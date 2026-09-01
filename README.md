@@ -1,0 +1,196 @@
+# Kapy Notes
+
+Offline-first notes where every line is also a live calculator. Write freely;
+any line that looks like arithmetic is worked out as you type and its result
+appears in a gutter beside it.
+
+```
+Lisbon trip budget
+
+Flights for two
+flights = 412 eur              412.00 EUR
+flights to usd                 478.29 USD
+
+Food and getting around        // rough guess
+daily = 55 eur                  55.00 EUR
+daily * 7                      385.00 EUR
+
+total                        2,288.00 EUR
+```
+
+One Flutter codebase, four platforms: **macOS, Windows, iOS, Android.**
+
+## Running it
+
+```bash
+flutter pub get
+flutter run -d macos      # or: windows, <ios device>, <android device>
+flutter test              # 104 tests
+```
+
+Built on Flutter 3.47.2 against the standalone **`material_ui`** package
+rather than `package:flutter/material.dart`. Material and Cupertino moved out
+of the SDK in 3.44 and the in-SDK libraries are formally deprecated in the
+November 2026 release, so this is where new code belongs; it also means design
+fixes arrive on the package's own schedule instead of the quarterly SDK train.
+`cupertino_ui` comes in transitively and backs the `.adaptive` widgets — there
+is no direct import, so it is not listed as a dependency.
+
+Verified on Flutter 3.47.2. Android needs JDK 17+ (`flutter config --jdk-dir`)
+and SDK platform 36; iOS needs Xcode's iOS platform installed
+(`xcodebuild -downloadPlatform iOS`). Goldens under `test/goldens/` render
+with macOS system fonts — regenerate them on macOS with
+`flutter test --update-goldens`.
+
+## Releasing
+
+```bash
+packaging/release.sh mac-direct   # notarised DMG for kapynotes.com
+packaging/release.sh ios          # .ipa for App Store Connect
+```
+
+The app ships as `Kapy Notes` under bundle ID `com.kapybara.kapynotes`, signed
+by Kapybara LLC (team `96V66447C6`). `SKIP_NOTARIZE=1` builds a DMG without
+contacting Apple, for local testing. `packaging/SUBMISSION.md` covers the
+certificates, the notarisation credential and the App Store metadata.
+
+## How it works
+
+### The calculation engine (`lib/calc/`)
+
+A purpose-built expression engine rather than a general maths library, because
+the interesting behaviour is in the natural phrasing, the unit algebra and the
+refusal to guess.
+
+| File | Role |
+|---|---|
+| `lexer.dart` | Text → tokens. Absorbs `1,250` thousands separators, `$`/`€` symbols and `//` comments. |
+| `parser.dart` | Tokens → AST. Recursive descent; `of`/`off`/`on`/`to`/`in`/`per` are operators. |
+| `evaluator.dart` | AST → value, against a scope that carries down the note. |
+| `unit.dart`, `unit_registry.dart` | Dimensional algebra over ~110 units plus live currencies. |
+| `engine.dart` | Runs a whole note top to bottom. |
+| `format.dart` | Compact display text and full-precision copy text. |
+| `highlight.dart` | Re-runs the lexer to colour the note. |
+
+**Percentages are a value type, not a text rewrite.** `20%` evaluates to a
+`PercentValue`, so `1250 + 8%` means "add 8 percent *of 1250*" while
+`0.08 + 1250` still means what it says. The same rule gives `20% of 80`,
+`20% off 50` and `25 as a % of 200` without any of them being special-cased in
+a regular expression.
+
+**Units carry dimensions.** `100 km / 2 h` produces `50 km/h` because the unit
+is a product of exponents, not a label. Conversions are offset-aware, so
+`100 degC to degF` is `212 °F`, while `20 degC + 5 degC` treats the right side
+as a difference and gives `25 °C`.
+
+**A line that does not parse produces nothing.** Someone mid-sentence is not
+someone with a syntax error, and "I have 3 apples" must not render a result.
+Lines are only attempted when they carry an arithmetic signal, and anything
+that fails to parse is left as plain text.
+
+**Running scope.** A variable assigned on one line is available below it, and
+`prev`, `sum`, `total` and `avg` accumulate as the note is read downward. A
+line that is *only* `total` reports the total without adding itself to it.
+
+### The editor (`lib/ui/editor/`)
+
+Flutter can style a text field's content directly, so this is one real,
+editable, syntax-coloured `TextField` — not the transparent-textarea-over-a-
+mirrored-div stack a browser forces on you.
+
+Results are aligned by laying the note out a second time with the same width,
+style and strut the field uses, and reading each line's offset from it. The
+gutter and the field share one `ScrollController`. That combination is what
+keeps a result pinned to its line through wrapping, scrolling and text scaling
+— and it is asserted directly in `test/note_editor_test.dart`, which compares
+chip positions against the field's own `RenderEditable` geometry.
+
+Clicking a result copies it at full precision.
+
+Currency codes can sit directly beside an amount, such as `10usd` or `10eur`;
+`rs` is accepted as an INR shorthand, so `10rs` and `10inr` are equivalent.
+Lines that start with `//` are treated and styled as quiet comments.
+
+### Storage (`lib/data/`)
+
+Everything is one JSON file in the platform's application-support directory.
+No account, no sync, no server.
+
+On iOS and Android, disk lookup is not on the launch critical path. The first
+Flutter frame is a focused plain-text capture field with no calculator, theme,
+font, image, or network setup ahead of it. Saved notes hydrate in the
+background. If someone types before hydration finishes, that text becomes a
+normal new note during the handoff, without dropping focus or the keyboard.
+
+Writes are coalesced into a 250 ms window and forced out whenever the app is
+backgrounded or asked to exit, with a write-then-rename so a crash mid-write
+cannot truncate the file. The in-memory copy is always current, so nothing on
+screen ever waits for the disk. Large JSON reads and all JSON writes are moved
+off the UI isolate so a long note history cannot interrupt typing.
+
+Exchange rates are the only networked feature. The cached snapshot is
+published before the full calculator mounts, so currency maths is available
+as soon as hydration completes and keeps working offline; a failed refresh
+changes nothing. Network client creation and stale refreshes wait until after
+the editor is ready. Rates then refresh on launch, resume, and every six hours
+while the app stays open. With no rates ever fetched, currency lines simply
+stay plain text.
+
+## Notable deviations from the original spec
+
+The spec described an Electron build. These changed for Flutter:
+
+| Spec | Here | Why |
+|---|---|---|
+| mathjs | Purpose-built engine | No Dart equivalent with unit support, and percentages want to be a value type. |
+| Layered textarea + mirrored div | One `TextField` with a custom controller | Flutter styles editable text natively. |
+| Separate highlight tokenizer | The parser's own lexer | Colouring cannot drift from evaluation if it is the same code. |
+| Regex `preprocess()` | Lexer and parser | `max(1,250)` and `1,250` need context to tell apart; a regex cannot. |
+| `localStorage`, write per keystroke | JSON file, coalesced writes | A synchronous disk write per keystroke is the wrong trade off the web. |
+| URL `?note=<id>` | Desktop selection plus mobile edit recency | Restores the right note across native app restarts. |
+| React Query | `RatesRepository` | One cached resource does not need a query layer. |
+| Two-pane only | Desktop two-pane; mobile editor with a notes drawer | Note taking stays one tap away on a phone. |
+
+## Platform notes
+
+- **macOS** — hidden title bar with the traffic lights inset into the sidebar;
+  the toolbar's inert stretch is the window drag region. Sandboxed, with
+  `network.client` added for the rate refresh.
+- **Windows / Linux** — native caption retained.
+- **iOS / Android:** accepts text on the first Flutter frame, then opens the
+  most recently edited note when no launch text was entered. A launch draft
+  becomes a new note. Search and the full note list are built only when the
+  hamburger drawer first opens; the gutter is fixed-width and the divider is
+  hidden.
+- Shortcuts: `⌘/Ctrl N` new note, `⌘/Ctrl F` search, `⌘/Ctrl \` toggle
+  sidebar, `⌘/Ctrl ⌫` delete note.
+
+## Window chrome
+
+macOS hides the title bar so the toolbar can act as window chrome, which means
+the OS draws the traffic lights straight over whatever is in the window's
+top-left corner. Which widget that is depends on state: the sidebar when it is
+showing, the toolbar when it is collapsed. `WindowChrome` owns the geometry and
+each pane asks for the inset it needs — the sidebar is tall enough to start
+*below* the buttons, while a one-row toolbar has to step *around* them.
+
+On a touch device the same corner belongs to the status bar and the bottom edge
+to the home indicator. The compact layout's `Scaffold` handles its top chrome,
+while the editor folds the bottom inset into the padding the text *and* the
+results gutter share — insetting only one would pull them apart.
+
+## Two alignment traps
+
+Both were caught on a real device after the widget tests passed, and both now
+have tests of their own.
+
+`TextField` merges the style you give it *over* the Material text theme, so
+any metric property you leave unset — `letterSpacing` especially — is
+inherited. The field then renders wider than the same string measured with
+your style alone, wraps somewhere else, and every result below the wrap sits
+on the wrong line. `EditorMetrics.textStyle` pins all of them.
+
+`RenderEditable` also wraps text inside `width - (1px + cursorWidth)`, holding
+that sliver back for the caret. It is smaller than one monospace glyph, so it
+only bites for lines that land in the gap — which is exactly what makes it
+easy to ship. `EditorMetrics.textLayoutWidth` applies it to both sides.

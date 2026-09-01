@@ -1,0 +1,39 @@
+name: kapy_notes
+description: "Notes where every line is a live calculator."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Local persistence: notes and preferences are plain JSON on disk.
+  path_provider: ^2.1.5
+  # Exchange-rate refresh. Everything else works with the network unplugged.
+  http: ^1.2.2
+  # Desktop window chrome (macOS traffic-light inset, min size, title bar).
+  window_manager: ^0.4.3
+  # Editable system-wide summon shortcut on macOS and Windows.
+  hotkey_manager: ^0.2.3
+  # Material moved out of the SDK in Flutter 3.44; the in-SDK library is
+  # deprecated in the Nov 2026 release. cupertino_ui arrives transitively and
+  # backs the .adaptive widgets, so it needs no direct entry here.
+  material_ui: ^1.1.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    # Platform app icons are native. This is the only brand bitmap Flutter
+    # paints, so keep unused source variants off the mobile startup bundle.
+    - assets/branding/kapy_notes_logo.png
+  fonts:
+    - family: OdinRounded
+      fonts:
+        - asset: assets/fonts/OdinRounded-Bold.otf
+          weight: 700
