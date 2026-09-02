@@ -5,8 +5,14 @@
 #   mac-direct  → build/release/Kapy-<version>.dmg   notarised, for kapynotes.com
 #   ios         → build/release/kapy-ios.ipa         for App Store Connect
 #   mac-store   → build/release/kapy-macos.pkg       Mac App Store (not in use yet)
+#   android     → build/release/kapy-android.aab     for Google Play
 #
-# Usage:  packaging/release.sh [mac-direct|ios|mac-store]
+# Usage:  packaging/release.sh [mac-direct|ios|mac-store|android]
+#
+# The Android bundle needs android/key.properties and the keystore it points
+# at. See android/key.properties.example. Without them Gradle falls back to
+# the debug key, and preflight_android.sh refuses the build rather than let a
+# debug-signed bundle reach Play.
 #
 # Notarising needs a stored credential. Create it once:
 #   xcrun notarytool store-credentials kapynotes-notary \
@@ -242,11 +248,22 @@ build_mac_store() {
   echo "  → $OUT/kapy-macos.pkg"
 }
 
+build_android() {
+  info "Android $VERSION ($BUILD_NUMBER) → Google Play"
+  "$ROOT/packaging/preflight_android.sh" --archive
+  "$FLUTTER" build appbundle --release
+  cp "$ROOT/build/app/outputs/bundle/release/app-release.aab" "$OUT/kapy-android.aab"
+  # Re-check the copied artifact, so what ships is what was verified.
+  "$ROOT/packaging/preflight_android.sh" --bundle "$OUT/kapy-android.aab"
+  echo "  → $OUT/kapy-android.aab"
+}
+
 case "${1:-mac-direct}" in
   mac-direct) build_mac_direct ;;
   ios)        build_ios ;;
   mac-store)  build_mac_store ;;
-  *)          echo "Usage: $0 [mac-direct|ios|mac-store]" >&2; exit 1 ;;
+  android)    build_android ;;
+  *)          echo "Usage: $0 [mac-direct|ios|mac-store|android]" >&2; exit 1 ;;
 esac
 
 info "Done"

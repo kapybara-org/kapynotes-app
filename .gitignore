@@ -49,3 +49,10 @@ app.*.map.json
 
 # App Store Connect API key id/issuer for packaging/upload_ios.sh
 packaging/.asc-credentials
+
+# Android release signing. The keystore itself must be backed up somewhere
+# durable: losing it means losing the ability to update the Play listing.
+/android/key.properties
+packaging/.play-credentials.json
+*.jks
+*.keystore

@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 APP_ROOT="$PWD"
 ADB="${ADB:-/Users/sanjay/Library/Android/sdk/platform-tools/adb}"
-APP_ID="com.kapybara.kapy_notes"
+APP_ID="com.kapybara.kapynotes"
 ACTIVITY="$APP_ID/.MainActivity"
 APK="$APP_ROOT/build/app/outputs/flutter-apk/app-debug.apk"
 OUT="$APP_ROOT/build/screenshots"

@@ -1,4 +1,4 @@
-package com.kapybara.kapy_notes
+package com.kapybara.kapynotes
 
 import io.flutter.embedding.android.FlutterActivity
 

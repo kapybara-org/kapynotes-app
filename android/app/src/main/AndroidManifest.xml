@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Refreshing exchange rates needs the network. Flutter only adds this
+         to the debug and profile manifests, so a release build without it
+         fails every rate refresh. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="Kapy Notes"
         android:name="${applicationName}"
@@ -40,6 +45,13 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- url_launcher opens the exchange-rate attribution link. Under
+             Android 11 package visibility it cannot see a browser without
+             this, and the link silently does nothing. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>
