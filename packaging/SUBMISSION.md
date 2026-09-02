@@ -347,6 +347,90 @@ the iOS app: buying digital content used in the app has to go through Apple.
 The app's only outbound link is the exchange-rate attribution, and it should
 stay that way.
 
+---
+
+## Google Play
+
+Not submitted yet. The pipeline exists and the bundle builds; what is missing
+is a Play Console listing and a signing key, both of which have to come from
+outside the repo.
+
+    packaging/preflight_android.sh --submission   repo, signing and listing art
+    packaging/release.sh android                  signed AAB to build/release/
+    packaging/upload_play.py                      confirm, validate, deliver
+
+### The package name is permanent
+
+`applicationId` is `com.kapybara.kapynotes`, matching the iOS bundle ID. It was
+briefly Flutter's default `com.kapybara.kapy_notes`, and was corrected before
+the first upload because **Play has no rename**. A wrong ID on the first upload
+means abandoning the listing and starting again with no installs, ratings or
+reviews. `preflight_android.sh` pins the value so it cannot drift.
+
+### Two bugs the Android build shipped with
+
+Both were found while wiring this up, and both only affect release builds,
+which is exactly why neither showed up in development:
+
+- **`INTERNET` was missing from `main/AndroidManifest.xml`.** Flutter adds it
+  to the debug and profile manifests for its own tooling, so every rate refresh
+  worked locally and would have failed silently in production.
+- **No `ACTION_VIEW` / `https` entry under `<queries>`.** Android 11 package
+  visibility means `url_launcher` cannot see a browser without one, so the
+  exchange-rate attribution link would have done nothing.
+
+Preflight now fails on either.
+
+### Signing
+
+Release signing is supplied out of tree through `android/key.properties`, which
+is gitignored along with `*.jks`. Copy `android/key.properties.example` and
+generate a keystore:
+
+    keytool -genkey -v -keystore ~/kapynotes-upload.jks \
+      -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+
+**Back that keystore up somewhere durable.** Play App Signing re-signs for
+distribution, but the upload key is how Play recognises you; losing it means a
+key reset with Google before you can ship another update.
+
+Without `key.properties`, Gradle falls back to the debug key so
+`flutter run --release` still works. That build is not uploadable, so
+`preflight_android.sh --bundle` checks the signer certificate and fails on
+`CN=Android Debug` rather than let one reach Play.
+
+### What only the Play Console can do
+
+- Create the app. The API cannot, exactly as with App Store Connect.
+- The **Data Safety** form, the content rating questionnaire, and the target
+  audience declaration. Data Safety is stricter than Apple's App Privacy: it
+  asks about each data type separately rather than accepting a single "not
+  collected".
+- Create the service account grant. `upload_play.py` needs a Google Cloud
+  service account that has been invited under Users and permissions.
+
+### Check the account type before planning a date
+
+A **personal** Play developer account created after 13 November 2023 must run a
+closed test with **12 testers opted in for 14 continuous days** before it can
+even apply for production access, and that application is reviewed for up to a
+week. "Opted in" means installed, not invited.
+
+**Organization accounts are exempt** and can publish straight to production.
+Kapybara LLC may well be registered as one; confirm it before promising a date,
+because it is the difference between days and a month.
+
+### Delivery
+
+`upload_play.py` defaults to the `internal` track, which is visible only to
+named testers, so a first delivery cannot land in front of real users by
+mistake. Promote from the Console after checking the build on a device.
+
+    packaging/upload_play.py --track internal
+
+The listing screenshots are already generated for all three form factors under
+`build/store-listing/play-store/`, from the same scenes as the App Store set.
+
 ### v1.1 sync reminder
 
 When accounts ship, add in-app account deletion. If any social login is added,

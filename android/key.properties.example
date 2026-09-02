@@ -1,0 +1,14 @@
+# Copy to android/key.properties and fill in. That file is gitignored.
+#
+# Generate an upload keystore once, and back it up somewhere durable:
+#
+#   keytool -genkey -v -keystore ~/kapynotes-upload.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# Google Play App Signing re-signs with its own key for distribution, but this
+# upload key is how Play recognises you. Lose it and updates need a key reset.
+
+storeFile=/absolute/path/to/kapynotes-upload.jks
+storePassword=
+keyAlias=upload
+keyPassword=
