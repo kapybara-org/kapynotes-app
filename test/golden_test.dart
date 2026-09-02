@@ -129,6 +129,71 @@ void main() {
     );
   });
 
+  testWidgets('desktop dark results divider hover', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('results-divider-hover'))),
+    );
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_results_divider_hover.png'),
+    );
+  });
+
+  testWidgets('desktop dark compact results divider hover', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(600, 630),
+      brightness: Brightness.dark,
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('results-divider-hover'))),
+    );
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile(
+        'goldens/desktop_dark_compact_results_divider_hover.png',
+      ),
+    );
+  });
+
+  testWidgets('desktop dark results restore hover', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    goldenPrefs.resultsVisible = false;
+    await tester.pumpAndSettle();
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('results-restore-hover'))),
+    );
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_results_restore_hover.png'),
+    );
+  });
+
   testWidgets('desktop dark compact header hover', (tester) async {
     await pumpForGolden(
       tester,

@@ -30,7 +30,7 @@ class NoteFooter extends StatelessWidget {
     this.showSettingsButton = true,
   });
 
-  final String total;
+  final String? total;
   final ShortcutBinding paragraphStyleShortcut;
   final ShortcutBinding boldShortcut;
   final ShortcutBinding italicShortcut;
@@ -119,33 +119,36 @@ class NoteFooter extends StatelessWidget {
                     ],
                   ),
                 ),
-                Positioned(
-                  right: 10,
-                  width: totalWidth,
-                  child: Text.rich(
-                    key: const ValueKey('note-total'),
-                    TextSpan(
-                      text: compactTotal ? 'Σ ' : 'Total: ',
-                      style: TextStyle(
-                        fontSize: 11.25,
-                        fontWeight: FontWeight.w500,
-                        color: palette.textTertiary,
-                      ),
-                      children: [
-                        TextSpan(
-                          text: total,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: palette.textPrimary,
-                          ),
+                // A note with no calculations has nothing to total, so the
+                // footer drops the readout instead of showing a hollow zero.
+                if (total case final total?)
+                  Positioned(
+                    right: 10,
+                    width: totalWidth,
+                    child: Text.rich(
+                      key: const ValueKey('note-total'),
+                      TextSpan(
+                        text: compactTotal ? 'Σ ' : 'Total: ',
+                        style: TextStyle(
+                          fontSize: 11.25,
+                          fontWeight: FontWeight.w500,
+                          color: palette.textTertiary,
                         ),
-                      ],
+                        children: [
+                          TextSpan(
+                            text: total,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: palette.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
                   ),
-                ),
               ],
             ),
           );

@@ -18,9 +18,6 @@ Two deliberate exceptions:
 - The **DMG filename** has no space, `KapyNotes-1.0.0.dmg`, so the download URL
   needs no `%20`. The volume and the app inside it are both `Kapy Notes`.
 
-`README.md` and the marketing site still say `Kapynötes`. Worth reconciling
-separately. Nothing in the build depends on it.
-
 ---
 
 ## The Mac DMG
@@ -95,12 +92,18 @@ Enter these values verbatim.
 | Build | `1` |
 | Primary category | Productivity |
 | Secondary category | Utilities, optional |
-| Copyright | `© 2026 Kapybara LLC` |
-| Support URL | https://kapynotes.com |
+| Copyright | `2026 Kapybara LLC` (App Store Connect adds the © symbol) |
+| Support URL | https://kapynotes.com/support |
 | Marketing URL | https://kapynotes.com |
 | Privacy Policy URL | https://kapynotes.com/privacy |
+| Price | **Free at launch.** Paid is the eventual intent, but v1.0.0 ships free so the first submission does not wait on the Paid Apps Agreement. See *Going paid later* below. |
 
 ### English (U.S.) listing copy
+
+All of the copy below, plus the subtitle, categories, privacy policy URL and
+both screenshot sets, is already live on the record, with one exception:
+the review notes, which are called out under **Review notes**. Re-push any
+field with the same values if it is ever cleared.
 
 **Subtitle** (28 of 30 characters)
 
@@ -137,7 +140,19 @@ Enter these values verbatim.
 
 **Review notes**
 
-> App is fully local-first; no account or login required for any feature.
+> This build has no in-app purchases, subscriptions, external purchase links,
+> account, or login. All functionality is available immediately after launch.
+> Notes and calculations are stored only on the device. The only network
+> activity is an HTTPS refresh of public currency rates from Frankfurter, with
+> ExchangeRate-API as a fallback; no note content is included. To test, enter
+> `1250 + 8%` or `100 km / 2 h` on any line and the result appears beside it.
+
+The copy above is **not yet on the record**. App Store Connect refuses a PATCH
+to the review detail unless the four contact fields are sent with it, so the
+notes still open with the old "This paid App Store build is the Pro Lifetime
+edition" sentence. Paste the corrected text when you fill in the App Review
+contact details, or the reviewer is told the app is paid while the listing
+shows it as free.
 
 ### Repo-verified release settings
 
@@ -149,6 +164,7 @@ Enter these values verbatim.
 - [x] `ITSAppUsesNonExemptEncryption = false`
 - [x] App privacy manifest is a Runner target resource
 - [x] 1024 by 1024 marketing icon is present and opaque
+- [x] Adaptive light/dark launch screen uses the canonical Kapy mark on iPhone and iPad
 - [x] No analytics, crash-reporting, advertising, or IDFA SDK is in the iOS dependency graph
 - [x] Privacy policy source exists at `/privacy`
 - [x] Real two-pane iPad layout, not a stretched phone layout
@@ -191,12 +207,27 @@ is a dependency.
 
 ### Apple-account and publishing checklist
 
-- [ ] Create an Apple Distribution certificate. The September 1, 2026 local audit found only `Developer ID Application: Kapybara LLC (96V66447C6)`.
-- [ ] Register the explicit App ID `com.kapybara.kapynotes` with no special capabilities.
-- [ ] Create the App Store Connect app record using the settled values above.
-- [ ] Deploy the website. `kapynotes.com` is registered on Cloudflare and its zone answers, but no record points at the Worker, so the support and privacy URLs do not resolve. Run `wrangler login`, then `npm --workspace website run deploy`.
+- [x] Create an Apple Distribution certificate. Present as of September 2, 2026: `Apple Distribution: Kapybara LLC (96V66447C6)`.
+- [x] Register the explicit App ID `com.kapybara.kapynotes` with no special capabilities. The exported IPA embeds `iOS Team Store Provisioning Profile: com.kapybara.kapynotes`, resolving `96V66447C6.com.kapybara.kapynotes`.
+- [x] Create the App Store Connect app record using the settled values above. Created as app id `6807810082`. The version record was renamed `1.0` to `1.0.0` so it matches `CFBundleShortVersionString`.
+- [x] Deploy the website. The homepage, privacy policy, support page, and terms all return HTTP 200 as of September 2, 2026.
 - [ ] Answer App Privacy as **Data Not Collected**. The app sends no notes, calculations, identifiers or analytics; whichever rate source is contacted receives only the connection metadata inherent to an HTTPS request, which the privacy policy discloses. Frankfurter says its API does not collect personal data, while Cloudflare receives basic analytics information. ExchangeRate-API remains a fallback, so request written confirmation from both providers if App Review requires it.
-- [ ] Complete age rating as **4+**, IDFA as **No**, and export compliance as **No non-exempt encryption**.
+- [x] Complete the updated age-rating questionnaire. The repo audit supports **4+**: no in-app controls, messaging, user-generated network content, advertising, violence, sexual content, substances, gambling, loot boxes, or unrestricted web access. Submitted through the API; the record now reads `FOUR_PLUS` and Brazil `L`.
+- [x] Content Rights is **Yes, rights are secured** (`USES_THIRD_PARTY_CONTENT`) because the app displays third-party exchange-rate data.
+- [ ] Set IDFA to **No** and export compliance to **No non-exempt encryption**. Both are answered on the build itself, so they only become available once a build finishes processing. `ITSAppUsesNonExemptEncryption = false` in `Info.plist` should auto-answer the encryption question.
+- [ ] Complete and verify Kapybara LLC's DSA trader status before selecting EU availability. Exclude China mainland unless the required local filing is in place.
+- [x] Price is set to **Free** (USA base territory, price point `10000`). A free
+  price schedule needs no Paid Apps Agreement, which is what unblocked the
+  first submission.
+- [ ] Accept the Paid Apps Agreement and finish banking and tax details before
+  the app can ever be sold. Not required to ship v1.0.0 free.
+- [x] Review notes are set on version 1.0.0, with `demoAccountRequired` false.
+- [ ] Add App Review contact details: first name, last name, phone and email. These cannot be filled from the repo and are still blank.
+- [ ] Choose manual release for the first version. The record currently says `AFTER_APPROVAL`.
+
+Run the read-only gate before archiving or opening App Store Connect:
+
+    packaging/preflight_ios.sh --submission
 
 ### Screenshots
 
@@ -210,15 +241,19 @@ Connect expects:
 - `build/screenshots/iphone-6.9/` — 1320 × 2868, from iPhone 16 Pro Max
 - `build/screenshots/ipad-13/` — 2064 × 2752, from iPad Pro 13-inch
 
+Uploaded, all eight accepted with no errors. Apple files these two sizes under
+the older display-type enums, `APP_IPHONE_67` and `APP_IPAD_PRO_3GEN_129`; the
+6.9-inch and 13-inch enums do not exist in the API.
+
 Four scenes per device — a currency budget, a percentage estimate, a scaled
 recipe and an invoice in dark mode — each one a seeded store written into the
 simulator's container by `packaging/screenshot_seed.py` and captured after a
 relaunch. Nothing demo-only is compiled into the app. Rates in the seed are
 frozen, so a rerun produces the same figures without the network.
 
-The iPhone scenes show the keyboard, because the compact editor deliberately
-opens ready to type. Re-run a single device with `screenshots.sh iphone` or
-`screenshots.sh ipad`.
+The iPhone scenes keep the full note visible; the caret shows that the compact
+editor is ready to type. Re-run a single device with `screenshots.sh iphone`
+or `screenshots.sh ipad`.
 
 ### Build and upload
 
@@ -231,12 +266,47 @@ The equivalent repository wrapper is:
 
     packaging/release.sh ios
 
-Upload `build/ios/ipa/*.ipa` with Transporter or Xcode Organizer. Every upload
-needs a build number higher than the previous upload.
+Then confirm the record and deliver the build:
+
+    packaging/upload_ios.sh
+
+That looks the app record up by bundle ID, prints the build numbers App Store
+Connect already holds, runs Apple's validation, and only then uploads. It needs
+an App Store Connect API key; the script header explains the one-time setup.
+Every upload needs a build number higher than the previous upload.
+
+Transporter.app and Xcode Organizer deliver the same package if you would
+rather click through it. The app record itself has to be created in the App
+Store Connect UI either way, because Apple's API rejects CREATE on the apps
+resource.
 
 After processing, install the build through TestFlight on a real iPhone and
 iPad. Attach the processed build to version 1.0.0, complete every required
 metadata section, choose the release mode, and submit for review.
+
+### Going paid later
+
+Free to paid is allowed at any time and needs no review. The catch is that it
+is a one-way door for everyone who already downloaded: an App Store purchase is
+permanent, so every free download keeps the app forever, including every future
+update. Flipping the price to 19.99 later only affects new users.
+
+Two consequences worth deciding on before the free window gets long:
+
+- Keep the free window deliberate and short if the plan is really a paid app.
+  The giveaway is small at launch and grows with every download.
+- When the time comes, a non-consumable **Pro Lifetime** in-app purchase is
+  usually the better instrument than flipping the app price. It keeps free
+  installs as the acquisition funnel and puts the paywall where you control
+  it, rather than trading the whole funnel for a cold-start 19.99 listing.
+  It does mean StoreKit work and a new App Privacy review, and the review
+  notes above would have to stop saying there are no in-app purchases.
+
+The website still sells the Mac build as Pro Lifetime at USD 19.99. That is
+fine alongside a free iOS app, but do not add a purchase link for it inside
+the iOS app: buying digital content used in the app has to go through Apple.
+The app's only outbound link is the exchange-rate attribution, and it should
+stay that way.
 
 ### v1.1 sync reminder
 

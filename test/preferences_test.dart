@@ -27,6 +27,7 @@ void main() {
     final prefs = LayoutPrefs(_MemoryStore())..load();
 
     expect(prefs.windowSize, const Size(600, 630));
+    expect(prefs.resultsVisible, isTrue);
     expect(prefs.dailySeparatorsEnabled, isTrue);
     expect(prefs.writingFont, WritingFont.handwritten);
     expect(prefs.timeZoneId, isNull);
@@ -39,6 +40,7 @@ void main() {
     prefs.windowSize = const Size(684, 712);
     prefs.sidebarWidth = 318;
     prefs.gutterWidth = 224;
+    prefs.resultsVisible = false;
     prefs.dailySeparatorsEnabled = false;
     prefs.writingFont = WritingFont.clean;
 
@@ -46,8 +48,32 @@ void main() {
     expect(restored.windowSize, const Size(684, 712));
     expect(restored.sidebarWidth, 318);
     expect(restored.gutterWidth, 224);
+    expect(restored.resultsVisible, isFalse);
     expect(restored.dailySeparatorsEnabled, isFalse);
     expect(restored.writingFont, WritingFont.clean);
+  });
+
+  test('resetting panel widths also brings a hidden results pane back', () {
+    final prefs = LayoutPrefs(_MemoryStore())..load();
+    prefs.gutterWidth = 320;
+    prefs.resultsVisible = false;
+
+    prefs.resetPanelWidths();
+
+    expect(prefs.gutterWidth, LayoutPrefs.defaultGutterWidth);
+    expect(prefs.resultsVisible, isTrue);
+  });
+
+  test('panel widths stop at compact usable sizes without hiding', () {
+    final prefs = LayoutPrefs(_MemoryStore())..load();
+
+    prefs.gutterWidth = 1;
+    prefs.sidebarWidth = 1;
+
+    expect(prefs.gutterWidth, LayoutPrefs.minGutterWidth);
+    expect(prefs.sidebarWidth, LayoutPrefs.minSidebarWidth);
+    expect(prefs.resultsVisible, isTrue);
+    expect(prefs.sidebarVisible, isTrue);
   });
 
   test('number system follows the region until the user overrides it', () {

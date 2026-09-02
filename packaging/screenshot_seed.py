@@ -11,10 +11,16 @@ close enough to real ones that the converted figures read as plausible.
 import json
 import os
 import sys
+import time
 
-# Milliseconds. Fixed so a rerun produces byte-identical scenes.
+# Note timestamps are fixed so reruns keep identical scenes.
 DAY = 86_400_000
 NOW = 1_772_452_800_000  # 2026-03-02 12:00 UTC
+
+# Keep the frozen snapshot fresh for the duration of this capture. The notes
+# retain fixed dates, but a historical fetchedAt makes the app replace these
+# rates from the network during the five-second screenshot settle window.
+RATES_FETCHED_AT = int(time.time() * 1000)
 
 RATES_PER_USD = {
     "USD": 1.0,
@@ -130,7 +136,7 @@ json.dump(
         "rates.v1": {
             "base": "USD",
             "date": "02 Mar 2026",
-            "fetchedAt": NOW,
+            "fetchedAt": RATES_FETCHED_AT,
             "rates": RATES_PER_USD,
         },
         "sidebarVisible.v1": True,

@@ -2,17 +2,19 @@
 
 ## Writing font
 
-The note editor defaults to Kalam Regular by Indian Type Foundry. It is a
-screen-optimized handwriting face distributed through Google Fonts under the
-SIL Open Font License 1.1.
+The note editor defaults to Shantell Sans by Shantell Martin and Arrow Type.
+Its variable axes are configured with low informality and no baseline bounce,
+keeping the writing surface human without making longer notes feel busy. The
+bundled upright and italic variable fonts are distributed through Google Fonts
+under the SIL Open Font License 1.1.
 
-Source: <https://github.com/google/fonts/tree/main/ofl/kalam>
+Source: <https://github.com/google/fonts/tree/main/ofl/shantellsans>
 
-License: [`Kalam-OFL.txt`](Kalam-OFL.txt)
+License: [`ShantellSans-OFL.txt`](ShantellSans-OFL.txt)
 
 ## Brand font
 
-The `Kapynötes` wordmark uses Odin Rounded Bold by Frank Hemmekam.
+The `Kapy Notes` wordmark uses Odin Rounded Bold by Frank Hemmekam.
 
 Source: <https://www.dafont.com/odin-rounded.font>
 

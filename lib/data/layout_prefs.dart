@@ -71,15 +71,16 @@ class LayoutPrefs extends ChangeNotifier {
   static const Size defaultWindowSize = Size(600, 630);
   static const Size minimumWindowSize = Size(520, 360);
 
-  static const double minGutterWidth = 110;
+  static const double minGutterWidth = 72;
   static const double maxGutterWidth = 480;
   static const double defaultGutterWidth = 190;
 
-  static const double minSidebarWidth = 180;
+  static const double minSidebarWidth = 150;
   static const double maxSidebarWidth = 420;
   static const double defaultSidebarWidth = 260;
 
   static const String _gutterKey = 'gutter.v1';
+  static const String _resultsVisibleKey = 'resultsVisible.v1';
   static const String _sidebarKey = 'sidebar.v1';
   static const String _sidebarVisibleKey = 'sidebarVisible.v1';
   static const String _windowWidthKey = 'windowWidth.v1';
@@ -96,6 +97,7 @@ class LayoutPrefs extends ChangeNotifier {
   final Locale Function() _locale;
 
   double _gutterWidth = defaultGutterWidth;
+  bool _resultsVisible = true;
   double _sidebarWidth = defaultSidebarWidth;
   bool _sidebarVisible = true;
   Size _windowSize = defaultWindowSize;
@@ -108,6 +110,7 @@ class LayoutPrefs extends ChangeNotifier {
     : _locale = locale ?? (() => PlatformDispatcher.instance.locale);
 
   double get gutterWidth => _gutterWidth;
+  bool get resultsVisible => _resultsVisible;
   double get sidebarWidth => _sidebarWidth;
   bool get sidebarVisible => _sidebarVisible;
   Size get windowSize => _windowSize;
@@ -132,6 +135,7 @@ class LayoutPrefs extends ChangeNotifier {
 
   void load() {
     _gutterWidth = _clampGutter(_readDouble(_gutterKey) ?? defaultGutterWidth);
+    _resultsVisible = _store.read<bool>(_resultsVisibleKey) ?? true;
     _sidebarWidth = _clampSidebar(
       _readDouble(_sidebarKey) ?? defaultSidebarWidth,
     );
@@ -154,6 +158,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (clamped == _gutterWidth) return;
     _gutterWidth = clamped;
     _store.put(_gutterKey, clamped);
+    notifyListeners();
+  }
+
+  set resultsVisible(bool value) {
+    if (value == _resultsVisible) return;
+    _resultsVisible = value;
+    _store.put(_resultsVisibleKey, value);
     notifyListeners();
   }
 
@@ -209,13 +220,16 @@ class LayoutPrefs extends ChangeNotifier {
 
   void resetPanelWidths() {
     if (_gutterWidth == defaultGutterWidth &&
-        _sidebarWidth == defaultSidebarWidth) {
+        _sidebarWidth == defaultSidebarWidth &&
+        _resultsVisible) {
       return;
     }
     _gutterWidth = defaultGutterWidth;
     _sidebarWidth = defaultSidebarWidth;
+    _resultsVisible = true;
     _store.put(_gutterKey, _gutterWidth);
     _store.put(_sidebarKey, _sidebarWidth);
+    _store.put(_resultsVisibleKey, _resultsVisible);
     notifyListeners();
   }
 

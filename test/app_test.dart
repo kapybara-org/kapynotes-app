@@ -232,6 +232,34 @@ void main() {
     );
   });
 
+  testWidgets('dragging resizes and clicking hides the desktop sidebar', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    notes.create();
+    await tester.pumpAndSettle();
+
+    final divider = find.byKey(const ValueKey('sidebar-divider'));
+    expect(divider, findsOneWidget);
+    expect(
+      find.byTooltip('Drag to resize. Click to hide notes.'),
+      findsOneWidget,
+    );
+
+    await tester.drag(divider, const Offset(-240, 0));
+    await tester.pumpAndSettle();
+
+    expect(prefs.sidebarWidth, LayoutPrefs.minSidebarWidth);
+    expect(prefs.sidebarVisible, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar-divider')));
+    await tester.pumpAndSettle();
+
+    expect(prefs.sidebarVisible, isFalse);
+    expect(find.byKey(const ValueKey('sidebar-divider')), findsNothing);
+    expect(find.byTooltip('Show notes'), findsOneWidget);
+  });
+
   testWidgets('types into a note, calculates, and derives its title', (
     tester,
   ) async {
@@ -272,6 +300,7 @@ void main() {
     tester,
   ) async {
     store.data['gutter.v1'] = 320.0;
+    store.data['resultsVisible.v1'] = false;
     store.data['sidebar.v1'] = 360.0;
     await pumpApp(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
@@ -298,7 +327,49 @@ void main() {
     await tester.tap(reset);
     await tester.pumpAndSettle();
     expect(prefs.gutterWidth, LayoutPrefs.defaultGutterWidth);
+    expect(prefs.resultsVisible, isTrue);
     expect(prefs.sidebarWidth, LayoutPrefs.defaultSidebarWidth);
+  });
+
+  testWidgets('settings reserves semibold for primary emphasis', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.pumpAndSettle();
+    await openSettings(tester);
+
+    final settings = find.byType(SettingsDialog);
+    final textWidgets = find.descendant(
+      of: settings,
+      matching: find.byType(Text),
+    );
+    for (final element in textWidgets.evaluate()) {
+      final text = element.widget as Text;
+      final inherited = DefaultTextStyle.of(element).style;
+      final weight = text.style?.fontWeight ?? inherited.fontWeight;
+      expect(
+        (weight ?? FontWeight.w400).value,
+        lessThanOrEqualTo(FontWeight.w600.value),
+        reason: '${text.data ?? text.textSpan?.toPlainText()} is too bold',
+      );
+    }
+
+    FontWeight weightOf(String label) {
+      final finder = find.descendant(of: settings, matching: find.text(label));
+      final element = tester.element(finder);
+      final text = tester.widget<Text>(finder);
+      return text.style?.fontWeight ??
+          DefaultTextStyle.of(element).style.fontWeight ??
+          FontWeight.w400;
+    }
+
+    expect(weightOf('Settings'), FontWeight.w600);
+    expect(weightOf('General'), FontWeight.w600);
+    expect(weightOf('Appearance'), FontWeight.w400);
+    expect(weightOf('NOTES'), FontWeight.w500);
+    expect(weightOf('Daily separators'), FontWeight.w500);
+    expect(weightOf('Done'), FontWeight.w500);
   });
 
   testWidgets('selects and persists the note time zone from settings', (
@@ -430,13 +501,23 @@ void main() {
     );
 
     expect(prefs.writingFont, WritingFont.handwritten);
-    expect(editor().style?.fontFamily, 'Kalam');
+    expect(editor().style?.fontFamily, 'Shantell Sans');
 
     await openSettings(tester, section: SettingsSection.appearance);
     expect(find.text('WRITING FONT'), findsOneWidget);
     for (final font in WritingFont.values) {
       expect(find.byKey(ValueKey('writing-font-${font.name}')), findsOneWidget);
     }
+    final handwritingPreview = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('writing-font-handwritten')),
+        matching: find.text(WritingFont.handwritten.preview),
+      ),
+    );
+    expect(
+      handwritingPreview.style?.fontVariations,
+      WritingFont.handwritten.fontVariations,
+    );
 
     await tester.tap(find.byKey(const ValueKey('writing-font-monospace')));
     await tester.pumpAndSettle();
@@ -573,6 +654,50 @@ void main() {
   });
 
   group('compact editor', () {
+    testWidgets('keeps the results divider in compact desktop windows', (
+      tester,
+    ) async {
+      store.data['notes.v1'] = [
+        {
+          'id': 'desktop-compact',
+          'body': 'Compact budget\n6 * 7',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(600, 630));
+
+      expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
+      expect(find.byType(GutterDivider), findsOneWidget);
+      expect(
+        tester
+            .widget<MouseRegion>(
+              find.byKey(const ValueKey('results-divider-hover')),
+            )
+            .cursor,
+        SystemMouseCursors.resizeLeftRight,
+      );
+    });
+
+    testWidgets('keeps the results divider out of phone-sized layouts', (
+      tester,
+    ) async {
+      store.data['notes.v1'] = [
+        {
+          'id': 'phone-compact',
+          'body': 'Phone budget\n6 * 7',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(420, 800));
+
+      expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
+      expect(find.byType(GutterDivider), findsNothing);
+    });
+
     testWidgets(
       'opens the last edited note with the caret and focus at its end',
       (tester) async {

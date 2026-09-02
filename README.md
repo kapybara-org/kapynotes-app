@@ -25,7 +25,7 @@ One Flutter codebase, four platforms: **macOS, Windows, iOS, Android.**
 ```bash
 flutter pub get
 flutter run -d macos      # or: windows, <ios device>, <android device>
-flutter test              # 104 tests
+flutter test              # 184 tests
 ```
 
 Built on Flutter 3.47.2 against the standalone **`material_ui`** package
@@ -47,6 +47,7 @@ with macOS system fonts — regenerate them on macOS with
 ```bash
 packaging/release.sh mac-direct   # notarised DMG for kapynotes.com
 packaging/release.sh ios          # .ipa for App Store Connect
+packaging/preflight_ios.sh --submission  # complete iOS readiness check
 ```
 
 The app ships as `Kapy Notes` under bundle ID `com.kapybara.kapynotes`, signed

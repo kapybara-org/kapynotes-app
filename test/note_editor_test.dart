@@ -40,6 +40,7 @@ Widget harness(
   String body, {
   List<NoteFormatRange> initialFormats = const [],
   double gutterWidth = 200,
+  bool resultsVisible = true,
   DateTime? lastUpdatedAt,
   bool dailySeparatorsEnabled = false,
   DateTime Function()? now,
@@ -50,6 +51,7 @@ Widget harness(
   ValueChanged<String>? onBodyChanged,
   ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
   ValueChanged<double>? onGutterWidthChanged,
+  ValueChanged<bool>? onResultsVisibilityChanged,
   VoidCallback? onGutterWidthReset,
   WritingFont writingFont = WritingFont.handwritten,
   ShortcutPrefs? shortcuts,
@@ -67,6 +69,7 @@ Widget harness(
         engine: engine,
         highlighter: Highlighter(engine.registry),
         gutterWidth: gutterWidth,
+        resultsVisible: resultsVisible,
         lastUpdatedAt: lastUpdatedAt,
         dailySeparatorsEnabled: dailySeparatorsEnabled,
         now: now,
@@ -79,6 +82,7 @@ Widget harness(
           onFormatsChanged?.call(formats);
         },
         onGutterWidthChanged: onGutterWidthChanged ?? (_) {},
+        onResultsVisibilityChanged: onResultsVisibilityChanged ?? (_) {},
         onGutterWidthReset: onGutterWidthReset ?? () {},
         onSettingsPressed: () {},
         writingFont: writingFont,
@@ -195,7 +199,8 @@ void main() {
     const long =
         '1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1';
     const body = 'first\n$long\nafter = 9';
-    // Kalam is proportionally spaced and fits more of this expression than the
+    // The handwriting face is proportionally spaced and fits more of this
+    // expression than the
     // old mono default, so keep the pane narrow enough to preserve the wrap.
     await tester.pumpWidget(harness(body, gutterWidth: 320));
     await tester.pumpAndSettle();
@@ -1010,6 +1015,7 @@ void main() {
     expect(rendered.height, expected.height);
     expect(rendered.fontFamily, expected.fontFamily);
     expect(rendered.fontWeight, expected.fontWeight);
+    expect(rendered.fontVariations, expected.fontVariations);
     expect(rendered.leadingDistribution, expected.leadingDistribution);
   });
 
@@ -1023,7 +1029,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(find.byType(TextField)).style?.fontFamily,
-      'Kalam',
+      'Shantell Sans',
     );
 
     await tester.pumpWidget(harness(body, writingFont: WritingFont.monospace));
@@ -1043,21 +1049,36 @@ void main() {
     tester,
   ) async {
     final widths = <double>[];
-    await tester.pumpWidget(harness('2 + 2', onGutterWidthChanged: widths.add));
+    final visibility = <bool>[];
+    await tester.pumpWidget(
+      harness(
+        '2 + 2',
+        onGutterWidthChanged: widths.add,
+        onResultsVisibilityChanged: visibility.add,
+      ),
+    );
     await tester.pumpAndSettle();
 
     final divider = find.byType(GutterDivider);
     final region = find.byKey(const ValueKey('results-divider-hover'));
+    final gripOpacity = find.byKey(
+      const ValueKey('results-divider-grip-opacity'),
+    );
     expect(
       tester.widget<MouseRegion>(region).cursor,
       SystemMouseCursors.resizeLeftRight,
     );
+    expect(tester.widget<AnimatedOpacity>(gripOpacity).opacity, 0);
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
     await mouse.addPointer(location: Offset.zero);
     await mouse.moveTo(tester.getCenter(divider));
     await tester.pumpAndSettle();
+    expect(tester.widget<AnimatedOpacity>(gripOpacity).opacity, 1);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(find.text('Drag to resize. Click to hide.'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('results-divider-line'))).width,
       2,
@@ -1085,6 +1106,119 @@ void main() {
 
     expect(widths, isNotEmpty);
     expect(widths.last, lessThan(200));
+
+    widths.clear();
+    await mouse.moveTo(tester.getCenter(divider));
+    await mouse.down(tester.getCenter(divider));
+    await mouse.moveBy(const Offset(20, 0));
+    await tester.pump();
+    await mouse.moveBy(const Offset(220, 0));
+    await mouse.up();
+    await tester.pumpAndSettle();
+
+    expect(widths, isNotEmpty);
+    expect(widths.last, lessThan(100));
+    expect(
+      visibility,
+      isEmpty,
+      reason: 'dragging only resizes; it never hides the results column',
+    );
+  });
+
+  testWidgets('clicking the results divider collapses to a restore edge', (
+    tester,
+  ) async {
+    final visibility = <bool>[];
+    await tester.pumpWidget(
+      harness('2 + 2', onResultsVisibilityChanged: visibility.add),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('results-divider')));
+    // The divider also reserves double-click for width reset, so its single
+    // click resolves after the platform double-click window.
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(visibility, [false]);
+
+    visibility.clear();
+    await tester.pumpWidget(
+      harness(
+        '2 + 2',
+        resultsVisible: false,
+        onResultsVisibilityChanged: visibility.add,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GutterDivider), findsNothing);
+    expect(find.byType(ResultsGutter), findsNothing);
+    expect(find.byType(ResultsRestoreHandle), findsOneWidget);
+    expect(
+      find.byTooltip('Show results. Drag left to resize.'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<MouseRegion>(
+            find.byKey(const ValueKey('results-restore-hover')),
+          )
+          .cursor,
+      SystemMouseCursors.resizeLeftRight,
+    );
+
+    final restore = find.byKey(const ValueKey('results-restore-handle'));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(restore));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find.byKey(const ValueKey('results-restore-grip-opacity')),
+          )
+          .opacity,
+      1,
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(find.text('Show results. Drag left to resize.'), findsOneWidget);
+
+    await tester.tap(restore);
+    await tester.pump();
+    expect(visibility, [true]);
+  });
+
+  testWidgets('dragging left from the restore edge chooses its width', (
+    tester,
+  ) async {
+    final widths = <double>[];
+    final visibility = <bool>[];
+    await tester.pumpWidget(
+      harness(
+        '2 + 2',
+        resultsVisible: false,
+        onGutterWidthChanged: widths.add,
+        onResultsVisibilityChanged: visibility.add,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final restore = find.byKey(const ValueKey('results-restore-handle'));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: tester.getCenter(restore));
+    await mouse.down(tester.getCenter(restore));
+    await mouse.moveBy(const Offset(-20, 0));
+    await tester.pump();
+    await mouse.moveBy(const Offset(-180, 0));
+    await mouse.up();
+    await tester.pumpAndSettle();
+
+    expect(widths, isNotEmpty);
+    expect(widths.last, closeTo(180, 1));
+    expect(visibility, [true]);
   });
 
   testWidgets('keeps results pinned to their lines while scrolling', (
@@ -1135,6 +1269,27 @@ void main() {
     expect(find.byTooltip('Settings'), findsOneWidget);
   });
 
+  testWidgets('hides the running total until the note has a calculation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('Groceries for the weekend'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('note-total')), findsNothing);
+
+    await tester.enterText(
+      find.byType(TextField),
+      'Groceries for the weekend\n12 + 30',
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('note-total')))
+          .textSpan!
+          .toPlainText(),
+      'Total: 42',
+    );
+  });
+
   testWidgets('carries a variable down to later lines', (tester) async {
     await tester.pumpWidget(harness('subtotal = 42\nsubtotal * 3'));
     await tester.pumpAndSettle();
@@ -1164,17 +1319,18 @@ void main() {
     );
     expect(heading.style!.fontWeight, FontWeight.w700);
     expect(subtitle.style!.fontStyle, FontStyle.italic);
+    expect(find.byKey(const ValueKey('note-total')), findsNothing);
+
+    await tester.enterText(find.byType(TextField), '1');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Start typing'), findsNothing);
     expect(
       tester
           .widget<Text>(find.byKey(const ValueKey('note-total')))
           .textSpan!
           .toPlainText(),
-      'Total: 0',
+      'Total: 1',
     );
-
-    await tester.enterText(find.byType(TextField), '1');
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Start typing'), findsNothing);
   });
 
   testWidgets('prepares a blank line without saving it on open', (

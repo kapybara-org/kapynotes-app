@@ -22,7 +22,10 @@ Future<void> loadTestFonts() async {
     await _load(family, ['/System/Library/Fonts/Supplemental/Arial.ttf']);
   }
   await _load('OdinRounded', ['assets/fonts/OdinRounded-Bold.otf']);
-  await _load('Kalam', ['assets/fonts/Kalam-Regular.ttf']);
+  await _loadAll('Shantell Sans', [
+    'assets/fonts/ShantellSans-Variable.ttf',
+    'assets/fonts/ShantellSans-Italic-Variable.ttf',
+  ]);
 }
 
 Future<void> _load(String family, List<String> candidates) async {
@@ -35,4 +38,17 @@ Future<void> _load(String family, List<String> candidates) async {
     await loader.load();
     return;
   }
+}
+
+Future<void> _loadAll(String family, List<String> paths) async {
+  final loader = FontLoader(family);
+  var found = false;
+  for (final path in paths) {
+    final file = File(path);
+    if (!file.existsSync()) continue;
+    final bytes = await file.readAsBytes();
+    loader.addFont(Future.value(ByteData.sublistView(bytes)));
+    found = true;
+  }
+  if (found) await loader.load();
 }

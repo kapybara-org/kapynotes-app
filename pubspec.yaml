@@ -37,11 +37,13 @@ flutter:
     # Platform app icons are native. This is the only brand bitmap Flutter
     # paints, so keep unused source variants off the mobile startup bundle.
     - assets/branding/kapy_notes_logo.png
+    - assets/fonts/ShantellSans-OFL.txt
   fonts:
-    - family: Kalam
+    - family: Shantell Sans
       fonts:
-        - asset: assets/fonts/Kalam-Regular.ttf
-          weight: 400
+        - asset: assets/fonts/ShantellSans-Variable.ttf
+        - asset: assets/fonts/ShantellSans-Italic-Variable.ttf
+          style: italic
     - family: OdinRounded
       fonts:
         - asset: assets/fonts/OdinRounded-Bold.otf

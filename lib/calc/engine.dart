@@ -40,9 +40,10 @@ class DocumentEvaluation {
     this.grouping = DigitGrouping.international,
   });
 
-  /// A note with no calculations still has a useful, stable footer value.
-  String get totalText => total == null
-      ? '0'
+  /// Null when the note holds no calculations at all, so the footer can omit
+  /// the readout rather than claim a total of zero.
+  String? get totalText => total == null
+      ? null
       : ResultFormatter.display(total!, grouping: grouping);
 }
 

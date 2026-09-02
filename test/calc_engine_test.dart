@@ -300,7 +300,10 @@ void main() {
 
         expect(result.results[2]!.text, '30');
         expect(result.totalText, '30');
-        expect(engine.evaluateDocumentWithSummary('notes only').totalText, '0');
+        expect(
+          engine.evaluateDocumentWithSummary('notes only').totalText,
+          isNull,
+        );
 
         final converted = engine.evaluateDocumentWithSummary(
           '10 usd\n20 usd\ntotal\ntotal to eur',

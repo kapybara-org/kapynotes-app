@@ -245,6 +245,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   minSidebarWidth: LayoutPrefs.minSidebarWidth,
                   maxSidebarWidth: LayoutPrefs.maxSidebarWidth,
                   onWidthChanged: (value) => widget.prefs.sidebarWidth = value,
+                  onHide: widget.prefs.toggleSidebar,
                   sidebar: Sidebar(
                     notes: _visibleNotes,
                     selectedId: _selectedId,
@@ -365,6 +366,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _buildCompactEditor(Note note) {
+    // Narrow desktop windows still have a precise pointer and enough room for
+    // the results column to be resized. Phone-sized test surfaces preserve the
+    // fixed mobile gutter, matching real iOS and Android builds.
+    final desktopResultsDivider =
+        AppPlatform.isDesktop &&
+        MediaQuery.sizeOf(context).width >= LayoutPrefs.minimumWindowSize.width;
     return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
@@ -376,10 +383,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialFormats: note.formats,
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
-          // A phone has no room for a draggable column; a fixed, narrow gutter
-          // keeps results visible without crowding the text.
-          gutterWidth: 132,
-          showDivider: false,
+          gutterWidth: desktopResultsDivider ? widget.prefs.gutterWidth : 132,
+          resultsVisible: desktopResultsDivider
+              ? widget.prefs.resultsVisible
+              : true,
+          showDivider: desktopResultsDivider,
           autofocus: true,
           startAtEnd: true,
           ensureKeyboardVisible:
@@ -391,8 +399,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           shortcuts: widget.shortcuts,
           onDocumentChanged: (body, formats) =>
               _updateDocument(note.id, body, formats),
-          onGutterWidthChanged: (_) {},
-          onGutterWidthReset: () {},
+          onGutterWidthChanged: desktopResultsDivider
+              ? (value) => widget.prefs.gutterWidth = value
+              : (_) {},
+          onResultsVisibilityChanged: desktopResultsDivider
+              ? (value) => widget.prefs.resultsVisible = value
+              : (_) {},
+          onGutterWidthReset: desktopResultsDivider
+              ? widget.prefs.resetGutterWidth
+              : () {},
           onSettingsPressed: _showSettings,
         ),
       ),
@@ -414,6 +429,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
           gutterWidth: widget.prefs.gutterWidth,
+          resultsVisible: widget.prefs.resultsVisible,
           autofocus: AppPlatform.isDesktop,
           startAtEnd: true,
           lastUpdatedAt: note.updatedAt,
@@ -424,6 +440,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onDocumentChanged: (body, formats) =>
               _updateDocument(note.id, body, formats),
           onGutterWidthChanged: (value) => widget.prefs.gutterWidth = value,
+          onResultsVisibilityChanged: (value) =>
+              widget.prefs.resultsVisible = value,
           onGutterWidthReset: widget.prefs.resetGutterWidth,
           onSettingsPressed: _showSettings,
           showSettingsButton: !widget.prefs.sidebarVisible,

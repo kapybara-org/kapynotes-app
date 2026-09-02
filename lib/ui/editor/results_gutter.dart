@@ -223,9 +223,17 @@ class _ResultChipState extends State<ResultChip> {
 
 /// The draggable edge between the text and its results.
 class GutterDivider extends StatefulWidget {
-  const GutterDivider({super.key, required this.onDrag, required this.onReset});
+  const GutterDivider({
+    super.key,
+    required this.gutterWidth,
+    required this.onDrag,
+    required this.onHide,
+    required this.onReset,
+  });
 
-  final void Function(double delta) onDrag;
+  final double gutterWidth;
+  final ValueChanged<double> onDrag;
+  final VoidCallback onHide;
   final VoidCallback onReset;
 
   /// A forgiving hit target around a deliberately thin visual divider.
@@ -238,6 +246,8 @@ class GutterDivider extends StatefulWidget {
 class _GutterDividerState extends State<GutterDivider> {
   bool _hovering = false;
   bool _dragging = false;
+  double _dragStartX = 0;
+  double _dragStartWidth = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -246,10 +256,11 @@ class _GutterDividerState extends State<GutterDivider> {
     final active = _hovering || _dragging;
 
     return Semantics(
+      button: true,
       label: 'Resize results column',
-      hint: 'Drag left or right to resize. Double tap to reset.',
+      hint: 'Drag left or right to resize. Click to hide. Double tap to reset.',
       child: Tooltip(
-        message: 'Drag to resize results',
+        message: 'Drag to resize. Click to hide.',
         child: MouseRegion(
           key: const ValueKey('results-divider-hover'),
           cursor: SystemMouseCursors.resizeLeftRight,
@@ -258,34 +269,181 @@ class _GutterDividerState extends State<GutterDivider> {
           child: GestureDetector(
             key: const ValueKey('results-divider'),
             behavior: HitTestBehavior.opaque,
-            onHorizontalDragStart: (_) => setState(() => _dragging = true),
-            onHorizontalDragUpdate: (details) =>
-                widget.onDrag(details.delta.dx),
+            onHorizontalDragStart: (details) {
+              _dragStartX = details.globalPosition.dx;
+              _dragStartWidth = widget.gutterWidth;
+              setState(() => _dragging = true);
+            },
+            onHorizontalDragUpdate: (details) => widget.onDrag(
+              _dragStartWidth - (details.globalPosition.dx - _dragStartX),
+            ),
             onHorizontalDragEnd: (_) => setState(() => _dragging = false),
             onHorizontalDragCancel: () => setState(() => _dragging = false),
+            onTap: widget.onHide,
             onDoubleTap: widget.onReset,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
               width: GutterDivider.width,
-              color: active
-                  ? accent.withValues(alpha: 0.035)
-                  : Colors.transparent,
-              child: Center(
-                child: AnimatedContainer(
-                  key: const ValueKey('results-divider-line'),
-                  duration: const Duration(milliseconds: 120),
-                  width: active ? 2 : 0.75,
-                  height: double.infinity,
-                  decoration: BoxDecoration(
-                    color: active ? accent : palette.separator,
-                    borderRadius: BorderRadius.circular(999),
+              color: Colors.transparent,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Center(
+                    child: AnimatedContainer(
+                      key: const ValueKey('results-divider-line'),
+                      duration: const Duration(milliseconds: 120),
+                      width: active ? 2 : 0.75,
+                      height: double.infinity,
+                      decoration: BoxDecoration(
+                        color: active ? accent : palette.separator,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
                   ),
-                ),
+                  IgnorePointer(
+                    child: AnimatedOpacity(
+                      key: const ValueKey('results-divider-grip-opacity'),
+                      duration: const Duration(milliseconds: 100),
+                      opacity: active ? 1 : 0,
+                      child: _EdgeGrip(
+                        key: const ValueKey('results-divider-grip'),
+                        icon: Icons.drag_indicator_rounded,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The narrow recovery target left at the far right when results are hidden.
+/// Clicking restores the saved width; dragging left restores to the distance
+/// the pointer travelled.
+class ResultsRestoreHandle extends StatefulWidget {
+  const ResultsRestoreHandle({super.key, required this.onRestore});
+
+  final ValueChanged<double?> onRestore;
+
+  static const double width = 15;
+
+  @override
+  State<ResultsRestoreHandle> createState() => _ResultsRestoreHandleState();
+}
+
+class _ResultsRestoreHandleState extends State<ResultsRestoreHandle> {
+  bool _hovering = false;
+  bool _dragging = false;
+  double _dragStartX = 0;
+  double _dragExtent = 0;
+
+  void _finishDrag() {
+    final extent = _dragExtent;
+    setState(() {
+      _dragging = false;
+      _dragExtent = 0;
+    });
+    if (extent > 0) widget.onRestore(extent);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final accent = Theme.of(context).colorScheme.primary;
+    final active = _hovering || _dragging;
+
+    return Semantics(
+      button: true,
+      label: 'Show results column',
+      hint: 'Click to restore results or drag left to resize them.',
+      child: Tooltip(
+        message: 'Show results. Drag left to resize.',
+        child: MouseRegion(
+          key: const ValueKey('results-restore-hover'),
+          cursor: SystemMouseCursors.resizeLeftRight,
+          onEnter: (_) => setState(() => _hovering = true),
+          onExit: (_) => setState(() => _hovering = false),
+          child: GestureDetector(
+            key: const ValueKey('results-restore-handle'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => widget.onRestore(null),
+            onHorizontalDragStart: (details) {
+              _dragStartX = details.globalPosition.dx;
+              _dragExtent = 0;
+              setState(() => _dragging = true);
+            },
+            onHorizontalDragUpdate: (details) {
+              final extent = _dragStartX - details.globalPosition.dx;
+              setState(() => _dragExtent = extent.clamp(0.0, 480.0));
+            },
+            onHorizontalDragEnd: (_) => _finishDrag(),
+            onHorizontalDragCancel: () => setState(() {
+              _dragging = false;
+              _dragExtent = 0;
+            }),
+            child: SizedBox(
+              width: ResultsRestoreHandle.width,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: AnimatedContainer(
+                      key: const ValueKey('results-restore-line'),
+                      duration: const Duration(milliseconds: 120),
+                      width: active ? 2 : 0.75,
+                      height: double.infinity,
+                      decoration: BoxDecoration(
+                        color: active ? accent : palette.separator,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  IgnorePointer(
+                    child: AnimatedOpacity(
+                      key: const ValueKey('results-restore-grip-opacity'),
+                      duration: const Duration(milliseconds: 100),
+                      opacity: active ? 1 : 0,
+                      child: const _EdgeGrip(
+                        key: ValueKey('results-restore-grip'),
+                        icon: Icons.chevron_left_rounded,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One compact handle shape for both resize and restore states. Keeping it
+/// inside the divider's 15px hit target avoids the oversized hover pills used
+/// by touch-first component defaults.
+class _EdgeGrip extends StatelessWidget {
+  const _EdgeGrip({super.key, required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      width: 13,
+      height: 24,
+      decoration: BoxDecoration(
+        color: palette.controlBackground,
+        border: Border.all(color: palette.controlBorder, width: 0.5),
+        borderRadius: BorderRadius.circular(6.5),
+      ),
+      child: Icon(icon, size: 12, color: palette.textSecondary),
     );
   }
 }

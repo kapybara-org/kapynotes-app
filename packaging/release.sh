@@ -221,6 +221,7 @@ build_disk_image() {
 
 build_ios() {
   info "iOS $VERSION ($BUILD_NUMBER) → App Store"
+  "$ROOT/packaging/preflight_ios.sh" --archive
   "$FLUTTER" build ipa \
     --release \
     --export-options-plist="$ROOT/packaging/ExportOptions-ios-appstore.plist"

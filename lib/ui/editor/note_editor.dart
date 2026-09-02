@@ -41,8 +41,10 @@ class NoteEditor extends StatefulWidget {
     required this.engine,
     required this.highlighter,
     required this.gutterWidth,
+    required this.resultsVisible,
     required this.onDocumentChanged,
     required this.onGutterWidthChanged,
+    required this.onResultsVisibilityChanged,
     required this.onGutterWidthReset,
     required this.onSettingsPressed,
     required this.writingFont,
@@ -64,8 +66,10 @@ class NoteEditor extends StatefulWidget {
   final CalcEngine engine;
   final Highlighter highlighter;
   final double gutterWidth;
+  final bool resultsVisible;
   final NoteDocumentChanged onDocumentChanged;
   final ValueChanged<double> onGutterWidthChanged;
+  final ValueChanged<bool> onResultsVisibilityChanged;
   final VoidCallback onGutterWidthReset;
   final VoidCallback onSettingsPressed;
   final WritingFont writingFont;
@@ -108,7 +112,7 @@ class NoteEditorState extends State<NoteEditor> {
   Timer? _selectionToolbarTimer;
 
   Map<int, LineResult> _results = const {};
-  String _totalText = '0';
+  String? _totalText;
   late TextEditingValue _lastValue;
   late List<NoteFormatRange> _formats;
   final Map<NoteFormat, bool> _typingOverrides = {};
@@ -469,8 +473,12 @@ class NoteEditorState extends State<NoteEditor> {
     _totalText = evaluation.totalText;
   }
 
-  void _dragGutter(double delta) =>
-      widget.onGutterWidthChanged(widget.gutterWidth - delta);
+  void _dragGutter(double width) => widget.onGutterWidthChanged(width);
+
+  void _restoreGutter(double? width) {
+    if (width != null) widget.onGutterWidthChanged(width);
+    widget.onResultsVisibilityChanged(true);
+  }
 
   static DateTime _localTime(DateTime value) => value.toLocal();
 
@@ -501,13 +509,20 @@ class NoteEditorState extends State<NoteEditor> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final dividerWidth = widget.showDivider
+                // Compact layouts always keep their fixed results gutter.
+                // Desktop can collapse it completely and recover it from the
+                // right-edge handle without giving up the saved width.
+                final resultsVisible =
+                    !widget.showDivider || widget.resultsVisible;
+                final dividerWidth = widget.showDivider && resultsVisible
                     ? GutterDivider.width
                     : 0.0;
-                final gutterWidth = widget.gutterWidth.clamp(
-                  0.0,
-                  (constraints.maxWidth - 160).clamp(0.0, 480.0),
-                );
+                final gutterWidth = resultsVisible
+                    ? widget.gutterWidth.clamp(
+                        0.0,
+                        (constraints.maxWidth - 160).clamp(0.0, 480.0),
+                      )
+                    : 0.0;
                 final textPaneWidth =
                     constraints.maxWidth - gutterWidth - dividerWidth;
 
@@ -533,46 +548,68 @@ class NoteEditorState extends State<NoteEditor> {
                   layoutKey: (widget.writingFont, _formats),
                 );
 
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                return Stack(
                   children: [
-                    SizedBox(
-                      width: textPaneWidth,
-                      child: NotebookPaper(
-                        child: Stack(
-                          children: [
-                            if (_isEmpty)
-                              _Placeholder(
-                                padding: padding,
-                                style: textStyle,
-                                strut: strut,
+                    Positioned.fill(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            width: textPaneWidth,
+                            child: NotebookPaper(
+                              child: Stack(
+                                children: [
+                                  if (_isEmpty)
+                                    _Placeholder(
+                                      padding: padding,
+                                      style: textStyle,
+                                      strut: strut,
+                                    ),
+                                  _buildField(
+                                    padding,
+                                    textStyle,
+                                    strut,
+                                    trailingGap,
+                                  ),
+                                ],
                               ),
-                            _buildField(padding, textStyle, strut, trailingGap),
-                          ],
-                        ),
+                            ),
+                          ),
+                          if (widget.showDivider && resultsVisible)
+                            GutterDivider(
+                              gutterWidth: gutterWidth,
+                              onDrag: _dragGutter,
+                              onHide: () =>
+                                  widget.onResultsVisibilityChanged(false),
+                              onReset: widget.onGutterWidthReset,
+                            ),
+                          if (resultsVisible)
+                            SizedBox(
+                              width: gutterWidth,
+                              child: ListenableBuilder(
+                                listenable: _scrollController,
+                                builder: (context, _) => ResultsGutter(
+                                  results: _results,
+                                  offsets: offsets,
+                                  scrollOffset: _scrollController.hasClients
+                                      ? _scrollController.offset
+                                      : 0,
+                                  viewportHeight: constraints.maxHeight,
+                                  padding: padding,
+                                  width: gutterWidth,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    if (widget.showDivider)
-                      GutterDivider(
-                        onDrag: _dragGutter,
-                        onReset: widget.onGutterWidthReset,
+                    if (widget.showDivider && !resultsVisible)
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: ResultsRestoreHandle(onRestore: _restoreGutter),
                       ),
-                    SizedBox(
-                      width: gutterWidth,
-                      child: ListenableBuilder(
-                        listenable: _scrollController,
-                        builder: (context, _) => ResultsGutter(
-                          results: _results,
-                          offsets: offsets,
-                          scrollOffset: _scrollController.hasClients
-                              ? _scrollController.offset
-                              : 0,
-                          viewportHeight: constraints.maxHeight,
-                          padding: padding,
-                          width: gutterWidth,
-                        ),
-                      ),
-                    ),
                   ],
                 );
               },

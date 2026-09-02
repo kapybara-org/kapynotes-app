@@ -137,7 +137,7 @@ private func markPNG(
 }
 
 private func lockupPNG(textColor: NSColor) -> Data {
-  let text = "Kapynötes" as NSString
+  let text = "Kapy Notes" as NSString
   let attributes: [NSAttributedString.Key: Any] = [
     .font: wordmarkFont,
     .foregroundColor: textColor,
@@ -201,6 +201,25 @@ for (name, side) in iosIcons {
   write(
     markPNG(side: side, insetRatio: 0.072, opaque: true),
     to: iosDirectory.appendingPathComponent(name)
+  )
+}
+
+// The native launch screen uses the same soft mark as the website header and
+// hands directly into the editor's warm paper or charcoal surface. Keeping the
+// three raster scales generated from the master prevents a blurry iPad launch
+// while avoiding a second, launch-only interpretation of the brand.
+private let iosLaunchMarks: [String: Int] = [
+  "LaunchImage.png": 112,
+  "LaunchImage@2x.png": 224,
+  "LaunchImage@3x.png": 336,
+]
+let iosLaunchDirectory = root.appendingPathComponent(
+  "ios/Runner/Assets.xcassets/LaunchImage.imageset"
+)
+for (name, side) in iosLaunchMarks {
+  write(
+    markPNG(side: side, insetRatio: 0, opaque: false),
+    to: iosLaunchDirectory.appendingPathComponent(name)
   )
 }
 

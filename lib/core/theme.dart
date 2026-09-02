@@ -204,6 +204,7 @@ class EditorMetrics {
     wordSpacing: 0,
     fontWeight: FontWeight.w400,
     fontStyle: FontStyle.normal,
+    fontVariations: font.fontVariations,
     textBaseline: TextBaseline.alphabetic,
     // A calculator column only lines up with tabular figures.
     fontFeatures: const [FontFeature.tabularFigures()],

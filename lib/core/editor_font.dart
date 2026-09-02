@@ -1,3 +1,5 @@
+import 'dart:ui' show FontVariation;
+
 import 'platform.dart';
 
 /// The typeface used on the writing surface.
@@ -15,7 +17,7 @@ extension WritingFontDetails on WritingFont {
   };
 
   String get description => switch (this) {
-    WritingFont.handwritten => 'Natural pen strokes, made for the page',
+    WritingFont.handwritten => 'Subtle pen strokes with a calm baseline',
     WritingFont.clean => 'Simple and calm for longer notes',
     WritingFont.monospace => 'Fixed-width characters for dense calculations',
   };
@@ -27,7 +29,7 @@ extension WritingFontDetails on WritingFont {
   };
 
   String? get fontFamily => switch (this) {
-    WritingFont.handwritten => 'Kalam',
+    WritingFont.handwritten => 'Shantell Sans',
     WritingFont.clean => null,
     WritingFont.monospace => AppPlatform.monoFontFallback.first,
   };
@@ -43,10 +45,21 @@ extension WritingFontDetails on WritingFont {
     WritingFont.monospace => AppPlatform.monoFontFallback,
   };
 
+  /// Shantell Sans is intentionally kept close to a clean sans: a hint of
+  /// hand variation, with no artificial baseline bounce.
+  List<FontVariation>? get fontVariations => switch (this) {
+    WritingFont.handwritten => const [
+      FontVariation('INFM', 16),
+      FontVariation('BNCE', 0),
+      FontVariation('SPAC', 0),
+    ],
+    WritingFont.clean || WritingFont.monospace => null,
+  };
+
   /// Handwriting faces need a little more size to carry the same visual weight
   /// as a UI sans or a compact mono face.
   double get editorSize => switch (this) {
-    WritingFont.handwritten => 17.5,
+    WritingFont.handwritten => 16.5,
     WritingFont.clean => 15.5,
     WritingFont.monospace => 14.5,
   };

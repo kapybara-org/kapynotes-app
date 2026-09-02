@@ -22,6 +22,9 @@ import '../data/time_zones.dart';
 enum SettingsSection { general, appearance, numbers, shortcuts }
 
 const _settingsRowPadding = EdgeInsets.fromLTRB(11, 8, 10, 8);
+const _settingsRegularWeight = FontWeight.w400;
+const _settingsMediumWeight = FontWeight.w500;
+const _settingsSemiboldWeight = FontWeight.w600;
 
 extension SettingsSectionCopy on SettingsSection {
   String get label => switch (this) {
@@ -178,7 +181,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
             titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 0),
             contentPadding: EdgeInsets.fromLTRB(paned ? 14 : 20, 14, 20, 0),
             actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-            title: const Text('Settings'),
+            title: const Text(
+              'Settings',
+              style: TextStyle(fontWeight: _settingsSemiboldWeight),
+            ),
             content: SizedBox(
               width: width,
               height: height,
@@ -187,7 +193,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Done'),
+                child: const Text(
+                  'Done',
+                  style: TextStyle(fontWeight: _settingsMediumWeight),
+                ),
               ),
             ],
           );
@@ -307,6 +316,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
             trailingStyle: TextStyle(
               fontFamily: font.fontFamily,
               fontFamilyFallback: font.fontFamilyFallback,
+              fontVariations: font.fontVariations,
               fontSize: font == WritingFont.handwritten ? 16 : 12.5,
               height: 1,
               letterSpacing: 0,
@@ -502,7 +512,9 @@ class _RailItem extends StatelessWidget {
                     section.label,
                     style: TextStyle(
                       fontSize: 12.5,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: selected
+                          ? _settingsSemiboldWeight
+                          : _settingsRegularWeight,
                       color: selected
                           ? palette.textPrimary
                           : palette.textSecondary,
@@ -531,7 +543,7 @@ class _SectionLabel extends StatelessWidget {
       text,
       style: TextStyle(
         fontSize: 10.5,
-        fontWeight: FontWeight.w600,
+        fontWeight: _settingsMediumWeight,
         letterSpacing: 0.65,
         color: context.palette.textTertiary,
       ),
@@ -594,7 +606,13 @@ class _WideButton extends StatelessWidget {
       child: TextButton.icon(
         onPressed: onPressed,
         icon: Icon(icon, size: 15),
-        label: Text(label),
+        label: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: _settingsMediumWeight,
+          ),
+        ),
         style: TextButton.styleFrom(
           minimumSize: const Size.fromHeight(34),
           padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -965,7 +983,7 @@ class _ShortcutRow extends StatelessWidget {
               binding.displayLabel,
               style: const TextStyle(
                 fontSize: 11.5,
-                fontWeight: FontWeight.w600,
+                fontWeight: _settingsMediumWeight,
               ),
             ),
           ),
@@ -991,7 +1009,7 @@ class _RowCopy extends StatelessWidget {
           title,
           style: TextStyle(
             fontSize: 12.5,
-            fontWeight: FontWeight.w600,
+            fontWeight: _settingsMediumWeight,
             color: palette.textPrimary,
           ),
         ),
@@ -1029,7 +1047,10 @@ class _TimeZonePickerDialogState extends State<_TimeZonePickerDialog> {
     final options = <String?>[if (systemMatches) null, ...matches];
 
     return AlertDialog(
-      title: const Text('Time zone'),
+      title: const Text(
+        'Time zone',
+        style: TextStyle(fontWeight: _settingsSemiboldWeight),
+      ),
       contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
       content: SizedBox(
@@ -1096,7 +1117,10 @@ class _TimeZonePickerDialogState extends State<_TimeZonePickerDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: const Text(
+            'Cancel',
+            style: TextStyle(fontWeight: _settingsMediumWeight),
+          ),
         ),
       ],
     );
@@ -1212,7 +1236,10 @@ class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
       autofocus: true,
       onKeyEvent: _onKeyEvent,
       child: AlertDialog(
-        title: Text('Set ${widget.action.label.toLowerCase()}'),
+        title: Text(
+          'Set ${widget.action.label.toLowerCase()}',
+          style: const TextStyle(fontWeight: _settingsSemiboldWeight),
+        ),
         content: SizedBox(
           width: 300,
           child: Column(
@@ -1241,7 +1268,7 @@ class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
                       'Press your new shortcut',
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: _settingsMediumWeight,
                         color: palette.textPrimary,
                       ),
                     ),
@@ -1272,7 +1299,10 @@ class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontWeight: _settingsMediumWeight),
+            ),
           ),
         ],
       ),
