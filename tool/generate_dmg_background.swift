@@ -20,7 +20,9 @@ private let fileManager = FileManager.default
 private let root = URL(fileURLWithPath: fileManager.currentDirectoryPath)
 private let outputDirectory = root.appendingPathComponent("packaging/dmg")
 private let fontURL = root.appendingPathComponent("assets/fonts/OdinRounded-Bold.otf")
-private let mascotURL = root.appendingPathComponent("../design/mascot/kapy-wave.png")
+private let mascotURL = root.appendingPathComponent(
+  "../design/mascot/final/png/kapy-welcome.png"
+)
 private let appIconURL = root.appendingPathComponent("assets/branding/kapynotes_app_icon.png")
 
 /// Points, and the content size of the Finder window release.sh opens.

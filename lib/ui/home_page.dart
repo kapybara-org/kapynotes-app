@@ -368,10 +368,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _buildCompactEditor(Note note) {
     // Narrow desktop windows still have a precise pointer and enough room for
     // the results column to be resized. Phone-sized test surfaces preserve the
-    // fixed mobile gutter, matching real iOS and Android builds.
+    // fixed mobile gutter, matching real iOS and Android builds. Wide phones
+    // get enough room for a grouped currency plus its three-letter code.
+    final compactWidth = MediaQuery.sizeOf(context).width;
     final desktopResultsDivider =
         AppPlatform.isDesktop &&
-        MediaQuery.sizeOf(context).width >= LayoutPrefs.minimumWindowSize.width;
+        compactWidth >= LayoutPrefs.minimumWindowSize.width;
+    final mobileGutterWidth = compactWidth >= 400 ? 152.0 : 132.0;
     return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
@@ -383,7 +386,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialFormats: note.formats,
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
-          gutterWidth: desktopResultsDivider ? widget.prefs.gutterWidth : 132,
+          gutterWidth: desktopResultsDivider
+              ? widget.prefs.gutterWidth
+              : mobileGutterWidth,
           resultsVisible: desktopResultsDivider
               ? widget.prefs.resultsVisible
               : true,
@@ -444,6 +449,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               widget.prefs.resultsVisible = value,
           onGutterWidthReset: widget.prefs.resetGutterWidth,
           onSettingsPressed: _showSettings,
+          hideEmptyResults: AppPlatform.isMobile,
           showSettingsButton: !widget.prefs.sidebarVisible,
         ),
       ),

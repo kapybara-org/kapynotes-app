@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/shortcut_prefs.dart';
 import '../compact_icon_button.dart';
@@ -61,7 +62,11 @@ class NoteFooter extends StatelessWidget {
       border: Border(top: BorderSide(color: palette.separator, width: 0.5)),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final compactTotal = constraints.maxWidth < 420;
+          // Wide phones still need the shorter label beside five formatting
+          // controls and a grouped currency value. Desktop keeps its existing
+          // label until the window reaches the genuinely narrow breakpoint.
+          final compactTotal =
+              constraints.maxWidth < (AppPlatform.isMobile ? 520 : 420);
           final totalWidth = ((constraints.maxWidth - 200) / 2 - 18).clamp(
             40.0,
             180.0,

@@ -50,6 +50,7 @@ class NoteEditor extends StatefulWidget {
     required this.writingFont,
     required this.shortcuts,
     this.showDivider = true,
+    this.hideEmptyResults = false,
     this.showSettingsButton = true,
     this.autofocus = false,
     this.startAtEnd = false,
@@ -75,6 +76,7 @@ class NoteEditor extends StatefulWidget {
   final WritingFont writingFont;
   final ShortcutPrefs shortcuts;
   final bool showDivider;
+  final bool hideEmptyResults;
   final bool showSettingsButton;
   final bool autofocus;
   final bool startAtEnd;
@@ -509,11 +511,16 @@ class NoteEditorState extends State<NoteEditor> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // Compact layouts always keep their fixed results gutter.
-                // Desktop can collapse it completely and recover it from the
-                // right-edge handle without giving up the saved width.
+                // Compact and touch layouts reserve the results rail only when
+                // a line calculates, so prose, checklists, and journals keep
+                // the full writing width. Desktop preserves its saved panel.
+                final hasResults = _results.isNotEmpty;
+                final emptyResultsSuppressed =
+                    !hasResults &&
+                    (!widget.showDivider || widget.hideEmptyResults);
                 final resultsVisible =
-                    !widget.showDivider || widget.resultsVisible;
+                    !emptyResultsSuppressed &&
+                    (!widget.showDivider || widget.resultsVisible);
                 final dividerWidth = widget.showDivider && resultsVisible
                     ? GutterDivider.width
                     : 0.0;
@@ -603,7 +610,9 @@ class NoteEditorState extends State<NoteEditor> {
                         ],
                       ),
                     ),
-                    if (widget.showDivider && !resultsVisible)
+                    if (widget.showDivider &&
+                        !resultsVisible &&
+                        !emptyResultsSuppressed)
                       Positioned(
                         top: 0,
                         right: 0,

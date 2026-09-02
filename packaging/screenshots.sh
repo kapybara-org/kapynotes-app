@@ -51,20 +51,21 @@ build_app() {
 
 # Writes the seeded note store straight into the app's container.
 seed() {
-  local udid="$1" selected="$2"
+  local udid="$1" selected="$2" layout="$3"
   local container
   container="$(xcrun simctl get_app_container "$udid" "$APP_ID" data)"
   mkdir -p "$container/Library/Application Support"
-  SEED_SELECTED="$selected" python3 "$ROOT/packaging/screenshot_seed.py" \
+  SEED_SELECTED="$selected" SEED_LAYOUT="$layout" \
+    python3 "$ROOT/packaging/screenshot_seed.py" \
     > "$container/Library/Application Support/kapy-notes.json"
 }
 
 shoot() {
-  local udid="$1" dir="$2" name="$3" selected="$4" appearance="$5"
+  local udid="$1" dir="$2" name="$3" selected="$4" appearance="$5" layout="$6"
 
   xcrun simctl terminate "$udid" "$APP_ID" >/dev/null 2>&1 || true
   xcrun simctl ui "$udid" appearance "$appearance" >/dev/null
-  seed "$udid" "$selected"
+  seed "$udid" "$selected" "$layout"
   xcrun simctl launch "$udid" "$APP_ID" >/dev/null
   # The editor evaluates every line on its first frame; give it room to land.
   sleep 5
@@ -75,7 +76,7 @@ shoot() {
 }
 
 capture_device() {
-  local name="$1" dir="$2"
+  local name="$1" dir="$2" layout="$3"
   local udid
   udid="$(udid_for "$name")"
 
@@ -93,10 +94,11 @@ capture_device() {
     --wifiMode active --wifiBars 3 \
     --dataNetwork wifi >/dev/null
 
-  shoot "$udid" "$dir" "1-trip-budget" trip light
-  shoot "$udid" "$dir" "2-remodel" remodel light
-  shoot "$udid" "$dir" "3-roast" roast light
-  shoot "$udid" "$dir" "4-invoice" invoice dark
+  shoot "$udid" "$dir" "1-live-calculator" math light "$layout"
+  shoot "$udid" "$dir" "2-notes" notes light "$layout"
+  shoot "$udid" "$dir" "3-checklist" checklist light "$layout"
+  shoot "$udid" "$dir" "4-journal" journal dark "$layout"
+  shoot "$udid" "$dir" "5-recipe" recipe light "$layout"
 
   xcrun simctl ui "$udid" appearance light >/dev/null
 
@@ -104,14 +106,16 @@ capture_device() {
   xcrun swift "$ROOT/tool/flatten_png.swift" "$dir"/*.png
 }
 
-build_app
+if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
+  build_app
+fi
 
 case "$TARGET" in
-  iphone) capture_device "$IPHONE_NAME" "$OUT/iphone-6.9" ;;
-  ipad)   capture_device "$IPAD_NAME"   "$OUT/ipad-13" ;;
+  iphone) capture_device "$IPHONE_NAME" "$OUT/iphone-6.9" phone ;;
+  ipad)   capture_device "$IPAD_NAME"   "$OUT/ipad-13" tablet ;;
   all)
-    capture_device "$IPHONE_NAME" "$OUT/iphone-6.9"
-    capture_device "$IPAD_NAME"   "$OUT/ipad-13"
+    capture_device "$IPHONE_NAME" "$OUT/iphone-6.9" phone
+    capture_device "$IPAD_NAME"   "$OUT/ipad-13" tablet
     ;;
   *) echo "usage: packaging/screenshots.sh [iphone|ipad|all]" >&2; exit 2 ;;
 esac

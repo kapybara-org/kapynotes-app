@@ -38,79 +38,329 @@ RATES_PER_USD = {
 }
 
 NOTES = {
-    "trip": """Lisbon trip
+    "math": """Lisbon trip budget
+Five days · two travelers
 
-Flights for two
-flights = 412 eur
-flights to usd
+Flights
+212 eur
+Hotel, 4 nights
+88 eur * 4
+Food, 5 days
+36 eur * 5
+Museum + tram
+46 eur
+Sintra day trip
+58 eur
+Surf lesson
+72 eur
+Airport transfer
+24 eur
+Travel buffer
+60 eur
 
-Hotel, 7 nights
-nightly = 128 eur
-nightly * 7
-
-Food and getting around // rough guess
-daily = 55 eur
-daily * 7
-
+Trip total
 total
 total to usd""",
-    "remodel": """Kitchen remodel
+    "notes": """Product launch notes
+Tuesday · brand and onboarding
 
-Cabinets
-cabinets = 4,200
+The big idea
+A notes app should feel ready before the thought disappears.
 
-Counters and sink
-counters = 2,850
+Decisions
+• Keep the first screen focused on the page
+• Make calculations feel native to every note
+• Let Kapy guide without distracting
 
-Appliances // showroom sale
-appliances = 3,100 - 15%
+What people said
+“It feels more like paper than software.”
 
-subtotal = cabinets + counters + appliances
-tax = subtotal * 8%
-subtotal + tax""",
-    "roast": """Sunday roast for six
+Details worth keeping
+• Warm paper texture
+• Fast keyboard focus
+• Local-first by default
 
-Recipe serves four
-scale = 6 / 4
+Next conversation
+Test the new onboarding with five writers.
+Bring the strongest words into the launch copy.""",
+    "checklist": """Launch day checklist
+Friday · ready by 9:00 AM
 
-Beef, 800 g a head
-beef = 800 g * 6
-beef to kg
+Ready to ship
+☑ Review App Store copy
+☑ Test the welcome flow
+☑ Check every screenshot total
+☑ Proofread privacy details
 
-Potatoes
-1.2 kg * scale
+Before we announce
+☑ Publish the changelog
+☐ Send the launch email
+☐ Share the product story
+☐ Update the press folder
 
-Stock
-500 ml * scale
+After launch
+☐ Watch the first reviews
+☐ Reply to support notes
+☐ Collect favorite use cases
 
-Oven
-180 c to f
+Remember
+• Celebrate with the team
+• Save the kind messages""",
+    "journal": """September 2
+Evening reflection · 9:41 PM
 
-Rest before carving
-25 min""",
-    "invoice": """March invoice
+Today
+One clear idea unlocked the rest of the day.
 
-Design sprint
-hours = 38
-rate = 95 usd
-hours * rate
+Grateful for
+• A quiet cup of coffee
+• The friend who asked the right question
+• A long walk after the rain
 
-Retainer
-retainer = 1,200 usd
+Small win
+I shared work before it felt perfect, and the conversation made it better.
 
-subtotal = hours * rate + retainer
-Agreed discount // said yes on the call
-due = subtotal - 5%
+Tomorrow
+Begin with the hardest page.
+Leave the afternoon open for curiosity.
+Call home before dinner.
 
-Client pays in euros
-due to eur""",
+One sentence to keep
+Small, steady steps still carry me forward.""",
+    "recipe": """Brown butter cookies
+Scale 12 → 18 cookies
+
+Ingredients
+Butter
+170 g * 18 / 12
+Brown sugar
+150 g * 18 / 12
+Flour
+220 g * 18 / 12
+Chocolate
+180 g * 18 / 12
+
+Weight check
+total
+total to oz
+
+Bake
+180 degC to degF
+Chill the dough for 30 minutes.
+Bake until the edges are golden.""",
 }
 
-ORDER = ["trip", "remodel", "roast", "invoice"]
+TABLET_NOTES = dict(NOTES)
+TABLET_NOTES["math"] = TABLET_NOTES["math"].replace(
+    "Trip total",
+    """More plans
+City transit
+52 eur
+Dinner out
+64 eur
+Bookshop stop
+34 eur
+Fado tickets
+76 eur
+Oceanarium
+50 eur
+Souvenirs
+42 eur
+Late checkout
+30 eur
 
-selected = os.environ.get("SEED_SELECTED", "trip")
+Trip total""",
+)
+TABLET_NOTES["notes"] = TABLET_NOTES["notes"].replace(
+    "Next conversation",
+    """Questions for Friday
+• What makes a note feel instantly approachable?
+• Which moments deserve a gentle Kapy nudge?
+• Where can we remove one more decision?
+• What should always work without a connection?
+• Which words sound most like our customers?
+• What would make someone tell a friend?
+• Which details make the app feel trustworthy?
+• How can the empty state feel more welcoming?
+• What deserves a shortcut on every platform?
+• What should the first minute teach naturally?
+
+Next conversation""",
+)
+TABLET_NOTES["checklist"] = TABLET_NOTES["checklist"].replace(
+    "After launch",
+    """Store details
+☑ Verify every device size
+☑ Check light and dark appearance
+☑ Confirm totals are never truncated
+☑ Compare iOS and Android captures
+☑ Check every heading at thumbnail size
+☑ Confirm each mascot matches its story
+☑ Remove stale production artwork
+☑ Read every line as a new customer
+☐ Upload the final tablet set
+☐ Preview the listing one last time
+
+After launch""",
+)
+TABLET_NOTES["journal"] = TABLET_NOTES["journal"].replace(
+    "Tomorrow",
+    """What I noticed
+The best work happened after I stopped trying to rush it.
+The room felt calmer once the phone was out of reach.
+I laughed more than I expected to today.
+
+What I can release
+Not every loose end needs an answer tonight.
+Rest is part of the work, not a reward for finishing it.
+
+A note to myself
+Protect the quiet hours in the morning.
+Make room for one small adventure this week.
+Keep noticing what already feels good.
+
+Tomorrow""",
+)
+TABLET_NOTES["recipe"] = TABLET_NOTES["recipe"].replace(
+    "Weight check",
+    """Finishing touches
+White sugar
+100 g * 18 / 12
+Vanilla
+2 tsp * 18 / 12
+Toasted walnuts
+80 g * 18 / 12
+Orange zest
+6 g * 18 / 12
+Sea salt
+4 g * 18 / 12
+Cocoa nibs
+30 g * 18 / 12
+
+Weight check""",
+)
+
+ANDROID_TABLET_NOTES = dict(NOTES)
+ANDROID_TABLET_NOTES["math"] = ANDROID_TABLET_NOTES["math"].replace(
+    "Trip total",
+    """More plans
+City transit
+52 eur
+Dinner out
+64 eur
+Bookshop stop
+34 eur
+
+Trip total""",
+)
+ANDROID_TABLET_NOTES["notes"] = ANDROID_TABLET_NOTES["notes"].replace(
+    "Next conversation",
+    """Questions for Friday
+• What makes a note feel instantly approachable?
+• Which moments deserve a gentle Kapy nudge?
+• What should always work without a connection?
+
+Next conversation""",
+)
+ANDROID_TABLET_NOTES["checklist"] = ANDROID_TABLET_NOTES["checklist"].replace(
+    "After launch",
+    """Store details
+☑ Verify every device size
+☑ Confirm totals are never truncated
+☐ Upload the final tablet set
+
+After launch""",
+)
+ANDROID_TABLET_NOTES["journal"] = ANDROID_TABLET_NOTES["journal"].replace(
+    "Tomorrow",
+    """What I noticed
+The best work happened after I stopped trying to rush it.
+The room felt calmer once the phone was out of reach.
+
+Tomorrow""",
+)
+ANDROID_TABLET_NOTES["recipe"] = ANDROID_TABLET_NOTES["recipe"].replace(
+    "Weight check",
+    """Finishing touches
+White sugar
+100 g * 18 / 12
+Vanilla
+2 tsp * 18 / 12
+Toasted walnuts
+80 g * 18 / 12
+
+Weight check""",
+)
+
+ORDER = ["math", "notes", "checklist", "journal", "recipe"]
+
+SECTION_HEADINGS = {
+    "Travel",
+    "Experiences",
+    "Little extras",
+    "More plans",
+    "Trip total",
+    "The big idea",
+    "Decisions",
+    "What people said",
+    "Details worth keeping",
+    "Questions for Friday",
+    "Next conversation",
+    "Ready to ship",
+    "Before we announce",
+    "Store details",
+    "After launch",
+    "Remember",
+    "Today",
+    "Grateful for",
+    "Small win",
+    "On my mind",
+    "What I noticed",
+    "What I can release",
+    "A note to myself",
+    "Tomorrow",
+    "One sentence to keep",
+    "Wet ingredients",
+    "Ingredients",
+    "Dry ingredients",
+    "Finishing touches",
+    "Weight check",
+    "Bake",
+}
+
+
+def formats_for(body):
+    """Applies the app's native rich-text styles to the seeded note."""
+    formats = []
+    offset = 0
+    for index, line in enumerate(body.split("\n")):
+        end = offset + len(line)
+        if line:
+            if index == 0:
+                formats.append({"start": offset, "end": end, "format": "heading"})
+            elif index == 1:
+                formats.append({"start": offset, "end": end, "format": "subtitle"})
+            if line in SECTION_HEADINGS:
+                formats.append({"start": offset, "end": end, "format": "bold"})
+            if line.startswith("“"):
+                formats.append({"start": offset, "end": end, "format": "italic"})
+        offset = end + 1
+    return formats
+
+selected = os.environ.get("SEED_SELECTED", "math")
 if selected not in NOTES:
     sys.exit(f"unknown seed note {selected!r}; expected one of {', '.join(ORDER)}")
+
+layout = os.environ.get("SEED_LAYOUT", "phone")
+if layout not in {"phone", "tablet", "android-tablet"}:
+    sys.exit(
+        "unknown seed layout; expected 'phone', 'tablet', or 'android-tablet'"
+    )
+notes_by_key = {
+    "phone": NOTES,
+    "tablet": TABLET_NOTES,
+    "android-tablet": ANDROID_TABLET_NOTES,
+}[layout]
 
 # The app opens the most recently edited note, so the scene is chosen by
 # timestamp rather than by the stored selection.
@@ -123,7 +373,8 @@ for index, key in enumerate(order):
     notes.append(
         {
             "id": f"screenshot-{key}",
-            "body": NOTES[key],
+            "body": notes_by_key[key],
+            "formats": formats_for(notes_by_key[key]),
             "createdAt": edited - 3 * DAY,
             "updatedAt": edited,
         }

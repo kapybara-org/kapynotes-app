@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -696,6 +698,91 @@ void main() {
 
       expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
       expect(find.byType(GutterDivider), findsNothing);
+    });
+
+    testWidgets('gives prose-only phone notes the full writing width', (
+      tester,
+    ) async {
+      store.data['notes.v1'] = [
+        {
+          'id': 'phone-prose',
+          'body': 'Field notes\nA quiet place to keep the whole thought.',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(420, 800));
+
+      expect(find.byType(ResultsGutter), findsNothing);
+      final editable = tester.getRect(find.byType(EditableText));
+      expect(
+        editable.width,
+        greaterThan(350),
+        reason: 'an empty results rail must not consume a third of the note',
+      );
+    });
+
+    testWidgets('does not reserve an empty results rail on tablets', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'tablet-journal',
+          'body': 'September 2\nA calm place to keep the whole day.',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(1100, 760));
+
+      expect(find.byType(ResultsGutter), findsNothing);
+      expect(find.byType(GutterDivider), findsNothing);
+    });
+
+    testWidgets('keeps complete currency totals visible on a wide phone', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['rates.v1'] = RateSnapshot(
+        base: 'USD',
+        date: '02 Sep 2026',
+        fetchedAt: DateTime(2026, 9, 2, 12),
+        rates: const {'EUR': 0.86},
+        provider: RateProvider.frankfurter,
+      ).toJson();
+      store.data['notes.v1'] = [
+        {
+          'id': 'phone-currency',
+          'body': 'Trip total\namount = 2288 eur',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(440, 956));
+
+      final result = find.descendant(
+        of: find.byType(ResultChip),
+        matching: find.text('2,288.00 EUR'),
+      );
+      expect(result, findsOneWidget);
+      expect(
+        tester.renderObject<RenderParagraph>(result).didExceedMaxLines,
+        isFalse,
+        reason: 'the live result is the primary payoff and must not ellipsize',
+      );
+
+      final total = find.byKey(const ValueKey('note-total'));
+      expect(
+        tester.renderObject<RenderParagraph>(total).didExceedMaxLines,
+        isFalse,
+        reason: 'the running total must remain complete on store-sized phones',
+      );
     });
 
     testWidgets(

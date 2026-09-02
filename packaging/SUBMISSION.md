@@ -214,16 +214,46 @@ is a dependency.
 - [ ] Answer App Privacy as **Data Not Collected**. The app sends no notes, calculations, identifiers or analytics; whichever rate source is contacted receives only the connection metadata inherent to an HTTPS request, which the privacy policy discloses. Frankfurter says its API does not collect personal data, while Cloudflare receives basic analytics information. ExchangeRate-API remains a fallback, so request written confirmation from both providers if App Review requires it.
 - [x] Complete the updated age-rating questionnaire. The repo audit supports **4+**: no in-app controls, messaging, user-generated network content, advertising, violence, sexual content, substances, gambling, loot boxes, or unrestricted web access. Submitted through the API; the record now reads `FOUR_PLUS` and Brazil `L`.
 - [x] Content Rights is **Yes, rights are secured** (`USES_THIRD_PARTY_CONTENT`) because the app displays third-party exchange-rate data.
-- [ ] Set IDFA to **No** and export compliance to **No non-exempt encryption**. Both are answered on the build itself, so they only become available once a build finishes processing. `ITSAppUsesNonExemptEncryption = false` in `Info.plist` should auto-answer the encryption question.
-- [ ] Complete and verify Kapybara LLC's DSA trader status before selecting EU availability. Exclude China mainland unless the required local filing is in place.
+- [x] Export compliance answered itself. Build 1 processed `VALID` and reports
+  `usesNonExemptEncryption = false`, picked up from `Info.plist`.
+- [ ] Answer IDFA **No** when the submission flow asks. No advertising or IDFA
+  SDK is in the dependency graph.
+- [x] DSA trader status is **Active** across 27 EU countries, last updated
+  14 June 2026. It lives at App Store Connect → Business → Agreements →
+  Compliance, not on the app record.
+- [x] Availability is set to 174 of 175 territories, with new territories opted
+  in. **China mainland is excluded**: mainland distribution has required an ICP
+  filing number for new apps since 1 September 2023, and Apple already reports
+  `CANNOT_SELL` for that storefront. Re-enable it only alongside a filing.
 - [x] Price is set to **Free** (USA base territory, price point `10000`). A free
   price schedule needs no Paid Apps Agreement, which is what unblocked the
   first submission.
 - [ ] Accept the Paid Apps Agreement and finish banking and tax details before
   the app can ever be sold. Not required to ship v1.0.0 free.
 - [x] Review notes are set on version 1.0.0, with `demoAccountRequired` false.
-- [ ] Add App Review contact details: first name, last name, phone and email. These cannot be filled from the repo and are still blank.
-- [ ] Choose manual release for the first version. The record currently says `AFTER_APPROVAL`.
+- [x] App Review contact details are filled in, and the review notes no longer
+  describe the build as paid.
+- [x] Release type is `MANUAL`. Note that it reverted to `AFTER_APPROVAL` once
+  after a UI save, so re-check it just before submitting.
+
+Two gates, one local and one against the live record:
+
+    packaging/preflight_ios.sh --submission
+
+checks the repo and toolchain before archiving. Everything the App Store
+Connect API can see — version, build, listing, screenshots, rating, price,
+availability, review contact — was verified separately and passed 25 of 25
+checks. **App Privacy is the one thing the API cannot read at all**: the app
+resource exposes no data-usage relationship, so *Data Not Collected* has to be
+confirmed by eye in the UI.
+
+Two API paths worth recording, because the obvious ones return 404 and read as
+"not configured" when the resource is really there:
+
+- availability is `GET /v1/apps/{id}/appAvailabilityV2`, not
+  `/v2/apps/{id}/appAvailability`
+- a single territory toggles through `PATCH /v1/territoryAvailabilities/{id}`,
+  while the `/v2/` form of that same path returns `NOT_FOUND`
 
 Run the read-only gate before archiving or opening App Store Connect:
 

@@ -33,6 +33,7 @@ total to usd''';
 
 const _rates = <String, double>{'EUR': 0.861401, 'GBP': 0.738359};
 final _goldenNow = DateTime(2026, 9, 1, 15, 38);
+final _goldenRatesFetchedAt = DateTime(2026, 9, 2, 12);
 
 /// Renders the whole app at a fixed size for visual review.
 ///
@@ -57,7 +58,7 @@ Future<void> pumpForGolden(
   store.data['rates.v1'] = RateSnapshot(
     base: 'USD',
     date: '01 Sep 2026',
-    fetchedAt: DateTime.now(),
+    fetchedAt: _goldenRatesFetchedAt,
     rates: _rates,
   ).toJson();
 
@@ -74,7 +75,7 @@ Future<void> pumpForGolden(
     if (!blankNote) notes.updateBody(note.id, _body);
   }
   // Publish the cached rates without going near the network.
-  await rates.initialize();
+  rates.loadCache();
 
   await tester.pumpWidget(
     KapyNotesApp(

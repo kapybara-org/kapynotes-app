@@ -6,11 +6,20 @@ import 'package:flutter/foundation.dart';
 class AppPlatform {
   const AppPlatform._();
 
-  static bool get isMacOS => !kIsWeb && Platform.isMacOS;
-  static bool get isWindows => !kIsWeb && Platform.isWindows;
-  static bool get isLinux => !kIsWeb && Platform.isLinux;
-  static bool get isIOS => !kIsWeb && Platform.isIOS;
-  static bool get isAndroid => !kIsWeb && Platform.isAndroid;
+  @visibleForTesting
+  static TargetPlatform? debugTargetPlatformOverride;
+
+  static bool _is(TargetPlatform target, bool hostValue) =>
+      !kIsWeb &&
+      (debugTargetPlatformOverride == null
+          ? hostValue
+          : debugTargetPlatformOverride == target);
+
+  static bool get isMacOS => _is(TargetPlatform.macOS, Platform.isMacOS);
+  static bool get isWindows => _is(TargetPlatform.windows, Platform.isWindows);
+  static bool get isLinux => _is(TargetPlatform.linux, Platform.isLinux);
+  static bool get isIOS => _is(TargetPlatform.iOS, Platform.isIOS);
+  static bool get isAndroid => _is(TargetPlatform.android, Platform.isAndroid);
 
   static bool get isDesktop => isMacOS || isWindows || isLinux;
   static bool get isMobile => isIOS || isAndroid;
