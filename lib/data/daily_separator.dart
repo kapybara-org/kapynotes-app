@@ -23,18 +23,26 @@ class DailySeparator {
 
   static final RegExp _linePattern = RegExp(r'^// ─+ .+ ─+$');
 
-  static String line(DateTime timestamp) {
-    final local = timestamp.toLocal();
-    final hour = local.hour.toString().padLeft(2, '0');
-    final minute = local.minute.toString().padLeft(2, '0');
-    return '// ─ ${local.day} ${_months[local.month - 1]} · $hour:$minute ─';
+  static String line(
+    DateTime timestamp, {
+    DateTime Function(DateTime)? displayTime,
+  }) {
+    final displayed = (displayTime ?? _localTime)(timestamp);
+    final hour = displayed.hour.toString().padLeft(2, '0');
+    final minute = displayed.minute.toString().padLeft(2, '0');
+    return '// ─ ${displayed.day} ${_months[displayed.month - 1]} · $hour:$minute ─';
   }
 
   static bool isLine(String value) => _linePattern.hasMatch(value.trim());
 
-  static bool isSameDay(DateTime first, DateTime second) {
-    final a = first.toLocal();
-    final b = second.toLocal();
+  static bool isSameDay(
+    DateTime first,
+    DateTime second, {
+    DateTime Function(DateTime)? displayTime,
+  }) {
+    final convert = displayTime ?? _localTime;
+    final a = convert(first);
+    final b = convert(second);
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
@@ -59,8 +67,11 @@ class DailySeparator {
 
   /// Appends a marker and leaves the caret-ready trailing newline in place.
   /// Reopening before anything is typed never stacks empty sections.
-  static String append(String body, DateTime lastUpdatedAt) =>
-      appendLine(body, line(lastUpdatedAt));
+  static String append(
+    String body,
+    DateTime lastUpdatedAt, {
+    DateTime Function(DateTime)? displayTime,
+  }) => appendLine(body, line(lastUpdatedAt, displayTime: displayTime));
 
   static String appendLine(String body, String separatorLine) {
     if (body.trim().isEmpty) return body;
@@ -98,4 +109,6 @@ class DailySeparator {
     }
     return index >= 0 && isLine(lines[index]) ? index : null;
   }
+
+  static DateTime _localTime(DateTime value) => value.toLocal();
 }

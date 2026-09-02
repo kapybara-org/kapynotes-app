@@ -111,6 +111,17 @@ Currency codes can sit directly beside an amount, such as `10usd` or `10eur`;
 `rs` is accepted as an INR shorthand, so `10rs` and `10inr` are equivalent.
 Lines that start with `//` are treated and styled as quiet comments.
 
+Daily separator timestamps follow the time zone selected in Settings. The
+default follows the device, while an explicit city uses bundled IANA rules so
+day boundaries and daylight-saving changes are based on the original edit
+instant. Existing separators are plain note text and are not rewritten when
+the setting changes.
+
+The sidebar uses that same time zone for each note's compact updated date and
+time. Notes are kept newest-updated-first on load and move to the top as soon
+as they are edited. During a search, the timestamp is temporarily replaced by
+the matching line so body-only results still have context.
+
 ### Storage (`lib/data/`)
 
 Everything is one JSON file in the platform's application-support directory.
@@ -131,10 +142,13 @@ off the UI isolate so a long note history cannot interrupt typing.
 Exchange rates are the only networked feature. The cached snapshot is
 published before the full calculator mounts, so currency maths is available
 as soon as hydration completes and keeps working offline; a failed refresh
-changes nothing. Network client creation and stale refreshes wait until after
-the editor is ready. Rates then refresh on launch, resume, and every six hours
-while the app stays open. With no rates ever fetched, currency lines simply
-stay plain text.
+changes nothing. Refreshes use Frankfurter's v2 USD rates first and try the
+ExchangeRate-API open endpoint only when the primary response fails validation.
+Snapshots are never combined, and their source is cached for accurate
+attribution. Network client creation and stale refreshes wait until after the
+editor is ready. Rates then refresh on launch, resume, and every six hours while
+the app stays open. With no rates ever fetched, currency lines simply stay
+plain text.
 
 ## Notable deviations from the original spec
 

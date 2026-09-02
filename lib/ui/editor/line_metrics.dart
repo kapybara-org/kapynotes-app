@@ -33,6 +33,7 @@ class LineMeasurer {
   String? _text;
   double? _width;
   TextScaler? _scaler;
+  Object? _layoutKey;
   LineOffsets? _cached;
 
   /// [span] must be the very span the field renders — styled runs can differ
@@ -43,10 +44,12 @@ class LineMeasurer {
     required double maxWidth,
     required StrutStyle strut,
     required TextScaler textScaler,
+    required Object layoutKey,
   }) {
     if (_text == text &&
         _width == maxWidth &&
         _scaler == textScaler &&
+        _layoutKey == layoutKey &&
         _cached != null) {
       return _cached!;
     }
@@ -78,6 +81,7 @@ class LineMeasurer {
     _text = text;
     _width = maxWidth;
     _scaler = textScaler;
+    _layoutKey = layoutKey;
     _cached = result;
     return result;
   }

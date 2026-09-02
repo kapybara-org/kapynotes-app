@@ -177,10 +177,10 @@ class Lexer {
     return _make(TokenType.unknown, start);
   }
 
-  /// Reads a number, absorbing `,`/`_` thousands separators and an optional
-  /// exponent. A comma only counts as a separator when it sits between a
-  /// digit and exactly three more digits — so `max(1,250)` still parses as
-  /// two arguments while `1,250` is twelve hundred and fifty.
+  /// Reads a number, absorbing `,`/`_` group separators and an optional
+  /// exponent. A comma only counts as a separator when the digits after it
+  /// complete a grouped integer — `1,250` and the Indian `12,34,567` are
+  /// single numbers, while `max(1, 250)` stays two arguments.
   Token _number(int start) {
     final buffer = StringBuffer();
     while (_pos < source.length) {
@@ -242,16 +242,20 @@ class Lexer {
     );
   }
 
+  /// A run of separated groups, anchored at one comma: either the final
+  /// group of three, or — for Indian grouping — pairs leading to one.
+  ///
+  /// Matching the whole run rather than a single group is what keeps
+  /// `max(10,20,30)` three arguments: `,20,30` never reaches a closing group
+  /// of three, so neither comma is a separator.
+  static final RegExp _groupRun = RegExp(
+    r',\d{3}(?!\d)|(?:,\d{2})+,\d{3}(?!\d)',
+  );
+
   bool _isThousandsSeparator(int commaIndex) {
     if (commaIndex == 0) return false;
     if (!_isDigit(source[commaIndex - 1])) return false;
-    for (var i = 1; i <= 3; i++) {
-      final idx = commaIndex + i;
-      if (idx >= source.length || !_isDigit(source[idx])) return false;
-    }
-    final after = commaIndex + 4;
-    if (after < source.length && _isDigit(source[after])) return false;
-    return true;
+    return _groupRun.matchAsPrefix(source, commaIndex) != null;
   }
 
   Token _make(TokenType type, int start) => Token(

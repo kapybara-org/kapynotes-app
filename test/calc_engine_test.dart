@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
+import 'package:kapy_notes/calc/format.dart';
 import 'package:kapy_notes/calc/value.dart';
 
 /// A small, fixed rate table so currency tests are deterministic.
@@ -20,8 +21,45 @@ Map<int, String> doc(String body) => engine
     .evaluateDocument(body)
     .map((key, value) => MapEntry(key, value.text));
 
+/// Evaluates a one-line note through an engine using Indian grouping.
+String? indianLine(String source) => CalcEngine(
+  ratesPerUsd: _rates,
+  grouping: DigitGrouping.indian,
+).evaluateDocument(source)[0]?.text;
+
 void main() {
   setUp(() => engine = CalcEngine(ratesPerUsd: _rates));
+
+  group('number system', () {
+    test('groups in threes by default', () {
+      expect(line('7000000'), '7,000,000');
+      expect(line('1234.5678'), '1,234.5678');
+      expect(line('40249440 inr'), '40,249,440.00 INR');
+    });
+
+    test('groups in lakh and crore when asked', () {
+      expect(indianLine('7000000'), '70,00,000');
+      expect(indianLine('1000'), '1,000');
+      expect(indianLine('100000'), '1,00,000');
+      expect(indianLine('1234.5678'), '1,234.5678');
+      expect(indianLine('-40249440'), '-4,02,49,440');
+      expect(indianLine('40249440 inr'), '4,02,49,440.00 INR');
+    });
+
+    test('leaves the clipboard value ungrouped either way', () {
+      final results = CalcEngine(
+        grouping: DigitGrouping.indian,
+      ).evaluateDocument('7000000');
+      expect(results[0]!.copyText, '7000000');
+    });
+
+    test('carries the grouping into the running total', () {
+      final evaluation = CalcEngine(
+        grouping: DigitGrouping.indian,
+      ).evaluateDocumentWithSummary('40,00,000\n30,00,000');
+      expect(evaluation.totalText, '70,00,000');
+    });
+  });
 
   group('arithmetic', () {
     test('evaluates basic expressions', () {
@@ -41,6 +79,13 @@ void main() {
     test('keeps commas as argument separators', () {
       expect(line('max(1, 250)'), '250');
       expect(line('min(4, 9, 2)'), '2');
+      // Unspaced pairs never close on a group of three, so they stay a list.
+      expect(line('max(10,20,30)'), '30');
+    });
+
+    test('reads numbers grouped in lakh and crore', () {
+      expect(line('70,00,000 / 2'), '3,500,000');
+      expect(line('4,02,49,440 - 40,249,440'), '0');
     });
 
     test('cleans binary float noise', () {

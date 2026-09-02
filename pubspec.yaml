@@ -13,6 +13,8 @@ dependencies:
   path_provider: ^2.1.5
   # Exchange-rate refresh. Everything else works with the network unplugged.
   http: ^1.2.2
+  # Bundled IANA rules for user-selected note timestamps and DST handling.
+  timezone: ^0.11.1
   # Desktop window chrome (macOS traffic-light inset, min size, title bar).
   window_manager: ^0.4.3
   # Editable system-wide summon shortcut on macOS and Windows.
@@ -21,6 +23,9 @@ dependencies:
   # deprecated in the Nov 2026 release. cupertino_ui arrives transitively and
   # backs the .adaptive widgets, so it needs no direct entry here.
   material_ui: ^1.1.0
+  # Opens the active exchange-rate source attribution. This is the only
+  # outbound link in the app.
+  url_launcher: ^6.3.2
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -33,6 +38,10 @@ flutter:
     # paints, so keep unused source variants off the mobile startup bundle.
     - assets/branding/kapy_notes_logo.png
   fonts:
+    - family: Kalam
+      fonts:
+        - asset: assets/fonts/Kalam-Regular.ttf
+          weight: 400
     - family: OdinRounded
       fonts:
         - asset: assets/fonts/OdinRounded-Bold.otf

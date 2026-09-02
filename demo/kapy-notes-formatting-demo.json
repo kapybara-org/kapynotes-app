@@ -1,0 +1,69 @@
+{
+  "notes.v1": [
+    {
+      "id": "formatting-demo",
+      "body": "KapyNotes Formatting Demo\nEvery style, ready to edit and switch\n\nParagraph styles\nHeading, Subtitle, and Text format whole lines.\nClick Aa repeatedly to cycle styles without a menu.\n\nInline formatting\nBold stands out. Italic adds emphasis. Both can work together.\n\nInline comments\nKeep this context // only this comment is lightened\n\nLists and checklists\n• A clean bulleted item\n• Another related idea\n☐ An open task\n☑ A completed task\n\nCalculator text\nsubtotal = 42\nsubtotal * 3",
+      "formats": [
+        {
+          "start": 0,
+          "end": 25,
+          "format": "heading"
+        },
+        {
+          "start": 26,
+          "end": 63,
+          "format": "subtitle"
+        },
+        {
+          "start": 65,
+          "end": 81,
+          "format": "heading"
+        },
+        {
+          "start": 183,
+          "end": 200,
+          "format": "heading"
+        },
+        {
+          "start": 201,
+          "end": 205,
+          "format": "bold"
+        },
+        {
+          "start": 218,
+          "end": 224,
+          "format": "italic"
+        },
+        {
+          "start": 240,
+          "end": 244,
+          "format": "bold"
+        },
+        {
+          "start": 240,
+          "end": 244,
+          "format": "italic"
+        },
+        {
+          "start": 265,
+          "end": 280,
+          "format": "heading"
+        },
+        {
+          "start": 334,
+          "end": 354,
+          "format": "heading"
+        },
+        {
+          "start": 437,
+          "end": 452,
+          "format": "heading"
+        }
+      ],
+      "createdAt": 1788291000000,
+      "updatedAt": 1788291000000
+    }
+  ],
+  "selectedNote.v1": "formatting-demo",
+  "sidebarVisible.v1": true
+}

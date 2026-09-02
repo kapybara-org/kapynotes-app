@@ -1,15 +1,35 @@
 import 'value.dart';
 
+/// Where the separators fall inside a grouped integer.
+///
+/// Only the integer part differs between the two; the decimal point and the
+/// separator character are the same either way.
+enum DigitGrouping {
+  /// Uniform groups of three: `1,234,567`.
+  international,
+
+  /// Thousands, then pairs: `12,34,567` — one lakh is `1,00,000` and one
+  /// crore is `1,00,00,000`.
+  indian,
+}
+
 /// Renders results twice: a compact string for the gutter chip, and a
 /// full-precision string for the clipboard.
 class ResultFormatter {
   const ResultFormatter._();
 
   /// Grouped, at most 6 decimal places — what the user sees.
-  static String display(CalcValue value) {
+  static String display(
+    CalcValue value, {
+    DigitGrouping grouping = DigitGrouping.international,
+  }) {
     if (value is BooleanValue) return value.value ? 'true' : 'false';
-    if (value is PercentValue) return _number(value.fraction, 6, group: true);
-    if (value is NumberValue) return _number(value.value, 6, group: true);
+    if (value is PercentValue) {
+      return _number(value.fraction, 6, group: true, grouping: grouping);
+    }
+    if (value is NumberValue) {
+      return _number(value.value, 6, group: true, grouping: grouping);
+    }
     if (value is QuantityValue) {
       // Money reads wrong without exactly two decimals.
       final decimals = value.unit.isCurrency ? 2 : 6;
@@ -17,6 +37,7 @@ class ResultFormatter {
         value.value,
         decimals,
         group: true,
+        grouping: grouping,
         fixed: value.unit.isCurrency,
       );
       final unit = value.unit.format();
@@ -24,6 +45,11 @@ class ResultFormatter {
     }
     return '';
   }
+
+  /// This formatter's own output for a number big enough to show where the
+  /// separators fall, so a settings preview cannot drift from the real thing.
+  static String sample(DigitGrouping grouping) =>
+      _number(12345678, 0, group: true, grouping: grouping);
 
   /// Ungrouped and full precision — what lands on the clipboard.
   static String copy(CalcValue value) {
@@ -46,6 +72,7 @@ class ResultFormatter {
     double raw,
     int maxDecimals, {
     bool group = false,
+    DigitGrouping grouping = DigitGrouping.international,
     bool fixed = false,
   }) {
     if (raw.isNaN) return 'NaN';
@@ -70,7 +97,7 @@ class ResultFormatter {
     final dot = text.indexOf('.');
     final intPart = dot == -1 ? text : text.substring(0, dot);
     final fracPart = dot == -1 ? '' : text.substring(dot);
-    return '${negative ? '-' : ''}${_group(intPart)}$fracPart';
+    return '${negative ? '-' : ''}${_group(intPart, grouping)}$fracPart';
   }
 
   /// 0.1 + 0.2 should read as 0.3, not 0.30000000000000004. Rounding to 12
@@ -104,15 +131,19 @@ class ResultFormatter {
     return text.replaceFirst('e+', 'e');
   }
 
-  static String _group(String digits) {
+  /// Splits [digits] from the right. The last three always travel together;
+  /// everything above them is cut into groups of three, or of two under
+  /// [DigitGrouping.indian].
+  static String _group(String digits, DigitGrouping grouping) {
     if (digits.length <= 3) return digits;
-    final buffer = StringBuffer();
-    final leading = digits.length % 3;
-    if (leading > 0) buffer.write(digits.substring(0, leading));
-    for (var i = leading; i < digits.length; i += 3) {
-      if (buffer.isNotEmpty) buffer.write(',');
-      buffer.write(digits.substring(i, i + 3));
+    final step = grouping == DigitGrouping.indian ? 2 : 3;
+    final groups = <String>[digits.substring(digits.length - 3)];
+    var cut = digits.length - 3;
+    while (cut > step) {
+      groups.add(digits.substring(cut - step, cut));
+      cut -= step;
     }
-    return buffer.toString();
+    groups.add(digits.substring(0, cut));
+    return groups.reversed.join(',');
   }
 }

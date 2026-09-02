@@ -162,10 +162,10 @@ class _ResultChipState extends State<ResultChip> {
       curve: Curves.easeOutCubic,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: _hovering
-            ? palette.controlBackground
-            : color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(8),
+        // Results read like quiet annotations on the page. A small wash only
+        // appears under the pointer to make the copy target clear.
+        color: _hovering ? color.withValues(alpha: 0.12) : Colors.transparent,
+        borderRadius: BorderRadius.circular(5),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -228,40 +228,58 @@ class GutterDivider extends StatefulWidget {
   final void Function(double delta) onDrag;
   final VoidCallback onReset;
 
-  static const double width = 11;
+  /// A forgiving hit target around a deliberately thin visual divider.
+  static const double width = 15;
 
   @override
   State<GutterDivider> createState() => _GutterDividerState();
 }
 
 class _GutterDividerState extends State<GutterDivider> {
-  bool _active = false;
+  bool _hovering = false;
+  bool _dragging = false;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final accent = Theme.of(context).colorScheme.primary;
+    final active = _hovering || _dragging;
 
     return Semantics(
       label: 'Resize results column',
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeLeftRight,
-        onEnter: (_) => setState(() => _active = true),
-        onExit: (_) => setState(() => _active = false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragUpdate: (details) => widget.onDrag(details.delta.dx),
-          onDoubleTap: widget.onReset,
-          child: SizedBox(
-            width: GutterDivider.width,
-            child: Center(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                width: _active ? 1.5 : 0.5,
-                decoration: BoxDecoration(
-                  color: _active
-                      ? Theme.of(context).colorScheme.primary
-                      : palette.separator,
-                  borderRadius: BorderRadius.circular(999),
+      hint: 'Drag left or right to resize. Double tap to reset.',
+      child: Tooltip(
+        message: 'Drag to resize results',
+        child: MouseRegion(
+          key: const ValueKey('results-divider-hover'),
+          cursor: SystemMouseCursors.resizeLeftRight,
+          onEnter: (_) => setState(() => _hovering = true),
+          onExit: (_) => setState(() => _hovering = false),
+          child: GestureDetector(
+            key: const ValueKey('results-divider'),
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragStart: (_) => setState(() => _dragging = true),
+            onHorizontalDragUpdate: (details) =>
+                widget.onDrag(details.delta.dx),
+            onHorizontalDragEnd: (_) => setState(() => _dragging = false),
+            onHorizontalDragCancel: () => setState(() => _dragging = false),
+            onDoubleTap: widget.onReset,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              width: GutterDivider.width,
+              color: active
+                  ? accent.withValues(alpha: 0.035)
+                  : Colors.transparent,
+              child: Center(
+                child: AnimatedContainer(
+                  key: const ValueKey('results-divider-line'),
+                  duration: const Duration(milliseconds: 120),
+                  width: active ? 2 : 0.75,
+                  height: double.infinity,
+                  decoration: BoxDecoration(
+                    color: active ? accent : palette.separator,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
               ),
             ),

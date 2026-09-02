@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
@@ -6,6 +8,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
+import 'package:kapy_notes/ui/editor/note_editor.dart';
 
 import 'app_test.dart' show MemoryStore;
 import 'test_fonts.dart';
@@ -42,6 +45,7 @@ Future<void> pumpForGolden(
   required Size size,
   required Brightness brightness,
   bool withNote = true,
+  bool blankNote = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -67,7 +71,7 @@ Future<void> pumpForGolden(
   prefs.load();
   if (withNote) {
     final note = notes.create();
-    notes.updateBody(note.id, _body);
+    if (!blankNote) notes.updateBody(note.id, _body);
   }
   // Publish the cached rates without going near the network.
   await rates.initialize();
@@ -105,6 +109,44 @@ void main() {
     );
   });
 
+  testWidgets('desktop dark compact hover surfaces', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('format-style'))),
+    );
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_hover_surfaces.png'),
+    );
+  });
+
+  testWidgets('desktop dark compact header hover', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.byTooltip('Hide notes')));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_header_hover.png'),
+    );
+  });
+
   testWidgets('desktop light', (tester) async {
     await pumpForGolden(
       tester,
@@ -127,6 +169,101 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_empty.png'),
+    );
+  });
+
+  testWidgets('desktop dark blank note sample', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      blankNote: true,
+    );
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_blank_note.png'),
+    );
+  });
+
+  testWidgets('desktop dark selection formatting toolbar', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    final editor = find.descendant(
+      of: find.byType(NoteEditor),
+      matching: find.byType(TextField),
+    );
+    final field = tester.widget<TextField>(editor);
+    final editable = tester
+        .state<EditableTextState>(
+          find.descendant(
+            of: find.byType(NoteEditor),
+            matching: find.byType(EditableText),
+          ),
+        )
+        .renderEditable;
+    final targetStart = _body.indexOf('Hotel');
+    final wordBox = editable
+        .getBoxesForSelection(
+          TextSelection(
+            baseOffset: targetStart,
+            extentOffset: targetStart + 'Hotel'.length,
+          ),
+        )
+        .first;
+    final start = editable.localToGlobal(
+      Offset(wordBox.left + 1, (wordBox.top + wordBox.bottom) / 2),
+    );
+    final mouse = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    await mouse.up();
+    await tester.pump(const Duration(milliseconds: 100));
+    await mouse.down(start);
+    await tester.pump();
+    await mouse.up();
+    await mouse.removePointer();
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+    expect(field.controller!.selection.isCollapsed, isFalse);
+    expect(
+      find.byKey(const ValueKey('selection-formatting-toolbar')),
+      findsOneWidget,
+    );
+    final toolbar = tester.getRect(
+      find.byKey(const ValueKey('selection-formatting-toolbar')),
+    );
+    expect(toolbar.left, greaterThanOrEqualTo(0));
+    expect(toolbar.top, greaterThanOrEqualTo(0));
+    expect(toolbar.right, lessThanOrEqualTo(760));
+    expect(toolbar.bottom, lessThanOrEqualTo(520));
+    expect(toolbar.width, inInclusiveRange(230, 245));
+    final selectionFade = tester.widget<FadeTransition>(
+      find
+          .ancestor(
+            of: find.byKey(const ValueKey('selection-formatting-toolbar')),
+            matching: find.byType(FadeTransition),
+          )
+          .first,
+    );
+    expect(selectionFade.opacity.value, closeTo(1, 0.01));
+    final hoverMouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    addTearDown(hoverMouse.removePointer);
+    await hoverMouse.addPointer(location: Offset.zero);
+    await hoverMouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('selection-style'))),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byKey(const ValueKey('selection-formatting-toolbar')),
+      matchesGoldenFile('goldens/selection_formatting_toolbar.png'),
     );
   });
 
@@ -160,6 +297,54 @@ void main() {
     );
   });
 
+  testWidgets('desktop dark settings, numbers', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('settings-section-numbers')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_settings_numbers.png'),
+    );
+  });
+
+  testWidgets('desktop dark settings, shortcuts', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('settings-section-shortcuts')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_settings_shortcuts.png'),
+    );
+  });
+
+  testWidgets('desktop light settings, appearance', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.light,
+    );
+    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('settings-section-appearance')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_light_settings_appearance.png'),
+    );
+  });
+
   testWidgets('phone editor', (tester) async {
     await pumpForGolden(
       tester,
@@ -169,6 +354,21 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/phone_editor.png'),
+    );
+  });
+
+  testWidgets('phone settings', (tester) async {
+    // Too narrow for the rail, so every section stacks into one column.
+    await pumpForGolden(
+      tester,
+      size: const Size(390, 760),
+      brightness: Brightness.dark,
+    );
+    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/phone_settings.png'),
     );
   });
 

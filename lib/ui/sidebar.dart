@@ -1,11 +1,13 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
 import '../core/theme.dart';
-import '../core/window_chrome.dart';
 import '../data/note.dart';
 import 'app_logo.dart';
+import 'compact_icon_button.dart';
 import 'editor/note_footer.dart';
 import 'glass_surface.dart';
+import 'sidebar_timestamp.dart';
 
 /// The note list, with search.
 class Sidebar extends StatelessWidget {
@@ -14,6 +16,7 @@ class Sidebar extends StatelessWidget {
     required this.notes,
     required this.selectedId,
     required this.query,
+    required this.displayTime,
     required this.onQueryChanged,
     required this.onSelect,
     required this.onCreate,
@@ -26,6 +29,7 @@ class Sidebar extends StatelessWidget {
   final List<Note> notes;
   final String? selectedId;
   final String query;
+  final DateTime Function(DateTime) displayTime;
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<String> onSelect;
   final VoidCallback onCreate;
@@ -39,11 +43,12 @@ class Sidebar extends StatelessWidget {
     final palette = context.palette;
 
     return GlassSurface(
-      color: palette.sidebarBackground,
-      blur: 30,
+      color: palette.sidebarBackground.withValues(alpha: 0.96),
+      blur: 10,
       // Colour runs to the window edges; content stays clear of the status
       // bar, home indicator and any display cutout.
       child: SafeArea(
+        top: showHeader,
         right: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -64,12 +69,14 @@ class Sidebar extends StatelessWidget {
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
                       itemCount: notes.length,
-                      itemExtent: 60,
+                      itemExtent: AppControlMetrics.sidebarNoteRowExtent,
                       itemBuilder: (context, index) {
                         final note = notes[index];
                         return NoteRow(
+                          key: ValueKey(note.id),
                           note: note,
                           query: query,
+                          displayTime: displayTime,
                           selected: note.id == selectedId,
                           onTap: () => onSelect(note.id),
                           onDelete: onDelete == null
@@ -114,30 +121,23 @@ class _Header extends StatelessWidget {
   final VoidCallback onCreate;
 
   @override
-  Widget build(BuildContext context) {
-    // The sidebar owns the window's top-left corner, where macOS draws the
-    // traffic lights. It is tall enough to simply start below them.
-    final topInset = 11 + WindowChrome.topInset(atWindowLeftEdge: true);
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(14, topInset, 10, 9),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: AppWordmark(markSize: 20, fontSize: 15.5, spacing: 7),
-            ),
-          ),
-          _IconButton(
+  Widget build(BuildContext context) => SizedBox(
+    height: 48,
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        const AppWordmark(markSize: 19, fontSize: 14.5, spacing: 6.5),
+        Positioned(
+          right: 10,
+          child: _IconButton(
             icon: Icons.add_rounded,
             tooltip: 'New note',
             onPressed: onCreate,
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
 }
 
 class _SearchField extends StatefulWidget {
@@ -224,15 +224,15 @@ class _SearchFieldState extends State<_SearchField> {
           filled: true,
           fillColor: palette.controlBackground,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: palette.controlBorder, width: 0.5),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: palette.controlBorder, width: 0.5),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(color: palette.selectedBorder, width: 0.75),
           ),
         ),
@@ -247,6 +247,7 @@ class NoteRow extends StatefulWidget {
     super.key,
     required this.note,
     required this.query,
+    required this.displayTime,
     required this.selected,
     required this.onTap,
     this.onDelete,
@@ -254,6 +255,7 @@ class NoteRow extends StatefulWidget {
 
   final Note note;
   final String query;
+  final DateTime Function(DateTime) displayTime;
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
@@ -300,14 +302,16 @@ class _NoteRowState extends State<NoteRow> {
     final palette = context.palette;
 
     // While searching, show the line that actually matched instead of the
-    // usual preview, so the reason for the hit is visible.
+    // timestamp, so the reason for the hit remains visible.
     final snippet = widget.query.trim().isEmpty
         ? null
         : widget.note.matchSnippet(widget.query.trim());
-    final subtitle = snippet ?? widget.note.preview;
 
     final foreground = palette.textPrimary;
     final secondary = palette.textSecondary;
+    final deleteVisible =
+        widget.onDelete != null &&
+        (_hovering || widget.selected || !AppPlatform.hasPointer);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
@@ -327,39 +331,125 @@ class _NoteRowState extends State<NoteRow> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
             curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
               color: widget.selected
                   ? palette.selectedBackground
                   : (_hovering ? palette.hover : Colors.transparent),
-              borderRadius: BorderRadius.circular(11),
+              borderRadius: BorderRadius.circular(7),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Row(
               children: [
-                Text(
-                  widget.note.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: widget.selected
-                        ? FontWeight.w600
-                        : FontWeight.w500,
-                    color: foreground,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        widget.note.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: widget.selected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: foreground,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      if (snippet != null)
+                        Text(
+                          snippet,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11.5, color: secondary),
+                        )
+                      else
+                        _UpdatedAtMetadata(
+                          updatedAt: widget.note.updatedAt,
+                          displayTime: widget.displayTime,
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11.5, color: secondary),
-                ),
+                if (widget.onDelete != null) ...[
+                  const SizedBox(width: 4),
+                  _DeleteNoteButton(
+                    noteId: widget.note.id,
+                    visible: deleteVisible,
+                    onPressed: widget.onDelete!,
+                  ),
+                ],
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DeleteNoteButton extends StatelessWidget {
+  const _DeleteNoteButton({
+    required this.noteId,
+    required this.visible,
+    required this.onPressed,
+  });
+
+  final String noteId;
+  final bool visible;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    ignoring: !visible,
+    child: AnimatedOpacity(
+      duration: const Duration(milliseconds: 120),
+      opacity: visible ? 1 : 0,
+      child: CompactIconButton(
+        key: ValueKey('delete-note-$noteId'),
+        tooltip: 'Delete note',
+        onPressed: onPressed,
+        icon: const Icon(Icons.delete_outline_rounded, size: 14),
+        foregroundColor: context.palette.textTertiary,
+      ),
+    ),
+  );
+}
+
+class _UpdatedAtMetadata extends StatelessWidget {
+  const _UpdatedAtMetadata({
+    required this.updatedAt,
+    required this.displayTime,
+  });
+
+  final DateTime updatedAt;
+  final DateTime Function(DateTime) displayTime;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final timestamp = SidebarTimestamp.format(
+      updatedAt,
+      displayTime: displayTime,
+    );
+    return Semantics(
+      label: 'Updated $timestamp',
+      child: ExcludeSemantics(
+        child: Row(
+          children: [
+            Icon(Icons.schedule_rounded, size: 11, color: palette.textTertiary),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                timestamp,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11.5, color: palette.textSecondary),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -397,16 +487,11 @@ class _IconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: IconButton(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 18),
-        color: context.palette.textSecondary,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-        visualDensity: VisualDensity.compact,
-      ),
+    return CompactIconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: Icon(icon, size: 17),
+      foregroundColor: context.palette.textSecondary,
     );
   }
 }

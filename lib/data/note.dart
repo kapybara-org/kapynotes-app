@@ -1,25 +1,33 @@
-/// A single note. Title and preview are always derived from [body] rather
-/// than stored, so they can never drift out of sync with the text.
+import 'note_format.dart';
+
+/// A single note. Its title is derived from [body] rather than stored, so it
+/// can never drift out of sync with the text.
 class Note {
   final String id;
   final String body;
+  final List<NoteFormatRange> formats;
   final DateTime createdAt;
   final DateTime updatedAt;
 
   const Note({
     required this.id,
     required this.body,
+    this.formats = const [],
     required this.createdAt,
     required this.updatedAt,
   });
 
   static const String untitled = 'New Note';
-  static const String noPreview = 'No additional text';
   static const int _titleLimit = 60;
 
-  Note copyWith({String? body, DateTime? updatedAt}) => Note(
+  Note copyWith({
+    String? body,
+    List<NoteFormatRange>? formats,
+    DateTime? updatedAt,
+  }) => Note(
     id: id,
     body: body ?? this.body,
+    formats: formats ?? this.formats,
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -42,29 +50,14 @@ class Note {
         : text;
   }
 
-  /// The next non-empty line after the one used for the title.
-  String get preview {
-    final lines = body.split('\n');
-    var seenTitle = false;
-    for (final line in lines) {
-      if (line.trim().isEmpty) continue;
-      if (!seenTitle) {
-        seenTitle = true;
-        continue;
-      }
-      return line.trim();
-    }
-    return noPreview;
-  }
-
   bool get isEmpty => body.trim().isEmpty;
 
   /// Case-insensitive match against the whole body, not just the title.
   bool matches(String query) =>
       body.toLowerCase().contains(query.toLowerCase());
 
-  /// The first line containing [query], shown instead of the preview so the
-  /// user can see *why* a note matched.
+  /// The first line containing [query], shown while searching so the user can
+  /// see why a note matched.
   String? matchSnippet(String query) {
     if (query.isEmpty) return null;
     final needle = query.toLowerCase();
@@ -87,6 +80,8 @@ class Note {
   Map<String, Object?> toJson() => {
     'id': id,
     'body': body,
+    if (formats.isNotEmpty)
+      'formats': formats.map((format) => format.toJson()).toList(),
     'createdAt': createdAt.millisecondsSinceEpoch,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
   };
@@ -99,6 +94,7 @@ class Note {
     return Note(
       id: id,
       body: body,
+      formats: noteFormatsFromJson(raw['formats'], body.length),
       createdAt: _date(raw['createdAt']),
       updatedAt: _date(raw['updatedAt']),
     );

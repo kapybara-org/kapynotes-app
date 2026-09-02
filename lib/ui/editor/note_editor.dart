@@ -1,18 +1,29 @@
 import 'dart:async';
 import 'dart:ui' show BoxHeightStyle;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../calc/engine.dart';
 import '../../calc/highlight.dart';
+import '../../core/editor_font.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/daily_separator.dart';
+import '../../data/note_format.dart';
+import '../../data/shortcut_prefs.dart';
+import '../notebook_paper.dart';
+import 'editor_formatting.dart';
 import 'highlighting_controller.dart';
 import 'line_metrics.dart';
 import 'note_footer.dart';
 import 'results_gutter.dart';
+import 'selection_formatting_toolbar.dart';
+
+typedef NoteDocumentChanged =
+    void Function(String body, List<NoteFormatRange> formats);
 
 /// The note surface: one syntax-coloured text field with a live results
 /// column pinned to it.
@@ -26,13 +37,16 @@ class NoteEditor extends StatefulWidget {
     super.key,
     required this.noteId,
     required this.initialBody,
+    this.initialFormats = const [],
     required this.engine,
     required this.highlighter,
     required this.gutterWidth,
-    required this.onBodyChanged,
+    required this.onDocumentChanged,
     required this.onGutterWidthChanged,
     required this.onGutterWidthReset,
     required this.onSettingsPressed,
+    required this.writingFont,
+    required this.shortcuts,
     this.showDivider = true,
     this.showSettingsButton = true,
     this.autofocus = false,
@@ -41,17 +55,21 @@ class NoteEditor extends StatefulWidget {
     this.lastUpdatedAt,
     this.dailySeparatorsEnabled = false,
     this.now,
+    this.displayTime,
   });
 
   final String noteId;
   final String initialBody;
+  final List<NoteFormatRange> initialFormats;
   final CalcEngine engine;
   final Highlighter highlighter;
   final double gutterWidth;
-  final ValueChanged<String> onBodyChanged;
+  final NoteDocumentChanged onDocumentChanged;
   final ValueChanged<double> onGutterWidthChanged;
   final VoidCallback onGutterWidthReset;
   final VoidCallback onSettingsPressed;
+  final WritingFont writingFont;
+  final ShortcutPrefs shortcuts;
   final bool showDivider;
   final bool showSettingsButton;
   final bool autofocus;
@@ -60,6 +78,7 @@ class NoteEditor extends StatefulWidget {
   final DateTime? lastUpdatedAt;
   final bool dailySeparatorsEnabled;
   final DateTime Function()? now;
+  final DateTime Function(DateTime)? displayTime;
 
   @override
   State<NoteEditor> createState() => NoteEditorState();
@@ -77,19 +96,8 @@ class NoteEditorState extends State<NoteEditor> {
     Duration(milliseconds: 1500),
   ];
 
-  static const List<String> _placeholderLines = [
-    'Start typing…',
-    '',
-    'Try:  20% of 80',
-    '      1,250 + 8%',
-    '      10rs to usd',
-    '      subtotal = 42',
-    '      subtotal * 3',
-    '',
-    'Start with // to add a comment',
-  ];
-
   late HighlightingController _controller;
+  final GlobalKey _textFieldKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
   late final FocusNode _focusNode = FocusNode(
     debugLabel: 'note-editor:${widget.noteId}',
@@ -97,10 +105,16 @@ class NoteEditorState extends State<NoteEditor> {
   final LineMeasurer _measurer = LineMeasurer();
   late final _DailySeparatorFormatter _dailySeparatorFormatter;
   Timer? _keyboardRetryTimer;
+  Timer? _selectionToolbarTimer;
 
   Map<int, LineResult> _results = const {};
   String _totalText = '0';
-  late String _lastText;
+  late TextEditingValue _lastValue;
+  late List<NoteFormatRange> _formats;
+  final Map<NoteFormat, bool> _typingOverrides = {};
+  NoteParagraphStyle? _paragraphOverride;
+  final Map<int, Offset> _pointerDownPositions = {};
+  Set<NoteFormat>? _nextInsertedFormats;
   bool _isEmpty = true;
 
   @override
@@ -112,15 +126,18 @@ class NoteEditorState extends State<NoteEditor> {
     final pendingSeparatorLine = widget.startAtEnd
         ? DailySeparator.trailingEmptySectionLine(widget.initialBody)
         : null;
+    _formats = normalizeNoteFormats(widget.initialFormats, initialText.length);
     _controller = HighlightingController(
       highlighter: widget.highlighter,
       palette: KapyTheme.darkPalette,
+      formats: _formats,
       text: initialText,
     );
     _dailySeparatorFormatter = _DailySeparatorFormatter(
       enabled: widget.dailySeparatorsEnabled,
       lastUpdatedAt: widget.lastUpdatedAt ?? (widget.now ?? DateTime.now)(),
       now: widget.now ?? DateTime.now,
+      displayTime: widget.displayTime ?? _localTime,
       pendingSeparatorLine: pendingSeparatorLine,
     );
     if (widget.startAtEnd) {
@@ -128,8 +145,9 @@ class NoteEditorState extends State<NoteEditor> {
         offset: initialText.length,
       );
     }
-    _lastText = initialText;
-    _controller.addListener(_onTextChanged);
+    _lastValue = _controller.value;
+    _controller.addListener(_onControllerChanged);
+    widget.shortcuts.addListener(_onShortcutsChanged);
     _isEmpty = initialText.isEmpty;
     _evaluate();
     if (widget.autofocus && widget.startAtEnd) {
@@ -140,14 +158,27 @@ class NoteEditorState extends State<NoteEditor> {
   @override
   void didUpdateWidget(NoteEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.shortcuts, widget.shortcuts)) {
+      oldWidget.shortcuts.removeListener(_onShortcutsChanged);
+      widget.shortcuts.addListener(_onShortcutsChanged);
+    }
     // A new engine arrives when exchange rates land; re-evaluate so currency
     // lines light up without the user touching anything.
     if (!identical(oldWidget.engine, widget.engine)) {
       _controller.highlighter = widget.highlighter;
       _evaluate();
     }
+    if (widget.initialBody == _controller.text &&
+        !listEquals(widget.initialFormats, _formats)) {
+      _formats = normalizeNoteFormats(
+        widget.initialFormats,
+        _controller.text.length,
+      );
+      _controller.formats = _formats;
+    }
     _dailySeparatorFormatter
       ..enabled = widget.dailySeparatorsEnabled
+      ..displayTime = widget.displayTime ?? _localTime
       ..syncLastUpdatedAt(widget.lastUpdatedAt);
   }
 
@@ -159,12 +190,18 @@ class NoteEditorState extends State<NoteEditor> {
 
   @override
   void dispose() {
-    _controller.removeListener(_onTextChanged);
+    _controller.removeListener(_onControllerChanged);
+    widget.shortcuts.removeListener(_onShortcutsChanged);
     _keyboardRetryTimer?.cancel();
+    _selectionToolbarTimer?.cancel();
     _controller.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _onShortcutsChanged() {
+    if (mounted) setState(() {});
   }
 
   void focus() {
@@ -211,18 +248,217 @@ class NoteEditorState extends State<NoteEditor> {
     });
   }
 
-  void _onTextChanged() {
-    final text = _controller.text;
-    // TextEditingController also notifies for selection, composing, palette,
-    // and highlighter changes. Only user-visible text changes belong in the
-    // note store, especially because the launch append position is transient.
-    if (text == _lastText) return;
-    _lastText = text;
+  void _onControllerChanged() {
+    final value = _controller.value;
+    final previous = _lastValue;
+    if (value.text == previous.text) {
+      final selectionChanged = value.selection != previous.selection;
+      _lastValue = value;
+      if (!selectionChanged) return;
+      _typingOverrides.clear();
+      _paragraphOverride = null;
+      _scheduleSelectionToolbar(value.selection);
+      setState(() {});
+      return;
+    }
+
+    final insertedText = insertedTextForChange(previous.text, value.text);
+    final forcedInsertedFormats = _nextInsertedFormats;
+    _nextInsertedFormats = null;
+    final insertedFormats = forcedInsertedFormats ?? <NoteFormat>{};
+    final previousParagraphStyle =
+        _paragraphOverride ??
+        paragraphStyleForSelection(previous.text, _formats, previous.selection);
+    if (forcedInsertedFormats == null) {
+      for (final format in NoteFormat.values.where(
+        (candidate) => candidate.isInline,
+      )) {
+        final active =
+            _typingOverrides[format] ??
+            selectionHasFormat(_formats, previous.selection, format);
+        if (active) insertedFormats.add(format);
+      }
+      final paragraphFormat = previousParagraphStyle?.format;
+      if (paragraphFormat != null) insertedFormats.add(paragraphFormat);
+    }
+    if (insertedText.contains('\n')) {
+      insertedFormats.removeWhere((format) => format.isParagraph);
+    }
+    var updatedFormats = rebaseNoteFormats(
+      oldText: previous.text,
+      newText: value.text,
+      formats: _formats,
+      insertedFormats: insertedFormats,
+    );
+    if (insertedText.contains('\n') && value.selection.isValid) {
+      // A heading naturally introduces a subtitle. That new style remains
+      // active across later lines until the writer explicitly cycles it.
+      final nextStyle = switch (previousParagraphStyle) {
+        NoteParagraphStyle.heading => NoteParagraphStyle.subtitle,
+        NoteParagraphStyle.subtitle => NoteParagraphStyle.subtitle,
+        NoteParagraphStyle.text => NoteParagraphStyle.text,
+        null => NoteParagraphStyle.text,
+      };
+      updatedFormats = applyParagraphStyle(
+        updatedFormats,
+        value.text,
+        value.selection,
+        nextStyle,
+      );
+      _paragraphOverride = nextStyle;
+    }
+    _lastValue = value;
+    _formats = updatedFormats;
+    _controller.formats = updatedFormats;
     setState(() {
-      _isEmpty = text.isEmpty;
+      _isEmpty = value.text.isEmpty;
       _evaluate();
     });
-    widget.onBodyChanged(text);
+    widget.onDocumentChanged(value.text, updatedFormats);
+  }
+
+  bool _formatActive(NoteFormat format) =>
+      _typingOverrides[format] ??
+      selectionHasFormat(_formats, _controller.selection, format);
+
+  NoteParagraphStyle? get _activeParagraphStyle =>
+      _paragraphOverride ??
+      paragraphStyleForSelection(
+        _controller.text,
+        _formats,
+        _controller.selection,
+      );
+
+  void _cycleParagraphStyle() {
+    _applyParagraphStyle(nextParagraphStyle(_activeParagraphStyle));
+  }
+
+  void _applyParagraphStyle(NoteParagraphStyle style) {
+    final selection = _controller.selection;
+    if (!selection.isValid) return;
+    _paragraphOverride = selection.isCollapsed ? style : null;
+    _commitFormats(
+      applyParagraphStyle(_formats, _controller.text, selection, style),
+    );
+    _focusNode.requestFocus();
+  }
+
+  void _toggleInlineFormat(NoteFormat format) {
+    final selection = _controller.selection;
+    if (!selection.isValid) return;
+    ContextMenuController.removeAny();
+    if (selection.isCollapsed) {
+      setState(() => _typingOverrides[format] = !_formatActive(format));
+    } else {
+      _typingOverrides.clear();
+      _commitFormats(
+        toggleNoteFormat(_formats, selection, format, _controller.text.length),
+      );
+    }
+    _focusNode.requestFocus();
+  }
+
+  void _commitFormats(List<NoteFormatRange> formats) {
+    _formats = formats;
+    _controller.formats = formats;
+    setState(() {});
+    widget.onDocumentChanged(_controller.text, formats);
+  }
+
+  void _toggleBullets() {
+    ContextMenuController.removeAny();
+    _typingOverrides.clear();
+    _nextInsertedFormats = const {};
+    _controller.value = toggleLineStyle(
+      _controller.value,
+      NoteLineStyle.bullet,
+    );
+    _focusNode.requestFocus();
+  }
+
+  void _toggleChecklist() {
+    ContextMenuController.removeAny();
+    _typingOverrides.clear();
+    _nextInsertedFormats = const {};
+    _controller.value = toggleLineStyle(
+      _controller.value,
+      NoteLineStyle.checklist,
+    );
+    _focusNode.requestFocus();
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    _pointerDownPositions[event.pointer] = event.position;
+  }
+
+  void _handlePointerCancel(PointerCancelEvent event) {
+    _pointerDownPositions.remove(event.pointer);
+  }
+
+  void _handlePointerUp(PointerUpEvent event) {
+    final down = _pointerDownPositions.remove(event.pointer);
+    if (down == null || (event.position - down).distance > 10) return;
+    final root = _textFieldKey.currentContext?.findRenderObject();
+    final editable = root == null ? null : _findRenderEditable(root);
+    if (editable == null) return;
+
+    final offset = editable.getPositionForPoint(event.position).offset;
+    final checkboxStart = checkboxLineStartAt(_controller.text, offset);
+    if (checkboxStart < 0) return;
+    final boxes = editable.getBoxesForSelection(
+      TextSelection(baseOffset: checkboxStart, extentOffset: checkboxStart + 1),
+    );
+    if (boxes.isEmpty) return;
+    final box = boxes.first;
+    final origin = editable.localToGlobal(Offset(box.left, box.top));
+    final checkboxRect =
+        origin & Size(box.right - box.left, box.bottom - box.top);
+    if (!checkboxRect.inflate(6).contains(event.position)) return;
+
+    _nextInsertedFormats = const {};
+    _controller.value = toggleCheckboxAt(_controller.value, checkboxStart);
+    _focusNode.requestFocus();
+  }
+
+  void _scheduleSelectionToolbar(TextSelection selection) {
+    _selectionToolbarTimer?.cancel();
+    if (!selection.isValid || selection.isCollapsed || !_focusNode.hasFocus) {
+      return;
+    }
+    _selectionToolbarTimer = Timer(const Duration(milliseconds: 180), () {
+      if (!mounted ||
+          !_focusNode.hasFocus ||
+          _controller.selection != selection) {
+        return;
+      }
+      _editableTextState()?.showToolbar();
+    });
+  }
+
+  EditableTextState? _editableTextState() {
+    final root = _textFieldKey.currentContext;
+    if (root is! Element) return null;
+    EditableTextState? result;
+    void visit(Element element) {
+      if (result != null) return;
+      if (element is StatefulElement && element.state is EditableTextState) {
+        result = element.state as EditableTextState;
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+
+    root.visitChildElements(visit);
+    return result;
+  }
+
+  static RenderEditable? _findRenderEditable(RenderObject root) {
+    if (root is RenderEditable) return root;
+    RenderEditable? result;
+    root.visitChildren((child) {
+      result ??= _findRenderEditable(child);
+    });
+    return result;
   }
 
   void _evaluate() {
@@ -236,6 +472,8 @@ class NoteEditorState extends State<NoteEditor> {
   void _dragGutter(double delta) =>
       widget.onGutterWidthChanged(widget.gutterWidth - delta);
 
+  static DateTime _localTime(DateTime value) => value.toLocal();
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -248,7 +486,11 @@ class NoteEditorState extends State<NoteEditor> {
     final padding = base.copyWith(
       bottom: base.bottom + MediaQuery.paddingOf(context).bottom,
     );
-    final textStyle = EditorMetrics.textStyle(palette.textPrimary);
+    final textStyle = EditorMetrics.textStyle(
+      palette.textPrimary,
+      widget.writingFont,
+    );
+    final strut = EditorMetrics.strut(widget.writingFont);
     final textScaler = MediaQuery.textScalerOf(context);
 
     return Container(
@@ -286,8 +528,9 @@ class NoteEditorState extends State<NoteEditor> {
                   ),
                   text: _controller.text,
                   maxWidth: contentWidth,
-                  strut: EditorMetrics.strut,
+                  strut: strut,
                   textScaler: textScaler,
+                  layoutKey: (widget.writingFont, _formats),
                 );
 
                 return Row(
@@ -295,12 +538,18 @@ class NoteEditorState extends State<NoteEditor> {
                   children: [
                     SizedBox(
                       width: textPaneWidth,
-                      child: Stack(
-                        children: [
-                          if (_isEmpty)
-                            _Placeholder(padding: padding, style: textStyle),
-                          _buildField(padding, textStyle, trailingGap),
-                        ],
+                      child: NotebookPaper(
+                        child: Stack(
+                          children: [
+                            if (_isEmpty)
+                              _Placeholder(
+                                padding: padding,
+                                style: textStyle,
+                                strut: strut,
+                              ),
+                            _buildField(padding, textStyle, strut, trailingGap),
+                          ],
+                        ),
                       ),
                     ),
                     if (widget.showDivider)
@@ -331,7 +580,38 @@ class NoteEditorState extends State<NoteEditor> {
           ),
           NoteFooter(
             total: _totalText,
+            paragraphStyleShortcut: widget.shortcuts.bindingFor(
+              ShortcutAction.cycleTextStyle,
+            ),
+            boldShortcut: widget.shortcuts.bindingFor(
+              ShortcutAction.formatBold,
+            ),
+            italicShortcut: widget.shortcuts.bindingFor(
+              ShortcutAction.formatItalic,
+            ),
+            bulletsShortcut: widget.shortcuts.bindingFor(
+              ShortcutAction.formatBullets,
+            ),
+            checklistShortcut: widget.shortcuts.bindingFor(
+              ShortcutAction.formatChecklist,
+            ),
             onSettingsPressed: widget.onSettingsPressed,
+            onParagraphStylePressed: _cycleParagraphStyle,
+            onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
+            onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
+            onBulletsPressed: _toggleBullets,
+            onChecklistPressed: _toggleChecklist,
+            boldActive: _formatActive(NoteFormat.bold),
+            italicActive: _formatActive(NoteFormat.italic),
+            bulletsActive: selectionHasLineStyle(
+              _controller.value,
+              NoteLineStyle.bullet,
+            ),
+            checklistActive: selectionHasLineStyle(
+              _controller.value,
+              NoteLineStyle.checklist,
+            ),
+            paragraphStyle: _activeParagraphStyle,
             showSettingsButton: widget.showSettingsButton,
           ),
         ],
@@ -342,6 +622,7 @@ class NoteEditorState extends State<NoteEditor> {
   Widget _buildField(
     EdgeInsets padding,
     TextStyle textStyle,
+    StrutStyle strut,
     double trailingGap,
   ) {
     return Padding(
@@ -351,58 +632,116 @@ class NoteEditorState extends State<NoteEditor> {
         top: padding.top,
         bottom: padding.bottom,
       ),
-      child: _textField(textStyle),
+      child: _textField(textStyle, strut),
     );
   }
 
-  Widget _textField(TextStyle textStyle) {
-    return TextField(
-      controller: _controller,
-      focusNode: _focusNode,
-      scrollController: _scrollController,
-      autofocus: widget.autofocus,
-      expands: true,
-      maxLines: null,
-      minLines: null,
-      style: textStyle,
-      strutStyle: EditorMetrics.strut,
-      cursorWidth: EditorMetrics.cursorWidth,
-      cursorRadius: const Radius.circular(1),
-      cursorColor: Theme.of(context).colorScheme.primary,
-      // Uniform selection rectangles: without this, a line whose glyphs come
-      // from a fallback font gets a differently sized highlight.
-      selectionHeightStyle: BoxHeightStyle.strut,
-      keyboardType: TextInputType.multiline,
-      textInputAction: TextInputAction.newline,
-      inputFormatters: [_dailySeparatorFormatter],
-      textAlignVertical: TextAlignVertical.top,
-      // This is a calculator surface, not prose: every helpful-guess input
-      // feature would fight the user.
-      autocorrect: false,
-      enableSuggestions: false,
-      textCapitalization: TextCapitalization.none,
-      smartDashesType: SmartDashesType.disabled,
-      smartQuotesType: SmartQuotesType.disabled,
-      scrollPadding: const EdgeInsets.all(80),
-      // No decoration padding: an InputDecorator positions its child by rules
-      // of its own, and the gutter needs the text origin to be exactly the
-      // padding it was told about.
-      decoration: const InputDecoration(
-        isCollapsed: true,
-        border: InputBorder.none,
-        filled: false,
-        hoverColor: Colors.transparent,
-        contentPadding: EdgeInsets.zero,
+  Widget _textField(TextStyle textStyle, StrutStyle strut) {
+    return Listener(
+      onPointerDown: _handlePointerDown,
+      onPointerUp: _handlePointerUp,
+      onPointerCancel: _handlePointerCancel,
+      child: CallbackShortcuts(
+        bindings: {
+          widget.shortcuts.bindingFor(ShortcutAction.cycleTextStyle).activator:
+              _cycleParagraphStyle,
+          widget.shortcuts
+              .bindingFor(ShortcutAction.formatBold)
+              .activator: () =>
+              _toggleInlineFormat(NoteFormat.bold),
+          widget.shortcuts
+              .bindingFor(ShortcutAction.formatItalic)
+              .activator: () =>
+              _toggleInlineFormat(NoteFormat.italic),
+          widget.shortcuts.bindingFor(ShortcutAction.formatBullets).activator:
+              _toggleBullets,
+          widget.shortcuts.bindingFor(ShortcutAction.formatChecklist).activator:
+              _toggleChecklist,
+        },
+        child: TextField(
+          key: _textFieldKey,
+          controller: _controller,
+          focusNode: _focusNode,
+          scrollController: _scrollController,
+          autofocus: widget.autofocus,
+          expands: true,
+          maxLines: null,
+          minLines: null,
+          style: textStyle,
+          strutStyle: strut,
+          cursorWidth: EditorMetrics.cursorWidth,
+          cursorRadius: const Radius.circular(1),
+          cursorColor: Theme.of(context).colorScheme.primary,
+          // Uniform selection rectangles: without this, a line whose glyphs
+          // come from a fallback font gets a differently sized highlight.
+          selectionHeightStyle: BoxHeightStyle.strut,
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
+          inputFormatters: [
+            _dailySeparatorFormatter,
+            const _ListContinuationFormatter(),
+          ],
+          contextMenuBuilder: (context, editableTextState) {
+            if (editableTextState.textEditingValue.selection.isCollapsed) {
+              return AdaptiveTextSelectionToolbar.editableText(
+                editableTextState: editableTextState,
+              );
+            }
+            return NoteSelectionFormattingToolbar(
+              editableTextState: editableTextState,
+              paragraphStyle: _activeParagraphStyle,
+              boldActive: _formatActive(NoteFormat.bold),
+              italicActive: _formatActive(NoteFormat.italic),
+              bulletsActive: selectionHasLineStyle(
+                _controller.value,
+                NoteLineStyle.bullet,
+              ),
+              checklistActive: selectionHasLineStyle(
+                _controller.value,
+                NoteLineStyle.checklist,
+              ),
+              onParagraphStylePressed: _cycleParagraphStyle,
+              onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
+              onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
+              onBulletsPressed: _toggleBullets,
+              onChecklistPressed: _toggleChecklist,
+            );
+          },
+          textAlignVertical: TextAlignVertical.top,
+          // This is a calculator surface, not prose: every helpful-guess input
+          // feature would fight the user.
+          autocorrect: false,
+          enableSuggestions: false,
+          textCapitalization: TextCapitalization.none,
+          smartDashesType: SmartDashesType.disabled,
+          smartQuotesType: SmartQuotesType.disabled,
+          scrollPadding: const EdgeInsets.all(80),
+          // No decoration padding: an InputDecorator positions its child by
+          // rules of its own, and the gutter needs the text origin to be
+          // exactly the padding it was told about.
+          decoration: const InputDecoration(
+            isCollapsed: true,
+            border: InputBorder.none,
+            filled: false,
+            hoverColor: Colors.transparent,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
       ),
     );
   }
 }
 
 class _Placeholder extends StatelessWidget {
-  const _Placeholder({required this.padding, required this.style});
+  const _Placeholder({
+    required this.padding,
+    required this.style,
+    required this.strut,
+  });
 
   final EdgeInsets padding;
   final TextStyle style;
+  final StrutStyle strut;
 
   @override
   Widget build(BuildContext context) {
@@ -413,14 +752,122 @@ class _Placeholder extends StatelessWidget {
           padding: padding,
           child: Align(
             alignment: Alignment.topLeft,
-            child: Text(
-              NoteEditorState._placeholderLines.join('\n'),
-              style: style.copyWith(color: palette.textTertiary),
-              strutStyle: EditorMetrics.strut,
+            child: Text.rich(
+              TextSpan(
+                style: style.copyWith(color: palette.textTertiary),
+                children: [
+                  TextSpan(
+                    text: 'Start typing…\n',
+                    style: paragraphTextStyle(
+                      style,
+                      NoteParagraphStyle.heading,
+                      primaryColor: palette.textTertiary,
+                    ),
+                  ),
+                  TextSpan(
+                    text: 'Notes and quick calculations\n\n',
+                    style: paragraphTextStyle(
+                      style,
+                      NoteParagraphStyle.subtitle,
+                      secondaryColor: palette.textTertiary,
+                    ),
+                  ),
+                  const TextSpan(text: 'Try a few things\n'),
+                  const TextSpan(text: 'Make text '),
+                  const TextSpan(
+                    text: 'bold',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const TextSpan(text: ' or '),
+                  const TextSpan(
+                    text: 'italic',
+                    style: TextStyle(fontStyle: FontStyle.italic),
+                  ),
+                  const TextSpan(text: '.\n'),
+                  const TextSpan(text: '• Keep ideas easy to scan\n'),
+                  const TextSpan(text: '☐ Add a checklist\n\n'),
+                  const TextSpan(text: '20% of 80\n'),
+                  const TextSpan(text: '10rs to usd\n'),
+                  const TextSpan(text: 'Idea details '),
+                  TextSpan(
+                    text: '// inline note',
+                    style: TextStyle(
+                      color: palette.comment,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+              strutStyle: strut,
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Continues a list when Enter is pressed and exits it from an empty item.
+class _ListContinuationFormatter extends TextInputFormatter {
+  const _ListContinuationFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final selection = oldValue.selection;
+    if (!selection.isValid || !selection.isCollapsed) return newValue;
+    final caret = selection.extentOffset;
+    if (newValue.text != oldValue.text.replaceRange(caret, caret, '\n')) {
+      return newValue;
+    }
+
+    final lineStart = caret == 0
+        ? 0
+        : oldValue.text.lastIndexOf('\n', caret - 1) + 1;
+    var prefixStart = lineStart;
+    while (prefixStart < caret &&
+        (oldValue.text[prefixStart] == ' ' ||
+            oldValue.text[prefixStart] == '\t')) {
+      prefixStart++;
+    }
+    String? prefix;
+    for (final candidate in [bulletPrefix, uncheckedPrefix, checkedPrefix]) {
+      if (oldValue.text.startsWith(candidate, prefixStart)) {
+        prefix = candidate;
+        break;
+      }
+    }
+    if (prefix == null) return newValue;
+
+    final lineEnd = oldValue.text.indexOf('\n', caret);
+    final contentEnd = lineEnd < 0 ? oldValue.text.length : lineEnd;
+    final content = oldValue.text.substring(
+      prefixStart + prefix.length,
+      contentEnd,
+    );
+    if (content.trim().isEmpty) {
+      final withoutEmptyItem = oldValue.text.replaceRange(
+        prefixStart,
+        prefixStart + prefix.length,
+        '',
+      );
+      return TextEditingValue(
+        text: withoutEmptyItem,
+        selection: TextSelection.collapsed(offset: caret - prefix.length),
+      );
+    }
+
+    final continuation = prefix == bulletPrefix
+        ? bulletPrefix
+        : uncheckedPrefix;
+    return newValue.copyWith(
+      text: newValue.text.replaceRange(caret + 1, caret + 1, continuation),
+      selection: TextSelection.collapsed(
+        offset: caret + 1 + continuation.length,
+      ),
+      composing: TextRange.empty,
     );
   }
 }
@@ -433,6 +880,7 @@ class _DailySeparatorFormatter extends TextInputFormatter {
     required this.enabled,
     required DateTime lastUpdatedAt,
     required this.now,
+    required this.displayTime,
     String? pendingSeparatorLine,
   }) : _lastUpdatedAt = lastUpdatedAt,
        _pendingSeparatorLine = pendingSeparatorLine;
@@ -441,6 +889,7 @@ class _DailySeparatorFormatter extends TextInputFormatter {
   DateTime _lastUpdatedAt;
   String? _pendingSeparatorLine;
   final DateTime Function() now;
+  DateTime Function(DateTime) displayTime;
 
   void syncLastUpdatedAt(DateTime? value) {
     if (value != null && value.isAfter(_lastUpdatedAt)) {
@@ -464,7 +913,11 @@ class _DailySeparatorFormatter extends TextInputFormatter {
     }
     final pendingSeparatorLine = _pendingSeparatorLine;
     if (pendingSeparatorLine == null &&
-        DailySeparator.isSameDay(previousEdit, editedAt)) {
+        DailySeparator.isSameDay(
+          previousEdit,
+          editedAt,
+          displayTime: displayTime,
+        )) {
       return newValue;
     }
 
@@ -479,7 +932,11 @@ class _DailySeparatorFormatter extends TextInputFormatter {
     if (!appendsAtEnd) return newValue;
 
     final separated = pendingSeparatorLine == null
-        ? DailySeparator.append(oldValue.text, previousEdit)
+        ? DailySeparator.append(
+            oldValue.text,
+            previousEdit,
+            displayTime: displayTime,
+          )
         : DailySeparator.appendLine(oldValue.text, pendingSeparatorLine);
     _pendingSeparatorLine = null;
     if (separated == oldValue.text) return newValue;

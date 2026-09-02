@@ -22,6 +22,7 @@ Future<void> loadTestFonts() async {
     await _load(family, ['/System/Library/Fonts/Supplemental/Arial.ttf']);
   }
   await _load('OdinRounded', ['assets/fonts/OdinRounded-Bold.otf']);
+  await _load('Kalam', ['assets/fonts/Kalam-Regular.ttf']);
 }
 
 Future<void> _load(String family, List<String> candidates) async {

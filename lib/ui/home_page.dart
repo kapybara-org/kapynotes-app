@@ -1,24 +1,23 @@
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
-import '../core/platform.dart';
 import '../core/desktop_integration.dart';
+import '../core/platform.dart';
 import '../core/theme.dart';
-import '../core/window_chrome.dart';
 import '../data/engine_provider.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
 import '../data/note.dart';
+import '../data/note_format.dart';
 import '../data/notes_store.dart';
+import '../data/rates.dart';
 import '../data/shortcut_prefs.dart';
-import 'app_logo.dart';
 import 'editor/note_editor.dart';
 import 'empty_state.dart';
-import 'glass_surface.dart';
 import 'sidebar.dart';
 import 'settings_dialog.dart';
 import 'split_view.dart';
 import 'toolbar.dart';
-import 'window_drag_area.dart';
 
 /// Width at which the two-pane desktop layout gives way to the compact editor
 /// with a notes drawer. Mobile platforms always use the compact layout.
@@ -29,6 +28,7 @@ class HomePage extends StatefulWidget {
     super.key,
     required this.notes,
     required this.engines,
+    required this.rates,
     required this.prefs,
     required this.shortcuts,
     this.desktopIntegration,
@@ -37,6 +37,7 @@ class HomePage extends StatefulWidget {
 
   final NotesStore notes;
   final EngineProvider engines;
+  final RatesRepository rates;
   final LayoutPrefs prefs;
   final ShortcutPrefs shortcuts;
   final DesktopIntegration? desktopIntegration;
@@ -110,7 +111,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Read from the window because selection is also reconciled outside build.
   bool get _usesCompactLayout {
-    if (AppPlatform.isMobile) return true;
     final view = WidgetsBinding.instance.platformDispatcher.views.first;
     return view.physicalSize.width / view.devicePixelRatio < kTwoPaneBreakpoint;
   }
@@ -162,7 +162,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  void _updateBody(String id, String body) => widget.notes.updateBody(id, body);
+  void _updateDocument(String id, String body, List<NoteFormatRange> formats) =>
+      widget.notes.updateDocument(id, body, formats);
 
   void _showSettings() {
     showDialog<void>(
@@ -170,6 +171,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       builder: (context) => SettingsDialog(
         layoutPrefs: widget.prefs,
         shortcuts: widget.shortcuts,
+        rates: widget.rates,
         desktopIntegration: widget.desktopIntegration,
       ),
     );
@@ -188,8 +190,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact =
-            AppPlatform.isMobile || constraints.maxWidth < kTwoPaneBreakpoint;
+        final compact = constraints.maxWidth < kTwoPaneBreakpoint;
         final content = compact ? _buildCompact(context) : _buildWide(context);
 
         if (!AppPlatform.isDesktop) return content;
@@ -215,6 +216,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildWide(BuildContext context) {
     final selected = widget.notes.byId(_selectedId);
+    // A tablet reaches this layout too, and it has no Scaffold to resize
+    // around the software keyboard. Desktop reports zero here.
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     // The desktop layout is its own chrome rather than a Scaffold, but text
     // fields, menus and ink still need a Material ancestor.
@@ -222,46 +226,47 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       color: AppPlatform.isMacOS && !AppPlatform.isFlutterTest
           ? Colors.transparent
           : context.palette.editorBackground,
-      child: ListenableBuilder(
-        listenable: widget.prefs,
-        builder: (context, _) => SplitView(
-          sidebarVisible: widget.prefs.sidebarVisible,
-          sidebarWidth: widget.prefs.sidebarWidth,
-          minSidebarWidth: LayoutPrefs.minSidebarWidth,
-          maxSidebarWidth: LayoutPrefs.maxSidebarWidth,
-          onWidthChanged: (value) => widget.prefs.sidebarWidth = value,
-          sidebar: Sidebar(
-            notes: _visibleNotes,
-            selectedId: _selectedId,
-            query: _query,
-            searchFocusNode: _searchFocus,
-            onQueryChanged: (value) => setState(() => _query = value),
-            onSelect: _select,
-            onCreate: _createNote,
-            onDelete: _deleteNote,
-            onSettingsPressed: _showSettings,
-          ),
-          body: Column(
+      child: Padding(
+        padding: EdgeInsets.only(bottom: keyboardInset),
+        child: ListenableBuilder(
+          listenable: widget.prefs,
+          builder: (context, _) => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               NoteToolbar(
-                title: selected?.title ?? AppWordmark.name,
                 sidebarVisible: widget.prefs.sidebarVisible,
                 onToggleSidebar: widget.prefs.toggleSidebar,
                 onCreate: _createNote,
-                onDelete: selected == null
-                    ? null
-                    : () => _deleteNote(selected.id),
-                // With the sidebar collapsed the toolbar runs to the window's
-                // left edge, straight under the macOS traffic lights.
-                leadingInset: WindowChrome.leadingInset(
-                  atWindowLeftEdge: !widget.prefs.sidebarVisible,
-                ),
               ),
               Expanded(
-                child: selected == null
-                    ? EmptyState(onCreate: _createNote)
-                    : _buildEditor(selected),
+                child: SplitView(
+                  sidebarVisible: widget.prefs.sidebarVisible,
+                  sidebarWidth: widget.prefs.sidebarWidth,
+                  minSidebarWidth: LayoutPrefs.minSidebarWidth,
+                  maxSidebarWidth: LayoutPrefs.maxSidebarWidth,
+                  onWidthChanged: (value) => widget.prefs.sidebarWidth = value,
+                  sidebar: Sidebar(
+                    notes: _visibleNotes,
+                    selectedId: _selectedId,
+                    query: _query,
+                    displayTime: widget.prefs.displayTime,
+                    searchFocusNode: _searchFocus,
+                    onQueryChanged: (value) => setState(() => _query = value),
+                    onSelect: _select,
+                    onCreate: _createNote,
+                    onDelete: _deleteNote,
+                    onSettingsPressed: _showSettings,
+                    showHeader: false,
+                  ),
+                  body: SafeArea(
+                    top: false,
+                    left: false,
+                    right: false,
+                    child: selected == null
+                        ? EmptyState(onCreate: _createNote)
+                        : _buildEditor(selected),
+                  ),
+                ),
               ),
             ],
           ),
@@ -277,117 +282,84 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       0.0,
       360.0,
     );
-    final leadingInset = WindowChrome.leadingInset(
-      atWindowLeftEdge: AppPlatform.isDesktop,
-    );
+    final overlayStyle = Theme.of(context).brightness == Brightness.dark
+        ? SystemUiOverlayStyle.light
+        : SystemUiOverlayStyle.dark;
 
-    return Scaffold(
-      backgroundColor: palette.editorBackground,
-      onDrawerChanged: (isOpen) {
-        _drawerOpen = isOpen;
-        if (isOpen && !_drawerContentReady) {
-          setState(() => _drawerContentReady = true);
-        }
-        if (!isOpen) _focusCompactEditorAtEnd();
-      },
-      drawer: Drawer(
-        width: drawerWidth,
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: const BorderRadius.only(
-            topRight: Radius.circular(22),
-            bottomRight: Radius.circular(22),
-          ),
-          side: BorderSide(color: palette.separator, width: 0.5),
-        ),
-        child: _drawerContentReady
-            ? Builder(
-                builder: (drawerContext) => Sidebar(
-                  notes: _visibleNotes,
-                  selectedId: _selectedId,
-                  query: _query,
-                  searchFocusNode: _searchFocus,
-                  onQueryChanged: (value) => setState(() => _query = value),
-                  onSelect: (id) {
-                    _select(id);
-                    Navigator.of(drawerContext).pop();
-                  },
-                  onCreate: () {
-                    _createNote();
-                    Navigator.of(drawerContext).pop();
-                  },
-                  onDelete: _deleteNote,
-                  onSettingsPressed: _showSettings,
-                ),
-              )
-            : ColoredBox(color: palette.sidebarBackground),
-      ),
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        flexibleSpace: GlassSurface(
-          color: palette.surfaceBackground.withValues(alpha: 0.74),
-          blur: 28,
-          child: const SizedBox.expand(),
-        ),
-        titleSpacing: 0,
-        leadingWidth: 48 + leadingInset,
-        leading: Builder(
-          builder: (scaffoldContext) => Padding(
-            padding: EdgeInsets.only(left: leadingInset),
-            child: IconButton(
-              onPressed: () {
-                FocusScope.of(scaffoldContext).unfocus();
-                Scaffold.of(scaffoldContext).openDrawer();
-              },
-              icon: const Icon(Icons.menu_rounded),
-              tooltip: 'Show notes',
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Scaffold(
+        backgroundColor: palette.editorBackground,
+        onDrawerChanged: (isOpen) {
+          setState(() {
+            _drawerOpen = isOpen;
+            if (isOpen) _drawerContentReady = true;
+          });
+          if (!isOpen) _focusCompactEditorAtEnd();
+        },
+        drawer: Drawer(
+          width: drawerWidth,
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(22),
+              bottomRight: Radius.circular(22),
             ),
+            side: BorderSide(color: palette.separator, width: 0.5),
           ),
+          child: _drawerContentReady
+              ? Builder(
+                  builder: (drawerContext) => ListenableBuilder(
+                    listenable: widget.prefs,
+                    builder: (context, _) => Sidebar(
+                      notes: _visibleNotes,
+                      selectedId: _selectedId,
+                      query: _query,
+                      displayTime: widget.prefs.displayTime,
+                      searchFocusNode: _searchFocus,
+                      onQueryChanged: (value) => setState(() => _query = value),
+                      onSelect: (id) {
+                        _select(id);
+                        Navigator.of(drawerContext).pop();
+                      },
+                      onCreate: () {
+                        _createNote();
+                        Navigator.of(drawerContext).pop();
+                      },
+                      onDelete: _deleteNote,
+                      onSettingsPressed: _showSettings,
+                    ),
+                  ),
+                )
+              : ColoredBox(color: palette.sidebarBackground),
         ),
-        title: WindowDragArea(
-          child: SizedBox(
-            height: kToolbarHeight,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                selected?.title ?? AppWordmark.name,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.1,
-                ),
-                overflow: TextOverflow.ellipsis,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Builder(
+              builder: (scaffoldContext) => NoteToolbar(
+                sidebarVisible: false,
+                showActions: !_drawerOpen,
+                onToggleSidebar: () {
+                  FocusScope.of(scaffoldContext).unfocus();
+                  Scaffold.of(scaffoldContext).openDrawer();
+                },
+                onCreate: _createNote,
               ),
             ),
-          ),
+            Expanded(
+              child: SafeArea(
+                top: false,
+                child: selected == null
+                    ? EmptyState(onCreate: _createNote)
+                    : _buildCompactEditor(selected),
+              ),
+            ),
+          ],
         ),
-        actions: [
-          IconButton(
-            onPressed: _createNote,
-            icon: const Icon(Icons.add_rounded, size: 19),
-            tooltip: 'New note',
-          ),
-          if (selected != null)
-            NoteActionsMenu(onDelete: () => _deleteNote(selected.id)),
-          const SizedBox(width: 8),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(0.5),
-          child: Container(height: 0.5, color: palette.separator),
-        ),
-      ),
-      body: SafeArea(
-        top: false,
-        child: selected == null
-            ? EmptyState(onCreate: _createNote)
-            : _buildCompactEditor(selected),
       ),
     );
   }
@@ -401,6 +373,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           key: _compactEditorKey,
           noteId: note.id,
           initialBody: note.body,
+          initialFormats: note.formats,
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
           // A phone has no room for a draggable column; a fixed, narrow gutter
@@ -413,7 +386,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               AppPlatform.isMobile || AppPlatform.isFlutterTest,
           lastUpdatedAt: note.updatedAt,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,
-          onBodyChanged: (body) => _updateBody(note.id, body),
+          displayTime: widget.prefs.displayTime,
+          writingFont: widget.prefs.writingFont,
+          shortcuts: widget.shortcuts,
+          onDocumentChanged: (body, formats) =>
+              _updateDocument(note.id, body, formats),
           onGutterWidthChanged: (_) {},
           onGutterWidthReset: () {},
           onSettingsPressed: _showSettings,
@@ -433,6 +410,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           key: ValueKey(note.id),
           noteId: note.id,
           initialBody: note.body,
+          initialFormats: note.formats,
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
           gutterWidth: widget.prefs.gutterWidth,
@@ -440,7 +418,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           startAtEnd: true,
           lastUpdatedAt: note.updatedAt,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,
-          onBodyChanged: (body) => _updateBody(note.id, body),
+          displayTime: widget.prefs.displayTime,
+          writingFont: widget.prefs.writingFont,
+          shortcuts: widget.shortcuts,
+          onDocumentChanged: (body, formats) =>
+              _updateDocument(note.id, body, formats),
           onGutterWidthChanged: (value) => widget.prefs.gutterWidth = value,
           onGutterWidthReset: widget.prefs.resetGutterWidth,
           onSettingsPressed: _showSettings,

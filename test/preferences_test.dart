@@ -1,5 +1,10 @@
+import 'dart:ui' show Locale;
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/calc/format.dart';
+import 'package:kapy_notes/core/editor_font.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
@@ -23,6 +28,8 @@ void main() {
 
     expect(prefs.windowSize, const Size(600, 630));
     expect(prefs.dailySeparatorsEnabled, isTrue);
+    expect(prefs.writingFont, WritingFont.handwritten);
+    expect(prefs.timeZoneId, isNull);
   });
 
   test('window, divider, and daily-section preferences survive reload', () {
@@ -33,12 +40,80 @@ void main() {
     prefs.sidebarWidth = 318;
     prefs.gutterWidth = 224;
     prefs.dailySeparatorsEnabled = false;
+    prefs.writingFont = WritingFont.clean;
 
     final restored = LayoutPrefs(store)..load();
     expect(restored.windowSize, const Size(684, 712));
     expect(restored.sidebarWidth, 318);
     expect(restored.gutterWidth, 224);
     expect(restored.dailySeparatorsEnabled, isFalse);
+    expect(restored.writingFont, WritingFont.clean);
+  });
+
+  test('number system follows the region until the user overrides it', () {
+    final store = _MemoryStore();
+    LayoutPrefs prefsIn(Locale locale) =>
+        LayoutPrefs(store, locale: () => locale)..load();
+
+    final indian = prefsIn(const Locale('en', 'IN'));
+    expect(indian.numberSystem, NumberSystem.auto);
+    expect(indian.digitGrouping, DigitGrouping.indian);
+    expect(indian.exampleFor(NumberSystem.auto), '1,23,45,678');
+
+    // A South Asian language with no region attached still means lakh.
+    expect(prefsIn(const Locale('hi')).digitGrouping, DigitGrouping.indian);
+    expect(
+      prefsIn(const Locale('en', 'US')).digitGrouping,
+      DigitGrouping.international,
+    );
+
+    // An explicit choice wins over the region, and survives a reload.
+    prefsIn(const Locale('en', 'IN')).numberSystem = NumberSystem.international;
+    final restored = prefsIn(const Locale('en', 'IN'));
+    expect(restored.numberSystem, NumberSystem.international);
+    expect(restored.digitGrouping, DigitGrouping.international);
+    expect(restored.exampleFor(NumberSystem.indian), '1,23,45,678');
+  });
+
+  test('an unreadable stored number system falls back to the region', () {
+    final store = _MemoryStore()..put('numberSystem.v1', 'martian');
+    final prefs = LayoutPrefs(store, locale: () => const Locale('en', 'GB'))
+      ..load();
+
+    expect(prefs.numberSystem, NumberSystem.auto);
+    expect(prefs.digitGrouping, DigitGrouping.international);
+  });
+
+  test('an unreadable writing font falls back to handwritten', () {
+    final store = _MemoryStore()..put('writingFont.v1', 'papyrus');
+    final prefs = LayoutPrefs(store)..load();
+
+    expect(prefs.writingFont, WritingFont.handwritten);
+  });
+
+  test('time zone selection converts timestamps and survives reload', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+
+    prefs.timeZoneId = 'Asia/Kolkata';
+    final displayed = prefs.displayTime(DateTime.utc(2026, 9, 1, 18, 12));
+    expect(displayed.hour, 23);
+    expect(displayed.minute, 42);
+    expect(displayed.timeZoneOffset, const Duration(hours: 5, minutes: 30));
+
+    final restored = LayoutPrefs(store)..load();
+    expect(restored.timeZoneId, 'Asia/Kolkata');
+
+    restored.timeZoneId = null;
+    expect(store.data['timeZone.v1'], '');
+    expect((LayoutPrefs(store)..load()).timeZoneId, isNull);
+  });
+
+  test('an unreadable stored time zone follows the system', () {
+    final store = _MemoryStore()..put('timeZone.v1', 'Mars/Olympus_Mons');
+    final prefs = LayoutPrefs(store)..load();
+
+    expect(prefs.timeZoneId, isNull);
   });
 
   test('shortcuts are editable, persistent, and cannot collide', () {
@@ -62,5 +137,37 @@ void main() {
 
     final restored = ShortcutPrefs(store)..load();
     expect(restored.bindingFor(ShortcutAction.findNotes), replacement);
+  });
+
+  test('formatting shortcuts have distinct OS-specific defaults', () {
+    final prefs = ShortcutPrefs(_MemoryStore())..load();
+    final defaults = [
+      for (final action in ShortcutAction.values) prefs.bindingFor(action),
+    ];
+
+    expect(defaults.toSet(), hasLength(ShortcutAction.values.length));
+    expect(
+      prefs.bindingFor(ShortcutAction.cycleTextStyle).logicalKey,
+      LogicalKeyboardKey.keyT,
+    );
+    expect(
+      prefs.bindingFor(ShortcutAction.formatBold).logicalKey,
+      LogicalKeyboardKey.keyB,
+    );
+    expect(
+      prefs.bindingFor(ShortcutAction.formatItalic).logicalKey,
+      LogicalKeyboardKey.keyI,
+    );
+    expect(prefs.bindingFor(ShortcutAction.formatBullets).shift, isTrue);
+    expect(
+      prefs.bindingFor(ShortcutAction.formatChecklist).logicalKey,
+      LogicalKeyboardKey.keyC,
+    );
+    expect(prefs.bindingFor(ShortcutAction.formatChecklist).shift, isTrue);
+
+    final bold = prefs.bindingFor(ShortcutAction.formatBold);
+    expect(bold.meta, AppPlatform.isMacOS);
+    expect(bold.control, !AppPlatform.isMacOS);
+    expect(bold.displayLabel, contains(AppPlatform.isMacOS ? 'Cmd' : 'Ctrl'));
   });
 }

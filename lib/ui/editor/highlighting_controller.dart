@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../calc/highlight.dart';
 import '../../core/theme.dart';
+import '../../data/note_format.dart';
+import 'editor_formatting.dart';
 
 /// A [TextEditingController] that paints the note's own syntax.
 ///
@@ -12,12 +15,15 @@ class HighlightingController extends TextEditingController {
   HighlightingController({
     required Highlighter highlighter,
     required CalcPalette palette,
+    List<NoteFormatRange> formats = const [],
     super.text,
   }) : _highlighter = highlighter,
-       _palette = palette;
+       _palette = palette,
+       _formats = formats;
 
   Highlighter _highlighter;
   CalcPalette _palette;
+  List<NoteFormatRange> _formats;
 
   String? _cachedText;
   List<HighlightSpan> _cachedSpans = const [];
@@ -34,6 +40,14 @@ class HighlightingController extends TextEditingController {
   set palette(CalcPalette value) {
     if (_palette == value) return;
     _palette = value;
+    notifyListeners();
+  }
+
+  List<NoteFormatRange> get formats => _formats;
+
+  set formats(List<NoteFormatRange> value) {
+    if (listEquals(_formats, value)) return;
+    _formats = value;
     notifyListeners();
   }
 
@@ -60,6 +74,7 @@ class HighlightingController extends TextEditingController {
     if (source.isEmpty) return TextSpan(style: base);
 
     final spans = spansFor(source);
+    final checkedRanges = _checkedTextRanges(source);
     final composing = withComposing && value.isComposingRangeValid
         ? value.composing
         : null;
@@ -71,6 +86,14 @@ class HighlightingController extends TextEditingController {
     for (final span in spans) {
       boundaries.add(span.start.clamp(0, source.length));
       boundaries.add(span.end.clamp(0, source.length));
+    }
+    for (final format in _formats) {
+      boundaries.add(format.start.clamp(0, source.length));
+      boundaries.add(format.end.clamp(0, source.length));
+    }
+    for (final range in checkedRanges) {
+      boundaries.add(range.start);
+      boundaries.add(range.end);
     }
     if (composing != null) {
       boundaries.add(composing.start.clamp(0, source.length));
@@ -99,6 +122,40 @@ class HighlightingController extends TextEditingController {
       var segmentStyle = active == null
           ? base
           : base.merge(_styleFor(active.kind));
+      final matchingFormats = _formats.where(
+        (format) => format.start <= start && format.end >= end,
+      );
+      final activeFormats = [
+        ...matchingFormats.where((format) => format.format.isParagraph),
+        ...matchingFormats.where((format) => format.format.isInline),
+      ];
+      for (final format in activeFormats) {
+        segmentStyle = switch (format.format) {
+          NoteFormat.bold => segmentStyle.copyWith(fontWeight: FontWeight.w700),
+          NoteFormat.italic => segmentStyle.copyWith(
+            fontStyle: FontStyle.italic,
+          ),
+          NoteFormat.heading => paragraphTextStyle(
+            segmentStyle,
+            NoteParagraphStyle.heading,
+            primaryColor: base.color,
+          ),
+          NoteFormat.subtitle => paragraphTextStyle(
+            segmentStyle,
+            NoteParagraphStyle.subtitle,
+            secondaryColor: _palette.textSecondary,
+          ),
+        };
+      }
+      if (checkedRanges.any(
+        (range) => range.start <= start && range.end >= end,
+      )) {
+        segmentStyle = segmentStyle.copyWith(
+          color: _palette.comment,
+          decoration: TextDecoration.lineThrough,
+          decorationColor: _palette.comment,
+        );
+      }
       if (composing != null &&
           start >= composing.start &&
           end <= composing.end) {
@@ -114,6 +171,29 @@ class HighlightingController extends TextEditingController {
     }
 
     return TextSpan(style: base, children: children);
+  }
+
+  static List<TextRange> _checkedTextRanges(String source) {
+    final ranges = <TextRange>[];
+    var lineStart = 0;
+    while (lineStart <= source.length) {
+      final newline = source.indexOf('\n', lineStart);
+      final lineEnd = newline < 0 ? source.length : newline;
+      var contentStart = lineStart;
+      while (contentStart < lineEnd &&
+          (source[contentStart] == ' ' || source[contentStart] == '\t')) {
+        contentStart++;
+      }
+      if (source.startsWith(checkedPrefix, contentStart) &&
+          contentStart + checkedPrefix.length < lineEnd) {
+        ranges.add(
+          TextRange(start: contentStart + checkedPrefix.length, end: lineEnd),
+        );
+      }
+      if (newline < 0) break;
+      lineStart = newline + 1;
+    }
+    return ranges;
   }
 
   TextStyle _styleFor(HighlightKind kind) {

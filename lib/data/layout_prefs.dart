@@ -1,10 +1,72 @@
-import 'dart:ui' show Size;
+import 'dart:ui' show Locale, PlatformDispatcher, Size;
 
 import 'package:flutter/foundation.dart';
 
+import '../calc/format.dart';
+import '../core/editor_font.dart';
 import 'local_store.dart';
+import 'time_zones.dart';
 
-/// User-adjustable layout sizes that survive restarts.
+/// How the user wants grouped numbers written, including deferring to the
+/// device.
+enum NumberSystem { auto, international, indian }
+
+extension NumberSystemCopy on NumberSystem {
+  String get label => switch (this) {
+    NumberSystem.auto => 'Match my region',
+    NumberSystem.international => 'International',
+    NumberSystem.indian => 'Indian',
+  };
+
+  String get description => switch (this) {
+    NumberSystem.auto => 'Follow the number format your system uses',
+    NumberSystem.international => 'Thousands, millions, billions',
+    NumberSystem.indian => 'Thousands, lakh, crore',
+  };
+
+  /// The grouping this choice means for [locale]. Only [NumberSystem.auto]
+  /// looks at the locale at all.
+  DigitGrouping resolve(Locale locale) => switch (this) {
+    NumberSystem.international => DigitGrouping.international,
+    NumberSystem.indian => DigitGrouping.indian,
+    NumberSystem.auto => _localeGrouping(locale),
+  };
+}
+
+/// Regions that write in lakh and crore, plus the South Asian languages that
+/// imply one when a locale carries no region at all.
+const Set<String> _indianRegions = {'IN', 'PK', 'BD', 'NP', 'LK', 'BT'};
+const Set<String> _indianLanguages = {
+  'as',
+  'bn',
+  'gu',
+  'hi',
+  'kn',
+  'ml',
+  'mr',
+  'ne',
+  'or',
+  'pa',
+  'si',
+  'ta',
+  'te',
+  'ur',
+};
+
+DigitGrouping _localeGrouping(Locale locale) {
+  final region = locale.countryCode;
+  if (region != null && region.isNotEmpty) {
+    return _indianRegions.contains(region.toUpperCase())
+        ? DigitGrouping.indian
+        : DigitGrouping.international;
+  }
+  return _indianLanguages.contains(locale.languageCode.toLowerCase())
+      ? DigitGrouping.indian
+      : DigitGrouping.international;
+}
+
+/// User preferences that survive restarts: panel sizes, window geometry, and
+/// the handful of display options the settings dialog exposes.
 class LayoutPrefs extends ChangeNotifier {
   static const Size defaultWindowSize = Size(600, 630);
   static const Size minimumWindowSize = Size(520, 360);
@@ -23,22 +85,50 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _windowWidthKey = 'windowWidth.v1';
   static const String _windowHeightKey = 'windowHeight.v1';
   static const String _dailySeparatorsKey = 'dailySeparators.v1';
+  static const String _numberSystemKey = 'numberSystem.v1';
+  static const String _writingFontKey = 'writingFont.v1';
+  static const String _timeZoneKey = 'timeZone.v1';
 
   final LocalStore _store;
+
+  /// Where [NumberSystem.auto] reads the device's region from. Injectable so
+  /// tests can resolve against a locale they choose.
+  final Locale Function() _locale;
 
   double _gutterWidth = defaultGutterWidth;
   double _sidebarWidth = defaultSidebarWidth;
   bool _sidebarVisible = true;
   Size _windowSize = defaultWindowSize;
   bool _dailySeparatorsEnabled = true;
+  NumberSystem _numberSystem = NumberSystem.auto;
+  WritingFont _writingFont = WritingFont.handwritten;
+  String? _timeZoneId;
 
-  LayoutPrefs(this._store);
+  LayoutPrefs(this._store, {Locale Function()? locale})
+    : _locale = locale ?? (() => PlatformDispatcher.instance.locale);
 
   double get gutterWidth => _gutterWidth;
   double get sidebarWidth => _sidebarWidth;
   bool get sidebarVisible => _sidebarVisible;
   Size get windowSize => _windowSize;
   bool get dailySeparatorsEnabled => _dailySeparatorsEnabled;
+  WritingFont get writingFont => _writingFont;
+  String? get timeZoneId => _timeZoneId;
+
+  /// Converts a stored instant to the zone selected for note timestamps.
+  DateTime displayTime(DateTime instant) =>
+      AppTimeZones.convert(instant, _timeZoneId);
+
+  /// The user's choice, which may be [NumberSystem.auto].
+  NumberSystem get numberSystem => _numberSystem;
+
+  /// That choice resolved against the device — what results are formatted in.
+  DigitGrouping get digitGrouping => _numberSystem.resolve(_locale());
+
+  /// The sample the settings dialog shows beside [system], resolved against
+  /// the same locale results are formatted with.
+  String exampleFor(NumberSystem system) =>
+      ResultFormatter.sample(system.resolve(_locale()));
 
   void load() {
     _gutterWidth = _clampGutter(_readDouble(_gutterKey) ?? defaultGutterWidth);
@@ -53,6 +143,9 @@ class LayoutPrefs extends ChangeNotifier {
       ),
     );
     _dailySeparatorsEnabled = _store.read<bool>(_dailySeparatorsKey) ?? true;
+    _numberSystem = _readNumberSystem();
+    _writingFont = _readWritingFont();
+    _timeZoneId = AppTimeZones.normalize(_store.read<String>(_timeZoneKey));
     notifyListeners();
   }
 
@@ -88,6 +181,30 @@ class LayoutPrefs extends ChangeNotifier {
     notifyListeners();
   }
 
+  set numberSystem(NumberSystem value) {
+    if (value == _numberSystem) return;
+    _numberSystem = value;
+    _store.put(_numberSystemKey, value.name);
+    notifyListeners();
+  }
+
+  set writingFont(WritingFont value) {
+    if (value == _writingFont) return;
+    _writingFont = value;
+    _store.put(_writingFontKey, value.name);
+    notifyListeners();
+  }
+
+  set timeZoneId(String? value) {
+    final normalized = AppTimeZones.normalize(value);
+    if (normalized == _timeZoneId) return;
+    _timeZoneId = normalized;
+    // LocalStore has no removal operation. An empty value is the durable
+    // representation of following the device time zone.
+    _store.put(_timeZoneKey, normalized ?? '');
+    notifyListeners();
+  }
+
   void resetGutterWidth() => gutterWidth = defaultGutterWidth;
 
   void resetPanelWidths() {
@@ -106,6 +223,26 @@ class LayoutPrefs extends ChangeNotifier {
     _sidebarVisible = !_sidebarVisible;
     _store.put(_sidebarVisibleKey, _sidebarVisible);
     notifyListeners();
+  }
+
+  /// An unrecognised stored name means a downgrade or a hand-edited file;
+  /// deferring to the device is the safe reading either way.
+  NumberSystem _readNumberSystem() {
+    final stored = _store.read<String>(_numberSystemKey);
+    return NumberSystem.values.firstWhere(
+      (system) => system.name == stored,
+      orElse: () => NumberSystem.auto,
+    );
+  }
+
+  /// New installs open with the paper-like face. Unknown values can come from
+  /// a newer app version, so they also fall back to that safe default.
+  WritingFont _readWritingFont() {
+    final stored = _store.read<String>(_writingFontKey);
+    return WritingFont.values.firstWhere(
+      (font) => font.name == stored,
+      orElse: () => WritingFont.handwritten,
+    );
   }
 
   double? _readDouble(String key) {

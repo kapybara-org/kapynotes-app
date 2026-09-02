@@ -46,16 +46,23 @@ class Highlighter {
     var offset = 0;
 
     for (final line in body.split('\n')) {
-      if (line.trimLeft().startsWith('//')) {
-        // A standalone comment is prose by definition, so it never reaches
-        // the math-only token highlighting below. Dim the complete line,
-        // including indentation, to make its role immediately clear.
+      final commentStart = line.indexOf('//');
+      final content = commentStart < 0 ? line : line.substring(0, commentStart);
+      if (content.trim().isNotEmpty &&
+          CalcEngine.looksLikeMath(content, knownNames)) {
+        _spansForLine(content, offset, knownNames, out);
+      }
+      if (commentStart >= 0) {
+        // Inline comments are valid after prose as well as calculations. Keep
+        // everything before the delimiter in its normal style and mute only
+        // the comment itself.
         out.add(
-          HighlightSpan(offset, offset + line.length, HighlightKind.comment),
+          HighlightSpan(
+            offset + commentStart,
+            offset + line.length,
+            HighlightKind.comment,
+          ),
         );
-      } else if (line.trim().isNotEmpty &&
-          CalcEngine.looksLikeMath(line, knownNames)) {
-        _spansForLine(line, offset, knownNames, out);
       }
       offset += line.length + 1;
     }

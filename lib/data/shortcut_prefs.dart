@@ -4,7 +4,18 @@ import 'package:flutter/widgets.dart';
 import '../core/platform.dart';
 import 'local_store.dart';
 
-enum ShortcutAction { openApp, newNote, findNotes, toggleSidebar, deleteNote }
+enum ShortcutAction {
+  openApp,
+  newNote,
+  findNotes,
+  toggleSidebar,
+  deleteNote,
+  cycleTextStyle,
+  formatBold,
+  formatItalic,
+  formatBullets,
+  formatChecklist,
+}
 
 extension ShortcutActionCopy on ShortcutAction {
   String get label => switch (this) {
@@ -13,6 +24,11 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.findNotes => 'Search notes',
     ShortcutAction.toggleSidebar => 'Toggle sidebar',
     ShortcutAction.deleteNote => 'Delete current note',
+    ShortcutAction.cycleTextStyle => 'Cycle text style',
+    ShortcutAction.formatBold => 'Bold',
+    ShortcutAction.formatItalic => 'Italic',
+    ShortcutAction.formatBullets => 'Bulleted list',
+    ShortcutAction.formatChecklist => 'Checklist',
   };
 
   String get description => switch (this) {
@@ -21,6 +37,22 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.findNotes => 'Open the sidebar and search',
     ShortcutAction.toggleSidebar => 'Show or hide the notes list',
     ShortcutAction.deleteNote => 'Remove the note you are editing',
+    ShortcutAction.cycleTextStyle =>
+      'Switch between Text, Heading, and Subtitle',
+    ShortcutAction.formatBold => 'Toggle bold on the selection or new text',
+    ShortcutAction.formatItalic => 'Toggle italic on the selection or new text',
+    ShortcutAction.formatBullets =>
+      'Toggle a bulleted list on the current lines',
+    ShortcutAction.formatChecklist => 'Toggle a checklist on the current lines',
+  };
+
+  bool get isFormatting => switch (this) {
+    ShortcutAction.cycleTextStyle ||
+    ShortcutAction.formatBold ||
+    ShortcutAction.formatItalic ||
+    ShortcutAction.formatBullets ||
+    ShortcutAction.formatChecklist => true,
+    _ => false,
   };
 }
 
@@ -211,6 +243,38 @@ class ShortcutPrefs extends ChangeNotifier {
         physicalKey: useMeta
             ? PhysicalKeyboardKey.backspace
             : PhysicalKeyboardKey.delete,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      ShortcutAction.cycleTextStyle => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyT,
+        physicalKey: PhysicalKeyboardKey.keyT,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      ShortcutAction.formatBold => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyB,
+        physicalKey: PhysicalKeyboardKey.keyB,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      ShortcutAction.formatItalic => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyI,
+        physicalKey: PhysicalKeyboardKey.keyI,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      ShortcutAction.formatBullets => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyB,
+        physicalKey: PhysicalKeyboardKey.keyB,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      ShortcutAction.formatChecklist => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyC,
+        physicalKey: PhysicalKeyboardKey.keyC,
         meta: useMeta,
         control: !useMeta,
         shift: true,

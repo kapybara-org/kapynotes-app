@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'local_store.dart';
 import 'note.dart';
+import 'note_format.dart';
 
 /// Owns the note list and its persistence.
 ///
@@ -26,18 +27,7 @@ class NotesStore extends ChangeNotifier {
   bool get isEmpty => _notes.isEmpty;
 
   /// The note whose contents changed most recently.
-  ///
-  /// Creation order is intentionally kept separate from edit recency so the
-  /// sidebar stays stable while the user types.
-  Note? get lastEditedNote {
-    if (_notes.isEmpty) return null;
-
-    var latest = _notes.first;
-    for (final note in _notes.skip(1)) {
-      if (note.updatedAt.isAfter(latest.updatedAt)) latest = note;
-    }
-    return latest;
-  }
+  Note? get lastEditedNote => _notes.isEmpty ? null : _notes.first;
 
   Future<void> load() => _loadFuture ??= _load();
 
@@ -45,7 +35,16 @@ class NotesStore extends ChangeNotifier {
     await _store.load();
     final raw = _store.read<List<Object?>>(_key);
     if (raw != null) {
-      _notes = raw.map(Note.fromJson).whereType<Note>().toList(growable: false);
+      final notes = <({int storedIndex, Note note})>[];
+      for (var index = 0; index < raw.length; index++) {
+        final note = Note.fromJson(raw[index]);
+        if (note != null) notes.add((storedIndex: index, note: note));
+      }
+      notes.sort((a, b) {
+        final recency = b.note.updatedAt.compareTo(a.note.updatedAt);
+        return recency != 0 ? recency : a.storedIndex.compareTo(b.storedIndex);
+      });
+      _notes = List.unmodifiable(notes.map((entry) => entry.note));
     }
     _loaded = true;
     notifyListeners();
@@ -76,9 +75,27 @@ class NotesStore extends ChangeNotifier {
     final existing = _notes[index];
     if (existing.body == body) return;
 
-    final updated = List<Note>.of(_notes);
-    updated[index] = existing.copyWith(body: body, updatedAt: _now());
-    _notes = updated;
+    updateDocument(id, body, const []);
+  }
+
+  void updateDocument(String id, String body, List<NoteFormatRange> formats) {
+    final index = indexOf(id);
+    if (index < 0) return;
+    final existing = _notes[index];
+    final normalized = normalizeNoteFormats(formats, body.length);
+    if (existing.body == body && listEquals(existing.formats, normalized)) {
+      return;
+    }
+
+    final updatedNote = existing.copyWith(
+      body: body,
+      formats: normalized,
+      updatedAt: _now(),
+    );
+    final remaining = List<Note>.of(_notes)..removeAt(index);
+    // This edit just happened, so moving it directly to the front avoids an
+    // O(n log n) sort on every keystroke while preserving newest-first order.
+    _notes = [updatedNote, ...remaining];
     _persist();
   }
 

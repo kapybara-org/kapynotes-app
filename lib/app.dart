@@ -82,7 +82,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       widget.notes.create();
     }
     widget.rates.loadCache();
-    _engines = EngineProvider(widget.rates);
+    _engines = EngineProvider(widget.rates, widget.prefs);
     _ready = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _scheduleRateRefresh();
@@ -149,6 +149,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       home: HomePage(
         notes: widget.notes,
         engines: _engines!,
+        rates: widget.rates,
         prefs: widget.prefs,
         shortcuts: widget.shortcuts,
         desktopIntegration: widget.desktopIntegration,

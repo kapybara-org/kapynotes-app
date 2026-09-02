@@ -32,11 +32,18 @@ class LineResult {
 class DocumentEvaluation {
   final Map<int, LineResult> results;
   final CalcValue? total;
+  final DigitGrouping grouping;
 
-  const DocumentEvaluation({required this.results, required this.total});
+  const DocumentEvaluation({
+    required this.results,
+    required this.total,
+    this.grouping = DigitGrouping.international,
+  });
 
   /// A note with no calculations still has a useful, stable footer value.
-  String get totalText => total == null ? '0' : ResultFormatter.display(total!);
+  String get totalText => total == null
+      ? '0'
+      : ResultFormatter.display(total!, grouping: grouping);
 }
 
 class _EvaluatedLine {
@@ -58,8 +65,14 @@ class _EvaluatedLine {
 class CalcEngine {
   final UnitRegistry registry;
 
-  CalcEngine({Map<String, double> ratesPerUsd = const {}})
-    : registry = UnitRegistry(ratesPerUsd: ratesPerUsd);
+  /// Where separators fall in the results this engine renders. Changing it
+  /// means building a new engine, exactly as a rate change does.
+  final DigitGrouping grouping;
+
+  CalcEngine({
+    Map<String, double> ratesPerUsd = const {},
+    this.grouping = DigitGrouping.international,
+  }) : registry = UnitRegistry(ratesPerUsd: ratesPerUsd);
 
   bool get hasCurrencyRates => registry.hasCurrencies;
 
@@ -90,6 +103,7 @@ class CalcEngine {
     return DocumentEvaluation(
       results: Map<int, LineResult>.unmodifiable(results),
       total: scope.runningSum,
+      grouping: grouping,
     );
   }
 
@@ -121,7 +135,7 @@ class CalcEngine {
         result: LineResult(
           line: index,
           value: value,
-          text: ResultFormatter.display(value),
+          text: ResultFormatter.display(value, grouping: grouping),
           copyText: ResultFormatter.copy(value),
         ),
         isAggregateReadout: _isAggregateReadout(node),

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'editor_font.dart';
 import 'platform.dart';
 
 /// Colours for calculator-specific surfaces: syntax highlighting and result
@@ -38,6 +39,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color selectedBorder;
   final Color selection;
   final Color hover;
+  final Color paperFiber;
 
   const CalcPalette({
     required this.number,
@@ -67,6 +69,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.selectedBorder,
     required this.selection,
     required this.hover,
+    required this.paperFiber,
   });
 
   @override
@@ -98,6 +101,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? selectedBorder,
     Color? selection,
     Color? hover,
+    Color? paperFiber,
   }) => CalcPalette(
     number: number ?? this.number,
     keyword: keyword ?? this.keyword,
@@ -126,6 +130,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     selectedBorder: selectedBorder ?? this.selectedBorder,
     selection: selection ?? this.selection,
     hover: hover ?? this.hover,
+    paperFiber: paperFiber ?? this.paperFiber,
   );
 
   @override
@@ -160,6 +165,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       selectedBorder: mix(selectedBorder, other.selectedBorder),
       selection: mix(selection, other.selection),
       hover: mix(hover, other.hover),
+      paperFiber: mix(paperFiber, other.paperFiber),
     );
   }
 }
@@ -170,9 +176,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
 class EditorMetrics {
   const EditorMetrics._();
 
-  static const double fontSize = 14.5;
-  static const double lineHeight = 28;
-  static const double heightFactor = lineHeight / fontSize;
+  static const double lineHeight = 29;
   static const EdgeInsets padding = EdgeInsets.symmetric(
     horizontal: 28,
     vertical: 20,
@@ -190,11 +194,11 @@ class EditorMetrics {
   /// and the field renders wider than anything measuring the same string with
   /// this style alone. That difference moves wrap points, and a moved wrap
   /// point puts every result below it on the wrong line.
-  static TextStyle textStyle(Color color) => TextStyle(
-    fontFamily: AppPlatform.monoFontFallback.first,
-    fontFamilyFallback: AppPlatform.monoFontFallback,
-    fontSize: fontSize,
-    height: heightFactor,
+  static TextStyle textStyle(Color color, WritingFont font) => TextStyle(
+    fontFamily: font.fontFamily,
+    fontFamilyFallback: font.fontFamilyFallback,
+    fontSize: font.editorSize,
+    height: lineHeight / font.editorSize,
     color: color,
     letterSpacing: 0,
     wordSpacing: 0,
@@ -221,93 +225,124 @@ class EditorMetrics {
   /// Forcing the strut makes every line exactly [lineHeight] tall regardless
   /// of which fallback font supplies a given glyph — the property the gutter
   /// alignment depends on.
-  static const StrutStyle strut = StrutStyle(
-    fontFamily: 'SF Mono',
-    fontFamilyFallback: AppPlatform.monoFontFallback,
-    fontSize: fontSize,
-    height: heightFactor,
+  static StrutStyle strut(WritingFont font) => StrutStyle(
+    fontFamily: font.fontFamily,
+    fontFamilyFallback: font.fontFamilyFallback,
+    fontSize: font.editorSize,
+    height: lineHeight / font.editorSize,
     forceStrutHeight: true,
     leading: 0,
   );
+}
+
+/// Compact control geometry shared by every app surface.
+class AppControlMetrics {
+  const AppControlMetrics._();
+
+  static double get iconButtonExtent => AppPlatform.hasPointer ? 24 : 40;
+
+  static MaterialTapTargetSize get iconButtonTapTargetSize =>
+      AppPlatform.hasPointer
+      ? MaterialTapTargetSize.shrinkWrap
+      : MaterialTapTargetSize.padded;
+
+  static double get sidebarNoteRowExtent => AppPlatform.hasPointer ? 54 : 60;
 }
 
 class KapyTheme {
   const KapyTheme._();
 
   static const brand = Color(0xFFD25C38);
-  static const _darkAccent = Color(0xFFF07856);
-  static const _lightAccent = Color(0xFFB9472E);
+  static const _darkAccent = Color(0xFF6CC4EE);
+  static const _lightAccent = Color(0xFFA94A35);
 
   static ThemeData light() => _build(Brightness.light, lightPalette);
   static ThemeData dark() => _build(Brightness.dark, darkPalette);
 
+  /// The dark palette follows Numi's quiet hierarchy: charcoal surfaces,
+  /// neutral writing, one cyan calculation accent, and one green result accent.
+  /// Categories remain semantic in the model without turning the page into a
+  /// collection of unrelated colours.
   static const CalcPalette darkPalette = CalcPalette(
-    number: Color(0xFF79B9FF),
-    keyword: Color(0xFFD39AF2),
-    unit: Color(0xFF7AD99B),
-    currency: Color(0xFF65D889),
-    function: Color(0xFFF0A45E),
-    variable: Color(0xFF70CBDD),
-    operator: Color(0xFF8E8984),
-    comment: Color(0xFF716D69),
-    chipNumber: Color(0xFF69AFFF),
-    chipCurrency: Color(0xFF5FD987),
-    chipUnit: Color(0xFFC990EE),
-    chipBoolean: Color(0xFFEFA15A),
-    chipOther: Color(0xFFAAA59F),
-    textPrimary: Color(0xFFF2F1EE),
-    textSecondary: Color(0xFFAAA7A2),
-    textTertiary: Color(0xFF7A7671),
-    separator: Color(0x16FFFFFF),
-    sidebarBackground: Color(0xEC20201F),
-    editorBackground: Color(0xFF181817),
-    gutterBackground: Color(0xE61A1A19),
-    surfaceBackground: Color(0xF0242423),
-    controlBackground: Color(0x0FFFFFFF),
-    controlBorder: Color(0x16FFFFFF),
-    selectedBackground: Color(0x16FFFFFF),
-    selectedBorder: Color(0x66F07856),
-    selection: Color(0x52D25C38),
-    hover: Color(0x12FFFFFF),
+    number: Color(0xFFE3E7E9),
+    keyword: Color(0xFF6CC4EE),
+    unit: Color(0xFFE3E7E9),
+    currency: Color(0xFFE3E7E9),
+    function: Color(0xFF6CC4EE),
+    variable: Color(0xFF6CC4EE),
+    operator: Color(0xFFA2A6AC),
+    comment: Color(0xFF71757C),
+    chipNumber: Color(0xFF8DD32D),
+    chipCurrency: Color(0xFF8DD32D),
+    chipUnit: Color(0xFF8DD32D),
+    chipBoolean: Color(0xFF8DD32D),
+    chipOther: Color(0xFF8DD32D),
+    textPrimary: Color(0xFFE3E7E9),
+    textSecondary: Color(0xFFA2A6AC),
+    textTertiary: Color(0xFF71757C),
+    separator: Color(0x6636383D),
+    sidebarBackground: Color(0xFF1F2024),
+    editorBackground: Color(0xFF212226),
+    gutterBackground: Color(0xFF212226),
+    surfaceBackground: Color(0xFF202125),
+    controlBackground: Color(0xFF292A2F),
+    controlBorder: Color(0xFF36383D),
+    selectedBackground: Color(0xFF303137),
+    selectedBorder: Color(0xFF6CC4EE),
+    selection: Color(0x456CC4EE),
+    hover: Color(0xFF292A2F),
+    paperFiber: Color(0x00000000),
   );
 
+  /// The same restraint as [darkPalette], pitched for paper: hues are held
+  /// back rather than lightened, because light backgrounds need the contrast.
   static const CalcPalette lightPalette = CalcPalette(
-    number: Color(0xFF1766B5),
-    keyword: Color(0xFF8438AE),
-    unit: Color(0xFF247B49),
-    currency: Color(0xFF1F7844),
-    function: Color(0xFFA65720),
-    variable: Color(0xFF176F7D),
-    operator: Color(0xFF817B76),
-    comment: Color(0xFF98918B),
-    chipNumber: Color(0xFF1769BF),
-    chipCurrency: Color(0xFF237D49),
-    chipUnit: Color(0xFF8539AD),
-    chipBoolean: Color(0xFFA75C25),
-    chipOther: Color(0xFF77716C),
-    textPrimary: Color(0xFF24211F),
-    textSecondary: Color(0xFF706B66),
-    textTertiary: Color(0xFF9B958F),
-    separator: Color(0x1617120F),
-    sidebarBackground: Color(0xEEF2F1EE),
-    editorBackground: Color(0xFFFAF9F7),
-    gutterBackground: Color(0xEAF7F6F3),
-    surfaceBackground: Color(0xF7FFFFFF),
-    controlBackground: Color(0x99FFFFFF),
-    controlBorder: Color(0x1417120F),
-    selectedBackground: Color(0x0F17120F),
-    selectedBorder: Color(0x59B9472E),
+    number: Color(0xFF315F91),
+    keyword: Color(0xFF79547F),
+    unit: Color(0xFF477052),
+    currency: Color(0xFF477052),
+    function: Color(0xFF986332),
+    variable: Color(0xFF356C72),
+    operator: Color(0xFF897A69),
+    comment: Color(0xFF998874),
+    chipNumber: Color(0xFF9B641F),
+    chipCurrency: Color(0xFF416D4B),
+    chipUnit: Color(0xFF4B688E),
+    chipBoolean: Color(0xFF9A5739),
+    chipOther: Color(0xFF70675B),
+    textPrimary: Color(0xFF26364A),
+    textSecondary: Color(0xFF675F53),
+    textTertiary: Color(0xFF958776),
+    separator: Color(0x24745F48),
+    sidebarBackground: Color(0xF2EEE3CC),
+    editorBackground: Color(0xFFF7F0DE),
+    gutterBackground: Color(0xF2F0E5CE),
+    surfaceBackground: Color(0xFAFBF5E8),
+    controlBackground: Color(0xB3FFF9EA),
+    controlBorder: Color(0x26765F45),
+    selectedBackground: Color(0x177A6046),
+    selectedBorder: Color(0x6CA94A35),
     selection: Color(0x3DD25C38),
-    hover: Color(0x0B17120F),
+    hover: Color(0x0F614A32),
+    paperFiber: Color(0x187D674E),
   );
 
   static ThemeData _build(Brightness brightness, CalcPalette palette) {
     final dark = brightness == Brightness.dark;
+    final compactControls = AppPlatform.isDesktop;
     final accent = dark ? _darkAccent : _lightAccent;
-    final onAccent = dark ? const Color(0xFF2D130C) : Colors.white;
+    final onAccent = dark ? const Color(0xFF15171A) : Colors.white;
+    final buttonHeight = compactControls ? 32.0 : 40.0;
+    final iconButtonExtent = AppControlMetrics.iconButtonExtent;
+    final tapTarget = compactControls
+        ? MaterialTapTargetSize.shrinkWrap
+        : MaterialTapTargetSize.padded;
 
     final scheme =
-        ColorScheme.fromSeed(seedColor: brand, brightness: brightness).copyWith(
+        ColorScheme.fromSeed(
+          seedColor: dark ? _darkAccent : brand,
+          brightness: brightness,
+        ).copyWith(
           primary: accent,
           onPrimary: onAccent,
           surface: palette.editorBackground,
@@ -369,7 +404,7 @@ class KapyTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: palette.surfaceBackground,
         surfaceTintColor: Colors.transparent,
-        elevation: 4,
+        elevation: 2,
         shadowColor: Colors.black.withValues(alpha: dark ? 0.24 : 0.10),
         titleTextStyle: base.textTheme.titleMedium?.copyWith(
           color: palette.textPrimary,
@@ -377,7 +412,7 @@ class KapyTheme {
           fontWeight: FontWeight.w600,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(14),
           side: BorderSide(color: palette.controlBorder, width: 0.5),
         ),
       ),
@@ -385,7 +420,7 @@ class KapyTheme {
         color: palette.surfaceBackground,
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.black.withValues(alpha: dark ? 0.24 : 0.10),
-        elevation: 4,
+        elevation: 2,
         menuPadding: const EdgeInsets.all(6),
         position: PopupMenuPosition.under,
         textStyle: base.textTheme.bodyMedium?.copyWith(
@@ -393,12 +428,17 @@ class KapyTheme {
           color: palette.textPrimary,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(9),
           side: BorderSide(color: palette.controlBorder, width: 0.5),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
         style: ButtonStyle(
+          minimumSize: WidgetStatePropertyAll(Size.square(iconButtonExtent)),
+          maximumSize: WidgetStatePropertyAll(Size.square(iconButtonExtent)),
+          padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+          visualDensity: VisualDensity.standard,
+          tapTargetSize: AppControlMetrics.iconButtonTapTargetSize,
           foregroundColor: WidgetStatePropertyAll(palette.textSecondary),
           backgroundColor: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.pressed)) {
@@ -412,21 +452,22 @@ class KapyTheme {
           }),
           overlayColor: const WidgetStatePropertyAll(Colors.transparent),
           shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           ),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
+          minimumSize: Size(0, buttonHeight),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          tapTargetSize: tapTarget,
           elevation: 0,
           shadowColor: Colors.transparent,
           backgroundColor: accent,
           foregroundColor: onAccent,
           disabledBackgroundColor: palette.controlBackground,
           disabledForegroundColor: palette.textTertiary,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(11),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: base.textTheme.labelLarge?.copyWith(
             fontSize: 13,
             fontWeight: FontWeight.w600,
@@ -435,12 +476,13 @@ class KapyTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+          minimumSize: Size(0, buttonHeight),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          tapTargetSize: tapTarget,
           elevation: 0,
           foregroundColor: palette.textPrimary,
           side: BorderSide(color: palette.controlBorder, width: 0.5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(11),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: base.textTheme.labelLarge?.copyWith(
             fontSize: 13,
             fontWeight: FontWeight.w500,
@@ -449,10 +491,11 @@ class KapyTheme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
+          minimumSize: Size(0, buttonHeight),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          tapTargetSize: tapTarget,
           foregroundColor: accent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
           textStyle: base.textTheme.labelLarge?.copyWith(
             fontSize: 13,
             fontWeight: FontWeight.w600,
@@ -460,6 +503,8 @@ class KapyTheme {
         ),
       ),
       switchTheme: SwitchThemeData(
+        materialTapTargetSize: tapTarget,
+        splashRadius: 16,
         thumbColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
               ? onAccent
@@ -494,7 +539,7 @@ class KapyTheme {
         ),
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(7),
           border: Border.all(color: palette.controlBorder, width: 0.5),
           boxShadow: [
             BoxShadow(
