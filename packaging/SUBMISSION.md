@@ -236,28 +236,37 @@ is a dependency.
 - [x] Release type is `MANUAL`. Note that it reverted to `AFTER_APPROVAL` once
   after a UI save, so re-check it just before submitting.
 
-Two gates, one local and one against the live record:
+### The two gates
 
-    packaging/preflight_ios.sh --submission
+Both are read-only, so neither can damage a record:
 
-checks the repo and toolchain before archiving. Everything the App Store
-Connect API can see — version, build, listing, screenshots, rating, price,
-availability, review contact — was verified separately and passed 25 of 25
-checks. **App Privacy is the one thing the API cannot read at all**: the app
-resource exposes no data-usage relationship, so *Data Not Collected* has to be
-confirmed by eye in the UI.
+    packaging/preflight_ios.sh --submission    the repo and the toolchain
+    packaging/audit_ios.py                     the live App Store Connect record
 
-Two API paths worth recording, because the obvious ones return 404 and read as
-"not configured" when the resource is really there:
+Run the first before archiving. Run the second before opening App Store
+Connect, and again just before submitting: it exits non-zero on a blocker, and
+it re-reads the record rather than trusting what was set earlier. That matters,
+because `releaseType` has silently reverted from `MANUAL` to `AFTER_APPROVAL`
+after a UI save at least once.
+
+`audit_ios.py` also compares the store's version string against `pubspec.yaml`.
+The record was originally created as `1.0` while the build declared `1.0.0`,
+which is the classic reason a processed build never appears in the version
+dropdown.
+
+**App Privacy is the one thing neither gate can check.** The apps resource
+exposes no data-usage relationship of any kind, so *Data Not Collected* has to
+be confirmed by eye in the UI. Everything else is read from the live record.
+
+Three API shapes worth recording, because the obvious form returns 404 and
+reads as "not configured" when the resource is really there:
 
 - availability is `GET /v1/apps/{id}/appAvailabilityV2`, not
   `/v2/apps/{id}/appAvailability`
 - a single territory toggles through `PATCH /v1/territoryAvailabilities/{id}`,
   while the `/v2/` form of that same path returns `NOT_FOUND`
-
-Run the read-only gate before archiving or opening App Store Connect:
-
-    packaging/preflight_ios.sh --submission
+- the age-rating questionnaire only accepts a complete payload; patching one
+  attribute at a time always fails with `ENTITY_ERROR.ATTRIBUTE.REQUIRED`
 
 ### Screenshots
 
