@@ -6,6 +6,17 @@
 #   packaging/upload_play.py listing    push the store listing copy and graphics
 #   packaging/upload_play.py validate   run the bundle preflight, upload nothing
 #   packaging/upload_play.py upload     validate, then deliver to a track
+#   packaging/upload_play.py promote    move an uploaded build to a wider track
+#
+#   --track internal|alpha|beta|production   alpha is closed testing, beta open
+#   --rollout 0.2                            staged release, promote only
+#
+# Play refuses to accept a version code it has already seen, so a build cannot
+# be re-uploaded to reach a wider track; promote reassigns the existing code
+# instead. That also means users install the exact bytes that were tested.
+#
+#   packaging/upload_play.py promote --track beta
+#   packaging/upload_play.py promote --track production --rollout 0.2
 #
 # With no argument it runs confirm -> validate -> upload in that order. `listing`
 # is deliberately not in that sequence: listing copy changes far less often than
@@ -302,6 +313,71 @@ def push_listing():
             call("DELETE", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}")
 
 
+def promote(version_code, track, rollout):
+    """Move an already-uploaded build to another track.
+
+    Play refuses a second upload of a version code that already exists, so a
+    build cannot be re-sent to reach a wider track. Promotion is a different
+    call: it assigns the existing code to another track, which is also what
+    keeps the artifact users install byte-identical to the one already tested.
+    """
+    if rollout is not None and not 0 < rollout <= 1:
+        die("--rollout takes a fraction between 0 and 1, for example 0.2")
+
+    target = f"{track} at {round(rollout * 100)}%" if rollout and rollout < 1 else track
+    info(f"Promoting version code {version_code} to {target}")
+
+    edit = call("POST", f"{API}/applications/{PACKAGE_NAME}/edits", body={})
+    edit_id = edit["id"]
+    committed = False
+    try:
+        # Confirm the code exists somewhere first. Play accepts a track update
+        # naming an unknown version code and simply produces an empty release,
+        # which looks like success and ships nothing.
+        tracks = call("GET", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}/tracks")
+        known = {
+            str(code)
+            for entry in tracks.get("tracks", [])
+            for release in entry.get("releases", [])
+            for code in release.get("versionCodes", []) or []
+        }
+        if str(version_code) not in known:
+            die(
+                f"version code {version_code} is not on any track yet. "
+                f"Known: {', '.join(sorted(known)) or 'none'}. Upload it first."
+            )
+
+        release = {"versionCodes": [str(version_code)]}
+        if rollout is not None and rollout < 1:
+            # A staged release can be halted or resumed from the Console if the
+            # crash rate moves; a completed one is live for everyone at once.
+            release["status"] = "inProgress"
+            release["userFraction"] = rollout
+        else:
+            release["status"] = "completed"
+
+        notes = listing_copy().get("releaseNotes")
+        if notes:
+            release["releaseNotes"] = [{"language": "en-US", "text": notes}]
+
+        call(
+            "PUT",
+            f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}/tracks/{track}",
+            body={"track": track, "releases": [release]},
+        )
+        call("POST", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:commit")
+        committed = True
+    finally:
+        if not committed:
+            call("DELETE", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}")
+
+    print(f"  version code {version_code} is now on '{track}'")
+    if track in ("alpha", "beta", "production"):
+        print("  This track is reviewed by Google before it reaches users.")
+    if rollout is not None and rollout < 1:
+        print(f"  Staged at {round(rollout * 100)}%. Increase or halt it from the Console.")
+
+
 def validate(bundle):
     info(f"Validating {os.path.basename(bundle)}")
     preflight = os.path.join(ROOT, "packaging", "preflight_android.sh")
@@ -345,20 +421,39 @@ def upload(bundle, track):
 def main():
     args = sys.argv[1:]
     mode, track, bundle = "all", "internal", DEFAULT_BUNDLE
+    rollout, version_code, track_given = None, None, False
     index = 0
     while index < len(args):
         argument = args[index]
-        if argument in ("confirm", "listing", "validate", "upload", "all"):
+        if argument in ("confirm", "listing", "validate", "upload", "promote", "all"):
             mode = argument
         elif argument == "--track":
             index += 1
             track = args[index] if index < len(args) else ""
+            track_given = True
         elif argument == "--bundle":
             index += 1
             bundle = args[index] if index < len(args) else ""
+        elif argument == "--rollout":
+            index += 1
+            try:
+                rollout = float(args[index]) if index < len(args) else None
+            except ValueError:
+                die("--rollout takes a fraction, for example 0.2")
+        elif argument == "--version-code":
+            index += 1
+            version_code = args[index] if index < len(args) else ""
         else:
             die(f"unknown argument '{argument}'")
         index += 1
+
+    # Promotion widens who can install the app, so the target is never implied.
+    if mode == "promote" and not track_given:
+        die("promote needs an explicit --track, for example --track beta")
+    if mode == "promote" and version_code is None:
+        _, version_code = pubspec_version()
+        if not version_code:
+            die("could not read the version code from pubspec.yaml; pass --version-code")
 
     if track not in VALID_TRACKS:
         die(f"track must be one of {', '.join(VALID_TRACKS)}")
@@ -369,6 +464,8 @@ def main():
         confirm(track)
     if mode == "listing":
         push_listing()
+    if mode == "promote":
+        promote(version_code, track, rollout)
     if mode in ("validate", "upload", "all"):
         validate(bundle)
     if mode in ("upload", "all"):
