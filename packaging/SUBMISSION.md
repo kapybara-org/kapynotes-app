@@ -387,6 +387,14 @@ stores' 30-character limit exactly.
 
 ### English (U.S.) listing copy
 
+`packaging/play_listing.json` holds this same text and is what
+`upload_play.py listing` actually pushes. The version below is here to be read
+and approved; if you change one, change the other. The character counts are
+checked by the script before anything is sent, because Play truncates an
+overlong field silently instead of refusing it.
+
+Pushed to the record on 3 September 2026, along with all 17 graphics.
+
 **App name** (30 of 30 characters)
 
 > Kapy Notes - Memo & Calculator
@@ -590,6 +598,29 @@ Without `key.properties`, Gradle falls back to the debug key so
   collected".
 - Create the service account grant. `upload_play.py` needs a Google Cloud
   service account that has been invited under Users and permissions.
+
+Set up on 3 September 2026 as
+`kapynotes-play-publisher@kapynotes-play.iam.gserviceaccount.com`, with app-level
+release permissions on Kapy Notes only and no account-level grants. Two things
+cost time and will cost it again on the next Google Cloud project:
+
+- The Play Console **API access** page could not be found from account
+  settings. It was unnecessary: create the project, enable the Google Play
+  Android Developer API on it, create the service account, then invite its
+  email under **Users and permissions**. That path does not depend on where
+  the Console has moved the shortcut.
+- Key creation was blocked by the organisation policy
+  `iam.disableServiceAccountKeyCreation`, which Google auto-enforces on new
+  organisations under Secure by Default. The fix is an override scoped to the
+  one project, not the organisation: set enforcement Off, create the key, then
+  set the project back to inheriting. Existing keys keep working, so the
+  exception does not need to stay open. If the override appears to take and
+  key creation still fails, the newer managed constraint
+  `iam.managed.disableServiceAccountKeyCreation` is enforced too and needs the
+  same treatment.
+
+A 401 means the key or the API; `The caller does not have permission` means the
+service account has not been invited to the app yet.
 
 ### Account type: organization, so no closed-test gate
 
