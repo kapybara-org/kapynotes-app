@@ -44,6 +44,10 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Golden diffs written by a failing `flutter test`, useful locally and never
+# worth committing.
+/test/failures/
+
 # Widget Preview related
 .widget_preview/
 

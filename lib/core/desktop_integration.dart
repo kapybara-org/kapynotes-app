@@ -57,7 +57,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     try {
       await hotKeyManager.register(
         candidate,
-        keyDownHandler: (_) => unawaited(showAndFocus()),
+        keyDownHandler: (_) => unawaited(toggleWindow()),
       );
       _openHotKey = candidate;
       return null;
@@ -66,7 +66,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
         try {
           await hotKeyManager.register(
             previous,
-            keyDownHandler: (_) => unawaited(showAndFocus()),
+            keyDownHandler: (_) => unawaited(toggleWindow()),
           );
           _openHotKey = previous;
         } catch (_) {
@@ -77,7 +77,18 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     }
   }
 
-  Future<void> showAndFocus() async {
+  /// Brings the window up, or puts it away if it is already the window you
+  /// are looking at.
+  ///
+  /// "Already there" deliberately means visible *and* focused. A window that
+  /// is merely visible behind something else should come forward on the first
+  /// press rather than disappear, which is what a plain visibility check would
+  /// have done.
+  Future<void> toggleWindow() async {
+    if (await windowManager.isVisible() && await windowManager.isFocused()) {
+      await windowManager.hide();
+      return;
+    }
     await windowManager.show();
     await windowManager.focus();
   }
