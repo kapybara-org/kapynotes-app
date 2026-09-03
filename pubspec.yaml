@@ -26,6 +26,13 @@ dependencies:
   # Opens the active exchange-rate source attribution. This is the only
   # outbound link in the app.
   url_launcher: ^6.3.2
+  # Sparkle (macOS) and WinSparkle (Windows) behind one API. Only the install
+  # half is used: the quiet check is our own, so no Sparkle UI appears until
+  # the user asks for it. See UpdateChecker.
+  auto_updater: ^1.0.0
+  # Lets the update check compare the appcast against the running build. The
+  # version is native (Info.plist / the .rc), not a Dart constant.
+  package_info_plus: ^10.2.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -12,6 +12,7 @@ import '../data/note_format.dart';
 import '../data/notes_store.dart';
 import '../data/rates.dart';
 import '../data/shortcut_prefs.dart';
+import '../data/update_checker.dart';
 import 'editor/note_editor.dart';
 import 'empty_state.dart';
 import 'sidebar.dart';
@@ -31,6 +32,7 @@ class HomePage extends StatefulWidget {
     required this.rates,
     required this.prefs,
     required this.shortcuts,
+    this.updates,
     this.desktopIntegration,
     required this.store,
   });
@@ -40,6 +42,7 @@ class HomePage extends StatefulWidget {
   final RatesRepository rates;
   final LayoutPrefs prefs;
   final ShortcutPrefs shortcuts;
+  final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
   final LocalStore store;
 
@@ -172,6 +175,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         layoutPrefs: widget.prefs,
         shortcuts: widget.shortcuts,
         rates: widget.rates,
+        updates: widget.updates,
         desktopIntegration: widget.desktopIntegration,
       ),
     );
@@ -257,6 +261,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     onCreate: _createNote,
                     onDelete: _deleteNote,
                     onSettingsPressed: _showSettings,
+                    updates: widget.updates,
                     showHeader: false,
                   ),
                   body: SafeArea(
@@ -332,6 +337,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       },
                       onDelete: _deleteNote,
                       onSettingsPressed: _showSettings,
+                      updates: widget.updates,
                     ),
                   ),
                 )

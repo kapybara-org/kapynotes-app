@@ -57,6 +57,20 @@ IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 //
+// WinSparkle
+//
+
+// WinSparkle looks the update-signing public key up as a resource under
+// exactly this name and type. It refuses any release whose DSA signature does
+// not verify against it, so a hijacked feed cannot ship a payload. Replace the
+// committed placeholder with the key printed by
+// `dart run auto_updater:generate_keys`; while it is a placeholder every
+// update is rejected, which is the correct way for this to fail.
+DSAPub                  DSAPEM                  "resources\\dsa_pub.pem"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
 // Version
 //
 

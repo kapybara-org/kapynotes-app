@@ -60,6 +60,10 @@ Compression=lzma2/max
 SolidCompression=yes
 ; Offers to close a running copy on upgrade rather than failing on locked DLLs.
 CloseApplications=yes
+; And brings it back afterwards. This matters for the in-app updater: WinSparkle
+; runs this installer with /VERYSILENT, which skips the [Run] entry below, so
+; without Restart Manager an update would silently leave the user with no app.
+RestartApplications=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

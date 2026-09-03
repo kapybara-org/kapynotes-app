@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
+import '../data/update_checker.dart';
 import 'app_logo.dart';
 import 'compact_icon_button.dart';
 import 'editor/note_footer.dart';
@@ -22,6 +23,7 @@ class Sidebar extends StatelessWidget {
     required this.onCreate,
     this.onDelete,
     this.onSettingsPressed,
+    this.updates,
     this.searchFocusNode,
     this.showHeader = true,
   });
@@ -35,6 +37,10 @@ class Sidebar extends StatelessWidget {
   final VoidCallback onCreate;
   final ValueChanged<String>? onDelete;
   final VoidCallback? onSettingsPressed;
+
+  /// Drives the dot on the settings gear. Null where the app cannot update
+  /// itself, which is also where the dot would never have anything to say.
+  final UpdateChecker? updates;
   final FocusNode? searchFocusNode;
   final bool showHeader;
 
@@ -87,7 +93,10 @@ class Sidebar extends StatelessWidget {
                     ),
             ),
             if (onSettingsPressed != null)
-              _SidebarFooter(onSettingsPressed: onSettingsPressed!),
+              _SidebarFooter(
+                onSettingsPressed: onSettingsPressed!,
+                updates: updates,
+              ),
           ],
         ),
       ),
@@ -96,13 +105,15 @@ class Sidebar extends StatelessWidget {
 }
 
 class _SidebarFooter extends StatelessWidget {
-  const _SidebarFooter({required this.onSettingsPressed});
+  const _SidebarFooter({required this.onSettingsPressed, this.updates});
 
   final VoidCallback onSettingsPressed;
+  final UpdateChecker? updates;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final updates = this.updates;
     return Container(
       height: NoteFooter.height,
       decoration: BoxDecoration(
@@ -110,7 +121,64 @@ class _SidebarFooter extends StatelessWidget {
       ),
       padding: const EdgeInsets.only(left: 8),
       alignment: Alignment.centerLeft,
-      child: FooterSettingsButton(onPressed: onSettingsPressed),
+      child: updates == null
+          ? FooterSettingsButton(onPressed: onSettingsPressed)
+          : ListenableBuilder(
+              listenable: updates,
+              builder: (context, _) => _UpdateDot(
+                visible: updates.hasUpdate,
+                child: FooterSettingsButton(
+                  onPressed: onSettingsPressed,
+                  tooltip: updates.hasUpdate
+                      ? 'Settings — update available'
+                      : 'Settings',
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+/// The entire announcement outside the settings pane: a 6px dot on the gear.
+///
+/// It is painted over the button rather than beside it, so nothing in the
+/// footer moves when an update appears, and it ignores pointers so the gear
+/// keeps the whole hit target.
+class _UpdateDot extends StatelessWidget {
+  const _UpdateDot({required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!visible) return child;
+    final palette = context.palette;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned(
+          top: 3,
+          right: 3,
+          child: IgnorePointer(
+            child: Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: palette.chipCurrency,
+                shape: BoxShape.circle,
+                // A hairline of the sidebar behind it keeps the dot legible
+                // where it overlaps the gear's own strokes.
+                border: Border.all(
+                  color: palette.sidebarBackground,
+                  width: 1,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -24,6 +24,10 @@ class AppPlatform {
   static bool get isDesktop => isMacOS || isWindows || isLinux;
   static bool get isMobile => isIOS || isAndroid;
 
+  /// Where the app updates itself. Sparkle and WinSparkle cover macOS and
+  /// Windows; Linux has no equivalent, and the stores update the phones.
+  static bool get hasAutoUpdate => isMacOS || isWindows;
+
   /// Widget tests render without a native window behind transparent surfaces,
   /// so they keep the opaque fallback used on non-vibrant platforms.
   static bool get isFlutterTest =>

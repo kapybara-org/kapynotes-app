@@ -34,5 +34,32 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+
+	<!-- Sparkle. The feed URL is set in Dart rather than here on purpose: the
+	     quiet daily check is our own, and Sparkle is only ever pointed at the
+	     appcast at the moment someone presses Update. -->
+
+	<!-- Sparkle refuses any release whose EdDSA signature does not verify
+	     against this key, so a hijacked feed cannot ship a payload. Its private
+	     half lives in the login keychain of whoever cut the release, and in the
+	     SPARKLE_ED_PRIVATE_KEY repository secret. Print it again any time with
+	     `macos/Pods/Sparkle/bin/generate_keys -p`. -->
+	<key>SUPublicEDKey</key>
+	<string>m/QEUYcH9j7ZJdgby5D1Kqr6utQlbe1EIUl/703mCt8=</string>
+
+	<!-- The app is sandboxed, so it cannot replace its own bundle. This hands
+	     installation to Sparkle's Installer XPC service, which runs outside
+	     the sandbox. Paired with the two mach-lookup exceptions in
+	     Runner/*.entitlements; remove one and updates fail at install time. -->
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+
+	<!-- Sparkle's own scheduler stays off. It checks against the standard user
+	     driver, which puts its update panel on screen unprompted the moment it
+	     finds a release — the interruption the whole design avoids. -->
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
 </dict>
 </plist>

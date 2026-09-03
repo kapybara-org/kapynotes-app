@@ -12,6 +12,7 @@ import 'data/local_store.dart';
 import 'data/notes_store.dart';
 import 'data/rates.dart';
 import 'data/shortcut_prefs.dart';
+import 'data/update_checker.dart';
 import 'ui/app_logo.dart';
 import 'ui/home_page.dart';
 import 'ui/instant_capture.dart';
@@ -25,6 +26,7 @@ class KapyNotesApp extends StatefulWidget {
     required this.rates,
     required this.prefs,
     required this.shortcuts,
+    this.updates,
     this.desktopIntegration,
   });
 
@@ -33,6 +35,9 @@ class KapyNotesApp extends StatefulWidget {
   final RatesRepository rates;
   final LayoutPrefs prefs;
   final ShortcutPrefs shortcuts;
+
+  /// Null off macOS and Windows, where the app cannot update itself.
+  final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
 
   @override
@@ -42,11 +47,15 @@ class KapyNotesApp extends StatefulWidget {
 class _KapyNotesAppState extends State<KapyNotesApp>
     with WidgetsBindingObserver {
   static const _rateRefreshDelay = Duration(seconds: 2);
+  // Behind the rate refresh: neither is urgent, and launch belongs to the
+  // first frame rather than to two background fetches racing it.
+  static const _updateCheckDelay = Duration(seconds: 5);
 
   final TextEditingController _launchController = TextEditingController();
   EngineProvider? _engines;
   Future<void>? _hydration;
   Timer? _rateRefreshTimer;
+  Timer? _updateCheckTimer;
   bool _ready = false;
 
   @override
@@ -82,19 +91,30 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       widget.notes.create();
     }
     widget.rates.loadCache();
+    widget.updates?.loadCache();
     _engines = EngineProvider(widget.rates, widget.prefs);
     _ready = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scheduleRateRefresh();
+      if (mounted) _scheduleBackgroundFetches();
     });
   }
 
-  void _scheduleRateRefresh() {
+  void _scheduleBackgroundFetches() {
     if (!_ready || AppPlatform.isFlutterTest) return;
     _rateRefreshTimer?.cancel();
     _rateRefreshTimer = Timer(
       _rateRefreshDelay,
       () => unawaited(widget.rates.refreshIfStale()),
+    );
+
+    final updates = widget.updates;
+    if (updates == null) return;
+    _updateCheckTimer?.cancel();
+    // Rate-limited to once a day inside the checker, so firing this on every
+    // resume costs nothing but keeps a long-lived window current.
+    _updateCheckTimer = Timer(
+      _updateCheckDelay,
+      () => unawaited(updates.checkIfDue()),
     );
   }
 
@@ -108,9 +128,11 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _rateRefreshTimer?.cancel();
+    _updateCheckTimer?.cancel();
     _launchController.dispose();
     _engines?.dispose();
     widget.rates.dispose();
+    widget.updates?.dispose();
     widget.desktopIntegration?.dispose();
     super.dispose();
   }
@@ -120,7 +142,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     // Writes are coalesced while the app is in use; losing focus or being
     // backgrounded is the moment to make sure everything is on disk.
     if (state == AppLifecycleState.resumed) {
-      _scheduleRateRefresh();
+      _scheduleBackgroundFetches();
     } else {
       unawaited(_flushAfterHydration());
     }
@@ -152,6 +174,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         rates: widget.rates,
         prefs: widget.prefs,
         shortcuts: widget.shortcuts,
+        updates: widget.updates,
         desktopIntegration: widget.desktopIntegration,
         store: widget.store,
       ),

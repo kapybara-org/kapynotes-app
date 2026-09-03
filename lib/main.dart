@@ -9,6 +9,7 @@ import 'data/local_store.dart';
 import 'data/notes_store.dart';
 import 'data/rates.dart';
 import 'data/shortcut_prefs.dart';
+import 'data/update_checker.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,6 +19,9 @@ Future<void> main() async {
   final prefs = LayoutPrefs(store);
   final shortcuts = ShortcutPrefs(store);
   final rates = RatesRepository(store);
+  // Only where Sparkle/WinSparkle can actually install: Linux desktop and the
+  // phones get their updates elsewhere and would show a button that lies.
+  final updates = AppPlatform.hasAutoUpdate ? UpdateChecker(store) : null;
 
   DesktopIntegration? desktopIntegration;
   if (AppPlatform.isDesktop) {
@@ -41,6 +45,7 @@ Future<void> main() async {
       rates: rates,
       prefs: prefs,
       shortcuts: shortcuts,
+      updates: updates,
       desktopIntegration: desktopIntegration,
     ),
   );
