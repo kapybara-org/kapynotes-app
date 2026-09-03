@@ -325,10 +325,15 @@ metadata section, choose the release mode, and submit for review.
 
 ### Going paid later
 
-Free to paid is allowed at any time and needs no review. The catch is that it
-is a one-way door for everyone who already downloaded: an App Store purchase is
-permanent, so every free download keeps the app forever, including every future
-update. Flipping the price to 19.99 later only affects new users.
+This section is about the **App Store only**. Play works the opposite way and
+a published free app can never be made paid there; see *Pricing* under Google
+Play before applying any of this to Android.
+
+On the App Store, free to paid is allowed at any time and needs no review. The
+catch is that it is a one-way door for everyone who already downloaded: an App
+Store purchase is permanent, so every free download keeps the app forever,
+including every future update. Flipping the price to 19.99 later only affects
+new users.
 
 Two consequences worth deciding on before the free window gets long:
 
@@ -351,13 +356,183 @@ stay that way.
 
 ## Google Play
 
-Not submitted yet. The pipeline exists and the bundle builds; what is missing
-is a Play Console listing and a signing key, both of which have to come from
-outside the repo.
+Not submitted yet. The pipeline exists, the bundle builds, and every listing
+asset and every answer is settled below. What is missing is a Play Console
+listing, a signing key, and a service account — all three come from outside the
+repo, and none of them can be created through an API.
 
+    node packaging/play_graphics.mjs              icon and feature graphic
     packaging/preflight_android.sh --submission   repo, signing and listing art
     packaging/release.sh android                  signed AAB to build/release/
     packaging/upload_play.py                      confirm, validate, deliver
+
+### App record values
+
+Enter these verbatim. The app name matches the App Store record, and fits both
+stores' 30-character limit exactly.
+
+| Field | Value |
+|---|---|
+| App name | `Kapy Notes - Memo & Calculator` |
+| Default language | English (United States) |
+| Package name | `com.kapybara.kapynotes` (**permanent**, see below) |
+| App or game | App |
+| Free or paid | **Free.** Same reasoning as iOS: a paid listing needs a merchant account, and v1.0.0 should not wait on one. |
+| Category | Productivity |
+| Tags | Notes, Calculator, Productivity |
+| Contact email | hello@kapybara.company |
+| Website | https://kapynotes.com |
+| Privacy policy | https://kapynotes.com/privacy |
+| Support URL | https://kapynotes.com/support |
+
+### English (U.S.) listing copy
+
+**App name** (30 of 30 characters)
+
+> Kapy Notes - Memo & Calculator
+
+**Short description** (78 of 80 characters)
+
+> Notepad with a live calculator on every line. Budgets, units, currency, lists.
+
+**Full description** (1,648 of 4,000 characters)
+
+> Kapy Notes is a fast, private notepad with a live calculator built into every line.
+>
+> Write a thought, type a calculation, and the answer appears right beside it. There is no mode to switch, no formula to set up, and no separate calculator to open.
+>
+> WRITE THE WAY YOU THINK
+> Start with a plain note and add numbers wherever they belong. Kapy Notes reads each line as you type and keeps a running total at the bottom, so a shopping list, a travel budget, and a project estimate can live in the same place as the rest of your writing.
+>
+> WHAT PEOPLE USE IT FOR
+> • Notes - meeting notes, ideas, and everyday scratch work
+> • Checklists - groceries, packing, and to-dos you can tick off
+> • Journal - dated entries with automatic day separators
+> • Math - budgets, splits, percentages, and estimates
+> • Conversions - currency, length, weight, volume, and temperature
+>
+> CALCULATIONS THAT READ LIKE SENTENCES
+> • 1250 + 8% for tax or a tip
+> • 120 EUR to USD at refreshed exchange rates
+> • 350 g to oz while scaling a recipe
+> • 180 C to F
+> • 100 km / 2 h
+>
+> PRIVATE BY DEFAULT
+> • Notes are stored on your device, not on our servers
+> • No account and no login
+> • No ads, no analytics, and no tracking
+> • Works offline; the internet is used only to refresh currency rates
+>
+> BUILT TO STAY OUT OF THE WAY
+> • Light and dark themes that follow your system setting
+> • A two-pane layout on tablets and a single column on phones
+> • Search across every note
+> • Bold, bullets, and headings when a note needs structure
+> • Timestamps in the time zone you choose
+>
+> Kapy Notes is free to use and has no in-app purchases.
+>
+> Exchange rates are supplied by Frankfurter, with ExchangeRate-API as a fallback.
+
+Play rejects promotional decoration in the title and short description:
+no emoji, no ALL CAPS words, no "#1", no "best", and no price claims. The copy
+above is already clear of all of them. The section headers inside the full
+description are allowed, because Play only restricts the title and the short
+description.
+
+### Listing graphics
+
+`node packaging/play_graphics.mjs` renders the two assets the app build never
+produces, into `build/store-listing/play-store/`:
+
+| Asset | Spec | File |
+|---|---|---|
+| App icon | 512 x 512, 32-bit PNG, **alpha required**, under 1 MB | `icon-512.png` |
+| Feature graphic | 1024 x 500, 24-bit PNG, **no alpha**, JPEG also accepted | `feature-graphic.png` |
+| Phone screenshots | 5 at 1080 x 1920, 9:16, no alpha | `phone/` |
+| 7-inch tablet | 5 at 1080 x 1920 | `tablet-7/` |
+| 10-inch tablet | 5 at 1080 x 1920 | `tablet-10/` |
+
+The alpha rule runs in opposite directions for the two graphics, which is the
+easy thing to get wrong; `preflight_android.sh --submission` now checks the
+dimensions, the alpha channel and the file size of both rather than only
+counting screenshots.
+
+The icon keeps the cream frame around the coral squircle on purpose. That is
+what `values/colors.xml` sets as the adaptive-icon background, so the store
+tile and the icon on the home screen after install are the same drawing.
+
+A promo video is optional and there is none. Leaving it out is fine; adding one
+later overlays a play button on the centre of the feature graphic, which is why
+the artwork keeps its centre clear.
+
+### Data Safety
+
+Play's Data Safety form is stricter than Apple's App Privacy: it asks about
+each data type separately instead of accepting one "not collected". The answers
+below follow from the repo, not from intent.
+
+- **Does your app collect or share any of the required user data types?**
+  **No.** Notes, calculations and preferences are written to the app's own
+  private storage through `path_provider` and never leave the device. There is
+  no account, no backend, and no analytics, crash-reporting or advertising SDK
+  in the dependency graph.
+- The follow-up questions about encryption in transit, deletion requests and
+  data types only appear once collection is declared, so the form ends there.
+- **Advertising ID:** **not used.** No dependency merges
+  `com.google.android.gms.permission.AD_ID` into the manifest; the only declared
+  permission in the release build is `INTERNET`.
+- **Photos, files, location, contacts, microphone:** none requested.
+
+Storing data locally is not "collection" under Play's definition, which covers
+data transmitted off the device. The rate refresh sends no note content: it is
+an unauthenticated HTTPS GET for public USD rates, and the provider receives
+only the connection metadata inherent to any HTTPS request, which
+`https://kapynotes.com/privacy` discloses.
+
+### Content rating and target audience
+
+The IARC questionnaire, answered from the same audit that produced the App
+Store 4+ rating:
+
+- Category: **Utility, Productivity, Communication, or Other**
+- Violence, sexuality, language, controlled substances, gambling: **No** to all
+- Does the app let users interact or exchange content? **No**
+- Does the app share the user's location? **No**
+- Does the app allow the purchase of digital goods? **No**
+- Does the app contain unrestricted internet browsing? **No.** The single
+  attribution link opens the system browser; there is no in-app browser.
+
+Expected result: **Everyone / PEGI 3**, matching 4+ on the App Store.
+
+Target audience: select **13 and over**. Including an under-13 group pulls the
+listing into the Families policy programme, with its own design and ads
+requirements, for no benefit here. Answer **No** to "could your app's store
+listing unintentionally appeal to children".
+
+Other declarations: ads **No**, app access **all functionality available without
+special access** (there is no login), and **No** to the government, financial,
+health and news app categories.
+
+### Repo-verified release settings
+
+- [x] Package name `com.kapybara.kapynotes` pinned by preflight
+- [x] Version `1.0.0`, version code `1`, from `pubspec.yaml`
+- [x] `targetSdk` 36 and `compileSdk` 36, from Flutter 3.47.2
+- [x] `INTERNET` declared in the release manifest
+- [x] `ACTION_VIEW` / `https` query present for the attribution link
+- [x] Release build type resolves a real signing config
+- [x] Manifest does not force `debuggable`
+- [x] Only `INTERNET` is requested; no `AD_ID`
+- [x] All 5 screenshots present for phone, 7-inch and 10-inch
+- [x] Store icon and feature graphic generated and spec-checked
+- [ ] Upload keystore created and `android/key.properties` written
+
+**The API 36 gate is already live.** Since 31 August 2026, a new app must
+target Android 16 to be accepted at all. This build targets 36, so it clears
+it, but that is the deadline that would silently reject the first upload if
+Flutter were ever pinned back.
 
 ### The package name is permanent
 
@@ -384,8 +559,15 @@ Preflight now fails on either.
 ### Signing
 
 Release signing is supplied out of tree through `android/key.properties`, which
-is gitignored along with `*.jks`. Copy `android/key.properties.example` and
-generate a keystore:
+is gitignored along with `*.jks`. One command creates both the keystore and the
+properties file, prompting for a password it never echoes or stores in history:
+
+    packaging/create_upload_keystore.sh
+
+It writes `~/kapynotes-upload.jks`, refuses to overwrite an existing keystore,
+and prints the SHA-1 and SHA-256 fingerprints that Play shows under **App
+integrity**. To do it by hand instead, copy `android/key.properties.example`
+and run:
 
     keytool -genkey -v -keystore ~/kapynotes-upload.jks \
       -keyalg RSA -keysize 2048 -validity 10000 -alias upload
@@ -409,16 +591,49 @@ Without `key.properties`, Gradle falls back to the debug key so
 - Create the service account grant. `upload_play.py` needs a Google Cloud
   service account that has been invited under Users and permissions.
 
-### Check the account type before planning a date
+### Account type: organization, so no closed-test gate
 
-A **personal** Play developer account created after 13 November 2023 must run a
-closed test with **12 testers opted in for 14 continuous days** before it can
-even apply for production access, and that application is reviewed for up to a
-week. "Opted in" means installed, not invited.
+Confirmed on 3 September 2026: the Kapybara LLC Play account is an
+**organization** account, so it can publish straight to production.
 
-**Organization accounts are exempt** and can publish straight to production.
-Kapybara LLC may well be registered as one; confirm it before promising a date,
-because it is the difference between days and a month.
+This is what it avoids. A **personal** account created after 13 November 2023
+must run a closed test with **12 testers opted in for 14 continuous days**
+before it can even apply for production access, and that application is
+reviewed for up to a week. "Opted in" means installed, not invited, and the
+14 days reset if the twelfth tester drops out on day seven. Organization
+accounts are exempt from all of it.
+
+Internal testing is still worth one pass to check the signed bundle on a real
+device, but it is a choice here, not a gate.
+
+### Pricing: free, and it cannot be undone
+
+**Play is not the App Store on this point.** On the App Store a free app can be
+flipped to paid at any time. On Play, once an app is published free, **it can
+never become paid** — the only direction that stays open is paid to free. The
+Console says as much on the pricing page, and that sentence is the whole
+decision.
+
+**Free is the only option that fits the product plan**, which is settled as of
+3 September 2026: a free basic app, plus a **Pro Lifetime** unlock at USD 20
+that adds sync and a raised page limit. Both features are still to be built.
+
+A Paid listing charges for the download itself, so it cannot express that plan
+at all — it would put the USD 20 in front of the basic version instead of in
+front of Pro. Free plus a one-time in-app product is the shape that matches,
+and it is also what iOS does, so the two stores stay coherent for anyone who
+owns both devices.
+
+The permanent free-to-paid door closing therefore costs nothing here. What it
+does close is the option of ever charging for the download, which is not the
+plan and would contradict the free basic tier.
+
+Leave **automatic protection** on. It adds an installer check that nudges users
+who obtained the app somewhere other than Play back to Play. That costs nothing
+here because the website deliberately sends Android and iOS to the stores and
+offers no direct download — see the note at the top of
+`website/src/pages/index.astro`. Revisit the toggle only if a direct APK is
+ever offered, because it would then nag those users.
 
 ### Delivery
 
@@ -435,3 +650,30 @@ The listing screenshots are already generated for all three form factors under
 
 When accounts ship, add in-app account deletion. If any social login is added,
 also add Sign in with Apple. Provide App Review with a working demo account.
+
+### What changes when Pro Lifetime ships
+
+Nothing below blocks v1.0.0. It is listed here because the free listing is
+being published on the assumption that all of it is possible later, and it is.
+
+- **Product type.** Pro Lifetime is a Play **one-time product**, configured as
+  non-consumable so the entitlement is permanently owned and restores on a new
+  device. It is not a subscription and not a listing price.
+- **Play Billing is mandatory** for unlocking in-app features on Android. The
+  Mac build sells the same Pro Lifetime for USD 19.99 direct from the website;
+  honouring a licence bought there is fine, but the Android app must not gain
+  a link or prompt that steers users to buy it outside Play. Anti-steering
+  rules have been moving since the Epic litigation, so re-check them at
+  implementation time rather than trusting this paragraph.
+- **Start the payments profile early.** Selling anything needs a Play payments
+  profile with bank and tax details, and verification is not instant. It is not
+  needed to publish v1.0.0 free, so it is the thing most likely to be left
+  until it is urgent.
+- **Listing declarations change.** The store gains an "In-app purchases" badge
+  and the price range. The iOS review notes and this document both currently
+  state there are no in-app purchases; both have to stop saying that.
+- **Data Safety changes with sync, not with billing.** Sync moves note content
+  off the device, which turns the current "no data collected" answer into a
+  real disclosure covering what is uploaded, that it is encrypted in transit,
+  and that users can request deletion. That is the same release that owes Play
+  in-app account deletion, above.
