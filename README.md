@@ -55,6 +55,18 @@ by Kapybara LLC (team `96V66447C6`). `SKIP_NOTARIZE=1` builds a DMG without
 contacting Apple, for local testing. `packaging/SUBMISSION.md` covers the
 certificates, the notarisation credential and the App Store metadata.
 
+Windows is built in CI rather than here: `flutter build windows` needs a Windows
+host with Visual Studio's "Desktop development with C++" workload, and macOS
+does not even offer the subcommand. `.github/workflows/windows-build.yml`
+compiles the release build on `windows-latest`, wraps it with
+`packaging/windows/kapynotes.iss`, and uploads two artifacts — the raw
+`Release/` folder and `KapyNotes-<version>-setup.exe`. The installer is Inno
+Setup, installing per-user under `%LOCALAPPDATA%\Programs` so it never raises a
+UAC prompt; on Windows the DLLs and `data/` folder have to ship alongside the
+exe, which is why there is an installer rather than a bare download. It is not
+Authenticode-signed yet, so SmartScreen warns on download — that is the one
+thing still between these builds and the download page.
+
 ## How it works
 
 ### The calculation engine (`lib/calc/`)
