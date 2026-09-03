@@ -32,7 +32,7 @@ extension ShortcutActionCopy on ShortcutAction {
   };
 
   String get description => switch (this) {
-    ShortcutAction.openApp => 'Show the app from anywhere',
+    ShortcutAction.openApp => 'Show the app from anywhere, or hide it again',
     ShortcutAction.newNote => 'Create and focus a blank note',
     ShortcutAction.findNotes => 'Open the sidebar and search',
     ShortcutAction.toggleSidebar => 'Show or hide the notes list',
@@ -172,8 +172,33 @@ class ShortcutPrefs extends ChangeNotifier {
         action:
             ShortcutBinding.fromJson(saved[action.name]) ?? defaultFor(action),
     };
+
+    // Changing the default alone would only reach new installs. Anyone still
+    // carrying the superseded binding never chose it — it was simply what
+    // shipped — so move them across and write it back once. A binding they
+    // actually picked, even an unlucky one, is theirs to keep.
+    if (_bindings[ShortcutAction.openApp] == _supersededOpenApp()) {
+      _bindings[ShortcutAction.openApp] = defaultFor(ShortcutAction.openApp);
+      _persist();
+      return;
+    }
+
     notifyListeners();
   }
+
+  /// The 1.0.0 default for [ShortcutAction.openApp]: Cmd/Ctrl+Shift+Space,
+  /// which is also 1Password's Quick Access. Registration went to whichever
+  /// app asked first, and it was rarely this one.
+  ///
+  /// A method rather than a constant because the answer depends on the host
+  /// platform, which tests override.
+  static ShortcutBinding _supersededOpenApp() => ShortcutBinding(
+    logicalKey: LogicalKeyboardKey.space,
+    physicalKey: PhysicalKeyboardKey.space,
+    meta: AppPlatform.isMacOS,
+    control: !AppPlatform.isMacOS,
+    shift: true,
+  );
 
   ShortcutBinding bindingFor(ShortcutAction action) => _bindings[action]!;
 
@@ -211,12 +236,29 @@ class ShortcutPrefs extends ChangeNotifier {
   static ShortcutBinding defaultFor(ShortcutAction action) {
     final useMeta = AppPlatform.isMacOS;
     return switch (action) {
+      // The only shortcut registered system-wide, so it has to dodge every
+      // other app rather than just this one. It used to be Cmd/Ctrl+Shift+
+      // Space, which is 1Password's Quick Access default — whoever asked
+      // first won, and it usually was not us.
+      //
+      // Option+Cmd+X is clear of the macOS bindings that neighbour it:
+      // Option+Cmd+Space is Finder search, +D toggles the Dock, +T the
+      // toolbar, +W closes all windows, +C/+V are copy and paste style,
+      // +Esc is Force Quit.
+      //
+      // Windows deliberately differs. Ctrl+Alt is what AltGr sends on
+      // international layouts, so a global Ctrl+Alt+X would fire whenever a
+      // German or Nordic user typed a character in that layer. Ctrl+Shift+X
+      // has no such double life.
+      //
+      // X sits bottom-left, so the whole chord is one comfortable left hand.
       ShortcutAction.openApp => ShortcutBinding(
-        logicalKey: LogicalKeyboardKey.space,
-        physicalKey: PhysicalKeyboardKey.space,
+        logicalKey: LogicalKeyboardKey.keyX,
+        physicalKey: PhysicalKeyboardKey.keyX,
         meta: useMeta,
         control: !useMeta,
-        shift: true,
+        alt: useMeta,
+        shift: !useMeta,
       ),
       ShortcutAction.newNote => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyN,

@@ -142,6 +142,63 @@ void main() {
     expect(prefs.timeZoneId, isNull);
   });
 
+  // The summon shortcut is the only one registered system-wide, so the exact
+  // chord matters: Cmd/Ctrl+Shift+Space collided with 1Password's Quick Access
+  // and simply never fired. Windows differs from macOS on purpose — Ctrl+Alt is
+  // AltGr on international layouts.
+  test('the summon shortcut avoids the combinations other apps claim', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    final mac = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
+    expect(mac.displayLabel, 'Cmd + Option + X');
+    expect(mac.shift, isFalse, reason: 'Cmd+Shift+Space is 1Password');
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    final windows = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
+    expect(windows.displayLabel, 'Ctrl + Shift + X');
+    expect(windows.alt, isFalse, reason: 'Ctrl+Alt is AltGr on many layouts');
+  });
+
+  test('an install still on the 1Password-shadowed shortcut is moved across', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+
+    // What 1.0.0 wrote to disk.
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {
+      'openApp': ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.space,
+        physicalKey: PhysicalKeyboardKey.space,
+        meta: true,
+        shift: true,
+      ).toJson(),
+    };
+
+    final prefs = ShortcutPrefs(store)..load();
+    expect(prefs.bindingFor(ShortcutAction.openApp).displayLabel, 'Cmd + Option + X');
+
+    // Written back, so the move survives a restart.
+    final reloaded = ShortcutPrefs(store)..load();
+    expect(reloaded.bindingFor(ShortcutAction.openApp).displayLabel, 'Cmd + Option + X');
+  });
+
+  test('a shortcut the user chose themselves is left alone', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+
+    final chosen = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.f9,
+      physicalKey: PhysicalKeyboardKey.f9,
+      control: true,
+    );
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {'openApp': chosen.toJson()};
+
+    final prefs = ShortcutPrefs(store)..load();
+    expect(prefs.bindingFor(ShortcutAction.openApp), chosen);
+  });
+
   test('shortcuts are editable, persistent, and cannot collide', () {
     final store = _MemoryStore();
     final prefs = ShortcutPrefs(store)..load();
@@ -152,7 +209,7 @@ void main() {
       shift: true,
     );
 
-    expect(prefs.bindingFor(ShortcutAction.openApp).keyLabel, 'Space');
+    expect(prefs.bindingFor(ShortcutAction.openApp).keyLabel, 'X');
     expect(prefs.conflictFor(ShortcutAction.findNotes, replacement), isNull);
 
     prefs.update(ShortcutAction.findNotes, replacement);
