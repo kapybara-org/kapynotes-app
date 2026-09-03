@@ -12,6 +12,7 @@ import '../core/toast.dart';
 import '../data/layout_prefs.dart';
 import '../data/rates.dart';
 import '../data/shortcut_prefs.dart';
+import '../data/update_checker.dart';
 import '../data/time_zones.dart';
 
 /// The groups of settings, one per rail entry.
@@ -52,12 +53,14 @@ class SettingsDialog extends StatefulWidget {
     required this.layoutPrefs,
     required this.shortcuts,
     required this.rates,
+    this.updates,
     this.desktopIntegration,
   });
 
   final LayoutPrefs layoutPrefs;
   final ShortcutPrefs shortcuts;
   final RatesRepository rates;
+  final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
 
   @override
@@ -293,6 +296,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
         icon: Icons.restart_alt_rounded,
         label: 'Reset panel widths',
       ),
+    ],
+    if (widget.updates != null) ...[
+      const SizedBox(height: 18),
+      const _SectionLabel('UPDATES'),
+      _SettingsGroup(children: [_UpdateRow(updates: widget.updates!)]),
     ],
   ];
 
@@ -938,6 +946,148 @@ class _RateAttributionRow extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The only place the update state is spelled out.
+///
+/// Nothing here downloads anything: the row reports what the daily manifest
+/// check found, and the button is the click that hands over to Sparkle or
+/// WinSparkle. Until it is pressed, no release has been fetched.
+class _UpdateRow extends StatelessWidget {
+  const _UpdateRow({required this.updates});
+
+  final UpdateChecker updates;
+
+  String _subtitle() {
+    final available = updates.available;
+    if (updates.isInstalling) return 'Opening the updater';
+    if (available != null) {
+      final current = updates.currentVersion;
+      return current.isEmpty
+          ? 'Ready to install'
+          : 'Ready to install · you have $current';
+    }
+    if (updates.isChecking) return 'Checking for updates';
+    final checked = updates.lastChecked;
+    if (checked == null) return 'Checks once a day';
+    return 'Up to date · checked ${_relativeDay(checked)}';
+  }
+
+  /// Deliberately coarse. The exact minute of a background check is noise,
+  /// and a stale clock reading "3 minutes ago" invites more doubt than trust.
+  static String _relativeDay(DateTime checked) {
+    final days = DateTime.now().difference(checked).inDays;
+    return switch (days) {
+      <= 0 => 'today',
+      1 => 'yesterday',
+      _ => '$days days ago',
+    };
+  }
+
+  Future<void> _openNotes(BuildContext context) async {
+    final raw = updates.available?.notesUrl ?? '';
+    final url = Uri.tryParse(raw);
+    if (url == null || raw.isEmpty) return;
+    var opened = false;
+    try {
+      opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (opened || !context.mounted) return;
+    Toast.show(
+      context,
+      'Could not open ${url.host}',
+      icon: Icons.error_outline_rounded,
+      isError: true,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return ListenableBuilder(
+      listenable: updates,
+      builder: (context, _) {
+        final available = updates.available;
+        final busy = updates.isChecking || updates.isInstalling;
+        final version = updates.currentVersion;
+        return Padding(
+          padding: _settingsRowPadding,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 25,
+                child: Icon(
+                  available != null
+                      ? Icons.system_update_alt_rounded
+                      : Icons.verified_outlined,
+                  size: 16,
+                  color: available != null
+                      ? palette.chipCurrency
+                      : palette.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _RowCopy(
+                  title: available != null
+                      ? 'Version ${available.version} available'
+                      : version.isEmpty
+                      ? 'Kapy Notes'
+                      : 'Kapy Notes $version',
+                  subtitle: _subtitle(),
+                ),
+              ),
+              if (available != null && available.notesUrl.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  key: const ValueKey('update-release-notes'),
+                  onPressed: () => _openNotes(context),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                  color: palette.textTertiary,
+                  tooltip: "What's new",
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 28,
+                    height: 28,
+                  ),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+              const SizedBox(width: 8),
+              TextButton(
+                key: const ValueKey('update-action'),
+                onPressed: busy
+                    ? null
+                    : available != null
+                    ? updates.startInstall
+                    : updates.check,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(78, 30),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  backgroundColor: available != null
+                      ? palette.selectedBackground
+                      : palette.controlBackground,
+                  foregroundColor: palette.textPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                ),
+                child: Text(
+                  available != null ? 'Update' : 'Check',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: _settingsMediumWeight,
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },

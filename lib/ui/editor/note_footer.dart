@@ -273,16 +273,24 @@ class _FormatButton extends StatelessWidget {
 
 /// The shared settings affordance used by the note and sidebar footers.
 class FooterSettingsButton extends StatelessWidget {
-  const FooterSettingsButton({super.key, required this.onPressed});
+  const FooterSettingsButton({
+    super.key,
+    required this.onPressed,
+    this.tooltip = 'Settings',
+  });
 
   final VoidCallback onPressed;
+
+  /// Overridden to carry the update notice, since the dot beside the gear is
+  /// the one part of it a screen reader cannot see.
+  final String tooltip;
 
   @override
   Widget build(BuildContext context) => CompactIconButton(
     key: const ValueKey('note-settings'),
     onPressed: onPressed,
     icon: const Icon(Icons.settings_outlined, size: 16),
-    tooltip: 'Settings',
+    tooltip: tooltip,
     foregroundColor: context.palette.textTertiary,
   );
 }

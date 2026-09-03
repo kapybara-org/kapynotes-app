@@ -98,6 +98,70 @@ the artwork, then commit the result:
 packaging/release.sh dmg-template
 ```
 
+### In-app updates
+
+Desktop builds check `dl.kapynotes.com/latest.json` once a day and, when a
+newer release exists, put a dot on the settings gear and an **Update** button
+in Settings → General. Nothing is downloaded before that button is pressed —
+the daily check is a few hundred bytes of JSON.
+
+The install itself is Sparkle on macOS and WinSparkle on Windows, behind the
+`auto_updater` plugin. Only the install half is used: Sparkle's own background
+check runs against the standard user driver, which throws its update panel on
+screen the moment it finds something, so the quiet half is `UpdateChecker` in
+`lib/data/update_checker.dart` instead.
+
+There are two appcasts because the two frameworks disagree about what
+`sparkle:version` means — Sparkle compares it against `CFBundleVersion` (the
+`+N` half of pubspec's version), WinSparkle against the `ProductVersion` string
+in `windows/runner/Runner.rc`. The release job writes both, plus `latest.json`,
+with a five-minute cache header; they are the only mutable objects in the
+bucket.
+
+Because macOS compares build numbers, a release that forgets to bump `+N` would
+tell every Mac it is already current. The `verify` job fails the release rather
+than let that ship.
+
+**Signing keys — already set up.** Both feeds are signed and the public halves
+are compiled into the app, so a hijacked feed cannot ship a payload. The
+EdDSA public key is `SUPublicEDKey` in `macos/Runner/Info.plist`; the DSA one
+is `windows/runner/resources/dsa_pub.pem`. Their private halves are the
+`SPARKLE_ED_PRIVATE_KEY` and `WINSPARKLE_DSA_PRIVATE_KEY` repository secrets,
+and the release job fails loudly if either is missing.
+
+The Sparkle private key also lives in the login keychain of the Mac it was
+generated on, which is the only copy that can be re-exported. Print the public
+key any time to check the plist still matches:
+
+```bash
+macos/Pods/Sparkle/bin/generate_keys -p        # needs `flutter build macos` first
+macos/Pods/Sparkle/bin/generate_keys -x key.txt  # re-export for a new CI secret
+```
+
+Note `sign_update`'s `-s` flag is deprecated and now fails; the release job
+uses `--ed-key-file`. The WinSparkle key is plain OpenSSL DSA and can be
+regenerated anywhere:
+
+```bash
+openssl dsaparam -out dsaparam.pem 2048
+openssl gendsa -out dsa_priv.pem dsaparam.pem
+openssl dsa -in dsa_priv.pem -pubout -out windows/runner/resources/dsa_pub.pem
+```
+
+Rotating either key means the release after it cannot be installed by anyone
+still running an older build — their copy only trusts the key it shipped with.
+
+The macOS app is sandboxed, which forbids it from replacing its own bundle, so
+installation goes through Sparkle's `Installer.xpc`. That needs
+`SUEnableInstallerLauncherService` in `Info.plist` and the two
+`mach-lookup.global-name` temporary exceptions in `Runner/*.entitlements` —
+remove either and updates fail at install time, after the download.
+
+On Windows, WinSparkle runs the Inno installer with `/VERYSILENT`, which skips
+its `[Run]` entry; `RestartApplications=yes` is what brings the app back
+afterwards. The install is per-user, so it raises no UAC prompt — but see below
+for what SmartScreen still does.
+
 ### Windows signing
 
 The installer is not Authenticode-signed — there is no certificate yet — so
@@ -105,6 +169,10 @@ SmartScreen shows "unknown publisher", and because reputation attaches to the
 certificate rather than the file, that will not improve across releases. Buying
 one needs a cloud HSM (e.g. Azure Trusted Signing) to sign from CI, since
 code-signing keys must now live on certified hardware.
+
+This is also the one place the in-app updater is not seamless: every Windows
+update runs an unsigned installer, so SmartScreen warns each time. macOS has no
+equivalent problem — the DMG is Developer ID signed and notarised.
 
 ## How it works
 
