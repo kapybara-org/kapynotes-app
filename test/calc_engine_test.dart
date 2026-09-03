@@ -354,6 +354,56 @@ void main() {
     });
   });
 
+  // A label followed by an amount that says what it is. The marker is the
+  // whole rule: without it `Lunch 12` cannot be told apart from `Room 12`.
+  group('labelled amounts', () {
+    test('reads a label followed by a marked amount', () {
+      expect(line(r'Coffee $4.50'), '4.50 USD');
+      expect(line('Lunch 12 usd'), '12.00 USD');
+      expect(line('Flights 412 eur'), '412.00 EUR');
+      expect(line('Run 5 km'), '5 km');
+      expect(line('Long descriptive label here 30 usd'), '30.00 USD');
+    });
+
+    test('refuses a bare trailing number, whatever the label', () {
+      expect(line('Room 12'), isNull);
+      expect(line('Chapter 4'), isNull);
+      expect(line('iPhone 15'), isNull);
+      expect(line('Lunch 12'), isNull);
+    });
+
+    test('leaves prose alone even when it contains a unit', () {
+      expect(line('take a 10 min break'), isNull);
+      expect(line('I have 3 apples'), isNull);
+      expect(line('Bought 2 shirts and 3 hats'), isNull);
+    });
+
+    test('labelled amounts feed the running total', () {
+      final evaluation = engine.evaluateDocumentWithSummary(
+        'Lisbon trip\nCoffee \$4.50\nLunch \$12\nTaxi \$8.25\ntotal',
+      );
+      expect(evaluation.results[0], isNull, reason: 'the heading');
+      expect(evaluation.results[4]?.text, '24.75 USD');
+      expect(evaluation.totalText, '24.75 USD');
+    });
+
+    test('a name the note has defined keeps its meaning', () {
+      // `budget` resolves, so the line is a comparison and not a label.
+      expect(doc('budget = 100 usd\nbudget 40 usd'), {0: '100.00 USD'});
+    });
+
+    test('does not rescue a half-typed expression by dropping its start', () {
+      expect(line('100 usd +'), isNull);
+      expect(line('* 20 usd'), isNull);
+    });
+
+    test('whole-line expressions still win over the label reading', () {
+      expect(line('100 km / 2 h'), '50 km/h');
+      expect(line('20% of 80'), '16');
+      expect(line('Coffee: 4.50'), '4.5');
+    });
+  });
+
   group('result kinds and copy text', () {
     test('classifies results for gutter colouring', () {
       final results = engine.evaluateDocument(

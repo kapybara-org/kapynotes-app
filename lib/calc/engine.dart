@@ -125,6 +125,16 @@ class CalcEngine {
     final source = _prepare(rawLine, scope);
     if (source == null) return null;
 
+    return _evaluateExpression(source, index, evaluator, scope) ??
+        _labelledAmount(source, index, evaluator, scope);
+  }
+
+  _EvaluatedLine? _evaluateExpression(
+    String source,
+    int index,
+    Evaluator evaluator,
+    CalcScope scope,
+  ) {
     try {
       final node = Parser(
         source,
@@ -147,6 +157,56 @@ class CalcEngine {
       // A malformed line is a line the user is still typing, not an error.
       return null;
     }
+  }
+
+  /// Reads `Coffee $4.50` or `Run 5 km`: a label in plain words, then an
+  /// amount that says what it is.
+  ///
+  /// Only tried once the line has failed to parse whole, and only a suffix
+  /// carrying a currency or a unit is accepted. A bare trailing number is
+  /// refused on purpose — `Room 12` and `Chapter 4` are the same shape as
+  /// `Lunch 12`, and nothing in the text distinguishes them. The unit or
+  /// currency is the user saying which one they meant.
+  _EvaluatedLine? _labelledAmount(
+    String source,
+    int index,
+    Evaluator evaluator,
+    CalcScope scope,
+  ) {
+    final known = scope.variables.keys.toSet();
+    final tokens = Lexer(source)
+        .tokenize()
+        .where((t) => t.isSignificant && t.type != TokenType.eof)
+        .toList();
+    if (tokens.length < 2) return null;
+
+    for (var i = 0; i < tokens.length - 1; i++) {
+      // Everything stepped over has to be an ordinary word. Stopping at the
+      // first token that is not keeps a half-typed `2 + + 3 usd` from being
+      // read as `3 usd`, and leaves any name the document has defined to go
+      // on meaning what it says.
+      final token = tokens[i];
+      if (token.type != TokenType.identifier) return null;
+      final name = token.text.toLowerCase();
+      if (known.contains(token.text) ||
+          aggregateNames.contains(name) ||
+          mathConstants.contains(name)) {
+        return null;
+      }
+
+      final evaluated = _evaluateExpression(
+        source.substring(tokens[i + 1].start),
+        index,
+        evaluator,
+        scope,
+      );
+      if (evaluated == null) continue;
+      final kind = evaluated.result.value.kind;
+      if (kind == ResultKind.currency || kind == ResultKind.unit) {
+        return evaluated;
+      }
+    }
+    return null;
   }
 
   /// Decides whether a line is worth evaluating, and rewrites the couple of
