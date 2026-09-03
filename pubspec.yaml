@@ -16,7 +16,7 @@ dependencies:
   # Bundled IANA rules for user-selected note timestamps and DST handling.
   timezone: ^0.11.1
   # Desktop window chrome (macOS traffic-light inset, min size, title bar).
-  window_manager: ^0.4.3
+  window_manager: ^0.5.2
   # Editable system-wide summon shortcut on macOS and Windows.
   hotkey_manager: ^0.2.3
   # Material moved out of the SDK in Flutter 3.44; the in-SDK library is
@@ -36,7 +36,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true

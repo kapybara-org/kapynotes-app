@@ -489,9 +489,8 @@ class _DesktopShortcuts extends StatelessWidget {
         shortcuts.bindingFor(ShortcutAction.findNotes).activator: onFindNotes,
         shortcuts.bindingFor(ShortcutAction.toggleSidebar).activator:
             onToggleSidebar,
-        if (onDeleteNote != null)
-          shortcuts.bindingFor(ShortcutAction.deleteNote).activator:
-              onDeleteNote!,
+        shortcuts.bindingFor(ShortcutAction.deleteNote).activator:
+            ?onDeleteNote,
       },
       child: Focus(autofocus: true, child: child),
     );
