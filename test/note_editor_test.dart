@@ -164,6 +164,58 @@ void main() {
     shortcutPrefs = ShortcutPrefs(_MemoryStore())..load();
   });
 
+  // Double-clicking a blank line used to select its terminator, painting a
+  // wide highlight over an empty line and opening the formatting toolbar on a
+  // selection holding no text.
+  testWidgets('double tapping a blank line leaves a caret, not a selection', (
+    tester,
+  ) async {
+    const body = 'todo\n\n☐ login and sync\n☐ sharable link';
+    await tester.pumpWidget(harness(body, autofocus: true));
+    await tester.pumpAndSettle();
+
+    final heading = lineRect(tester, body, 0);
+    final firstItem = lineRect(tester, body, 2);
+    final blank = Offset(
+      heading.center.dx,
+      (heading.bottom + firstItem.top) / 2,
+    );
+
+    await tester.tapAt(blank);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(blank);
+    await tester.pumpAndSettle();
+
+    final selection = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .textEditingValue
+        .selection;
+    expect(selection.isCollapsed, isTrue);
+    expect(selection.baseOffset, body.indexOf('\n') + 1);
+  });
+
+  testWidgets('a selection that spans blank lines and text is kept', (
+    tester,
+  ) async {
+    const body = 'todo\n\n☐ login and sync\n☐ sharable link';
+    await tester.pumpWidget(harness(body, autofocus: true));
+    await tester.pumpAndSettle();
+
+    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    // Straddles the blank line on the way to real text.
+    state.userUpdateTextEditingValue(
+      state.textEditingValue.copyWith(
+        selection: const TextSelection(baseOffset: 4, extentOffset: 12),
+      ),
+      SelectionChangedCause.drag,
+    );
+    await tester.pumpAndSettle();
+
+    final selection = state.textEditingValue.selection;
+    expect(selection.isCollapsed, isFalse);
+    expect(selection.extentOffset, 12);
+  });
+
   testWidgets('shows a result chip only for lines that calculate', (
     tester,
   ) async {
