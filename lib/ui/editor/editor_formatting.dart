@@ -8,6 +8,16 @@ const bulletPrefix = '• ';
 const uncheckedPrefix = '☐ ';
 const checkedPrefix = '☑ ';
 
+/// One level of nesting, written into the note as ordinary text.
+///
+/// Spaces rather than a tab: a note is plain text that other editors will
+/// open, and a tab renders at whatever width each of them chooses.
+const listIndentUnit = '  ';
+
+/// Deep enough for a real outline, shallow enough that the text still reads
+/// as a list rather than a staircase.
+const maxListIndentDepth = 4;
+
 enum NoteLineStyle { bullet, checklist }
 
 /// Semantic styles that apply to whole logical lines.
@@ -364,6 +374,108 @@ TextEditingValue toggleLineStyle(TextEditingValue value, NoteLineStyle style) {
         replacement: replacement,
       ),
     );
+  }
+  if (edits.isEmpty) return value;
+
+  edits.sort((a, b) => a.start.compareTo(b.start));
+  var updatedText = text;
+  for (final edit in edits.reversed) {
+    updatedText = updatedText.replaceRange(
+      edit.start,
+      edit.end,
+      edit.replacement,
+    );
+  }
+  return TextEditingValue(
+    text: updatedText,
+    selection: TextSelection(
+      baseOffset: _mapOffset(selection.baseOffset, edits),
+      extentOffset: _mapOffset(selection.extentOffset, edits),
+      affinity: selection.affinity,
+      isDirectional: selection.isDirectional,
+    ),
+  );
+}
+
+/// Leading whitespace on the line beginning at [lineStart], as characters.
+int _indentWidthAt(String text, int lineStart) =>
+    _prefixAt(text, lineStart).start - lineStart;
+
+/// True when any line the selection touches carries a list prefix.
+///
+/// Decides whether the nesting controls are worth showing at all, so they stay
+/// out of the way while writing prose.
+bool selectionHasListLine(TextEditingValue value) {
+  final text = value.text;
+  final selection = value.selection.isValid
+      ? value.selection
+      : TextSelection.collapsed(offset: text.length);
+  for (final start in _selectedLineStarts(text, selection)) {
+    if (_prefixAt(text, start).value.isNotEmpty) return true;
+  }
+  return false;
+}
+
+/// True when [indentSelection] would actually move something.
+bool canIndentSelection(TextEditingValue value, {required bool outdent}) {
+  final text = value.text;
+  final selection = value.selection.isValid
+      ? value.selection
+      : TextSelection.collapsed(offset: text.length);
+  for (final start in _selectedLineStarts(text, selection)) {
+    if (_prefixAt(text, start).value.isEmpty) continue;
+    final indent = _indentWidthAt(text, start);
+    if (outdent) {
+      if (indent > 0) return true;
+    } else if (indent ~/ listIndentUnit.length < maxListIndentDepth) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Nests, or un-nests, every list line the selection touches.
+///
+/// Lines with no list prefix are left where they are, so indenting a selection
+/// that runs from a heading through several items moves only the items. The
+/// indent goes in front of the prefix, which every reader here already skips —
+/// [_prefixAt], the continuation formatter, and the engine, which trims each
+/// line before parsing it. Nesting therefore cannot change what a note
+/// calculates.
+TextEditingValue indentSelection(
+  TextEditingValue value, {
+  required bool outdent,
+}) {
+  final text = value.text;
+  final selection = value.selection.isValid
+      ? value.selection
+      : TextSelection.collapsed(offset: text.length);
+
+  final edits = <_TextEdit>[];
+  for (final start in _selectedLineStarts(text, selection)) {
+    if (_prefixAt(text, start).value.isEmpty) continue;
+    final indent = _indentWidthAt(text, start);
+    if (outdent) {
+      if (indent == 0) continue;
+      // Whitespace that is not a whole unit wide — a stray tab, or a note
+      // written elsewhere — still steps back to the margin rather than
+      // sticking.
+      final removed = indent < listIndentUnit.length
+          ? indent
+          : listIndentUnit.length;
+      edits.add(
+        _TextEdit(
+          start: start + indent - removed,
+          end: start + indent,
+          replacement: '',
+        ),
+      );
+    } else {
+      if (indent ~/ listIndentUnit.length >= maxListIndentDepth) continue;
+      edits.add(
+        _TextEdit(start: start, end: start, replacement: listIndentUnit),
+      );
+    }
   }
   if (edits.isEmpty) return value;
 

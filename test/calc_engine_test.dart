@@ -404,6 +404,30 @@ void main() {
     });
   });
 
+  // Sub-lists are written as leading spaces before the list prefix, so the
+  // engine has to be blind to indentation or nesting an item would change what
+  // the note computes.
+  group('indentation', () {
+    test('leading whitespace does not change a result', () {
+      expect(line('2 + 2'), '4');
+      expect(line('  2 + 2'), '4');
+      expect(line('\t2 + 2'), '4');
+      // Indented continuation lines see the same scope as unindented ones.
+      expect(doc('price = 10 usd\n    price * 2'), {
+        0: '10.00 USD',
+        1: '20.00 USD',
+      });
+    });
+
+    test('a list marker is not arithmetic, at any depth', () {
+      // Pre-existing: the engine never strips these, so a bullet line has
+      // never produced a result. Nesting must not change that either way.
+      expect(line('• 2 + 2'), isNull);
+      expect(line('  • 2 + 2'), isNull);
+      expect(line('☐ 2 + 2'), isNull);
+    });
+  });
+
   group('result kinds and copy text', () {
     test('classifies results for gutter colouring', () {
       final results = engine.evaluateDocument(

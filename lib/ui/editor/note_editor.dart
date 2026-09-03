@@ -394,6 +394,40 @@ class NoteEditorState extends State<NoteEditor> {
     _focusNode.requestFocus();
   }
 
+  void _indentList({required bool outdent}) {
+    ContextMenuController.removeAny();
+    _nextInsertedFormats = const {};
+    _controller.value = indentSelection(_controller.value, outdent: outdent);
+    _focusNode.requestFocus();
+  }
+
+  /// Tab nests the current item, Shift+Tab lifts it out.
+  ///
+  /// Only claimed when the caret is actually on a list line. Everywhere else
+  /// Tab is left to move focus, which is the only way to leave the editor from
+  /// the keyboard.
+  KeyEventResult _handleTabIndent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey != LogicalKeyboardKey.tab) {
+      return KeyEventResult.ignored;
+    }
+    if (!_focusNode.hasFocus || !selectionHasListLine(_controller.value)) {
+      return KeyEventResult.ignored;
+    }
+    final pressed = HardwareKeyboard.instance.logicalKeysPressed;
+    final outdent =
+        pressed.contains(LogicalKeyboardKey.shiftLeft) ||
+        pressed.contains(LogicalKeyboardKey.shiftRight);
+    // Claim the key even at the ends of the range, or Tab would silently fall
+    // through to focus traversal exactly when the list stops moving.
+    if (canIndentSelection(_controller.value, outdent: outdent)) {
+      _indentList(outdent: outdent);
+    }
+    return KeyEventResult.handled;
+  }
+
   void _handlePointerDown(PointerDownEvent event) {
     _pointerDownPositions[event.pointer] = event.position;
   }
@@ -674,6 +708,11 @@ class NoteEditorState extends State<NoteEditor> {
             onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
             onBulletsPressed: _toggleBullets,
             onChecklistPressed: _toggleChecklist,
+            onIndentPressed: () => _indentList(outdent: false),
+            onOutdentPressed: () => _indentList(outdent: true),
+            showIndentControls: selectionHasListLine(_controller.value),
+            canIndent: canIndentSelection(_controller.value, outdent: false),
+            canOutdent: canIndentSelection(_controller.value, outdent: true),
             boldActive: _formatActive(NoteFormat.bold),
             italicActive: _formatActive(NoteFormat.italic),
             bulletsActive: selectionHasLineStyle(
@@ -705,7 +744,14 @@ class NoteEditorState extends State<NoteEditor> {
         top: padding.top,
         bottom: padding.bottom,
       ),
-      child: _textField(textStyle, strut),
+      child: Focus(
+        // Not a focus stop of its own; it only watches the field below for Tab
+        // before the app's traversal shortcuts can claim it.
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _handleTabIndent,
+        child: _textField(textStyle, strut),
+      ),
     );
   }
 
@@ -920,7 +966,26 @@ class _ListContinuationFormatter extends TextInputFormatter {
       prefixStart + prefix.length,
       contentEnd,
     );
+    final indent = oldValue.text.substring(lineStart, prefixStart);
+
     if (content.trim().isEmpty) {
+      // Enter on an empty item steps out one level at a time, and only leaves
+      // the list once the item is back at the margin. Both swallow the
+      // newline: the keypress is the user backing out, not adding a line.
+      if (indent.isNotEmpty) {
+        final removed = indent.length < listIndentUnit.length
+            ? indent.length
+            : listIndentUnit.length;
+        return TextEditingValue(
+          text: oldValue.text.replaceRange(
+            prefixStart - removed,
+            prefixStart,
+            '',
+          ),
+          selection: TextSelection.collapsed(offset: caret - removed),
+          composing: TextRange.empty,
+        );
+      }
       final withoutEmptyItem = oldValue.text.replaceRange(
         prefixStart,
         prefixStart + prefix.length,
@@ -932,9 +997,10 @@ class _ListContinuationFormatter extends TextInputFormatter {
       );
     }
 
-    final continuation = prefix == bulletPrefix
-        ? bulletPrefix
-        : uncheckedPrefix;
+    // The new item keeps the depth of the one it came from; without this a
+    // nested list would jump back to the margin on every Enter.
+    final continuation =
+        indent + (prefix == bulletPrefix ? bulletPrefix : uncheckedPrefix);
     return newValue.copyWith(
       text: newValue.text.replaceRange(caret + 1, caret + 1, continuation),
       selection: TextSelection.collapsed(

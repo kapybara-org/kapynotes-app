@@ -949,6 +949,99 @@ void main() {
     expect(field.controller!.text, 'Task');
   });
 
+  testWidgets('Enter keeps a nested item at its own depth', (tester) async {
+    await tester.pumpWidget(harness('• one\n  • two'));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.controller!.selection = const TextSelection.collapsed(offset: 13);
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), '• one\n  • two\n');
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, '• one\n  • two\n  • ');
+  });
+
+  testWidgets('Enter on an empty nested item steps out one level at a time', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('• one\n    • '));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.controller!.selection = const TextSelection.collapsed(offset: 12);
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), '• one\n    • \n');
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, '• one\n  • ');
+
+    await tester.enterText(find.byType(TextField), '• one\n  • \n');
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, '• one\n• ');
+
+    // Back at the margin, the next Enter leaves the list, as it always did.
+    await tester.enterText(find.byType(TextField), '• one\n• \n');
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, '• one\n');
+  });
+
+  testWidgets('Tab nests the current item and Shift+Tab lifts it out', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('• one', autofocus: true));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.controller!.selection = const TextSelection.collapsed(offset: 5);
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, '  • one');
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, '• one');
+  });
+
+  testWidgets('Tab is left to move focus when the caret is not on a list', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('just prose', autofocus: true));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.controller!.selection = const TextSelection.collapsed(offset: 4);
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, 'just prose');
+  });
+
+  testWidgets('the nesting controls appear only for a list line', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('plain\n• item', autofocus: true));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+
+    field.controller!.selection = const TextSelection.collapsed(offset: 2);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('format-indent')), findsNothing);
+
+    field.controller!.selection = const TextSelection.collapsed(offset: 9);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('format-indent')), findsOneWidget);
+    // Already at the margin, so there is nowhere to step out to.
+    final outdent = tester.widget<IconButton>(
+      find.descendant(
+        of: find.byKey(const ValueKey('format-outdent')),
+        matching: find.byType(IconButton),
+      ),
+    );
+    expect(outdent.onPressed, isNull);
+  });
+
   testWidgets('continues and exits a checklist with Enter', (tester) async {
     await tester.pumpWidget(harness('☐ Task'));
     await tester.pumpAndSettle();

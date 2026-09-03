@@ -23,6 +23,11 @@ class NoteFooter extends StatelessWidget {
     required this.onItalicPressed,
     required this.onBulletsPressed,
     required this.onChecklistPressed,
+    required this.onIndentPressed,
+    required this.onOutdentPressed,
+    required this.showIndentControls,
+    required this.canIndent,
+    required this.canOutdent,
     required this.boldActive,
     required this.italicActive,
     required this.bulletsActive,
@@ -43,6 +48,15 @@ class NoteFooter extends StatelessWidget {
   final VoidCallback onItalicPressed;
   final VoidCallback onBulletsPressed;
   final VoidCallback onChecklistPressed;
+
+  /// Nesting only appears once the caret is on a list line. The row shares its
+  /// width with the total readout, and on a narrow phone two permanent extra
+  /// buttons would crowd it for the sake of controls that would do nothing.
+  final VoidCallback onIndentPressed;
+  final VoidCallback onOutdentPressed;
+  final bool showIndentControls;
+  final bool canIndent;
+  final bool canOutdent;
   final bool boldActive;
   final bool italicActive;
   final bool bulletsActive;
@@ -121,6 +135,22 @@ class NoteFooter extends StatelessWidget {
                         active: checklistActive,
                         onPressed: onChecklistPressed,
                       ),
+                      if (showIndentControls) ...[
+                        _FormatButton(
+                          key: const ValueKey('format-outdent'),
+                          icon: Icons.format_indent_decrease_rounded,
+                          tooltip: 'Move out · Shift + Tab',
+                          active: false,
+                          onPressed: canOutdent ? onOutdentPressed : null,
+                        ),
+                        _FormatButton(
+                          key: const ValueKey('format-indent'),
+                          icon: Icons.format_indent_increase_rounded,
+                          tooltip: 'Move in · Tab',
+                          active: false,
+                          onPressed: canIndent ? onIndentPressed : null,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -218,15 +248,23 @@ class _FormatButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
   final bool active;
-  final VoidCallback onPressed;
+
+  /// Null disables the button, which is how the nesting controls show that a
+  /// list is already at the margin or at the deepest level.
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final foreground = switch ((active, onPressed == null)) {
+      (_, true) => palette.textTertiary.withValues(alpha: 0.38),
+      (true, _) => palette.textPrimary,
+      _ => palette.textTertiary,
+    };
     return CompactIconButton(
       tooltip: tooltip,
       selected: active,
-      foregroundColor: active ? palette.textPrimary : palette.textTertiary,
+      foregroundColor: foreground,
       onPressed: onPressed,
       icon: Icon(icon, size: 17),
     );

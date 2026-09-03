@@ -4,6 +4,7 @@ import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/ui/editor/editor_formatting.dart';
 
 void main() {
+  _nestingTests();
   test('adds, removes, and rebases overlapping inline formats', () {
     final bold = toggleNoteFormat(
       const [],
@@ -171,4 +172,67 @@ void main() {
       expect(insertedTextForChange('Body', 'Body text'), ' text');
     },
   );
+}
+
+// Nesting is written into the note as leading spaces before the list prefix.
+// Everything that reads a line already skips that whitespace, so a sub-list
+// stays plain text and cannot change what the note calculates.
+void _nestingTests() {
+  TextEditingValue at(String text, int offset) =>
+      TextEditingValue(text: text, selection: TextSelection.collapsed(offset: offset));
+
+  group('list nesting', () {
+    test('indents the line the caret is on', () {
+      final result = indentSelection(at('• one\n• two', 8), outdent: false);
+      expect(result.text, '• one\n  • two');
+      // The caret keeps its place in the text it was sitting in.
+      expect(result.selection.baseOffset, 10);
+    });
+
+    test('outdents back to the margin and no further', () {
+      var value = at('  • one', 6);
+      value = indentSelection(value, outdent: true);
+      expect(value.text, '• one');
+      expect(indentSelection(value, outdent: true), same(value));
+    });
+
+    test('stops at the deepest level', () {
+      var value = at('• one', 3);
+      for (var i = 0; i < maxListIndentDepth; i++) {
+        value = indentSelection(value, outdent: false);
+      }
+      expect(value.text, '${listIndentUnit * maxListIndentDepth}• one');
+      expect(indentSelection(value, outdent: false), same(value));
+    });
+
+    test('moves only the list lines inside a mixed selection', () {
+      const body = 'Shopping\n• milk\nplain line\n☐ bread';
+      final result = indentSelection(
+        const TextEditingValue(
+          text: body,
+          selection: TextSelection(baseOffset: 0, extentOffset: 34),
+        ),
+        outdent: false,
+      );
+      expect(result.text, 'Shopping\n  • milk\nplain line\n  ☐ bread');
+    });
+
+    test('reports what is available, for the toolbar', () {
+      expect(canIndentSelection(at('• one', 3), outdent: false), isTrue);
+      expect(canIndentSelection(at('• one', 3), outdent: true), isFalse);
+      expect(canIndentSelection(at('  • one', 5), outdent: true), isTrue);
+      expect(canIndentSelection(at('plain', 3), outdent: false), isFalse);
+    });
+
+    test('knows when a list line is in play at all', () {
+      expect(selectionHasListLine(at('• one', 3)), isTrue);
+      expect(selectionHasListLine(at('  ☐ one', 5)), isTrue);
+      expect(selectionHasListLine(at('just prose', 4)), isFalse);
+    });
+
+    test('leaves a stray tab indent able to reach the margin', () {
+      final result = indentSelection(at('\t• one', 4), outdent: true);
+      expect(result.text, '• one');
+    });
+  });
 }
