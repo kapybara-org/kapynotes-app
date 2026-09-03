@@ -140,6 +140,14 @@ someone with a syntax error, and "I have 3 apples" must not render a result.
 Lines are only attempted when they carry an arithmetic signal, and anything
 that fails to parse is left as plain text.
 
+**A label followed by a marked amount is a value.** `Coffee $4.50`,
+`Lunch 12 usd` and `Run 5 km` each read as the amount and join the running
+total, so a budget needs no `=` on every line. The marker carries the whole
+rule: a bare trailing number is refused, because `Lunch 12` and `Room 12` are
+the same shape and nothing in the text separates them. Writing a currency or a
+unit is the user saying which one they meant. This is tried only after the
+whole line has failed to parse, so `100 km / 2 h` is still a division.
+
 **Running scope.** A variable assigned on one line is available below it, and
 `prev`, `sum`, `total` and `avg` accumulate as the note is read downward. A
 line that is *only* `total` reports the total without adding itself to it.
