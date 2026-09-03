@@ -261,6 +261,7 @@ class NoteEditorState extends State<NoteEditor> {
       final selectionChanged = value.selection != previous.selection;
       _lastValue = value;
       if (!selectionChanged) return;
+      if (_collapseLineTerminatorSelection(value.selection)) return;
       _typingOverrides.clear();
       _paragraphOverride = null;
       _scheduleSelectionToolbar(value.selection);
@@ -424,6 +425,32 @@ class NoteEditorState extends State<NoteEditor> {
     _nextInsertedFormats = const {};
     _controller.value = toggleCheckboxAt(_controller.value, checkboxStart);
     _focusNode.requestFocus();
+  }
+
+  /// Double-clicking a blank line has no word to take, so the platform
+  /// selects the line terminator instead. Nothing can be done with such a
+  /// selection — it holds no text to copy, format or replace — but it paints a
+  /// full-width highlight across the empty line and opens the formatting
+  /// toolbar over it.
+  ///
+  /// Collapsing to a caret is what every other editor leaves you with there.
+  /// Only a selection that is *entirely* newlines is caught, so dragging
+  /// across blank lines on the way to real text is untouched.
+  ///
+  /// Returns true when it took over, so the caller can leave the follow-up
+  /// work to the change this triggers.
+  bool _collapseLineTerminatorSelection(TextSelection selection) {
+    if (!selection.isValid || selection.isCollapsed) return false;
+    final text = _controller.text;
+    if (selection.start < 0 || selection.end > text.length) return false;
+    final selected = text.substring(selection.start, selection.end);
+    if (selected.isEmpty || selected.replaceAll('\n', '').isNotEmpty) {
+      return false;
+    }
+    // Re-enters this listener, where the now-collapsed selection falls
+    // straight through the check above.
+    _controller.selection = TextSelection.collapsed(offset: selection.start);
+    return true;
   }
 
   void _scheduleSelectionToolbar(TextSelection selection) {
