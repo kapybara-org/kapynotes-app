@@ -3,10 +3,23 @@
 # Confirms the Play Console listing and delivers the Android App Bundle.
 #
 #   packaging/upload_play.py confirm    show the tracks and the version codes on them
+#   packaging/upload_play.py listing    push the store listing copy and graphics
 #   packaging/upload_play.py validate   run the bundle preflight, upload nothing
 #   packaging/upload_play.py upload     validate, then deliver to a track
 #
-# With no argument it runs confirm -> validate -> upload in that order.
+# With no argument it runs confirm -> validate -> upload in that order. `listing`
+# is deliberately not in that sequence: listing copy changes far less often than
+# builds do, and it is the one operation that overwrites text a human may have
+# edited in the Console.
+#
+# The listing copy is read from packaging/play_listing.json, which is what
+# actually gets pushed. SUBMISSION.md carries the same text for review; if you
+# edit one, edit the other.
+#
+# What the API cannot do: the App content declarations. Data Safety, the
+# content rating questionnaire, target audience, ads and app access are all
+# Console-only, because they are attestations the developer makes rather than
+# data about the build. Their settled answers are in SUBMISSION.md.
 #
 #   --track internal|alpha|beta|production   default: internal
 #   --bundle PATH                            default: build/release/kapy-android.aab
@@ -184,6 +197,111 @@ def confirm(track):
     print(f"  staged      {name} ({code}) -> {track}")
 
 
+LISTING_JSON = os.path.join(ROOT, "packaging", "play_listing.json")
+PLAY_ASSETS = os.path.join(ROOT, "build", "store-listing", "play-store")
+
+# Play's own names for the image slots, mapped to where the renderer puts them.
+# A directory means every PNG in it, in filename order, which is the order Play
+# shows them in; that is why the files are numbered.
+IMAGE_SLOTS = [
+    ("icon", os.path.join(PLAY_ASSETS, "icon-512.png")),
+    ("featureGraphic", os.path.join(PLAY_ASSETS, "feature-graphic.png")),
+    ("phoneScreenshots", os.path.join(PLAY_ASSETS, "phone")),
+    ("sevenInchScreenshots", os.path.join(PLAY_ASSETS, "tablet-7")),
+    ("tenInchScreenshots", os.path.join(PLAY_ASSETS, "tablet-10")),
+]
+
+# Play truncates silently rather than refusing, so a copy overrun would ship as
+# a half sentence. Check before sending, not after.
+COPY_LIMITS = {"title": 30, "shortDescription": 80, "fullDescription": 4000}
+
+
+def listing_copy():
+    if not os.path.exists(LISTING_JSON):
+        die(f"no listing copy at {LISTING_JSON}")
+    with open(LISTING_JSON) as handle:
+        copy = json.load(handle)
+    for field, limit in COPY_LIMITS.items():
+        value = copy.get(field) or ""
+        if not value:
+            die(f"{field} is empty in play_listing.json")
+        if len(value) > limit:
+            die(f"{field} is {len(value)} characters, over Play's limit of {limit}")
+    return copy
+
+
+def push_listing():
+    copy = listing_copy()
+    language = copy.get("language", "en-US")
+    info(f"Pushing the {language} listing for {PACKAGE_NAME}")
+
+    for field, limit in COPY_LIMITS.items():
+        print(f"  {field:<18} {len(copy[field]):>5} / {limit}")
+
+    edit = call("POST", f"{API}/applications/{PACKAGE_NAME}/edits", body={})
+    edit_id = edit["id"]
+    committed = False
+    try:
+        call(
+            "PUT",
+            f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}/details",
+            body={
+                "defaultLanguage": language,
+                "contactEmail": copy["contactEmail"],
+                "contactWebsite": copy["contactWebsite"],
+            },
+        )
+        print("  contact details set")
+
+        call(
+            "PUT",
+            f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}/listings/{language}",
+            body={
+                "language": language,
+                "title": copy["title"],
+                "shortDescription": copy["shortDescription"],
+                "fullDescription": copy["fullDescription"],
+            },
+        )
+        print("  title, short and full description set")
+
+        for slot, source in IMAGE_SLOTS:
+            if os.path.isdir(source):
+                files = sorted(
+                    os.path.join(source, name)
+                    for name in os.listdir(source)
+                    if name.endswith(".png")
+                )
+            elif os.path.exists(source):
+                files = [source]
+            else:
+                die(f"missing {slot} asset at {source}; run node packaging/play_graphics.mjs")
+
+            # Replace rather than append, so re-running does not stack up
+            # duplicate screenshots on the listing.
+            call(
+                "DELETE",
+                f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}/listings/{language}/{slot}",
+            )
+            for path in files:
+                with open(path, "rb") as handle:
+                    call(
+                        "POST",
+                        f"{UPLOAD_API}/applications/{PACKAGE_NAME}/edits/{edit_id}"
+                        f"/listings/{language}/{slot}?uploadType=media",
+                        data=handle.read(),
+                        content_type="image/png",
+                    )
+            print(f"  {slot:<22} {len(files)} image(s)")
+
+        call("POST", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:commit")
+        committed = True
+        print("\n  Listing committed. It is a draft until the app is published.")
+    finally:
+        if not committed:
+            call("DELETE", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}")
+
+
 def validate(bundle):
     info(f"Validating {os.path.basename(bundle)}")
     preflight = os.path.join(ROOT, "packaging", "preflight_android.sh")
@@ -230,7 +348,7 @@ def main():
     index = 0
     while index < len(args):
         argument = args[index]
-        if argument in ("confirm", "validate", "upload", "all"):
+        if argument in ("confirm", "listing", "validate", "upload", "all"):
             mode = argument
         elif argument == "--track":
             index += 1
@@ -249,6 +367,8 @@ def main():
 
     if mode in ("confirm", "all"):
         confirm(track)
+    if mode == "listing":
+        push_listing()
     if mode in ("validate", "upload", "all"):
         validate(bundle)
     if mode in ("upload", "all"):
