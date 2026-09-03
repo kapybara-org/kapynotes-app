@@ -469,6 +469,10 @@ void main() {
     await tester.enterText(find.byType(EditableText).last, 'rev = 7000000');
     await tester.pumpAndSettle();
     expect(find.widgetWithText(ResultChip, '7,000,000'), findsOneWidget);
+    expect(
+      find.byTooltip('Seven million\n7 million\nClick to copy'),
+      findsOneWidget,
+    );
 
     await openSettings(tester, section: SettingsSection.numbers);
     expect(find.text('1,23,45,678'), findsWidgets);
@@ -481,6 +485,10 @@ void main() {
 
     // The open note re-evaluates against the new engine without being touched.
     expect(find.widgetWithText(ResultChip, '70,00,000'), findsOneWidget);
+    expect(
+      find.byTooltip('Seventy lakh\n0.7 crore\nClick to copy'),
+      findsOneWidget,
+    );
     expect(
       tester
           .widget<Text>(find.byKey(const ValueKey('note-total')))

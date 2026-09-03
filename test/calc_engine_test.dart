@@ -27,6 +27,11 @@ String? indianLine(String source) => CalcEngine(
   grouping: DigitGrouping.indian,
 ).evaluateDocument(source)[0]?.text;
 
+String? tooltip(String source, {DigitGrouping? grouping}) => CalcEngine(
+  ratesPerUsd: _rates,
+  grouping: grouping ?? DigitGrouping.international,
+).evaluateDocument(source)[0]?.tooltipText;
+
 void main() {
   setUp(() => engine = CalcEngine(ratesPerUsd: _rates));
 
@@ -58,6 +63,38 @@ void main() {
         grouping: DigitGrouping.indian,
       ).evaluateDocumentWithSummary('40,00,000\n30,00,000');
       expect(evaluation.totalText, '70,00,000');
+    });
+
+    test('explains large results in international words and millions', () {
+      expect(
+        tooltip('12345678'),
+        'Twelve million three hundred forty-five thousand six hundred '
+        'seventy-eight\n12.345678 million\nClick to copy',
+      );
+    });
+
+    test('explains large results in Indian words and crores', () {
+      expect(
+        tooltip('12345678', grouping: DigitGrouping.indian),
+        'One crore twenty-three lakh forty-five thousand six hundred '
+        'seventy-eight\n1.234568 crore\nClick to copy',
+      );
+      expect(
+        tooltip('7000000', grouping: DigitGrouping.indian),
+        'Seventy lakh\n0.7 crore\nClick to copy',
+      );
+    });
+
+    test('keeps decimals, signs, and units in result explanations', () {
+      expect(
+        tooltip('-1200.5 km'),
+        'Negative one thousand two hundred point five km\nClick to copy',
+      );
+      expect(
+        tooltip('12345678 inr'),
+        'Twelve million three hundred forty-five thousand six hundred '
+        'seventy-eight INR\n12.345678 million INR\nClick to copy',
+      );
     });
   });
 

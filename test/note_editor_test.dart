@@ -1685,4 +1685,27 @@ void main() {
     // Let the "copied" tick and the toast finish so no timer outlives the test.
     await tester.pump(const Duration(seconds: 3));
   });
+
+  testWidgets('shows a result in words when its chip is hovered', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('12345678'));
+    await tester.pumpAndSettle();
+
+    final chip = chipWithText('12,345,678');
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(chip));
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Twelve million three hundred forty-five thousand six hundred '
+        'seventy-eight\n12.345678 million\nClick to copy',
+      ),
+      findsOneWidget,
+    );
+  });
 }

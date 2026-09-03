@@ -13,10 +13,67 @@ enum DigitGrouping {
   indian,
 }
 
-/// Renders results twice: a compact string for the gutter chip, and a
-/// full-precision string for the clipboard.
+/// Renders results for the gutter chip, its explanatory tooltip, and the
+/// clipboard.
 class ResultFormatter {
   const ResultFormatter._();
+
+  static const List<String> _smallNumbers = [
+    'zero',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'eleven',
+    'twelve',
+    'thirteen',
+    'fourteen',
+    'fifteen',
+    'sixteen',
+    'seventeen',
+    'eighteen',
+    'nineteen',
+  ];
+
+  static const List<String> _tens = [
+    '',
+    '',
+    'twenty',
+    'thirty',
+    'forty',
+    'fifty',
+    'sixty',
+    'seventy',
+    'eighty',
+    'ninety',
+  ];
+
+  static const List<String> _internationalScales = [
+    '',
+    'thousand',
+    'million',
+    'billion',
+    'trillion',
+  ];
+
+  static const List<String> _digitWords = [
+    'zero',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+  ];
 
   /// Grouped, at most 6 decimal places — what the user sees.
   static String display(
@@ -68,6 +125,30 @@ class ResultFormatter {
     return '';
   }
 
+  /// A plain-language explanation for a result-chip hover.
+  ///
+  /// The words use the same number system as the visible result. Large
+  /// values also include a quick conversion to millions or crores, which is
+  /// often easier to scan than either the grouped digits or the full phrase.
+  static String tooltip(
+    CalcValue value, {
+    DigitGrouping grouping = DigitGrouping.international,
+  }) {
+    if (value is BooleanValue) return 'Copy result';
+
+    final raw = _rawNumber(value);
+    if (raw == null) return 'Copy result';
+
+    final suffix = value is QuantityValue ? value.unit.format() : '';
+    final spoken = _capitalize(
+      '${_numberInWords(raw, _displayDecimals(value), grouping)}'
+      '${suffix.isEmpty ? '' : ' $suffix'}',
+    );
+    final scaled = _scaledValue(raw, grouping, suffix);
+
+    return [spoken, ?scaled, 'Click to copy'].join('\n');
+  }
+
   static String _number(
     double raw,
     int maxDecimals, {
@@ -99,6 +180,153 @@ class ResultFormatter {
     final fracPart = dot == -1 ? '' : text.substring(dot);
     return '${negative ? '-' : ''}${_group(intPart, grouping)}$fracPart';
   }
+
+  static double? _rawNumber(CalcValue value) => switch (value) {
+    NumberValue() => value.value,
+    PercentValue() => value.fraction,
+    QuantityValue() => value.value,
+    BooleanValue() => null,
+  };
+
+  static int _displayDecimals(CalcValue value) =>
+      value is QuantityValue && value.unit.isCurrency ? 2 : 6;
+
+  static String _numberInWords(
+    double raw,
+    int maxDecimals,
+    DigitGrouping grouping,
+  ) {
+    if (raw.isNaN) return 'not a number';
+    if (raw.isInfinite) {
+      return raw.isNegative ? 'negative infinity' : 'infinity';
+    }
+
+    final cleaned = _stripFloatNoise(raw);
+    final magnitude = cleaned.abs();
+    if (magnitude != 0 && (magnitude >= 1e15 || magnitude < 1e-9)) {
+      return _scientificInWords(_trimExponential(cleaned));
+    }
+
+    return _decimalInWords(_toFixedTrimmed(cleaned, maxDecimals), grouping);
+  }
+
+  static String _decimalInWords(String raw, DigitGrouping grouping) {
+    var text = raw;
+    final negative = text.startsWith('-');
+    if (negative) text = text.substring(1);
+
+    final parts = text.split('.');
+    final integer = int.tryParse(parts.first) ?? 0;
+    final integerWords = grouping == DigitGrouping.indian
+        ? _indianInteger(integer)
+        : _internationalInteger(integer);
+    final fraction = parts.length == 1
+        ? ''
+        : ' point ${parts.last.split('').map((digit) => _digitWords[int.parse(digit)]).join(' ')}';
+    return '${negative ? 'negative ' : ''}$integerWords$fraction';
+  }
+
+  static String _scientificInWords(String raw) {
+    final marker = raw.indexOf('e');
+    if (marker == -1) return raw;
+    final coefficient = _decimalInWords(
+      raw.substring(0, marker),
+      DigitGrouping.international,
+    );
+    final exponent = int.parse(raw.substring(marker + 1));
+    final exponentWords = exponent < 0
+        ? 'negative ${_internationalInteger(exponent.abs())}'
+        : _internationalInteger(exponent);
+    return '$coefficient times ten to the power of $exponentWords';
+  }
+
+  static String _internationalInteger(int value) {
+    if (value == 0) return _smallNumbers.first;
+
+    var remaining = value;
+    var scale = 0;
+    final groups = <String>[];
+    while (remaining > 0) {
+      final chunk = remaining % 1000;
+      if (chunk != 0) {
+        final label = _internationalScales[scale];
+        groups.add('${_underThousand(chunk)}${label.isEmpty ? '' : ' $label'}');
+      }
+      remaining ~/= 1000;
+      scale++;
+    }
+    return groups.reversed.join(' ');
+  }
+
+  /// Indian English ordinarily keeps using crore for very large financial
+  /// values (for example, `one lakh crore`) instead of switching to the less
+  /// familiar arab/kharab scale names.
+  static String _indianInteger(int value) {
+    if (value == 0) return _smallNumbers.first;
+    if (value >= 10000000) {
+      final crores = value ~/ 10000000;
+      final rest = value % 10000000;
+      return '${_indianInteger(crores)} crore'
+          '${rest == 0 ? '' : ' ${_indianBelowCrore(rest)}'}';
+    }
+    return _indianBelowCrore(value);
+  }
+
+  static String _indianBelowCrore(int value) {
+    var remaining = value;
+    final parts = <String>[];
+
+    final lakhs = remaining ~/ 100000;
+    if (lakhs > 0) {
+      parts.add('${_underThousand(lakhs)} lakh');
+      remaining %= 100000;
+    }
+
+    final thousands = remaining ~/ 1000;
+    if (thousands > 0) {
+      parts.add('${_underThousand(thousands)} thousand');
+      remaining %= 1000;
+    }
+
+    if (remaining > 0) parts.add(_underThousand(remaining));
+    return parts.join(' ');
+  }
+
+  static String _underThousand(int value) {
+    if (value < 100) return _underHundred(value);
+    final hundreds = value ~/ 100;
+    final rest = value % 100;
+    return '${_smallNumbers[hundreds]} hundred'
+        '${rest == 0 ? '' : ' ${_underHundred(rest)}'}';
+  }
+
+  static String _underHundred(int value) {
+    if (value < 20) return _smallNumbers[value];
+    final tens = value ~/ 10;
+    final ones = value % 10;
+    return '${_tens[tens]}${ones == 0 ? '' : '-${_smallNumbers[ones]}'}';
+  }
+
+  static String? _scaledValue(
+    double raw,
+    DigitGrouping grouping,
+    String suffix,
+  ) {
+    if (!raw.isFinite) return null;
+    final (divisor, label) = grouping == DigitGrouping.indian
+        ? (10000000.0, 'crore')
+        : (1000000.0, 'million');
+    // Once a value reaches seven digits, its selected large-number unit is
+    // useful even when that means a fractional crore (for example, 0.7
+    // crore). Smaller values read more clearly without the extra line.
+    if (raw.abs() < 1000000) return null;
+
+    final scaled = _number(raw / divisor, 6, group: true, grouping: grouping);
+    return '$scaled $label${suffix.isEmpty ? '' : ' $suffix'}';
+  }
+
+  static String _capitalize(String value) =>
+      value.isEmpty ? value : '${value[0].toUpperCase()}${value.substring(1)}';
 
   /// 0.1 + 0.2 should read as 0.3, not 0.30000000000000004. Rounding to 12
   /// significant digits removes binary-float artefacts without touching

@@ -205,7 +205,7 @@ class _ResultChipState extends State<ResultChip> {
         onTap: _copy,
         behavior: HitTestBehavior.opaque,
         child: Tooltip(
-          message: 'Copy result',
+          message: widget.result.tooltipText,
           child: ConstrainedBox(
             // Hovering lets a truncated result grow leftward over the text.
             constraints: BoxConstraints(

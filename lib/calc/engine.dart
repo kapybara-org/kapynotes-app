@@ -17,11 +17,22 @@ class LineResult {
   /// Full-precision text for the clipboard.
   final String copyText;
 
-  const LineResult({
+  final DigitGrouping grouping;
+
+  /// Number-system-aware words and scale context, prepared only if a visible
+  /// chip needs them. Long notes should not spell every off-screen result on
+  /// each keystroke.
+  late final String tooltipText = ResultFormatter.tooltip(
+    value,
+    grouping: grouping,
+  );
+
+  LineResult({
     required this.line,
     required this.value,
     required this.text,
     required this.copyText,
+    this.grouping = DigitGrouping.international,
   });
 
   ResultKind get kind => value.kind;
@@ -148,6 +159,7 @@ class CalcEngine {
           value: value,
           text: ResultFormatter.display(value, grouping: grouping),
           copyText: ResultFormatter.copy(value),
+          grouping: grouping,
         ),
         isAggregateReadout: _isAggregateReadout(node),
       );
