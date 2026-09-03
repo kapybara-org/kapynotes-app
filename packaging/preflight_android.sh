@@ -213,6 +213,47 @@ if [[ "$MODE" == "--submission" ]]; then
       fail "$set_name has $count screenshots, Play wants between 2 and 8"
     fi
   done
+
+  # The icon and the feature graphic are the two listing assets the app build
+  # never produces, so they are the two most likely to be missing on the day.
+  # Both come from packaging/play_graphics.mjs. Play is strict about the alpha
+  # channel in opposite directions: the icon must carry one, the feature
+  # graphic must not.
+  check_graphic() {
+    local file="$1" label="$2" want_w="$3" want_h="$4" want_alpha="$5" max_kb="$6"
+
+    if [[ ! -f "$file" ]]; then
+      fail "no $label; run: node packaging/play_graphics.mjs"
+      return
+    fi
+
+    local width height alpha size_kb
+    width=$(sips -g pixelWidth "$file" 2>/dev/null | awk '/pixelWidth/ {print $2}')
+    height=$(sips -g pixelHeight "$file" 2>/dev/null | awk '/pixelHeight/ {print $2}')
+    alpha=$(sips -g hasAlpha "$file" 2>/dev/null | awk '/hasAlpha/ {print $2}')
+    size_kb=$(( $(stat -f%z "$file") / 1024 ))
+
+    if [[ "$width" == "$want_w" && "$height" == "$want_h" ]]; then
+      pass "$label is ${width}x${height}"
+    else
+      fail "$label is ${width}x${height}, Play wants ${want_w}x${want_h}"
+    fi
+
+    if [[ "$alpha" == "$want_alpha" ]]; then
+      pass "$label alpha channel is correct (hasAlpha=$alpha)"
+    else
+      fail "$label has hasAlpha=$alpha, Play wants $want_alpha"
+    fi
+
+    if (( size_kb <= max_kb )); then
+      pass "$label is ${size_kb} KB"
+    else
+      fail "$label is ${size_kb} KB, over the ${max_kb} KB limit"
+    fi
+  }
+
+  check_graphic "$PLAY_ASSETS/icon-512.png" "store icon" 512 512 yes 1024
+  check_graphic "$PLAY_ASSETS/feature-graphic.png" "feature graphic" 1024 500 no 15360
 fi
 
 echo
