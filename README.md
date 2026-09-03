@@ -44,9 +44,36 @@ with macOS system fonts — regenerate them on macOS with
 
 ## Releasing
 
+Desktop releases are cut by tagging. The tag must match `version:` in
+`pubspec.yaml`, and a job checks that before anything expensive runs:
+
 ```bash
-packaging/release.sh mac-direct   # notarised DMG for kapynotes.com
-packaging/release.sh ios          # .ipa for App Store Connect
+git tag v1.0.1 && git push origin v1.0.1
+```
+
+`.github/workflows/desktop-release.yml` then builds a notarised DMG on a macOS
+runner and the Inno Setup installer on a Windows one, uploads both to the
+`kapynotes` R2 bucket under `downloads/`, and cuts a GitHub Release. The
+landing page pins both filenames, so bump them in
+`website/src/pages/index.astro` and redeploy — the release job prints this
+reminder in its summary.
+
+Tags rather than pushes because the artifacts are named after the version and
+served `immutable` for a year: republishing one filename would leave Cloudflare
+edges serving the old bytes indefinitely.
+
+`.github/workflows/desktop-ci.yml` runs on every push instead, building both
+desktop platforms unsigned and keeping them as artifacts. Windows has to be
+built there — `flutter build windows` needs a Windows host with Visual Studio's
+C++ workload, and macOS does not offer the subcommand at all. Note the billing
+multipliers on a private repo: Windows 2x, macOS 10x.
+
+Local builds still work exactly as before:
+
+```bash
+packaging/release.sh mac-direct    # notarised DMG, using the keychain profile
+packaging/release.sh mac-unsigned  # same image, no certificate; what CI builds
+packaging/release.sh ios           # .ipa for App Store Connect
 packaging/preflight_ios.sh --submission  # complete iOS readiness check
 ```
 
@@ -55,17 +82,29 @@ by Kapybara LLC (team `96V66447C6`). `SKIP_NOTARIZE=1` builds a DMG without
 contacting Apple, for local testing. `packaging/SUBMISSION.md` covers the
 certificates, the notarisation credential and the App Store metadata.
 
-Windows is built in CI rather than here: `flutter build windows` needs a Windows
-host with Visual Studio's "Desktop development with C++" workload, and macOS
-does not even offer the subcommand. `.github/workflows/windows-build.yml`
-compiles the release build on `windows-latest`, wraps it with
-`packaging/windows/kapynotes.iss`, and uploads two artifacts — the raw
-`Release/` folder and `KapyNotes-<version>-setup.exe`. The installer is Inno
-Setup, installing per-user under `%LOCALAPPDATA%\Programs` so it never raises a
-UAC prompt; on Windows the DLLs and `data/` folder have to ship alongside the
-exe, which is why there is an installer rather than a bare download. It is not
-Authenticode-signed yet, so SmartScreen warns on download — that is the one
-thing still between these builds and the download page.
+### The DMG window layout
+
+Finder writes the installer window's background and icon positions into a
+`.DS_Store`, and scripting Finder needs a desktop session no CI runner has. So
+the layout is captured once and committed as `packaging/dmg/DS_Store` — without
+the leading dot, which `.gitignore` would swallow. `build_disk_image` copies it
+in and refuses to build if it is missing, rather than quietly shipping Finder's
+default window.
+
+Regenerate it after changing the window geometry constants in `release.sh` or
+the artwork, then commit the result:
+
+```bash
+packaging/release.sh dmg-template
+```
+
+### Windows signing
+
+The installer is not Authenticode-signed — there is no certificate yet — so
+SmartScreen shows "unknown publisher", and because reputation attaches to the
+certificate rather than the file, that will not improve across releases. Buying
+one needs a cloud HSM (e.g. Azure Trusted Signing) to sign from CI, since
+code-signing keys must now live on certified hardware.
 
 ## How it works
 
