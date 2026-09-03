@@ -145,7 +145,11 @@ def access_token() -> str:
 TOKEN = None
 
 
-def call(method, url, *, body=None, data=None, content_type=None):
+class PlayError(Exception):
+    """An API error the caller wants to inspect rather than die on."""
+
+
+def call(method, url, *, body=None, data=None, content_type=None, soft=False):
     global TOKEN
     if TOKEN is None:
         TOKEN = access_token()
@@ -166,6 +170,8 @@ def call(method, url, *, body=None, data=None, content_type=None):
             message = json.loads(detail)["error"]["message"]
         except Exception:
             message = detail[:400]
+        if soft:
+            raise PlayError(message)
         die(f"{method} {url.split('?')[0]}\n  {message}")
 
 
@@ -347,29 +353,66 @@ def promote(version_code, track, rollout):
                 f"Known: {', '.join(sorted(known)) or 'none'}. Upload it first."
             )
 
-        release = {"versionCodes": [str(version_code)]}
-        if rollout is not None and rollout < 1:
-            # A staged release can be halted or resumed from the Console if the
-            # crash rate moves; a completed one is live for everyone at once.
-            release["status"] = "inProgress"
-            release["userFraction"] = rollout
-        else:
-            release["status"] = "completed"
-
         notes = listing_copy().get("releaseNotes")
-        if notes:
-            release["releaseNotes"] = [{"language": "en-US", "text": notes}]
 
-        call(
-            "PUT",
-            f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}/tracks/{track}",
-            body={"track": track, "releases": [release]},
-        )
-        call("POST", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:commit")
+        def build_release(status):
+            release = {"versionCodes": [str(version_code)], "status": status}
+            # userFraction is only meaningful while a release is in progress;
+            # Play rejects it on any other status.
+            if status == "inProgress":
+                release["userFraction"] = rollout
+            if notes:
+                release["releaseNotes"] = [{"language": "en-US", "text": notes}]
+            return release
+
+        if rollout is not None and rollout < 1:
+            # A staged release can be halted or widened from the Console if the
+            # crash rate moves; a completed one is live for everyone at once.
+            status = "inProgress"
+        else:
+            status = "completed"
+
+        def put_and_commit(release_status):
+            call(
+                "PUT",
+                f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}/tracks/{track}",
+                body={"track": track, "releases": [build_release(release_status)]},
+            )
+            call(
+                "POST",
+                f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:commit",
+                soft=True,
+            )
+
+        try:
+            put_and_commit(status)
+        except PlayError as error:
+            # An app that has never been published is a "draft app", and Play
+            # only accepts draft releases on it. The first public release has
+            # to be sent for review by a human in the Console; there is no API
+            # for that step. Fall back to staging it as a draft so the build,
+            # the track and the release notes are all in place for that click.
+            if "draft" not in str(error).lower():
+                die(f"commit failed\n  {error}")
+            print("  App has never been published, so Play requires a draft release.")
+            status = "draft"
+            call("DELETE", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}")
+            edit_id = call(
+                "POST", f"{API}/applications/{PACKAGE_NAME}/edits", body={}
+            )["id"]
+            put_and_commit(status)
+
         committed = True
     finally:
         if not committed:
             call("DELETE", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}")
+
+    if status == "draft":
+        print(f"\n  Version code {version_code} is staged as a DRAFT on '{track}'.")
+        print("  It is not with reviewers yet. In the Console, open the track and")
+        print("  press 'Send for review' to submit the app for the first time.")
+        print("  Every later release can go out from here without that step.")
+        return
 
     print(f"  version code {version_code} is now on '{track}'")
     if track in ("alpha", "beta", "production"):
