@@ -106,13 +106,20 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
 
   String get currentVersion => _packageInfo?.version ?? '';
 
+  String get currentBuild => _packageInfo?.buildNumber ?? '';
+
   DateTime? get lastChecked => _lastChecked;
 
   /// Publishes the last known result without touching the network, so the
-  /// settings row is already correct the first time it is opened.
+  /// settings rows are already correct the first time they are opened.
+  ///
+  /// The installed version is read here too. It costs one platform call and
+  /// no network, and without it a launch whose daily check is not yet due
+  /// would leave the version row blank until tomorrow.
   void loadCache() {
     if (_disposed || _cacheLoaded) return;
     _cacheLoaded = true;
+    unawaited(_ensurePackageInfo());
     final cached = _store.read<Map<String, Object?>>(_key);
     _available = AvailableUpdate.fromJson(cached?['available']);
     final checkedAt = cached?['checkedAt'];
@@ -130,6 +137,8 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
   Future<void> checkIfDue() async {
     if (_disposed) return;
     loadCache();
+    await _ensurePackageInfo();
+    if (_disposed) return;
     if (_isDue) {
       await check();
     } else {
@@ -250,6 +259,21 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
     // The install replaces the bundle the moment this returns, so anything
     // still sitting in the debounced write queue has to reach disk now.
     unawaited(_store.flush());
+  }
+
+  /// Reads the running build's version once, and survives a platform channel
+  /// that has nothing to say — a nameless version is a cosmetic loss, not a
+  /// reason to fail a check.
+  Future<void> _ensurePackageInfo() async {
+    if (_disposed || _packageInfo != null) return;
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (_disposed || _packageInfo != null) return;
+      _packageInfo = info;
+      notifyListeners();
+    } catch (error) {
+      debugPrint('KapyNotes: could not read the installed version: $error');
+    }
   }
 
   void _scheduleNextCheck() {

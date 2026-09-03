@@ -2,13 +2,16 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/testing.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/update_checker.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
 import 'test_fonts.dart';
@@ -47,6 +50,7 @@ Future<void> pumpForGolden(
   required Brightness brightness,
   bool withNote = true,
   bool blankNote = false,
+  bool withUpdates = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -61,6 +65,26 @@ Future<void> pumpForGolden(
     fetchedAt: _goldenRatesFetchedAt,
     rates: _rates,
   ).toJson();
+
+  UpdateChecker? updates;
+  if (withUpdates) {
+    // A checked, current app: the state the pane is in almost all the time,
+    // and the only one whose copy does not move with the calendar.
+    store.data['updates.v1'] = {
+      'available': null,
+      'checkedAt': DateTime.now().toIso8601String(),
+    };
+    updates = UpdateChecker(
+      store,
+      client: MockClient((_) async => throw StateError('no network here')),
+      packageInfo: PackageInfo(
+        appName: 'Kapy Notes',
+        packageName: 'com.kapybara.kapynotes',
+        version: '1.1.0',
+        buildNumber: '11',
+      ),
+    );
+  }
 
   final notes = NotesStore(store, now: () => _goldenNow);
   final prefs = LayoutPrefs(store);
@@ -84,6 +108,7 @@ Future<void> pumpForGolden(
       rates: rates,
       prefs: prefs,
       shortcuts: shortcuts,
+      updates: updates,
     ),
   );
   await tester.runAsync(
@@ -392,6 +417,23 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_settings_shortcuts.png'),
+    );
+  });
+
+  testWidgets('desktop dark settings, updates', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      withUpdates: true,
+    );
+    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('settings-section-updates')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_settings_updates.png'),
     );
   });
 

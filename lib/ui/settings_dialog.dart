@@ -20,7 +20,7 @@ import '../data/time_zones.dart';
 /// Adding a section is meant to be the whole job of adding a category of
 /// options: name it here, give it a pane in [_SettingsDialogState], and both
 /// layouts pick it up.
-enum SettingsSection { general, appearance, numbers, shortcuts }
+enum SettingsSection { general, appearance, numbers, shortcuts, updates }
 
 const _settingsRowPadding = EdgeInsets.fromLTRB(11, 8, 10, 8);
 const _settingsRegularWeight = FontWeight.w400;
@@ -33,6 +33,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.appearance => 'Appearance',
     SettingsSection.numbers => 'Numbers',
     SettingsSection.shortcuts => 'Shortcuts',
+    SettingsSection.updates => 'Updates',
   };
 
   IconData get icon => switch (this) {
@@ -40,11 +41,8 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.appearance => Icons.auto_stories_outlined,
     SettingsSection.numbers => Icons.numbers_rounded,
     SettingsSection.shortcuts => Icons.keyboard_outlined,
+    SettingsSection.updates => Icons.system_update_alt_rounded,
   };
-
-  /// Shortcuts are a desktop-only idea, so the phone never shows the section.
-  bool get isAvailable =>
-      this != SettingsSection.shortcuts || AppPlatform.isDesktop;
 }
 
 class SettingsDialog extends StatefulWidget {
@@ -83,6 +81,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
   void initState() {
     super.initState();
     _shortcutError = widget.desktopIntegration?.registrationError;
+    // The gear that opened this is badged when a release is waiting, so open
+    // on the pane that badge is about rather than making it be hunted for.
+    if (widget.updates?.hasUpdate ?? false) _section = SettingsSection.updates;
   }
 
   @override
@@ -91,8 +92,17 @@ class _SettingsDialogState extends State<SettingsDialog> {
     super.dispose();
   }
 
+  /// A section appears only where its subject does: shortcuts are a
+  /// desktop-only idea, and updates need the checker that only a platform
+  /// which can update itself is given.
+  bool _isAvailable(SettingsSection section) => switch (section) {
+    SettingsSection.shortcuts => AppPlatform.isDesktop,
+    SettingsSection.updates => widget.updates != null,
+    _ => true,
+  };
+
   List<SettingsSection> get _sections =>
-      SettingsSection.values.where((section) => section.isAvailable).toList();
+      SettingsSection.values.where(_isAvailable).toList();
 
   void _showSection(SettingsSection section) {
     if (section == _section) return;
@@ -248,6 +258,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     SettingsSection.appearance => _appearancePane(),
     SettingsSection.numbers => _numbersPane(),
     SettingsSection.shortcuts => _shortcutsPane(),
+    SettingsSection.updates => _updatesPane(),
   };
 
   List<Widget> _generalPane() => [
@@ -296,11 +307,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
         icon: Icons.restart_alt_rounded,
         label: 'Reset panel widths',
       ),
-    ],
-    if (widget.updates != null) ...[
-      const SizedBox(height: 18),
-      const _SectionLabel('UPDATES'),
-      _SettingsGroup(children: [_UpdateRow(updates: widget.updates!)]),
     ],
   ];
 
@@ -359,19 +365,22 @@ class _SettingsDialogState extends State<SettingsDialog> {
     _SettingsGroup(children: [_RateAttributionRow(rates: widget.rates)]),
   ];
 
+  /// App shortcuts lead: they reach the window from anywhere and are the ones
+  /// people come here to change. The formatting keys below them are already
+  /// spelled out on every footer button.
   List<Widget> _shortcutsPane() => [
-    const _SectionLabel('FORMATTING'),
     Padding(
-      padding: const EdgeInsets.only(left: 3, bottom: 8),
+      padding: const EdgeInsets.only(left: 3, bottom: 9),
       child: Text(
-        'Select a shortcut, then press a new combination. Footer hints update immediately.',
+        'Select a shortcut, then press a new combination. Menus and footer hints update immediately.',
         style: TextStyle(fontSize: 11.5, color: context.palette.textTertiary),
       ),
     ),
+    const _SectionLabel('APP'),
     _SettingsGroup(
       children: [
         for (final action in ShortcutAction.values.where(
-          (action) => action.isFormatting,
+          (action) => !action.isFormatting,
         ))
           _ShortcutRow(
             action: action,
@@ -381,11 +390,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
       ],
     ),
     const SizedBox(height: 18),
-    const _SectionLabel('APP'),
+    const _SectionLabel('FORMATTING'),
     _SettingsGroup(
       children: [
         for (final action in ShortcutAction.values.where(
-          (action) => !action.isFormatting,
+          (action) => action.isFormatting,
         ))
           _ShortcutRow(
             action: action,
@@ -412,6 +421,27 @@ class _SettingsDialogState extends State<SettingsDialog> {
       label: 'Restore shortcut defaults',
     ),
   ];
+
+  /// Everything the app knows about its own release, in the one place a
+  /// person would look for it: which build is running, whether a newer one
+  /// exists, and the button that goes and finds out.
+  List<Widget> _updatesPane() {
+    final updates = widget.updates!;
+    return [
+      const _SectionLabel('VERSION'),
+      _SettingsGroup(children: [_VersionRow(updates: updates)]),
+      const SizedBox(height: 18),
+      const _SectionLabel('SOFTWARE UPDATE'),
+      Padding(
+        padding: const EdgeInsets.only(left: 3, bottom: 8),
+        child: Text(
+          'Kapy Notes looks for a new release once a day. Nothing is downloaded until you ask for it.',
+          style: TextStyle(fontSize: 11.5, color: context.palette.textTertiary),
+        ),
+      ),
+      _SettingsGroup(children: [_UpdateRow(updates: updates)]),
+    ];
+  }
 }
 
 /// The scrolling half of the dialog, whichever layout is in use.
@@ -953,6 +983,53 @@ class _RateAttributionRow extends StatelessWidget {
   }
 }
 
+/// Names the build that is actually running.
+///
+/// Worth a row of its own: it is the first thing a bug report asks for, and
+/// the only line in this pane that never depends on the network.
+class _VersionRow extends StatelessWidget {
+  const _VersionRow({required this.updates});
+
+  final UpdateChecker updates;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return ListenableBuilder(
+      listenable: updates,
+      builder: (context, _) {
+        final version = updates.currentVersion;
+        final build = updates.currentBuild;
+        return Padding(
+          key: const ValueKey('app-version'),
+          padding: _settingsRowPadding,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 25,
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: palette.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _RowCopy(
+                  title: version.isEmpty ? 'Kapy Notes' : 'Kapy Notes $version',
+                  subtitle: build.isEmpty
+                      ? 'Reading the installed version'
+                      : 'Build $build',
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// The only place the update state is spelled out.
 ///
 /// Nothing here downloads anything: the row reports what the daily manifest
@@ -963,19 +1040,27 @@ class _UpdateRow extends StatelessWidget {
 
   final UpdateChecker updates;
 
-  String _subtitle() {
+  /// A check that has never reached the manifest may not claim anything, so
+  /// the untouched state offers the check instead of asserting a verdict.
+  String _title() {
     final available = updates.available;
+    if (available != null) return 'Version ${available.version} available';
+    if (updates.isChecking) return 'Checking for updates';
+    return updates.lastChecked == null ? 'Check for updates' : 'Up to date';
+  }
+
+  String _subtitle() {
     if (updates.isInstalling) return 'Opening the updater';
+    final available = updates.available;
     if (available != null) {
       final current = updates.currentVersion;
       return current.isEmpty
           ? 'Ready to install'
           : 'Ready to install · you have $current';
     }
-    if (updates.isChecking) return 'Checking for updates';
     final checked = updates.lastChecked;
     if (checked == null) return 'Checks once a day';
-    return 'Up to date · checked ${_relativeDay(checked)}';
+    return 'Checked ${_relativeDay(checked)}';
   }
 
   /// Deliberately coarse. The exact minute of a background check is noise,
@@ -1016,7 +1101,6 @@ class _UpdateRow extends StatelessWidget {
       builder: (context, _) {
         final available = updates.available;
         final busy = updates.isChecking || updates.isInstalling;
-        final version = updates.currentVersion;
         return Padding(
           padding: _settingsRowPadding,
           child: Row(
@@ -1035,14 +1119,7 @@ class _UpdateRow extends StatelessWidget {
               ),
               const SizedBox(width: 9),
               Expanded(
-                child: _RowCopy(
-                  title: available != null
-                      ? 'Version ${available.version} available'
-                      : version.isEmpty
-                      ? 'Kapy Notes'
-                      : 'Kapy Notes $version',
-                  subtitle: _subtitle(),
-                ),
+                child: _RowCopy(title: _title(), subtitle: _subtitle()),
               ),
               if (available != null && available.notesUrl.isNotEmpty) ...[
                 const SizedBox(width: 4),

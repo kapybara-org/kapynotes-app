@@ -548,6 +548,11 @@ void main() {
 
     expect(find.text('FORMATTING'), findsOneWidget);
     expect(find.text('APP'), findsOneWidget);
+    // App shortcuts lead the pane; formatting keys follow them.
+    expect(
+      tester.getTopLeft(find.text('APP')).dy,
+      lessThan(tester.getTopLeft(find.text('FORMATTING')).dy),
+    );
     // The rail shows one pane at a time, so the general options are gone.
     expect(find.text('Daily separators'), findsNothing);
     for (final action in ShortcutAction.values) {
