@@ -329,6 +329,18 @@ class NotesStore extends ChangeNotifier {
     return conflicted.map((note) => note.id).toList(growable: false);
   }
 
+  /// Drops every note and tombstone this device holds.
+  ///
+  /// Only for signing in as a different person on a device that already has
+  /// notes, and only once they have said so. Nothing else in the app removes
+  /// notes in bulk, and a sign-out deliberately does not.
+  void forgetEverything() {
+    _notes = const [];
+    _tombstones = const [];
+    _encoded.clear();
+    _persist();
+  }
+
   Future<void> flush() => _store.flush();
 
   void _persist() {

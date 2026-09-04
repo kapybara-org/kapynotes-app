@@ -10,6 +10,12 @@ import 'data/notes_store.dart';
 import 'data/rates.dart';
 import 'data/shortcut_prefs.dart';
 import 'data/update_checker.dart';
+import 'sync/account.dart';
+import 'sync/auth_api.dart';
+import 'sync/config.dart';
+import 'sync/key_store.dart';
+import 'sync/sync_api.dart';
+import 'sync/sync_state.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +28,23 @@ Future<void> main() async {
   // Only where Sparkle/WinSparkle can actually install: Linux desktop and the
   // phones get their updates elsewhere and would show a button that lies.
   final updates = AppPlatform.hasAutoUpdate ? UpdateChecker(store) : null;
+
+  // One object owns the session, the key and the sync loop; everything else
+  // just hands it along. Constructed eagerly because it is cheap — nothing
+  // here touches the keystore or the network until `restore()` runs, after
+  // the first frame.
+  final account = kSyncEnabled
+      ? Account(
+          auth: HttpAuthApi(baseUrl: Uri.parse(kApiBaseUrl)),
+          syncApi: (token) => HttpSyncApi(
+            baseUrl: Uri.parse(kApiBaseUrl),
+            token: () async => token,
+          ),
+          keys: KeyStore(defaultSecureStore()),
+          notes: notes,
+          state: SyncState(store),
+        )
+      : null;
 
   DesktopIntegration? desktopIntegration;
   if (AppPlatform.isDesktop) {
@@ -45,6 +68,7 @@ Future<void> main() async {
       shortcuts: shortcuts,
       updates: updates,
       desktopIntegration: desktopIntegration,
+      account: account,
     ),
   );
 }

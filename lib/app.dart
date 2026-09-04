@@ -13,6 +13,7 @@ import 'data/notes_store.dart';
 import 'data/rates.dart';
 import 'data/shortcut_prefs.dart';
 import 'data/update_checker.dart';
+import 'sync/account.dart';
 import 'ui/app_logo.dart';
 import 'ui/home_page.dart';
 import 'ui/instant_capture.dart';
@@ -28,6 +29,7 @@ class KapyNotesApp extends StatefulWidget {
     required this.shortcuts,
     this.updates,
     this.desktopIntegration,
+    this.account,
   });
 
   final LocalStore store;
@@ -39,6 +41,9 @@ class KapyNotesApp extends StatefulWidget {
   /// Null off macOS and Windows, where the app cannot update itself.
   final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
+
+  /// Null when the build has no server to sync with.
+  final Account? account;
 
   @override
   State<KapyNotesApp> createState() => _KapyNotesAppState();
@@ -97,6 +102,16 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     }
     widget.rates.loadCache();
     widget.updates?.loadCache();
+    // After the editor exists, never before it: restoring reads the platform
+    // keystore and asks the server who we are, and neither belongs in front of
+    // the first frame.
+    final account = widget.account;
+    if (account != null) {
+      unawaited(account.restore());
+      // Every edit lands in the store; the service coalesces them into one
+      // pass rather than one per keystroke.
+      widget.notes.addListener(_onNotesChangedForSync);
+    }
     _engines = EngineProvider(widget.rates, widget.prefs);
     _ready = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -123,6 +138,8 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     );
   }
 
+  void _onNotesChangedForSync() => widget.account?.sync?.requestSync();
+
   Future<void> _flushAfterHydration() async {
     final hydration = _hydration;
     if (hydration != null) await hydration;
@@ -132,6 +149,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.notes.removeListener(_onNotesChangedForSync);
     _rateRefreshTimer?.cancel();
     _updateCheckTimer?.cancel();
     _launchController.dispose();
@@ -148,6 +166,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     // backgrounded is the moment to make sure everything is on disk.
     if (state == AppLifecycleState.resumed) {
       _scheduleBackgroundFetches();
+      // Coming back is the likeliest moment for another device to have moved
+      // on without us.
+      unawaited(widget.account?.sync?.syncNow() ?? Future<void>.value());
     } else {
       unawaited(_flushAfterHydration());
     }
@@ -181,6 +202,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         shortcuts: widget.shortcuts,
         updates: widget.updates,
         desktopIntegration: widget.desktopIntegration,
+        account: widget.account,
         store: widget.store,
       ),
     );

@@ -11,6 +11,8 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/layout_prefs.dart';
+import '../sync/account.dart';
+import 'account/sync_pane.dart';
 import '../data/rates.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
@@ -21,7 +23,7 @@ import '../data/time_zones.dart';
 /// Adding a section is meant to be the whole job of adding a category of
 /// options: name it here, give it a pane in [_SettingsDialogState], and both
 /// layouts pick it up.
-enum SettingsSection { general, appearance, numbers, shortcuts, updates }
+enum SettingsSection { general, sync, appearance, numbers, shortcuts, updates }
 
 const _settingsRowPadding = EdgeInsets.fromLTRB(11, 8, 10, 8);
 const _settingsRegularWeight = FontWeight.w400;
@@ -31,6 +33,7 @@ const _settingsSemiboldWeight = FontWeight.w600;
 extension SettingsSectionCopy on SettingsSection {
   String get label => switch (this) {
     SettingsSection.general => 'General',
+    SettingsSection.sync => 'Sync',
     SettingsSection.appearance => 'Appearance',
     SettingsSection.numbers => 'Numbers',
     SettingsSection.shortcuts => 'Shortcuts',
@@ -39,6 +42,7 @@ extension SettingsSectionCopy on SettingsSection {
 
   IconData get icon => switch (this) {
     SettingsSection.general => Icons.tune_rounded,
+    SettingsSection.sync => Icons.cloud_outlined,
     SettingsSection.appearance => Icons.auto_stories_outlined,
     SettingsSection.numbers => Icons.numbers_rounded,
     SettingsSection.shortcuts => Icons.keyboard_outlined,
@@ -52,6 +56,7 @@ class SettingsDialog extends StatefulWidget {
     required this.layoutPrefs,
     required this.shortcuts,
     required this.rates,
+    this.account,
     this.updates,
     this.desktopIntegration,
   });
@@ -59,6 +64,9 @@ class SettingsDialog extends StatefulWidget {
   final LayoutPrefs layoutPrefs;
   final ShortcutPrefs shortcuts;
   final RatesRepository rates;
+
+  /// Null when the app was built without sync wired up.
+  final Account? account;
   final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
 
@@ -111,6 +119,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
   bool _isAvailable(SettingsSection section) => switch (section) {
     SettingsSection.shortcuts => AppPlatform.isDesktop,
     SettingsSection.updates => widget.updates != null,
+    // Absent until the app is built with a server to talk to.
+    SettingsSection.sync => widget.account != null,
     _ => true,
   };
 
@@ -311,6 +321,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   List<Widget> _paneFor(SettingsSection section) => switch (section) {
     SettingsSection.general => _generalPane(),
+    SettingsSection.sync => [SyncPane(account: widget.account!)],
     SettingsSection.appearance => _appearancePane(),
     SettingsSection.numbers => _numbersPane(),
     SettingsSection.shortcuts => _shortcutsPane(),

@@ -10,6 +10,7 @@ import '../data/local_store.dart';
 import '../data/note.dart';
 import '../data/note_format.dart';
 import '../data/notes_store.dart';
+import '../sync/account.dart';
 import '../data/rates.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
@@ -34,6 +35,7 @@ class HomePage extends StatefulWidget {
     required this.shortcuts,
     this.updates,
     this.desktopIntegration,
+    this.account,
     required this.store,
   });
 
@@ -44,6 +46,7 @@ class HomePage extends StatefulWidget {
   final ShortcutPrefs shortcuts;
   final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
+  final Account? account;
   final LocalStore store;
 
   @override
@@ -188,6 +191,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     showDialog<void>(
       context: context,
       builder: (context) => SettingsDialog(
+        account: widget.account,
         layoutPrefs: widget.prefs,
         shortcuts: widget.shortcuts,
         rates: widget.rates,
