@@ -1,0 +1,7 @@
+# Declared so the analyzer and runner know the tag exists. The live suite gates
+# itself on KAPYNOTES_E2E_TOKEN rather than being skipped here, so a plain
+# `flutter test` reports it as skipped while an explicit run still works:
+#
+#   KAPYNOTES_E2E_TOKEN=<token> flutter test --tags live
+tags:
+  live:
