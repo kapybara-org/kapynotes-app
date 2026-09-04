@@ -80,7 +80,22 @@ DSAPub                  DSAPEM                  "resources\\dsa_pub.pem"
 #define VERSION_AS_NUMBER 1,0,0,0
 #endif
 
-#if defined(FLUTTER_VERSION)
+// This is the string WinSparkle compares the appcast against. With nothing
+// passed to win_sparkle_set_app_build_version it falls back to ProductVersion
+// and reads it straight out of this resource.
+//
+// It must be the release triple and nothing else. Flutter's FLUTTER_VERSION
+// carries pubspec's build metadata too, "1.4.0+5" rather than "1.4.0", and
+// WinSparkle's comparator splits on character class, so "1.4.0+5" becomes
+// 1 . 4 . 0 + 5 against the feed's 1 . 4 . 0. Equal as far as the shorter one
+// goes, and the first part past it is "+", a string rather than a number, so
+// it reads the extra segment as a pre-release marker and calls the installed
+// build older: exactly the rule that puts 1.5b3 behind 1.5. The feed then
+// offers a release that is already installed, forever, and every install
+// hands back the same answer.
+#if defined(FLUTTER_RELEASE_VERSION)
+#define VERSION_AS_STRING FLUTTER_RELEASE_VERSION
+#elif defined(FLUTTER_VERSION)
 #define VERSION_AS_STRING FLUTTER_VERSION
 #else
 #define VERSION_AS_STRING "1.0.0"

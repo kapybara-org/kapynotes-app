@@ -94,8 +94,22 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
       _packageInfo = packageInfo;
 
   /// The newer release, or null when the running build is the latest known.
-  AvailableUpdate? get available => _available;
-  bool get hasUpdate => _available != null;
+  ///
+  /// Measured against the installed build on every read, never trusted as
+  /// stored. The cache outlives the app that wrote it: install the release it
+  /// advertises and that same entry is still on disk afterwards, now naming a
+  /// version already running. Nothing re-reads the manifest until the daily
+  /// check comes due, so without this the notice survives the very update it
+  /// asked for — and an entry written before an out-of-band install can name
+  /// a version older than the one in the row above it.
+  AvailableUpdate? get available {
+    final cached = _available;
+    final info = _packageInfo;
+    if (cached == null || info == null) return cached;
+    return _isNewerThanInstalled(cached, info) ? cached : null;
+  }
+
+  bool get hasUpdate => available != null;
   bool get isChecking => _checking;
 
   /// True while the handoff to the native updater is in flight. It clears as
@@ -124,7 +138,29 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
     _available = AvailableUpdate.fromJson(cached?['available']);
     final checkedAt = cached?['checkedAt'];
     _lastChecked = checkedAt is String ? DateTime.tryParse(checkedAt) : null;
+    _forgetOvertakenUpdate();
     notifyListeners();
+  }
+
+  /// Throws away a cached notice the running build has already caught up
+  /// with, rather than leaving it on disk to be published again at the next
+  /// launch. [available] hides it either way; this is what stops it coming
+  /// back. Called once the installed version is known, which on a cold start
+  /// is a moment after [loadCache] has read the file.
+  ///
+  /// The clock is not touched. That check did happen, and its verdict is
+  /// still sound: a release that was not newer than the version installed
+  /// then cannot be newer than the one installed now.
+  void _forgetOvertakenUpdate() {
+    final cached = _available;
+    final info = _packageInfo;
+    if (cached == null || info == null) return;
+    if (_isNewerThanInstalled(cached, info)) return;
+    _available = null;
+    _store.put(_key, {
+      'available': null,
+      'checkedAt': _lastChecked?.toIso8601String(),
+    });
   }
 
   bool get _isDue {
@@ -270,6 +306,9 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
       final info = await PackageInfo.fromPlatform();
       if (_disposed || _packageInfo != null) return;
       _packageInfo = info;
+      // The first moment a cached notice can be judged against the build it
+      // claims to be ahead of.
+      _forgetOvertakenUpdate();
       notifyListeners();
     } catch (error) {
       debugPrint('KapyNotes: could not read the installed version: $error');

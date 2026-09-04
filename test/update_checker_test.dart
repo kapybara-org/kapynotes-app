@@ -180,6 +180,80 @@ void main() {
     checker.dispose();
   });
 
+  test('forgets a cached update the running build has caught up with', () async {
+    final store = _MemoryStore();
+    final checkedAt = DateTime.now().subtract(const Duration(minutes: 5));
+    store.put('updates.v1', {
+      'available': {'version': '1.0.1', 'build': 2, 'notesUrl': ''},
+      'checkedAt': checkedAt.toIso8601String(),
+    });
+    // What the disk looks like the moment after that update is installed: the
+    // notice that asked for it is still there, and the daily check that would
+    // overwrite it is not due for another 23 hours.
+    final checker = _checker(
+      store,
+      installed: _installed(version: '1.0.1', build: '2'),
+      client: MockClient((_) async => fail('must not reach the network')),
+    );
+
+    checker.loadCache();
+
+    expect(checker.hasUpdate, isFalse);
+    expect(checker.available, isNull);
+    expect(
+      (store.read<Map<String, Object?>>('updates.v1'))!['available'],
+      isNull,
+      reason: 'and it must not come back at the next launch',
+    );
+    expect(
+      checker.lastChecked,
+      checkedAt,
+      reason: 'the check still happened; only its subject is gone',
+    );
+    checker.dispose();
+  });
+
+  test('hides a cached update older than the installed release', () async {
+    final store = _MemoryStore();
+    store.put('updates.v1', {
+      'available': {'version': '1.2.0', 'build': 3, 'notesUrl': ''},
+      'checkedAt': DateTime.now().toIso8601String(),
+    });
+    // An out-of-band install: the notice was written while 1.1.0 was running
+    // and 1.4.0 was dropped on top by hand, so the cache now names a release
+    // two versions behind the one in the version row.
+    final checker = _checker(
+      store,
+      installed: _installed(version: '1.4.0', build: '5'),
+      client: MockClient((_) async => fail('must not reach the network')),
+    );
+
+    checker.loadCache();
+
+    expect(checker.hasUpdate, isFalse);
+    checker.dispose();
+  });
+
+  test('keeps a cached update the running build has not reached', () async {
+    final store = _MemoryStore();
+    store.put('updates.v1', {
+      'available': {'version': '1.4.0', 'build': 5, 'notesUrl': ''},
+      'checkedAt': DateTime.now().toIso8601String(),
+    });
+    // The half-finished upgrade: 1.3.0 installed over 1.2.0 while 1.4.0 is
+    // out. Still behind, so the notice stands.
+    final checker = _checker(
+      store,
+      installed: _installed(version: '1.3.0', build: '4'),
+      client: MockClient((_) async => fail('must not reach the network')),
+    );
+
+    checker.loadCache();
+
+    expect(checker.available!.version, '1.4.0');
+    checker.dispose();
+  });
+
   test('skips the network when the last check was recent', () async {
     final store = _MemoryStore();
     store.put('updates.v1', {
