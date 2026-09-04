@@ -83,12 +83,6 @@ class AuthUnreachable extends AuthResult {
 /// moves sealed bytes. Collapsing them would invite the server to be trusted
 /// with both.
 abstract class AuthApi {
-  Future<AuthResult> signUp({
-    required String email,
-    required String password,
-    required String name,
-  });
-
   Future<AuthResult> signIn({required String email, required String password});
 
   /// Asks for a six-digit code. Works for an address that has never signed
@@ -132,17 +126,6 @@ class HttpAuthApi implements AuthApi {
   final Uri _baseUrl;
   final http.Client _client;
   final Duration timeout;
-
-  @override
-  Future<AuthResult> signUp({
-    required String email,
-    required String password,
-    required String name,
-  }) => _authenticate('api/auth/sign-up/email', {
-    'email': email,
-    'password': password,
-    'name': name,
-  }, email);
 
   @override
   Future<AuthResult> signIn({

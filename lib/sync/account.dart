@@ -99,14 +99,6 @@ class Account extends ChangeNotifier {
     await _resume();
   }
 
-  Future<void> signUp({
-    required String email,
-    required String password,
-    required String name,
-  }) => _afterAuth(
-    () => _auth.signUp(email: email, password: password, name: name),
-  );
-
   Future<void> signIn({required String email, required String password}) =>
       _afterAuth(() => _auth.signIn(email: email, password: password));
 

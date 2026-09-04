@@ -151,13 +151,6 @@ class FakeAuth implements AuthApi {
     required String password,
   }) async => nextResult ?? AuthSignedIn('token-$id', _user);
 
-  @override
-  Future<AuthResult> signUp({
-    required String email,
-    required String password,
-    required String name,
-  }) async => nextResult ?? AuthSignedIn('token-$id', _user);
-
   /// The code a test types back. Real enough: it is compared, not guessed.
   String code = '123456';
   String? sentCodeTo;
