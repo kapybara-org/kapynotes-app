@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:ui' show BoxHeightStyle;
+import 'dart:ui' show BoxHeightStyle, BoxWidthStyle;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart'
@@ -1030,6 +1030,12 @@ class NoteEditorState extends State<NoteEditor> {
             // Uniform selection rectangles: without this, a line whose glyphs
             // come from a fallback font gets a differently sized highlight.
             selectionHeightStyle: BoxHeightStyle.strut,
+            // A highlight stops at the end of its own line. Flutter defaults
+            // this to `max` off the web, which pads every selected line that
+            // carries a line break out to the width of the longest line in
+            // the whole note — so selecting two short lines under a long one
+            // paints a block of empty space that is not selected at all.
+            selectionWidthStyle: BoxWidthStyle.tight,
             keyboardType: TextInputType.multiline,
             textInputAction: TextInputAction.newline,
             inputFormatters: [

@@ -234,6 +234,55 @@ void main() {
     expect(selection.extentOffset, 12);
   });
 
+  // Flutter pads every selected line that carries a line break out to the
+  // width of the longest line in the note unless told otherwise, so selecting
+  // two short lines under a long one washed a block of empty space in the
+  // selection colour.
+  testWidgets('a selected line is highlighted no wider than its own text', (
+    tester,
+  ) async {
+    const body =
+        'a much longer line further down the note\n'
+        '12 mangoes\n'
+        'potatoes 13';
+    await tester.pumpWidget(harness(body, autofocus: true));
+    await tester.pumpAndSettle();
+
+    final start = startOfLine(body, 1);
+    final selection = TextSelection(
+      baseOffset: start,
+      extentOffset: body.length,
+    );
+    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    state.userUpdateTextEditingValue(
+      state.textEditingValue.copyWith(selection: selection),
+      SelectionChangedCause.drag,
+    );
+    await tester.pumpAndSettle();
+
+    final editable = state.renderEditable;
+    final highlight = editable.getBoxesForSelection(selection);
+    expect(highlight, hasLength(2), reason: 'one highlight per selected line');
+    // The first line is the one that used to be padded: its line break falls
+    // inside the selection, and the line above it is far longer.
+    for (final index in [1, 2]) {
+      final text = editable
+          .getBoxesForSelection(
+            TextSelection(
+              baseOffset: startOfLine(body, index),
+              extentOffset:
+                  startOfLine(body, index) + body.split('\n')[index].length,
+            ),
+          )
+          .single;
+      expect(
+        highlight[index - 1].right,
+        moreOrLessEquals(text.right, epsilon: 0.5),
+        reason: 'line $index is highlighted past its own text',
+      );
+    }
+  });
+
   testWidgets('shows a result chip only for lines that calculate', (
     tester,
   ) async {
