@@ -170,14 +170,14 @@ class LayoutPrefs extends ChangeNotifier {
     final clamped = _clampGutter(value);
     if (clamped == _gutterWidth) return;
     _gutterWidth = clamped;
-    _store.put(_gutterKey, clamped);
+    _store.putNow(_gutterKey, clamped);
     notifyListeners();
   }
 
   set resultsVisible(bool value) {
     if (value == _resultsVisible) return;
     _resultsVisible = value;
-    _store.put(_resultsVisibleKey, value);
+    _store.putNow(_resultsVisibleKey, value);
     notifyListeners();
   }
 
@@ -185,7 +185,7 @@ class LayoutPrefs extends ChangeNotifier {
     final clamped = _clampSidebar(value);
     if (clamped == _sidebarWidth) return;
     _sidebarWidth = clamped;
-    _store.put(_sidebarKey, clamped);
+    _store.putNow(_sidebarKey, clamped);
     notifyListeners();
   }
 
@@ -193,36 +193,36 @@ class LayoutPrefs extends ChangeNotifier {
     final clamped = _clampWindowSize(value);
     if (clamped == _windowSize) return;
     _windowSize = clamped;
-    _store.put(_windowWidthKey, clamped.width);
-    _store.put(_windowHeightKey, clamped.height);
+    _store.putNow(_windowWidthKey, clamped.width);
+    _store.putNow(_windowHeightKey, clamped.height);
     notifyListeners();
   }
 
   set dailySeparatorsEnabled(bool value) {
     if (value == _dailySeparatorsEnabled) return;
     _dailySeparatorsEnabled = value;
-    _store.put(_dailySeparatorsKey, value);
+    _store.putNow(_dailySeparatorsKey, value);
     notifyListeners();
   }
 
   set readyToTypeOnOpen(bool value) {
     if (value == _readyToTypeOnOpen) return;
     _readyToTypeOnOpen = value;
-    _store.put(_readyToTypeOnOpenKey, value);
+    _store.putNow(_readyToTypeOnOpenKey, value);
     notifyListeners();
   }
 
   set numberSystem(NumberSystem value) {
     if (value == _numberSystem) return;
     _numberSystem = value;
-    _store.put(_numberSystemKey, value.name);
+    _store.putNow(_numberSystemKey, value.name);
     notifyListeners();
   }
 
   set writingFont(WritingFont value) {
     if (value == _writingFont) return;
     _writingFont = value;
-    _store.put(_writingFontKey, value.name);
+    _store.putNow(_writingFontKey, value.name);
     notifyListeners();
   }
 
@@ -232,14 +232,14 @@ class LayoutPrefs extends ChangeNotifier {
     _timeZoneId = normalized;
     // LocalStore has no removal operation. An empty value is the durable
     // representation of following the device time zone.
-    _store.put(_timeZoneKey, normalized ?? '');
+    _store.putNow(_timeZoneKey, normalized ?? '');
     notifyListeners();
   }
 
   set keepRunningInBackground(bool value) {
     if (value == _keepRunningInBackground) return;
     _keepRunningInBackground = value;
-    _store.put(_keepRunningKey, value);
+    _store.putNow(_keepRunningKey, value);
     notifyListeners();
   }
 
@@ -254,15 +254,15 @@ class LayoutPrefs extends ChangeNotifier {
     _gutterWidth = defaultGutterWidth;
     _sidebarWidth = defaultSidebarWidth;
     _resultsVisible = true;
-    _store.put(_gutterKey, _gutterWidth);
-    _store.put(_sidebarKey, _sidebarWidth);
-    _store.put(_resultsVisibleKey, _resultsVisible);
+    _store.putNow(_gutterKey, _gutterWidth);
+    _store.putNow(_sidebarKey, _sidebarWidth);
+    _store.putNow(_resultsVisibleKey, _resultsVisible);
     notifyListeners();
   }
 
   void toggleSidebar() {
     _sidebarVisible = !_sidebarVisible;
-    _store.put(_sidebarVisibleKey, _sidebarVisible);
+    _store.putNow(_sidebarVisibleKey, _sidebarVisible);
     notifyListeners();
   }
 

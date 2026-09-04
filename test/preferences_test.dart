@@ -22,6 +22,20 @@ class _MemoryStore extends LocalStore {
   void put(String key, Object? value) => data[key] = value;
 }
 
+/// Persists only when flushed, the way the file on disk does. A write still
+/// sitting in the coalescing window simply is not there.
+class _FlushOnlyStore extends LocalStore {
+  _FlushOnlyStore() : super(fileName: 'flush-only-test.json');
+
+  final Map<String, Object?> persisted = {};
+
+  @override
+  Future<void> load() async {}
+
+  @override
+  Future<void> flush() async => persisted.addAll(data);
+}
+
 void main() {
   test('desktop window size defaults to the compact portrait layout', () {
     final prefs = LayoutPrefs(_MemoryStore())..load();
@@ -77,6 +91,37 @@ void main() {
     expect(prefs.sidebarWidth, LayoutPrefs.minSidebarWidth);
     expect(prefs.resultsVisible, isTrue);
     expect(prefs.sidebarVisible, isTrue);
+  });
+
+  test('a setting is on disk before the app can be quit', () {
+    // The real store only persists on flush, so a value left waiting in the
+    // coalescing window is a value a quit would have thrown away.
+    final store = _FlushOnlyStore();
+    final prefs = LayoutPrefs(store)..load();
+
+    prefs.toggleSidebar();
+
+    expect(
+      store.persisted['sidebarVisible.v1'],
+      isFalse,
+      reason: 'toggling then quitting must not lose the choice',
+    );
+  });
+
+  test('sidebar visibility survives a restart', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.sidebarVisible, isTrue, reason: 'shown by default');
+
+    prefs.toggleSidebar();
+    expect(prefs.sidebarVisible, isFalse);
+
+    // A second instance over the same storage is what the next launch sees.
+    final restarted = LayoutPrefs(store)..load();
+    expect(restarted.sidebarVisible, isFalse);
+
+    restarted.toggleSidebar();
+    expect((LayoutPrefs(store)..load()).sidebarVisible, isTrue);
   });
 
   test('number system follows the region until the user overrides it', () {

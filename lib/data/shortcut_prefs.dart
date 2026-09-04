@@ -238,7 +238,7 @@ class ShortcutPrefs extends ChangeNotifier {
   }
 
   void _persist() {
-    _store.put(_key, {
+    _store.putNow(_key, {
       for (final entry in _bindings.entries)
         entry.key.name: entry.value.toJson(),
     });

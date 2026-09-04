@@ -61,6 +61,21 @@ class LocalStore {
     _timer = Timer(debounce, () => unawaited(flush()));
   }
 
+  /// Writes without waiting for the coalescing window.
+  ///
+  /// For settings rather than notes. Coalescing exists because a note changes
+  /// on every keystroke; a preference changes when somebody deliberately
+  /// changes it, and the moment after that is exactly when they are likely to
+  /// quit. Waiting 250ms to write a choice the user just made is how the
+  /// choice gets lost.
+  void putNow(String key, Object? value) {
+    _data[key] = value;
+    _dirty = true;
+    _timer?.cancel();
+    _timer = null;
+    unawaited(flush());
+  }
+
   T? read<T>(String key) {
     final value = _data[key];
     return value is T ? value : null;
