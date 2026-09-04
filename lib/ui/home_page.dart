@@ -55,10 +55,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   final FocusNode _searchFocus = FocusNode(debugLabel: 'sidebar-search');
   GlobalKey<NoteEditorState> _compactEditorKey = GlobalKey<NoteEditorState>();
+  GlobalKey<NoteEditorState> _wideEditorKey = GlobalKey<NoteEditorState>();
 
   String? _selectedId;
   String _query = '';
   bool _initialNoteScheduled = false;
+  bool _openSessionScheduled = false;
   bool _drawerContentReady = false;
   bool _drawerOpen = false;
 
@@ -71,6 +73,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // The system-wide new-note shortcut has already raised the window by the
     // time this runs; the note itself is this page's to make.
     widget.desktopIntegration?.onNewNoteRequested = _createNote;
+    widget.desktopIntegration?.onOpenRequested = _beginOpenSession;
     _reconcileSelection();
   }
 
@@ -79,20 +82,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
     widget.desktopIntegration?.onNewNoteRequested = null;
+    widget.desktopIntegration?.onOpenRequested = null;
     _searchFocus.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed ||
-        !_usesCompactLayout ||
-        _drawerOpen) {
+    if (state == AppLifecycleState.resumed) _beginOpenSession();
+  }
+
+  void _beginOpenSession() {
+    if (!widget.prefs.readyToTypeOnOpen ||
+        _drawerOpen ||
+        _openSessionScheduled) {
       return;
     }
+    _openSessionScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _openSessionScheduled = false;
       if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
-      _compactEditorKey.currentState?.focus();
+      final editor = _usesCompactLayout
+          ? _compactEditorKey.currentState
+          : _wideEditorKey.currentState;
+      editor?.beginAppendSession();
     });
   }
 
@@ -125,6 +138,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _setSelectedId(String? id) {
     if (_selectedId != id) {
       _compactEditorKey = GlobalKey<NoteEditorState>();
+      _wideEditorKey = GlobalKey<NoteEditorState>();
     }
     _selectedId = id;
   }
@@ -151,7 +165,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _setSelectedId(note.id);
     });
     widget.store.put(_selectionKey, note.id);
-    if (_usesCompactLayout) _focusCompactEditorAtEnd();
+    _focusSelectedEditorAtEnd();
   }
 
   void _deleteNote(String id) {
@@ -163,10 +177,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final next = widget.notes.successorTo(index);
     setState(() => _setSelectedId(next));
     widget.store.put(_selectionKey, next);
-    if (_usesCompactLayout) {
-      if (next == null) _scheduleInitialNote();
-      _focusCompactEditorAtEnd();
-    }
+    if (_usesCompactLayout && next == null) _scheduleInitialNote();
+    _focusSelectedEditorAtEnd();
   }
 
   void _updateDocument(String id, String body, List<NoteFormatRange> formats) =>
@@ -185,10 +197,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  void _focusCompactEditorAtEnd() {
+  void _focusSelectedEditorAtEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _compactEditorKey.currentState?.focusAtEnd();
+      final editor = _usesCompactLayout
+          ? _compactEditorKey.currentState
+          : _wideEditorKey.currentState;
+      editor?.focusAtEnd();
     });
   }
 
@@ -215,6 +230,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onDeleteNote: _selectedId == null
                 ? null
                 : () => _deleteNote(_selectedId!),
+            autofocus: _selectedId == null || !widget.prefs.readyToTypeOnOpen,
             child: content,
           ),
         );
@@ -305,7 +321,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             _drawerOpen = isOpen;
             if (isOpen) _drawerContentReady = true;
           });
-          if (!isOpen) _focusCompactEditorAtEnd();
+          if (!isOpen) _focusSelectedEditorAtEnd();
         },
         drawer: Drawer(
           width: drawerWidth,
@@ -403,10 +419,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ? widget.prefs.resultsVisible
               : true,
           showDivider: desktopResultsDivider,
-          autofocus: true,
-          startAtEnd: true,
+          autofocus: widget.prefs.readyToTypeOnOpen,
+          startAtEnd: widget.prefs.readyToTypeOnOpen,
           ensureKeyboardVisible:
-              AppPlatform.isMobile || AppPlatform.isFlutterTest,
+              widget.prefs.readyToTypeOnOpen &&
+              (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,
           displayTime: widget.prefs.displayTime,
@@ -437,7 +454,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         builder: (context, _) => NoteEditor(
           // Remounting on note change keeps one note's editing state from
           // leaking into the next.
-          key: ValueKey(note.id),
+          key: _wideEditorKey,
           noteId: note.id,
           initialBody: note.body,
           initialFormats: note.formats,
@@ -445,8 +462,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           highlighter: widget.engines.highlighter,
           gutterWidth: widget.prefs.gutterWidth,
           resultsVisible: widget.prefs.resultsVisible,
-          autofocus: AppPlatform.isDesktop,
-          startAtEnd: true,
+          autofocus: widget.prefs.readyToTypeOnOpen,
+          startAtEnd: widget.prefs.readyToTypeOnOpen,
+          ensureKeyboardVisible:
+              widget.prefs.readyToTypeOnOpen &&
+              (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,
           displayTime: widget.prefs.displayTime,
@@ -476,6 +496,7 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onToggleSidebar,
     required this.onDeleteNote,
     required this.shortcuts,
+    required this.autofocus,
   });
 
   final Widget child;
@@ -484,6 +505,7 @@ class _DesktopShortcuts extends StatelessWidget {
   final VoidCallback onToggleSidebar;
   final VoidCallback? onDeleteNote;
   final ShortcutPrefs shortcuts;
+  final bool autofocus;
 
   @override
   Widget build(BuildContext context) {
@@ -496,7 +518,7 @@ class _DesktopShortcuts extends StatelessWidget {
         shortcuts.bindingFor(ShortcutAction.deleteNote).activator:
             ?onDeleteNote,
       },
-      child: Focus(autofocus: true, child: child),
+      child: Focus(autofocus: autofocus, child: child),
     );
   }
 }

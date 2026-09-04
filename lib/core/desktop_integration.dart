@@ -40,6 +40,11 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   /// dropped rather than queued — there is no note list yet to add to.
   VoidCallback? onNewNoteRequested;
 
+  /// Called after an existing window is brought forward from the tray or a
+  /// system-wide shortcut. The notes UI uses this to restore its chosen
+  /// ready-to-type behavior after the native window owns focus again.
+  VoidCallback? onOpenRequested;
+
   /// Run before the process ends, so unsaved work reaches disk. Set by the
   /// app root, which owns the store.
   Future<void> Function()? onBeforeQuit;
@@ -190,13 +195,14 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   /// asked for somewhere to write, and a note behind the app you were in is
   /// not somewhere to write.
   Future<void> _summonForNewNote() async {
-    await _summon();
+    await _summon(notifyOpen: false);
     onNewNoteRequested?.call();
   }
 
-  Future<void> _summon() async {
+  Future<void> _summon({bool notifyOpen = true}) async {
     await windowManager.show();
     await windowManager.focus();
+    if (notifyOpen) onOpenRequested?.call();
   }
 
   /// Both platforms report the close before honouring it, whether or not it
@@ -207,6 +213,11 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   void onWindowClose() {
     if (!_hidesOnClose) return;
     unawaited(windowManager.hide());
+  }
+
+  @override
+  void onWindowFocus() {
+    onOpenRequested?.call();
   }
 
   /// Brings the window up, or puts it away if it is already the window you
@@ -221,8 +232,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
       await windowManager.hide();
       return;
     }
-    await windowManager.show();
-    await windowManager.focus();
+    await _summon();
   }
 
   @override
@@ -257,6 +267,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     layoutPrefs.removeListener(_onPrefsChanged);
     unawaited(_tray.dispose());
     onNewNoteRequested = null;
+    onOpenRequested = null;
     onBeforeQuit = null;
     for (final hotKey in _hotKeys.values) {
       unawaited(hotKeyManager.unregister(hotKey));

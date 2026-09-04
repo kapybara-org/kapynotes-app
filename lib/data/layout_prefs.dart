@@ -86,6 +86,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _sidebarVisibleKey = 'sidebarVisible.v1';
   static const String _windowWidthKey = 'windowWidth.v1';
   static const String _windowHeightKey = 'windowHeight.v1';
+  static const String _readyToTypeOnOpenKey = 'readyToTypeOnOpen.v1';
   static const String _dailySeparatorsKey = 'dailySeparators.v1';
   static const String _numberSystemKey = 'numberSystem.v1';
   static const String _writingFontKey = 'writingFont.v1';
@@ -103,6 +104,7 @@ class LayoutPrefs extends ChangeNotifier {
   double _sidebarWidth = defaultSidebarWidth;
   bool _sidebarVisible = true;
   Size _windowSize = defaultWindowSize;
+  bool _readyToTypeOnOpen = true;
   bool _dailySeparatorsEnabled = true;
   NumberSystem _numberSystem = NumberSystem.auto;
   WritingFont _writingFont = WritingFont.handwritten;
@@ -117,6 +119,7 @@ class LayoutPrefs extends ChangeNotifier {
   double get sidebarWidth => _sidebarWidth;
   bool get sidebarVisible => _sidebarVisible;
   Size get windowSize => _windowSize;
+  bool get readyToTypeOnOpen => _readyToTypeOnOpen;
   bool get dailySeparatorsEnabled => _dailySeparatorsEnabled;
   WritingFont get writingFont => _writingFont;
   String? get timeZoneId => _timeZoneId;
@@ -154,6 +157,7 @@ class LayoutPrefs extends ChangeNotifier {
         _readDouble(_windowHeightKey) ?? defaultWindowSize.height,
       ),
     );
+    _readyToTypeOnOpen = _store.read<bool>(_readyToTypeOnOpenKey) ?? true;
     _dailySeparatorsEnabled = _store.read<bool>(_dailySeparatorsKey) ?? true;
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
@@ -198,6 +202,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _dailySeparatorsEnabled) return;
     _dailySeparatorsEnabled = value;
     _store.put(_dailySeparatorsKey, value);
+    notifyListeners();
+  }
+
+  set readyToTypeOnOpen(bool value) {
+    if (value == _readyToTypeOnOpen) return;
+    _readyToTypeOnOpen = value;
+    _store.put(_readyToTypeOnOpenKey, value);
     notifyListeners();
   }
 

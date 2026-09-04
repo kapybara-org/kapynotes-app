@@ -322,6 +322,14 @@ class _SettingsDialogState extends State<SettingsDialog> {
     _SettingsGroup(
       children: [
         _ToggleRow(
+          key: const ValueKey('ready-to-type-on-open-toggle'),
+          icon: Icons.keyboard_alt_outlined,
+          title: 'Ready to type on open',
+          subtitle: 'Place the cursor on a new line when Kapy Notes opens',
+          value: widget.layoutPrefs.readyToTypeOnOpen,
+          onChanged: (value) => widget.layoutPrefs.readyToTypeOnOpen = value,
+        ),
+        _ToggleRow(
           key: const ValueKey('daily-separators-toggle'),
           icon: Icons.calendar_today_outlined,
           title: 'Daily separators',

@@ -22,6 +22,8 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
     required this.onItalicPressed,
     required this.onBulletsPressed,
     required this.onChecklistPressed,
+    this.onOpenLink,
+    this.onCopyLink,
   });
 
   final EditableTextState editableTextState;
@@ -35,6 +37,8 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
   final VoidCallback onItalicPressed;
   final VoidCallback onBulletsPressed;
   final VoidCallback onChecklistPressed;
+  final VoidCallback? onOpenLink;
+  final VoidCallback? onCopyLink;
 
   static const double _screenPadding = 8;
   static const double _toolbarGap = 8;
@@ -84,6 +88,24 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (onOpenLink != null)
+                    _SelectionIconButton(
+                      key: const ValueKey('selection-open-link'),
+                      icon: Icons.open_in_new_rounded,
+                      tooltip: 'Open link',
+                      active: false,
+                      onPressed: () => _run(onOpenLink!),
+                    ),
+                  if (onCopyLink != null)
+                    _SelectionIconButton(
+                      key: const ValueKey('selection-copy-link'),
+                      icon: Icons.content_copy_rounded,
+                      tooltip: 'Copy link',
+                      active: false,
+                      onPressed: () => _run(onCopyLink!),
+                    ),
+                  if (onOpenLink != null || onCopyLink != null)
+                    Container(width: 0.5, height: 20, color: palette.separator),
                   _SelectionStyleCycle(
                     style: paragraphStyle,
                     onPressed: onParagraphStylePressed,

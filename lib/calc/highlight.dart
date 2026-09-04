@@ -1,3 +1,4 @@
+import '../core/note_link.dart';
 import 'engine.dart';
 import 'lexer.dart';
 import 'parser.dart';
@@ -30,9 +31,9 @@ class HighlightSpan {
 
 /// Classifies note text for display.
 ///
-/// It runs the same [Lexer] the parser uses, so highlighting can never drift
-/// from evaluation. Lines that are not calculations are left uncoloured,
-/// which keeps prose from lighting up because it happens to contain "to".
+/// It runs the same [Lexer] the parser uses after masking web links, which are
+/// prose rather than calculator syntax. Lines that are not calculations are
+/// left uncoloured, so ordinary writing stays quiet.
 class Highlighter {
   final UnitRegistry registry;
 
@@ -40,17 +41,19 @@ class Highlighter {
 
   /// Returns spans over the whole document, in order, covering only the
   /// characters that need colour. Gaps render in the default text colour.
-  List<HighlightSpan> spans(String body) {
+  List<HighlightSpan> spans(String body, {List<NoteLink>? links}) {
     final knownNames = _assignedNames(body);
+    final noteLinks = links ?? findNoteLinks(body);
     final out = <HighlightSpan>[];
     var offset = 0;
 
     for (final line in body.split('\n')) {
-      final commentStart = line.indexOf('//');
+      final commentStart = _commentStart(line, offset, noteLinks);
       final content = commentStart < 0 ? line : line.substring(0, commentStart);
-      if (content.trim().isNotEmpty &&
-          CalcEngine.looksLikeMath(content, knownNames)) {
-        _spansForLine(content, offset, knownNames, out);
+      final highlightableContent = _maskLinks(content, offset, noteLinks);
+      if (highlightableContent.trim().isNotEmpty &&
+          CalcEngine.looksLikeMath(highlightableContent, knownNames)) {
+        _spansForLine(highlightableContent, offset, knownNames, out);
       }
       if (commentStart >= 0) {
         // Inline comments are valid after prose as well as calculations. Keep
@@ -67,6 +70,54 @@ class Highlighter {
       offset += line.length + 1;
     }
     return out;
+  }
+
+  /// Finds the first real comment delimiter, skipping slashes that belong to
+  /// a detected web address. Without this, `https://` would mute the rest of
+  /// an otherwise ordinary note line as though it were a calculator comment.
+  static int _commentStart(String line, int lineOffset, List<NoteLink> links) {
+    var searchFrom = 0;
+    while (searchFrom < line.length) {
+      final index = line.indexOf('//', searchFrom);
+      if (index < 0) return -1;
+      final globalIndex = lineOffset + index;
+      NoteLink? containingLink;
+      for (final link in links) {
+        if (link.start > globalIndex) break;
+        if (link.start <= globalIndex && link.end > globalIndex + 1) {
+          containingLink = link;
+          break;
+        }
+      }
+      if (containingLink == null) return index;
+      searchFrom = (containingLink.end - lineOffset).clamp(
+        index + 2,
+        line.length,
+      );
+    }
+    return -1;
+  }
+
+  /// Keeps source offsets stable while making URL punctuation invisible to
+  /// the calculator lexer. In particular, its own `//` token must not repaint
+  /// a URL and everything after it as a comment.
+  static String _maskLinks(
+    String content,
+    int lineOffset,
+    List<NoteLink> links,
+  ) {
+    List<int>? codeUnits;
+    final lineEnd = lineOffset + content.length;
+    for (final link in links) {
+      if (link.end <= lineOffset) continue;
+      if (link.start >= lineEnd) break;
+      final start = (link.start - lineOffset).clamp(0, content.length);
+      final end = (link.end - lineOffset).clamp(0, content.length);
+      if (end <= start) continue;
+      codeUnits ??= List<int>.of(content.codeUnits);
+      codeUnits.fillRange(start, end, 0x20);
+    }
+    return codeUnits == null ? content : String.fromCharCodes(codeUnits);
   }
 
   void _spansForLine(

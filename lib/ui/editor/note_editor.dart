@@ -1,16 +1,21 @@
 import 'dart:async';
-import 'dart:ui' show BoxHeightStyle;
+import 'dart:ui' show BoxHeightStyle, PointerDeviceKind;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart'
+    show kLongPressTimeout, kPrimaryButton, kTouchSlop;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../calc/engine.dart';
 import '../../calc/highlight.dart';
 import '../../core/editor_font.dart';
+import '../../core/note_link.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
+import '../../core/toast.dart';
 import '../../data/daily_separator.dart';
 import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
@@ -119,7 +124,7 @@ class NoteEditorState extends State<NoteEditor> {
   late List<NoteFormatRange> _formats;
   final Map<NoteFormat, bool> _typingOverrides = {};
   NoteParagraphStyle? _paragraphOverride;
-  final Map<int, Offset> _pointerDownPositions = {};
+  final Map<int, _PointerDownDetails> _pointerDownDetails = {};
   Set<NoteFormat>? _nextInsertedFormats;
   bool _isEmpty = true;
 
@@ -213,6 +218,38 @@ class NoteEditorState extends State<NoteEditor> {
   void focus() {
     _focusNode.requestFocus();
     _scheduleKeyboardRetry();
+  }
+
+  /// Opens a fresh append position without writing empty lines to the note.
+  /// The prepared spacing becomes durable only if the user actually types.
+  void beginAppendSession() {
+    if (!mounted) return;
+    final currentText = _controller.text;
+    final pendingSeparatorLine = DailySeparator.trailingEmptySectionLine(
+      currentText,
+    );
+    final preparedText = DailySeparator.prepareForAppend(currentText);
+    _dailySeparatorFormatter.beginAppendSession(pendingSeparatorLine);
+
+    if (preparedText != currentText) {
+      // This is presentation state, just like the initial blank line created
+      // in initState. Keep it out of persistence until a real edit arrives.
+      _controller.removeListener(_onControllerChanged);
+      _formats = normalizeNoteFormats(_formats, preparedText.length);
+      _controller.value = TextEditingValue(
+        text: preparedText,
+        selection: TextSelection.collapsed(offset: preparedText.length),
+      );
+      _controller.formats = _formats;
+      _lastValue = _controller.value;
+      _typingOverrides.clear();
+      _paragraphOverride = null;
+      _isEmpty = preparedText.isEmpty;
+      _controller.addListener(_onControllerChanged);
+      setState(_evaluate);
+    }
+
+    focusAtEnd();
   }
 
   /// Places the caret after the note's final character and brings it on screen.
@@ -429,36 +466,131 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   void _handlePointerDown(PointerDownEvent event) {
-    _pointerDownPositions[event.pointer] = event.position;
+    _pointerDownDetails[event.pointer] = _PointerDownDetails(
+      position: event.position,
+      timeStamp: event.timeStamp,
+      wasPrimary: event.buttons & kPrimaryButton != 0,
+    );
   }
 
   void _handlePointerCancel(PointerCancelEvent event) {
-    _pointerDownPositions.remove(event.pointer);
+    _pointerDownDetails.remove(event.pointer);
   }
 
   void _handlePointerUp(PointerUpEvent event) {
-    final down = _pointerDownPositions.remove(event.pointer);
-    if (down == null || (event.position - down).distance > 10) return;
+    final down = _pointerDownDetails.remove(event.pointer);
+    if (down == null ||
+        !down.wasPrimary ||
+        event.timeStamp - down.timeStamp >= kLongPressTimeout ||
+        (event.position - down.position).distance > kTouchSlop) {
+      return;
+    }
     final root = _textFieldKey.currentContext?.findRenderObject();
     final editable = root == null ? null : _findRenderEditable(root);
     if (editable == null) return;
 
     final offset = editable.getPositionForPoint(event.position).offset;
     final checkboxStart = checkboxLineStartAt(_controller.text, offset);
-    if (checkboxStart < 0) return;
-    final boxes = editable.getBoxesForSelection(
-      TextSelection(baseOffset: checkboxStart, extentOffset: checkboxStart + 1),
-    );
-    if (boxes.isEmpty) return;
-    final box = boxes.first;
-    final origin = editable.localToGlobal(Offset(box.left, box.top));
-    final checkboxRect =
-        origin & Size(box.right - box.left, box.bottom - box.top);
-    if (!checkboxRect.inflate(6).contains(event.position)) return;
+    if (checkboxStart >= 0) {
+      final boxes = editable.getBoxesForSelection(
+        TextSelection(
+          baseOffset: checkboxStart,
+          extentOffset: checkboxStart + 1,
+        ),
+      );
+      if (boxes.isNotEmpty) {
+        final box = boxes.first;
+        final origin = editable.localToGlobal(Offset(box.left, box.top));
+        final checkboxRect =
+            origin & Size(box.right - box.left, box.bottom - box.top);
+        if (checkboxRect.inflate(6).contains(event.position)) {
+          _nextInsertedFormats = const {};
+          _controller.value = toggleCheckboxAt(
+            _controller.value,
+            checkboxStart,
+          );
+          _focusNode.requestFocus();
+          return;
+        }
+      }
+    }
 
-    _nextInsertedFormats = const {};
-    _controller.value = toggleCheckboxAt(_controller.value, checkboxStart);
-    _focusNode.requestFocus();
+    final link = _linkAtPoint(editable, event.position, offset);
+    if (link == null || !_shouldOpenLinkFrom(event)) return;
+    unawaited(_openLink(link));
+  }
+
+  NoteLink? _linkAtPoint(
+    RenderEditable editable,
+    Offset globalPosition,
+    int textOffset,
+  ) {
+    final links = _controller.linksFor(_controller.text);
+    for (final link in links) {
+      if (textOffset < link.start || textOffset > link.end) continue;
+      final boxes = editable.getBoxesForSelection(
+        TextSelection(baseOffset: link.start, extentOffset: link.end),
+      );
+      for (final box in boxes) {
+        final origin = editable.localToGlobal(Offset(box.left, box.top));
+        final rect = origin & Size(box.right - box.left, box.bottom - box.top);
+        if (rect.inflate(2).contains(globalPosition)) return link;
+      }
+    }
+    return null;
+  }
+
+  bool _shouldOpenLinkFrom(PointerUpEvent event) {
+    final isDirectTouch = switch (event.kind) {
+      PointerDeviceKind.touch ||
+      PointerDeviceKind.stylus ||
+      PointerDeviceKind.invertedStylus => true,
+      _ => false,
+    };
+    if (isDirectTouch) return true;
+    return AppPlatform.isMacOS || AppPlatform.isIOS
+        ? HardwareKeyboard.instance.isMetaPressed
+        : HardwareKeyboard.instance.isControlPressed;
+  }
+
+  NoteLink? _linkForSelection(TextSelection selection) =>
+      noteLinkForSelection(_controller.linksFor(_controller.text), selection);
+
+  Future<void> _openLink(NoteLink link) async {
+    ContextMenuController.removeAny();
+    var opened = false;
+    try {
+      opened = await launchUrl(link.uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (opened || !mounted) return;
+    Toast.show(
+      context,
+      'Could not open ${link.uri.host}',
+      icon: Icons.error_outline_rounded,
+      isError: true,
+    );
+  }
+
+  Future<void> _copyLink(NoteLink link) async {
+    ContextMenuController.removeAny();
+    await Clipboard.setData(ClipboardData(text: link.text));
+    if (mounted) Toast.show(context, 'Link copied');
+  }
+
+  List<ContextMenuButtonItem> _linkContextMenuItems(NoteLink? link) {
+    if (link == null) return const [];
+    return [
+      ContextMenuButtonItem(
+        label: 'Open Link',
+        onPressed: () => unawaited(_openLink(link)),
+      ),
+      ContextMenuButtonItem(
+        label: 'Copy Link',
+        onPressed: () => unawaited(_copyLink(link)),
+      ),
+    ];
   }
 
   /// Double-clicking a blank line has no word to take, so the platform
@@ -801,9 +933,16 @@ class NoteEditorState extends State<NoteEditor> {
             const _ListContinuationFormatter(),
           ],
           contextMenuBuilder: (context, editableTextState) {
-            if (editableTextState.textEditingValue.selection.isCollapsed) {
-              return AdaptiveTextSelectionToolbar.editableText(
-                editableTextState: editableTextState,
+            final selection = editableTextState.textEditingValue.selection;
+            final link = _linkForSelection(selection);
+            final linkItems = _linkContextMenuItems(link);
+            if (selection.isCollapsed) {
+              return AdaptiveTextSelectionToolbar.buttonItems(
+                anchors: editableTextState.contextMenuAnchors,
+                buttonItems: [
+                  ...linkItems,
+                  ...editableTextState.contextMenuButtonItems,
+                ],
               );
             }
             return NoteSelectionFormattingToolbar(
@@ -824,6 +963,12 @@ class NoteEditorState extends State<NoteEditor> {
               onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
               onBulletsPressed: _toggleBullets,
               onChecklistPressed: _toggleChecklist,
+              onOpenLink: link == null
+                  ? null
+                  : () => unawaited(_openLink(link)),
+              onCopyLink: link == null
+                  ? null
+                  : () => unawaited(_copyLink(link)),
             );
           },
           textAlignVertical: TextAlignVertical.top,
@@ -849,6 +994,18 @@ class NoteEditorState extends State<NoteEditor> {
       ),
     );
   }
+}
+
+class _PointerDownDetails {
+  const _PointerDownDetails({
+    required this.position,
+    required this.timeStamp,
+    required this.wasPrimary,
+  });
+
+  final Offset position;
+  final Duration timeStamp;
+  final bool wasPrimary;
 }
 
 class _Placeholder extends StatelessWidget {
@@ -1034,6 +1191,10 @@ class _DailySeparatorFormatter extends TextInputFormatter {
     if (value != null && value.isAfter(_lastUpdatedAt)) {
       _lastUpdatedAt = value;
     }
+  }
+
+  void beginAppendSession(String? pendingSeparatorLine) {
+    _pendingSeparatorLine = pendingSeparatorLine;
   }
 
   @override

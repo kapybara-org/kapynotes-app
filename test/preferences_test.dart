@@ -28,6 +28,7 @@ void main() {
 
     expect(prefs.windowSize, const Size(600, 630));
     expect(prefs.resultsVisible, isTrue);
+    expect(prefs.readyToTypeOnOpen, isTrue);
     expect(prefs.dailySeparatorsEnabled, isTrue);
     expect(prefs.writingFont, WritingFont.handwritten);
     expect(prefs.timeZoneId, isNull);
@@ -41,6 +42,7 @@ void main() {
     prefs.sidebarWidth = 318;
     prefs.gutterWidth = 224;
     prefs.resultsVisible = false;
+    prefs.readyToTypeOnOpen = false;
     prefs.dailySeparatorsEnabled = false;
     prefs.writingFont = WritingFont.clean;
 
@@ -49,6 +51,7 @@ void main() {
     expect(restored.sidebarWidth, 318);
     expect(restored.gutterWidth, 224);
     expect(restored.resultsVisible, isFalse);
+    expect(restored.readyToTypeOnOpen, isFalse);
     expect(restored.dailySeparatorsEnabled, isFalse);
     expect(restored.writingFont, WritingFont.clean);
   });

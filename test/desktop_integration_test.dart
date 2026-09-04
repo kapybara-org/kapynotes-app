@@ -132,6 +132,23 @@ void main() {
     },
   );
 
+  test('summoning the window reports that it is ready for writing', () async {
+    window.answers['isFocused'] = false;
+    var opened = 0;
+    integration.onOpenRequested = () => opened++;
+
+    await integration.toggleWindow();
+
+    expect(
+      window.calls,
+      containsAllInOrder(['isVisible', 'isFocused', 'show', 'focus']),
+    );
+    expect(opened, 1);
+
+    integration.onWindowFocus();
+    expect(opened, 2);
+  });
+
   test('a tray that will not appear leaves the close button alone', () async {
     // Reported, not thrown: a tray is a convenience and must not take the app
     // down with it. The report would otherwise fail this test.

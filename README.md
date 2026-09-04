@@ -25,7 +25,7 @@ One Flutter codebase, four platforms: **macOS, Windows, iOS, Android.**
 ```bash
 flutter pub get
 flutter run -d macos      # or: windows, <ios device>, <android device>
-flutter test              # 252 tests
+flutter test
 ```
 
 Built on Flutter 3.47.2 against the standalone **`material_ui`** package
@@ -100,10 +100,12 @@ packaging/release.sh dmg-template
 
 ### In-app updates
 
-Desktop builds check `dl.kapynotes.com/latest.json` once a day and, when a
-newer release exists, put a dot on the settings gear and an **Update** button
-in Settings → General. Nothing is downloaded before that button is pressed —
-the daily check is a few hundred bytes of JSON.
+Desktop builds schedule a quiet check of `dl.kapynotes.com/latest.json` five
+seconds after launch and resume. The checker makes a network request at most
+once every 24 hours after a successful response; failures retry after two
+hours. When a newer release exists, the app puts a dot on the settings gear
+and an **Update** button in Settings → Updates. Nothing is downloaded before
+that button is pressed; the check is only a few hundred bytes of JSON.
 
 The install itself is Sparkle on macOS and WinSparkle on Windows, behind the
 `auto_updater` plugin. Only the install half is used: Sparkle's own background
@@ -235,6 +237,11 @@ chip positions against the field's own `RenderEditable` geometry.
 
 Clicking a result copies it at full precision.
 
+Typed and pasted web addresses stay ordinary note text, but appear as links.
+Tap one on touch devices, or Command-click on Apple platforms and Control-click
+elsewhere, to open it. Selecting or long-pressing a link exposes a dedicated
+Copy Link action while leaving the platform's normal text copy and paste intact.
+
 Currency codes can sit directly beside an amount, such as `10usd` or `10eur`;
 `rs` is accepted as an INR shorthand, so `10rs` and `10inr` are equivalent.
 Lines that start with `//` are treated and styled as quiet comments.
@@ -304,6 +311,10 @@ The spec described an Electron build. These changed for Flutter:
   becomes a new note. Search and the full note list are built only when the
   hamburger drawer first opens; the gutter is fixed-width and the divider is
   hidden.
+- **Every platform:** *Ready to type on open* is on by default. The latest note
+  opens focused on a fresh line, and returning to the app starts another
+  append position without saving empty lines. It can be disabled in Settings
+  › General.
 - Shortcuts: `⌘/Ctrl N` new note, `⌘/Ctrl F` search, `⌘/Ctrl \` toggle
   sidebar, `⌘/Ctrl ⌫` delete note. Two more are registered with the OS and
   answer from inside any other app: `⌥⌘X` / `Ctrl+Shift+X` summons the window,

@@ -19,4 +19,16 @@ void main() {
       '// standalone comment',
     ]);
   });
+
+  test('does not treat URL slashes as a comment delimiter', () {
+    const body =
+        'Read https://example.com/path//part and keep writing // real comment';
+    final comments = Highlighter(CalcEngine().registry)
+        .spans(body)
+        .where((span) => span.kind == HighlightKind.comment)
+        .map((span) => body.substring(span.start, span.end))
+        .toList();
+
+    expect(comments, ['// real comment']);
+  });
 }

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../calc/highlight.dart';
+import '../../core/note_link.dart';
 import '../../core/theme.dart';
 import '../../data/note_format.dart';
 import 'editor_formatting.dart';
@@ -27,6 +28,7 @@ class HighlightingController extends TextEditingController {
 
   String? _cachedText;
   List<HighlightSpan> _cachedSpans = const [];
+  List<NoteLink> _cachedLinks = const [];
 
   /// Swapped in when exchange rates arrive and new currency codes become
   /// colourable.
@@ -54,13 +56,20 @@ class HighlightingController extends TextEditingController {
   void _invalidate() {
     _cachedText = null;
     _cachedSpans = const [];
+    _cachedLinks = const [];
   }
 
   List<HighlightSpan> spansFor(String source) {
     if (_cachedText == source) return _cachedSpans;
-    _cachedSpans = _highlighter.spans(source);
+    _cachedLinks = findNoteLinks(source);
+    _cachedSpans = _highlighter.spans(source, links: _cachedLinks);
     _cachedText = source;
     return _cachedSpans;
+  }
+
+  List<NoteLink> linksFor(String source) {
+    spansFor(source);
+    return _cachedLinks;
   }
 
   @override
@@ -74,6 +83,7 @@ class HighlightingController extends TextEditingController {
     if (source.isEmpty) return TextSpan(style: base);
 
     final spans = spansFor(source);
+    final links = linksFor(source);
     final checkedRanges = _checkedTextRanges(source);
     final composing = withComposing && value.isComposingRangeValid
         ? value.composing
@@ -86,6 +96,10 @@ class HighlightingController extends TextEditingController {
     for (final span in spans) {
       boundaries.add(span.start.clamp(0, source.length));
       boundaries.add(span.end.clamp(0, source.length));
+    }
+    for (final link in links) {
+      boundaries.add(link.start);
+      boundaries.add(link.end);
     }
     for (final format in _formats) {
       boundaries.add(format.start.clamp(0, source.length));
@@ -103,6 +117,8 @@ class HighlightingController extends TextEditingController {
     final cuts = boundaries.toList()..sort();
     final children = <TextSpan>[];
     var spanIndex = 0;
+    var linkIndex = 0;
+    final linkColor = Theme.of(context).colorScheme.primary;
 
     for (var i = 0; i < cuts.length - 1; i++) {
       final start = cuts[i];
@@ -117,6 +133,15 @@ class HighlightingController extends TextEditingController {
               spans[spanIndex].start <= start &&
               spans[spanIndex].end >= end
           ? spans[spanIndex]
+          : null;
+      while (linkIndex < links.length && links[linkIndex].end <= start) {
+        linkIndex++;
+      }
+      final activeLink =
+          linkIndex < links.length &&
+              links[linkIndex].start <= start &&
+              links[linkIndex].end >= end
+          ? links[linkIndex]
           : null;
 
       var segmentStyle = active == null
@@ -147,12 +172,26 @@ class HighlightingController extends TextEditingController {
           ),
         };
       }
-      if (checkedRanges.any(
+      if (activeLink != null) {
+        segmentStyle = segmentStyle.copyWith(
+          color: linkColor,
+          decoration: TextDecoration.underline,
+          decorationColor: linkColor.withValues(alpha: 0.82),
+          decorationThickness: 1,
+        );
+      }
+      final checked = checkedRanges.any(
         (range) => range.start <= start && range.end >= end,
-      )) {
+      );
+      if (checked) {
         segmentStyle = segmentStyle.copyWith(
           color: _palette.comment,
-          decoration: TextDecoration.lineThrough,
+          decoration: activeLink == null
+              ? TextDecoration.lineThrough
+              : TextDecoration.combine(const [
+                  TextDecoration.underline,
+                  TextDecoration.lineThrough,
+                ]),
           decorationColor: _palette.comment,
         );
       }

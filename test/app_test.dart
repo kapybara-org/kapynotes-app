@@ -164,6 +164,117 @@ void main() {
     expect(notes.notes, hasLength(1));
   });
 
+  testWidgets('opens a desktop note on a fresh line ready to type', (
+    tester,
+  ) async {
+    store.data['notes.v1'] = [
+      {
+        'id': 'desktop-latest',
+        'body': 'Desktop thought\nfinal line',
+        'createdAt': 1000,
+        'updatedAt': 2000,
+      },
+    ];
+    await pumpApp(tester);
+
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(field.controller!.text, 'Desktop thought\nfinal line\n\n');
+    expect(
+      field.controller!.selection.baseOffset,
+      field.controller!.text.length,
+    );
+    expect(field.focusNode!.hasFocus, isTrue);
+    expect(notes.notes.single.body, 'Desktop thought\nfinal line');
+  });
+
+  testWidgets('ready-to-type behavior can be disabled on desktop', (
+    tester,
+  ) async {
+    store.data['readyToTypeOnOpen.v1'] = false;
+    store.data['notes.v1'] = [
+      {
+        'id': 'desktop-continue',
+        'body': 'Leave this exactly here',
+        'createdAt': 1000,
+        'updatedAt': 2000,
+      },
+    ];
+    final integration = DesktopIntegration(layoutPrefs: prefs);
+
+    await pumpApp(tester, desktopIntegration: integration);
+
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(field.controller!.text, 'Leave this exactly here');
+    expect(field.focusNode!.hasFocus, isFalse);
+
+    integration.onOpenRequested!();
+    await tester.pump();
+    expect(field.controller!.text, 'Leave this exactly here');
+    expect(field.focusNode!.hasFocus, isFalse);
+
+    await tester.tap(find.byIcon(Icons.add_rounded).first);
+    await tester.pumpAndSettle();
+    final newNoteField = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(newNoteField.controller!.text, isEmpty);
+    expect(newNoteField.focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('bringing the desktop window back starts a new append session', (
+    tester,
+  ) async {
+    store.data['dailySeparators.v1'] = false;
+    store.data['notes.v1'] = [
+      {
+        'id': 'desktop-return',
+        'body': 'Earlier thought',
+        'createdAt': 1000,
+        'updatedAt': 2000,
+      },
+    ];
+    final integration = DesktopIntegration(layoutPrefs: prefs);
+
+    await pumpApp(tester, desktopIntegration: integration);
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(TextField),
+      ),
+    );
+    await tester.enterText(
+      find.byType(TextField).last,
+      'Earlier thought\n\nMore',
+    );
+    await tester.pumpAndSettle();
+    field.focusNode!.unfocus();
+    await tester.pump();
+
+    integration.onOpenRequested!();
+    await tester.pump();
+
+    expect(field.controller!.text, 'Earlier thought\n\nMore\n\n');
+    expect(
+      field.controller!.selection.baseOffset,
+      field.controller!.text.length,
+    );
+    expect(field.focusNode!.hasFocus, isTrue);
+    expect(notes.notes.single.body, 'Earlier thought\n\nMore');
+  });
+
   testWidgets('keeps exchange-rate status out of the toolbar', (tester) async {
     await pumpApp(tester);
 
@@ -322,6 +433,14 @@ void main() {
     );
     expect(prefs.dailySeparatorsEnabled, isTrue);
     expect(tester.getSize(compactSwitch), const Size(34, 18));
+
+    final readyToType = find.byKey(
+      const ValueKey('ready-to-type-on-open-toggle'),
+    );
+    expect(prefs.readyToTypeOnOpen, isTrue);
+    await tester.tap(readyToType);
+    await tester.pumpAndSettle();
+    expect(prefs.readyToTypeOnOpen, isFalse);
 
     await tester.tap(find.byKey(const ValueKey('sidebar-toggle')));
     await tester.pumpAndSettle();
@@ -873,6 +992,22 @@ void main() {
 
       expect(find.byType(ResultsGutter), findsNothing);
       expect(find.byType(GutterDivider), findsNothing);
+      final field = tester.widget<TextField>(
+        find.descendant(
+          of: find.byType(NoteEditor),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(
+        field.controller!.text,
+        'September 2\nA calm place to keep the whole day.\n\n',
+      );
+      expect(
+        field.controller!.selection.baseOffset,
+        field.controller!.text.length,
+      );
+      expect(field.focusNode!.hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
     });
 
     testWidgets('keeps complete currency totals visible on a wide phone', (
@@ -964,6 +1099,29 @@ void main() {
         expect(tester.testTextInput.isVisible, isTrue);
       },
     );
+
+    testWidgets('ready-to-type behavior can be disabled on mobile', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['readyToTypeOnOpen.v1'] = false;
+      store.data['notes.v1'] = [
+        {
+          'id': 'mobile-continue',
+          'body': 'Keep my place',
+          'createdAt': 1000,
+          'updatedAt': 2000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(420, 800));
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.controller!.text, 'Keep my place');
+      expect(field.focusNode!.hasFocus, isFalse);
+      expect(tester.testTextInput.isVisible, isFalse);
+    });
 
     testWidgets('keeps search and notes in a drawer and switches in place', (
       tester,

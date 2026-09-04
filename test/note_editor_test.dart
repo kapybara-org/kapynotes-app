@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/calc/highlight.dart';
 import 'package:kapy_notes/core/editor_font.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_format.dart';
@@ -439,6 +440,59 @@ void main() {
     expect(formatted.style!.fontStyle, FontStyle.italic);
   });
 
+  testWidgets('styles pasted URLs as links without changing their text', (
+    tester,
+  ) async {
+    const body = 'Read https://example.com/docs?q=notes.';
+    const linkText = 'https://example.com/docs?q=notes';
+    final linkStart = body.indexOf(linkText);
+    final linkEnd = linkStart + linkText.length;
+
+    await tester.pumpWidget(harness(body));
+    await tester.pumpAndSettle();
+
+    final rendered =
+        tester
+                .state<EditableTextState>(find.byType(EditableText))
+                .renderEditable
+                .text!
+            as TextSpan;
+    var offset = 0;
+    var sawLinkRun = false;
+    var sawTrailingPeriod = false;
+    for (final span in rendered.children!.whereType<TextSpan>()) {
+      final text = span.text ?? '';
+      final end = offset + text.length;
+      if (offset >= linkStart && end <= linkEnd && text.isNotEmpty) {
+        sawLinkRun = true;
+        expect(
+          span.style!.color,
+          Theme.of(tester.element(find.byType(TextField))).colorScheme.primary,
+        );
+        expect(
+          span.style!.decoration!.contains(TextDecoration.underline),
+          isTrue,
+        );
+      }
+      if (offset == linkEnd && text == '.') {
+        sawTrailingPeriod = true;
+        expect(
+          span.style?.decoration?.contains(TextDecoration.underline) ?? false,
+          isFalse,
+        );
+        expect(span.style?.fontStyle, isNot(FontStyle.italic));
+      }
+      offset = end;
+    }
+
+    expect(sawLinkRun, isTrue);
+    expect(sawTrailingPeriod, isTrue);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      body,
+    );
+  });
+
   testWidgets('cycles paragraph presets directly from the footer', (
     tester,
   ) async {
@@ -629,6 +683,151 @@ void main() {
     ]);
   });
 
+  testWidgets('offers one-tap open and full-link copy for selected URLs', (
+    tester,
+  ) async {
+    const body = 'Read www.example.com/docs today';
+    const linkText = 'www.example.com/docs';
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(harness(body, autofocus: true));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.controller!.selection = TextSelection(
+      baseOffset: body.indexOf('example'),
+      extentOffset: body.indexOf('.com'),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('selection-open-link')), findsOneWidget);
+    expect(find.byKey(const ValueKey('selection-copy-link')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('selection-copy-link')));
+    await tester.pumpAndSettle();
+
+    expect(copied, [linkText]);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('opens a tapped link with a normalized HTTPS destination', (
+    tester,
+  ) async {
+    const body = 'Open www.example.com/path';
+    const linkText = 'www.example.com/path';
+    final launched = <String>[];
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      final url = (call.arguments as Map?)?['url'];
+      if (url is String) launched.add(url);
+      return true;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(harness(body));
+    await tester.pumpAndSettle();
+    final editable = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .renderEditable;
+    final start = body.indexOf(linkText);
+    final box = editable
+        .getBoxesForSelection(
+          TextSelection(
+            baseOffset: start,
+            extentOffset: start + linkText.length,
+          ),
+        )
+        .first;
+    final tapPosition = editable.localToGlobal(
+      Offset((box.left + box.right) / 2, (box.top + box.bottom) / 2),
+    );
+
+    await tester.tapAt(tapPosition);
+    await tester.pumpAndSettle();
+
+    expect(launched, ['https://www.example.com/path']);
+  });
+
+  testWidgets('plain desktop clicks edit and Command-click opens links', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    const body = 'Open https://example.com/path';
+    const linkText = 'https://example.com/path';
+    final launched = <String>[];
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      final url = (call.arguments as Map?)?['url'];
+      if (url is String) launched.add(url);
+      return true;
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(harness(body));
+    await tester.pumpAndSettle();
+    final editable = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .renderEditable;
+    final start = body.indexOf(linkText);
+    final box = editable
+        .getBoxesForSelection(
+          TextSelection(
+            baseOffset: start,
+            extentOffset: start + linkText.length,
+          ),
+        )
+        .first;
+    final clickPosition = editable.localToGlobal(
+      Offset((box.left + box.right) / 2, (box.top + box.bottom) / 2),
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: clickPosition);
+
+    await mouse.down(clickPosition);
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(launched, isEmpty);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await mouse.down(clickPosition);
+    await mouse.up();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+
+    expect(launched, ['https://example.com/path']);
+  });
+
   testWidgets('cycles selected line styles without a floating popover', (
     tester,
   ) async {
@@ -714,18 +913,18 @@ void main() {
     expect(italic.style!.fontStyle, FontStyle.italic);
   });
 
-  testWidgets('keeps the selection toolbar inside a narrow phone', (
-    tester,
-  ) async {
+  testWidgets('keeps link actions inside a narrow phone', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(harness('Select this text', autofocus: true));
+    await tester.pumpWidget(harness('www.example.com', autofocus: true));
     await tester.pumpAndSettle();
     final field = tester.widget<TextField>(find.byType(TextField));
     field.controller!.selection = const TextSelection(
-      baseOffset: 0,
-      extentOffset: 6,
+      baseOffset: 4,
+      extentOffset: 11,
     );
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 200));
@@ -736,6 +935,8 @@ void main() {
     );
     expect(toolbar.left, greaterThanOrEqualTo(0));
     expect(toolbar.right, lessThanOrEqualTo(320));
+    expect(find.byKey(const ValueKey('selection-open-link')), findsOneWidget);
+    expect(find.byKey(const ValueKey('selection-copy-link')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
