@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:ui' show BoxHeightStyle, PointerDeviceKind;
+import 'dart:ui' show BoxHeightStyle;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart'
@@ -23,6 +23,7 @@ import '../notebook_paper.dart';
 import 'editor_formatting.dart';
 import 'highlighting_controller.dart';
 import 'line_metrics.dart';
+import 'link_popover.dart';
 import 'note_footer.dart';
 import 'results_gutter.dart';
 import 'selection_formatting_toolbar.dart';
@@ -158,6 +159,9 @@ class NoteEditorState extends State<NoteEditor> {
     }
     _lastValue = _controller.value;
     _controller.addListener(_onControllerChanged);
+    // Anchored to a rect that scrolling invalidates, so it goes rather than
+    // drifts away from the link it points at.
+    _scrollController.addListener(LinkPopover.hide);
     widget.shortcuts.addListener(_onShortcutsChanged);
     _isEmpty = initialText.isEmpty;
     _evaluate();
@@ -201,7 +205,9 @@ class NoteEditorState extends State<NoteEditor> {
 
   @override
   void dispose() {
+    LinkPopover.hide();
     _controller.removeListener(_onControllerChanged);
+    _scrollController.removeListener(LinkPopover.hide);
     widget.shortcuts.removeListener(_onShortcutsChanged);
     _keyboardRetryTimer?.cancel();
     _selectionToolbarTimer?.cancel();
@@ -305,6 +311,10 @@ class NoteEditorState extends State<NoteEditor> {
       setState(() {});
       return;
     }
+
+    // The text moved under the panel, so the rect it is pinned to no longer
+    // describes the link.
+    LinkPopover.hide();
 
     final insertedText = insertedTextForChange(previous.text, value.text);
     final forcedInsertedFormats = _nextInsertedFormats;
@@ -438,6 +448,14 @@ class NoteEditorState extends State<NoteEditor> {
     _focusNode.requestFocus();
   }
 
+  /// Any key at all dismisses the link panel first. Escape is the one people
+  /// reach for, but a panel that outlives the caret it was raised next to is
+  /// wrong whichever key moved it.
+  KeyEventResult _handleEditorKey(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent) LinkPopover.hide();
+    return _handleTabIndent(node, event);
+  }
+
   /// Tab nests the current item, Shift+Tab lifts it out.
   ///
   /// Only claimed when the caret is actually on a list line. Everywhere else
@@ -515,12 +533,21 @@ class NoteEditorState extends State<NoteEditor> {
       }
     }
 
-    final link = _linkAtPoint(editable, event.position, offset);
-    if (link == null || !_shouldOpenLinkFrom(event)) return;
-    unawaited(_openLink(link));
+    final hit = _linkAtPoint(editable, event.position, offset);
+    if (hit == null) return;
+    // The shortcut stays: someone who already knows it should not be made to
+    // read a panel first.
+    if (_isDirectOpenShortcut()) {
+      unawaited(_openLink(hit.link));
+      return;
+    }
+    _showLinkPopover(hit);
   }
 
-  NoteLink? _linkAtPoint(
+  /// The clicked link and the rect of the line it was clicked on, in global
+  /// coordinates. A link that wraps has one box per line; the panel belongs
+  /// against the one under the pointer, not against the whole run.
+  _LinkHit? _linkAtPoint(
     RenderEditable editable,
     Offset globalPosition,
     int textOffset,
@@ -534,23 +561,30 @@ class NoteEditorState extends State<NoteEditor> {
       for (final box in boxes) {
         final origin = editable.localToGlobal(Offset(box.left, box.top));
         final rect = origin & Size(box.right - box.left, box.bottom - box.top);
-        if (rect.inflate(2).contains(globalPosition)) return link;
+        if (rect.inflate(2).contains(globalPosition)) {
+          return _LinkHit(link: link, rect: rect);
+        }
       }
     }
     return null;
   }
 
-  bool _shouldOpenLinkFrom(PointerUpEvent event) {
-    final isDirectTouch = switch (event.kind) {
-      PointerDeviceKind.touch ||
-      PointerDeviceKind.stylus ||
-      PointerDeviceKind.invertedStylus => true,
-      _ => false,
-    };
-    if (isDirectTouch) return true;
-    return AppPlatform.isMacOS || AppPlatform.isIOS
-        ? HardwareKeyboard.instance.isMetaPressed
-        : HardwareKeyboard.instance.isControlPressed;
+  /// Cmd on Apple platforms, Ctrl everywhere else: the modifier that opens a
+  /// link outright, skipping the panel. Touch has no modifier to hold, so a
+  /// tap raises the panel like a click does — and a tap meant to put the
+  /// caret inside a URL no longer launches a browser.
+  bool _isDirectOpenShortcut() => AppPlatform.isMacOS || AppPlatform.isIOS
+      ? HardwareKeyboard.instance.isMetaPressed
+      : HardwareKeyboard.instance.isControlPressed;
+
+  void _showLinkPopover(_LinkHit hit) {
+    LinkPopover.show(
+      context,
+      anchor: hit.rect,
+      label: hit.link.text,
+      onOpen: () => unawaited(_openLink(hit.link)),
+      onCopy: () => unawaited(_copyLink(hit.link)),
+    );
   }
 
   NoteLink? _linkForSelection(TextSelection selection) =>
@@ -881,7 +915,7 @@ class NoteEditorState extends State<NoteEditor> {
         // before the app's traversal shortcuts can claim it.
         canRequestFocus: false,
         skipTraversal: true,
-        onKeyEvent: _handleTabIndent,
+        onKeyEvent: _handleEditorKey,
         child: _textField(textStyle, strut),
       ),
     );
@@ -994,6 +1028,14 @@ class NoteEditorState extends State<NoteEditor> {
       ),
     );
   }
+}
+
+/// A link and where it was drawn, paired so the panel can be put against it.
+class _LinkHit {
+  const _LinkHit({required this.link, required this.rect});
+
+  final NoteLink link;
+  final Rect rect;
 }
 
 class _PointerDownDetails {

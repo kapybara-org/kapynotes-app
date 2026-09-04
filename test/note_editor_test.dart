@@ -37,6 +37,22 @@ class _MemoryStore extends LocalStore {
   void put(String key, Object? value) => data[key] = value;
 }
 
+/// The middle of a link's first line, in global coordinates.
+Offset _centerOfLink(WidgetTester tester, String body, String linkText) {
+  final editable = tester
+      .state<EditableTextState>(find.byType(EditableText))
+      .renderEditable;
+  final start = body.indexOf(linkText);
+  final box = editable
+      .getBoxesForSelection(
+        TextSelection(baseOffset: start, extentOffset: start + linkText.length),
+      )
+      .first;
+  return editable.localToGlobal(
+    Offset((box.left + box.right) / 2, (box.top + box.bottom) / 2),
+  );
+}
+
 Widget harness(
   String body, {
   List<NoteFormatRange> initialFormats = const [],
@@ -725,7 +741,7 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   });
 
-  testWidgets('opens a tapped link with a normalized HTTPS destination', (
+  testWidgets('a tapped link offers to open rather than opening itself', (
     tester,
   ) async {
     const body = 'Open www.example.com/path';
@@ -767,7 +783,115 @@ void main() {
     await tester.tapAt(tapPosition);
     await tester.pumpAndSettle();
 
+    // The tap put the caret in the URL and said what could be done with it;
+    // it did not leave the app.
+    expect(find.byKey(const ValueKey('link-popover')), findsOneWidget);
+    expect(find.text(linkText), findsOneWidget);
+    expect(launched, isEmpty);
+
+    await tester.tap(find.byKey(const ValueKey('link-popover-open')));
+    await tester.pumpAndSettle();
+
     expect(launched, ['https://www.example.com/path']);
+    expect(find.byKey(const ValueKey('link-popover')), findsNothing);
+  });
+
+  testWidgets('the panel copies the link exactly as it is written', (
+    tester,
+  ) async {
+    const body = 'Read www.example.com/docs today';
+    const linkText = 'www.example.com/docs';
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(harness(body));
+    await tester.pumpAndSettle();
+    await tester.tapAt(_centerOfLink(tester, body, linkText));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('link-popover-copy')));
+    await tester.pumpAndSettle();
+
+    // The source text, not the normalized https:// form the browser gets.
+    expect(copied, [linkText]);
+    expect(find.byKey(const ValueKey('link-popover')), findsNothing);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('a click elsewhere dismisses the panel and still moves the caret', (
+    tester,
+  ) async {
+    const body = 'Open www.example.com/path and then keep writing here';
+    await tester.pumpWidget(harness(body, autofocus: true));
+    await tester.pumpAndSettle();
+    await tester.tapAt(_centerOfLink(tester, body, 'www.example.com/path'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('link-popover')), findsOneWidget);
+
+    // The panel does not swallow the press that dismisses it, so putting the
+    // caret somewhere else still takes the one click it always took.
+    await tester.tapAt(_centerOfLink(tester, body, 'writing'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('link-popover')), findsNothing);
+    final field = tester.widget<TextField>(find.byType(TextField));
+    final caret = field.controller!.selection.baseOffset;
+    expect(caret, greaterThanOrEqualTo(body.indexOf('writing')));
+    expect(caret, lessThanOrEqualTo(body.indexOf('writing') + 'writing'.length));
+  });
+
+  testWidgets('keeps the link panel inside a narrow phone', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const body = 'www.example.com/a/rather/long/path/that/will/not/fit';
+    await tester.pumpWidget(harness(body, autofocus: true));
+    await tester.pumpAndSettle();
+
+    await tester.tapAt(_centerOfLink(tester, body, body));
+    await tester.pumpAndSettle();
+
+    final panel = tester.getRect(find.byKey(const ValueKey('link-popover')));
+    expect(panel.left, greaterThanOrEqualTo(0));
+    expect(panel.right, lessThanOrEqualTo(320));
+    expect(panel.top, greaterThanOrEqualTo(0));
+    expect(panel.bottom, lessThanOrEqualTo(640));
+    expect(
+      find.byKey(const ValueKey('link-popover-open')),
+      findsOneWidget,
+      reason: 'the address gives way before the actions do',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('typing dismisses the link panel', (tester) async {
+    const body = 'Open www.example.com/path';
+    await tester.pumpWidget(harness(body, autofocus: true));
+    await tester.pumpAndSettle();
+    await tester.tapAt(_centerOfLink(tester, body, 'www.example.com/path'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('link-popover')), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '$body!');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('link-popover')), findsNothing);
   });
 
   testWidgets('plain desktop clicks edit and Command-click opens links', (
@@ -818,6 +942,11 @@ void main() {
     await mouse.up();
     await tester.pumpAndSettle();
     expect(launched, isEmpty);
+    expect(
+      find.byKey(const ValueKey('link-popover')),
+      findsOneWidget,
+      reason: 'a plain click edits, and offers the link rather than taking it',
+    );
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
     await mouse.down(clickPosition);
@@ -826,6 +955,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(launched, ['https://example.com/path']);
+    expect(
+      find.byKey(const ValueKey('link-popover')),
+      findsNothing,
+      reason: 'the shortcut skips the panel instead of stacking one up',
+    );
   });
 
   testWidgets('cycles selected line styles without a floating popover', (
