@@ -495,6 +495,11 @@ class NoteEditorState extends State<NoteEditor> {
     _pointerDownDetails.remove(event.pointer);
   }
 
+  /// What the editor claims about itself under the pointer. An I-beam over
+  /// text, a hand over a checkbox or a link.
+  static const MouseCursor _textCursor = SystemMouseCursors.text;
+  MouseCursor _hoverCursor = _textCursor;
+
   void _handlePointerUp(PointerUpEvent event) {
     final down = _pointerDownDetails.remove(event.pointer);
     if (down == null ||
@@ -508,29 +513,12 @@ class NoteEditorState extends State<NoteEditor> {
     if (editable == null) return;
 
     final offset = editable.getPositionForPoint(event.position).offset;
-    final checkboxStart = checkboxLineStartAt(_controller.text, offset);
+    final checkboxStart = _checkboxAt(editable, event.position, offset);
     if (checkboxStart >= 0) {
-      final boxes = editable.getBoxesForSelection(
-        TextSelection(
-          baseOffset: checkboxStart,
-          extentOffset: checkboxStart + 1,
-        ),
-      );
-      if (boxes.isNotEmpty) {
-        final box = boxes.first;
-        final origin = editable.localToGlobal(Offset(box.left, box.top));
-        final checkboxRect =
-            origin & Size(box.right - box.left, box.bottom - box.top);
-        if (checkboxRect.inflate(6).contains(event.position)) {
-          _nextInsertedFormats = const {};
-          _controller.value = toggleCheckboxAt(
-            _controller.value,
-            checkboxStart,
-          );
-          _focusNode.requestFocus();
-          return;
-        }
-      }
+      _nextInsertedFormats = const {};
+      _controller.value = toggleCheckboxAt(_controller.value, checkboxStart);
+      _focusNode.requestFocus();
+      return;
     }
 
     final hit = _linkAtPoint(editable, event.position, offset);
@@ -542,6 +530,61 @@ class NoteEditorState extends State<NoteEditor> {
       return;
     }
     _showLinkPopover(hit);
+  }
+
+  /// The offset of the checkbox glyph under [globalPosition], or -1.
+  ///
+  /// Shared by the click handler and the hover cursor deliberately: the two
+  /// cannot disagree if they ask the same question, so anything that shows a
+  /// hand is something a click will actually toggle.
+  int _checkboxAt(
+    RenderEditable editable,
+    Offset globalPosition,
+    int textOffset,
+  ) {
+    final start = checkboxLineStartAt(_controller.text, textOffset);
+    if (start < 0) return -1;
+    final boxes = editable.getBoxesForSelection(
+      TextSelection(baseOffset: start, extentOffset: start + 1),
+    );
+    if (boxes.isEmpty) return -1;
+    final box = boxes.first;
+    final origin = editable.localToGlobal(Offset(box.left, box.top));
+    final rect = origin & Size(box.right - box.left, box.bottom - box.top);
+    // A forgiving margin: the glyph is small, and a pointer a few pixels off
+    // is still aiming at it.
+    return rect.inflate(6).contains(globalPosition) ? start : -1;
+  }
+
+  /// Turns the pointer into a hand over the things a click acts on, and
+  /// leaves it as an I-beam over everything else.
+  ///
+  /// Checkboxes and links are characters inside an editable field rather than
+  /// widgets, so nothing gives them a cursor for free — without this the
+  /// editor claims the whole surface is text and offers no hint that any of
+  /// it can be clicked.
+  void _handleHover(PointerHoverEvent event) {
+    final root = _textFieldKey.currentContext?.findRenderObject();
+    final editable = root == null ? null : _findRenderEditable(root);
+    var wanted = _textCursor;
+
+    if (editable != null) {
+      final offset = editable.getPositionForPoint(event.position).offset;
+      // Link scanning is cached against the text, so hovering re-uses the
+      // spans the highlighter already built rather than re-scanning the note.
+      if (_checkboxAt(editable, event.position, offset) >= 0 ||
+          _linkAtPoint(editable, event.position, offset) != null) {
+        wanted = SystemMouseCursors.click;
+      }
+    }
+    // Only on a change: a rebuild per mouse-move would be a needless frame.
+    if (wanted != _hoverCursor) setState(() => _hoverCursor = wanted);
+  }
+
+  void _handleHoverExit() {
+    if (_hoverCursor != _textCursor) {
+      setState(() => _hoverCursor = _textCursor);
+    }
   }
 
   /// The clicked link and the rect of the line it was clicked on, in global
@@ -937,113 +980,126 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   Widget _textField(TextStyle textStyle, StrutStyle strut) {
-    return Listener(
-      onPointerDown: _handlePointerDown,
-      onPointerUp: _handlePointerUp,
-      onPointerCancel: _handlePointerCancel,
-      child: CallbackShortcuts(
-        bindings: {
-          widget.shortcuts.bindingFor(ShortcutAction.cycleTextStyle).activator:
-              _cycleParagraphStyle,
-          widget.shortcuts
-              .bindingFor(ShortcutAction.formatBold)
-              .activator: () =>
-              _toggleInlineFormat(NoteFormat.bold),
-          widget.shortcuts
-              .bindingFor(ShortcutAction.formatItalic)
-              .activator: () =>
-              _toggleInlineFormat(NoteFormat.italic),
-          widget.shortcuts.bindingFor(ShortcutAction.formatBullets).activator:
-              _toggleBullets,
-          widget.shortcuts.bindingFor(ShortcutAction.formatChecklist).activator:
-              _toggleChecklist,
-        },
-        child: TextField(
-          key: _textFieldKey,
-          controller: _controller,
-          focusNode: _focusNode,
-          scrollController: _scrollController,
-          autofocus: widget.autofocus,
-          expands: true,
-          maxLines: null,
-          minLines: null,
-          style: textStyle,
-          strutStyle: strut,
-          cursorWidth: EditorMetrics.cursorWidth,
-          cursorRadius: const Radius.circular(1),
-          cursorColor: Theme.of(context).colorScheme.primary,
-          // Uniform selection rectangles: without this, a line whose glyphs
-          // come from a fallback font gets a differently sized highlight.
-          selectionHeightStyle: BoxHeightStyle.strut,
-          keyboardType: TextInputType.multiline,
-          textInputAction: TextInputAction.newline,
-          inputFormatters: [
-            _dailySeparatorFormatter,
-            const _ListContinuationFormatter(),
-          ],
-          contextMenuBuilder: (context, editableTextState) {
-            final selection = editableTextState.textEditingValue.selection;
-            final link = _linkForSelection(selection);
-            final linkItems = _linkContextMenuItems(link);
-            if (selection.isCollapsed) {
-              return AdaptiveTextSelectionToolbar.buttonItems(
-                anchors: editableTextState.contextMenuAnchors,
-                buttonItems: [
-                  ...linkItems,
-                  if (_controller.text.isNotEmpty)
-                    ContextMenuButtonItem(
-                      label: 'Copy Plain Text',
-                      onPressed: () => unawaited(_copyPlainText(selection)),
-                    ),
-                  ...editableTextState.contextMenuButtonItems,
-                ],
-              );
-            }
-            return NoteSelectionFormattingToolbar(
-              editableTextState: editableTextState,
-              paragraphStyle: _activeParagraphStyle,
-              boldActive: _formatActive(NoteFormat.bold),
-              italicActive: _formatActive(NoteFormat.italic),
-              bulletsActive: selectionHasLineStyle(
-                _controller.value,
-                NoteLineStyle.bullet,
-              ),
-              checklistActive: selectionHasLineStyle(
-                _controller.value,
-                NoteLineStyle.checklist,
-              ),
-              onParagraphStylePressed: _cycleParagraphStyle,
-              onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
-              onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
-              onBulletsPressed: _toggleBullets,
-              onChecklistPressed: _toggleChecklist,
-              onOpenLink: link == null
-                  ? null
-                  : () => unawaited(_openLink(link)),
-              onCopyLink: link == null
-                  ? null
-                  : () => unawaited(_copyLink(link)),
-              onCopyPlainText: () => unawaited(_copyPlainText(selection)),
-            );
+    return MouseRegion(
+      // Hover only. The cursor itself goes to the TextField below: it builds
+      // its own MouseRegion around the text, and the innermost region under
+      // the pointer is the one that decides, so setting it here would be
+      // silently overridden.
+      onHover: _handleHover,
+      onExit: (_) => _handleHoverExit(),
+      child: Listener(
+        onPointerDown: _handlePointerDown,
+        onPointerUp: _handlePointerUp,
+        onPointerCancel: _handlePointerCancel,
+        child: CallbackShortcuts(
+          bindings: {
+            widget.shortcuts
+                    .bindingFor(ShortcutAction.cycleTextStyle)
+                    .activator:
+                _cycleParagraphStyle,
+            widget.shortcuts
+                .bindingFor(ShortcutAction.formatBold)
+                .activator: () =>
+                _toggleInlineFormat(NoteFormat.bold),
+            widget.shortcuts
+                .bindingFor(ShortcutAction.formatItalic)
+                .activator: () =>
+                _toggleInlineFormat(NoteFormat.italic),
+            widget.shortcuts.bindingFor(ShortcutAction.formatBullets).activator:
+                _toggleBullets,
+            widget.shortcuts
+                    .bindingFor(ShortcutAction.formatChecklist)
+                    .activator:
+                _toggleChecklist,
           },
-          textAlignVertical: TextAlignVertical.top,
-          // This is a calculator surface, not prose: every helpful-guess input
-          // feature would fight the user.
-          autocorrect: false,
-          enableSuggestions: false,
-          textCapitalization: TextCapitalization.none,
-          smartDashesType: SmartDashesType.disabled,
-          smartQuotesType: SmartQuotesType.disabled,
-          scrollPadding: const EdgeInsets.all(80),
-          // No decoration padding: an InputDecorator positions its child by
-          // rules of its own, and the gutter needs the text origin to be
-          // exactly the padding it was told about.
-          decoration: const InputDecoration(
-            isCollapsed: true,
-            border: InputBorder.none,
-            filled: false,
-            hoverColor: Colors.transparent,
-            contentPadding: EdgeInsets.zero,
+          child: TextField(
+            key: _textFieldKey,
+            mouseCursor: _hoverCursor,
+            controller: _controller,
+            focusNode: _focusNode,
+            scrollController: _scrollController,
+            autofocus: widget.autofocus,
+            expands: true,
+            maxLines: null,
+            minLines: null,
+            style: textStyle,
+            strutStyle: strut,
+            cursorWidth: EditorMetrics.cursorWidth,
+            cursorRadius: const Radius.circular(1),
+            cursorColor: Theme.of(context).colorScheme.primary,
+            // Uniform selection rectangles: without this, a line whose glyphs
+            // come from a fallback font gets a differently sized highlight.
+            selectionHeightStyle: BoxHeightStyle.strut,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
+            inputFormatters: [
+              _dailySeparatorFormatter,
+              const _ListContinuationFormatter(),
+            ],
+            contextMenuBuilder: (context, editableTextState) {
+              final selection = editableTextState.textEditingValue.selection;
+              final link = _linkForSelection(selection);
+              final linkItems = _linkContextMenuItems(link);
+              if (selection.isCollapsed) {
+                return AdaptiveTextSelectionToolbar.buttonItems(
+                  anchors: editableTextState.contextMenuAnchors,
+                  buttonItems: [
+                    ...linkItems,
+                    if (_controller.text.isNotEmpty)
+                      ContextMenuButtonItem(
+                        label: 'Copy Plain Text',
+                        onPressed: () => unawaited(_copyPlainText(selection)),
+                      ),
+                    ...editableTextState.contextMenuButtonItems,
+                  ],
+                );
+              }
+              return NoteSelectionFormattingToolbar(
+                editableTextState: editableTextState,
+                paragraphStyle: _activeParagraphStyle,
+                boldActive: _formatActive(NoteFormat.bold),
+                italicActive: _formatActive(NoteFormat.italic),
+                bulletsActive: selectionHasLineStyle(
+                  _controller.value,
+                  NoteLineStyle.bullet,
+                ),
+                checklistActive: selectionHasLineStyle(
+                  _controller.value,
+                  NoteLineStyle.checklist,
+                ),
+                onParagraphStylePressed: _cycleParagraphStyle,
+                onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
+                onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
+                onBulletsPressed: _toggleBullets,
+                onChecklistPressed: _toggleChecklist,
+                onOpenLink: link == null
+                    ? null
+                    : () => unawaited(_openLink(link)),
+                onCopyLink: link == null
+                    ? null
+                    : () => unawaited(_copyLink(link)),
+                onCopyPlainText: () => unawaited(_copyPlainText(selection)),
+              );
+            },
+            textAlignVertical: TextAlignVertical.top,
+            // This is a calculator surface, not prose: every helpful-guess input
+            // feature would fight the user.
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.none,
+            smartDashesType: SmartDashesType.disabled,
+            smartQuotesType: SmartQuotesType.disabled,
+            scrollPadding: const EdgeInsets.all(80),
+            // No decoration padding: an InputDecorator positions its child by
+            // rules of its own, and the gutter needs the text origin to be
+            // exactly the padding it was told about.
+            decoration: const InputDecoration(
+              isCollapsed: true,
+              border: InputBorder.none,
+              filled: false,
+              hoverColor: Colors.transparent,
+              contentPadding: EdgeInsets.zero,
+            ),
           ),
         ),
       ),

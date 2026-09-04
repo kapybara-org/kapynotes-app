@@ -273,15 +273,20 @@ class _SearchFieldState extends State<_SearchField> {
           ),
           suffixIcon: widget.query.isEmpty
               ? null
-              : GestureDetector(
-                  onTap: () {
-                    _controller.clear();
-                    widget.onChanged('');
-                  },
-                  child: Icon(
-                    Icons.cancel_rounded,
-                    size: 14,
-                    color: palette.textTertiary,
+              // Inside a text field, so without a cursor of its own it would
+              // inherit the field's I-beam and read as more text.
+              : MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () {
+                      _controller.clear();
+                      widget.onChanged('');
+                    },
+                    child: Icon(
+                      Icons.cancel_rounded,
+                      size: 14,
+                      color: palette.textTertiary,
+                    ),
                   ),
                 ),
           suffixIconConstraints: const BoxConstraints(
@@ -384,7 +389,9 @@ class _NoteRowState extends State<NoteRow> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: MouseRegion(
-        cursor: SystemMouseCursors.basic,
+        // The row is the main click target in the sidebar; matching the
+        // settings rows, which are InkWells and already say so.
+        cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _hovering = true),
         onExit: (_) => setState(() => _hovering = false),
         child: GestureDetector(

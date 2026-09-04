@@ -198,7 +198,8 @@ class _ResultChipState extends State<ResultChip> {
     );
 
     return MouseRegion(
-      cursor: SystemMouseCursors.basic,
+      // A result copies itself when clicked, so it has to look clickable.
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
       child: GestureDetector(

@@ -1,6 +1,7 @@
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
@@ -37,8 +38,8 @@ class _MemoryStore extends LocalStore {
   void put(String key, Object? value) => data[key] = value;
 }
 
-/// The middle of a link's first line, in global coordinates.
-Offset _centerOfLink(WidgetTester tester, String body, String linkText) {
+/// The middle of a substring's first line, in global coordinates.
+Offset _centerOf(WidgetTester tester, String body, String linkText) {
   final editable = tester
       .state<EditableTextState>(find.byType(EditableText))
       .renderEditable;
@@ -820,7 +821,7 @@ void main() {
 
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
-    await tester.tapAt(_centerOfLink(tester, body, linkText));
+    await tester.tapAt(_centerOf(tester, body, linkText));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('link-popover-copy')));
@@ -832,27 +833,31 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   });
 
-  testWidgets('a click elsewhere dismisses the panel and still moves the caret', (
-    tester,
-  ) async {
-    const body = 'Open www.example.com/path and then keep writing here';
-    await tester.pumpWidget(harness(body, autofocus: true));
-    await tester.pumpAndSettle();
-    await tester.tapAt(_centerOfLink(tester, body, 'www.example.com/path'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('link-popover')), findsOneWidget);
+  testWidgets(
+    'a click elsewhere dismisses the panel and still moves the caret',
+    (tester) async {
+      const body = 'Open www.example.com/path and then keep writing here';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      await tester.tapAt(_centerOf(tester, body, 'www.example.com/path'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('link-popover')), findsOneWidget);
 
-    // The panel does not swallow the press that dismisses it, so putting the
-    // caret somewhere else still takes the one click it always took.
-    await tester.tapAt(_centerOfLink(tester, body, 'writing'));
-    await tester.pumpAndSettle();
+      // The panel does not swallow the press that dismisses it, so putting the
+      // caret somewhere else still takes the one click it always took.
+      await tester.tapAt(_centerOf(tester, body, 'writing'));
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('link-popover')), findsNothing);
-    final field = tester.widget<TextField>(find.byType(TextField));
-    final caret = field.controller!.selection.baseOffset;
-    expect(caret, greaterThanOrEqualTo(body.indexOf('writing')));
-    expect(caret, lessThanOrEqualTo(body.indexOf('writing') + 'writing'.length));
-  });
+      expect(find.byKey(const ValueKey('link-popover')), findsNothing);
+      final field = tester.widget<TextField>(find.byType(TextField));
+      final caret = field.controller!.selection.baseOffset;
+      expect(caret, greaterThanOrEqualTo(body.indexOf('writing')));
+      expect(
+        caret,
+        lessThanOrEqualTo(body.indexOf('writing') + 'writing'.length),
+      );
+    },
+  );
 
   testWidgets('keeps the link panel inside a narrow phone', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
@@ -864,7 +869,7 @@ void main() {
     await tester.pumpWidget(harness(body, autofocus: true));
     await tester.pumpAndSettle();
 
-    await tester.tapAt(_centerOfLink(tester, body, body));
+    await tester.tapAt(_centerOf(tester, body, body));
     await tester.pumpAndSettle();
 
     final panel = tester.getRect(find.byKey(const ValueKey('link-popover')));
@@ -908,9 +913,7 @@ void main() {
     final field = tester.widget<TextField>(find.byType(TextField));
     field.controller!.selection = const TextSelection.collapsed(offset: 3);
     await tester.pumpAndSettle();
-    tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .showToolbar();
+    tester.state<EditableTextState>(find.byType(EditableText)).showToolbar();
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Copy Plain Text'));
@@ -968,7 +971,7 @@ void main() {
     const body = 'Open www.example.com/path';
     await tester.pumpWidget(harness(body, autofocus: true));
     await tester.pumpAndSettle();
-    await tester.tapAt(_centerOfLink(tester, body, 'www.example.com/path'));
+    await tester.tapAt(_centerOf(tester, body, 'www.example.com/path'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('link-popover')), findsOneWidget);
 
@@ -2126,5 +2129,85 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  group('pointer affordances', () {
+    /// Parks a mouse at [position] and reports the cursor the app asks for.
+    Future<MouseCursor> cursorAt(WidgetTester tester, Offset position) async {
+      final gesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+        pointer: 1,
+      );
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await tester.pump();
+      await gesture.moveTo(position);
+      await tester.pump();
+      return RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1)!;
+    }
+
+    testWidgets('a checkbox asks for a hand', (tester) async {
+      const body = '\u2610 milk\n\u2610 eggs';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+
+      expect(
+        await cursorAt(tester, _centerOf(tester, body, '\u2610')),
+        SystemMouseCursors.click,
+      );
+    });
+
+    testWidgets('ordinary text still asks for an I-beam', (tester) async {
+      const body = '\u2610 milk\n\u2610 eggs';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+
+      // The word beside the box, not the box: the editor is still a text
+      // field everywhere a click would only place the caret.
+      expect(
+        await cursorAt(tester, _centerOf(tester, body, 'milk')),
+        SystemMouseCursors.text,
+      );
+    });
+
+    testWidgets('a link asks for a hand too', (tester) async {
+      const body = 'Open www.example.com/path';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+
+      expect(
+        await cursorAt(tester, _centerOf(tester, body, 'www.example.com/path')),
+        SystemMouseCursors.click,
+      );
+    });
+
+    testWidgets('and the I-beam returns on the way out', (tester) async {
+      const body = '\u2610 milk and more text here';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+
+      final gesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+        pointer: 1,
+      );
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await tester.pump();
+
+      await gesture.moveTo(_centerOf(tester, body, '\u2610'));
+      await tester.pump();
+      expect(
+        RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+        SystemMouseCursors.click,
+      );
+
+      await gesture.moveTo(_centerOf(tester, body, 'more text'));
+      await tester.pump();
+      expect(
+        RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+        SystemMouseCursors.text,
+        reason: 'the hand must not stick once the pointer leaves the box',
+      );
+    });
   });
 }
