@@ -137,7 +137,8 @@ class CalcEngine {
     if (source == null) return null;
 
     return _evaluateExpression(source, index, evaluator, scope) ??
-        _labelledAmount(source, index, evaluator, scope);
+        _labelledAmount(source, index, evaluator, scope) ??
+        _quantityWithLabel(source, index, evaluator, scope);
   }
 
   _EvaluatedLine? _evaluateExpression(
@@ -179,6 +180,9 @@ class CalcEngine {
   /// refused on purpose — `Room 12` and `Chapter 4` are the same shape as
   /// `Lunch 12`, and nothing in the text distinguishes them. The unit or
   /// currency is the user saying which one they meant.
+  ///
+  /// The other order — `12 mangoes`, where the number leads — needs no such
+  /// marker and is read by [_quantityWithLabel].
   _EvaluatedLine? _labelledAmount(
     String source,
     int index,
@@ -219,6 +223,79 @@ class CalcEngine {
       }
     }
     return null;
+  }
+
+  /// Reads `12 mangoes` or `3 shirts`: the amount first, then plain words
+  /// naming what was counted.
+  ///
+  /// The mirror of [_labelledAmount], and safe where that one needs a unit to
+  /// be safe. Word order carries the meaning here: a line that *opens* with a
+  /// number is stating a quantity, while `Room 12`, `Chapter 4` and `iPhone
+  /// 15` put the number last and are naming something instead. So the amount
+  /// has to come first, with the words that name it after.
+  ///
+  /// Every word after the amount must be one the calculator has no meaning
+  /// for. A unit, a currency, a function, a keyword or a name the note has
+  /// defined all say the line is a calculation still being typed — `100 usd
+  /// to` is on its way to somewhere, and answering `100 usd` while the user
+  /// is mid-word would be worse than staying quiet.
+  ///
+  /// The amount itself must be pure arithmetic, with no word of its own. That
+  /// is the whole difference between `12 mangoes` and `10 min break`: in the
+  /// first the words are what the number counts, while in the second the
+  /// amount already says what it is and `break` is prose that happens to
+  /// follow it. Only the first is a quantity someone wanted totalled.
+  _EvaluatedLine? _quantityWithLabel(
+    String source,
+    int index,
+    Evaluator evaluator,
+    CalcScope scope,
+  ) {
+    final tokens = Lexer(source)
+        .tokenize()
+        .where((t) => t.isSignificant && t.type != TokenType.eof)
+        .toList();
+    if (tokens.length < 2) return null;
+
+    // Walk back over the trailing words that mean nothing here; where they
+    // start is where the amount ends. No such words, and the line is naming
+    // something rather than counting it: `Room 12` stops here.
+    var split = tokens.length;
+    while (split > 1 && _isLabelWord(tokens[split - 1], scope)) {
+      split--;
+    }
+    if (split == tokens.length) return null;
+    // Digits, operators and a currency symbol only — see above. This is also
+    // what keeps `Hotel: 7 nights` out: its amount carries a word.
+    if (tokens.take(split).any((token) => token.type == TokenType.identifier)) {
+      return null;
+    }
+
+    final evaluated = _evaluateExpression(
+      source.substring(0, tokens[split - 1].end),
+      index,
+      evaluator,
+      scope,
+    );
+    if (evaluated == null) return null;
+    // A comparison that happens to be followed by words is not a quantity.
+    final kind = evaluated.result.value.kind;
+    if (kind == ResultKind.boolean || kind == ResultKind.other) return null;
+    return evaluated;
+  }
+
+  /// True for a word the calculator can make nothing of, and so can read as
+  /// part of a label.
+  bool _isLabelWord(Token token, CalcScope scope) {
+    if (token.type != TokenType.identifier) return false;
+    final name = token.text.toLowerCase();
+    return !scope.variables.containsKey(token.text) &&
+        !calcKeywords.contains(name) &&
+        !aggregateNames.contains(name) &&
+        !mathConstants.contains(name) &&
+        !booleanLiterals.contains(name) &&
+        !functionNames.contains(name) &&
+        !registry.isUnit(name);
   }
 
   /// Decides whether a line is worth evaluating, and rewrites the couple of

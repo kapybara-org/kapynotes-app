@@ -441,6 +441,70 @@ void main() {
     });
   });
 
+  // The other word order: the amount leads and the words that follow name it.
+  group('quantities with a label', () {
+    test('reads a number followed by plain words', () {
+      expect(line('12 mangoes'), '12');
+      expect(line('12 bananas'), '12');
+      expect(line('3 shirts'), '3');
+      expect(line('12 ripe alphonso mangoes'), '12');
+      expect(line('2.5 boxes'), '2.5');
+    });
+
+    test('keeps the amount whole, whatever arithmetic it is made of', () {
+      expect(line(r'$5 apples'), '5.00 USD');
+      expect(line('2 + 3 apples'), '5');
+      expect(line('(2 + 3) * 4 boxes'), '20');
+      expect(line('-5 apples'), '-5');
+      // Exactly what a bare `50%` renders as; the label changes nothing.
+      expect(line('50% discount'), '0.5');
+    });
+
+    // The words have to be what the number counts. An amount that already
+    // says what it is has been read whole; words after it are prose.
+    test('an amount that names itself is not looking for a label', () {
+      expect(line('5 kg apples'), isNull);
+      expect(line('10 min break'), isNull);
+      expect(line('2 hours later he left'), isNull);
+      expect(line('5 usd apples'), isNull);
+    });
+
+    test('the number still has to lead', () {
+      // Named, not counted. Unchanged by this reading.
+      expect(line('Room 12'), isNull);
+      expect(line('Chapter 4'), isNull);
+      expect(line('iPhone 15'), isNull);
+      expect(line('Hotel: 7 nights'), isNull);
+    });
+
+    test('a word the calculator knows is not a label', () {
+      // Each of these is a calculation part way through being typed.
+      expect(line('100 usd to'), isNull);
+      expect(line('100 usd to xyz'), isNull);
+      expect(line('20 mod'), isNull);
+      expect(line('7 sqrt'), isNull);
+      expect(line('12 pi'), isNull);
+      expect(line('5 total'), isNull);
+      expect(doc('mangoes = 4\n12 mangoes'), {0: '4'});
+    });
+
+    test('prose that opens with a number is still not a calculation', () {
+      expect(line('12 + mangoes'), isNull);
+      expect(line('12 mangoes 13'), isNull);
+      expect(line('• 12 mangoes'), isNull);
+      expect(line('☐ 12 mangoes'), isNull);
+    });
+
+    test('quantities feed the running total', () {
+      final evaluation = engine.evaluateDocumentWithSummary(
+        'Shopping\n12 mangoes\n13 bananas\ntotal',
+      );
+      expect(evaluation.results[0], isNull, reason: 'the heading');
+      expect(evaluation.results[3]?.text, '25');
+      expect(evaluation.totalText, '25');
+    });
+  });
+
   // Sub-lists are written as leading spaces before the list prefix, so the
   // engine has to be blind to indentation or nesting an item would change what
   // the note computes.
