@@ -20,7 +20,7 @@ import 'package:kapy_notes/sync/vault.dart';
 /// what caught a keyset cursor that threw on every pull after the first — a
 /// bug invisible to a fake server and to any device that only ever synced once.
 ///
-///   KAPYNOTES_E2E_TOKEN=<bearer> flutter test --tags live
+///   `KAPYNOTES_E2E_TOKEN=<bearer> flutter test --tags live`
 ///
 /// Re-runnable: it reuses the account's key bundle if one exists, and scopes
 /// every assertion to its own run so previous runs' notes do not interfere.
