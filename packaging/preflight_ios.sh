@@ -188,7 +188,7 @@ if rg -q 'PrivacyInfo\.xcprivacy in Resources' ios/Runner.xcodeproj/project.pbxp
 else
   fail "Runner target does not embed PrivacyInfo.xcprivacy"
 fi
-if SEED_SELECTED=trip python3 packaging/screenshot_seed.py | python3 -c '
+if SEED_SELECTED=math python3 packaging/screenshot_seed.py | python3 -c '
 import json, sys, time
 seed = json.load(sys.stdin)
 rates = seed["rates.v1"]
