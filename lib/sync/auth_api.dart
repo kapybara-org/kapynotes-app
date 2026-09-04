@@ -52,9 +52,9 @@ class AuthNeedsVerification extends AuthResult {
   final String email;
 }
 
-/// A link is on its way. Nothing more happens until it is opened.
-class AuthLinkSent extends AuthResult {
-  const AuthLinkSent(this.email);
+/// A code is on its way. Nothing more happens until it is typed back.
+class AuthCodeSent extends AuthResult {
+  const AuthCodeSent(this.email);
   final String email;
 }
 
@@ -84,7 +84,16 @@ abstract class AuthApi {
 
   Future<AuthResult> signIn({required String email, required String password});
 
-  Future<AuthResult> sendMagicLink(String email);
+  /// Asks for a six-digit code. Works for an address that has never signed
+  /// up: the code is what creates the account.
+  Future<AuthResult> sendCode(String email);
+
+  /// Exchanges a code for a session. The code proves control of the address,
+  /// so this both creates the account and marks the email confirmed.
+  Future<AuthResult> signInWithCode({
+    required String email,
+    required String code,
+  });
 
   /// Best-effort: a token the server has already forgotten is still a token
   /// this device should drop.
@@ -127,13 +136,23 @@ class HttpAuthApi implements AuthApi {
   }, email);
 
   @override
-  Future<AuthResult> sendMagicLink(String email) async {
-    final response = await _post('api/auth/sign-in/magic-link', {
+  Future<AuthResult> sendCode(String email) async {
+    final response = await _post('api/auth/email-otp/send-verification-otp', {
       'email': email,
+      'type': 'sign-in',
     });
     if (response is _Failure) return response.result;
-    return AuthLinkSent(email);
+    return AuthCodeSent(email);
   }
+
+  @override
+  Future<AuthResult> signInWithCode({
+    required String email,
+    required String code,
+  }) => _authenticate('api/auth/sign-in/email-otp', {
+    'email': email,
+    'otp': code,
+  }, email);
 
   @override
   Future<void> signOut(String token) async {

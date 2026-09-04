@@ -50,7 +50,11 @@ class _Busy extends StatelessWidget {
 
 /// The shared frame: a sentence saying where things stand, then the controls.
 class _Panel extends StatelessWidget {
-  const _Panel({required this.title, required this.blurb, required this.children});
+  const _Panel({
+    required this.title,
+    required this.blurb,
+    required this.children,
+  });
 
   final String title;
   final String blurb;
@@ -73,7 +77,11 @@ class _Panel extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           blurb,
-          style: TextStyle(fontSize: 12.5, color: palette.textSecondary, height: 1.4),
+          style: TextStyle(
+            fontSize: 12.5,
+            color: palette.textSecondary,
+            height: 1.4,
+          ),
         ),
         const SizedBox(height: 14),
         ...children,
@@ -117,7 +125,10 @@ class _Field extends StatelessWidget {
         decoration: InputDecoration(
           hintText: hint,
           isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 11,
+          ),
           filled: true,
           fillColor: palette.controlBackground,
           border: OutlineInputBorder(
@@ -139,7 +150,11 @@ class _Message extends StatelessWidget {
     padding: const EdgeInsets.only(top: 10),
     child: Text(
       text,
-      style: TextStyle(fontSize: 12, color: context.palette.textSecondary, height: 1.4),
+      style: TextStyle(
+        fontSize: 12,
+        color: context.palette.textSecondary,
+        height: 1.4,
+      ),
     ),
   );
 }
@@ -156,16 +171,22 @@ class _SignInForm extends StatefulWidget {
 
 class _SignInFormState extends State<_SignInForm> {
   final _email = TextEditingController();
+  final _code = TextEditingController();
   final _password = TextEditingController();
-  final _name = TextEditingController();
-  bool _creating = false;
+
+  /// A code sent to this address is waiting to be typed back.
+  bool _awaitingCode = false;
+
+  /// The password path, for accounts that have one. The code path is first
+  /// because it is the one that works without remembering anything.
+  bool _usingPassword = false;
   bool _busy = false;
 
   @override
   void dispose() {
     _email.dispose();
+    _code.dispose();
     _password.dispose();
-    _name.dispose();
     super.dispose();
   }
 
@@ -175,72 +196,105 @@ class _SignInFormState extends State<_SignInForm> {
     if (mounted) setState(() => _busy = false);
   }
 
+  Future<void> _requestCode() => _run(() async {
+    final sent = await widget.account.sendCode(_email.text.trim());
+    if (sent && mounted) setState(() => _awaitingCode = true);
+  });
+
   @override
   Widget build(BuildContext context) {
     final account = widget.account;
     return _Panel(
-      title: _creating ? 'Create an account' : 'Sign in',
-      blurb: _creating
-          ? 'Your notes are encrypted on this device before they are sent. '
-                'The server stores them sealed and cannot read them.'
-          : 'Sync your notes across your devices.',
+      title: 'Sign in',
+      blurb: _awaitingCode
+          ? 'We sent a six-digit code to ${_email.text.trim()}. It works once '
+                'and expires in ten minutes.'
+          : 'Sync your notes across your devices. Your notes are encrypted on '
+                'this device before they are sent — the server stores them '
+                'sealed and cannot read them.',
       children: [
-        if (_creating)
-          _Field(controller: _name, hint: 'Your name', autofocus: true),
-        _Field(
-          controller: _email,
-          hint: 'Email',
-          autofocus: !_creating,
-          keyboardType: TextInputType.emailAddress,
-        ),
-        _Field(
-          controller: _password,
-          hint: 'Password',
-          obscure: true,
-          onSubmitted: _busy ? null : _submit,
-        ),
-        const SizedBox(height: 4),
-        FilledButton(
-          onPressed: _busy ? null : _submit,
-          child: Text(_creating ? 'Create account' : 'Sign in'),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            TextButton(
-              onPressed: _busy
-                  ? null
-                  : () => setState(() => _creating = !_creating),
-              child: Text(_creating ? 'I have an account' : 'Create an account'),
-            ),
-            if (!_creating)
+        if (_awaitingCode) ...[
+          _Field(
+            controller: _code,
+            hint: '6-digit code',
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            onSubmitted: _busy ? null : _submitCode,
+          ),
+          FilledButton(
+            onPressed: _busy ? null : _submitCode,
+            child: const Text('Sign in'),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
               TextButton(
-                onPressed: _busy || _email.text.trim().isEmpty
+                onPressed: _busy
                     ? null
-                    : () => _run(
-                        () => account.sendMagicLink(_email.text.trim()),
-                      ),
-                child: const Text('Email me a link'),
+                    : () => setState(() {
+                        _awaitingCode = false;
+                        _code.clear();
+                      }),
+                child: const Text('Use a different address'),
               ),
-          ],
-        ),
+              TextButton(
+                onPressed: _busy ? null : _requestCode,
+                child: const Text('Send another'),
+              ),
+            ],
+          ),
+        ] else ...[
+          _Field(
+            controller: _email,
+            hint: 'Email',
+            autofocus: true,
+            keyboardType: TextInputType.emailAddress,
+            onSubmitted: _busy || _usingPassword ? null : _requestCode,
+          ),
+          if (_usingPassword)
+            _Field(
+              controller: _password,
+              hint: 'Password',
+              obscure: true,
+              onSubmitted: _busy ? null : _submitPassword,
+            ),
+          FilledButton(
+            onPressed: _busy
+                ? null
+                : _usingPassword
+                ? _submitPassword
+                : _requestCode,
+            child: Text(_usingPassword ? 'Sign in' : 'Email me a code'),
+          ),
+          const SizedBox(height: 6),
+          TextButton(
+            onPressed: _busy
+                ? null
+                : () => setState(() => _usingPassword = !_usingPassword),
+            child: Text(
+              _usingPassword ? 'Email me a code instead' : 'Use a password',
+            ),
+          ),
+        ],
         if (account.lastError != null) _Message(account.lastError!),
       ],
     );
   }
 
-  void _submit() => _run(() {
-    final email = _email.text.trim();
-    final password = _password.text;
-    return _creating
-        ? widget.account.signUp(
-            email: email,
-            password: password,
-            name: _name.text.trim().isEmpty ? email : _name.text.trim(),
-          )
-        : widget.account.signIn(email: email, password: password);
-  });
+  void _submitCode() => _run(
+    () => widget.account.signInWithCode(
+      email: _email.text.trim(),
+      code: _code.text.trim(),
+    ),
+  );
+
+  void _submitPassword() => _run(
+    () => widget.account.signIn(
+      email: _email.text.trim(),
+      password: _password.text,
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -290,7 +344,9 @@ class _PassphraseFormState extends State<_PassphraseForm> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (recovery == null) {
-      setState(() => _problem = widget.account.lastError ?? 'That did not work.');
+      setState(
+        () => _problem = widget.account.lastError ?? 'That did not work.',
+      );
       return;
     }
     await showRecoveryKeyDialog(context, recovery);
@@ -299,7 +355,8 @@ class _PassphraseFormState extends State<_PassphraseForm> {
   @override
   Widget build(BuildContext context) => _Panel(
     title: 'Choose an encryption passphrase',
-    blurb: 'This is what your notes are locked with. It never leaves this '
+    blurb:
+        'This is what your notes are locked with. It never leaves this '
         'device, so nobody — including us — can reset it or read your notes '
         'without it.',
     children: [
@@ -425,19 +482,18 @@ class _AccountSwitch extends StatelessWidget {
     final email = account.user?.email ?? 'this account';
     return _Panel(
       title: 'These notes were written before you signed in',
-      blurb: 'They belong to this device, not to $email. Adding them uploads '
+      blurb:
+          'They belong to this device, not to $email. Adding them uploads '
           'them to that account. Discarding them removes them from here, and '
           'they are not on any server to get back.',
       children: [
         FilledButton(
-          onPressed: () =>
-              account.resolveAccountSwitch(keepLocalNotes: true),
+          onPressed: () => account.resolveAccountSwitch(keepLocalNotes: true),
           child: Text('Add them to $email'),
         ),
         const SizedBox(height: 6),
         TextButton(
-          onPressed: () =>
-              account.resolveAccountSwitch(keepLocalNotes: false),
+          onPressed: () => account.resolveAccountSwitch(keepLocalNotes: false),
           child: const Text('Discard them'),
         ),
       ],
@@ -482,10 +538,7 @@ class _Ready extends StatelessWidget {
             child: const Text('Sync now'),
           ),
           const SizedBox(width: 8),
-          TextButton(
-            onPressed: account.signOut,
-            child: const Text('Sign out'),
-          ),
+          TextButton(onPressed: account.signOut, child: const Text('Sign out')),
         ],
       ),
       _Message(

@@ -110,8 +110,27 @@ class Account extends ChangeNotifier {
   Future<void> signIn({required String email, required String password}) =>
       _afterAuth(() => _auth.signIn(email: email, password: password));
 
-  Future<void> sendMagicLink(String email) =>
-      _afterAuth(() => _auth.sendMagicLink(email));
+  /// Returns true when a code is on its way, so the screen can move on to
+  /// asking for it.
+  Future<bool> sendCode(String email) async {
+    _lastError = null;
+    final result = await _auth.sendCode(email);
+    switch (result) {
+      case AuthCodeSent():
+        notifyListeners();
+        return true;
+      case AuthRejected(:final message):
+      case AuthUnreachable(:final message):
+        _lastError = message;
+        notifyListeners();
+        return false;
+      default:
+        return false;
+    }
+  }
+
+  Future<void> signInWithCode({required String email, required String code}) =>
+      _afterAuth(() => _auth.signInWithCode(email: email, code: code));
 
   Future<void> _afterAuth(Future<AuthResult> Function() attempt) async {
     _lastError = null;
@@ -125,8 +144,8 @@ class Account extends ChangeNotifier {
       case AuthNeedsVerification(:final email):
         _lastError = 'Confirm $email, then sign in.';
         _moveTo(AccountState.signedOut);
-      case AuthLinkSent(:final email):
-        _lastError = 'A sign-in link is on its way to $email.';
+      case AuthCodeSent(:final email):
+        _lastError = 'A code is on its way to $email.';
         _moveTo(AccountState.signedOut);
       case AuthRejected(:final message):
       case AuthUnreachable(:final message):

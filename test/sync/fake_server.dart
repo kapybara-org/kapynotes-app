@@ -158,9 +158,23 @@ class FakeAuth implements AuthApi {
     required String name,
   }) async => nextResult ?? AuthSignedIn('token-$id', _user);
 
+  /// The code a test types back. Real enough: it is compared, not guessed.
+  String code = '123456';
+  String? sentCodeTo;
+
   @override
-  Future<AuthResult> sendMagicLink(String email) async =>
-      nextResult ?? AuthLinkSent(email);
+  Future<AuthResult> sendCode(String email) async {
+    sentCodeTo = email;
+    return nextResult ?? AuthCodeSent(email);
+  }
+
+  @override
+  Future<AuthResult> signInWithCode({
+    required String email,
+    required String code,
+  }) async => code == this.code
+      ? (nextResult ?? AuthSignedIn('token-$id', _user))
+      : const AuthRejected('That code is not right.');
 
   @override
   Future<void> signOut(String token) async => signOutCalls++;

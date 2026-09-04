@@ -52,8 +52,42 @@ void main() {
     await tester.pumpWidget(harness(app.account));
     await tester.pumpAndSettle();
 
-    expect(find.text('Sign in'), findsWidgets);
-    expect(find.text('Create an account'), findsOneWidget);
+    expect(find.text('Email me a code'), findsOneWidget);
+    expect(find.text('Use a password'), findsOneWidget);
+    app.account.dispose();
+  });
+
+  testWidgets('a code is asked for, then exchanged for a session', (
+    tester,
+  ) async {
+    final app = build();
+    await app.notes.load();
+    await app.account.restore();
+    await tester.pumpWidget(harness(app.account));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'someone@example.com');
+    await tester.tap(find.text('Email me a code'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('six-digit code'), findsOneWidget);
+    expect(find.text('Send another'), findsOneWidget);
+
+    // "Sign in" is also the panel's title, so aim at the button.
+    final signIn = find.widgetWithText(FilledButton, 'Sign in');
+
+    // A wrong code is refused without losing the screen.
+    await tester.enterText(find.byType(TextField), '000000');
+    await tester.tap(signIn);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('not right'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.tap(signIn);
+    await tester.pumpAndSettle();
+
+    // Signed in, and now it wants the encryption passphrase.
+    expect(find.text('Choose an encryption passphrase'), findsOneWidget);
     app.account.dispose();
   });
 
