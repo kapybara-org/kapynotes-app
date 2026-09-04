@@ -37,6 +37,17 @@ dependencies:
   # Lets the update check compare the appcast against the running build. The
   # version is native (Info.plist / the .rc), not a Dart constant.
   package_info_plus: ^10.2.1
+
+  # End-to-end encryption for sync. The maintained fork: the original
+  # `cryptography` package last shipped in Nov 2025, this one tracks current
+  # Dart SDKs. Argon2id to stretch the passphrase, XChaCha20-Poly1305 to seal
+  # note payloads. Nothing here runs on the launch path — notes stay plaintext
+  # on local disk, so opening the app costs no crypto at all.
+  cryptography_plus: ^3.0.0
+  # The master key, parked in Keychain / Keystore / libsecret / DPAPI after the
+  # first unlock. This is what keeps Argon2id a once-per-device cost instead of
+  # a once-per-launch one.
+  flutter_secure_storage: ^11.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

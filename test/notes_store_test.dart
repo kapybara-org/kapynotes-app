@@ -16,6 +16,10 @@ class _MemoryStore extends LocalStore {
   void put(String key, Object? value) => data[key] = value;
 }
 
+/// The note array inside the `notes.v2` record.
+List<Object?> storedNotes(LocalStore store) =>
+    (store.data['notes.v2'] as Map<String, Object?>)['notes'] as List<Object?>;
+
 void main() {
   test('sorts persisted notes by most recent update on load', () async {
     final store = _MemoryStore();
@@ -64,7 +68,7 @@ void main() {
     expect(notes.notes.map((note) => note.id), [first.id, second.id]);
     expect(notes.notes.first.updatedAt, now);
     expect(notes.search('note').map((note) => note.id), [first.id, second.id]);
-    final stored = store.data['notes.v1'] as List<Object?>;
+    final stored = storedNotes(store);
     expect(stored.map((entry) => (entry as Map<String, Object?>)['id']), [
       first.id,
       second.id,
@@ -84,8 +88,7 @@ void main() {
 
     notes.updateDocument(note.id, note.body, formats);
 
-    final stored = store.data['notes.v1'] as List<Object?>;
-    final json = stored.single as Map<String, Object?>;
+    final json = storedNotes(store).single as Map<String, Object?>;
     expect(json['formats'], isNotNull);
 
     final restored = NotesStore(store);
