@@ -112,25 +112,41 @@ class Account extends ChangeNotifier {
 
   /// Returns true when a code is on its way, so the screen can move on to
   /// asking for it.
-  Future<bool> sendCode(String email) async {
-    _lastError = null;
-    final result = await _auth.sendCode(email);
-    switch (result) {
-      case AuthCodeSent():
-        notifyListeners();
-        return true;
-      case AuthRejected(:final message):
-      case AuthUnreachable(:final message):
-        _lastError = message;
-        notifyListeners();
-        return false;
-      default:
-        return false;
-    }
-  }
+  Future<bool> sendCode(String email) =>
+      _reportable(() => _auth.sendCode(email));
 
   Future<void> signInWithCode({required String email, required String code}) =>
       _afterAuth(() => _auth.signInWithCode(email: email, code: code));
+
+  Future<bool> requestPasswordReset(String email) =>
+      _reportable(() => _auth.requestPasswordReset(email));
+
+  /// True when the password was changed. Signing in is left to the caller: a
+  /// reset should not hand a session to whoever happens to be holding the
+  /// device the code was typed on.
+  Future<bool> resetPassword({
+    required String email,
+    required String code,
+    required String password,
+  }) => _reportable(
+    () => _auth.resetPassword(email: email, code: code, password: password),
+  );
+
+  /// Runs something whose only outcomes are "it worked" and "here is why not".
+  Future<bool> _reportable(Future<AuthResult> Function() attempt) async {
+    _lastError = null;
+    final result = await attempt();
+    final ok = result is AuthCodeSent || result is AuthPasswordChanged;
+    if (!ok) {
+      _lastError = switch (result) {
+        AuthRejected(:final message) => message,
+        AuthUnreachable(:final message) => message,
+        _ => 'That did not work.',
+      };
+    }
+    notifyListeners();
+    return ok;
+  }
 
   Future<void> _afterAuth(Future<AuthResult> Function() attempt) async {
     _lastError = null;
@@ -150,6 +166,11 @@ class Account extends ChangeNotifier {
       case AuthRejected(:final message):
       case AuthUnreachable(:final message):
         _lastError = message;
+        _moveTo(AccountState.signedOut);
+      case AuthPasswordChanged():
+        // Not reachable: resetting goes through [resetPassword], which never
+        // expects a session. Named rather than defaulted so that adding a
+        // result here has to be thought about.
         _moveTo(AccountState.signedOut);
     }
   }

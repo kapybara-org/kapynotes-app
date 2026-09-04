@@ -161,6 +161,13 @@ class _Message extends StatelessWidget {
 
 // ---------------------------------------------------------------------------
 
+/// What the sign-in form is currently asking for.
+///
+/// An enum rather than a handful of booleans because the states are exclusive
+/// and two of them look almost identical — a six-digit field either signs you
+/// in or precedes a new password, and only this says which.
+enum _SignInStep { email, code, password, resetRequest, resetCode }
+
 class _SignInForm extends StatefulWidget {
   const _SignInForm({required this.account});
   final Account account;
@@ -174,13 +181,9 @@ class _SignInFormState extends State<_SignInForm> {
   final _code = TextEditingController();
   final _password = TextEditingController();
 
-  /// A code sent to this address is waiting to be typed back.
-  bool _awaitingCode = false;
-
-  /// The password path, for accounts that have one. The code path is first
-  /// because it is the one that works without remembering anything.
-  bool _usingPassword = false;
+  _SignInStep _step = _SignInStep.email;
   bool _busy = false;
+  String? _note;
 
   @override
   void dispose() {
@@ -190,111 +193,197 @@ class _SignInFormState extends State<_SignInForm> {
     super.dispose();
   }
 
+  String get _address => _email.text.trim();
+
   Future<void> _run(Future<void> Function() action) async {
     setState(() => _busy = true);
     await action();
     if (mounted) setState(() => _busy = false);
   }
 
-  Future<void> _requestCode() => _run(() async {
-    final sent = await widget.account.sendCode(_email.text.trim());
-    if (sent && mounted) setState(() => _awaitingCode = true);
+  void _goTo(_SignInStep step, {String? note}) => setState(() {
+    _step = step;
+    _note = note;
+    _code.clear();
+  });
+
+  Future<void> _sendSignInCode() => _run(() async {
+    if (await widget.account.sendCode(_address) && mounted) {
+      _goTo(_SignInStep.code);
+    }
+  });
+
+  Future<void> _sendResetCode() => _run(() async {
+    if (await widget.account.requestPasswordReset(_address) && mounted) {
+      _goTo(_SignInStep.resetCode);
+    }
+  });
+
+  Future<void> _resetPassword() => _run(() async {
+    final done = await widget.account.resetPassword(
+      email: _address,
+      code: _code.text.trim(),
+      password: _password.text,
+    );
+    if (done && mounted) {
+      _password.clear();
+      _goTo(_SignInStep.password, note: 'Password changed. Sign in with it.');
+    }
   });
 
   @override
   Widget build(BuildContext context) {
     final account = widget.account;
     return _Panel(
-      title: 'Sign in',
-      blurb: _awaitingCode
-          ? 'We sent a six-digit code to ${_email.text.trim()}. It works once '
-                'and expires in ten minutes.'
-          : 'Sync your notes across your devices. Your notes are encrypted on '
-                'this device before they are sent — the server stores them '
-                'sealed and cannot read them.',
+      title: _step == _SignInStep.resetRequest || _step == _SignInStep.resetCode
+          ? 'Reset your password'
+          : 'Sign in',
+      blurb: switch (_step) {
+        _SignInStep.code =>
+          'We sent a six-digit code to $_address. It works once and expires '
+              'in ten minutes.',
+        _SignInStep.resetCode =>
+          'We sent a code to $_address. Enter it with the password you want '
+              'from now on.',
+        _SignInStep.resetRequest =>
+          'We will email you a code. This changes how you sign in — it does '
+              'not touch your encryption passphrase, and your notes stay '
+              'locked with that.',
+        _ =>
+          'Sync your notes across your devices. Your notes are encrypted on '
+              'this device before they are sent — the server stores them '
+              'sealed and cannot read them.',
+      },
       children: [
-        if (_awaitingCode) ...[
-          _Field(
-            controller: _code,
-            hint: '6-digit code',
-            autofocus: true,
-            keyboardType: TextInputType.number,
-            onSubmitted: _busy ? null : _submitCode,
-          ),
-          FilledButton(
-            onPressed: _busy ? null : _submitCode,
-            child: const Text('Sign in'),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => setState(() {
-                        _awaitingCode = false;
-                        _code.clear();
-                      }),
-                child: const Text('Use a different address'),
-              ),
-              TextButton(
-                onPressed: _busy ? null : _requestCode,
-                child: const Text('Send another'),
-              ),
-            ],
-          ),
-        ] else ...[
-          _Field(
-            controller: _email,
-            hint: 'Email',
-            autofocus: true,
-            keyboardType: TextInputType.emailAddress,
-            onSubmitted: _busy || _usingPassword ? null : _requestCode,
-          ),
-          if (_usingPassword)
-            _Field(
-              controller: _password,
-              hint: 'Password',
-              obscure: true,
-              onSubmitted: _busy ? null : _submitPassword,
-            ),
-          FilledButton(
-            onPressed: _busy
-                ? null
-                : _usingPassword
-                ? _submitPassword
-                : _requestCode,
-            child: Text(_usingPassword ? 'Sign in' : 'Email me a code'),
-          ),
-          const SizedBox(height: 6),
-          TextButton(
-            onPressed: _busy
-                ? null
-                : () => setState(() => _usingPassword = !_usingPassword),
-            child: Text(
-              _usingPassword ? 'Email me a code instead' : 'Use a password',
-            ),
-          ),
-        ],
+        ..._fields(),
+        ..._actions(),
+        if (_note != null) _Message(_note!),
         if (account.lastError != null) _Message(account.lastError!),
       ],
     );
   }
 
-  void _submitCode() => _run(
-    () => widget.account.signInWithCode(
-      email: _email.text.trim(),
-      code: _code.text.trim(),
-    ),
-  );
+  List<Widget> _fields() => switch (_step) {
+    _SignInStep.email || _SignInStep.resetRequest => [
+      _Field(
+        controller: _email,
+        hint: 'Email',
+        autofocus: true,
+        keyboardType: TextInputType.emailAddress,
+        onSubmitted: _busy ? null : _primaryAction,
+      ),
+    ],
+    _SignInStep.password => [
+      _Field(
+        controller: _email,
+        hint: 'Email',
+        keyboardType: TextInputType.emailAddress,
+      ),
+      _Field(
+        controller: _password,
+        hint: 'Password',
+        obscure: true,
+        onSubmitted: _busy ? null : _primaryAction,
+      ),
+    ],
+    _SignInStep.code => [
+      _Field(
+        key: const ValueKey('sign-in-code'),
+        controller: _code,
+        hint: '6-digit code',
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        onSubmitted: _busy ? null : _primaryAction,
+      ),
+    ],
+    _SignInStep.resetCode => [
+      _Field(
+        key: const ValueKey('reset-code'),
+        controller: _code,
+        hint: '6-digit code',
+        autofocus: true,
+        keyboardType: TextInputType.number,
+      ),
+      _Field(
+        controller: _password,
+        hint: 'New password',
+        obscure: true,
+        onSubmitted: _busy ? null : _primaryAction,
+      ),
+    ],
+  };
 
-  void _submitPassword() => _run(
-    () => widget.account.signIn(
-      email: _email.text.trim(),
-      password: _password.text,
+  String get _primaryLabel => switch (_step) {
+    _SignInStep.email => 'Email me a code',
+    _SignInStep.code => 'Sign in',
+    _SignInStep.password => 'Sign in',
+    _SignInStep.resetRequest => 'Email me a code',
+    _SignInStep.resetCode => 'Set new password',
+  };
+
+  void _primaryAction() => switch (_step) {
+    _SignInStep.email => _sendSignInCode(),
+    _SignInStep.resetRequest => _sendResetCode(),
+    _SignInStep.resetCode => _resetPassword(),
+    _SignInStep.code => _run(
+      () => widget.account.signInWithCode(
+        email: _address,
+        code: _code.text.trim(),
+      ),
     ),
-  );
+    _SignInStep.password => _run(
+      () => widget.account.signIn(email: _address, password: _password.text),
+    ),
+  };
+
+  List<Widget> _actions() => [
+    FilledButton(
+      onPressed: _busy ? null : _primaryAction,
+      child: Text(_primaryLabel),
+    ),
+    const SizedBox(height: 6),
+    Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: switch (_step) {
+        _SignInStep.email => [
+          TextButton(
+            onPressed: _busy ? null : () => _goTo(_SignInStep.password),
+            child: const Text('Use a password'),
+          ),
+        ],
+        _SignInStep.password => [
+          TextButton(
+            onPressed: _busy ? null : () => _goTo(_SignInStep.email),
+            child: const Text('Email me a code instead'),
+          ),
+          TextButton(
+            onPressed: _busy ? null : () => _goTo(_SignInStep.resetRequest),
+            child: const Text('Forgot password?'),
+          ),
+        ],
+        _SignInStep.code || _SignInStep.resetCode => [
+          TextButton(
+            onPressed: _busy ? null : () => _goTo(_SignInStep.email),
+            child: const Text('Start over'),
+          ),
+          TextButton(
+            onPressed: _busy
+                ? null
+                : _step == _SignInStep.code
+                ? _sendSignInCode
+                : _sendResetCode,
+            child: const Text('Send another'),
+          ),
+        ],
+        _SignInStep.resetRequest => [
+          TextButton(
+            onPressed: _busy ? null : () => _goTo(_SignInStep.password),
+            child: const Text('Back'),
+          ),
+        ],
+      },
+    ),
+  ];
 }
 
 // ---------------------------------------------------------------------------

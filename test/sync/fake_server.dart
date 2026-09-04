@@ -176,6 +176,27 @@ class FakeAuth implements AuthApi {
       ? (nextResult ?? AuthSignedIn('token-$id', _user))
       : const AuthRejected('That code is not right.');
 
+  /// The password the fake currently believes in, so a reset can be seen to
+  /// have changed something.
+  String password = 'original';
+
+  @override
+  Future<AuthResult> requestPasswordReset(String email) async {
+    sentCodeTo = email;
+    return nextResult ?? AuthCodeSent(email);
+  }
+
+  @override
+  Future<AuthResult> resetPassword({
+    required String email,
+    required String code,
+    required String password,
+  }) async {
+    if (code != this.code) return const AuthRejected('That code is not right.');
+    this.password = password;
+    return const AuthPasswordChanged();
+  }
+
   @override
   Future<void> signOut(String token) async => signOutCalls++;
 

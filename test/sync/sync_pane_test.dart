@@ -91,6 +91,37 @@ void main() {
     app.account.dispose();
   });
 
+  testWidgets('a forgotten password is reset with a code, not a link', (
+    tester,
+  ) async {
+    final app = build();
+    await app.notes.load();
+    await app.account.restore();
+    await tester.pumpWidget(harness(app.account));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Use a password'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'someone@example.com');
+
+    await tester.tap(find.text('Forgot password?'));
+    await tester.pumpAndSettle();
+    expect(find.text('Reset your password'), findsOneWidget);
+    // The one thing a reset must not be mistaken for.
+    expect(find.textContaining('encryption passphrase'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Email me a code'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, '123456');
+    await tester.enterText(find.byType(TextField).last, 'a new password');
+    await tester.tap(find.widgetWithText(FilledButton, 'Set new password'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Password changed'), findsOneWidget);
+    app.account.dispose();
+  });
+
   testWidgets('signing in with no key asks for a passphrase', (tester) async {
     final app = build();
     await app.notes.load();

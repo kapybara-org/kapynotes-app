@@ -58,6 +58,13 @@ class AuthCodeSent extends AuthResult {
   final String email;
 }
 
+/// The password was changed. There is no session yet: signing in with the new
+/// one is the next step, and doing it explicitly means a reset never silently
+/// signs somebody in on a device they only borrowed to type a code.
+class AuthPasswordChanged extends AuthResult {
+  const AuthPasswordChanged();
+}
+
 /// The server said no, and the reason is worth showing.
 class AuthRejected extends AuthResult {
   const AuthRejected(this.message);
@@ -87,6 +94,17 @@ abstract class AuthApi {
   /// Asks for a six-digit code. Works for an address that has never signed
   /// up: the code is what creates the account.
   Future<AuthResult> sendCode(String email);
+
+  /// Sends a code for setting a new password. Same shape as signing in,
+  /// deliberately: there is nothing about forgetting a password that should
+  /// need a browser.
+  Future<AuthResult> requestPasswordReset(String email);
+
+  Future<AuthResult> resetPassword({
+    required String email,
+    required String code,
+    required String password,
+  });
 
   /// Exchanges a code for a session. The code proves control of the address,
   /// so this both creates the account and marks the email confirmed.
@@ -143,6 +161,30 @@ class HttpAuthApi implements AuthApi {
     });
     if (response is _Failure) return response.result;
     return AuthCodeSent(email);
+  }
+
+  @override
+  Future<AuthResult> requestPasswordReset(String email) async {
+    final response = await _post('api/auth/email-otp/request-password-reset', {
+      'email': email,
+    });
+    return response is _Failure ? response.result : AuthCodeSent(email);
+  }
+
+  @override
+  Future<AuthResult> resetPassword({
+    required String email,
+    required String code,
+    required String password,
+  }) async {
+    final response = await _post('api/auth/email-otp/reset-password', {
+      'email': email,
+      'otp': code,
+      'password': password,
+    });
+    return response is _Failure
+        ? response.result
+        : const AuthPasswordChanged();
   }
 
   @override
