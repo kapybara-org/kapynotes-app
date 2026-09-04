@@ -111,6 +111,10 @@ void WindowClassRegistrar::UnregisterWindowClass() {
   class_registered_ = false;
 }
 
+const wchar_t* Win32Window::WindowClassName() {
+  return kWindowClassName;
+}
+
 Win32Window::Win32Window() {
   ++g_active_window_count;
 }

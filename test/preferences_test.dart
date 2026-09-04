@@ -142,6 +142,17 @@ void main() {
     expect(prefs.timeZoneId, isNull);
   });
 
+  test('keeping the app running past its window is off until asked for', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+
+    // An app that will not go away when you close it is the user's call.
+    expect(prefs.keepRunningInBackground, isFalse);
+
+    prefs.keepRunningInBackground = true;
+    expect((LayoutPrefs(store)..load()).keepRunningInBackground, isTrue);
+  });
+
   // The summon shortcut is the only one registered system-wide, so the exact
   // chord matters: Cmd/Ctrl+Shift+Space collided with 1Password's Quick Access
   // and simply never fired. Windows differs from macOS on purpose — Ctrl+Alt is
@@ -160,28 +171,79 @@ void main() {
     expect(windows.alt, isFalse, reason: 'Ctrl+Alt is AltGr on many layouts');
   });
 
-  test('an install still on the 1Password-shadowed shortcut is moved across', () {
+  // The second and last shortcut the OS hears. It mirrors the summon chord so
+  // that one teaches the other, and it must not sit on the in-app Cmd/Ctrl+N.
+  test('the global new-note shortcut mirrors the summon chord', () {
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    final mac = ShortcutPrefs.defaultFor(ShortcutAction.newNoteAnywhere);
+    expect(mac.displayLabel, 'Cmd + Option + N');
 
-    // What 1.0.0 wrote to disk.
-    final store = _MemoryStore();
-    store.data['shortcuts.v1'] = {
-      'openApp': ShortcutBinding(
-        logicalKey: LogicalKeyboardKey.space,
-        physicalKey: PhysicalKeyboardKey.space,
-        meta: true,
-        shift: true,
-      ).toJson(),
-    };
-
-    final prefs = ShortcutPrefs(store)..load();
-    expect(prefs.bindingFor(ShortcutAction.openApp).displayLabel, 'Cmd + Option + X');
-
-    // Written back, so the move survives a restart.
-    final reloaded = ShortcutPrefs(store)..load();
-    expect(reloaded.bindingFor(ShortcutAction.openApp).displayLabel, 'Cmd + Option + X');
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    final windows = ShortcutPrefs.defaultFor(ShortcutAction.newNoteAnywhere);
+    expect(windows.displayLabel, 'Ctrl + Shift + N');
+    expect(windows.alt, isFalse, reason: 'Ctrl+Alt is AltGr on many layouts');
   });
+
+  test('no two shortcuts ship on the same combination', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final claimed = <ShortcutBinding, ShortcutAction>{};
+      for (final action in ShortcutAction.values) {
+        final binding = ShortcutPrefs.defaultFor(action);
+        expect(
+          claimed[binding],
+          isNull,
+          reason:
+              '${action.name} ships on ${binding.displayLabel}, which '
+              '${claimed[binding]?.name} already has on $platform',
+        );
+        claimed[binding] = action;
+      }
+    }
+  });
+
+  test('only the summon and new-note shortcuts reach the OS', () {
+    expect(ShortcutAction.values.where((action) => action.isGlobal), [
+      ShortcutAction.openApp,
+      ShortcutAction.newNoteAnywhere,
+    ]);
+  });
+
+  test(
+    'an install still on the 1Password-shadowed shortcut is moved across',
+    () {
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+
+      // What 1.0.0 wrote to disk.
+      final store = _MemoryStore();
+      store.data['shortcuts.v1'] = {
+        'openApp': ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.space,
+          physicalKey: PhysicalKeyboardKey.space,
+          meta: true,
+          shift: true,
+        ).toJson(),
+      };
+
+      final prefs = ShortcutPrefs(store)..load();
+      expect(
+        prefs.bindingFor(ShortcutAction.openApp).displayLabel,
+        'Cmd + Option + X',
+      );
+
+      // Written back, so the move survives a restart.
+      final reloaded = ShortcutPrefs(store)..load();
+      expect(
+        reloaded.bindingFor(ShortcutAction.openApp).displayLabel,
+        'Cmd + Option + X',
+      );
+    },
+  );
 
   test('a shortcut the user chose themselves is left alone', () {
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);

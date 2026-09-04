@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -56,6 +57,7 @@ late ShortcutPrefs shortcuts;
 Future<void> pumpApp(
   WidgetTester tester, {
   Size size = const Size(1100, 760),
+  DesktopIntegration? desktopIntegration,
 }) async {
   tester.view.physicalSize = size * tester.view.devicePixelRatio;
   tester.view.devicePixelRatio = 1;
@@ -72,6 +74,7 @@ Future<void> pumpApp(
       rates: rates,
       prefs: prefs,
       shortcuts: shortcuts,
+      desktopIntegration: desktopIntegration,
     ),
   );
   await tester.pumpAndSettle();
@@ -538,6 +541,116 @@ void main() {
     expect(restored.writingFont, WritingFont.monospace);
   });
 
+  testWidgets('desktop can keep the app running and open it at login', (
+    tester,
+  ) async {
+    // Stands in for the runners, which a widget test has none of.
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    void mock(String name, Future<Object?> Function(MethodCall) handler) {
+      final channel = MethodChannel(name);
+      messenger.setMockMethodCallHandler(channel, handler);
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    }
+
+    final native = <String>[];
+    for (final name in ['window_manager', 'tray_manager']) {
+      mock(name, (call) async {
+        native.add(call.method);
+        return call.method.startsWith('is') ? false : null;
+      });
+    }
+    var openAtLogin = false;
+    mock('kapynotes/login_item', (call) async {
+      switch (call.method) {
+        case 'isSupported':
+          return true;
+        case 'isEnabled':
+          return openAtLogin;
+        case 'setEnabled':
+          openAtLogin = (call.arguments as Map)['enabled'] as bool;
+          return null;
+      }
+      return null;
+    });
+
+    final integration = DesktopIntegration(layoutPrefs: prefs);
+    await pumpApp(tester, desktopIntegration: integration);
+    await openSettings(tester);
+
+    final keepRunning = find.byKey(const ValueKey('keep-running-toggle'));
+    await tester.ensureVisible(keepRunning);
+    await tester.tap(keepRunning);
+    await tester.pumpAndSettle();
+
+    expect(prefs.keepRunningInBackground, isTrue);
+    // Nothing goes in the tray until it is asked for, and the close button
+    // only changes meaning at the same moment.
+    expect(native, containsAll(['setPreventClose', 'setIcon']));
+
+    final login = find.byKey(const ValueKey('login-item-toggle'));
+    await tester.ensureVisible(login);
+    await tester.tap(login);
+    await tester.pumpAndSettle();
+    expect(openAtLogin, isTrue);
+
+    // The toast that explains what the close button now does.
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('the startup row is absent where the OS has no mechanism', (
+    tester,
+  ) async {
+    final channel = const MethodChannel('kapynotes/login_item');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+
+    await pumpApp(
+      tester,
+      desktopIntegration: DesktopIntegration(layoutPrefs: prefs),
+    );
+    await openSettings(tester);
+
+    // A switch that cannot do anything is worse than no switch.
+    expect(find.byKey(const ValueKey('login-item-toggle')), findsNothing);
+    expect(find.byKey(const ValueKey('keep-running-toggle')), findsOneWidget);
+  });
+
+  testWidgets('the system-wide new-note shortcut lands on a blank note', (
+    tester,
+  ) async {
+    // Registering the hot key needs a host window manager, so this stands in
+    // for the press itself: what the handler calls once the window is up.
+    final integration = DesktopIntegration(layoutPrefs: prefs);
+    await pumpApp(tester, desktopIntegration: integration);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(TextField),
+      ),
+      'petrol 40',
+    );
+    await tester.pumpAndSettle();
+
+    expect(integration.onNewNoteRequested, isNotNull);
+    integration.onNewNoteRequested!();
+    await tester.pumpAndSettle();
+
+    expect(notes.notes, hasLength(2));
+    // The new note is the one being edited, and the old one is untouched.
+    final editor = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(editor.controller!.text, isEmpty);
+    expect(notes.notes.last.body, startsWith('petrol 40'));
+  });
+
   testWidgets('shows and records every editable desktop shortcut', (
     tester,
   ) async {
@@ -546,9 +659,15 @@ void main() {
     await tester.pumpAndSettle();
     await openSettings(tester, section: SettingsSection.shortcuts);
 
-    expect(find.text('FORMATTING'), findsOneWidget);
+    expect(find.text('SYSTEM-WIDE'), findsOneWidget);
     expect(find.text('APP'), findsOneWidget);
-    // App shortcuts lead the pane; formatting keys follow them.
+    expect(find.text('FORMATTING'), findsOneWidget);
+    // The shortcuts another app can refuse lead the pane, then the in-app
+    // keys, then formatting.
+    expect(
+      tester.getTopLeft(find.text('SYSTEM-WIDE')).dy,
+      lessThan(tester.getTopLeft(find.text('APP')).dy),
+    );
     expect(
       tester.getTopLeft(find.text('APP')).dy,
       lessThan(tester.getTopLeft(find.text('FORMATTING')).dy),

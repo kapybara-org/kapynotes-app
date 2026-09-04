@@ -62,6 +62,11 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Quitting from the tray never passes through the platform's exit
+    // request, so the flush that request would have triggered has to be
+    // handed over explicitly. This state owns the store; nothing below it
+    // does.
+    widget.desktopIntegration?.onBeforeQuit = _flushAfterHydration;
     if (widget.notes.isLoaded) {
       _activateLoadedApp();
     } else {

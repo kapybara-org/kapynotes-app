@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "login_item.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -28,6 +29,11 @@ class FlutterWindow : public Win32Window {
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+
+  // "Open at login". Held here because a channel that outlives nothing stops
+  // answering as soon as OnCreate returns.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      login_item_channel_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

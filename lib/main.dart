@@ -25,7 +25,7 @@ Future<void> main() async {
 
   DesktopIntegration? desktopIntegration;
   if (AppPlatform.isDesktop) {
-    // Desktop needs saved window geometry and the global shortcut before its
+    // Desktop needs saved window geometry and the global shortcuts before its
     // native window is shown. Mobile starts Flutter immediately and hydrates
     // behind an editable first frame inside KapyNotesApp.
     await notes.load();
@@ -33,9 +33,7 @@ Future<void> main() async {
     shortcuts.load();
     await _configureWindow(prefs.windowSize);
     desktopIntegration = DesktopIntegration(layoutPrefs: prefs);
-    await desktopIntegration.initialize(
-      shortcuts.bindingFor(ShortcutAction.openApp),
-    );
+    await desktopIntegration.initialize(shortcuts);
   }
 
   runApp(

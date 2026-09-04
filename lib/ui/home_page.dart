@@ -68,6 +68,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _selectedId = widget.notes.lastEditedNote?.id;
     widget.notes.addListener(_onNotesChanged);
+    // The system-wide new-note shortcut has already raised the window by the
+    // time this runs; the note itself is this page's to make.
+    widget.desktopIntegration?.onNewNoteRequested = _createNote;
     _reconcileSelection();
   }
 
@@ -75,6 +78,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
+    widget.desktopIntegration?.onNewNoteRequested = null;
     _searchFocus.dispose();
     super.dispose();
   }

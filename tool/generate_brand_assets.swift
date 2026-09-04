@@ -76,6 +76,10 @@ private func png(
   guard let image = context.makeImage() else {
     fatalError("Could not snapshot a \(width)x\(height) bitmap")
   }
+  return encodePNG(image)
+}
+
+private func encodePNG(_ image: CGImage) -> Data {
   let data = NSMutableData()
   guard let destination = CGImageDestinationCreateWithData(
     data,
@@ -262,6 +266,305 @@ for (directory, legacySide, foregroundSide) in androidScales {
   )
 }
 
+/// The tile the mark sits on, read out of the artwork rather than written
+/// down a second time where the two could drift apart.
+private let tileColor: NSColor = {
+  guard
+    let data = source.tiffRepresentation,
+    let rep = NSBitmapImageRep(data: data),
+    let corner = rep.colorAt(x: 3, y: 3)?.usingColorSpace(.deviceRGB)
+  else {
+    fatalError("Could not read the mark's tile colour")
+  }
+  return corner
+}()
+
+/// The capybara and its page, lifted off the tile and cropped to their own
+/// edges, painted in [color].
+///
+/// The mark is cream on terracotta, so luminance alone separates the two. The
+/// ramp rather than a hard cutoff is what stops the outline crawling once it
+/// is scaled down to a menu bar or a notification area, and the crop is what
+/// stops the tile's generous margin coming with it — at sixteen pixels that
+/// margin is most of the icon.
+private func markSilhouette(color: NSColor) -> CGImage {
+  guard let paint = color.usingColorSpace(.deviceRGB) else {
+    fatalError("Could not resolve the silhouette colour")
+  }
+
+  // Thresholded well above any size this is used at, so the crop has real
+  // edges to find and the downscale does the antialiasing.
+  let working = 512
+  let bytesPerRow = working * 4
+  guard let context = CGContext(
+    data: nil,
+    width: working,
+    height: working,
+    bitsPerComponent: 8,
+    bytesPerRow: bytesPerRow,
+    space: CGColorSpaceCreateDeviceRGB(),
+    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+      | CGBitmapInfo.byteOrder32Big.rawValue
+  ) else {
+    fatalError("Could not create a \(working)x\(working) bitmap")
+  }
+
+  let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
+  NSGraphicsContext.saveGraphicsState()
+  NSGraphicsContext.current = graphicsContext
+  graphicsContext.imageInterpolation = .high
+  source.draw(
+    in: NSRect(x: 0, y: 0, width: working, height: working),
+    from: NSRect(origin: .zero, size: source.size),
+    operation: .sourceOver,
+    fraction: 1,
+    respectFlipped: false,
+    hints: [.interpolation: NSImageInterpolation.high]
+  )
+  graphicsContext.flushGraphics()
+  NSGraphicsContext.restoreGraphicsState()
+
+  guard let pixels = context.data else {
+    fatalError("Could not read back the \(working)x\(working) bitmap")
+  }
+  let buffer = pixels.bindMemory(to: UInt8.self, capacity: bytesPerRow * working)
+  let floor: CGFloat = 0.55
+  let ceiling: CGFloat = 0.75
+
+  // Row 0 of a bitmap context's buffer is the top of the image it makes,
+  // which is also what CGImage.cropping measures from. Everything here stays
+  // in that one space.
+  var minX = working
+  var minY = working
+  var maxX = -1
+  var maxY = -1
+
+  for row in 0..<working {
+    for column in 0..<working {
+      let index = (row * bytesPerRow) + (column * 4)
+      let red = CGFloat(buffer[index]) / 255
+      let green = CGFloat(buffer[index + 1]) / 255
+      let blue = CGFloat(buffer[index + 2]) / 255
+      let luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+      let coverage = min(max((luminance - floor) / (ceiling - floor), 0), 1)
+
+      // Premultiplied, so the colour is scaled by its own coverage.
+      buffer[index] = UInt8((paint.redComponent * coverage * 255).rounded())
+      buffer[index + 1] = UInt8((paint.greenComponent * coverage * 255).rounded())
+      buffer[index + 2] = UInt8((paint.blueComponent * coverage * 255).rounded())
+      buffer[index + 3] = UInt8((coverage * 255).rounded())
+
+      // Half coverage or better, so a faint antialiased fringe cannot push
+      // the crop outwards by a pixel or two.
+      if coverage >= 0.5 {
+        minX = min(minX, column)
+        maxX = max(maxX, column)
+        minY = min(minY, row)
+        maxY = max(maxY, row)
+      }
+    }
+  }
+
+  guard
+    maxX >= minX, maxY >= minY,
+    let rendered = context.makeImage(),
+    let cropped = rendered.cropping(
+      to: CGRect(
+        x: minX,
+        y: minY,
+        width: maxX - minX + 1,
+        height: maxY - minY + 1
+      )
+    )
+  else {
+    fatalError("The mark did not separate from its tile")
+  }
+  return cropped
+}
+
+/// Centres [shape] in [canvas] at [fraction] of it, keeping its proportions.
+///
+/// It fills whichever way it runs longest, because both slots this draws into
+/// are square and the capybara is not.
+private func drawFitted(_ shape: CGImage, in canvas: NSRect, fraction: CGFloat) {
+  let width = CGFloat(shape.width)
+  let height = CGFloat(shape.height)
+  let scale = (min(canvas.width, canvas.height) * fraction) / max(width, height)
+  NSGraphicsContext.current?.cgContext.draw(
+    shape,
+    in: NSRect(
+      x: canvas.midX - (width * scale / 2),
+      y: canvas.midY - (height * scale / 2),
+      width: width * scale,
+      height: height * scale
+    )
+  )
+}
+
+/// The menu bar icon, as a template: one flat shape with an alpha channel,
+/// which macOS then tints itself — dark on a light menu bar, light on a dark
+/// one, and white again while the item is held open. Shipping the brand
+/// palette up there instead would fight all three.
+private func trayTemplatePNG(side: Int) -> Data {
+  let shape = markSilhouette(color: .black)
+  let bytesPerRow = side * 4
+  guard let context = CGContext(
+    data: nil,
+    width: side,
+    height: side,
+    bitsPerComponent: 8,
+    bytesPerRow: bytesPerRow,
+    space: CGColorSpaceCreateDeviceRGB(),
+    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+      | CGBitmapInfo.byteOrder32Big.rawValue
+  ) else {
+    fatalError("Could not create a \(side)x\(side) bitmap")
+  }
+
+  let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
+  NSGraphicsContext.saveGraphicsState()
+  NSGraphicsContext.current = graphicsContext
+  graphicsContext.imageInterpolation = .high
+  // A hair of margin, so the outline never touches its neighbours.
+  drawFitted(shape, in: NSRect(x: 0, y: 0, width: side, height: side), fraction: 0.94)
+  graphicsContext.flushGraphics()
+  NSGraphicsContext.restoreGraphicsState()
+
+  firmUpAlpha(context, side: side, bytesPerRow: bytesPerRow)
+
+  guard let image = context.makeImage() else {
+    fatalError("Could not snapshot the \(side)x\(side) template")
+  }
+  return encodePNG(image)
+}
+
+/// Pulls a template's edges back towards solid, without hardening them.
+///
+/// A template is nothing but its alpha channel, so the resample's half-covered
+/// pixels are the whole of its softness. The ramp is deliberately wide: gentle
+/// enough that the Retina rendering, which is pixel-for-pixel, keeps its
+/// antialiasing, and firm enough that halving it for a 1x display still leaves
+/// an edge rather than a haze.
+private func firmUpAlpha(_ context: CGContext, side: Int, bytesPerRow: Int) {
+  guard let pixels = context.data else { return }
+  let buffer = pixels.bindMemory(to: UInt8.self, capacity: bytesPerRow * side)
+
+  for index in stride(from: 0, to: bytesPerRow * side, by: 4) {
+    let alpha = CGFloat(buffer[index + 3]) / 255
+    let eased = min(max((alpha - 0.28) / 0.44, 0), 1)
+    let smooth = eased * eased * (3 - (2 * eased))
+    // Black artwork, so the premultiplied colour is zero either way and only
+    // the alpha has to be rewritten.
+    buffer[index + 3] = UInt8((smooth * 255).rounded())
+  }
+}
+
+/// The notification-area icon, which keeps the brand tile.
+///
+/// Windows draws these on whatever the taskbar happens to be, and only an
+/// opaque tile is legible on both a dark one and a light one — a bare cream
+/// capybara would vanish into a light taskbar. The capybara is drawn far
+/// larger inside that tile than the mark itself draws it: sixteen pixels is
+/// the size that matters, and the artwork has none to spare.
+private func trayTilePNG(side: Int) -> Data {
+  let shape = markSilhouette(color: ivory)
+  let bytesPerRow = side * 4
+  guard let context = CGContext(
+    data: nil,
+    width: side,
+    height: side,
+    bitsPerComponent: 8,
+    bytesPerRow: bytesPerRow,
+    space: CGColorSpaceCreateDeviceRGB(),
+    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+      | CGBitmapInfo.byteOrder32Big.rawValue
+  ) else {
+    fatalError("Could not create a \(side)x\(side) bitmap")
+  }
+
+  let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
+  NSGraphicsContext.saveGraphicsState()
+  NSGraphicsContext.current = graphicsContext
+  graphicsContext.imageInterpolation = .high
+  let canvas = NSRect(x: 0, y: 0, width: side, height: side)
+  tileColor.setFill()
+  NSBezierPath(
+    roundedRect: canvas,
+    xRadius: CGFloat(side) * 0.17,
+    yRadius: CGFloat(side) * 0.17
+  ).fill()
+  drawFitted(shape, in: canvas, fraction: 0.84)
+  graphicsContext.flushGraphics()
+  NSGraphicsContext.restoreGraphicsState()
+
+  sharpenAgainstTile(context, side: side, bytesPerRow: bytesPerRow)
+
+  guard let image = context.makeImage() else {
+    fatalError("Could not snapshot the \(side)x\(side) tile")
+  }
+  return encodePNG(image)
+}
+
+/// Firms up the cream against the terracotta after the downscale.
+///
+/// Sixteen pixels is a long way down from the artwork, and an even resample
+/// leaves every edge two or three pixels of half-mixed colour wide — which at
+/// that size is most of the capybara, and reads as a smudge. There are only
+/// ever two colours in the tile, so each pixel can be pushed back towards
+/// whichever of them it is nearer, keeping about a pixel of ramp for the
+/// antialiasing to live in.
+///
+/// Only fully opaque pixels are touched. The rounded corners fade out through
+/// partial alpha, where the premultiplied colour no longer means what this
+/// arithmetic would assume.
+private func sharpenAgainstTile(
+  _ context: CGContext,
+  side: Int,
+  bytesPerRow: Int
+) {
+  guard
+    let pixels = context.data,
+    let tile = tileColor.usingColorSpace(.deviceRGB),
+    let cream = ivory.usingColorSpace(.deviceRGB)
+  else {
+    return
+  }
+
+  let buffer = pixels.bindMemory(to: UInt8.self, capacity: bytesPerRow * side)
+  let axis = (
+    red: cream.redComponent - tile.redComponent,
+    green: cream.greenComponent - tile.greenComponent,
+    blue: cream.blueComponent - tile.blueComponent
+  )
+  let lengthSquared =
+    (axis.red * axis.red) + (axis.green * axis.green) + (axis.blue * axis.blue)
+  guard lengthSquared > 0 else { return }
+
+  for row in 0..<side {
+    for column in 0..<side {
+      let index = (row * bytesPerRow) + (column * 4)
+      guard buffer[index + 3] == 255 else { continue }
+
+      let red = CGFloat(buffer[index]) / 255
+      let green = CGFloat(buffer[index + 1]) / 255
+      let blue = CGFloat(buffer[index + 2]) / 255
+      // Where the pixel falls along the terracotta-to-cream line: 0 is tile,
+      // 1 is capybara, and everything the resample invented is in between.
+      let along = (
+        ((red - tile.redComponent) * axis.red)
+          + ((green - tile.greenComponent) * axis.green)
+          + ((blue - tile.blueComponent) * axis.blue)
+      ) / lengthSquared
+
+      let eased = min(max((along - 0.38) / 0.24, 0), 1)
+      let smooth = eased * eased * (3 - (2 * eased))
+      buffer[index] = UInt8(((tile.redComponent + (axis.red * smooth)) * 255).rounded())
+      buffer[index + 1] = UInt8(((tile.greenComponent + (axis.green * smooth)) * 255).rounded())
+      buffer[index + 2] = UInt8(((tile.blueComponent + (axis.blue * smooth)) * 255).rounded())
+    }
+  }
+}
+
 private extension Data {
   mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
     var littleEndian = value.littleEndian
@@ -271,9 +574,8 @@ private extension Data {
   }
 }
 
-private func iconData() -> Data {
-  let sizes = [16, 24, 32, 48, 64, 128, 256]
-  let images = sizes.map { markPNG(side: $0, insetRatio: 0.045, opaque: false) }
+private func iconData(sizes: [Int], image: (Int) -> Data) -> Data {
+  let images = sizes.map(image)
   var result = Data()
   result.appendLittleEndian(UInt16(0))
   result.appendLittleEndian(UInt16(1))
@@ -296,8 +598,28 @@ private func iconData() -> Data {
 }
 
 write(
-  iconData(),
+  iconData(
+    sizes: [16, 24, 32, 48, 64, 128, 256],
+    image: { markPNG(side: $0, insetRatio: 0.045, opaque: false) }
+  ),
   to: root.appendingPathComponent("windows/runner/resources/app_icon.ico")
+)
+
+// The tray copy stops at 48: nothing in the notification area asks for more,
+// and it travels inside the app bundle as a Flutter asset. No inset either —
+// the mark has 16 pixels to be recognised in and cannot spend any on margin.
+write(
+  iconData(sizes: [16, 20, 24, 32, 48], image: trayTilePNG),
+  to: branding.appendingPathComponent("kapynotes_tray_windows.ico")
+)
+
+// 36, because tray_manager hands macOS one image and asks for 18 points of
+// it: a Retina menu bar then draws it pixel for pixel, and a 1x one halves it
+// exactly. The 72 this started at made every display resample further than it
+// needed to.
+write(
+  trayTemplatePNG(side: 36),
+  to: branding.appendingPathComponent("kapynotes_tray_macos.png")
 )
 
 print("Generated KapyNotes brand assets and platform icons.")

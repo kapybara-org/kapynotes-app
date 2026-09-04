@@ -65,8 +65,9 @@ DigitGrouping _localeGrouping(Locale locale) {
       : DigitGrouping.international;
 }
 
-/// User preferences that survive restarts: panel sizes, window geometry, and
-/// the handful of display options the settings dialog exposes.
+/// User preferences that survive restarts: panel sizes, window geometry, the
+/// handful of display options the settings dialog exposes, and how the app
+/// behaves once its window is closed.
 class LayoutPrefs extends ChangeNotifier {
   static const Size defaultWindowSize = Size(600, 630);
   static const Size minimumWindowSize = Size(520, 360);
@@ -89,6 +90,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _numberSystemKey = 'numberSystem.v1';
   static const String _writingFontKey = 'writingFont.v1';
   static const String _timeZoneKey = 'timeZone.v1';
+  static const String _keepRunningKey = 'keepRunningInBackground.v1';
 
   final LocalStore _store;
 
@@ -105,6 +107,7 @@ class LayoutPrefs extends ChangeNotifier {
   NumberSystem _numberSystem = NumberSystem.auto;
   WritingFont _writingFont = WritingFont.handwritten;
   String? _timeZoneId;
+  bool _keepRunningInBackground = false;
 
   LayoutPrefs(this._store, {Locale Function()? locale})
     : _locale = locale ?? (() => PlatformDispatcher.instance.locale);
@@ -117,6 +120,11 @@ class LayoutPrefs extends ChangeNotifier {
   bool get dailySeparatorsEnabled => _dailySeparatorsEnabled;
   WritingFont get writingFont => _writingFont;
   String? get timeZoneId => _timeZoneId;
+
+  /// Whether closing the window tucks the app into the tray instead of
+  /// ending it. Off unless asked for: an app that will not go away when you
+  /// close it is a decision the user gets to make, not one made for them.
+  bool get keepRunningInBackground => _keepRunningInBackground;
 
   /// Converts a stored instant to the zone selected for note timestamps.
   DateTime displayTime(DateTime instant) =>
@@ -150,6 +158,7 @@ class LayoutPrefs extends ChangeNotifier {
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
     _timeZoneId = AppTimeZones.normalize(_store.read<String>(_timeZoneKey));
+    _keepRunningInBackground = _store.read<bool>(_keepRunningKey) ?? false;
     notifyListeners();
   }
 
@@ -213,6 +222,13 @@ class LayoutPrefs extends ChangeNotifier {
     // LocalStore has no removal operation. An empty value is the durable
     // representation of following the device time zone.
     _store.put(_timeZoneKey, normalized ?? '');
+    notifyListeners();
+  }
+
+  set keepRunningInBackground(bool value) {
+    if (value == _keepRunningInBackground) return;
+    _keepRunningInBackground = value;
+    _store.put(_keepRunningKey, value);
     notifyListeners();
   }
 

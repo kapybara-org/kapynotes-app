@@ -6,6 +6,7 @@ import 'local_store.dart';
 
 enum ShortcutAction {
   openApp,
+  newNoteAnywhere,
   newNote,
   findNotes,
   toggleSidebar,
@@ -20,6 +21,7 @@ enum ShortcutAction {
 extension ShortcutActionCopy on ShortcutAction {
   String get label => switch (this) {
     ShortcutAction.openApp => 'Open Kapy Notes',
+    ShortcutAction.newNoteAnywhere => 'New note from anywhere',
     ShortcutAction.newNote => 'New note',
     ShortcutAction.findNotes => 'Search notes',
     ShortcutAction.toggleSidebar => 'Toggle sidebar',
@@ -33,6 +35,8 @@ extension ShortcutActionCopy on ShortcutAction {
 
   String get description => switch (this) {
     ShortcutAction.openApp => 'Show the app from anywhere, or hide it again',
+    ShortcutAction.newNoteAnywhere =>
+      'Come forward on a blank note, whatever you were in',
     ShortcutAction.newNote => 'Create and focus a blank note',
     ShortcutAction.findNotes => 'Open the sidebar and search',
     ShortcutAction.toggleSidebar => 'Show or hide the notes list',
@@ -44,6 +48,14 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.formatBullets =>
       'Toggle a bulleted list on the current lines',
     ShortcutAction.formatChecklist => 'Toggle a checklist on the current lines',
+  };
+
+  /// Registered with the operating system rather than the widget tree, so it
+  /// answers while another app is in front — and can be refused outright if
+  /// something else already holds the chord.
+  bool get isGlobal => switch (this) {
+    ShortcutAction.openApp || ShortcutAction.newNoteAnywhere => true,
+    _ => false,
   };
 
   bool get isFormatting => switch (this) {
@@ -255,6 +267,23 @@ class ShortcutPrefs extends ChangeNotifier {
       ShortcutAction.openApp => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyX,
         physicalKey: PhysicalKeyboardKey.keyX,
+        meta: useMeta,
+        control: !useMeta,
+        alt: useMeta,
+        shift: !useMeta,
+      ),
+      // The summon shortcut's sibling, and the second and last one the OS
+      // hears. It carries the same modifiers so that learning one teaches the
+      // other, over N because that is the letter every app already spends on
+      // "new".
+      //
+      // Nothing in this range is unclaimed. Holding it system-wide takes
+      // Option+Cmd+N from Finder's New Smart Folder, and Ctrl+Shift+N from
+      // Explorer's New Folder and Chrome's private window — for as long as
+      // this app is running, and only until Settings hands it back.
+      ShortcutAction.newNoteAnywhere => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyN,
+        physicalKey: PhysicalKeyboardKey.keyN,
         meta: useMeta,
         control: !useMeta,
         alt: useMeta,

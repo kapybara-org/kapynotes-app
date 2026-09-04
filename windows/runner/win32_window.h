@@ -28,6 +28,11 @@ class Win32Window {
   Win32Window();
   virtual ~Win32Window();
 
+  // The class every runner window is registered under. Exposed so a second
+  // launch can find the first instance's window rather than guess at a title
+  // that other apps, and Explorer folders, are free to share.
+  static const wchar_t* WindowClassName();
+
   // Creates a win32 window with |title| that is positioned and sized using
   // |origin| and |size|. New windows are created on the default monitor. Window
   // sizes are specified to the OS in physical pixels, hence to ensure a

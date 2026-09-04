@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
@@ -74,6 +75,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   static const double _stackedWidth = 410;
 
   String? _shortcutError;
+  String? _loginItemError;
   SettingsSection _section = SettingsSection.general;
   final ScrollController _scrollController = ScrollController();
 
@@ -81,6 +83,17 @@ class _SettingsDialogState extends State<SettingsDialog> {
   void initState() {
     super.initState();
     _shortcutError = widget.desktopIntegration?.registrationError;
+    // System Settings and the Task Manager can both drop the login item
+    // without telling the app, so the switch is re-read every time this opens
+    // rather than trusted from launch.
+    final integration = widget.desktopIntegration;
+    if (integration != null) {
+      unawaited(
+        integration.refreshLoginItem().then((_) {
+          if (mounted) setState(() {});
+        }),
+      );
+    }
     // The gear that opened this is badged when a release is waiting, so open
     // on the pane that badge is about rather than making it be hunted for.
     if (widget.updates?.hasUpdate ?? false) _section = SettingsSection.updates;
@@ -133,8 +146,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
       return;
     }
 
-    if (action == ShortcutAction.openApp && widget.desktopIntegration != null) {
-      final error = await widget.desktopIntegration!.tryOpenShortcut(candidate);
+    if (action.isGlobal && widget.desktopIntegration != null) {
+      final error = await widget.desktopIntegration!.trySystemShortcut(
+        action,
+        candidate,
+      );
       if (!mounted) return;
       if (error != null) {
         setState(() => _shortcutError = error);
@@ -147,19 +163,59 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   Future<void> _restoreShortcutDefaults() async {
-    final openDefault = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
-    if (widget.desktopIntegration != null) {
-      final error = await widget.desktopIntegration!.tryOpenShortcut(
-        openDefault,
-      );
-      if (!mounted) return;
-      if (error != null) {
+    final integration = widget.desktopIntegration;
+    if (integration != null) {
+      final restored = <ShortcutAction>[];
+      for (final action in ShortcutAction.values.where(
+        (action) => action.isGlobal,
+      )) {
+        final error = await integration.trySystemShortcut(
+          action,
+          ShortcutPrefs.defaultFor(action),
+        );
+        if (error == null) {
+          restored.add(action);
+          continue;
+        }
+        // Nothing is restored unless everything is. Whatever went back before
+        // the refusal has to come forward again, or this pane would name one
+        // shortcut while the system answered another.
+        for (final done in restored) {
+          await integration.trySystemShortcut(
+            done,
+            widget.shortcuts.bindingFor(done),
+          );
+        }
+        if (!mounted) return;
         setState(() => _shortcutError = error);
         return;
       }
     }
     widget.shortcuts.resetAll();
     if (mounted) setState(() => _shortcutError = null);
+  }
+
+  /// Turning this on changes what the close button does, which is worth
+  /// saying out loud once. The tray icon appearing is the only other notice
+  /// the user gets, and it is easy to miss.
+  void _setKeepRunning(bool value) {
+    widget.layoutPrefs.keepRunningInBackground = value;
+    if (!value) return;
+    Toast.show(
+      context,
+      AppPlatform.isMacOS
+          ? 'Kapy Notes now has a menu bar icon.'
+          : 'Closing the window now keeps Kapy Notes in the tray.',
+      icon: Icons.check_rounded,
+    );
+  }
+
+  Future<void> _setLoginItem(bool value) async {
+    final integration = widget.desktopIntegration;
+    if (integration == null) return;
+    final error = await integration.setLoginItemEnabled(value);
+    if (!mounted) return;
+    setState(() => _loginItemError = error);
   }
 
   Future<void> _chooseTimeZone() async {
@@ -302,11 +358,58 @@ class _SettingsDialogState extends State<SettingsDialog> {
     if (AppPlatform.isDesktop) ...[
       const SizedBox(height: 18),
       const _SectionLabel('WINDOW'),
+      _SettingsGroup(
+        children: [
+          _ToggleRow(
+            key: const ValueKey('keep-running-toggle'),
+            icon: Icons.close_fullscreen_rounded,
+            title: AppPlatform.isMacOS
+                ? 'Keep running in the menu bar'
+                : 'Keep running in the tray',
+            subtitle: AppPlatform.isMacOS
+                ? 'Adds a menu bar icon to open, write and quit from'
+                : 'Closing the window hides it there instead of quitting, so '
+                      'your shortcuts keep working',
+            value: widget.layoutPrefs.keepRunningInBackground,
+            onChanged: _setKeepRunning,
+          ),
+        ],
+      ),
+      const SizedBox(height: 10),
       _WideButton(
         onPressed: widget.layoutPrefs.resetPanelWidths,
         icon: Icons.restart_alt_rounded,
         label: 'Reset panel widths',
       ),
+      // Absent rather than disabled where the OS has no mechanism this app is
+      // allowed to use: macOS 12 predates the one the sandbox permits.
+      if (widget.desktopIntegration?.loginItemSupported ?? false) ...[
+        const SizedBox(height: 18),
+        const _SectionLabel('STARTUP'),
+        _SettingsGroup(
+          children: [
+            _ToggleRow(
+              key: const ValueKey('login-item-toggle'),
+              icon: Icons.login_rounded,
+              title: 'Open at login',
+              subtitle: 'Start Kapy Notes when you sign in to this computer',
+              value: widget.desktopIntegration!.loginItemEnabled,
+              onChanged: (value) => unawaited(_setLoginItem(value)),
+            ),
+          ],
+        ),
+        if (_loginItemError != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _loginItemError!,
+            key: const ValueKey('login-item-error'),
+            style: TextStyle(
+              fontSize: 11.5,
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ),
+        ],
+      ],
     ],
   ];
 
@@ -365,9 +468,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
     _SettingsGroup(children: [_RateAttributionRow(rates: widget.rates)]),
   ];
 
-  /// App shortcuts lead: they reach the window from anywhere and are the ones
-  /// people come here to change. The formatting keys below them are already
-  /// spelled out on every footer button.
+  /// The system-wide pair leads: they are the ones that reach the app from
+  /// outside it, they are the ones another app can refuse, and they are what
+  /// people come here to change. Then the in-app keys, then formatting, which
+  /// every footer button already spells out.
   List<Widget> _shortcutsPane() => [
     Padding(
       padding: const EdgeInsets.only(left: 3, bottom: 9),
@@ -376,11 +480,25 @@ class _SettingsDialogState extends State<SettingsDialog> {
         style: TextStyle(fontSize: 11.5, color: context.palette.textTertiary),
       ),
     ),
+    const _SectionLabel('SYSTEM-WIDE'),
+    _SettingsGroup(
+      children: [
+        for (final action in ShortcutAction.values.where(
+          (action) => action.isGlobal,
+        ))
+          _ShortcutRow(
+            action: action,
+            binding: widget.shortcuts.bindingFor(action),
+            onPressed: () => _recordShortcut(action),
+          ),
+      ],
+    ),
+    const SizedBox(height: 18),
     const _SectionLabel('APP'),
     _SettingsGroup(
       children: [
         for (final action in ShortcutAction.values.where(
-          (action) => !action.isFormatting,
+          (action) => !action.isFormatting && !action.isGlobal,
         ))
           _ShortcutRow(
             action: action,

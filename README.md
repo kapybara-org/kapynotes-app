@@ -25,7 +25,7 @@ One Flutter codebase, four platforms: **macOS, Windows, iOS, Android.**
 ```bash
 flutter pub get
 flutter run -d macos      # or: windows, <ios device>, <android device>
-flutter test              # 184 tests
+flutter test              # 252 tests
 ```
 
 Built on Flutter 3.47.2 against the standalone **`material_ui`** package
@@ -305,7 +305,18 @@ The spec described an Electron build. These changed for Flutter:
   hamburger drawer first opens; the gutter is fixed-width and the divider is
   hidden.
 - Shortcuts: `⌘/Ctrl N` new note, `⌘/Ctrl F` search, `⌘/Ctrl \` toggle
-  sidebar, `⌘/Ctrl ⌫` delete note.
+  sidebar, `⌘/Ctrl ⌫` delete note. Two more are registered with the OS and
+  answer from inside any other app: `⌥⌘X` / `Ctrl+Shift+X` summons the window,
+  `⌥⌘N` / `Ctrl+Shift+N` summons it onto a blank note. All of them are
+  rebindable in Settings › Shortcuts.
+- Closing the window quits on Windows and leaves the process running on macOS,
+  each platform's own convention. *Keep running in the tray* (Settings ›
+  General, off by default) makes both hide to a tray icon instead, so the
+  system-wide shortcuts go on answering. The icon carries Open, New Note and
+  Quit — the only way out of an app whose close button no longer closes it —
+  and exists only while the setting does. Windows takes a single-instance lock
+  to go with it: an app that looks shut is one whose desktop icon gets clicked
+  a second time, and two copies share one notes file.
 
 ## Window chrome
 

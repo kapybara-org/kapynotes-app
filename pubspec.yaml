@@ -19,6 +19,10 @@ dependencies:
   window_manager: ^0.5.2
   # Editable system-wide summon shortcut on macOS and Windows.
   hotkey_manager: ^0.2.3
+  # The tray icon that a window closing to the background needs, so there is
+  # always something to click on and always a way to quit. Opt-in: nothing
+  # appears in the tray until the setting is turned on.
+  tray_manager: ^0.5.3
   # Material moved out of the SDK in Flutter 3.44; the in-SDK library is
   # deprecated in the Nov 2026 release. cupertino_ui arrives transitively and
   # backs the .adaptive widgets, so it needs no direct entry here.
@@ -41,9 +45,14 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    # Platform app icons are native. This is the only brand bitmap Flutter
-    # paints, so keep unused source variants off the mobile startup bundle.
+    # Platform app icons are native. These are the only brand bitmaps Flutter
+    # carries, so keep unused source variants off the mobile startup bundle.
     - assets/branding/kapy_notes_logo.png
+    # The tray icon, read by tray_manager from the bundle rather than painted:
+    # an .ico for the Windows notification area, a template PNG that macOS
+    # tints for the menu bar. Desktop-only, and small enough not to matter.
+    - assets/branding/kapynotes_tray_windows.ico
+    - assets/branding/kapynotes_tray_macos.png
     - assets/fonts/ShantellSans-OFL.txt
   fonts:
     - family: Shantell Sans

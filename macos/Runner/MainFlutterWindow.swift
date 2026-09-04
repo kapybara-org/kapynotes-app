@@ -2,6 +2,10 @@ import Cocoa
 import FlutterMacOS
 
 class MainFlutterWindow: NSWindow {
+  /// Held for the window's lifetime: a channel whose only owner is a local
+  /// stops answering as soon as `awakeFromNib` returns.
+  private var loginItemChannel: FlutterMethodChannel?
+
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     flutterViewController.backgroundColor = NSColor.clear
@@ -33,6 +37,9 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    loginItemChannel = LoginItem.register(
+      with: flutterViewController.engine.binaryMessenger
+    )
 
     super.awakeFromNib()
   }
