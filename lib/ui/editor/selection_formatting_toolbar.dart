@@ -24,6 +24,7 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
     required this.onChecklistPressed,
     this.onOpenLink,
     this.onCopyLink,
+    this.onCopyPlainText,
   });
 
   final EditableTextState editableTextState;
@@ -39,6 +40,7 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
   final VoidCallback onChecklistPressed;
   final VoidCallback? onOpenLink;
   final VoidCallback? onCopyLink;
+  final VoidCallback? onCopyPlainText;
 
   static const double _screenPadding = 8;
   static const double _toolbarGap = 8;
@@ -62,6 +64,17 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
           ).isNotEmpty,
         )
         .toList(growable: false);
+    // Sits with the native Copy rather than out on the row: it is the same
+    // action with one difference, and the row is for writing, not clipboard
+    // housekeeping.
+    final menuItems = [
+      if (onCopyPlainText != null)
+        ContextMenuButtonItem(
+          label: 'Copy Plain Text',
+          onPressed: () => _run(onCopyPlainText!),
+        ),
+      ...nativeItems,
+    ];
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -139,8 +152,7 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
                     active: checklistActive,
                     onPressed: () => _run(onChecklistPressed),
                   ),
-                  if (nativeItems.isNotEmpty)
-                    _NativeActionsMenu(items: nativeItems),
+                  if (menuItems.isNotEmpty) _NativeActionsMenu(items: menuItems),
                 ],
               ),
             ),

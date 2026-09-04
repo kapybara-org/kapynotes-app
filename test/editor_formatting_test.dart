@@ -5,6 +5,7 @@ import 'package:kapy_notes/ui/editor/editor_formatting.dart';
 
 void main() {
   _nestingTests();
+  _plainTextTests();
   test('adds, removes, and rebases overlapping inline formats', () {
     final bold = toggleNoteFormat(
       const [],
@@ -233,6 +234,44 @@ void _nestingTests() {
     test('leaves a stray tab indent able to reach the margin', () {
       final result = indentSelection(at('\t• one', 4), outdent: true);
       expect(result.text, '• one');
+    });
+  });
+}
+
+// The note stores its list markers as literal glyphs, so they leave with an
+// ordinary copy. This is the conversion that keeps a pasted checklist legible
+// in a mail composer.
+void _plainTextTests() {
+  group('plainTextFrom', () {
+    test('turns the drawn list glyphs into ASCII markers', () {
+      expect(
+        plainTextFrom('${bulletPrefix}one\n${uncheckedPrefix}two\n${checkedPrefix}three'),
+        '- one\n- [ ] two\n- [x] three',
+      );
+    });
+
+    test('keeps the indentation that carries a nested list', () {
+      expect(
+        plainTextFrom('${bulletPrefix}top\n$listIndentUnit${uncheckedPrefix}under'),
+        '- top\n$listIndentUnit- [ ] under',
+      );
+    });
+
+    test('leaves ordinary lines, blank lines and gaps exactly as written', () {
+      const note = 'Q3 invoice\n\n120 * 3\n  indented thought\n\n\ntotal';
+      expect(plainTextFrom(note), note);
+    });
+
+    test('only rewrites a marker that opens its line', () {
+      // A glyph someone typed mid-sentence is their text, not our list.
+      expect(
+        plainTextFrom('rated 4 ${checkedPrefix}out of 5'),
+        'rated 4 ${checkedPrefix}out of 5',
+      );
+    });
+
+    test('leaves a bare glyph with no space after it alone', () {
+      expect(plainTextFrom('☐'), '☐');
     });
   });
 }

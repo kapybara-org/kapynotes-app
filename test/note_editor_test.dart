@@ -880,6 +880,90 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('right-click copies the whole note as plain text', (
+    tester,
+  ) async {
+    const body =
+        '${bulletPrefix}milk\n$listIndentUnit${uncheckedPrefix}oat\n'
+        '${checkedPrefix}bread\n\n120 * 3';
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(harness(body, autofocus: true));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.controller!.selection = const TextSelection.collapsed(offset: 3);
+    await tester.pumpAndSettle();
+    tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .showToolbar();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Copy Plain Text'));
+    await tester.pumpAndSettle();
+
+    // Nothing selected, so the whole note comes across: glyphs turned to
+    // ASCII, the nested indent and the blank line untouched.
+    expect(copied, [
+      '- milk\n$listIndentUnit- [ ] oat\n- [x] bread\n\n120 * 3',
+    ]);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('plain-text copy takes only the selection when there is one', (
+    tester,
+  ) async {
+    const body = '${uncheckedPrefix}first\n${uncheckedPrefix}second';
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(harness(body, autofocus: true));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.controller!.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: body.indexOf('\n'),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('selection-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Copy Plain Text'));
+    await tester.pumpAndSettle();
+
+    expect(copied, ['- [ ] first']);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
   testWidgets('typing dismisses the link panel', (tester) async {
     const body = 'Open www.example.com/path';
     await tester.pumpWidget(harness(body, autofocus: true));

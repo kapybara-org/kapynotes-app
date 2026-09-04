@@ -611,3 +611,42 @@ class _TextEdit {
   final int end;
   final String replacement;
 }
+
+/// The same words, with the list glyphs the editor draws swapped for ones
+/// that survive a paste into a mail composer or any plain-text field.
+///
+/// `•`, `☐` and `☑` are ordinary characters in the note, not styling, so an
+/// ordinary copy carries them out of the app — where they land in whatever
+/// the receiving font makes of them, often a box or nothing at all. ASCII
+/// markers say the same thing everywhere.
+///
+/// Nothing else is touched. No line is added, removed or re-wrapped, and the
+/// indentation stays exactly as it was: once the glyphs are plain, the gaps
+/// in front of them are the only thing still carrying the shape of a nested
+/// list. Inline styles never needed stripping — bold and italic are held
+/// beside the text, not in it.
+String plainTextFrom(String text) {
+  const replacements = {
+    bulletPrefix: '- ',
+    uncheckedPrefix: '- [ ] ',
+    checkedPrefix: '- [x] ',
+  };
+  return text
+      .split('\n')
+      .map((line) {
+        var indent = 0;
+        while (indent < line.length &&
+            (line[indent] == ' ' || line[indent] == '\t')) {
+          indent++;
+        }
+        for (final entry in replacements.entries) {
+          if (line.startsWith(entry.key, indent)) {
+            return line.substring(0, indent) +
+                entry.value +
+                line.substring(indent + entry.key.length);
+          }
+        }
+        return line;
+      })
+      .join('\n');
+}

@@ -607,6 +607,21 @@ class NoteEditorState extends State<NoteEditor> {
     );
   }
 
+  /// Copies the selection, or the whole note when nothing is selected, with
+  /// the list glyphs turned into ASCII. Ordinary copy is left alone: pasting
+  /// a checklist back into another note should return it unchanged, and only
+  /// this action promises to leave the app cleanly.
+  Future<void> _copyPlainText(TextSelection selection) async {
+    ContextMenuController.removeAny();
+    final text = _controller.text;
+    final source = selection.isValid && !selection.isCollapsed
+        ? selection.textInside(text)
+        : text;
+    if (source.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: plainTextFrom(source)));
+    if (mounted) Toast.show(context, 'Copied as plain text');
+  }
+
   Future<void> _copyLink(NoteLink link) async {
     ContextMenuController.removeAny();
     await Clipboard.setData(ClipboardData(text: link.text));
@@ -975,6 +990,11 @@ class NoteEditorState extends State<NoteEditor> {
                 anchors: editableTextState.contextMenuAnchors,
                 buttonItems: [
                   ...linkItems,
+                  if (_controller.text.isNotEmpty)
+                    ContextMenuButtonItem(
+                      label: 'Copy Plain Text',
+                      onPressed: () => unawaited(_copyPlainText(selection)),
+                    ),
                   ...editableTextState.contextMenuButtonItems,
                 ],
               );
@@ -1003,6 +1023,7 @@ class NoteEditorState extends State<NoteEditor> {
               onCopyLink: link == null
                   ? null
                   : () => unawaited(_copyLink(link)),
+              onCopyPlainText: () => unawaited(_copyPlainText(selection)),
             );
           },
           textAlignVertical: TextAlignVertical.top,
