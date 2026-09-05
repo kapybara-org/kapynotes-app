@@ -695,8 +695,7 @@ void main() {
             matching: find.byWidgetPredicate(
               (widget) => widget is Text && widget.textSpan != null,
             ),
-          )
-          .single,
+          ),
     );
     final mixedSpans = (mixedPreview.textSpan! as TextSpan).children!;
     expect(mixedSpans.first.style?.fontFamily, 'Shantell Sans');
