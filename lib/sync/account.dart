@@ -74,6 +74,11 @@ class Account extends ChangeNotifier {
 
   AccountState get state => _accountState;
   AccountUser? get user => _user;
+
+  /// The current session token, for API clients built outside this object.
+  /// Read through a callback rather than captured, so a client made once keeps
+  /// working across a sign-out and back in.
+  String? get token => _token;
   String? get lastError => _lastError;
   SyncService? get sync => _sync;
   bool get isSyncing => _sync?.status == SyncStatus.syncing;

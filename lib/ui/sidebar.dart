@@ -20,6 +20,7 @@ class Sidebar extends StatelessWidget {
     required this.displayTime,
     required this.onQueryChanged,
     required this.onSelect,
+    this.onShare,
     required this.onCreate,
     this.onDelete,
     this.onSettingsPressed,
@@ -34,6 +35,10 @@ class Sidebar extends StatelessWidget {
   final DateTime Function(DateTime) displayTime;
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<String> onSelect;
+
+  /// Null where sharing is unavailable — no account, or a build without sync.
+  /// The row then shows no share affordance at all rather than a dead one.
+  final ValueChanged<String>? onShare;
   final VoidCallback onCreate;
   final ValueChanged<String>? onDelete;
   final VoidCallback? onSettingsPressed;
@@ -85,6 +90,9 @@ class Sidebar extends StatelessWidget {
                           displayTime: displayTime,
                           selected: note.id == selectedId,
                           onTap: () => onSelect(note.id),
+                          onShare: onShare == null
+                              ? null
+                              : () => onShare!(note.id),
                           onDelete: onDelete == null
                               ? null
                               : () => onDelete!(note.id),
@@ -335,6 +343,7 @@ class NoteRow extends StatefulWidget {
     required this.displayTime,
     required this.selected,
     required this.onTap,
+    this.onShare,
     this.onDelete,
   });
 
@@ -343,6 +352,7 @@ class NoteRow extends StatefulWidget {
   final DateTime Function(DateTime) displayTime;
   final bool selected;
   final VoidCallback onTap;
+  final VoidCallback? onShare;
   final VoidCallback? onDelete;
 
   @override
@@ -401,9 +411,10 @@ class _NoteRowState extends State<NoteRow> {
 
     final foreground = palette.textPrimary;
     final secondary = palette.textSecondary;
-    final deleteVisible =
-        widget.onDelete != null &&
-        (_hovering || widget.selected || !AppPlatform.hasPointer);
+    final actionsVisible =
+        _hovering || widget.selected || !AppPlatform.hasPointer;
+    final deleteVisible = widget.onDelete != null && actionsVisible;
+    final shareVisible = widget.onShare != null && actionsVisible;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
@@ -470,10 +481,22 @@ class _NoteRowState extends State<NoteRow> {
                     ],
                   ),
                 ),
+                if (widget.onShare != null) ...[
+                  const SizedBox(width: 4),
+                  _RowAction(
+                    key: ValueKey('share-note-${widget.note.id}'),
+                    icon: Icons.ios_share_rounded,
+                    tooltip: 'Share note',
+                    visible: shareVisible,
+                    onPressed: widget.onShare!,
+                  ),
+                ],
                 if (widget.onDelete != null) ...[
                   const SizedBox(width: 4),
-                  _DeleteNoteButton(
-                    noteId: widget.note.id,
+                  _RowAction(
+                    key: ValueKey('delete-note-${widget.note.id}'),
+                    icon: Icons.delete_outline_rounded,
+                    tooltip: 'Delete note',
                     visible: deleteVisible,
                     onPressed: widget.onDelete!,
                   ),
@@ -487,14 +510,23 @@ class _NoteRowState extends State<NoteRow> {
   }
 }
 
-class _DeleteNoteButton extends StatelessWidget {
-  const _DeleteNoteButton({
-    required this.noteId,
+/// A trailing action on a note row.
+///
+/// Hidden by opacity rather than by being absent, so revealing it on hover
+/// cannot shift the title beside it — a row that reflows under the pointer is
+/// a row that is hard to click. [IgnorePointer] keeps the invisible state from
+/// being clickable anyway.
+class _RowAction extends StatelessWidget {
+  const _RowAction({
+    super.key,
+    required this.icon,
+    required this.tooltip,
     required this.visible,
     required this.onPressed,
   });
 
-  final String noteId;
+  final IconData icon;
+  final String tooltip;
   final bool visible;
   final VoidCallback onPressed;
 
@@ -505,13 +537,9 @@ class _DeleteNoteButton extends StatelessWidget {
       duration: const Duration(milliseconds: 120),
       opacity: visible ? 1 : 0,
       child: CompactIconButton(
-        key: ValueKey('delete-note-$noteId'),
-        tooltip: 'Delete note',
+        tooltip: tooltip,
         onPressed: onPressed,
-        icon: Icon(
-          Icons.delete_outline_rounded,
-          size: AppControlMetrics.iconAdornment,
-        ),
+        icon: Icon(icon, size: AppControlMetrics.iconAdornment),
         foregroundColor: context.palette.textTertiary,
       ),
     ),

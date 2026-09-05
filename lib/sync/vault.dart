@@ -154,7 +154,8 @@ class Vault {
         : Isolate.run(() => _sealBatch(encoded, key));
   }
 
-  Future<NotePayload?> open(SealedBox box) async => (await openAll([box])).single;
+  Future<NotePayload?> open(SealedBox box) async =>
+      (await openAll([box])).single;
 
   /// Opens a batch, returning null in place of any box that fails to
   /// authenticate. One unreadable note — sealed under a key this account no
@@ -239,6 +240,26 @@ Future<Uint8List> _deriveKeyEncryptionKey(
 /// algorithm against `Cryptography.instance` on every note in a batch.
 final Cipher _cipher = Xchacha20.poly1305Aead();
 
+/// Seals arbitrary JSON under an arbitrary 32-byte key.
+///
+/// For share links, whose key is not the account's master key and whose
+/// plaintext is not a [NotePayload]. It goes through the same cipher as
+/// everything else on purpose: a second sealing path is a second chance to get
+/// a nonce or a tag layout wrong, and this one is already the audited one.
+Future<SealedBox> sealJsonUnderKey(
+  Map<String, Object?> json,
+  Uint8List key,
+) async {
+  if (key.length != Vault.keyLength) {
+    throw ArgumentError.value(
+      key.length,
+      'key',
+      'expected ${Vault.keyLength} bytes',
+    );
+  }
+  return _sealBytes(_utf8Json(json), key);
+}
+
 Future<SealedBox> _sealBytes(Uint8List plaintext, Uint8List key) async {
   final box = await _cipher.encrypt(plaintext, secretKey: SecretKey(key));
   return SealedBox(
@@ -270,7 +291,10 @@ Future<Uint8List?> _openBytes(SealedBox box, Uint8List key) async {
   }
 }
 
-Future<List<SealedBox>> _sealBatch(List<Uint8List> plaintexts, Uint8List key) async {
+Future<List<SealedBox>> _sealBatch(
+  List<Uint8List> plaintexts,
+  Uint8List key,
+) async {
   final sealed = <SealedBox>[];
   for (final plaintext in plaintexts) {
     sealed.add(await _sealBytes(plaintext, key));
@@ -278,7 +302,10 @@ Future<List<SealedBox>> _sealBatch(List<Uint8List> plaintexts, Uint8List key) as
   return sealed;
 }
 
-Future<List<Uint8List?>> _openBatch(List<SealedBox> boxes, Uint8List key) async {
+Future<List<Uint8List?>> _openBatch(
+  List<SealedBox> boxes,
+  Uint8List key,
+) async {
   final opened = <Uint8List?>[];
   for (final box in boxes) {
     opened.add(await _openBytes(box, key));

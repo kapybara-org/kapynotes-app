@@ -13,6 +13,10 @@ import '../data/note.dart';
 import '../data/note_format.dart';
 import '../data/notes_store.dart';
 import '../sync/account.dart';
+import '../sync/config.dart';
+import '../sync/share_api.dart';
+import '../sync/share_secrets.dart';
+import '../sync/share_service.dart';
 import '../data/rates.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
@@ -21,6 +25,7 @@ import 'empty_state.dart';
 import 'kapy_header_mascot.dart';
 import 'sidebar.dart';
 import 'settings_dialog.dart';
+import 'share_dialog.dart';
 import 'sidebar_swipe.dart';
 import 'split_view.dart';
 import 'toolbar.dart';
@@ -88,6 +93,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // time this runs; the note itself is this page's to make.
     widget.desktopIntegration?.onNewNoteRequested = _createNote;
     widget.desktopIntegration?.onOpenRequested = _beginOpenSession;
+    _shares = _buildShareService();
     _reconcileSelection();
     // Keep timers and mascot work behind the first editable frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -97,8 +103,52 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
+  /// Null where there is nothing to share to: a build without a server, or no
+  /// account object at all. The sidebar then shows no share affordance rather
+  /// than one that opens onto an error.
+  ShareService? _shares;
+
+  ShareService? _buildShareService() {
+    final account = widget.account;
+    if (!kSyncEnabled || account == null) return null;
+
+    final secrets = ShareSecrets(widget.store)..load();
+    return ShareService(
+      api: HttpShareApi(
+        baseUrl: Uri.parse(kApiBaseUrl),
+        // Read per request rather than captured, so the client survives a
+        // sign-out and back in without being rebuilt.
+        token: () async => account.token,
+      ),
+      secrets: secrets,
+      engine: () => widget.engines.engine,
+      siteOrigin: Uri.parse(kSiteBaseUrl),
+    );
+  }
+
+  /// Opens the share sheet. Refreshing first is what lets a note published on
+  /// another device show as already shared rather than being published twice.
+  Future<void> _shareNote(String id) async {
+    final shares = _shares;
+    final note = widget.notes.byId(id);
+    if (shares == null || note == null) return;
+
+    if (!shares.loaded) {
+      // Best effort: offline, the dialog still works and publishes on demand.
+      try {
+        await shares.refresh();
+      } on Object {
+        // Swallowed deliberately — the dialog reports its own failures, and a
+        // stale list is not one worth blocking the sheet on.
+      }
+    }
+    if (!mounted) return;
+    await showShareDialog(context, note: note, shares: shares);
+  }
+
   @override
   void dispose() {
+    _shares?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
     widget.desktopIntegration?.onNewNoteRequested = null;
@@ -368,6 +418,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onQueryChanged: (value) => setState(() => _query = value),
                       onSelect: _select,
                       onCreate: _createNote,
+                      onShare: _shares == null ? null : _shareNote,
                       onDelete: _deleteNote,
                       onSettingsPressed: _showSettings,
                       updates: widget.updates,
@@ -452,6 +503,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         _createNote();
                         Navigator.of(drawerContext).pop();
                       },
+                      onShare: _shares == null ? null : _shareNote,
                       onDelete: _deleteNote,
                       onSettingsPressed: _showSettings,
                       updates: widget.updates,
