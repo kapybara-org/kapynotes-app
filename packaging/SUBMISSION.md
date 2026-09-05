@@ -6,6 +6,7 @@ One codebase, bundle ID `com.kapybara.kapynotes`, team `96V66447C6` (Kapybara LL
 |---|---|---|---|
 | `KapyNotes-<version>.dmg` | Direct, kapynotes.com | **current plan** | `packaging/release.sh mac-direct` |
 | `kapy-ios.ipa` | iOS App Store | **live, 1.0.0** | `packaging/release.sh ios` |
+| `kapy-notes.aab` | Google Play | **live, 1.4.0** | `packaging/release.sh android` |
 | `kapy-macos.pkg` | Mac App Store | not in use | `packaging/release.sh mac-store` |
 
 The product is called **Kapy Notes** in the Dock, on the Home Screen, in the
@@ -448,10 +449,17 @@ each build before it can attach to a version.
 
 ## Google Play
 
-Not submitted yet. The pipeline exists, the bundle builds, and every listing
-asset and every answer is settled below. What is missing is a Play Console
-listing, a signing key, and a service account — all three come from outside the
-repo, and none of them can be created through an API.
+**Live on the production track, serving version code 5 — that is 1.4.0.** The
+three things this section used to call missing all exist now: the Play Console
+listing, the upload keystore (`~/kapynotes-upload.jks`, with
+`android/key.properties` pointing at it), and the service account. All of it is
+reachable from this Mac, so `packaging/upload_play.py confirm` is the fastest
+way to see what the Console actually holds:
+
+    production   5                      completed
+    beta         1                      completed
+    alpha        no builds              draft
+    internal     5                      completed
 
     node packaging/play_graphics.mjs              icon and feature graphic
     packaging/preflight_android.sh --submission   repo, signing and listing art
@@ -769,10 +777,57 @@ mistake. Promote from the Console after checking the build on a device.
 The listing screenshots are already generated for all three form factors under
 `build/store-listing/play-store/`, from the same scenes as the App Store set.
 
-### v1.1 sync reminder
+### Shipping 1.7.0, the first Play build with sync
 
-When accounts ship, add in-app account deletion. If any social login is added,
-also add Sign in with Apple. Provide App Review with a working demo account.
+Production is on 1.4.0. Going to 1.7.0 crosses 1.5.0, where accounts and sync
+shipped, and that is what makes this more than a version bump. The build itself
+is the easy half:
+
+    packaging/preflight_android.sh --submission
+    packaging/release.sh android                        # signed AAB, 1.7.0 (8)
+    packaging/upload_play.py upload --track internal
+    packaging/upload_play.py promote --track production --rollout 0.2
+
+Version code comes from the `+N` half of `pubspec.yaml`, so it is 8 and Play
+has not seen it. `promote` reassigns the code that was tested rather than
+rebuilding, so production installs the exact bytes internal did.
+
+**Three listing obligations come with sync, and two of them are removal-grade.**
+Play enforces these after publication, not at review, so getting them wrong is
+a takedown rather than a rejection:
+
+1. **Data Safety is now a real disclosure.** The current answer is "no data
+   collected", which stops being true the moment 1.7.0 reaches production. It
+   has to cover the account email and the note content that leaves the device.
+   Note content is end-to-end encrypted and we cannot read it, but Play asks
+   whether data is *collected*, not whether it is legible to us — it is, so it
+   is declared, with encryption in transit and a deletion route.
+2. **In-app account deletion, plus a web route.** The in-app half already
+   exists: 1.5.0 put account deletion beside sign-out. Play also wants a URL a
+   user can reach without installing the app, which the Data Safety form asks
+   for directly. `kapynotes.com/support` documents deletion; confirm it names
+   account deletion specifically before pointing the form at it.
+3. **The store description contradicts the build.** `play_listing.json` says
+   "Notes are stored on your device, not on our servers" and "No account and no
+   login" under PRIVATE BY DEFAULT. Both are accurate for the 1.4.0 that is
+   live and wrong for 1.7.0. Do not push the listing before the build — the
+   copy must not describe sync while production still serves 1.4.0. Replacement
+   for that block:
+
+       PRIVATE BY DEFAULT
+       • Your notes stay on your device unless you turn on sync
+       • Sync is end-to-end encrypted — we cannot read your notes
+       • Optional account, used only for sync; no ads, analytics, or tracking
+       • Works offline; the internet is used for sync and exchange rates
+
+   `releaseNotes` still says "First release of Kapy Notes for Android" and
+   needs the 1.5.0-to-1.7.0 story instead. The iOS *What's New* under
+   **iOS App Store 1.7.0** covers the same ground and can be reused nearly
+   verbatim, minus the App Store phrasing.
+
+Order that respects all three: upload to internal → push the corrected listing
+and Data Safety → promote to production. If a social login is ever added, Sign
+in with Apple becomes mandatory on iOS; email codes alone do not trigger it.
 
 ### What changes when Pro Lifetime ships
 
