@@ -1,0 +1,123 @@
+# Desktop builds on every push and pull request — validation, not distribution.
+#
+# Windows is here because it cannot be built anywhere else: `flutter build
+# windows` needs a Windows host with Visual Studio's C++ workload, and macOS
+# does not offer the subcommand at all. macOS is here so a break is caught
+# before a release tag rather than during one.
+#
+# Neither artifact is signed. The DMG is ad-hoc signed and Gatekeeper will
+# refuse it on any other machine; the Windows installer has no Authenticode
+# signature. Both are for looking at, not for shipping — releases come from
+# desktop-release.yml, on a tag.
+#
+# Tags do not run this workflow. A `branches` filter makes a push event ignore
+# tags entirely, and `**` matches every branch including the slashed ones.
+# Pushing a tag would otherwise build an unsigned DMG and installer here while
+# desktop-release.yml built signed ones from the same commit.
+#
+# Both jobs run on every branch and every pull request because this repository
+# is public, and standard runners are free for public repositories on all
+# three operating systems. Nothing here needs rationing.
+#
+# Pull requests from forks run with no secrets — GitHub withholds them — so
+# untrusted code cannot reach the signing keys this repository holds for
+# desktop-release.yml.
+name: Desktop CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.2'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # `jni` arrives transitively and compiles as an FFI plugin on Windows,
+      # where its CMake looks for a JVM. The runner image ships one, but pin it
+      # so a change to the image default cannot move the build out from under
+      # us. 17 matches the JDK the Android build already requires.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # Platform-independent, so it need not run on both platforms. The test
+      # suite is deliberately absent: the goldens under test/goldens/ render
+      # with macOS system fonts by design, so they cannot pass on Windows.
+      - run: flutter analyze
+
+      - run: flutter build windows --release
+
+      - name: Read version from pubspec.yaml
+        id: version
+        run: |
+          if ((Get-Content pubspec.yaml -Raw) -match '(?m)^version:\s*([\d.]+)\+') {
+            "version=$($Matches[1])" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            throw 'Could not read version from pubspec.yaml'
+          }
+
+      # Inno Setup ships on the windows-latest image, so this needs no network.
+      - name: Build installer
+        run: |
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup not found on this runner" }
+          & $iscc /DAppVersion=${{ steps.version.outputs.version }} packaging\windows\kapynotes.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-unsigned
+          path: build/release/KapyNotes-${{ steps.version.outputs.version }}-setup.exe
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # `mac-unsigned` builds the app ad-hoc signed and wraps it in the real
+      # branded disk image, using the committed packaging/dmg/DS_Store rather
+      # than scripting Finder, which no runner can do. FLUTTER overrides the
+      # script's default SDK path.
+      - name: Build unsigned DMG
+        env:
+          FLUTTER: flutter
+        run: packaging/release.sh mac-unsigned
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg-unsigned
+          path: build/release/KapyNotes-*-unsigned.dmg
+          if-no-files-found: error

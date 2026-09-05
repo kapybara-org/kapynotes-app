@@ -1,0 +1,449 @@
+# Desktop releases, cut by tagging.
+#
+#   git tag v1.0.1 && git push origin v1.0.1
+#
+# Builds a notarised DMG and the Windows installer, uploads both to the
+# kapynotes R2 bucket under downloads/, and cuts a GitHub Release. Tag-driven
+# rather than push-driven on purpose: the artifacts are named after the version
+# in pubspec.yaml and served with a one-year immutable cache header, so
+# republishing the same filename would leave Cloudflare edges handing out the
+# old bytes indefinitely. A tag is the one action that guarantees a new name.
+#
+# Required secrets — the job fails without them:
+#   MACOS_CERT_P12         Developer ID Application cert, .p12, base64-encoded
+#   MACOS_CERT_PASSWORD    the password that .p12 was exported with
+#   KEYCHAIN_PASSWORD      any string; scopes the throwaway CI keychain
+#   ASC_KEY_P8             App Store Connect API key (.p8), base64-encoded
+#   ASC_KEY_ID             that key's ID          (see packaging/.asc-credentials)
+#   ASC_ISSUER_ID          the issuer UUID        (see packaging/.asc-credentials)
+#   CLOUDFLARE_API_TOKEN   R2 write, in the Kapybara Panel account
+#   CLOUDFLARE_ACCOUNT_ID  the Kapybara Panel account id
+#   SPARKLE_ED_PRIVATE_KEY EdDSA key the macOS appcast is signed with; its
+#                          public half is SUPublicEDKey in macos/Runner/Info.plist
+#   WINSPARKLE_DSA_PRIVATE_KEY  DSA key (PEM) the Windows appcast is signed
+#                          with; its public half is windows/runner/resources/
+#                          dsa_pub.pem. Both come from
+#                          `dart run auto_updater:generate_keys`.
+#
+# The update feeds are the only mutable objects in the bucket. Everything else
+# is uploaded immutable and never rewritten, so the appcasts and latest.json
+# are what actually move a user forward — they get a five-minute cache instead.
+#
+# The Windows installer is NOT Authenticode-signed — there is no certificate
+# yet — so SmartScreen warns on it. See README.md.
+#
+# This repository is public, so all three runner types are free and none of
+# the jobs below are rationed. The secrets are real, though: they live in a
+# public repository and are what makes a signed release possible. GitHub
+# withholds them from pull requests, and the tag trigger only fires on this
+# repository, so untrusted code never sees them — but the build, windows and
+# macos jobs are additionally gated on the `release` environment, which
+# requires a human approval before any of them starts.
+name: Desktop release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.47.2'
+
+jobs:
+  # Cheap gate. A mismatched tag fails here, before the 10x-billed macOS runner
+  # has spent anything.
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      # Full history: the build-number guard below reads the previous tag's
+      # pubspec, which a shallow tag checkout does not have.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: check
+        name: Tag must match the version in pubspec.yaml
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)"
+          build="$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f2)"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME implies $tag, but pubspec.yaml says $version"
+            exit 1
+          fi
+
+          # Sparkle decides whether an update exists by comparing the appcast's
+          # sparkle:version against the installed CFBundleVersion, which Flutter
+          # takes from the +N half of pubspec's version. Ship a release that
+          # forgot to bump it and every macOS client is told it is already up to
+          # date — a silent, un-debuggable no-op. Catch it here instead.
+          previous="$(git tag --list 'v*' --sort=-v:refname \
+            | grep -vx "$GITHUB_REF_NAME" | head -1)"
+          if [ -n "$previous" ]; then
+            before="$(git show "$previous:pubspec.yaml" \
+              | grep -m1 '^version:' | sed 's/version: *//' | cut -d+ -f2)"
+            if [ "$build" -le "$before" ]; then
+              echo "::error::build number $build is not greater than $before in $previous — macOS clients would never see this release"
+              exit 1
+            fi
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version ($build)"
+
+      # The R2 credentials are not read until publish, which runs after both
+      # builds — so a missing or under-scoped token would waste a notarised
+      # macOS build (billed 10x) before anyone found out. A scratch round trip
+      # costs seconds and proves write access, which a read-only token would
+      # otherwise pass right up to the last step.
+      - name: R2 credentials must be able to write
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not set"
+            exit 1
+          fi
+          key="preflight/$GITHUB_RUN_ID"
+          echo "$GITHUB_SHA" > preflight.txt
+          # Dot-free, short-lived, and deleted below. Never served: the site
+          # only ever links into downloads/.
+          npx --yes wrangler@4 r2 object put "kapynotes/$key" \
+            --file=preflight.txt --remote --content-type=text/plain
+          npx --yes wrangler@4 r2 object delete "kapynotes/$key" --remote
+          echo "R2 write access confirmed"
+
+  windows:
+    needs: verify
+    environment: release
+    runs-on: windows-latest
+    outputs:
+      signature: ${{ steps.sign.outputs.signature }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build windows --release
+
+      - name: Build installer
+        run: |
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup not found on this runner" }
+          & $iscc /DAppVersion=${{ needs.verify.outputs.version }} packaging\windows\kapynotes.iss
+
+      # WinSparkle rejects any release whose DSA signature does not verify
+      # against the DSAPub resource compiled into the app, so an unsigned feed
+      # is a feed no client will install from. This is the same pipeline
+      # WinSparkle's own sign_update.bat runs, inlined to avoid depending on
+      # the plugin's ephemeral symlink path.
+      - id: sign
+        name: Sign the installer for WinSparkle
+        shell: bash
+        env:
+          DSA_PRIVATE_KEY: ${{ secrets.WINSPARKLE_DSA_PRIVATE_KEY }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DSA_PRIVATE_KEY:-}" ]; then
+            echo "::error::WINSPARKLE_DSA_PRIVATE_KEY is not set — the release would ship a feed no client can verify"
+            exit 1
+          fi
+          command -v openssl >/dev/null || {
+            echo "::error::openssl is not on PATH in this shell"
+            exit 1
+          }
+          # Kept relative and trapped rather than written under $RUNNER_TEMP,
+          # which is a backslashed Windows path in this shell. The trap fires
+          # even if openssl fails, so the key never outlives the step.
+          key=dsa_priv.pem
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$DSA_PRIVATE_KEY" > "$key"
+          # -A keeps the base64 on one line; the default wraps at 64 columns,
+          # which would corrupt the XML attribute.
+          signature="$(openssl dgst -sha1 -binary < "build/release/KapyNotes-$VERSION-setup.exe" \
+            | openssl dgst -sha1 -sign "$key" \
+            | openssl enc -base64 -A)"
+          echo "signature=$signature" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: build/release/KapyNotes-${{ needs.verify.outputs.version }}-setup.exe
+          if-no-files-found: error
+
+  macos:
+    needs: verify
+    environment: release
+    runs-on: macos-latest
+    outputs:
+      enclosure: ${{ steps.sign.outputs.enclosure }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # A throwaway keychain, so nothing is left on the runner and the search
+      # list is predictable for codesign and xcodebuild.
+      - name: Import the Developer ID certificate
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          printf '%s' "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/cert.p12"
+          # Without this, codesign blocks on a GUI prompt no runner can answer.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" \
+            $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$keychain"
+
+      - name: Build, sign and notarise
+        env:
+          FLUTTER: flutter
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          printf '%s' "$ASC_KEY_P8" | base64 --decode > "$RUNNER_TEMP/asc-key.p8"
+          # Presence of NOTARY_KEY_PATH is what makes release.sh use the API key
+          # instead of a keychain profile, which CI has no way to store.
+          export NOTARY_KEY_PATH="$RUNNER_TEMP/asc-key.p8"
+          packaging/release.sh mac-direct
+
+      # Sparkle's sign_update is a macOS binary shipped inside the pod the
+      # build just installed, so the signing has to happen on this runner
+      # rather than alongside the rest of the appcast in publish. It prints the
+      # signature and byte length as ready-made XML attributes.
+      - id: sign
+        name: Sign the DMG for Sparkle
+        env:
+          ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ED_PRIVATE_KEY:-}" ]; then
+            echo "::error::SPARKLE_ED_PRIVATE_KEY is not set — the release would ship a feed no client can verify"
+            exit 1
+          fi
+          sign_update=macos/Pods/Sparkle/bin/sign_update
+          if [ ! -x "$sign_update" ]; then
+            echo "::error::$sign_update is missing — did the Sparkle pod install?"
+            exit 1
+          fi
+          # --ed-key-file rather than -s: passing the key as an argument is
+          # deprecated in current Sparkle and only prints a warning before
+          # failing. The trap fires even if signing does, so the key never
+          # outlives the step.
+          key=sparkle_ed_key.txt
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && printf '%s' "$ED_PRIVATE_KEY" > "$key")
+          enclosure="$("$sign_update" --ed-key-file "$key" "build/release/KapyNotes-$VERSION.dmg")"
+          echo "enclosure=$enclosure" >> "$GITHUB_OUTPUT"
+
+      - name: Remove the keychain and the API key
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/asc-key.p8"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: build/release/KapyNotes-${{ needs.verify.outputs.version }}.dmg
+          if-no-files-found: error
+
+  publish:
+    needs: [verify, windows, macos]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Upload to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          # --remote is not optional: without it wrangler writes to a local
+          # simulator, reports "Upload complete", and uploads nothing.
+          npx --yes wrangler@4 r2 object put \
+            "kapynotes/downloads/KapyNotes-$VERSION.dmg" \
+            --file="dist/KapyNotes-$VERSION.dmg" --remote \
+            --content-type=application/x-apple-diskimage \
+            --cache-control='public, max-age=31536000, immutable'
+          npx --yes wrangler@4 r2 object put \
+            "kapynotes/downloads/KapyNotes-$VERSION-setup.exe" \
+            --file="dist/KapyNotes-$VERSION-setup.exe" --remote \
+            --content-type=application/vnd.microsoft.portable-executable \
+            --cache-control='public, max-age=31536000, immutable'
+
+      # The three mutable objects. Everything above this point is content the
+      # bucket will serve forever under a versioned name; these are pointers,
+      # rewritten on every release, and so cached for minutes rather than a
+      # year. Get the header wrong and an edge will keep announcing the
+      # previous version until the cache expires.
+      #
+      # Two appcasts rather than one because the frameworks disagree about what
+      # sparkle:version means: Sparkle compares it to CFBundleVersion (the +N
+      # build number), WinSparkle to the ProductVersion string in Runner.rc.
+      # latest.json is neither — it is the few hundred bytes the app itself
+      # polls once a day to decide whether to show the dot.
+      - name: Publish the update feeds
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          BUILD: ${{ needs.verify.outputs.build }}
+          MAC_ENCLOSURE: ${{ needs.macos.outputs.enclosure }}
+          WIN_SIGNATURE: ${{ needs.windows.outputs.signature }}
+        run: |
+          set -euo pipefail
+          downloads="https://dl.kapynotes.com/downloads"
+          # What "What's new" opens, in Settings and in the update panel: the
+          # entry on the site's changelog, not the auto-generated release page.
+          # The anchor is built the same way website/src/data/releases.ts does
+          # it — 1.2.0 becomes v1-2-0 — so the entry has to be deployed before
+          # the tag, or the reader lands at the top of the page instead.
+          notes="https://kapynotes.com/changelog#v$(echo "$VERSION" | tr '.' '-')"
+          published="$(date -u '+%a, %d %b %Y %H:%M:%S +0000')"
+          win_bytes="$(stat -c %s "dist/KapyNotes-$VERSION-setup.exe")"
+
+          cat > appcast-macos.xml <<XML
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <channel>
+              <title>Kapy Notes</title>
+              <item>
+                <title>Version $VERSION</title>
+                <pubDate>$published</pubDate>
+                <sparkle:releaseNotesLink>$notes</sparkle:releaseNotesLink>
+                <enclosure url="$downloads/KapyNotes-$VERSION.dmg"
+                           sparkle:version="$BUILD"
+                           sparkle:shortVersionString="$VERSION"
+                           type="application/octet-stream"
+                           $MAC_ENCLOSURE />
+              </item>
+            </channel>
+          </rss>
+          XML
+
+          cat > appcast-windows.xml <<XML
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <channel>
+              <title>Kapy Notes</title>
+              <item>
+                <title>Version $VERSION</title>
+                <pubDate>$published</pubDate>
+                <sparkle:releaseNotesLink>$notes</sparkle:releaseNotesLink>
+                <!-- Inno runs per-user, so this raises no UAC prompt. It also
+                     skips the installer's [Run] entry, which is why the script
+                     sets RestartApplications=yes to bring the app back. -->
+                <sparkle:installerArguments>/VERYSILENT /SUPPRESSMSGBOXES /NORESTART</sparkle:installerArguments>
+                <enclosure url="$downloads/KapyNotes-$VERSION-setup.exe"
+                           sparkle:version="$VERSION"
+                           sparkle:os="windows"
+                           type="application/octet-stream"
+                           length="$win_bytes"
+                           sparkle:dsaSignature="$WIN_SIGNATURE" />
+              </item>
+            </channel>
+          </rss>
+          XML
+
+          cat > latest.json <<JSON
+          {
+            "version": "$VERSION",
+            "build": $BUILD,
+            "notesUrl": "$notes",
+            "publishedAt": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          }
+          JSON
+
+          for file in appcast-macos.xml appcast-windows.xml latest.json; do
+            case "$file" in
+              *.xml) type=application/xml ;;
+              *)     type=application/json ;;
+            esac
+            npx --yes wrangler@4 r2 object put "kapynotes/$file" \
+              --file="$file" --remote \
+              --content-type="$type" \
+              --cache-control='public, max-age=300'
+          done
+
+      - name: Cut the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Kapy Notes $VERSION" \
+            --generate-notes \
+            "dist/KapyNotes-$VERSION.dmg" \
+            "dist/KapyNotes-$VERSION-setup.exe"
+
+      # The site names this version in two load-bearing places: the download
+      # links, and the changelog anchor the update feeds just pointed every
+      # client at. Both come from one entry in releases.ts, and both are wrong
+      # until it is deployed — so check rather than assume, and say which.
+      - name: The site has to know about this version
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          anchor="v$(echo "$VERSION" | tr '.' '-')"
+          if curl -fsS --max-time 20 https://kapynotes.com/changelog | grep -q "id=\"$anchor\""; then
+            state="kapynotes.com/changelog already lists $VERSION. Nothing left to do."
+          else
+            state="**kapynotes.com/changelog does not list $VERSION yet.** Add the entry to \`website/src/data/releases.ts\` and run \`npm run deploy\` from \`website/\`. Until then the download links offer the previous release, and every \"What's new\" link lands at the top of the changelog."
+          fi
+          {
+            echo "### Released $VERSION"
+            echo
+            echo "$state"
+            echo
+            echo "The Windows installer is not Authenticode-signed; SmartScreen will warn."
+          } >> "$GITHUB_STEP_SUMMARY"
