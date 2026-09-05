@@ -44,6 +44,18 @@ dependencies:
   # note payloads. Nothing here runs on the launch path — notes stay plaintext
   # on local disk, so opening the app costs no crypto at all.
   cryptography_plus: ^3.0.0
+  # Zip container for export / import. Pure Dart, so the same code path runs
+  # on all four platforms and inside a test with no plugin registrar.
+  archive: ^4.0.7
+  # SHA-256 over each exported markdown file, so import can tell a file the
+  # user hand-edited from one it wrote itself. Already present transitively;
+  # named here because this is a direct use.
+  crypto: ^3.0.7
+  # The save and open dialogs export and import need. Flutter-team federated
+  # plugin; `getSaveLocation` is desktop-only, and the mobile path writes into
+  # the app's own documents directory instead.
+  file_selector: ^1.0.3
+
   # The master key, parked in Keychain / Keystore / libsecret / DPAPI after the
   # first unlock. This is what keeps Argon2id a once-per-device cost instead of
   # a once-per-launch one.
@@ -56,9 +68,10 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    # Platform app icons are native. These are the only brand bitmaps Flutter
-    # carries, so keep unused source variants off the mobile startup bundle.
+    # Platform app icons are native. Keep only the small brand bitmaps used by
+    # the running app here so unused source variants stay out of the bundle.
     - assets/branding/kapy_notes_logo.png
+    - assets/mascot/kapy_cursor_peek.webp
     # The tray icon, read by tray_manager from the bundle rather than painted:
     # an .ico for the Windows notification area, a template PNG that macOS
     # tints for the menu bar. Desktop-only, and small enough not to matter.

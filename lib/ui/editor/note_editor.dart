@@ -143,6 +143,7 @@ class NoteEditorState extends State<NoteEditor> {
     _controller = HighlightingController(
       highlighter: widget.highlighter,
       palette: KapyTheme.darkPalette,
+      writingFont: widget.writingFont,
       formats: _formats,
       text: initialText,
     );
@@ -177,6 +178,9 @@ class NoteEditorState extends State<NoteEditor> {
     if (!identical(oldWidget.shortcuts, widget.shortcuts)) {
       oldWidget.shortcuts.removeListener(_onShortcutsChanged);
       widget.shortcuts.addListener(_onShortcutsChanged);
+    }
+    if (oldWidget.writingFont != widget.writingFont) {
+      _controller.writingFont = widget.writingFont;
     }
     // A new engine arrives when exchange rates land; re-evaluate so currency
     // lines light up without the user touching anything.
@@ -550,7 +554,8 @@ class NoteEditorState extends State<NoteEditor> {
     if (!mounted) return;
     final text = _controller.text;
     final done = !text.contains(uncheckedPrefix);
-    final total = uncheckedPrefix.allMatches(text).length +
+    final total =
+        uncheckedPrefix.allMatches(text).length +
         checkedPrefix.allMatches(text).length;
     final finale = done && total >= 2;
     Celebrate.at(context, tapPosition);
@@ -565,7 +570,9 @@ class NoteEditorState extends State<NoteEditor> {
     final selection = _controller.selection;
     if (!selection.isValid) return null;
     final rect = editable.getLocalRectForCaret(
-      TextPosition(offset: selection.extentOffset.clamp(0, _controller.text.length)),
+      TextPosition(
+        offset: selection.extentOffset.clamp(0, _controller.text.length),
+      ),
     );
     return editable.localToGlobal(rect.topCenter);
   }
@@ -894,6 +901,7 @@ class NoteEditorState extends State<NoteEditor> {
                                       padding: padding,
                                       style: textStyle,
                                       strut: strut,
+                                      writingFont: widget.writingFont,
                                     ),
                                   _buildField(
                                     padding,
@@ -1178,11 +1186,13 @@ class _Placeholder extends StatelessWidget {
     required this.padding,
     required this.style,
     required this.strut,
+    required this.writingFont,
   });
 
   final EdgeInsets padding;
   final TextStyle style;
   final StrutStyle strut;
+  final WritingFont writingFont;
 
   @override
   Widget build(BuildContext context) {
@@ -1202,6 +1212,7 @@ class _Placeholder extends StatelessWidget {
                     style: paragraphTextStyle(
                       style,
                       NoteParagraphStyle.heading,
+                      writingFont: writingFont,
                       primaryColor: palette.textTertiary,
                     ),
                   ),
@@ -1210,6 +1221,7 @@ class _Placeholder extends StatelessWidget {
                     style: paragraphTextStyle(
                       style,
                       NoteParagraphStyle.subtitle,
+                      writingFont: writingFont,
                       secondaryColor: palette.textTertiary,
                     ),
                   ),

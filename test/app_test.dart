@@ -670,8 +670,8 @@ void main() {
       ),
     );
 
-    expect(prefs.writingFont, WritingFont.handwritten);
-    expect(editor().style?.fontFamily, 'Shantell Sans');
+    expect(prefs.writingFont, WritingFont.mixed);
+    expect(editor().style?.fontFamily, WritingFont.mixed.fontFamily);
 
     await openSettings(tester, section: SettingsSection.appearance);
     expect(find.text('WRITING FONT'), findsOneWidget);
@@ -687,6 +687,23 @@ void main() {
     expect(
       handwritingPreview.style?.fontVariations,
       WritingFont.handwritten.fontVariations,
+    );
+    final mixedPreview = tester.widget<Text>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('writing-font-mixed')),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Text && widget.textSpan != null,
+            ),
+          )
+          .single,
+    );
+    final mixedSpans = (mixedPreview.textSpan! as TextSpan).children!;
+    expect(mixedSpans.first.style?.fontFamily, 'Shantell Sans');
+    expect(
+      mixedSpans.last.style?.fontFamily,
+      isNull,
+      reason: 'the number inherits the mixed option\'s monospace base',
     );
 
     await tester.tap(find.byKey(const ValueKey('writing-font-monospace')));

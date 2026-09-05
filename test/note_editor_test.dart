@@ -15,6 +15,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/time_zones.dart';
 import 'package:kapy_notes/ui/editor/editor_formatting.dart';
 import 'package:kapy_notes/ui/celebrate.dart';
+import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
@@ -206,9 +207,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('Kapy only comes up once the last box is ticked', (
-    tester,
-  ) async {
+  testWidgets('Kapy only comes up once the last box is ticked', (tester) async {
     await tester.pumpWidget(harness('☑ milk\n☐ bread', autofocus: true));
     await tester.pumpAndSettle();
     final topLeft = tester.getTopLeft(find.byType(EditableText));
@@ -221,12 +220,13 @@ void main() {
       findsOneWidget,
       reason: 'that emptied the list',
     );
+    // And it is really Kapy, riding the burst's own timeline rather than a
+    // second one that would drift away from it.
+    expect(find.byKey(KapyCursorPeek.mascotKey), findsOneWidget);
     await tester.pumpAndSettle();
   });
 
-  testWidgets('a single box on its own is not a finished list', (
-    tester,
-  ) async {
+  testWidgets('a single box on its own is not a finished list', (tester) async {
     await tester.pumpWidget(harness('☐ milk', autofocus: true));
     await tester.pumpAndSettle();
     final topLeft = tester.getTopLeft(find.byType(EditableText));
@@ -1783,6 +1783,47 @@ void main() {
     expect(
       tester.getRect(chipWithText('42')).center.dy,
       closeTo(lineRect(tester, body, 1).center.dy, 1.5),
+    );
+  });
+
+  testWidgets('mixed typeface gives headings a handwritten face', (
+    tester,
+  ) async {
+    const body = 'Nightly cost\nnightly = 128 eur\nnightly * 7';
+    const formats = [
+      NoteFormatRange(start: 0, end: 12, format: NoteFormat.heading),
+    ];
+    await tester.pumpWidget(
+      harness(body, initialFormats: formats, writingFont: WritingFont.mixed),
+    );
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.style?.fontFamily, WritingFont.monospace.fontFamily);
+
+    final rendered =
+        tester
+                .state<EditableTextState>(find.byType(EditableText))
+                .renderEditable
+                .text!
+            as TextSpan;
+    final heading = rendered.children!.whereType<TextSpan>().firstWhere(
+      (span) => span.text == 'Nightly cost',
+    );
+    final bodyText = rendered.children!.whereType<TextSpan>().firstWhere(
+      (span) => span.text == 'nightly',
+    );
+
+    expect(heading.style?.fontFamily, WritingFont.handwritten.fontFamily);
+    expect(
+      heading.style?.fontVariations,
+      WritingFont.handwritten.fontVariations,
+    );
+    expect(heading.style?.fontSize, WritingFont.handwritten.editorSize * 1.28);
+    expect(bodyText.style?.fontFamily, WritingFont.monospace.fontFamily);
+    expect(
+      tester.getRect(chipWithText('896')).center.dy,
+      closeTo(lineRect(tester, body, 2).center.dy, 1.5),
     );
   });
 

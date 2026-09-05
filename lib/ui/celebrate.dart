@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/theme.dart';
-import 'app_logo.dart';
+import 'kapy_cursor_peek.dart';
 
 /// Small, brief celebrations for the moments worth one.
 ///
@@ -113,6 +113,7 @@ class _CelebrationState extends State<_Celebration>
         spin: (random.nextDouble() - 0.5) * 7,
         color: colors[index % colors.length],
         delay: random.nextDouble() * 0.12,
+        flip: random.nextDouble() * pi * 2,
       );
     });
     _controller.forward().whenComplete(widget.onDone);
@@ -157,34 +158,22 @@ class _CelebrationState extends State<_Celebration>
     );
   }
 
-  /// Kapy rising out of the line the caret is on, and going back down.
+  /// Kapy looking around the line's caret, and slipping behind it again.
   ///
-  /// The clip is the whole trick: the mark is drawn inside a window the
-  /// height of one peek, so it reads as coming up from behind the text rather
-  /// than fading in on top of it.
+  /// The component's anchor lands its drawn cursor directly over the real
+  /// caret. Its clip then keeps Kapy behind that edge throughout the motion.
   Widget _kapy() {
-    const size = 22.0;
-    final t = Curves.easeOutBack.transform(
-      (_controller.value / 0.42).clamp(0.0, 1.0),
-    );
-    final down = Curves.easeInCubic.transform(
-      ((_controller.value - 0.72) / 0.28).clamp(0.0, 1.0),
-    );
-    final risen = (t - down).clamp(0.0, 1.0);
+    const size = 44.0;
+    final anchor = KapyCursorPeek.caretAnchor(size);
     return Positioned(
-      left: widget.origin.dx - size / 2,
-      top: widget.origin.dy - size,
+      left: widget.origin.dx - anchor.dx,
+      top: widget.origin.dy - anchor.dy,
       width: size,
       height: size,
-      child: ClipRect(
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          heightFactor: 1,
-          child: Transform.translate(
-            offset: Offset(0, size * (1 - risen)),
-            child: const AppLogo(size: size, excludeFromSemantics: true),
-          ),
-        ),
+      child: KapyCursorPeek(
+        size: size,
+        animation: _controller,
+        caretColor: widget.accent,
       ),
     );
   }
@@ -198,6 +187,7 @@ class _Fleck {
     required this.spin,
     required this.color,
     required this.delay,
+    required this.flip,
   });
 
   final double angle;
@@ -206,6 +196,10 @@ class _Fleck {
   final double spin;
   final Color color;
   final double delay;
+
+  /// Where in its turn the piece starts, so they do not all show their edge
+  /// on the same frame.
+  final double flip;
 }
 
 class _FleckPainter extends CustomPainter {
@@ -238,6 +232,12 @@ class _FleckPainter extends CustomPainter {
       final opacity = local < 0.5 ? 1.0 : 1 - (local - 0.5) * 2;
       paint.color = fleck.color.withValues(alpha: opacity.clamp(0.0, 1.0));
 
+      // Real confetti turns over as it falls, showing its edge and then its
+      // face again. Squeezing the width on a second, faster cycle is enough
+      // to read as that flip — without it these are just rotating rectangles,
+      // which is the thing that gives a hand-rolled burst away.
+      final flip = (cos(fleck.flip + local * 11) * 0.9).abs() + 0.1;
+
       canvas.save();
       canvas.translate(origin.dx + dx, origin.dy + dy);
       canvas.rotate(fleck.spin * local);
@@ -245,7 +245,7 @@ class _FleckPainter extends CustomPainter {
         RRect.fromRectAndRadius(
           Rect.fromCenter(
             center: Offset.zero,
-            width: fleck.size,
+            width: fleck.size * flip,
             height: fleck.size * 1.7,
           ),
           const Radius.circular(1),

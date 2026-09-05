@@ -457,6 +457,21 @@ class _SettingsDialogState extends State<SettingsDialog> {
               height: 1,
               letterSpacing: 0,
             ),
+            trailingSpans: font == WritingFont.mixed
+                ? [
+                    TextSpan(
+                      text: 'Ideas',
+                      style: TextStyle(
+                        fontFamily: WritingFont.handwritten.fontFamily,
+                        fontFamilyFallback:
+                            WritingFont.handwritten.fontFamilyFallback,
+                        fontVariations: WritingFont.handwritten.fontVariations,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const TextSpan(text: ' 42'),
+                  ]
+                : null,
             selected: widget.layoutPrefs.writingFont == font,
             onTap: () => widget.layoutPrefs.writingFont = font,
           ),
@@ -943,6 +958,7 @@ class _ChoiceRow extends StatelessWidget {
     required this.subtitle,
     required this.trailing,
     this.trailingStyle,
+    this.trailingSpans,
     required this.selected,
     required this.onTap,
   });
@@ -951,6 +967,7 @@ class _ChoiceRow extends StatelessWidget {
   final String subtitle;
   final String trailing;
   final TextStyle? trailingStyle;
+  final List<InlineSpan>? trailingSpans;
   final bool selected;
   final VoidCallback onTap;
 
@@ -982,8 +999,11 @@ class _ChoiceRow extends StatelessWidget {
                 child: _RowCopy(title: title, subtitle: subtitle),
               ),
               const SizedBox(width: 10),
-              Text(
-                trailing,
+              Text.rich(
+                TextSpan(
+                  text: trailingSpans == null ? trailing : null,
+                  children: trailingSpans,
+                ),
                 style:
                     (trailingStyle ??
                             TextStyle(

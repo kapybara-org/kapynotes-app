@@ -108,7 +108,7 @@ class LayoutPrefs extends ChangeNotifier {
   bool _readyToTypeOnOpen = true;
   bool _dailySeparatorsEnabled = true;
   NumberSystem _numberSystem = NumberSystem.auto;
-  WritingFont _writingFont = WritingFont.handwritten;
+  WritingFont _writingFont = WritingFont.mixed;
   String? _timeZoneId;
   bool _keepRunningInBackground = false;
   bool _alwaysOnTop = false;
@@ -295,13 +295,14 @@ class LayoutPrefs extends ChangeNotifier {
     );
   }
 
-  /// New installs open with the paper-like face. Unknown values can come from
-  /// a newer app version, so they also fall back to that safe default.
+  /// New installs open with typefaces matched to the note's text styles.
+  /// Unknown values can come from a newer app version, so they also fall back
+  /// to that safe default.
   WritingFont _readWritingFont() {
     final stored = _store.read<String>(_writingFontKey);
     return WritingFont.values.firstWhere(
       (font) => font.name == stored,
-      orElse: () => WritingFont.handwritten,
+      orElse: () => WritingFont.mixed,
     );
   }
 

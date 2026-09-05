@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart'
     show Color, FontStyle, FontWeight, TextStyle;
 
+import '../../core/editor_font.dart';
 import '../../data/note_format.dart';
 
 /// The bullet each nesting level is drawn with, cycling once it runs out.
@@ -79,21 +80,29 @@ NoteParagraphStyle nextParagraphStyle(NoteParagraphStyle? current) {
 TextStyle paragraphTextStyle(
   TextStyle base,
   NoteParagraphStyle paragraphStyle, {
+  WritingFont? writingFont,
   Color? primaryColor,
   Color? secondaryColor,
 }) {
+  final paragraphBase =
+      writingFont == WritingFont.mixed &&
+          paragraphStyle == NoteParagraphStyle.heading
+      ? _mixedHeadingBase(base)
+      : base;
   final scale = switch (paragraphStyle) {
     NoteParagraphStyle.heading => 1.28,
     NoteParagraphStyle.text => 1.0,
     NoteParagraphStyle.subtitle => 0.92,
   };
-  return base.copyWith(
+  return paragraphBase.copyWith(
     color: paragraphStyle == NoteParagraphStyle.subtitle
-        ? secondaryColor ?? base.color
-        : primaryColor ?? base.color,
-    fontSize: base.fontSize == null ? null : base.fontSize! * scale,
+        ? secondaryColor ?? paragraphBase.color
+        : primaryColor ?? paragraphBase.color,
+    fontSize: paragraphBase.fontSize == null
+        ? null
+        : paragraphBase.fontSize! * scale,
     // Preserve the editor's fixed 29px row while changing visual size.
-    height: base.height == null ? null : base.height! / scale,
+    height: paragraphBase.height == null ? null : paragraphBase.height! / scale,
     fontWeight: switch (paragraphStyle) {
       NoteParagraphStyle.heading => FontWeight.w700,
       NoteParagraphStyle.text => FontWeight.w400,
@@ -102,6 +111,25 @@ TextStyle paragraphTextStyle(
     fontStyle: paragraphStyle == NoteParagraphStyle.subtitle
         ? FontStyle.italic
         : FontStyle.normal,
+  );
+}
+
+/// Mixed notes use the compact monospace face for ordinary writing, then give
+/// headings the warmer handwritten face without changing the fixed row height
+/// that keeps calculated results aligned with their source lines.
+TextStyle _mixedHeadingBase(TextStyle base) {
+  final headingFont = WritingFont.handwritten;
+  final lineHeight = base.fontSize == null || base.height == null
+      ? null
+      : base.fontSize! * base.height!;
+  return base.copyWith(
+    fontFamily: headingFont.fontFamily,
+    fontFamilyFallback: headingFont.fontFamilyFallback,
+    fontSize: headingFont.editorSize,
+    height: lineHeight == null
+        ? base.height
+        : lineHeight / headingFont.editorSize,
+    fontVariations: headingFont.fontVariations,
   );
 }
 

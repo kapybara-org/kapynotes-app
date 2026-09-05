@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../calc/highlight.dart';
+import '../../core/editor_font.dart';
 import '../../core/note_link.dart';
 import '../../core/theme.dart';
 import '../../data/note_format.dart';
@@ -16,14 +17,17 @@ class HighlightingController extends TextEditingController {
   HighlightingController({
     required Highlighter highlighter,
     required CalcPalette palette,
+    required WritingFont writingFont,
     List<NoteFormatRange> formats = const [],
     super.text,
   }) : _highlighter = highlighter,
        _palette = palette,
+       _writingFont = writingFont,
        _formats = formats;
 
   Highlighter _highlighter;
   CalcPalette _palette;
+  WritingFont _writingFont;
   List<NoteFormatRange> _formats;
 
   String? _cachedText;
@@ -42,6 +46,12 @@ class HighlightingController extends TextEditingController {
   set palette(CalcPalette value) {
     if (_palette == value) return;
     _palette = value;
+    notifyListeners();
+  }
+
+  set writingFont(WritingFont value) {
+    if (_writingFont == value) return;
+    _writingFont = value;
     notifyListeners();
   }
 
@@ -163,11 +173,13 @@ class HighlightingController extends TextEditingController {
           NoteFormat.heading => paragraphTextStyle(
             segmentStyle,
             NoteParagraphStyle.heading,
+            writingFont: _writingFont,
             primaryColor: base.color,
           ),
           NoteFormat.subtitle => paragraphTextStyle(
             segmentStyle,
             NoteParagraphStyle.subtitle,
+            writingFont: _writingFont,
             secondaryColor: _palette.textSecondary,
           ),
         };

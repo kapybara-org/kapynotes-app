@@ -43,4 +43,14 @@ void main() {
       FontVariation('SPAC', 0),
     ]);
   });
+
+  test('mixed editor face uses monospace for its writing surface', () {
+    expect(WritingFont.mixed.label, 'Mixed');
+    expect(WritingFont.mixed.fontFamily, WritingFont.monospace.fontFamily);
+    expect(
+      WritingFont.mixed.fontFamilyFallback,
+      WritingFont.monospace.fontFamilyFallback,
+    );
+    expect(WritingFont.mixed.editorSize, WritingFont.monospace.editorSize);
+  });
 }

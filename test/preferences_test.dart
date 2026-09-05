@@ -44,7 +44,7 @@ void main() {
     expect(prefs.resultsVisible, isTrue);
     expect(prefs.readyToTypeOnOpen, isTrue);
     expect(prefs.dailySeparatorsEnabled, isTrue);
-    expect(prefs.writingFont, WritingFont.handwritten);
+    expect(prefs.writingFont, WritingFont.mixed);
     expect(prefs.timeZoneId, isNull);
   });
 
@@ -158,11 +158,11 @@ void main() {
     expect(prefs.digitGrouping, DigitGrouping.international);
   });
 
-  test('an unreadable writing font falls back to handwritten', () {
+  test('an unreadable writing font falls back to mixed', () {
     final store = _MemoryStore()..put('writingFont.v1', 'papyrus');
     final prefs = LayoutPrefs(store)..load();
 
-    expect(prefs.writingFont, WritingFont.handwritten);
+    expect(prefs.writingFont, WritingFont.mixed);
   });
 
   test('time zone selection converts timestamps and survives reload', () {
