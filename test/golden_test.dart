@@ -135,6 +135,23 @@ void main() {
     );
   });
 
+  testWidgets('desktop dark pinned on top', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    // The pin is the only toolbar control with an on state, and the filled
+    // icon behind a selected surface is the whole signal that the window is
+    // now floating.
+    goldenPrefs.toggleAlwaysOnTop();
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_pinned.png'),
+    );
+  });
+
   testWidgets('desktop dark compact hover surfaces', (tester) async {
     await pumpForGolden(
       tester,
