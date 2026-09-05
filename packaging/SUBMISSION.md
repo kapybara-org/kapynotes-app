@@ -802,11 +802,22 @@ a takedown rather than a rejection:
    Note content is end-to-end encrypted and we cannot read it, but Play asks
    whether data is *collected*, not whether it is legible to us — it is, so it
    is declared, with encryption in transit and a deletion route.
-2. **In-app account deletion, plus a web route.** The in-app half already
-   exists: 1.5.0 put account deletion beside sign-out. Play also wants a URL a
-   user can reach without installing the app, which the Data Safety form asks
-   for directly. `kapynotes.com/support` documents deletion; confirm it names
-   account deletion specifically before pointing the form at it.
+2. **In-app account deletion — which does not exist, in either half.** This is
+   the blocker, and it is missing code rather than a form. `lib/ui/account/
+   sync_pane.dart` offers Sign out and nothing else, and the server has three
+   routes — `attachments`, `keys`, `sync` — with no account route at all. The
+   1.5.0 entry in `releases.ts` claims "Deleting your account, from the same
+   place, removes everything"; that shipped as copy and not as a feature, and
+   the claim is live on kapynotes.com today.
+
+   Both stores require it once an app can create accounts: Apple under review
+   guideline 5.1.1(v), where it is a rejection, and Play under its User Data
+   policy, where it also wants a deletion URL reachable without installing the
+   app and enforces after publication. So this has to be built before either
+   store gets a 1.7.0 with sync in it — deletion in the app, a route on the
+   server that erases the user, their notes and their key bundle, and a page on
+   the site describing how to ask. `kapynotes.com/support` currently says the
+   opposite: "there is no account to delete".
 3. **The store description contradicts the build.** `play_listing.json` says
    "Notes are stored on your device, not on our servers" and "No account and no
    login" under PRIVATE BY DEFAULT. Both are accurate for the 1.4.0 that is
