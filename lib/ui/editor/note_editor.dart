@@ -20,6 +20,7 @@ import '../../data/daily_separator.dart';
 import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
 import '../notebook_paper.dart';
+import '../celebrate.dart';
 import 'editor_formatting.dart';
 import 'highlighting_controller.dart';
 import 'line_metrics.dart';
@@ -516,8 +517,15 @@ class NoteEditorState extends State<NoteEditor> {
     final checkboxStart = _checkboxAt(editable, event.position, offset);
     if (checkboxStart >= 0) {
       _nextInsertedFormats = const {};
+      final wasUnchecked = _controller.text.startsWith(
+        uncheckedPrefix,
+        checkboxStart,
+      );
       _controller.value = toggleCheckboxAt(_controller.value, checkboxStart);
       _focusNode.requestFocus();
+      // Only on the way in. Unticking something is a correction, and a
+      // correction that throws confetti is mocking you.
+      if (wasUnchecked) _celebrateCheck(editable, event.position);
       return;
     }
 
@@ -530,6 +538,36 @@ class NoteEditorState extends State<NoteEditor> {
       return;
     }
     _showLinkPopover(hit);
+  }
+
+  /// Confetti over the box just ticked, and Kapy if that was the last one.
+  ///
+  /// The finale is deliberately rare: a note has to have had at least two
+  /// boxes and none of them can be left, so it marks finishing a list rather
+  /// than ticking a single stray item. Kapy comes up out of the caret because
+  /// that is where the writing is, and ducks straight back.
+  void _celebrateCheck(RenderEditable editable, Offset tapPosition) {
+    if (!mounted) return;
+    final text = _controller.text;
+    final done = !text.contains(uncheckedPrefix);
+    final total = uncheckedPrefix.allMatches(text).length +
+        checkedPrefix.allMatches(text).length;
+    final finale = done && total >= 2;
+    Celebrate.at(context, tapPosition);
+    if (!finale) return;
+
+    final caret = _caretGlobalCenter(editable);
+    if (caret != null) Celebrate.at(context, caret, finale: true);
+  }
+
+  /// Where the caret is on screen, or null if it has nowhere to be.
+  Offset? _caretGlobalCenter(RenderEditable editable) {
+    final selection = _controller.selection;
+    if (!selection.isValid) return null;
+    final rect = editable.getLocalRectForCaret(
+      TextPosition(offset: selection.extentOffset.clamp(0, _controller.text.length)),
+    );
+    return editable.localToGlobal(rect.topCenter);
   }
 
   /// The offset of the checkbox glyph under [globalPosition], or -1.
@@ -1025,6 +1063,7 @@ class NoteEditorState extends State<NoteEditor> {
             style: textStyle,
             strutStyle: strut,
             cursorWidth: EditorMetrics.cursorWidth,
+            cursorHeight: EditorMetrics.cursorHeight(widget.writingFont),
             cursorRadius: const Radius.circular(1),
             cursorColor: Theme.of(context).colorScheme.primary,
             // Uniform selection rectangles: without this, a line whose glyphs

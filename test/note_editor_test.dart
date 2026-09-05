@@ -14,6 +14,7 @@ import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/time_zones.dart';
 import 'package:kapy_notes/ui/editor/editor_formatting.dart';
+import 'package:kapy_notes/ui/celebrate.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
@@ -180,6 +181,61 @@ void main() {
   setUp(() {
     engine = CalcEngine(ratesPerUsd: _rates);
     shortcutPrefs = ShortcutPrefs(_MemoryStore())..load();
+  });
+
+  testWidgets('ticking a box celebrates, unticking it does not', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('☐ milk\n☐ bread', autofocus: true));
+    await tester.pumpAndSettle();
+    final topLeft = tester.getTopLeft(find.byType(EditableText));
+
+    // First box: a burst, and no finale — there is still one left.
+    await tester.tapAt(topLeft + const Offset(6, 14));
+    await tester.pump();
+    expect(find.byKey(Celebrate.burstKey), findsOneWidget);
+    expect(find.byKey(Celebrate.finaleKey), findsNothing);
+    await tester.pumpAndSettle();
+    expect(find.byKey(Celebrate.burstKey), findsNothing);
+
+    // Unticking is a correction, and a correction that throws confetti is
+    // mocking you.
+    await tester.tapAt(topLeft + const Offset(6, 14));
+    await tester.pump();
+    expect(find.byKey(Celebrate.burstKey), findsNothing);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('Kapy only comes up once the last box is ticked', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('☑ milk\n☐ bread', autofocus: true));
+    await tester.pumpAndSettle();
+    final topLeft = tester.getTopLeft(find.byType(EditableText));
+
+    await tester.tapAt(topLeft + const Offset(6, 43));
+    await tester.pump();
+    expect(find.byKey(Celebrate.burstKey), findsOneWidget);
+    expect(
+      find.byKey(Celebrate.finaleKey),
+      findsOneWidget,
+      reason: 'that emptied the list',
+    );
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a single box on its own is not a finished list', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('☐ milk', autofocus: true));
+    await tester.pumpAndSettle();
+    final topLeft = tester.getTopLeft(find.byType(EditableText));
+
+    await tester.tapAt(topLeft + const Offset(6, 14));
+    await tester.pump();
+    expect(find.byKey(Celebrate.burstKey), findsOneWidget);
+    expect(find.byKey(Celebrate.finaleKey), findsNothing);
+    await tester.pumpAndSettle();
   });
 
   // Double-clicking a blank line used to select its terminator, painting a

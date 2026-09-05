@@ -213,6 +213,18 @@ class EditorMetrics {
 
   static const double cursorWidth = 1.7;
 
+  /// The caret is drawn to the text, not to the line box.
+  ///
+  /// [lineHeight] is deliberately generous — it is what gives a note its air,
+  /// and what the results gutter aligns to — but a caret filling it overshot
+  /// the glyphs by eight pixels above and nine below, which is what made it
+  /// read as a slab dropped between the letters rather than a place to type.
+  /// Ascender to descender is the job.
+  ///
+  /// Derived from the font so the three writing faces each get a caret in
+  /// proportion to their own size rather than a number tuned for one of them.
+  static double cursorHeight(WritingFont font) => font.editorSize * 1.28;
+
   /// Width `RenderEditable` reserves beside the text for the caret: a fixed
   /// 1px gap plus the cursor itself. Text wraps inside what is left, so
   /// anything measuring the note has to subtract it or it will place wraps
