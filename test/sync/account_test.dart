@@ -209,4 +209,73 @@ void main() {
     expect(d.notes.notes, isEmpty);
     d.dispose();
   });
+
+  test('deleting the account clears the session and keeps the notes', () async {
+    final d = Device(server);
+    await d.boot();
+    await d.account.signIn(email: 'a@b.co', password: 'x');
+    await d.account.createPassphrase('a good passphrase');
+    d.notes.create(body: 'Written before closing the account');
+    await d.account.sync!.syncNow();
+    expect(server.rows, isNotEmpty);
+
+    final ok = await d.account.deleteAccount('someone@example.com');
+
+    expect(ok, isTrue);
+    expect(server.deleted, isTrue);
+    expect(d.account.state, AccountState.signedOut);
+    expect(await d.keys.readToken(), isNull, reason: 'the session is gone');
+    // A closed account is not a request to erase what the person wrote, which
+    // is the same promise sign-out makes.
+    expect(d.notes.notes.single.body, 'Written before closing the account');
+    d.dispose();
+  });
+
+  test('a mistyped address is refused and the account survives', () async {
+    final d = Device(server);
+    await d.boot();
+    await d.account.signIn(email: 'a@b.co', password: 'x');
+    await d.account.createPassphrase('a good passphrase');
+
+    final ok = await d.account.deleteAccount('not-the-address@example.com');
+
+    expect(ok, isFalse);
+    expect(server.deleted, isFalse);
+    expect(d.account.state, AccountState.ready, reason: 'still signed in');
+    expect(await d.keys.readToken(), isNotNull);
+    expect(d.account.lastError, isNotNull);
+    d.dispose();
+  });
+
+  test('the address is matched without case or padding mattering', () async {
+    final d = Device(server);
+    await d.boot();
+    await d.account.signIn(email: 'a@b.co', password: 'x');
+    await d.account.createPassphrase('a good passphrase');
+
+    expect(await d.account.deleteAccount('  SomeOne@Example.COM '), isTrue);
+    d.dispose();
+  });
+
+  test('a locked device can still delete the account', () async {
+    final first = Device(server);
+    await first.boot();
+    await first.account.signIn(email: 'a@b.co', password: 'x');
+    await first.account.createPassphrase('a good passphrase');
+    first.notes.create(body: 'Sealed with a passphrase nobody remembers');
+    await first.account.sync!.syncNow();
+    first.dispose();
+
+    final second = Device(server);
+    await second.boot();
+    await second.account.signIn(email: 'a@b.co', password: 'x');
+    expect(second.account.state, AccountState.locked);
+
+    // The whole point: this is the one person with no other move to make, and
+    // a delete gated on the key they have lost would be no delete at all.
+    expect(await second.account.deleteAccount('someone@example.com'), isTrue);
+    expect(second.account.state, AccountState.signedOut);
+    expect(server.deleted, isTrue);
+    second.dispose();
+  });
 }

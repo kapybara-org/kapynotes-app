@@ -292,6 +292,53 @@ class Account extends ChangeNotifier {
     _moveTo(AccountState.signedOut);
   }
 
+  /// Closes the account on the server and leaves this device signed out.
+  ///
+  /// Deliberately reachable from every signed-in state, including a locked
+  /// one. Somebody who has lost both the passphrase and the recovery key can
+  /// do nothing else with the account they have — deleting it and starting
+  /// again is their only way forward, and a delete that needed the key would
+  /// be withheld from exactly the person who needs it.
+  ///
+  /// The notes on this device are kept, for the same reason [signOut] keeps
+  /// them: they are the user's, and closing a server account is not a request
+  /// to erase their writing. What goes is the account, everything the server
+  /// held for it, and the key material this device was holding.
+  ///
+  /// Returns false and sets [lastError] if the server refused, leaving the
+  /// session intact so it can be tried again.
+  Future<bool> deleteAccount(String confirmation) async {
+    final token = _token;
+    if (token == null) return false;
+
+    try {
+      await _syncApiFor(token).deleteAccount(confirmation);
+    } on SyncProtocolException {
+      // A 400: the typed address did not match. Worth saying plainly, because
+      // the alternative reading — that deletion is broken — is worse.
+      _lastError = 'That is not the email address on this account.';
+      notifyListeners();
+      return false;
+    } catch (error) {
+      _lastError = 'Could not reach the server. Try again when you are online.';
+      notifyListeners();
+      return false;
+    }
+
+    // The account is gone, so there is no session left to revoke: tear the
+    // local half down directly rather than calling signOut, whose sign-out
+    // request would now be answered with a 401.
+    _sync?.dispose();
+    _sync = null;
+    _token = null;
+    _user = null;
+    _lastError = null;
+    _state.clearCursor();
+    await _keys.clear();
+    _moveTo(AccountState.signedOut);
+    return true;
+  }
+
   void _moveTo(AccountState next) {
     if (_accountState == next) {
       notifyListeners();

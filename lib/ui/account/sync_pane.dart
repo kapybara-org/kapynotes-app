@@ -721,6 +721,11 @@ class _UnlockFormState extends State<_UnlockForm> {
           ),
         ],
       ),
+      // Reachable from here on purpose. Someone who has lost the passphrase
+      // and the recovery key can do nothing else with this account, and a
+      // delete that first demanded the key would be withheld from precisely
+      // the person with no other way out.
+      _DeleteAccount(account: widget.account, enabled: !_busy),
       if (_problem != null) _Message(_problem!),
     ],
   );
@@ -800,6 +805,165 @@ class _Ready extends StatelessWidget {
         'Signing out leaves your notes on this device. It only forgets the '
         'key and the session.',
       ),
+      _DeleteAccount(account: account),
     ],
   );
+}
+
+// ---------------------------------------------------------------------------
+
+/// The way out of the account entirely, and the last thing in the pane.
+///
+/// Deliberately quiet — a text button, not a filled one — and deliberately
+/// present in every signed-in state. Both stores require it of an app that can
+/// create an account, and someone locked out of their own notes has no other
+/// move to make.
+class _DeleteAccount extends StatelessWidget {
+  const _DeleteAccount({required this.account, this.enabled = true});
+
+  final Account account;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: TextButton(
+      onPressed: enabled ? () => _confirm(context, account) : null,
+      style: TextButton.styleFrom(
+        foregroundColor: Theme.of(context).colorScheme.error,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
+      child: const Text('Delete account'),
+    ),
+  );
+}
+
+Future<void> _confirm(BuildContext context, Account account) => showDialog<void>(
+  context: context,
+  builder: (context) => _DeleteAccountDialog(account: account),
+);
+
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog({required this.account});
+  final Account account;
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _typed = TextEditingController();
+  bool _busy = false;
+  String? _problem;
+
+  @override
+  void initState() {
+    super.initState();
+    // The button enables itself the moment the address matches, so the field
+    // has to be listened to rather than read on submit.
+    _typed.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _typed.dispose();
+    super.dispose();
+  }
+
+  String get _email => widget.account.user?.email ?? '';
+
+  bool get _matches =>
+      _typed.text.trim().toLowerCase() == _email.trim().toLowerCase() &&
+      _email.isNotEmpty;
+
+  Future<void> _delete() async {
+    setState(() {
+      _busy = true;
+      _problem = null;
+    });
+
+    final ok = await widget.account.deleteAccount(_typed.text.trim());
+    if (!mounted) return;
+
+    if (ok) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() {
+      _busy = false;
+      _problem = widget.account.lastError ?? 'That did not work.';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+
+    return AlertDialog(
+      title: const Text('Delete this account'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'This removes the account and everything stored for it: the '
+              'synced copy of your notes, their attachments, and the key your '
+              'passphrase unlocks.',
+              style: TextStyle(
+                fontSize: 13,
+                color: palette.textPrimary,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              // The honest version. Nobody can undo this, and saying so is
+              // the same fact the passphrase design has been saying all along.
+              'Nobody can undo it, us included — without that key what is on '
+              'our servers is unreadable to anyone. The notes on this device '
+              'stay where they are.',
+              style: TextStyle(
+                fontSize: 13,
+                color: palette.textSecondary,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Type $_email to confirm.',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: palette.textSecondary,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _Field(
+              controller: _typed,
+              hint: 'Your email address',
+              autofocus: true,
+              keyboardType: TextInputType.emailAddress,
+              onSubmitted: _busy || !_matches ? null : _delete,
+            ),
+            if (_problem != null) _Message(_problem!),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: const Text('Keep my account'),
+        ),
+        FilledButton(
+          onPressed: _busy || !_matches ? null : _delete,
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          child: Text(_busy ? 'Deleting…' : 'Delete account'),
+        ),
+      ],
+    );
+  }
 }

@@ -122,6 +122,14 @@ abstract class SyncApi {
   /// current key.
   Future<void> createKeyBundle(KeyBundle bundle);
   Future<void> rotateKeyBundle(KeyBundle bundle);
+
+  /// Closes the account and erases everything the server holds for it.
+  ///
+  /// [confirmation] must be the account's own email address; the server
+  /// refuses anything else with a 400. Nothing about this is recoverable —
+  /// the key bundle goes with the account, and the ciphertext is noise
+  /// without it — so the confirmation is the design, not ceremony.
+  Future<void> deleteAccount(String confirmation);
 }
 
 /// One request may not carry more than this. Matches `PUSH_MAX_NOTES`.
@@ -211,6 +219,13 @@ class HttpSyncApi implements SyncApi {
   @override
   Future<void> rotateKeyBundle(KeyBundle bundle) =>
       _send('PUT', _baseUrl.resolve('keys'), payload: bundle.toJson());
+
+  @override
+  Future<void> deleteAccount(String confirmation) => _send(
+    'DELETE',
+    _baseUrl.resolve('account'),
+    payload: {'confirm': confirmation},
+  );
 
   /// Returns the decoded body, or an empty map when [absentIsNull] turned a
   /// 404 into "there isn't one".

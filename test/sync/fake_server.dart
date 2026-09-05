@@ -30,6 +30,24 @@ class FakeServer {
   /// corpus.
   int pageSize = 200;
 
+  /// The address [deleteAccount] will accept, mirroring the real server's
+  /// check that the caller named the account it meant.
+  String email = 'someone@example.com';
+
+  /// True once the account has been deleted, so a test can tell "the request
+  /// was refused" apart from "the request never arrived".
+  bool deleted = false;
+
+  void deleteAccount(String confirmation) {
+    calls.add('deleteAccount');
+    if (confirmation.trim().toLowerCase() != email.trim().toLowerCase()) {
+      throw const SyncProtocolException('server returned 400');
+    }
+    deleted = true;
+    rows.clear();
+    bundle = null;
+  }
+
   PushResult push(List<WireNote> notes) {
     calls.add('push:${notes.length}');
     final applied = <String>{};
@@ -126,6 +144,12 @@ class FakeApi implements SyncApi {
 
   @override
   Future<void> rotateKeyBundle(KeyBundle bundle) async => server.bundle = bundle;
+
+  @override
+  Future<void> deleteAccount(String confirmation) async {
+    _maybeFail();
+    server.deleteAccount(confirmation);
+  }
 }
 
 /// Both devices in these tests hold the same master key, which is what having
