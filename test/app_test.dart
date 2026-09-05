@@ -21,6 +21,7 @@ import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/toolbar.dart';
+import 'package:kapy_notes/ui/window_drag_area.dart';
 
 import 'test_fonts.dart';
 
@@ -273,6 +274,43 @@ void main() {
     );
     expect(field.focusNode!.hasFocus, isTrue);
     expect(notes.notes.single.body, 'Earlier thought\n\nMore');
+  });
+
+  testWidgets('the pin sits beside the lockup, outside its drag region', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await tester.pumpAndSettle();
+
+    final pin = find.byIcon(Icons.push_pin_outlined);
+    final wordmark = find.byKey(const ValueKey('toolbar-app-wordmark'));
+    expect(pin, findsOneWidget);
+
+    // The lockup is window chrome and drags the window. The pin must not be
+    // under that: DragToMoveArea recognises double taps, so it holds the
+    // gesture arena for the timeout and a button beneath it answers late on
+    // every single click.
+    expect(
+      find.ancestor(of: pin, matching: find.byType(WindowDragArea)),
+      findsNothing,
+      reason: 'the pin would answer a double-tap timeout late on every click',
+    );
+    expect(
+      find.ancestor(of: wordmark, matching: find.byType(WindowDragArea)),
+      findsOneWidget,
+      reason: 'the lockup still has to drag the window',
+    );
+
+    // Beside it, and on the trailing side of it.
+    expect(
+      tester.getCenter(pin).dx,
+      greaterThan(tester.getCenter(wordmark).dx),
+    );
+
+    await tester.tap(pin);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.push_pin_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.push_pin_outlined), findsNothing);
   });
 
   testWidgets('keeps exchange-rate status out of the toolbar', (tester) async {

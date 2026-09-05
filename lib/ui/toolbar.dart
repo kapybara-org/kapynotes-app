@@ -41,12 +41,17 @@ class NoteToolbar extends StatelessWidget {
 
   static const double height = 48;
 
+  /// Between the lockup and the pin, and mirrored on the other side.
+  static const double _pinGap = 5;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     // On a device with a status bar over the window, the toolbar's background
     // runs underneath it while its contents sit below.
     final topInset = MediaQuery.paddingOf(context).top;
+
+    final pinned = onToggleAlwaysOnTop;
 
     return GlassSurface(
       color: palette.surfaceBackground.withValues(alpha: 0.94),
@@ -56,16 +61,54 @@ class NoteToolbar extends StatelessWidget {
         height: height + topInset,
         child: Stack(
           children: [
+            // The bare drag surface. Everything above it either drags on its
+            // own account or is a button, and anything that is neither falls
+            // through to here — which is what keeps the empty stretches of the
+            // toolbar draggable.
             Positioned.fill(
               top: topInset,
-              child: WindowDragArea(
-                child: const Center(
-                  child: AppWordmark(
-                    key: ValueKey('toolbar-app-wordmark'),
-                    markSize: 19,
-                    fontSize: 14.5,
-                    spacing: 6.5,
-                  ),
+              child: const WindowDragArea(child: SizedBox.expand()),
+            ),
+            Positioned.fill(
+              top: topInset,
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Balances the pin on the other side, so the lockup keeps
+                    // the exact centre of the toolbar rather than being
+                    // shouldered off it — two tests hold that to half a pixel,
+                    // and it is the reason the title bar reads as centred at
+                    // any window width.
+                    if (showActions && pinned != null)
+                      SizedBox(width: AppControlMetrics.iconButtonExtent + _pinGap),
+                    // The lockup carries its own drag region rather than
+                    // sitting inside one with the pin: DragToMoveArea waits
+                    // out the double-tap timeout before it yields, so a button
+                    // beneath it answers late on every single click.
+                    const WindowDragArea(
+                      child: AppWordmark(
+                        key: ValueKey('toolbar-app-wordmark'),
+                        markSize: 19,
+                        fontSize: 14.5,
+                        spacing: 6.5,
+                      ),
+                    ),
+                    if (showActions && pinned != null) ...[
+                      const SizedBox(width: _pinGap),
+                      _ToolbarButton(
+                        icon: alwaysOnTop
+                            ? Icons.push_pin_rounded
+                            : Icons.push_pin_outlined,
+                        tooltip: [
+                          alwaysOnTop ? 'Stop keeping on top' : 'Keep on top',
+                          ?alwaysOnTopShortcut,
+                        ].join('  '),
+                        selected: alwaysOnTop,
+                        onPressed: pinned,
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -77,20 +120,6 @@ class NoteToolbar extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (onToggleAlwaysOnTop != null) ...[
-                      _ToolbarButton(
-                        icon: alwaysOnTop
-                            ? Icons.push_pin_rounded
-                            : Icons.push_pin_outlined,
-                        tooltip: [
-                          alwaysOnTop ? 'Stop keeping on top' : 'Keep on top',
-                          ?alwaysOnTopShortcut,
-                        ].join('  '),
-                        selected: alwaysOnTop,
-                        onPressed: onToggleAlwaysOnTop!,
-                      ),
-                      const SizedBox(width: 2),
-                    ],
                     _ToolbarButton(
                       icon: Icons.add_rounded,
                       tooltip: AppPlatform.isMacOS
