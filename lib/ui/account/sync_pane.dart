@@ -1,7 +1,10 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../sync/account.dart';
+import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
 import 'recovery_key_dialog.dart';
 
@@ -97,6 +100,7 @@ class _Field extends StatelessWidget {
     required this.hint,
     this.obscure = false,
     this.autofocus = false,
+    this.monospace = false,
     this.keyboardType,
     this.onSubmitted,
   });
@@ -104,6 +108,10 @@ class _Field extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final bool obscure;
+
+  /// For a value that has to be read off the screen and typed somewhere else,
+  /// the way the recovery key dialog sets one.
+  final bool monospace;
   final bool autofocus;
   final TextInputType? keyboardType;
   final VoidCallback? onSubmitted;
@@ -120,7 +128,13 @@ class _Field extends StatelessWidget {
         keyboardType: keyboardType,
         autocorrect: false,
         enableSuggestions: false,
-        style: TextStyle(fontSize: 13, color: palette.textPrimary),
+        style: TextStyle(
+          fontSize: 13,
+          color: palette.textPrimary,
+          fontFamily: monospace ? AppPlatform.monoFontFallback.first : null,
+          fontFamilyFallback: monospace ? AppPlatform.monoFontFallback : null,
+          letterSpacing: monospace ? 0.3 : null,
+        ),
         onSubmitted: (_) => onSubmitted?.call(),
         decoration: InputDecoration(
           hintText: hint,
@@ -136,6 +150,55 @@ class _Field extends StatelessWidget {
             borderSide: BorderSide(color: palette.controlBorder, width: 0.5),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The one thing on this pane worth stopping to read.
+///
+/// Set apart from [_Panel]'s blurb rather than folded into it: the blurb says
+/// what the field is, and this says what the whole arrangement costs — no
+/// reset, no support request, no way back without the recovery key. Somebody
+/// who skims past that discovers it at the worst possible moment.
+class _InfoNote extends StatelessWidget {
+  const _InfoNote(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(11, 10, 12, 11),
+      decoration: BoxDecoration(
+        color: palette.controlBackground,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.controlBorder, width: 0.5),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(
+              Icons.lock_outline_rounded,
+              size: 15,
+              color: palette.textSecondary,
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12,
+                color: palette.textSecondary,
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -402,16 +465,61 @@ class _PassphraseFormState extends State<_PassphraseForm> {
   String? _problem;
   bool _busy = false;
 
+  /// The generated value, while it is still the thing in the field. Typing
+  /// over it clears this, because everything below keys off it — the copy
+  /// button, the saved-it gate, and whether the confirm field is worth
+  /// showing at all.
+  String? _generated;
+  bool _copied = false;
+  bool _savedIt = false;
+
   /// Not a password policy, a floor. This key is the only thing between the
   /// notes and anyone holding the ciphertext, and unlike a password nobody
   /// can reset it for you.
   static const int _minimumLength = 10;
 
   @override
+  void initState() {
+    super.initState();
+    _passphrase.addListener(_onPassphraseChanged);
+  }
+
+  @override
   void dispose() {
+    _passphrase.removeListener(_onPassphraseChanged);
     _passphrase.dispose();
     _confirm.dispose();
     super.dispose();
+  }
+
+  void _onPassphraseChanged() {
+    if (_generated == null || _passphrase.text == _generated) return;
+    // They have taken it over. It is theirs to confirm and remember now.
+    setState(() {
+      _generated = null;
+      _copied = false;
+      _savedIt = false;
+      _confirm.clear();
+    });
+  }
+
+  void _generate() {
+    final value = generatePassphrase();
+    setState(() {
+      _generated = value;
+      _copied = false;
+      _savedIt = false;
+      _problem = null;
+      _passphrase.text = value;
+      // Confirming means retyping thirty-two characters nobody chose, to
+      // catch a typo that cannot happen. The field goes away instead.
+      _confirm.text = value;
+    });
+  }
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: _passphrase.text));
+    if (mounted) setState(() => _copied = true);
   }
 
   Future<void> _create() async {
@@ -420,7 +528,7 @@ class _PassphraseFormState extends State<_PassphraseForm> {
       setState(() => _problem = 'Use at least $_minimumLength characters.');
       return;
     }
-    if (passphrase != _confirm.text) {
+    if (_generated == null && passphrase != _confirm.text) {
       setState(() => _problem = 'Those do not match.');
       return;
     }
@@ -442,33 +550,91 @@ class _PassphraseFormState extends State<_PassphraseForm> {
   }
 
   @override
-  Widget build(BuildContext context) => _Panel(
-    title: 'Choose an encryption passphrase',
-    blurb:
-        'This is what your notes are locked with. It never leaves this '
-        'device, so nobody — including us — can reset it or read your notes '
-        'without it.',
-    children: [
-      _Field(
-        controller: _passphrase,
-        hint: 'Passphrase',
-        obscure: true,
-        autofocus: true,
-      ),
-      _Field(
-        controller: _confirm,
-        hint: 'Type it again',
-        obscure: true,
-        onSubmitted: _busy ? null : _create,
-      ),
-      const SizedBox(height: 4),
-      FilledButton(
-        onPressed: _busy ? null : _create,
-        child: const Text('Set passphrase'),
-      ),
-      if (_problem != null) _Message(_problem!),
-    ],
-  );
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final generated = _generated != null;
+
+    return _Panel(
+      title: 'Choose an encryption passphrase',
+      blurb:
+          'This is what your notes are locked with. It never leaves this '
+          'device, so nobody — including us — can reset it or read your notes '
+          'without it.',
+      children: [
+        const _InfoNote(
+          'Your notes are sealed on this device before any of them are sent, '
+          'and this passphrase is the key. We never receive it — which is '
+          'what makes "we cannot read your notes" a fact about how sync works '
+          'rather than a promise about how we behave.\n\n'
+          'The same choice is why there is no reset link. Forget this and '
+          'your recovery key, and the notes cannot be opened by anyone.',
+        ),
+        const SizedBox(height: 12),
+        _Field(
+          controller: _passphrase,
+          hint: 'Passphrase',
+          // A generated one has to be readable to be written down.
+          obscure: !generated,
+          monospace: generated,
+          autofocus: true,
+        ),
+        if (!generated)
+          _Field(
+            controller: _confirm,
+            hint: 'Type it again',
+            obscure: true,
+            onSubmitted: _busy ? null : _create,
+          ),
+        if (generated) ...[
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _copy,
+                icon: Icon(
+                  _copied ? Icons.check_rounded : Icons.copy_rounded,
+                  size: 16,
+                ),
+                label: Text(_copied ? 'Copied' : 'Copy'),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: _generate,
+                child: const Text('Generate another'),
+              ),
+            ],
+          ),
+          CheckboxListTile(
+            key: const ValueKey('generated-passphrase-saved'),
+            value: _savedIt,
+            onChanged: (value) => setState(() => _savedIt = value ?? false),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: Text(
+              'I have saved this somewhere safe',
+              style: TextStyle(fontSize: 12.5, color: palette.textPrimary),
+            ),
+          ),
+        ] else
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              key: const ValueKey('generate-passphrase'),
+              onPressed: _generate,
+              child: const Text('Generate a strong one for me'),
+            ),
+          ),
+        const SizedBox(height: 4),
+        FilledButton(
+          // Generated and unsaved is the one combination that ends with notes
+          // nobody can open, so it is the one the button waits on.
+          onPressed: _busy || (generated && !_savedIt) ? null : _create,
+          child: const Text('Set passphrase'),
+        ),
+        if (_problem != null) _Message(_problem!),
+      ],
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

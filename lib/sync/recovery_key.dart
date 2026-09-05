@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 
 /// Crockford's base32, for the one secret a person has to copy by hand.
@@ -35,6 +36,26 @@ String formatRecoveryKey(Uint8List bytes) {
     buffer.write(_alphabet[(accumulator << (5 - bits)) & 0x1f]);
   }
   return buffer.toString();
+}
+
+/// A passphrase nobody had to invent, in the same shape as a recovery key.
+///
+/// The alphabet and the grouping are shared deliberately: this is the other
+/// secret somebody may end up reading off one screen and typing into another,
+/// so the letters that are easy to confuse should be missing from both.
+///
+/// Sixteen bytes is 128 bits, which is past the point where guessing the
+/// passphrase is easier than attacking the key it derives — unlike a
+/// passphrase a person chooses, where the KDF is doing the heavy lifting.
+/// [Random.secure] for the same reason [Vault] uses it: anything cheaper is a
+/// PRNG whose output an attacker can reproduce.
+String generatePassphrase({int byteLength = 16}) {
+  final random = Random.secure();
+  return formatRecoveryKey(
+    Uint8List.fromList(
+      List<int>.generate(byteLength, (_) => random.nextInt(256)),
+    ),
+  );
 }
 
 /// Null for anything that is not a recovery key. Separators, spaces and case

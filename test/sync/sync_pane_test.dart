@@ -136,6 +136,76 @@ void main() {
     app.account.dispose();
   });
 
+  testWidgets('a generated passphrase cannot be set until it is saved', (
+    tester,
+  ) async {
+    final app = build();
+    await app.notes.load();
+    await app.account.restore();
+    await app.account.signIn(email: 'a@b.co', password: 'x');
+    await tester.pumpWidget(harness(app.account));
+    await tester.pumpAndSettle();
+
+    // Why there is no reset link, said before the field rather than after.
+    expect(find.textContaining('no reset link'), findsOneWidget);
+    expect(find.byType(TextField), findsNWidgets(2));
+
+    await tester.tap(find.byKey(const ValueKey('generate-passphrase')));
+    await tester.pumpAndSettle();
+
+    // Nothing to confirm, and it has to be readable to be written down.
+    expect(find.byType(TextField), findsOneWidget);
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.obscureText, isFalse);
+    expect(field.controller!.text, isNotEmpty);
+    expect(field.controller!.text.length, greaterThan(20));
+
+    final setButton = find.widgetWithText(FilledButton, 'Set passphrase');
+    expect(
+      tester.widget<FilledButton>(setButton).onPressed,
+      isNull,
+      reason: 'a generated passphrase nobody saved opens nothing',
+    );
+
+    await tester.tap(find.byKey(const ValueKey('generated-passphrase-saved')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(setButton).onPressed, isNotNull);
+
+    app.account.dispose();
+  });
+
+  testWidgets('typing over a generated passphrase hands it back to you', (
+    tester,
+  ) async {
+    final app = build();
+    await app.notes.load();
+    await app.account.restore();
+    await app.account.signIn(email: 'a@b.co', password: 'x');
+    await tester.pumpWidget(harness(app.account));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('generate-passphrase')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('generated-passphrase-saved')), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).first, 'one I thought of');
+    await tester.pumpAndSettle();
+
+    // Their passphrase, their confirmation, and no saved-it gate.
+    expect(find.byType(TextField), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('generated-passphrase-saved')), findsNothing);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Set passphrase'),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    app.account.dispose();
+  });
+
   testWidgets('the recovery key cannot be skipped past', (tester) async {
     final app = build();
     await app.notes.load();

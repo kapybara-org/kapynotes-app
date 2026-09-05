@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../sync/account.dart';
 
@@ -61,7 +62,12 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
               SelectableText(
                 widget.recoveryKey.formatted,
                 style: TextStyle(
-                  fontFamily: 'monospace',
+                  // 'monospace' alone is only the last resort in this list,
+                  // and resolves to nothing on macOS — the recovery key was
+                  // being drawn in the proportional UI face, which is the one
+                  // place in the app where 0 and O have to stay apart.
+                  fontFamily: AppPlatform.monoFontFallback.first,
+                  fontFamilyFallback: AppPlatform.monoFontFallback,
                   fontSize: 13,
                   height: 1.7,
                   letterSpacing: 0.4,
