@@ -10,6 +10,7 @@ enum ShortcutAction {
   newNote,
   findNotes,
   toggleSidebar,
+  toggleAlwaysOnTop,
   deleteNote,
   cycleTextStyle,
   formatBold,
@@ -25,6 +26,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.newNote => 'New note',
     ShortcutAction.findNotes => 'Search notes',
     ShortcutAction.toggleSidebar => 'Toggle sidebar',
+    ShortcutAction.toggleAlwaysOnTop => 'Keep window on top',
     ShortcutAction.deleteNote => 'Delete current note',
     ShortcutAction.cycleTextStyle => 'Cycle text style',
     ShortcutAction.formatBold => 'Bold',
@@ -40,6 +42,8 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.newNote => 'Create and focus a blank note',
     ShortcutAction.findNotes => 'Open the sidebar and search',
     ShortcutAction.toggleSidebar => 'Show or hide the notes list',
+    ShortcutAction.toggleAlwaysOnTop =>
+      'Float the window over other apps, or let it fall behind again',
     ShortcutAction.deleteNote => 'Remove the note you are editing',
     ShortcutAction.cycleTextStyle =>
       'Switch between Text, Heading, and Subtitle',
@@ -306,6 +310,17 @@ class ShortcutPrefs extends ChangeNotifier {
         physicalKey: PhysicalKeyboardKey.backslash,
         meta: useMeta,
         control: !useMeta,
+      ),
+      // T for top, one modifier along from the T that cycles text style.
+      // Not P for pin: Cmd+Shift+P is the chord the settings pane's own test
+      // rebinds onto, and a default that occupies it would be refused there
+      // by [conflictFor] — see the defaults-do-not-collide test.
+      ShortcutAction.toggleAlwaysOnTop => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyT,
+        physicalKey: PhysicalKeyboardKey.keyT,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
       ),
       ShortcutAction.deleteNote => ShortcutBinding(
         logicalKey: useMeta

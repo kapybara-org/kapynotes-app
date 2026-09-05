@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/shortcut_prefs.dart';
 
 /// Records what the runners were asked to do, and answers for them.
 ///
@@ -230,4 +231,38 @@ void main() {
       expect(integration.loginItemEnabled, isFalse);
     },
   );
+
+  test('the pin reaches the window manager, and only when it changes', () async {
+    expect(window.calls, isNot(contains('setAlwaysOnTop')));
+
+    prefs.alwaysOnTop = true;
+    await settle();
+    expect(window.calls, contains('setAlwaysOnTop'));
+
+    // LayoutPrefs notifies for every dragged pixel of the sidebar, so an
+    // unguarded listener would cross the channel on each one.
+    window.calls.clear();
+    prefs.sidebarWidth = LayoutPrefs.defaultSidebarWidth + 40;
+    prefs.sidebarWidth = LayoutPrefs.defaultSidebarWidth + 80;
+    await settle();
+    expect(window.calls, isNot(contains('setAlwaysOnTop')));
+
+    prefs.alwaysOnTop = false;
+    await settle();
+    expect(window.calls, contains('setAlwaysOnTop'));
+  });
+
+  test('a pin saved last time is re-asserted on the new window', () async {
+    // A fresh window starts unpinned however the preference was left, so
+    // startup has to say so rather than wait for a change that never comes.
+    final restored = LayoutPrefs(_MemoryStore()..data['alwaysOnTop.v1'] = true)
+      ..load();
+    final second = DesktopIntegration(layoutPrefs: restored);
+    addTearDown(second.dispose);
+    window.calls.clear();
+
+    await second.initialize(ShortcutPrefs(_MemoryStore())..load());
+
+    expect(window.calls, contains('setAlwaysOnTop'));
+  });
 }

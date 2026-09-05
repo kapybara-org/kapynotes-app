@@ -231,6 +231,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _searchFocus.requestFocus();
             },
             onToggleSidebar: widget.prefs.toggleSidebar,
+            onToggleAlwaysOnTop: AppPlatform.isDesktop
+                ? widget.prefs.toggleAlwaysOnTop
+                : null,
             onDeleteNote: _selectedId == null
                 ? null
                 : () => _deleteNote(_selectedId!),
@@ -265,6 +268,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 sidebarVisible: widget.prefs.sidebarVisible,
                 onToggleSidebar: widget.prefs.toggleSidebar,
                 onCreate: _createNote,
+                alwaysOnTop: widget.prefs.alwaysOnTop,
+                // Null on anything without a window to float, which keeps the
+                // pin off the toolbar rather than showing a dead control.
+                onToggleAlwaysOnTop: AppPlatform.isDesktop
+                    ? widget.prefs.toggleAlwaysOnTop
+                    : null,
+                alwaysOnTopShortcut: widget.shortcuts
+                    .bindingFor(ShortcutAction.toggleAlwaysOnTop)
+                    .displayLabel,
               ),
               Expanded(
                 child: SplitView(
@@ -498,6 +510,7 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onNewNote,
     required this.onFindNotes,
     required this.onToggleSidebar,
+    required this.onToggleAlwaysOnTop,
     required this.onDeleteNote,
     required this.shortcuts,
     required this.autofocus,
@@ -507,6 +520,7 @@ class _DesktopShortcuts extends StatelessWidget {
   final VoidCallback onNewNote;
   final VoidCallback onFindNotes;
   final VoidCallback onToggleSidebar;
+  final VoidCallback? onToggleAlwaysOnTop;
   final VoidCallback? onDeleteNote;
   final ShortcutPrefs shortcuts;
   final bool autofocus;
@@ -519,6 +533,8 @@ class _DesktopShortcuts extends StatelessWidget {
         shortcuts.bindingFor(ShortcutAction.findNotes).activator: onFindNotes,
         shortcuts.bindingFor(ShortcutAction.toggleSidebar).activator:
             onToggleSidebar,
+        shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop).activator:
+            ?onToggleAlwaysOnTop,
         shortcuts.bindingFor(ShortcutAction.deleteNote).activator:
             ?onDeleteNote,
       },

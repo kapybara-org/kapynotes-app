@@ -18,12 +18,26 @@ class NoteToolbar extends StatelessWidget {
     required this.onCreate,
     this.sidebarVisible = true,
     this.showActions = true,
+    this.alwaysOnTop = false,
+    this.onToggleAlwaysOnTop,
+    this.alwaysOnTopShortcut,
   });
 
   final VoidCallback onToggleSidebar;
   final VoidCallback onCreate;
   final bool sidebarVisible;
   final bool showActions;
+
+  /// Whether the window is currently floating over other applications.
+  final bool alwaysOnTop;
+
+  /// Null on platforms with no such concept, which is how the pin stays off
+  /// the toolbar on phones rather than sitting there doing nothing.
+  final VoidCallback? onToggleAlwaysOnTop;
+
+  /// The chord currently bound to the toggle, for the tooltip. Read from
+  /// preferences rather than written here, because the binding is editable.
+  final String? alwaysOnTopShortcut;
 
   static const double height = 48;
 
@@ -63,6 +77,20 @@ class NoteToolbar extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (onToggleAlwaysOnTop != null) ...[
+                      _ToolbarButton(
+                        icon: alwaysOnTop
+                            ? Icons.push_pin_rounded
+                            : Icons.push_pin_outlined,
+                        tooltip: [
+                          alwaysOnTop ? 'Stop keeping on top' : 'Keep on top',
+                          ?alwaysOnTopShortcut,
+                        ].join('  '),
+                        selected: alwaysOnTop,
+                        onPressed: onToggleAlwaysOnTop!,
+                      ),
+                      const SizedBox(width: 2),
+                    ],
                     _ToolbarButton(
                       icon: Icons.add_rounded,
                       tooltip: AppPlatform.isMacOS
@@ -91,18 +119,23 @@ class _ToolbarButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    this.selected = false,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onPressed;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     return CompactIconButton(
       tooltip: tooltip,
       onPressed: onPressed,
-      foregroundColor: context.palette.textSecondary,
+      selected: selected,
+      foregroundColor: selected
+          ? context.palette.textPrimary
+          : context.palette.textSecondary,
       icon: Icon(icon, size: 17),
     );
   }

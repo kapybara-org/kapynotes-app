@@ -92,6 +92,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _writingFontKey = 'writingFont.v1';
   static const String _timeZoneKey = 'timeZone.v1';
   static const String _keepRunningKey = 'keepRunningInBackground.v1';
+  static const String _alwaysOnTopKey = 'alwaysOnTop.v1';
 
   final LocalStore _store;
 
@@ -110,6 +111,7 @@ class LayoutPrefs extends ChangeNotifier {
   WritingFont _writingFont = WritingFont.handwritten;
   String? _timeZoneId;
   bool _keepRunningInBackground = false;
+  bool _alwaysOnTop = false;
 
   LayoutPrefs(this._store, {Locale Function()? locale})
     : _locale = locale ?? (() => PlatformDispatcher.instance.locale);
@@ -128,6 +130,13 @@ class LayoutPrefs extends ChangeNotifier {
   /// ending it. Off unless asked for: an app that will not go away when you
   /// close it is a decision the user gets to make, not one made for them.
   bool get keepRunningInBackground => _keepRunningInBackground;
+
+  /// Whether the window floats over other applications. Persisted like every
+  /// other window preference here, so a window pinned for a task is still
+  /// pinned after a restart — the toolbar button and its shortcut are right
+  /// there to undo it, and a pin that quietly forgot itself overnight would
+  /// be the more surprising behaviour.
+  bool get alwaysOnTop => _alwaysOnTop;
 
   /// Converts a stored instant to the zone selected for note timestamps.
   DateTime displayTime(DateTime instant) =>
@@ -163,6 +172,7 @@ class LayoutPrefs extends ChangeNotifier {
     _writingFont = _readWritingFont();
     _timeZoneId = AppTimeZones.normalize(_store.read<String>(_timeZoneKey));
     _keepRunningInBackground = _store.read<bool>(_keepRunningKey) ?? false;
+    _alwaysOnTop = _store.read<bool>(_alwaysOnTopKey) ?? false;
     notifyListeners();
   }
 
@@ -243,6 +253,13 @@ class LayoutPrefs extends ChangeNotifier {
     notifyListeners();
   }
 
+  set alwaysOnTop(bool value) {
+    if (value == _alwaysOnTop) return;
+    _alwaysOnTop = value;
+    _store.putNow(_alwaysOnTopKey, value);
+    notifyListeners();
+  }
+
   void resetGutterWidth() => gutterWidth = defaultGutterWidth;
 
   void resetPanelWidths() {
@@ -259,6 +276,8 @@ class LayoutPrefs extends ChangeNotifier {
     _store.putNow(_resultsVisibleKey, _resultsVisible);
     notifyListeners();
   }
+
+  void toggleAlwaysOnTop() => alwaysOnTop = !_alwaysOnTop;
 
   void toggleSidebar() {
     _sidebarVisible = !_sidebarVisible;

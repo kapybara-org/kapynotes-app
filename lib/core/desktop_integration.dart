@@ -50,6 +50,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   Future<void> Function()? onBeforeQuit;
 
   bool? _appliedKeepRunning;
+  bool? _appliedAlwaysOnTop;
   bool _hidesOnClose = false;
   bool _loginItemSupported = false;
   bool _loginItemEnabled = false;
@@ -73,6 +74,9 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
       );
     }
     await _applyBackgroundBehavior();
+    // A pin survives a restart, so it has to be re-asserted on the new
+    // window rather than waiting for the preference to change again.
+    await _applyAlwaysOnTop();
     await refreshLoginItem();
     notifyListeners();
   }
@@ -97,7 +101,23 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     return error;
   }
 
-  void _onPrefsChanged() => unawaited(_applyBackgroundBehavior());
+  void _onPrefsChanged() {
+    unawaited(_applyBackgroundBehavior());
+    unawaited(_applyAlwaysOnTop());
+  }
+
+  /// Floats the window above other applications, or stops.
+  ///
+  /// Guarded on the last applied value for the same reason as
+  /// [_applyBackgroundBehavior]: [LayoutPrefs] notifies for every dragged
+  /// pixel of the sidebar, and this would otherwise cross the platform
+  /// channel on each one.
+  Future<void> _applyAlwaysOnTop() async {
+    final onTop = layoutPrefs.alwaysOnTop;
+    if (onTop == _appliedAlwaysOnTop) return;
+    _appliedAlwaysOnTop = onTop;
+    await windowManager.setAlwaysOnTop(onTop);
+  }
 
   /// Brings the tray and the close button in line with the preference.
   ///

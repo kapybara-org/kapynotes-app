@@ -363,4 +363,44 @@ void main() {
     expect(bold.control, !AppPlatform.isMacOS);
     expect(bold.displayLabel, contains(AppPlatform.isMacOS ? 'Cmd' : 'Ctrl'));
   });
+
+  test('the pin is off for a new install and survives a restart', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.alwaysOnTop, isFalse);
+
+    prefs.toggleAlwaysOnTop();
+    expect(prefs.alwaysOnTop, isTrue);
+
+    // A window pinned for a task is still pinned tomorrow; the toolbar
+    // button and its shortcut are how it gets undone.
+    expect((LayoutPrefs(store)..load()).alwaysOnTop, isTrue);
+
+    prefs.toggleAlwaysOnTop();
+    expect((LayoutPrefs(store)..load()).alwaysOnTop, isFalse);
+  });
+
+  test('no two default shortcuts claim the same chord', () {
+    // conflictFor refuses a rebind onto a chord already in use, so a default
+    // that collided would be unreachable from the settings pane and silently
+    // shadowed at the keyboard.
+    for (final useMeta in [true, false]) {
+      AppPlatform.debugTargetPlatformOverride = useMeta
+          ? TargetPlatform.macOS
+          : TargetPlatform.windows;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+      final prefs = ShortcutPrefs(_MemoryStore())..load();
+      final seen = <String, ShortcutAction>{};
+      for (final action in ShortcutAction.values) {
+        final label = prefs.bindingFor(action).displayLabel;
+        expect(
+          seen[label],
+          isNull,
+          reason: '$label is claimed by both ${seen[label]} and $action',
+        );
+        seen[label] = action;
+      }
+    }
+  });
 }
