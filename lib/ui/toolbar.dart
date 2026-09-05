@@ -44,7 +44,7 @@ class NoteToolbar extends StatelessWidget {
   /// Drives the optional animated mark without changing toolbar geometry.
   final KapyHeaderController? mascotController;
 
-  static const double height = 48;
+  static double get height => AppControlMetrics.toolbarHeight;
 
   /// Between the lockup and the pin, and mirrored on the other side.
   static const double _pinGap = 5;
@@ -55,6 +55,8 @@ class NoteToolbar extends StatelessWidget {
     // On a device with a status bar over the window, the toolbar's background
     // runs underneath it while its contents sit below.
     final topInset = MediaQuery.paddingOf(context).top;
+    // Grows with Dynamic Type so the wordmark is never cropped by its own bar.
+    final barHeight = AppControlMetrics.scaleBar(context, height);
 
     final pinned = onToggleAlwaysOnTop;
 
@@ -63,7 +65,7 @@ class NoteToolbar extends StatelessWidget {
       blur: 10,
       border: Border(bottom: BorderSide(color: palette.separator, width: 0.5)),
       child: SizedBox(
-        height: height + topInset,
+        height: barHeight + topInset,
         child: Stack(
           children: [
             // The bare drag surface. Everything above it either drags on its
@@ -98,15 +100,15 @@ class NoteToolbar extends StatelessWidget {
                     // beneath it answers late on every single click.
                     WindowDragArea(
                       child: AppWordmark(
-                        key: ValueKey('toolbar-app-wordmark'),
-                        markSize: 19,
-                        fontSize: 14.5,
+                        key: const ValueKey('toolbar-app-wordmark'),
+                        markSize: AppControlMetrics.wordmarkMark,
+                        fontSize: AppTypeScale.wordmark,
                         spacing: 6.5,
                         mark: mascotController == null
                             ? null
                             : KapyHeaderMascot(
                                 controller: mascotController!,
-                                markSize: 19,
+                                markSize: AppControlMetrics.wordmarkMark,
                               ),
                       ),
                     ),
@@ -132,7 +134,7 @@ class NoteToolbar extends StatelessWidget {
               Positioned(
                 top: topInset,
                 right: 9,
-                height: height,
+                height: barHeight,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -181,7 +183,7 @@ class _ToolbarButton extends StatelessWidget {
       foregroundColor: selected
           ? context.palette.textPrimary
           : context.palette.textSecondary,
-      icon: Icon(icon, size: 17),
+      icon: Icon(icon, size: AppControlMetrics.iconAction),
     );
   }
 }

@@ -111,7 +111,7 @@ class _ToastBodyState extends State<_ToastBody>
                   children: [
                     Icon(
                       widget.icon,
-                      size: 15,
+                      size: AppControlMetrics.iconAdornment,
                       color: widget.isError
                           ? Theme.of(context).colorScheme.error
                           : palette.chipCurrency,
@@ -124,7 +124,7 @@ class _ToastBodyState extends State<_ToastBody>
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 12.5,
+                          fontSize: AppTypeScale.body,
                           color: palette.textPrimary,
                         ),
                       ),

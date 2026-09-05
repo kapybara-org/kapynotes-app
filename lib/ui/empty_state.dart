@@ -20,12 +20,16 @@ class EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const AppWordmark(markSize: 48, fontSize: 31, spacing: 12),
+          AppWordmark(
+            markSize: AppControlMetrics.wordmarkMarkLarge,
+            fontSize: AppTypeScale.display,
+            spacing: 12,
+          ),
           const SizedBox(height: 18),
           Text(
             'No note selected',
             style: TextStyle(
-              fontSize: 15,
+              fontSize: AppTypeScale.title,
               fontWeight: FontWeight.w600,
               color: palette.textPrimary,
             ),
@@ -35,7 +39,7 @@ class EmptyState extends StatelessWidget {
             'Write freely. Calculations resolve as you type.',
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 12.5,
+              fontSize: AppTypeScale.body,
               height: 1.45,
               color: palette.textSecondary,
             ),
@@ -43,12 +47,12 @@ class EmptyState extends StatelessWidget {
           const SizedBox(height: 18),
           FilledButton.icon(
             onPressed: onCreate,
-            icon: const Icon(Icons.add_rounded, size: 17),
+            icon: Icon(Icons.add_rounded, size: AppControlMetrics.iconAction),
             label: const Text('New Note'),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
-                fontSize: 13,
+                fontSize: AppTypeScale.control,
                 fontWeight: FontWeight.w600,
               ),
             ),

@@ -53,7 +53,7 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
                 'your notes. Nobody can reset it for you — not even us, '
                 'because we never had it.',
                 style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: AppTypeScale.body,
                   color: palette.textSecondary,
                   height: 1.45,
                 ),
@@ -68,7 +68,7 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
                   // place in the app where 0 and O have to stay apart.
                   fontFamily: AppPlatform.monoFontFallback.first,
                   fontFamilyFallback: AppPlatform.monoFontFallback,
-                  fontSize: 13,
+                  fontSize: AppTypeScale.control,
                   height: 1.7,
                   letterSpacing: 0.4,
                   color: palette.textPrimary,
@@ -84,7 +84,7 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
                 },
                 icon: Icon(
                   _copied ? Icons.check_rounded : Icons.copy_rounded,
-                  size: 16,
+                  size: AppControlMetrics.iconControl,
                 ),
                 label: Text(_copied ? 'Copied' : 'Copy'),
               ),
@@ -97,7 +97,10 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
                 dense: true,
                 title: Text(
                   'I have saved this somewhere safe',
-                  style: TextStyle(fontSize: 12.5, color: palette.textPrimary),
+                  style: TextStyle(
+                    fontSize: AppTypeScale.body,
+                    color: palette.textPrimary,
+                  ),
                 ),
               ),
             ],

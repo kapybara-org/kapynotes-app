@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -51,7 +52,19 @@ Future<void> pumpForGolden(
   bool withNote = true,
   bool blankNote = false,
   bool withUpdates = false,
+
+  /// Which build the image is of.
+  ///
+  /// Sizes in this app resolve from [AppPlatform.hasPointer], not from the
+  /// window, so a phone-sized window on a Mac still renders every control at
+  /// desktop density. Without this a "phone" golden documents a narrow desktop
+  /// window and nothing about the phone.
+  TargetPlatform? platform,
 }) async {
+  if (platform != null) {
+    AppPlatform.debugTargetPlatformOverride = platform;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+  }
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   tester.platformDispatcher.platformBrightnessTestValue = brightness;
@@ -512,6 +525,23 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/phone_drawer.png'),
+    );
+  });
+
+  // The largest phone the app ships to, and the one where desktop-scale chrome
+  // was most obviously wrong: a 40pt footer of 17px glyphs reads as a toolbar
+  // belonging to some other, smaller application. Held at the full 932pt so
+  // the bars are judged against the screen they actually sit on.
+  testWidgets('phone editor at iPhone Pro Max size', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(430, 932),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.iOS,
+    );
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/phone_editor_large.png'),
     );
   });
 }

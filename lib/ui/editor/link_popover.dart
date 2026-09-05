@@ -150,7 +150,7 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: AppTypeScale.small,
                             color: palette.textSecondary,
                           ),
                         ),
@@ -160,7 +160,10 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                         key: const ValueKey('link-popover-open'),
                         onPressed: widget.onOpen,
                         style: TextButton.styleFrom(
-                          minimumSize: const Size(0, 26),
+                          minimumSize: Size(
+                            0,
+                            AppControlMetrics.popoverActionExtent,
+                          ),
                           padding: const EdgeInsets.symmetric(horizontal: 10),
                           backgroundColor: palette.selectedBackground,
                           foregroundColor: palette.textPrimary,
@@ -168,10 +171,10 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                             borderRadius: BorderRadius.circular(6),
                           ),
                         ),
-                        child: const Text(
+                        child: Text(
                           'Open link',
                           style: TextStyle(
-                            fontSize: 11.5,
+                            fontSize: AppTypeScale.caption,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -180,13 +183,16 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                       IconButton(
                         key: const ValueKey('link-popover-copy'),
                         onPressed: widget.onCopy,
-                        icon: const Icon(Icons.content_copy_rounded, size: 14),
+                        icon: Icon(
+                          Icons.content_copy_rounded,
+                          size: AppControlMetrics.iconAdornment,
+                        ),
                         color: palette.textTertiary,
                         tooltip: 'Copy link',
                         visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 26,
-                          height: 26,
+                        constraints: BoxConstraints.tightFor(
+                          width: AppControlMetrics.popoverActionExtent,
+                          height: AppControlMetrics.popoverActionExtent,
                         ),
                         padding: EdgeInsets.zero,
                       ),
