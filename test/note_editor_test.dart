@@ -1435,17 +1435,18 @@ void main() {
   testWidgets('Enter on an empty nested item steps out one level at a time', (
     tester,
   ) async {
-    await tester.pumpWidget(harness('• one\n    • '));
+    await tester.pumpWidget(harness('• one\n    ▪ '));
     await tester.pumpAndSettle();
     final field = tester.widget<TextField>(find.byType(TextField));
     field.controller!.selection = const TextSelection.collapsed(offset: 12);
     await tester.pump();
 
-    await tester.enterText(find.byType(TextField), '• one\n    • \n');
+    // Stepping out a level takes that level's bullet with it.
+    await tester.enterText(find.byType(TextField), '• one\n    ▪ \n');
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '• one\n  • ');
+    expect(field.controller!.text, '• one\n  ◦ ');
 
-    await tester.enterText(find.byType(TextField), '• one\n  • \n');
+    await tester.enterText(find.byType(TextField), '• one\n  ◦ \n');
     await tester.pumpAndSettle();
     expect(field.controller!.text, '• one\n• ');
 
@@ -1453,6 +1454,74 @@ void main() {
     await tester.enterText(find.byType(TextField), '• one\n• \n');
     await tester.pumpAndSettle();
     expect(field.controller!.text, '• one\n');
+  });
+
+  testWidgets('typing "- " at the start of a line makes a bullet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness(''));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+
+    await tester.enterText(find.byType(TextField), '-');
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '- ');
+    await tester.pumpAndSettle();
+
+    // The typed space is spent on the marker rather than added after it.
+    expect(field.controller!.text, '• ');
+    expect(field.controller!.selection.baseOffset, 2);
+  });
+
+  testWidgets('typing "[] " and "[ ] " both make a checkbox', (tester) async {
+    for (final shorthand in ['[]', '[ ]']) {
+      await tester.pumpWidget(harness(''));
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(find.byType(TextField));
+
+      await tester.enterText(find.byType(TextField), shorthand);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '$shorthand ');
+      await tester.pumpAndSettle();
+
+      expect(field.controller!.text, '☐ ', reason: 'from "$shorthand "');
+    }
+  });
+
+  testWidgets('shorthand inside a nested list takes that level\'s bullet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('• one\n  '));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+
+    await tester.enterText(find.byType(TextField), '• one\n  -');
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '• one\n  - ');
+    await tester.pumpAndSettle();
+
+    expect(field.controller!.text, '• one\n  ◦ ');
+  });
+
+  testWidgets('a minus that is not shorthand is left as arithmetic', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness(''));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+
+    // No space after the minus, so this stays the negative number the engine
+    // evaluates rather than becoming a bullet.
+    await tester.enterText(find.byType(TextField), '-5');
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, '-5');
+
+    // And mid-line the shorthand does not apply at all.
+    await tester.enterText(find.byType(TextField), '12 -');
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '12 - ');
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, '12 - ');
   });
 
   testWidgets('Tab nests the current item and Shift+Tab lifts it out', (
@@ -1466,7 +1535,7 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '  • one');
+    expect(field.controller!.text, '  ◦ one');
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);

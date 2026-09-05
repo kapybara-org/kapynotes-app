@@ -182,16 +182,71 @@ void _nestingTests() {
   TextEditingValue at(String text, int offset) =>
       TextEditingValue(text: text, selection: TextSelection.collapsed(offset: offset));
 
+  group('bullet levels', () {
+    test('cycle through the glyph set as they nest', () {
+      expect(bulletPrefixForDepth(0), '• ');
+      expect(bulletPrefixForDepth(1), '◦ ');
+      expect(bulletPrefixForDepth(2), '▪ ');
+      // Repeating is easier to follow than a fourth mark distinct enough to
+      // tell apart at this size.
+      expect(bulletPrefixForDepth(3), '• ');
+      expect(bulletPrefixForDepth(4), '◦ ');
+    });
+
+    test('every level is still recognised as a bullet', () {
+      for (final prefix in bulletPrefixes) {
+        expect(isBulletPrefix(prefix), isTrue, reason: prefix);
+        final value = at('${prefix}item', prefix.length + 2);
+        expect(selectionHasLineStyle(value, NoteLineStyle.bullet), isTrue);
+        expect(selectionHasListLine(value), isTrue);
+      }
+    });
+
+    test('a bullet added to a nested line takes that level', () {
+      final value = at('    plan', 8);
+      final result = toggleLineStyle(value, NoteLineStyle.bullet);
+      expect(result.text, '    ▪ plan');
+    });
+
+    test('indenting and outdenting walk the glyphs in step', () {
+      var value = at('• one', 5);
+      value = indentSelection(value, outdent: false);
+      expect(value.text, '  ◦ one');
+      value = indentSelection(value, outdent: false);
+      expect(value.text, '    ▪ one');
+      value = indentSelection(value, outdent: true);
+      expect(value.text, '  ◦ one');
+      value = indentSelection(value, outdent: true);
+      expect(value.text, '• one');
+    });
+
+    test('a checkbox keeps its glyph at every depth', () {
+      var value = at('☐ milk', 6);
+      value = indentSelection(value, outdent: false);
+      expect(value.text, '  ☐ milk');
+      value = indentSelection(value, outdent: false);
+      expect(value.text, '    ☐ milk');
+    });
+
+    test('every level exports as the same plain marker', () {
+      expect(
+        plainTextFrom('• one\n  ◦ two\n    ▪ three\n  ☐ four\n  ☑ five'),
+        '- one\n  - two\n    - three\n  - [ ] four\n  - [x] five',
+      );
+    });
+  });
+
   group('list nesting', () {
     test('indents the line the caret is on', () {
       final result = indentSelection(at('• one\n• two', 8), outdent: false);
-      expect(result.text, '• one\n  • two');
+      // The bullet becomes the second level's on the way in.
+      expect(result.text, '• one\n  ◦ two');
       // The caret keeps its place in the text it was sitting in.
       expect(result.selection.baseOffset, 10);
     });
 
     test('outdents back to the margin and no further', () {
-      var value = at('  • one', 6);
+      var value = at('  ◦ one', 6);
       value = indentSelection(value, outdent: true);
       expect(value.text, '• one');
       expect(indentSelection(value, outdent: true), same(value));
@@ -202,7 +257,11 @@ void _nestingTests() {
       for (var i = 0; i < maxListIndentDepth; i++) {
         value = indentSelection(value, outdent: false);
       }
-      expect(value.text, '${listIndentUnit * maxListIndentDepth}• one');
+      expect(
+        value.text,
+        '${listIndentUnit * maxListIndentDepth}'
+        '${bulletPrefixForDepth(maxListIndentDepth)}one',
+      );
       expect(indentSelection(value, outdent: false), same(value));
     });
 
@@ -215,13 +274,14 @@ void _nestingTests() {
         ),
         outdent: false,
       );
-      expect(result.text, 'Shopping\n  • milk\nplain line\n  ☐ bread');
+      // The checkbox is a checkbox at any depth; only the bullet restyles.
+      expect(result.text, 'Shopping\n  ◦ milk\nplain line\n  ☐ bread');
     });
 
     test('reports what is available, for the toolbar', () {
       expect(canIndentSelection(at('• one', 3), outdent: false), isTrue);
       expect(canIndentSelection(at('• one', 3), outdent: true), isFalse);
-      expect(canIndentSelection(at('  • one', 5), outdent: true), isTrue);
+      expect(canIndentSelection(at('  ◦ one', 5), outdent: true), isTrue);
       expect(canIndentSelection(at('plain', 3), outdent: false), isFalse);
     });
 
@@ -232,7 +292,7 @@ void _nestingTests() {
     });
 
     test('leaves a stray tab indent able to reach the margin', () {
-      final result = indentSelection(at('\t• one', 4), outdent: true);
+      final result = indentSelection(at('\t◦ one', 4), outdent: true);
       expect(result.text, '• one');
     });
   });

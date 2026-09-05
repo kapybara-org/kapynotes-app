@@ -4,9 +4,32 @@ import 'package:material_ui/material_ui.dart'
 
 import '../../data/note_format.dart';
 
+/// The bullet each nesting level is drawn with, cycling once it runs out.
+///
+/// Filled, hollow, square — a progression that reads as depth rather than as
+/// three arbitrary marks, and the same one word processors settled on. A
+/// fourth level repeating the first is easier to follow than a fourth glyph
+/// distinct enough to tell apart at 13px would be.
+///
+/// Not `-` or `>`: `- ` at the start of a line is what a reader types to make
+/// a bullet, and [plainTextFrom] writes every bullet back out as `- ` for
+/// pasting elsewhere. A marker that is also the shorthand for itself makes
+/// both of those ambiguous.
+const bulletGlyphs = ['•', '◦', '▪'];
+
+const bulletPrefixes = ['• ', '◦ ', '▪ '];
+
+/// The level-one bullet, which is what most of the app means by "a bullet".
 const bulletPrefix = '• ';
 const uncheckedPrefix = '☐ ';
 const checkedPrefix = '☑ ';
+
+/// The bullet for a line nested [depth] levels deep.
+String bulletPrefixForDepth(int depth) =>
+    bulletPrefixes[(depth < 0 ? 0 : depth) % bulletPrefixes.length];
+
+/// True for any of the nesting levels' bullets, not just the first.
+bool isBulletPrefix(String prefix) => bulletPrefixes.contains(prefix);
 
 /// One level of nesting, written into the note as ordinary text.
 ///
@@ -196,7 +219,7 @@ bool selectionHasLineStyle(TextEditingValue value, NoteLineStyle style) {
   return starts.every((start) {
     final prefix = _prefixAt(value.text, start).value;
     return switch (style) {
-      NoteLineStyle.bullet => prefix == bulletPrefix,
+      NoteLineStyle.bullet => isBulletPrefix(prefix),
       NoteLineStyle.checklist =>
         prefix == uncheckedPrefix || prefix == checkedPrefix,
     };
@@ -351,7 +374,7 @@ TextEditingValue toggleLineStyle(TextEditingValue value, NoteLineStyle style) {
   final prefixes = [for (final start in lineStarts) _prefixAt(text, start)];
   final allAlreadyStyled = prefixes.every(
     (prefix) => switch (style) {
-      NoteLineStyle.bullet => prefix.value == bulletPrefix,
+      NoteLineStyle.bullet => isBulletPrefix(prefix.value),
       NoteLineStyle.checklist =>
         prefix.value == uncheckedPrefix || prefix.value == checkedPrefix,
     },
@@ -363,7 +386,11 @@ TextEditingValue toggleLineStyle(TextEditingValue value, NoteLineStyle style) {
     final replacement = allAlreadyStyled
         ? ''
         : switch (style) {
-            NoteLineStyle.bullet => bulletPrefix,
+            // A line that is already indented keeps its level, so the bullet
+            // it gets has to be that level's rather than always the first.
+            NoteLineStyle.bullet => bulletPrefixForDepth(
+              _depthAt(text, lineStarts[index]),
+            ),
             NoteLineStyle.checklist => uncheckedPrefix,
           };
     if (prefix.value == replacement) continue;
@@ -397,9 +424,34 @@ TextEditingValue toggleLineStyle(TextEditingValue value, NoteLineStyle style) {
   );
 }
 
+/// Swaps a bullet for the one its new level is drawn with.
+///
+/// Only bullets: a checkbox is a checkbox at every depth, and the glyph is
+/// carrying its state rather than its level.
+void _addBulletRestyle(
+  List<_TextEdit> edits,
+  ({int start, String value}) prefix,
+  int newDepth,
+) {
+  if (!isBulletPrefix(prefix.value)) return;
+  final replacement = bulletPrefixForDepth(newDepth);
+  if (replacement == prefix.value) return;
+  edits.add(
+    _TextEdit(
+      start: prefix.start,
+      end: prefix.start + prefix.value.length,
+      replacement: replacement,
+    ),
+  );
+}
+
 /// Leading whitespace on the line beginning at [lineStart], as characters.
 int _indentWidthAt(String text, int lineStart) =>
     _prefixAt(text, lineStart).start - lineStart;
+
+/// How many levels in the line beginning at [lineStart] is nested.
+int _depthAt(String text, int lineStart) =>
+    _indentWidthAt(text, lineStart) ~/ listIndentUnit.length;
 
 /// True when any line the selection touches carries a list prefix.
 ///
@@ -453,8 +505,10 @@ TextEditingValue indentSelection(
 
   final edits = <_TextEdit>[];
   for (final start in _selectedLineStarts(text, selection)) {
-    if (_prefixAt(text, start).value.isEmpty) continue;
+    final prefix = _prefixAt(text, start);
+    if (prefix.value.isEmpty) continue;
     final indent = _indentWidthAt(text, start);
+    final depth = indent ~/ listIndentUnit.length;
     if (outdent) {
       if (indent == 0) continue;
       // Whitespace that is not a whole unit wide — a stray tab, or a note
@@ -470,11 +524,13 @@ TextEditingValue indentSelection(
           replacement: '',
         ),
       );
+      _addBulletRestyle(edits, prefix, depth - 1);
     } else {
-      if (indent ~/ listIndentUnit.length >= maxListIndentDepth) continue;
+      if (depth >= maxListIndentDepth) continue;
       edits.add(
         _TextEdit(start: start, end: start, replacement: listIndentUnit),
       );
+      _addBulletRestyle(edits, prefix, depth + 1);
     }
   }
   if (edits.isEmpty) return value;
@@ -582,7 +638,7 @@ NoteParagraphStyle _paragraphStyleForLine(
       (text[prefixStart] == ' ' || text[prefixStart] == '\t')) {
     prefixStart++;
   }
-  for (final prefix in [bulletPrefix, uncheckedPrefix, checkedPrefix]) {
+  for (final prefix in [...bulletPrefixes, uncheckedPrefix, checkedPrefix]) {
     if (text.startsWith(prefix, prefixStart)) {
       return (start: prefixStart, value: prefix);
     }
@@ -626,8 +682,11 @@ class _TextEdit {
 /// list. Inline styles never needed stripping — bold and italic are held
 /// beside the text, not in it.
 String plainTextFrom(String text) {
-  const replacements = {
-    bulletPrefix: '- ',
+  final replacements = {
+    // Every level's bullet lands on the same `- `. The indentation in front
+    // of it is what still carries the depth, exactly as it did before the
+    // glyphs started changing.
+    for (final prefix in bulletPrefixes) prefix: '- ',
     uncheckedPrefix: '- [ ] ',
     checkedPrefix: '- [x] ',
   };

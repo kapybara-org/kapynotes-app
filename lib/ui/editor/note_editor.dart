@@ -1041,6 +1041,7 @@ class NoteEditorState extends State<NoteEditor> {
             inputFormatters: [
               _dailySeparatorFormatter,
               const _ListContinuationFormatter(),
+              const _ListShorthandFormatter(),
             ],
             contextMenuBuilder: (context, editableTextState) {
               final selection = editableTextState.textEditingValue.selection;
@@ -1209,6 +1210,69 @@ class _Placeholder extends StatelessWidget {
 }
 
 /// Continues a list when Enter is pressed and exits it from an empty item.
+/// Turns `- ` and `[] ` at the start of a line into a real list marker.
+///
+/// The space is part of the trigger, not decoration. `-5` on its own line is
+/// a negative number this app evaluates, and the engine says so explicitly —
+/// it excludes `-` from the leading-operator continuation "because `-5` on
+/// its own is a perfectly good negative number". Requiring the space keeps
+/// the two apart: `-5` stays arithmetic, `- ` becomes a bullet. Bulleting a
+/// line does make it prose, since the engine deliberately skips list lines,
+/// so the conversion is a real change of meaning — and undo is one keystroke
+/// away, which is where every editor with this feature leaves it.
+///
+/// The bullet matches the depth the line is already at, so shorthand typed
+/// inside a nested list gets that level's glyph rather than the first's.
+class _ListShorthandFormatter extends TextInputFormatter {
+  const _ListShorthandFormatter();
+
+  static const _bullet = ['-'];
+  static const _checklist = ['[]', '[ ]'];
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final selection = oldValue.selection;
+    if (!selection.isValid || !selection.isCollapsed) return newValue;
+    final caret = selection.extentOffset;
+    // Only the space that completes the shorthand, and only when it is being
+    // typed rather than pasted over something.
+    if (newValue.text != oldValue.text.replaceRange(caret, caret, ' ')) {
+      return newValue;
+    }
+
+    final text = oldValue.text;
+    final lineStart = caret == 0 ? 0 : text.lastIndexOf('\n', caret - 1) + 1;
+    var indentEnd = lineStart;
+    while (indentEnd < caret &&
+        (text[indentEnd] == ' ' || text[indentEnd] == '\t')) {
+      indentEnd++;
+    }
+
+    final typed = text.substring(indentEnd, caret);
+    final String marker;
+    if (_bullet.contains(typed)) {
+      marker = bulletPrefixForDepth(
+        (indentEnd - lineStart) ~/ listIndentUnit.length,
+      );
+    } else if (_checklist.contains(typed)) {
+      marker = uncheckedPrefix;
+    } else {
+      return newValue;
+    }
+
+    // The marker carries its own trailing space, so the typed one is spent
+    // rather than added.
+    return TextEditingValue(
+      text: text.replaceRange(indentEnd, caret, marker),
+      selection: TextSelection.collapsed(offset: indentEnd + marker.length),
+      composing: TextRange.empty,
+    );
+  }
+}
+
 class _ListContinuationFormatter extends TextInputFormatter {
   const _ListContinuationFormatter();
 
@@ -1234,7 +1298,11 @@ class _ListContinuationFormatter extends TextInputFormatter {
       prefixStart++;
     }
     String? prefix;
-    for (final candidate in [bulletPrefix, uncheckedPrefix, checkedPrefix]) {
+    for (final candidate in [
+      ...bulletPrefixes,
+      uncheckedPrefix,
+      checkedPrefix,
+    ]) {
       if (oldValue.text.startsWith(candidate, prefixStart)) {
         prefix = candidate;
         break;
@@ -1258,11 +1326,18 @@ class _ListContinuationFormatter extends TextInputFormatter {
         final removed = indent.length < listIndentUnit.length
             ? indent.length
             : listIndentUnit.length;
+        final shallower = isBulletPrefix(prefix)
+            ? bulletPrefixForDepth(
+                (indent.length - removed) ~/ listIndentUnit.length,
+              )
+            : prefix;
         return TextEditingValue(
+          // One replaceRange rather than two, so the offsets below do not
+          // have to account for an edit made before them.
           text: oldValue.text.replaceRange(
             prefixStart - removed,
-            prefixStart,
-            '',
+            prefixStart + prefix.length,
+            shallower,
           ),
           selection: TextSelection.collapsed(offset: caret - removed),
           composing: TextRange.empty,
@@ -1280,9 +1355,11 @@ class _ListContinuationFormatter extends TextInputFormatter {
     }
 
     // The new item keeps the depth of the one it came from; without this a
-    // nested list would jump back to the margin on every Enter.
+    // nested list would jump back to the margin on every Enter. Keeping the
+    // depth means keeping that depth's bullet, so the glyph is carried over
+    // rather than reset to the first level's.
     final continuation =
-        indent + (prefix == bulletPrefix ? bulletPrefix : uncheckedPrefix);
+        indent + (isBulletPrefix(prefix) ? prefix : uncheckedPrefix);
     return newValue.copyWith(
       text: newValue.text.replaceRange(caret + 1, caret + 1, continuation),
       selection: TextSelection.collapsed(
