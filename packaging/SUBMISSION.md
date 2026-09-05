@@ -797,11 +797,26 @@ Play enforces these after publication, not at review, so getting them wrong is
 a takedown rather than a rejection:
 
 1. **Data Safety is now a real disclosure.** The current answer is "no data
-   collected", which stops being true the moment 1.7.0 reaches production. It
-   has to cover the account email and the note content that leaves the device.
-   Note content is end-to-end encrypted and we cannot read it, but Play asks
-   whether data is *collected*, not whether it is legible to us — it is, so it
-   is declared, with encryption in transit and a deletion route.
+   collected", which stops being true the moment a build with sync reaches
+   production. Two data types, and the second is the one easily missed:
+
+   - **Personal info → Email address.** Optional, App functionality and
+     Account management.
+   - **App activity → Other user-generated content**, for the note text sync
+     uploads. Optional, App functionality *only* — note content plays no part
+     in managing an account. Not "Files and docs", which is for user files and
+     documents; Google's description of Other user-generated content gives
+     "notes" as one of its examples.
+
+   Declare the note content even though it is end-to-end encrypted. Play asks
+   whether data is *collected*, not whether it is legible to us — we transmit
+   and store it, so it is. Nothing is *shared*: R2 is our own storage, not a
+   third-party recipient.
+
+   Do not declare Photos and videos or Files and docs. Attachments have server
+   routes and a payload type but no client: `lib/export/archive.dart` says
+   there are none to collect until the app can make one, and no image picker
+   exists. That changes the day attachments ship.
 2. **In-app account deletion — which does not exist, in either half.** This is
    the blocker, and it is missing code rather than a form. `lib/ui/account/
    sync_pane.dart` offers Sign out and nothing else, and the server has three
