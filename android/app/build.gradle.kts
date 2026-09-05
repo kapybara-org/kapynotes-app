@@ -20,7 +20,17 @@ val hasReleaseKeystore = keystorePropertiesFile.exists()
 
 android {
     namespace = "com.kapybara.kapynotes"
-    compileSdk = flutter.compileSdkVersion
+    // Pinned above `flutter.compileSdkVersion`, which is still 36 in this
+    // Flutter version. flutter_secure_storage 11 publishes AAR metadata
+    // demanding 37, and the release bundle simply will not link without it:
+    // `checkReleaseAarMetadata` fails the build rather than warning.
+    //
+    // Compiling against a newer SDK does not change how the app behaves on a
+    // device — that is `targetSdk`, left on Flutter's default below. AGP 9.1.0
+    // names 36 as its highest *recommended* compileSdk and warns about 37; the
+    // warning is the price of the dependency, and the alternative is holding
+    // secure storage back on the one plugin that holds the account key.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
