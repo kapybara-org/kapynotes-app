@@ -3,7 +3,6 @@ import 'dart:math';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/theme.dart';
-import 'kapy_cursor_peek.dart';
 
 /// Small, brief celebrations for the moments worth one.
 ///
@@ -31,9 +30,9 @@ class Celebrate {
 
   /// A handful of confetti at [origin], in global coordinates.
   ///
-  /// [finale] adds Kapy, who pops up, looks at what you did, and ducks back
-  /// down. Reserved for finishing a list rather than ticking one box: an
-  /// easter egg that fires every time is just a feature, and a loud one.
+  /// [finale] makes the last-checkmark burst a little fuller. Kapy is kept out
+  /// of checklist completion so the mascot can remain a quiet editor-idle
+  /// moment rather than a reward attached to task management.
   static void at(BuildContext context, Offset origin, {bool finale = false}) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
@@ -150,30 +149,9 @@ class _CelebrationState extends State<_Celebration>
                   ),
                 ),
               ),
-              if (widget.finale) _kapy(),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  /// Kapy looking around the line's caret, and slipping behind it again.
-  ///
-  /// The component's anchor lands its drawn cursor directly over the real
-  /// caret. Its clip then keeps Kapy behind that edge throughout the motion.
-  Widget _kapy() {
-    const size = 44.0;
-    final anchor = KapyCursorPeek.caretAnchor(size);
-    return Positioned(
-      left: widget.origin.dx - anchor.dx,
-      top: widget.origin.dy - anchor.dy,
-      width: size,
-      height: size,
-      child: KapyCursorPeek(
-        size: size,
-        animation: _controller,
-        caretColor: widget.accent,
       ),
     );
   }

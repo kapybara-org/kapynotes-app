@@ -11,8 +11,10 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/layout_prefs.dart';
+import '../data/notes_store.dart';
 import '../sync/account.dart';
 import 'account/sync_pane.dart';
+import 'export_import.dart';
 import '../data/rates.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
@@ -56,6 +58,7 @@ class SettingsDialog extends StatefulWidget {
     required this.layoutPrefs,
     required this.shortcuts,
     required this.rates,
+    required this.notes,
     this.account,
     this.updates,
     this.desktopIntegration,
@@ -64,6 +67,7 @@ class SettingsDialog extends StatefulWidget {
   final LayoutPrefs layoutPrefs;
   final ShortcutPrefs shortcuts;
   final RatesRepository rates;
+  final NotesStore notes;
 
   /// Null when the app was built without sync wired up.
   final Account? account;
@@ -358,6 +362,28 @@ class _SettingsDialogState extends State<SettingsDialog> {
             value: widget.layoutPrefs.sidebarVisible,
             onChanged: (_) => widget.layoutPrefs.toggleSidebar(),
           ),
+      ],
+    ),
+    const SizedBox(height: 18),
+    const _SectionLabel('YOUR NOTES'),
+    _SettingsGroup(
+      children: [
+        _NavigationRow(
+          key: const ValueKey('export-notes'),
+          icon: Icons.ios_share_rounded,
+          title: 'Export all notes',
+          // The one-line warning the plaintext deserves, at the moment it
+          // matters. Not called a backup, because nothing here runs on its own.
+          subtitle: 'Markdown in one .zip · not encrypted once it is saved',
+          onTap: () => unawaited(runExport(context, widget.notes)),
+        ),
+        _NavigationRow(
+          key: const ValueKey('import-notes'),
+          icon: Icons.download_rounded,
+          title: 'Import from an export',
+          subtitle: 'Read a .zip back in, and see what it changes first',
+          onTap: () => unawaited(runImport(context, widget.notes)),
+        ),
       ],
     ),
     const SizedBox(height: 18),

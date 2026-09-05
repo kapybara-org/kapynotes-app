@@ -21,6 +21,7 @@ import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
 import '../notebook_paper.dart';
 import '../celebrate.dart';
+import '../kapy_cursor_peek.dart';
 import 'editor_formatting.dart';
 import 'highlighting_controller.dart';
 import 'line_metrics.dart';
@@ -93,6 +94,10 @@ class NoteEditor extends StatefulWidget {
   final DateTime Function()? now;
   final DateTime Function(DateTime)? displayTime;
 
+  /// Kapy peeks once after both typing and caret activity have been quiet for
+  /// this long. A new activity starts a fresh one-shot wait.
+  static const kapyPeekIdleDelay = Duration(seconds: 5);
+
   @override
   State<NoteEditor> createState() => NoteEditorState();
 }
@@ -119,6 +124,8 @@ class NoteEditorState extends State<NoteEditor> {
   late final _DailySeparatorFormatter _dailySeparatorFormatter;
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
+  Timer? _kapyPeekIdleTimer;
+  VoidCallback? _kapyPeekDismiss;
 
   Map<int, LineResult> _results = const {};
   String? _totalText;
@@ -161,9 +168,10 @@ class NoteEditorState extends State<NoteEditor> {
     }
     _lastValue = _controller.value;
     _controller.addListener(_onControllerChanged);
+    _focusNode.addListener(_handleFocusChanged);
     // Anchored to a rect that scrolling invalidates, so it goes rather than
     // drifts away from the link it points at.
-    _scrollController.addListener(LinkPopover.hide);
+    _scrollController.addListener(_handleEditorScroll);
     widget.shortcuts.addListener(_onShortcutsChanged);
     _isEmpty = initialText.isEmpty;
     _evaluate();
@@ -212,10 +220,13 @@ class NoteEditorState extends State<NoteEditor> {
   void dispose() {
     LinkPopover.hide();
     _controller.removeListener(_onControllerChanged);
-    _scrollController.removeListener(LinkPopover.hide);
+    _focusNode.removeListener(_handleFocusChanged);
+    _scrollController.removeListener(_handleEditorScroll);
     widget.shortcuts.removeListener(_onShortcutsChanged);
     _keyboardRetryTimer?.cancel();
     _selectionToolbarTimer?.cancel();
+    _kapyPeekIdleTimer?.cancel();
+    _dismissKapyPeek();
     _controller.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -226,8 +237,14 @@ class NoteEditorState extends State<NoteEditor> {
     if (mounted) setState(() {});
   }
 
+  void _handleEditorScroll() {
+    LinkPopover.hide();
+    _recordKapyPeekActivity();
+  }
+
   void focus() {
     _focusNode.requestFocus();
+    _recordKapyPeekActivity();
     _scheduleKeyboardRetry();
   }
 
@@ -270,6 +287,7 @@ class NoteEditorState extends State<NoteEditor> {
       offset: _controller.text.length,
     );
     _focusNode.requestFocus();
+    _recordKapyPeekActivity();
     _scheduleKeyboardRetry();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
@@ -303,6 +321,7 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   void _onControllerChanged() {
+    _recordKapyPeekActivity();
     final value = _controller.value;
     final previous = _lastValue;
     if (value.text == previous.text) {
@@ -457,7 +476,10 @@ class NoteEditorState extends State<NoteEditor> {
   /// reach for, but a panel that outlives the caret it was raised next to is
   /// wrong whichever key moved it.
   KeyEventResult _handleEditorKey(FocusNode node, KeyEvent event) {
-    if (event is KeyDownEvent) LinkPopover.hide();
+    if (event is KeyDownEvent) {
+      LinkPopover.hide();
+      _recordKapyPeekActivity();
+    }
     return _handleTabIndent(node, event);
   }
 
@@ -489,6 +511,7 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   void _handlePointerDown(PointerDownEvent event) {
+    _recordKapyPeekActivity();
     _pointerDownDetails[event.pointer] = _PointerDownDetails(
       position: event.position,
       timeStamp: event.timeStamp,
@@ -544,12 +567,11 @@ class NoteEditorState extends State<NoteEditor> {
     _showLinkPopover(hit);
   }
 
-  /// Confetti over the box just ticked, and Kapy if that was the last one.
+  /// Confetti over the box just ticked, with a fuller burst for the last one.
   ///
   /// The finale is deliberately rare: a note has to have had at least two
   /// boxes and none of them can be left, so it marks finishing a list rather
-  /// than ticking a single stray item. Kapy comes up out of the caret because
-  /// that is where the writing is, and ducks straight back.
+  /// than ticking a single stray item.
   void _celebrateCheck(RenderEditable editable, Offset tapPosition) {
     if (!mounted) return;
     final text = _controller.text;
@@ -575,6 +597,55 @@ class NoteEditorState extends State<NoteEditor> {
       ),
     );
     return editable.localToGlobal(rect.topCenter);
+  }
+
+  void _handleFocusChanged() {
+    if (_focusNode.hasFocus) {
+      _recordKapyPeekActivity();
+      return;
+    }
+    _kapyPeekIdleTimer?.cancel();
+    _kapyPeekIdleTimer = null;
+    _dismissKapyPeek();
+  }
+
+  void _recordKapyPeekActivity() {
+    _kapyPeekIdleTimer?.cancel();
+    _kapyPeekIdleTimer = null;
+    _dismissKapyPeek();
+    if (!mounted || !_focusNode.hasFocus) return;
+    _kapyPeekIdleTimer = Timer(
+      NoteEditor.kapyPeekIdleDelay,
+      _showKapyPeekIfStillIdle,
+    );
+  }
+
+  void _showKapyPeekIfStillIdle() {
+    _kapyPeekIdleTimer = null;
+    if (!mounted || !_focusNode.hasFocus) return;
+    final selection = _controller.selection;
+    if (!selection.isValid || !selection.isCollapsed) return;
+    final root = _textFieldKey.currentContext?.findRenderObject();
+    final editable = root == null ? null : _findRenderEditable(root);
+    if (editable == null) return;
+    final caret = _caretGlobalCenter(editable);
+    if (caret == null) return;
+
+    late final VoidCallback? dismiss;
+    dismiss = KapyCursorPeek.showAt(
+      context,
+      caret,
+      onDismissed: () {
+        if (identical(_kapyPeekDismiss, dismiss)) _kapyPeekDismiss = null;
+      },
+    );
+    _kapyPeekDismiss = dismiss;
+  }
+
+  void _dismissKapyPeek() {
+    final dismiss = _kapyPeekDismiss;
+    _kapyPeekDismiss = null;
+    dismiss?.call();
   }
 
   /// The offset of the checkbox glyph under [globalPosition], or -1.

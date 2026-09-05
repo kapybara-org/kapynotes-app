@@ -72,6 +72,12 @@ flutter:
     # the running app here so unused source variants stay out of the bundle.
     - assets/branding/kapy_notes_logo.png
     - assets/mascot/kapy_cursor_peek.webp
+    - assets/mascot/kapy_standing.webp
+    - assets/mascot/kapy_sleeping.webp
+    - assets/mascot/kapy_header_emerge_30fps.webp
+    - assets/mascot/kapy_header_think_30fps.webp
+    - assets/mascot/kapy_header_sleep_30fps.webp
+    - assets/mascot/kapy_header_sleep_loop_30fps.webp
     # The tray icon, read by tray_manager from the bundle rather than painted:
     # an .ico for the Windows notification area, a template PNG that macOS
     # tints for the menu bar. Desktop-only, and small enough not to matter.

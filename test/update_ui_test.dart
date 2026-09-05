@@ -73,6 +73,9 @@ Future<UpdateChecker> _pump(
 
   await notes.load();
   prefs.load();
+  // The update row lives in the notes list, which a new install starts with
+  // closed. These tests are about the row, not about the default.
+  if (!prefs.sidebarVisible) prefs.toggleSidebar();
   shortcuts.load();
   await tester.pumpWidget(
     KapyNotesApp(
@@ -232,6 +235,9 @@ void main() {
 
     await notes.load();
     prefs.load();
+  // The update row lives in the notes list, which a new install starts with
+  // closed. These tests are about the row, not about the default.
+  if (!prefs.sidebarVisible) prefs.toggleSidebar();
     shortcuts.load();
     await tester.pumpWidget(
       KapyNotesApp(

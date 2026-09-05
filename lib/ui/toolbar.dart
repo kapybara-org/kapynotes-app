@@ -5,6 +5,7 @@ import '../core/theme.dart';
 import 'app_logo.dart';
 import 'compact_icon_button.dart';
 import 'glass_surface.dart';
+import 'kapy_header_mascot.dart';
 import 'window_drag_area.dart';
 
 /// The app's unified title bar: centered identity and global note actions.
@@ -21,6 +22,7 @@ class NoteToolbar extends StatelessWidget {
     this.alwaysOnTop = false,
     this.onToggleAlwaysOnTop,
     this.alwaysOnTopShortcut,
+    this.mascotController,
   });
 
   final VoidCallback onToggleSidebar;
@@ -38,6 +40,9 @@ class NoteToolbar extends StatelessWidget {
   /// The chord currently bound to the toggle, for the tooltip. Read from
   /// preferences rather than written here, because the binding is editable.
   final String? alwaysOnTopShortcut;
+
+  /// Drives the optional animated mark without changing toolbar geometry.
+  final KapyHeaderController? mascotController;
 
   static const double height = 48;
 
@@ -80,21 +85,32 @@ class NoteToolbar extends StatelessWidget {
                     // shouldered off it — two tests hold that to half a pixel,
                     // and it is the reason the title bar reads as centred at
                     // any window width.
-                    if (showActions && pinned != null)
-                      SizedBox(width: AppControlMetrics.iconButtonExtent + _pinGap),
+                    // Not gated on showActions: that hides the note actions
+                    // while the drawer covers them, and the pin is about the
+                    // window rather than the note.
+                    if (pinned != null)
+                      SizedBox(
+                        width: AppControlMetrics.iconButtonExtent + _pinGap,
+                      ),
                     // The lockup carries its own drag region rather than
                     // sitting inside one with the pin: DragToMoveArea waits
                     // out the double-tap timeout before it yields, so a button
                     // beneath it answers late on every single click.
-                    const WindowDragArea(
+                    WindowDragArea(
                       child: AppWordmark(
                         key: ValueKey('toolbar-app-wordmark'),
                         markSize: 19,
                         fontSize: 14.5,
                         spacing: 6.5,
+                        mark: mascotController == null
+                            ? null
+                            : KapyHeaderMascot(
+                                controller: mascotController!,
+                                markSize: 19,
+                              ),
                       ),
                     ),
-                    if (showActions && pinned != null) ...[
+                    if (pinned != null) ...[
                       const SizedBox(width: _pinGap),
                       _ToolbarButton(
                         icon: alwaysOnTop

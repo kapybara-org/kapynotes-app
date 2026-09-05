@@ -103,12 +103,12 @@ class LayoutPrefs extends ChangeNotifier {
   double _gutterWidth = defaultGutterWidth;
   bool _resultsVisible = true;
   double _sidebarWidth = defaultSidebarWidth;
-  bool _sidebarVisible = true;
+  bool _sidebarVisible = false;
   Size _windowSize = defaultWindowSize;
   bool _readyToTypeOnOpen = true;
   bool _dailySeparatorsEnabled = true;
   NumberSystem _numberSystem = NumberSystem.auto;
-  WritingFont _writingFont = WritingFont.mixed;
+  WritingFont _writingFont = WritingFont.handwritten;
   String? _timeZoneId;
   bool _keepRunningInBackground = false;
   bool _alwaysOnTop = false;
@@ -159,7 +159,10 @@ class LayoutPrefs extends ChangeNotifier {
     _sidebarWidth = _clampSidebar(
       _readDouble(_sidebarKey) ?? defaultSidebarWidth,
     );
-    _sidebarVisible = _store.read<bool>(_sidebarVisibleKey) ?? true;
+    // Closed on a new install: the first thing anyone should meet is a page
+    // to write on, not a list of the nothing they have written yet. It is one
+    // click or one swipe away, and the choice is remembered from then on.
+    _sidebarVisible = _store.read<bool>(_sidebarVisibleKey) ?? false;
     _windowSize = _clampWindowSize(
       Size(
         _readDouble(_windowWidthKey) ?? defaultWindowSize.width,
@@ -295,14 +298,13 @@ class LayoutPrefs extends ChangeNotifier {
     );
   }
 
-  /// New installs open with typefaces matched to the note's text styles.
-  /// Unknown values can come from a newer app version, so they also fall back
-  /// to that safe default.
+  /// New installs open with the paper-like face. Unknown values can come from
+  /// a newer app version, so they also fall back to that safe default.
   WritingFont _readWritingFont() {
     final stored = _store.read<String>(_writingFontKey);
     return WritingFont.values.firstWhere(
       (font) => font.name == stored,
-      orElse: () => WritingFont.mixed,
+      orElse: () => WritingFont.handwritten,
     );
   }
 

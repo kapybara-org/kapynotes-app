@@ -60,14 +60,35 @@ void main() {
     await tester.pumpWidget(_harness());
     final hiddenStart = _mascotDx(tester);
 
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 600));
     final visible = _mascotDx(tester);
 
-    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump(const Duration(milliseconds: 1050));
     final hiddenEnd = _mascotDx(tester);
 
     expect(hiddenStart, greaterThan(visible + 15));
     expect(hiddenEnd, closeTo(hiddenStart, 0.01));
+  });
+
+  testWidgets('blinks twice while holding the full peek', (tester) async {
+    Future<void> show(double progress) => tester.pumpWidget(
+      _harness(animation: AlwaysStoppedAnimation(progress)),
+    );
+
+    await show(0.40);
+    expect(find.byKey(KapyCursorPeek.blinkKey), findsNothing);
+
+    await show(0.45);
+    expect(find.byKey(KapyCursorPeek.blinkKey), findsOneWidget);
+
+    await show(0.52);
+    expect(find.byKey(KapyCursorPeek.blinkKey), findsNothing);
+
+    await show(0.59);
+    expect(find.byKey(KapyCursorPeek.blinkKey), findsOneWidget);
+
+    await show(0.66);
+    expect(find.byKey(KapyCursorPeek.blinkKey), findsNothing);
   });
 
   testWidgets('stays absent when reduced motion is enabled', (tester) async {
@@ -80,7 +101,7 @@ void main() {
   });
 
   testWidgets('cursor-peek key frames', (tester) async {
-    tester.view.physicalSize = const Size(280, 88);
+    tester.view.physicalSize = const Size(420, 88);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
@@ -95,15 +116,23 @@ void main() {
               children: const [
                 KapyCursorPeek(
                   size: 56,
-                  animation: AlwaysStoppedAnimation(0.08),
-                ),
-                KapyCursorPeek(
-                  size: 56,
                   animation: AlwaysStoppedAnimation(0.14),
                 ),
                 KapyCursorPeek(
                   size: 56,
-                  animation: AlwaysStoppedAnimation(0.5),
+                  animation: AlwaysStoppedAnimation(0.40),
+                ),
+                KapyCursorPeek(
+                  size: 56,
+                  animation: AlwaysStoppedAnimation(0.45),
+                ),
+                KapyCursorPeek(
+                  size: 56,
+                  animation: AlwaysStoppedAnimation(0.52),
+                ),
+                KapyCursorPeek(
+                  size: 56,
+                  animation: AlwaysStoppedAnimation(0.59),
                 ),
                 KapyCursorPeek(
                   size: 56,

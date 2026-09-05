@@ -6,6 +6,11 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- The export save panel and the import open panel. The sandbox grants
+	     access only to what the user picks in one, which is exactly the
+	     scope this feature wants. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
 	<!-- Sparkle's Installer XPC service, which does the bundle swap the
 	     sandbox forbids the app itself. Both names are required; they are
 	     derived from the bundle id by Sparkle and must match exactly. -->

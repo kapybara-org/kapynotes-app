@@ -44,7 +44,7 @@ void main() {
     expect(prefs.resultsVisible, isTrue);
     expect(prefs.readyToTypeOnOpen, isTrue);
     expect(prefs.dailySeparatorsEnabled, isTrue);
-    expect(prefs.writingFont, WritingFont.mixed);
+    expect(prefs.writingFont, WritingFont.handwritten);
     expect(prefs.timeZoneId, isNull);
   });
 
@@ -90,7 +90,7 @@ void main() {
     expect(prefs.gutterWidth, LayoutPrefs.minGutterWidth);
     expect(prefs.sidebarWidth, LayoutPrefs.minSidebarWidth);
     expect(prefs.resultsVisible, isTrue);
-    expect(prefs.sidebarVisible, isTrue);
+    expect(prefs.sidebarVisible, isFalse, reason: 'closed until asked for');
   });
 
   test('a setting is on disk before the app can be quit', () {
@@ -103,7 +103,7 @@ void main() {
 
     expect(
       store.persisted['sidebarVisible.v1'],
-      isFalse,
+      isTrue,
       reason: 'toggling then quitting must not lose the choice',
     );
   });
@@ -111,17 +111,17 @@ void main() {
   test('sidebar visibility survives a restart', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();
-    expect(prefs.sidebarVisible, isTrue, reason: 'shown by default');
+    expect(prefs.sidebarVisible, isFalse, reason: 'closed on a new install');
 
     prefs.toggleSidebar();
-    expect(prefs.sidebarVisible, isFalse);
+    expect(prefs.sidebarVisible, isTrue);
 
     // A second instance over the same storage is what the next launch sees.
     final restarted = LayoutPrefs(store)..load();
-    expect(restarted.sidebarVisible, isFalse);
+    expect(restarted.sidebarVisible, isTrue);
 
     restarted.toggleSidebar();
-    expect((LayoutPrefs(store)..load()).sidebarVisible, isTrue);
+    expect((LayoutPrefs(store)..load()).sidebarVisible, isFalse);
   });
 
   test('number system follows the region until the user overrides it', () {
@@ -158,11 +158,11 @@ void main() {
     expect(prefs.digitGrouping, DigitGrouping.international);
   });
 
-  test('an unreadable writing font falls back to mixed', () {
+  test('an unreadable writing font falls back to handwritten', () {
     final store = _MemoryStore()..put('writingFont.v1', 'papyrus');
     final prefs = LayoutPrefs(store)..load();
 
-    expect(prefs.writingFont, WritingFont.mixed);
+    expect(prefs.writingFont, WritingFont.handwritten);
   });
 
   test('time zone selection converts timestamps and survives reload', () {
@@ -402,5 +402,20 @@ void main() {
         seen[label] = action;
       }
     }
+  });
+
+  test('a new install opens on a page, not on a list of nothing', () {
+    final prefs = LayoutPrefs(_MemoryStore())..load();
+    expect(prefs.sidebarVisible, isFalse);
+    // And the paper-like face, not the mixed one.
+    expect(prefs.writingFont, WritingFont.handwritten);
+  });
+
+  test('but a chosen sidebar state is remembered', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    prefs.toggleSidebar();
+    expect(prefs.sidebarVisible, isTrue);
+    expect((LayoutPrefs(store)..load()).sidebarVisible, isTrue);
   });
 }

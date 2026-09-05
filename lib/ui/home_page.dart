@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
@@ -16,8 +18,10 @@ import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
 import 'editor/note_editor.dart';
 import 'empty_state.dart';
+import 'kapy_header_mascot.dart';
 import 'sidebar.dart';
 import 'settings_dialog.dart';
+import 'sidebar_swipe.dart';
 import 'split_view.dart';
 import 'toolbar.dart';
 
@@ -39,6 +43,9 @@ class HomePage extends StatefulWidget {
     required this.store,
   });
 
+  /// Kapy settles into sleep after a full minute without local interaction.
+  static const kapyIdleDelay = Duration(minutes: 1);
+
   final NotesStore notes;
   final EngineProvider engines;
   final RatesRepository rates;
@@ -55,8 +62,11 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static const String _selectionKey = 'selectedNote.v1';
+  static final _totalCue = RegExp(r'\btotal\b', caseSensitive: false);
 
   final FocusNode _searchFocus = FocusNode(debugLabel: 'sidebar-search');
+  final KapyHeaderController _kapyHeader = KapyHeaderController();
+  final Set<String> _totalAnimatedFor = {};
   GlobalKey<NoteEditorState> _compactEditorKey = GlobalKey<NoteEditorState>();
   GlobalKey<NoteEditorState> _wideEditorKey = GlobalKey<NoteEditorState>();
 
@@ -66,6 +76,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _openSessionScheduled = false;
   bool _drawerContentReady = false;
   bool _drawerOpen = false;
+  Timer? _kapyIdleTimer;
 
   @override
   void initState() {
@@ -78,6 +89,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.desktopIntegration?.onNewNoteRequested = _createNote;
     widget.desktopIntegration?.onOpenRequested = _beginOpenSession;
     _reconcileSelection();
+    // Keep timers and mascot work behind the first editable frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _armKapyIdleTimer();
+      _reactToSelectedTotal();
+    });
   }
 
   @override
@@ -86,13 +103,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.notes.removeListener(_onNotesChanged);
     widget.desktopIntegration?.onNewNoteRequested = null;
     widget.desktopIntegration?.onOpenRequested = null;
+    _kapyIdleTimer?.cancel();
+    _kapyHeader.dispose();
     _searchFocus.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _beginOpenSession();
+    if (state == AppLifecycleState.resumed) {
+      _recordKapyActivity();
+      _beginOpenSession();
+    } else {
+      _kapyIdleTimer?.cancel();
+    }
   }
 
   void _beginOpenSession() {
@@ -114,6 +138,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void _onNotesChanged() {
     _reconcileSelection();
+    _reactToSelectedTotal();
     if (mounted) setState(() {});
   }
 
@@ -159,9 +184,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _select(String id) {
     setState(() => _setSelectedId(id));
     widget.store.put(_selectionKey, id);
+    _recordKapyActivity();
+    _reactToSelectedTotal();
   }
 
   void _createNote() {
+    _recordKapyActivity();
     final note = widget.notes.create();
     setState(() {
       _query = '';
@@ -172,6 +200,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _deleteNote(String id) {
+    _recordKapyActivity();
+    _totalAnimatedFor.remove(id);
     final index = widget.notes.indexOf(id);
     final deletingSelected = id == _selectedId;
     widget.notes.delete(id);
@@ -184,14 +214,51 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _focusSelectedEditorAtEnd();
   }
 
-  void _updateDocument(String id, String body, List<NoteFormatRange> formats) =>
-      widget.notes.updateDocument(id, body, formats);
+  void _updateDocument(String id, String body, List<NoteFormatRange> formats) {
+    _recordKapyActivity();
+    widget.notes.updateDocument(id, body, formats);
+  }
+
+  /// The pin's toggle, or null where there is no window to float.
+  ///
+  /// Desktop always, mobile never — and deliberately not conditioned on
+  /// window width. A narrow desktop window still has a window; hiding the
+  /// control there was the bug this replaced, and a rule stated once cannot
+  /// drift between the two toolbars that read it.
+  VoidCallback? get _pinToggle =>
+      AppPlatform.isDesktop ? widget.prefs.toggleAlwaysOnTop : null;
+
+  String get _pinShortcut => widget.shortcuts
+      .bindingFor(ShortcutAction.toggleAlwaysOnTop)
+      .displayLabel;
+
+  void _recordKapyActivity() {
+    if (_kapyHeader.needsWake) _kapyHeader.wake(hideAfter: true);
+    _armKapyIdleTimer();
+  }
+
+  void _armKapyIdleTimer() {
+    _kapyIdleTimer?.cancel();
+    _kapyIdleTimer = Timer(HomePage.kapyIdleDelay, _kapyHeader.sleep);
+  }
+
+  void _reactToSelectedTotal() {
+    final id = _selectedId;
+    final note = widget.notes.byId(id);
+    if (id == null || note == null) return;
+    if (!_totalCue.hasMatch(note.body)) {
+      _totalAnimatedFor.remove(id);
+      return;
+    }
+    if (_totalAnimatedFor.add(id)) _kapyHeader.think();
+  }
 
   void _showSettings() {
     showDialog<void>(
       context: context,
       builder: (context) => SettingsDialog(
         account: widget.account,
+        notes: widget.notes,
         layoutPrefs: widget.prefs,
         shortcuts: widget.shortcuts,
         rates: widget.rates,
@@ -215,10 +282,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // Keep LayoutBuilder as the first render object: the app's whole-window
+    // golden harness captures this boundary directly.
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < kTwoPaneBreakpoint;
-        final content = compact ? _buildCompact(context) : _buildWide(context);
+        final page = compact ? _buildCompact(context) : _buildWide(context);
+        final content = Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => _recordKapyActivity(),
+          child: page,
+        );
 
         if (!AppPlatform.isDesktop) return content;
         return ListenableBuilder(
@@ -265,48 +339,48 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               NoteToolbar(
+                mascotController: _kapyHeader,
                 sidebarVisible: widget.prefs.sidebarVisible,
                 onToggleSidebar: widget.prefs.toggleSidebar,
                 onCreate: _createNote,
                 alwaysOnTop: widget.prefs.alwaysOnTop,
-                // Null on anything without a window to float, which keeps the
-                // pin off the toolbar rather than showing a dead control.
-                onToggleAlwaysOnTop: AppPlatform.isDesktop
-                    ? widget.prefs.toggleAlwaysOnTop
-                    : null,
-                alwaysOnTopShortcut: widget.shortcuts
-                    .bindingFor(ShortcutAction.toggleAlwaysOnTop)
-                    .displayLabel,
+                onToggleAlwaysOnTop: _pinToggle,
+                alwaysOnTopShortcut: _pinShortcut,
               ),
               Expanded(
-                child: SplitView(
+                child: SidebarSwipe(
                   sidebarVisible: widget.prefs.sidebarVisible,
-                  sidebarWidth: widget.prefs.sidebarWidth,
-                  minSidebarWidth: LayoutPrefs.minSidebarWidth,
-                  maxSidebarWidth: LayoutPrefs.maxSidebarWidth,
-                  onWidthChanged: (value) => widget.prefs.sidebarWidth = value,
-                  onHide: widget.prefs.toggleSidebar,
-                  sidebar: Sidebar(
-                    notes: _visibleNotes,
-                    selectedId: _selectedId,
-                    query: _query,
-                    displayTime: widget.prefs.displayTime,
-                    searchFocusNode: _searchFocus,
-                    onQueryChanged: (value) => setState(() => _query = value),
-                    onSelect: _select,
-                    onCreate: _createNote,
-                    onDelete: _deleteNote,
-                    onSettingsPressed: _showSettings,
-                    updates: widget.updates,
-                    showHeader: false,
-                  ),
-                  body: SafeArea(
-                    top: false,
-                    left: false,
-                    right: false,
-                    child: selected == null
-                        ? EmptyState(onCreate: _createNote)
-                        : _buildEditor(selected),
+                  onToggle: widget.prefs.toggleSidebar,
+                  child: SplitView(
+                    sidebarVisible: widget.prefs.sidebarVisible,
+                    sidebarWidth: widget.prefs.sidebarWidth,
+                    minSidebarWidth: LayoutPrefs.minSidebarWidth,
+                    maxSidebarWidth: LayoutPrefs.maxSidebarWidth,
+                    onWidthChanged: (value) =>
+                        widget.prefs.sidebarWidth = value,
+                    onHide: widget.prefs.toggleSidebar,
+                    sidebar: Sidebar(
+                      notes: _visibleNotes,
+                      selectedId: _selectedId,
+                      query: _query,
+                      displayTime: widget.prefs.displayTime,
+                      searchFocusNode: _searchFocus,
+                      onQueryChanged: (value) => setState(() => _query = value),
+                      onSelect: _select,
+                      onCreate: _createNote,
+                      onDelete: _deleteNote,
+                      onSettingsPressed: _showSettings,
+                      updates: widget.updates,
+                      showHeader: false,
+                    ),
+                    body: SafeArea(
+                      top: false,
+                      left: false,
+                      right: false,
+                      child: selected == null
+                          ? EmptyState(onCreate: _createNote)
+                          : _buildEditor(selected),
+                    ),
                   ),
                 ),
               ),
@@ -324,6 +398,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       0.0,
       360.0,
     );
+    // A third of the window, so "show me my notes" does not need aiming.
+    final drawerEdgeDragWidth = MediaQuery.sizeOf(context).width / 3;
     final overlayStyle = Theme.of(context).brightness == Brightness.dark
         ? SystemUiOverlayStyle.light
         : SystemUiOverlayStyle.dark;
@@ -332,6 +408,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       value: overlayStyle,
       child: Scaffold(
         backgroundColor: palette.editorBackground,
+        // A drag rather than a free swipe, and only one that starts near the
+        // left edge: anywhere else in a note, sideways dragging is how a
+        // touchscreen selects text. Flutter's default strip is about twenty
+        // pixels, which is a lot of precision to ask for.
+        drawerEdgeDragWidth: drawerEdgeDragWidth,
         onDrawerChanged: (isOpen) {
           setState(() {
             _drawerOpen = isOpen;
@@ -384,6 +465,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           children: [
             Builder(
               builder: (scaffoldContext) => NoteToolbar(
+                mascotController: _kapyHeader,
                 sidebarVisible: false,
                 showActions: !_drawerOpen,
                 onToggleSidebar: () {
@@ -391,6 +473,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   Scaffold.of(scaffoldContext).openDrawer();
                 },
                 onCreate: _createNote,
+                alwaysOnTop: widget.prefs.alwaysOnTop,
+                onToggleAlwaysOnTop: _pinToggle,
+                alwaysOnTopShortcut: _pinShortcut,
               ),
             ),
             Expanded(

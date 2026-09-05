@@ -59,6 +59,7 @@ Future<void> pumpApp(
   WidgetTester tester, {
   Size size = const Size(1100, 760),
   DesktopIntegration? desktopIntegration,
+  bool sidebarVisible = true,
 }) async {
   tester.view.physicalSize = size * tester.view.devicePixelRatio;
   tester.view.devicePixelRatio = 1;
@@ -67,6 +68,11 @@ Future<void> pumpApp(
 
   await notes.load();
   prefs.load();
+  // Most of this suite speaks for somebody who has used the app before, and
+  // they have opened the notes list at some point. A new install now starts
+  // with it closed, which is asserted where it belongs rather than assumed
+  // by every test that happens to look at the sidebar.
+  if (prefs.sidebarVisible != sidebarVisible) prefs.toggleSidebar();
   shortcuts.load();
   await tester.pumpWidget(
     KapyNotesApp(
@@ -311,6 +317,61 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.push_pin_rounded), findsOneWidget);
     expect(find.byIcon(Icons.push_pin_outlined), findsNothing);
+  });
+
+  testWidgets('a first run opens on a page, with the notes list closed', (
+    tester,
+  ) async {
+    // pumpApp speaks for an established user by default, so this is the one
+    // place that asks for the state a new install actually starts in.
+    await pumpApp(tester, sidebarVisible: false);
+
+    expect(prefs.sidebarVisible, isFalse);
+    // SplitView keeps the list mounted inside an OverflowBox and collapses
+    // the container around it, so the list's own rect is 260 wide either way
+    // and geometry says nothing here. The toolbar does: it offers to show the
+    // notes rather than to hide them.
+    expect(find.byTooltip('Show notes'), findsOneWidget);
+    expect(find.byTooltip('Hide notes'), findsNothing);
+  });
+
+  testWidgets('the pin survives every desktop width, and never reaches a phone', (
+    tester,
+  ) async {
+    // The bug this replaces: the compact toolbar is a second call site, and
+    // it was reached by a narrow desktop window as well as by a phone. The
+    // pin went missing on the desktop at small widths as a result.
+    for (final size in [
+      const Size(1100, 760),
+      const Size(700, 620),
+      LayoutPrefs.minimumWindowSize,
+    ]) {
+      await pumpApp(tester, size: size);
+      expect(
+        find.byIcon(Icons.push_pin_outlined),
+        findsOneWidget,
+        reason: 'the pin went missing at $size',
+      );
+    }
+
+    // The drawer hides the note actions while it covers them. The pin is
+    // about the window, not the note, so it stays.
+    await pumpApp(tester, size: const Size(700, 620));
+    await tester.tap(find.byTooltip('Show notes'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byIcon(Icons.push_pin_outlined),
+      findsOneWidget,
+      reason: 'the pin went with the drawer',
+    );
+
+    // A phone has no window to float, so the control is absent rather than
+    // present and inert.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await pumpApp(tester, size: const Size(420, 800));
+    expect(find.byIcon(Icons.push_pin_outlined), findsNothing);
+    expect(find.byIcon(Icons.push_pin_rounded), findsNothing);
   });
 
   testWidgets('keeps exchange-rate status out of the toolbar', (tester) async {
@@ -670,8 +731,8 @@ void main() {
       ),
     );
 
-    expect(prefs.writingFont, WritingFont.mixed);
-    expect(editor().style?.fontFamily, WritingFont.mixed.fontFamily);
+    expect(prefs.writingFont, WritingFont.handwritten);
+    expect(editor().style?.fontFamily, WritingFont.handwritten.fontFamily);
 
     await openSettings(tester, section: SettingsSection.appearance);
     expect(find.text('WRITING FONT'), findsOneWidget);

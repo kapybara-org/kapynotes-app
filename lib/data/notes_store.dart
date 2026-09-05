@@ -213,7 +213,8 @@ class NotesStore extends ChangeNotifier {
 
     if (notes.isNotEmpty) {
       final pushed = {
-        for (final note in notes) note.id: note.updatedAt.millisecondsSinceEpoch,
+        for (final note in notes)
+          note.id: note.updatedAt.millisecondsSinceEpoch,
       };
       _notes = List.unmodifiable([
         for (final note in _notes)
@@ -254,9 +255,7 @@ class NotesStore extends ChangeNotifier {
   }) {
     if (notes.isEmpty && tombstones.isEmpty) return const [];
 
-    final byIdIndex = {
-      for (var i = 0; i < _notes.length; i++) _notes[i].id: i,
-    };
+    final byIdIndex = {for (var i = 0; i < _notes.length; i++) _notes[i].id: i};
     final live = List<Note>.of(_notes);
     final stones = {for (final stone in _tombstones) stone.id: stone};
     final conflicted = <Note>[];
@@ -269,7 +268,8 @@ class NotesStore extends ChangeNotifier {
 
       // A local delete that is newer than the remote edit wins, and stays
       // pending so the delete still gets pushed.
-      if (localStone != null && !localStone.deletedAt.isBefore(incoming.updatedAt)) {
+      if (localStone != null &&
+          !localStone.deletedAt.isBefore(incoming.updatedAt)) {
         continue;
       }
       stones.remove(incoming.id);
@@ -327,6 +327,40 @@ class NotesStore extends ChangeNotifier {
     _persist();
 
     return conflicted.map((note) => note.id).toList(growable: false);
+  }
+
+  /// Writes notes an import decided to apply.
+  ///
+  /// Every one lands dirty — `syncedAt` stays null — because the server has
+  /// never seen this revision. That is the whole of import's relationship with
+  /// sync: it puts notes in the store, and the next pass pushes them under the
+  /// same last-writer-wins rules as a note somebody typed.
+  ///
+  /// A tombstone older than the note being written is dropped, exactly as
+  /// [applyRemote] drops one, or the restored note would be deleted again by
+  /// its own pending deletion.
+  void importNotes(List<Note> notes) {
+    if (notes.isEmpty) return;
+
+    final incoming = {for (final note in notes) note.id: note};
+    final stones = {for (final stone in _tombstones) stone.id: stone};
+    for (final note in notes) {
+      final stone = stones[note.id];
+      if (stone != null && stone.deletedAt.isBefore(note.updatedAt)) {
+        stones.remove(note.id);
+      }
+    }
+
+    final merged = <Note>[
+      for (final note in _notes)
+        if (incoming.containsKey(note.id)) incoming.remove(note.id)! else note,
+      // Whatever is left had no counterpart here.
+      ...incoming.values,
+    ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+    _notes = List.unmodifiable(merged);
+    _tombstones = List.unmodifiable(stones.values);
+    _persist();
   }
 
   /// Drops every note and tombstone this device holds.

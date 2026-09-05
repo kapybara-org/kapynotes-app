@@ -94,6 +94,10 @@ Future<void> pumpForGolden(
 
   await notes.load();
   prefs.load();
+  // These images document the app in use, where the notes list has been
+  // opened at least once. A new install starts with it closed; the one
+  // golden that wants it that way toggles it back below.
+  if (!prefs.sidebarVisible) prefs.toggleSidebar();
   if (withNote) {
     final note = notes.create();
     if (!blankNote) notes.updateBody(note.id, _body);

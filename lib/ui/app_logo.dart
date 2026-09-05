@@ -37,6 +37,7 @@ class AppWordmark extends StatelessWidget {
     this.spacing = 8,
     this.textColor,
     this.excludeFromSemantics = false,
+    this.mark,
   });
 
   static const name = 'Kapy Notes';
@@ -47,12 +48,18 @@ class AppWordmark extends StatelessWidget {
   final Color? textColor;
   final bool excludeFromSemantics;
 
+  /// Replaces only the fixed-size mark while preserving the lockup geometry.
+  final Widget? mark;
+
   @override
   Widget build(BuildContext context) {
     final lockup = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        AppLogo(size: markSize, excludeFromSemantics: true),
+        if (mark == null)
+          AppLogo(size: markSize, excludeFromSemantics: true)
+        else
+          SizedBox.square(dimension: markSize, child: mark),
         SizedBox(width: spacing),
         Text(
           name,

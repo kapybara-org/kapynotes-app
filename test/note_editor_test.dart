@@ -207,7 +207,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('Kapy only comes up once the last box is ticked', (tester) async {
+  testWidgets('finishing a checklist keeps its confetti but not Kapy', (
+    tester,
+  ) async {
     await tester.pumpWidget(harness('☑ milk\n☐ bread', autofocus: true));
     await tester.pumpAndSettle();
     final topLeft = tester.getTopLeft(find.byType(EditableText));
@@ -220,9 +222,7 @@ void main() {
       findsOneWidget,
       reason: 'that emptied the list',
     );
-    // And it is really Kapy, riding the burst's own timeline rather than a
-    // second one that would drift away from it.
-    expect(find.byKey(KapyCursorPeek.mascotKey), findsOneWidget);
+    expect(find.byKey(KapyCursorPeek.mascotKey), findsNothing);
     await tester.pumpAndSettle();
   });
 
@@ -236,6 +236,58 @@ void main() {
     expect(find.byKey(Celebrate.burstKey), findsOneWidget);
     expect(find.byKey(Celebrate.finaleKey), findsNothing);
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('Kapy peeks once after five seconds without typing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('A quiet note', autofocus: true));
+    await tester.pumpAndSettle();
+
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byKey(KapyCursorPeek.overlayKey), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'A quiet note with an edit');
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byKey(KapyCursorPeek.overlayKey), findsNothing);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(find.byKey(KapyCursorPeek.overlayKey), findsOneWidget);
+    expect(find.byKey(KapyCursorPeek.mascotKey), findsOneWidget);
+    expect(find.byKey(Celebrate.burstKey), findsNothing);
+
+    await tester.pump(
+      KapyCursorPeek.defaultDuration + const Duration(milliseconds: 1),
+    );
+    await tester.pump();
+    expect(find.byKey(KapyCursorPeek.overlayKey), findsNothing);
+
+    // The wait is one-shot. Remaining idle does not make Kapy repeat forever.
+    await tester.pump(NoteEditor.kapyPeekIdleDelay * 2);
+    await tester.pump();
+    expect(find.byKey(KapyCursorPeek.overlayKey), findsNothing);
+  });
+
+  testWidgets('moving the caret restarts the five-second peek wait', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      harness('first line\nsecond line', autofocus: true),
+    );
+    await tester.pumpAndSettle();
+    final topLeft = tester.getTopLeft(find.byType(EditableText));
+
+    await tester.pump(const Duration(seconds: 4));
+    await tester.tapAt(topLeft + const Offset(40, 43));
+    await tester.pump();
+
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byKey(KapyCursorPeek.overlayKey), findsNothing);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(find.byKey(KapyCursorPeek.overlayKey), findsOneWidget);
   });
 
   // Double-clicking a blank line used to select its terminator, painting a
@@ -1822,7 +1874,7 @@ void main() {
     expect(heading.style?.fontSize, WritingFont.handwritten.editorSize * 1.28);
     expect(bodyText.style?.fontFamily, WritingFont.monospace.fontFamily);
     expect(
-      tester.getRect(chipWithText('896')).center.dy,
+      tester.getRect(chipWithText('896.00 EUR')).center.dy,
       closeTo(lineRect(tester, body, 2).center.dy, 1.5),
     );
   });
