@@ -5,7 +5,7 @@ One codebase, bundle ID `com.kapybara.kapynotes`, team `96V66447C6` (Kapybara LL
 | Artifact | Channel | Status | Command |
 |---|---|---|---|
 | `KapyNotes-<version>.dmg` | Direct, kapynotes.com | **current plan** | `packaging/release.sh mac-direct` |
-| `kapy-ios.ipa` | iOS App Store | **v1.0.0 submission** | `packaging/release.sh ios` |
+| `kapy-ios.ipa` | iOS App Store | **live, 1.0.0** | `packaging/release.sh ios` |
 | `kapy-macos.pkg` | Mac App Store | not in use | `packaging/release.sh mac-store` |
 
 The product is called **Kapy Notes** in the Dock, on the Home Screen, in the
@@ -75,7 +75,7 @@ off their cards.
 
 ---
 
-## iOS App Store v1.0.0
+## iOS App Store v1.0.0 — live
 
 ### App record values
 
@@ -351,6 +351,98 @@ fine alongside a free iOS app, but do not add a purchase link for it inside
 the iOS app: buying digital content used in the app has to go through Apple.
 The app's only outbound link is the exchange-rate attribution, and it should
 stay that way.
+
+---
+
+## iOS App Store 1.7.0
+
+1.0.0 went live on 2026-09-05, released manually from `PENDING_DEVELOPER_RELEASE`
+once review passed. The store record now sits seven minor versions behind the
+app, so the next iOS submission is a 1.0.0 → 1.7.0 jump and the listing has to
+catch up with it before the build does.
+
+### The version needs no Xcode change
+
+`ios/Runner/Info.plist` reads `CFBundleShortVersionString` from
+`$(FLUTTER_BUILD_NAME)` and `CFBundleVersion` from `$(FLUTTER_BUILD_NUMBER)`, so
+bumping `version:` in `pubspec.yaml` is the whole job — an iOS archive built
+today is 1.7.0 (8). The `MARKETING_VERSION = 1.0` entries in
+`Runner.xcodeproj/project.pbxproj` belong to the **RunnerTests** target only and
+never reach the shipped bundle. Do not "fix" them to match; they are inert.
+
+### Three listing fields are now wrong, and one of them fails review
+
+Sync landed in 1.5.0 and the record still describes a 1.0.0 app that had none.
+All three must be corrected **before** 1.7.0 is submitted:
+
+1. **Description.** It says `• Notes stored locally on your device` and
+   `• No account, login, ads, or tracking`. Accounts and an optional server
+   copy both exist now. Suggested replacement for those two lines:
+
+   > • Notes stay on your device unless you turn on sync
+   > • Optional account for sync — no ads, no tracking
+
+2. **Review notes.** They still open with "This build has no in-app purchases,
+   subscriptions, external purchase links, account, or login." A reviewer who
+   reads that and then finds a sign-in screen has been told the app does
+   something it does not. This is the field most likely to cost a rejection.
+   Note that the corrected 1.0.0 text in the section above was never pushed
+   either — App Store Connect refuses a PATCH to the review detail unless the
+   four contact fields go with it.
+
+3. **App Privacy.** Answered for an app that collected nothing. Sync collects an
+   email address for the account, and stores note ciphertext the server cannot
+   read. Email has to be declared; the note content is worth declaring as
+   *Other Data* with linking off, since we hold bytes we cannot decrypt. This
+   is answered on the record, not in a build, and a wrong answer here is a
+   post-release removal rather than a rejection.
+
+### What's New
+
+Everything below is on iOS. Window pinning (1.6.0), the tray, the global
+shortcuts and the self-updater are desktop-only and are deliberately absent.
+
+> Sync, if you want it. Your notes on every device you own, encrypted on the
+> device before they leave it — what reaches us is sealed, and we cannot read
+> it. Signing in is your email and a six-digit code, with no password to invent.
+> You pick an encryption passphrase that never leaves your device, and you are
+> shown a recovery key once while you set up. Signing out leaves every note
+> where it is.
+>
+> Export and import. Take every note out as a single .zip of markdown, readable
+> in any editor, and read the same archive back later. The export lands in Files
+> where you can move it anywhere. It is a copy you can take with you, not a
+> scheduled backup, and the file is plain once it is saved.
+>
+> Links behave like links. Tap one to open or copy it, without changing the text
+> you wrote.
+>
+> Kapy Notes opens on your latest note, ready for the next thought. Turn it off
+> in Settings › General if you would rather keep your place.
+>
+> Copy Plain Text turns bullets and checkboxes into ordinary characters, so a
+> list pasted into a message still reads as one.
+>
+> A line that counts something — 12 mangoes, 3 shirts — now totals like any
+> other amount, and a labelled amount reads as its value.
+>
+> Kapy has moved into the header, and reacts to what you are doing.
+
+### Build and upload
+
+Unchanged from 1.0.0, and already scripted:
+
+    packaging/preflight_ios.sh
+    packaging/release.sh ios
+    packaging/upload_ios.sh confirm     # record + the build numbers ASC holds
+    packaging/upload_ios.sh upload      # validates, then delivers
+
+`upload_ios.sh` reads `ASC_KEY_ID` and `ASC_ISSUER_ID` from
+`packaging/.asc-credentials` and the key from
+`~/.appstoreconnect/private_keys/`. That key carries App Manager, which is what
+released 1.0.0 — so it is also enough to drive delivery from CI if an iOS
+workflow is ever worth having. Export compliance still has to be answered on
+each build before it can attach to a version.
 
 ---
 
