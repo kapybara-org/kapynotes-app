@@ -5,7 +5,10 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/theme.dart';
 import '../../sync/account.dart';
 import '../../sync/sharing.dart';
+import '../../sync/sync_api.dart' show SyncRefusedException;
+import '../../sync/safety.dart';
 import '../../sync/spaces.dart';
+import '../safety_dialogs.dart';
 import '../share_dialog.dart';
 
 /// Shared spaces, in settings: invitations waiting for an answer, a place to
@@ -38,20 +41,25 @@ class SharingPane extends StatelessWidget {
           children: const [],
         );
       }
-      return _SharingBody(sharing: sharing);
+      return SharingPaneBody(sharing: sharing);
     },
   );
 }
 
-class _SharingBody extends StatefulWidget {
-  const _SharingBody({required this.sharing});
+/// The pane's contents, given a [Sharing] directly.
+///
+/// Public so a test can mount it without standing up a whole signed-in
+/// [Account] — the thing worth testing here is what the pane does with
+/// invitations and blocks, not the session behind it.
+class SharingPaneBody extends StatefulWidget {
+  const SharingPaneBody({super.key, required this.sharing});
   final Sharing sharing;
 
   @override
-  State<_SharingBody> createState() => _SharingBodyState();
+  State<SharingPaneBody> createState() => _SharingPaneBodyState();
 }
 
-class _SharingBodyState extends State<_SharingBody> {
+class _SharingPaneBodyState extends State<SharingPaneBody> {
   final _code = TextEditingController();
   bool _busy = false;
   String? _message;
@@ -89,7 +97,7 @@ class _SharingBodyState extends State<_SharingBody> {
       _message = null;
     });
     try {
-      await action();
+      await _withTerms(action);
       if (mounted) {
         setState(() {
           _message = done;
@@ -105,6 +113,23 @@ class _SharingBodyState extends State<_SharingBody> {
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Runs an action, showing the sharing rules first if the server says this
+  /// account has not agreed to them. Accepting an invitation is a door into
+  /// sharing exactly as sending one is, so it is gated the same way.
+  Future<void> _withTerms(Future<void> Function() action) async {
+    try {
+      await action();
+    } on SyncRefusedException catch (error) {
+      if (error.code != termsRequiredCode || !mounted) rethrow;
+      final accepted = await showSharingTermsSheet(
+        context,
+        sharing: widget.sharing,
+      );
+      if (!accepted) return;
+      await action();
     }
   }
 
@@ -165,6 +190,19 @@ class _SharingBodyState extends State<_SharingBody> {
                     'a member lets you in.',
               ),
               onDecline: () => _run(() => sharing.declineInvite(invite.token)),
+              onBlock: () => _run(
+                () => sharing.blockPerson(invite.invitedBy),
+                done: 'Blocked ${invite.invitedBy}. They cannot invite you '
+                    'again.',
+              ),
+              onReport: () => showReportDialog(
+                context,
+                sharing: sharing,
+                target: ReportTarget.invitation(
+                  token: invite.token,
+                  email: invite.invitedBy,
+                ),
+              ),
             ),
         ],
         const SizedBox(height: 14),
@@ -231,6 +269,58 @@ class _SharingBodyState extends State<_SharingBody> {
               sharing: sharing,
             ),
           ),
+        if (sharing.blocks.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _Label('Blocked'),
+          for (final block in sharing.blocks)
+            Padding(
+              key: ValueKey('block-${block.email}'),
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.block_rounded,
+                    size: AppControlMetrics.iconControl,
+                    color: palette.textTertiary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      block.email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: AppTypeScale.control,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    key: ValueKey('unblock-${block.email}'),
+                    onPressed: _busy
+                        ? null
+                        : () => _run(
+                            () => sharing.unblockPerson(block.email),
+                            done: 'Unblocked ${block.email}.',
+                          ),
+                    child: const Text('Unblock'),
+                  ),
+                ],
+              ),
+            ),
+        ],
+        const SizedBox(height: 14),
+        Text(
+          'Something wrong in a shared space? Block the person from their '
+          'invitation or from the space, and report it — one person reads '
+          'every report, usually within $reportResponseDays working days. You '
+          'can also write to $safetyContact.',
+          style: TextStyle(
+            fontSize: AppTypeScale.small,
+            color: palette.textTertiary,
+            height: 1.45,
+          ),
+        ),
         if (_message case final message?) ...[
           const SizedBox(height: 10),
           Text(
@@ -256,12 +346,16 @@ class _InviteRow extends StatelessWidget {
     required this.busy,
     required this.onAccept,
     required this.onDecline,
+    required this.onBlock,
+    required this.onReport,
   });
 
   final PendingInvite invite;
   final bool busy;
   final VoidCallback onAccept;
   final VoidCallback onDecline;
+  final VoidCallback onBlock;
+  final VoidCallback onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -285,8 +379,20 @@ class _InviteRow extends StatelessWidget {
             ),
           ),
           Row(
-            mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              // The two quiet ways out sit at the far end from Accept, so the
+              // reflex tap is never the irreversible one.
+              TextButton(
+                key: ValueKey('report-${invite.token}'),
+                onPressed: busy ? null : onReport,
+                child: const Text('Report'),
+              ),
+              TextButton(
+                key: ValueKey('block-${invite.token}'),
+                onPressed: busy ? null : onBlock,
+                child: const Text('Block'),
+              ),
+              const Spacer(),
               TextButton(
                 onPressed: busy ? null : onDecline,
                 child: const Text('Decline'),

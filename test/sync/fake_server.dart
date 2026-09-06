@@ -8,6 +8,7 @@ import 'package:kapy_notes/sync/identity.dart';
 import 'package:kapy_notes/sync/key_bundle.dart';
 import 'package:kapy_notes/sync/key_wrap.dart';
 import 'package:kapy_notes/sync/live_channel.dart';
+import 'package:kapy_notes/sync/safety.dart';
 import 'package:kapy_notes/sync/sealed_box.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
@@ -47,8 +48,12 @@ class FakeServer {
   /// on the poll.
   bool deliverWakeups = true;
 
-  /// Invitation emails "sent".
+  /// Invitation emails "sent". A blocked sender's invitation never appears
+  /// here, which is how a test sees the silence.
   final List<({String to, String token})> outbox = [];
+
+  /// Reports filed, in order. `content` is null unless consent was given.
+  final List<FakeReport> reports = [];
 
   /// The minimum protocol the server serves. Raise it to see a build refuse.
   int minProtocol = 1;
@@ -444,8 +449,15 @@ class FakeServer {
     return members;
   }
 
+  void _requireTerms(String userId) {
+    if (user(userId).termsVersion < sharingTermsVersion) {
+      _refuse(403, termsRequiredCode);
+    }
+  }
+
   Space createSpace(String userId, String name, SealedToPublicKey key) {
     calls.add('createSpace');
+    _requireTerms(userId);
     final space = FakeSpace(
       id: 'space-${spaces.length + 1}-$name',
       kind: SpaceKind.team,
@@ -460,6 +472,7 @@ class FakeServer {
 
   InviteResult invite(String userId, String spaceId, String email) {
     calls.add('invite:$email');
+    _requireTerms(userId);
     final space = _member(userId, spaceId);
     if (space.members[userId] != SpaceRole.owner) {
       _refuse(403, 'only the owner can do this');
@@ -470,7 +483,11 @@ class FakeServer {
     space.invites.removeWhere((_, existing) => existing == email);
     final token = 'invite-${email.split('@').first}-${space.invites.length}';
     space.invites[token] = email;
-    outbox.add((to: email, token: token));
+    // Blocked: written, never delivered, and the sender is told nothing.
+    final blockedBy = users.values.where(
+      (u) => u.email.toLowerCase() == email && u.blocks.contains(user(userId).email.toLowerCase()),
+    );
+    if (blockedBy.isEmpty) outbox.add((to: email, token: token));
     announceSpace(spaceId, null);
     return InviteResult(
       token: token,
@@ -482,10 +499,12 @@ class FakeServer {
 
   List<PendingInvite> invitesFor(String userId) {
     final email = user(userId).email.toLowerCase();
+    final blocked = user(userId).blocks;
     return [
       for (final space in spaces.values)
         for (final entry in space.invites.entries)
-          if (entry.value == email)
+          if (entry.value == email &&
+              !blocked.contains(user(space.ownerId).email.toLowerCase()))
             PendingInvite(
               token: entry.key,
               spaceId: space.id,
@@ -501,6 +520,12 @@ class FakeServer {
     final email = user(userId).email.toLowerCase();
     for (final space in spaces.values) {
       if (space.invites[token] != email) continue;
+      // A blocked sender's invitation does not exist, however its link
+      // travelled, and the rules are agreed to before joining.
+      if (user(userId).blocks.contains(user(space.ownerId).email.toLowerCase())) {
+        _refuse(404, 'no such invitation');
+      }
+      _requireTerms(userId);
       space.invites.remove(token);
       space.members[userId] = SpaceRole.member;
       announceSpace(space.id, null);
@@ -692,6 +717,37 @@ class FakeUser {
   String email;
   KeyBundle? bundle;
   bool deleted = false;
+
+  /// Accepted by default, because almost every test is about something else.
+  /// Set to 0 for an account that has agreed to nothing.
+  int termsVersion = sharingTermsVersion;
+
+  /// Lower-cased addresses this account will not accept invitations from.
+  final Set<String> blocks = {};
+}
+
+class FakeReport {
+  const FakeReport({
+    required this.kind,
+    required this.reason,
+    required this.reporter,
+    this.reportedEmail,
+    this.spaceId,
+    this.noteId,
+    this.content,
+    this.details,
+  });
+
+  final ReportKind kind;
+  final ReportReason reason;
+  final String reporter;
+  final String? reportedEmail;
+  final String? spaceId;
+  final String? noteId;
+
+  /// Null unless the person reporting explicitly chose to attach the note.
+  final String? content;
+  final String? details;
 }
 
 class FakeSpace {
@@ -934,6 +990,81 @@ class FakeApi implements SyncApi {
   Future<void> stopSharing(String spaceId, List<WireNote> notes) async {
     _gate();
     server.stopSharing(userId, spaceId, notes);
+  }
+
+  @override
+  Future<List<Block>> fetchBlocks() async {
+    _gate();
+    return [
+      for (final email in server.user(userId).blocks)
+        Block(email: email, createdAt: DateTime.utc(2026, 9, 1)),
+    ];
+  }
+
+  @override
+  Future<void> block(String email) async {
+    _gate();
+    final address = email.trim().toLowerCase();
+    if (address == server.user(userId).email.toLowerCase()) {
+      throw const SyncRefusedException(400, 'you cannot block yourself', {});
+    }
+    server.user(userId).blocks.add(address);
+    // Anything already sent stops being visible in the same moment.
+    for (final space in server.spaces.values) {
+      space.invites.removeWhere(
+        (_, invited) =>
+            invited == server.user(userId).email.toLowerCase() &&
+            server.user(space.ownerId).email.toLowerCase() == address,
+      );
+    }
+  }
+
+  @override
+  Future<void> unblock(String email) async {
+    _gate();
+    server.user(userId).blocks.remove(email.trim().toLowerCase());
+  }
+
+  @override
+  Future<TermsStatus> fetchTerms() async {
+    _gate();
+    return TermsStatus(
+      acceptedVersion: server.user(userId).termsVersion,
+      currentVersion: sharingTermsVersion,
+    );
+  }
+
+  @override
+  Future<TermsStatus> acceptTerms() async {
+    _gate();
+    server.user(userId).termsVersion = sharingTermsVersion;
+    return const TermsStatus(
+      acceptedVersion: sharingTermsVersion,
+      currentVersion: sharingTermsVersion,
+    );
+  }
+
+  @override
+  Future<void> report({
+    required ReportTarget target,
+    required ReportReason reason,
+    String? details,
+    bool includeContent = false,
+  }) async {
+    _gate();
+    final attach = includeContent && target.canAttachContent;
+    server.reports.add(
+      FakeReport(
+        kind: target.kind,
+        reason: reason,
+        reporter: server.user(userId).email,
+        reportedEmail: target.email,
+        spaceId: target.spaceId,
+        noteId: target.noteId,
+        details: details,
+        content: attach ? target.noteBody : null,
+      ),
+    );
   }
 }
 

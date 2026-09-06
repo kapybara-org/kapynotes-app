@@ -8,6 +8,7 @@ import 'aead.dart';
 import 'config.dart';
 import 'key_wrap.dart';
 import 'note_payload.dart';
+import 'safety.dart';
 import 'space_keyring.dart';
 import 'spaces.dart';
 import 'sync_api.dart';
@@ -50,6 +51,26 @@ class Sharing extends ChangeNotifier {
   String get userId => _keyring.userId;
   List<Space> get spaces => _keyring.spaces;
 
+  List<Block> _blocks = const [];
+  TermsStatus _terms = TermsStatus.unknown;
+
+  /// Everyone this account has blocked, newest first.
+  List<Block> get blocks => _blocks;
+
+  /// Whether this account has agreed to the rules of a shared space. Assumed
+  /// not until the server has said otherwise, so the sheet is shown once too
+  /// often rather than skipped.
+  TermsStatus get terms => _terms;
+  bool get hasAcceptedTerms => _terms.isAccepted;
+
+  bool hasBlocked(String email) {
+    final wanted = email.trim().toLowerCase();
+    for (final block in _blocks) {
+      if (block.email.toLowerCase() == wanted) return true;
+    }
+    return false;
+  }
+
   /// Shared spaces, in the order they were created.
   List<Space> get teams => _keyring.teams;
   List<PendingInvite> get invites => _keyring.invites;
@@ -74,8 +95,20 @@ class Sharing extends ChangeNotifier {
   /// cannot sign in as the invited address.
   Uri inviteLink(String token) => Uri.parse(kSiteBaseUrl).resolve('join/$token');
 
-  /// Fetches the latest list of spaces and invitations.
-  Future<void> refresh() => _keyring.refresh(_api, _vault);
+  /// Fetches the latest list of spaces and invitations, and the two
+  /// account-level facts the sharing UI needs beside them.
+  Future<void> refresh() async {
+    await _keyring.refresh(_api, _vault);
+    await refreshSafety();
+  }
+
+  /// Blocks and terms. Split out because the share sheet wants them without
+  /// necessarily wanting a full space refresh.
+  Future<void> refreshSafety() async {
+    _blocks = await _api.fetchBlocks();
+    _terms = await _api.fetchTerms();
+    notifyListeners();
+  }
 
   // -------------------------------------------------------------------------
   // Sharing a note
@@ -254,6 +287,69 @@ class Sharing extends ChangeNotifier {
     _notes.bringHome(mine.map((note) => note.id), at: at);
     await refresh();
     _sync.requestSync();
+  }
+
+  // -------------------------------------------------------------------------
+  // Blocking, reporting and the terms
+  // -------------------------------------------------------------------------
+
+  /// Agrees to the rules of a shared space. Every door into sharing is closed
+  /// until this has happened, so it is the first thing the UI does.
+  Future<void> acceptTerms() async {
+    _terms = await _api.acceptTerms();
+    notifyListeners();
+  }
+
+  /// Blocks a person, and ends whatever relationship gave them a way in.
+  ///
+  /// Blocking on its own only stops future invitations, which is no use at
+  /// all if the problem is somebody already in a space with you. So when
+  /// [inSpaceId] is given, this also does the thing that actually removes
+  /// them: the owner removes them, and a member leaves.
+  Future<void> blockPerson(String email, {String? inSpaceId}) async {
+    final address = email.trim().toLowerCase();
+    await _api.block(address);
+
+    final space = inSpaceId == null ? null : _keyring.byId(inSpaceId);
+    if (space != null && space.isTeam) {
+      String? theirId;
+      for (final member in space.members) {
+        if (member.email.toLowerCase() == address) theirId = member.userId;
+      }
+      if (space.isOwner && theirId != null && theirId != userId) {
+        await _api.removeMember(space.id, theirId);
+      } else if (!space.isOwner && theirId != null) {
+        // Not ours to remove them from, so we go instead.
+        await _api.removeMember(space.id, userId);
+      }
+    }
+
+    await refresh();
+    _sync.requestSync();
+  }
+
+  Future<void> unblockPerson(String email) async {
+    await _api.unblock(email);
+    await refreshSafety();
+  }
+
+  /// Files a report. Nothing encrypted travels unless [includeContent] is
+  /// true, which the UI only passes when the person has been shown what it
+  /// means and has said yes.
+  Future<void> report({
+    required ReportTarget target,
+    required ReportReason reason,
+    String? details,
+    bool includeContent = false,
+  }) async {
+    await _api.report(
+      target: target,
+      reason: reason,
+      details: details,
+      includeContent: includeContent,
+    );
+    // An invitation reported is usually one the person also wants gone.
+    if (target.kind == ReportKind.invitation) await refresh();
   }
 
   /// The person has looked at a changed fingerprint and chosen to trust it.

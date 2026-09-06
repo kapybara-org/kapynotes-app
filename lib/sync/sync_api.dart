@@ -7,6 +7,7 @@ import 'identity.dart';
 import 'key_bundle.dart';
 import 'key_wrap.dart';
 import 'live_channel.dart';
+import 'safety.dart';
 import 'sealed_box.dart';
 import 'spaces.dart';
 
@@ -267,6 +268,25 @@ abstract class SyncApi {
   });
   Future<Space> transfer(String spaceId, String userId);
   Future<void> stopSharing(String spaceId, List<WireNote> notes);
+
+  // Blocking, reporting and the sharing terms.
+
+  Future<List<Block>> fetchBlocks();
+  Future<void> block(String email);
+  Future<void> unblock(String email);
+
+  Future<TermsStatus> fetchTerms();
+  Future<TermsStatus> acceptTerms();
+
+  /// Files a report. [includeContent] is the only thing here that can send
+  /// anything the server could not already see, and it is false unless the
+  /// person reporting has been told what it means and said yes.
+  Future<void> report({
+    required ReportTarget target,
+    required ReportReason reason,
+    String? details,
+    bool includeContent = false,
+  });
 }
 
 /// One request may not carry more than this. Matches `PUSH_MAX_NOTES`.
@@ -532,6 +552,72 @@ class HttpSyncApi implements SyncApi {
     _baseUrl.resolve('spaces/$spaceId'),
     payload: {'notes': notes.map((note) => note.toJson()).toList()},
   );
+
+  @override
+  Future<List<Block>> fetchBlocks() async {
+    final body = await _send('GET', _baseUrl.resolve('blocks'));
+    final blocks = body['blocks'];
+    return blocks is List
+        ? blocks.map(Block.fromJson).whereType<Block>().toList()
+        : const [];
+  }
+
+  @override
+  Future<void> block(String email) => _send(
+    'POST',
+    _baseUrl.resolve('blocks'),
+    payload: {'email': email.trim().toLowerCase()},
+  );
+
+  @override
+  Future<void> unblock(String email) => _send(
+    'DELETE',
+    _baseUrl.resolve('blocks/${Uri.encodeComponent(email.trim().toLowerCase())}'),
+  );
+
+  @override
+  Future<TermsStatus> fetchTerms() async =>
+      TermsStatus.fromJson(await _send('GET', _baseUrl.resolve('terms'))) ??
+      TermsStatus.unknown;
+
+  @override
+  Future<TermsStatus> acceptTerms() async =>
+      TermsStatus.fromJson(
+        await _send(
+          'POST',
+          _baseUrl.resolve('terms'),
+          payload: {'version': sharingTermsVersion},
+        ),
+      ) ??
+      TermsStatus.unknown;
+
+  @override
+  Future<void> report({
+    required ReportTarget target,
+    required ReportReason reason,
+    String? details,
+    bool includeContent = false,
+  }) {
+    final attach = includeContent && target.canAttachContent;
+    return _send(
+      'POST',
+      _baseUrl.resolve('reports'),
+      payload: {
+        'kind': target.kind.name,
+        'reason': reason.wire,
+        if (details != null && details.trim().isNotEmpty)
+          'details': details.trim(),
+        if (target.token != null) 'token': target.token,
+        if (target.spaceId != null) 'spaceId': target.spaceId,
+        if (target.noteId != null) 'noteId': target.noteId,
+        if (target.email != null) 'email': target.email,
+        // Both fields together or neither: the server refuses content that
+        // arrives without the consent beside it, and so should we.
+        if (attach) 'content': target.noteBody,
+        'contentConsent': attach,
+      },
+    );
+  }
 
   List<Space> _spaces(Object? raw) => raw is List
       ? raw.map(Space.fromJson).whereType<Space>().toList()

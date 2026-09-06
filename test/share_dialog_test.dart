@@ -178,8 +178,16 @@ void main() {
     expect(find.text(bob.email), findsOneWidget);
     expect(find.text('Owner'), findsOneWidget);
     expect(find.text('Waiting for access'), findsNothing);
-    // Only the owner removes people.
-    expect(find.byKey(ValueKey('remove-${bob.userId}')), findsOneWidget);
+    // The per-member actions live behind one button, and the owner's menu
+    // is the only one with Remove in it.
+    expect(find.byKey(ValueKey('member-menu-${bob.userId}')), findsOneWidget);
+    await tester.tap(find.byKey(ValueKey('member-menu-${bob.userId}')));
+    await tester.pumpAndSettle();
+    expect(find.text('Report…'), findsOneWidget);
+    expect(find.text('Block…'), findsOneWidget);
+    expect(find.text('Remove'), findsOneWidget);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('unshare-note')));
     await tester.pumpAndSettle();
@@ -215,9 +223,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('stop-sharing')), findsNothing);
-    expect(find.byKey(ValueKey('remove-${alice.userId}')), findsNothing);
     expect(find.byKey(const ValueKey('leave-space')), findsOneWidget);
     expect(find.text('Add someone'), findsNothing);
+
+    // A member can still report and block the owner — those are not
+    // privileges — but cannot remove them.
+    await tester.tap(find.byKey(ValueKey('member-menu-${alice.userId}')));
+    await tester.pumpAndSettle();
+    expect(find.text('Report…'), findsOneWidget);
+    expect(find.text('Block…'), findsOneWidget);
+    expect(find.text('Remove'), findsNothing);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('leave-space')));
     await tester.pumpAndSettle();

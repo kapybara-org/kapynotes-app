@@ -6,10 +6,12 @@ import 'package:material_ui/material_ui.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/note.dart';
+import '../sync/safety.dart';
 import '../sync/sharing.dart';
+import '../sync/sync_api.dart' show SyncRefusedException;
 import '../sync/spaces.dart';
-import '../sync/sync_api.dart';
 import '../sync/trust.dart';
+import 'safety_dialogs.dart';
 
 /// The share sheet for one note.
 ///
@@ -35,29 +37,6 @@ Future<void> showSpaceDialog(
   context: context,
   builder: (context) => _ShareDialog(spaceId: spaceId, sharing: sharing),
 );
-
-/// One sentence for whatever went wrong, in place of an exception nobody
-/// sees.
-String describeSharingError(Object error) => switch (error) {
-  SyncAuthException() => 'Sign in again to share notes.',
-  SyncOutdatedException() => 'Update Kapy Notes to keep sharing.',
-  SyncRefusedException(:final code) => switch (code) {
-    'already a member' => 'They are already in this space.',
-    'too many pending invitations' => 'Too many people are still to accept.',
-    'too many invitations today' => 'That is enough invitations for today.',
-    'the space is full' => 'This space is full.',
-    'quota exceeded' => 'Not enough storage for this.',
-    'the new owner does not hold the key yet' =>
-      'They have to be let in before they can take over.',
-    'no such invitation' => 'That invitation is not for this account, or has expired.',
-    'owned-spaces' => 'Hand over or stop sharing your spaces first.',
-    _ => 'The server did not allow that.',
-  },
-  SyncTransientException() =>
-    'Could not reach the server. Try again in a moment.',
-  SyncProtocolException(:final message) => message,
-  _ => 'That did not work.',
-};
 
 class _ShareDialog extends StatefulWidget {
   const _ShareDialog({this.noteId, this.spaceId, required this.sharing});
@@ -125,13 +104,49 @@ class _ShareDialogState extends State<_ShareDialog> {
       _notice = null;
     });
     try {
-      await action();
+      await _withTerms(action);
       if (mounted && done != null) setState(() => _notice = done);
     } catch (error) {
       if (mounted) setState(() => _error = describeSharingError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Runs an action; if the server says the sharing rules have not been agreed
+  /// to, shows them and runs it again.
+  ///
+  /// Here rather than in front of every button that might need it, because the
+  /// rules are a step in the flow and not a failure of it — and because the
+  /// server is the only thing that actually knows, so asking it is what keeps
+  /// a second device from showing the sheet to somebody who already agreed.
+  Future<void> _withTerms(Future<void> Function() action) async {
+    try {
+      await action();
+    } on SyncRefusedException catch (error) {
+      if (error.code != termsRequiredCode || !mounted) rethrow;
+      final accepted = await showSharingTermsSheet(
+        context,
+        sharing: widget.sharing,
+      );
+      if (!accepted) return;
+      await action();
+    }
+  }
+
+  Future<void> _reportNote() async {
+    final note = _note;
+    final space = _space;
+    if (note == null || space == null) return;
+    await showReportDialog(
+      context,
+      sharing: widget.sharing,
+      target: ReportTarget.note(
+        spaceId: space.id,
+        noteId: note.id,
+        noteBody: note.body,
+      ),
+    );
   }
 
   Future<void> _shareWithEmail() async {
@@ -275,10 +290,49 @@ class _ShareDialogState extends State<_ShareDialog> {
                     destructive: true,
                     run: () => sharing.removeMember(space.id, member.userId),
                   ),
+                  onBlock: (member) => _confirm(
+                    title: 'Block ${member.email}?',
+                    body:
+                        'They stop being able to invite you anywhere, and you '
+                        'leave this space. What they already downloaded stays '
+                        'on their devices.',
+                    action: 'Block',
+                    destructive: true,
+                    run: () async {
+                      await sharing.blockPerson(
+                        member.email,
+                        inSpaceId: space.id,
+                      );
+                      if (context.mounted) Navigator.of(context).pop();
+                    },
+                  ),
+                  onReport: (member) => showReportDialog(
+                    context,
+                    sharing: sharing,
+                    target: ReportTarget.member(
+                      spaceId: space.id,
+                      email: member.email,
+                    ),
+                  ),
                   onRevoke: (invite) =>
                       _run(() => sharing.revokeInvite(space.id, invite.token)),
                   onTrust: sharing.trustNewKey,
                 ),
+                if (note != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: const ValueKey('report-note'),
+                      onPressed: _busy ? null : _reportNote,
+                      icon: Icon(
+                        Icons.flag_outlined,
+                        size: AppControlMetrics.iconControl,
+                      ),
+                      label: const Text('Report this note'),
+                    ),
+                  ),
+                ],
                 if (space.isOwner) ...[
                   const SizedBox(height: 14),
                   _Label('Add someone'),
@@ -404,6 +458,8 @@ class _Members extends StatelessWidget {
     required this.busy,
     required this.onCopyLink,
     required this.onRemove,
+    required this.onBlock,
+    required this.onReport,
     required this.onRevoke,
     required this.onTrust,
   });
@@ -413,6 +469,8 @@ class _Members extends StatelessWidget {
   final bool busy;
   final ValueChanged<String> onCopyLink;
   final ValueChanged<SpaceMember> onRemove;
+  final ValueChanged<SpaceMember> onBlock;
+  final ValueChanged<SpaceMember> onReport;
   final ValueChanged<SpaceInvite> onRevoke;
   final ValueChanged<TrustWarning> onTrust;
 
@@ -492,11 +550,14 @@ class _Members extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (space.isOwner && !member.isOwner)
-                  TextButton(
-                    key: ValueKey('remove-${member.userId}'),
-                    onPressed: busy ? null : () => onRemove(member),
-                    child: const Text('Remove'),
+                if (member.userId != sharing.userId)
+                  _MemberMenu(
+                    key: ValueKey('member-menu-${member.userId}'),
+                    canRemove: space.isOwner && !member.isOwner,
+                    enabled: !busy,
+                    onReport: () => onReport(member),
+                    onBlock: () => onBlock(member),
+                    onRemove: () => onRemove(member),
                   ),
               ],
             ),
@@ -550,6 +611,57 @@ class _Members extends StatelessWidget {
                   ),
               ],
             ),
+          ),
+      ],
+    );
+  }
+}
+
+/// The per-member actions, behind one button.
+///
+/// A row that grew three more text buttons would push the address it is about
+/// off the edge on a phone, and two of the three are rare enough that they
+/// should cost a tap rather than permanent width.
+class _MemberMenu extends StatelessWidget {
+  const _MemberMenu({
+    super.key,
+    required this.canRemove,
+    required this.enabled,
+    required this.onReport,
+    required this.onBlock,
+    required this.onRemove,
+  });
+
+  final bool canRemove;
+  final bool enabled;
+  final VoidCallback onReport;
+  final VoidCallback onBlock;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final error = Theme.of(context).colorScheme.error;
+    return PopupMenuButton<String>(
+      enabled: enabled,
+      tooltip: 'More',
+      icon: Icon(
+        Icons.more_horiz_rounded,
+        size: AppControlMetrics.iconControl,
+        color: palette.textSecondary,
+      ),
+      onSelected: (value) => switch (value) {
+        'report' => onReport(),
+        'block' => onBlock(),
+        _ => onRemove(),
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(value: 'report', child: Text('Report…')),
+        const PopupMenuItem(value: 'block', child: Text('Block…')),
+        if (canRemove)
+          PopupMenuItem(
+            value: 'remove',
+            child: Text('Remove', style: TextStyle(color: error)),
           ),
       ],
     );

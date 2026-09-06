@@ -869,43 +869,70 @@ server, with `/support#delete-your-account` describing the email route.
 Sharing adds two more, and the first is the one that is easy to miss because
 it is not about privacy at all.
 
-1. **The content rating questionnaire has an answer that is now false, and
-   the rating is the smaller half of the problem.**
-   Question 17 of 20 is *Online Interaction or Content Exchange*, and Google's
-   guidance is that it is **Yes** when "users can freely exchange content they
-   have created ... or exchange any other type of content created by users".
-   A shared note is exactly that. The carve-out — "multiplayer functionality by
-   itself (with no means for communication or sharing)" — does not reach us.
+1. **The content rating questionnaire, and the policy that answering it
+   honestly pulls us into.** Question 17 of 20 is *Online Interaction or
+   Content Exchange*, and Google's test is whether "users can freely exchange
+   content they have created". A shared note is exactly that, so it is **Yes**;
+   the carve-out for "multiplayer functionality by itself (with no means for
+   communication or sharing)" does not reach us.
 
-   Answering Yes is honest and cheap. What it does is put the app inside the
-   **User Generated Content policy**, and that is not cheap. Play defines UGC
-   as "content that users contribute to an app, and which is visible to or
-   accessible by at least a subset of the app's users", which a note in a
-   shared space is. The requirements are tiered, and ours is the middle tier:
+   Answering Yes puts the app inside the **User Generated Content policy**,
+   which defines UGC as "content that users contribute to an app, and which is
+   visible to or accessible by at least a subset of the app's users". The
+   tiers, and where we land:
 
-   - one-to-one interaction with specific users -> **in-app blocking of users**
+   - one-to-one interaction with specific users -> **in-app blocking**
    - closed networks of identified users -> **in-app reporting** of content
      and users
    - public UGC -> both
 
-   Plus "a clear and accessible Terms of Use" the user affirmatively accepts
-   before taking part. These took effect 15 April 2026 and are enforced after
-   publication, like Data Safety.
+   Plus a Terms of Use the person affirmatively accepts before taking part.
+   In force since 15 April 2026, enforced after publication. There is **no
+   exemption** for private sharing, for collaboration tools, or for content
+   the developer cannot read.
 
-   **There is no exemption for private sharing, for collaboration tools, or
-   for content the developer cannot read.** End-to-end encryption is not a
-   defence here; it is a design constraint we have to answer inside. The
-   messengers solve it the only way it can be solved: blocking is server-side
-   and needs no plaintext, and reporting is a deliberate user-initiated
-   disclosure of one item, which is the one moment E2EE is allowed to be
-   broken because the person holding the key chose to break it.
+   **All three are built**, as of the release that follows 1.11.0. Blocking is
+   an address the server refuses to relay invitations from, offered on every
+   invitation and on every member; reporting covers invitations, notes and
+   people; the sharing rules are accepted once, and every door into sharing is
+   closed until they are. The one that needed a decision rather than code was
+   reporting a note, because we cannot read one: the app asks, in the moment,
+   whether to send a copy of that single note, and files the report either way.
 
-   None of this exists today. Mapped onto what we have, it is roughly:
-   a block list keyed by address that `POST /spaces/:id/invites` and
-   `GET /invites` both consult; a report action on a shared note that uploads
-   that note's plaintext with explicit consent; and a one-time acceptance
-   before the first share. That is a day's work, not an afternoon, and it is
-   the reason 12 should sit on internal rather than being promoted.
+   So the questionnaire's User Content Sharing section reads:
+
+   | Question | Answer |
+   | --- | --- |
+   | Natively allow users to interact or exchange content | **Yes** |
+   | Is shared UGC the *primary* source of content | **No** |
+   | Public sharing of nudity | No |
+   | Public sharing of graphic violence | No |
+   | Ability to block users or UGC | **Yes** |
+   | Ability to report users or UGC | **Yes** |
+   | Chat moderation | No (there is no chat) |
+   | Interactions limited to invited friends only | **Yes** |
+
+   The second row is the one worth getting right. This is a notepad; the
+   content is the user's own writing, and most people will never share a note.
+   Answering Yes there would describe a social platform, push the rating, and
+   invite obligations that belong to a different product.
+
+   **Apple asks for the same things in one guideline and one breath.** 1.2
+   wants filtering, reporting, blocking, and published contact information.
+   Three of those exist. Filtering is the one that cannot exist for note
+   content, and the review notes should say so plainly rather than leave it to
+   be discovered: we cannot filter what we cannot read, the surfaces we *can*
+   see are space names and the addresses on invitations, and note content is
+   covered by report plus block plus terms. That is the same answer every
+   end-to-end encrypted messenger on the App Store gives.
+
+   One thing that came out of building it and is worth recording, because it
+   was a live bug rather than a policy question: the invitation email used to
+   carry the space's name, which is sixty characters of free text. That made
+   this server a machine for delivering a stranger's words to any address
+   somebody named, over our domain. The name now appears in the app after the
+   invitation is opened, and the email carries only the sender's verified
+   address and the link.
 
 2. **Data Safety gains the invitee's address, not just the account's.**
    The email address disclosure the 1.7.0 section already requires covers the
@@ -929,17 +956,16 @@ it is not about privacy at all.
    immediately and to every track at once; the bundle upload sends only
    `releaseNotes`, which is why 12 could go to internal without touching it.
 
-Order, unchanged in shape from 1.7.0, with one item added at the front:
-build blocking, reporting and Terms acceptance -> internal (**done**) ->
-re-answer the content rating questionnaire and Data Safety in the Console ->
-push the listing -> promote 12 to production with a staged rollout.
+Order: build blocking, reporting and terms acceptance (**done**) -> upload
+that build to internal -> re-answer the content rating questionnaire and Data
+Safety in the Console -> push the listing -> promote to production with a
+staged rollout.
 
-Worth saying plainly: the desktop build has sharing today and owes none of
-this, because no store polices it. So the cheapest reading of step 4 of
-`docs/collaboration.md` — ship it and watch — is to watch on desktop, and to
-build the moderation surface only once somebody has actually shared a note.
-Promoting 12 to Play production is what starts the clock, and nothing forces
-us to start it.
+Nothing here forces the last step to be soon. The desktop build has sharing
+and owes none of it, so step 4 of `docs/collaboration.md` — ship it and watch
+— can be watched there. What has changed is that the reason to wait is now
+"we have not seen whether anyone uses this", rather than "we would be out of
+compliance if anyone did".
 
 ### What changes when Pro Lifetime ships
 
