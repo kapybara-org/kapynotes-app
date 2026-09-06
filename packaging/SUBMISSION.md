@@ -855,6 +855,62 @@ Order that respects all three: upload to internal → push the corrected listing
 and Data Safety → promote to production. If a social login is ever added, Sign
 in with Apple becomes mandatory on iOS; email codes alone do not trigger it.
 
+### Shipping 1.11.0, the first build with sharing
+
+**Internal already has it.** Version code 12 was uploaded to the internal
+track on 6 September 2026, so the sharing build can be checked on a real
+device against the live server. Production is still 1.4.0 and beta is still
+1.0.0, which is why nothing below is urgent — but every item is required
+before 12 is promoted anywhere users can reach.
+
+The three obligations from the 1.7.0 section still apply, and account
+deletion is no longer one of them: it shipped in 1.8.0, in the app and on the
+server, with `/support#delete-your-account` describing the email route.
+Sharing adds two more, and the first is the one that is easy to miss because
+it is not about privacy at all.
+
+1. **The content rating questionnaire has an answer that is now false.**
+   It was answered *"Does the app let users interact or exchange content?
+   **No**"*, and sharing makes that **Yes**: one user invites another by
+   email and they then read and write the same note. The questionnaire has to
+   be answered again in the Console. An inaccurate rating is grounds for
+   removal, and IARC treats "users can exchange content" as a rating input
+   rather than a footnote, so the resulting rating may not stay Everyone.
+   Expect follow-up questions about whether shared content is moderated and
+   whether users can be reported or blocked; neither exists today, and both
+   are worth deciding before answering rather than while answering.
+
+   Apple's equivalent is the same fact under a different form. The 4+ rating
+   and the review notes both describe an app with no way to reach another
+   person; a build that can invite somebody by email is a build App Review
+   will read as having user-generated content.
+
+2. **Data Safety gains the invitee's address, not just the account's.**
+   The email address disclosure the 1.7.0 section already requires covers the
+   signed-in user. Sharing also transmits an address the user *types about
+   somebody else*, and the server emails that person an invitation. It is the
+   same declared type — **Personal info -> Email address** — so the form does
+   not change shape, but the purpose does: it is now App functionality and
+   Account management for the account holder, and App functionality for the
+   invitee.
+
+   **Nothing moves to "shared".** Play defines sharing as transfer to a third
+   party, and excludes transfer that the user themselves initiates and
+   expects. A note reaching the person you deliberately invited is exactly
+   that exclusion. R2 and the sync server remain our own storage. So the
+   answer to "is any data shared" stays **No** — but write down *why*, because
+   the intuitive reading of a feature called sharing is the opposite.
+
+3. **The listing copy is updated in `play_listing.json` and must not be
+   pushed yet.** It now describes sync and sharing, which is right for 12 and
+   wrong for the 1.4.0 users still see. `upload_play.py listing` publishes
+   immediately and to every track at once; the bundle upload sends only
+   `releaseNotes`, which is why 12 could go to internal without touching it.
+
+Order, unchanged in shape from 1.7.0: internal (**done**) -> re-answer the
+content rating questionnaire and Data Safety in the Console -> push the
+listing -> promote 12 to production with a staged rollout.
+
 ### What changes when Pro Lifetime ships
 
 Nothing below blocks v1.0.0. It is listed here because the free listing is
