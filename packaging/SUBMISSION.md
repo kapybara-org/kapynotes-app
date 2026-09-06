@@ -869,21 +869,43 @@ server, with `/support#delete-your-account` describing the email route.
 Sharing adds two more, and the first is the one that is easy to miss because
 it is not about privacy at all.
 
-1. **The content rating questionnaire has an answer that is now false.**
-   It was answered *"Does the app let users interact or exchange content?
-   **No**"*, and sharing makes that **Yes**: one user invites another by
-   email and they then read and write the same note. The questionnaire has to
-   be answered again in the Console. An inaccurate rating is grounds for
-   removal, and IARC treats "users can exchange content" as a rating input
-   rather than a footnote, so the resulting rating may not stay Everyone.
-   Expect follow-up questions about whether shared content is moderated and
-   whether users can be reported or blocked; neither exists today, and both
-   are worth deciding before answering rather than while answering.
+1. **The content rating questionnaire has an answer that is now false, and
+   the rating is the smaller half of the problem.**
+   Question 17 of 20 is *Online Interaction or Content Exchange*, and Google's
+   guidance is that it is **Yes** when "users can freely exchange content they
+   have created ... or exchange any other type of content created by users".
+   A shared note is exactly that. The carve-out — "multiplayer functionality by
+   itself (with no means for communication or sharing)" — does not reach us.
 
-   Apple's equivalent is the same fact under a different form. The 4+ rating
-   and the review notes both describe an app with no way to reach another
-   person; a build that can invite somebody by email is a build App Review
-   will read as having user-generated content.
+   Answering Yes is honest and cheap. What it does is put the app inside the
+   **User Generated Content policy**, and that is not cheap. Play defines UGC
+   as "content that users contribute to an app, and which is visible to or
+   accessible by at least a subset of the app's users", which a note in a
+   shared space is. The requirements are tiered, and ours is the middle tier:
+
+   - one-to-one interaction with specific users -> **in-app blocking of users**
+   - closed networks of identified users -> **in-app reporting** of content
+     and users
+   - public UGC -> both
+
+   Plus "a clear and accessible Terms of Use" the user affirmatively accepts
+   before taking part. These took effect 15 April 2026 and are enforced after
+   publication, like Data Safety.
+
+   **There is no exemption for private sharing, for collaboration tools, or
+   for content the developer cannot read.** End-to-end encryption is not a
+   defence here; it is a design constraint we have to answer inside. The
+   messengers solve it the only way it can be solved: blocking is server-side
+   and needs no plaintext, and reporting is a deliberate user-initiated
+   disclosure of one item, which is the one moment E2EE is allowed to be
+   broken because the person holding the key chose to break it.
+
+   None of this exists today. Mapped onto what we have, it is roughly:
+   a block list keyed by address that `POST /spaces/:id/invites` and
+   `GET /invites` both consult; a report action on a shared note that uploads
+   that note's plaintext with explicit consent; and a one-time acceptance
+   before the first share. That is a day's work, not an afternoon, and it is
+   the reason 12 should sit on internal rather than being promoted.
 
 2. **Data Safety gains the invitee's address, not just the account's.**
    The email address disclosure the 1.7.0 section already requires covers the
@@ -907,9 +929,17 @@ it is not about privacy at all.
    immediately and to every track at once; the bundle upload sends only
    `releaseNotes`, which is why 12 could go to internal without touching it.
 
-Order, unchanged in shape from 1.7.0: internal (**done**) -> re-answer the
-content rating questionnaire and Data Safety in the Console -> push the
-listing -> promote 12 to production with a staged rollout.
+Order, unchanged in shape from 1.7.0, with one item added at the front:
+build blocking, reporting and Terms acceptance -> internal (**done**) ->
+re-answer the content rating questionnaire and Data Safety in the Console ->
+push the listing -> promote 12 to production with a staged rollout.
+
+Worth saying plainly: the desktop build has sharing today and owes none of
+this, because no store polices it. So the cheapest reading of step 4 of
+`docs/collaboration.md` — ship it and watch — is to watch on desktop, and to
+build the moderation surface only once somebody has actually shared a note.
+Promoting 12 to Play production is what starts the clock, and nothing forces
+us to start it.
 
 ### What changes when Pro Lifetime ships
 
