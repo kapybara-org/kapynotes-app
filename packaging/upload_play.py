@@ -10,6 +10,7 @@
 #
 #   --track internal|alpha|beta|production   alpha is closed testing, beta open
 #   --rollout 0.2                            staged release, promote only
+#   --text-only                              listing only: copy, not graphics
 #
 # Play refuses to accept a version code it has already seen, so a build cannot
 # be re-uploaded to reach a wider track; promote reassigns the existing code
@@ -247,10 +248,12 @@ def listing_copy():
     return copy
 
 
-def push_listing():
+def push_listing(text_only=False):
     copy = listing_copy()
     language = copy.get("language", "en-US")
     info(f"Pushing the {language} listing for {PACKAGE_NAME}")
+    if text_only:
+        print("  text only: the graphics already on the listing are left alone")
 
     for field, limit in COPY_LIMITS.items():
         print(f"  {field:<18} {len(copy[field]):>5} / {limit}")
@@ -282,7 +285,7 @@ def push_listing():
         )
         print("  title, short and full description set")
 
-        for slot, source in IMAGE_SLOTS:
+        for slot, source in [] if text_only else IMAGE_SLOTS:
             if os.path.isdir(source):
                 files = sorted(
                     os.path.join(source, name)
@@ -292,7 +295,15 @@ def push_listing():
             elif os.path.exists(source):
                 files = [source]
             else:
-                die(f"missing {slot} asset at {source}; run node packaging/play_graphics.mjs")
+                # Every slot is replaced rather than merged, so a partial set
+                # would delete the screenshots already on the listing and put
+                # back fewer. Refusing is the only safe answer; --text-only is
+                # the way past it when only the copy has changed.
+                die(
+                    f"missing {slot} asset at {source}; run node "
+                    "packaging/play_graphics.mjs, or pass --text-only to "
+                    "push the copy and leave the graphics as they are"
+                )
 
             # Replace rather than append, so re-running does not stack up
             # duplicate screenshots on the listing.
@@ -465,6 +476,7 @@ def main():
     args = sys.argv[1:]
     mode, track, bundle = "all", "internal", DEFAULT_BUNDLE
     rollout, version_code, track_given = None, None, False
+    text_only = False
     index = 0
     while index < len(args):
         argument = args[index]
@@ -483,6 +495,8 @@ def main():
                 rollout = float(args[index]) if index < len(args) else None
             except ValueError:
                 die("--rollout takes a fraction, for example 0.2")
+        elif argument == "--text-only":
+            text_only = True
         elif argument == "--version-code":
             index += 1
             version_code = args[index] if index < len(args) else ""
@@ -506,7 +520,7 @@ def main():
     if mode in ("confirm", "all"):
         confirm(track)
     if mode == "listing":
-        push_listing()
+        push_listing(text_only)
     if mode == "promote":
         promote(version_code, track, rollout)
     if mode in ("validate", "upload", "all"):
