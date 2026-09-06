@@ -1390,11 +1390,11 @@ void main() {
 
     await sendShortcut(
       tester,
-      shortcutPrefs.bindingFor(ShortcutAction.formatBold),
+      shortcutPrefs.bindingFor(ShortcutAction.formatBold)!,
     );
     await sendShortcut(
       tester,
-      shortcutPrefs.bindingFor(ShortcutAction.formatItalic),
+      shortcutPrefs.bindingFor(ShortcutAction.formatItalic)!,
     );
     await tester.pumpAndSettle();
 
@@ -1421,7 +1421,7 @@ void main() {
 
     await sendShortcut(
       tester,
-      shortcutPrefs.bindingFor(ShortcutAction.cycleTextStyle),
+      shortcutPrefs.bindingFor(ShortcutAction.cycleTextStyle)!,
     );
     await tester.pumpAndSettle();
     expect(changes.last, const [
@@ -1429,7 +1429,7 @@ void main() {
     ]);
     await sendShortcut(
       tester,
-      shortcutPrefs.bindingFor(ShortcutAction.cycleTextStyle),
+      shortcutPrefs.bindingFor(ShortcutAction.cycleTextStyle)!,
     );
     await tester.pumpAndSettle();
     expect(changes.last, const [
@@ -1437,21 +1437,21 @@ void main() {
     ]);
     await sendShortcut(
       tester,
-      shortcutPrefs.bindingFor(ShortcutAction.cycleTextStyle),
+      shortcutPrefs.bindingFor(ShortcutAction.cycleTextStyle)!,
     );
     await tester.pumpAndSettle();
     expect(changes.last, isEmpty);
 
     await sendShortcut(
       tester,
-      shortcutPrefs.bindingFor(ShortcutAction.formatBullets),
+      shortcutPrefs.bindingFor(ShortcutAction.formatBullets)!,
     );
     await tester.pumpAndSettle();
     expect(field.controller!.text, '${bulletPrefix}Task');
 
     await sendShortcut(
       tester,
-      shortcutPrefs.bindingFor(ShortcutAction.formatChecklist),
+      shortcutPrefs.bindingFor(ShortcutAction.formatChecklist)!,
     );
     await tester.pumpAndSettle();
     expect(field.controller!.text, '${uncheckedPrefix}Task');
@@ -1464,30 +1464,30 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.byTooltip(
-        'Text style: Text · ${shortcutPrefs.bindingFor(ShortcutAction.cycleTextStyle).displayLabel}',
+        'Text style: Text · ${shortcutPrefs.bindingFor(ShortcutAction.cycleTextStyle)!.displayLabel}',
       ),
       findsOneWidget,
     );
     expect(
       find.byTooltip(
-        'Bold · ${shortcutPrefs.bindingFor(ShortcutAction.formatBold).displayLabel}',
+        'Bold · ${shortcutPrefs.bindingFor(ShortcutAction.formatBold)!.displayLabel}',
       ),
       findsOneWidget,
     );
     expect(
       find.byTooltip(
-        'Italic · ${shortcutPrefs.bindingFor(ShortcutAction.formatItalic).displayLabel}',
+        'Italic · ${shortcutPrefs.bindingFor(ShortcutAction.formatItalic)!.displayLabel}',
       ),
       findsOneWidget,
     );
-    final original = shortcutPrefs.bindingFor(ShortcutAction.formatBullets);
+    final original = shortcutPrefs.bindingFor(ShortcutAction.formatBullets)!;
     expect(
       find.byTooltip('Bulleted list · ${original.displayLabel}'),
       findsOneWidget,
     );
     expect(
       find.byTooltip(
-        'Checklist · ${shortcutPrefs.bindingFor(ShortcutAction.formatChecklist).displayLabel}',
+        'Checklist · ${shortcutPrefs.bindingFor(ShortcutAction.formatChecklist)!.displayLabel}',
       ),
       findsOneWidget,
     );

@@ -87,6 +87,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// reachable from a context below the Scaffold.
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  /// Everything the toolbar draws itself from: the pin's state comes from
+  /// [LayoutPrefs], and the chord its tooltip names from [ShortcutPrefs].
+  /// Listening to only the first left the tooltip quoting a shortcut the user
+  /// had already changed.
+  ///
+  /// Merged once rather than per build, so the subscription is not torn down
+  /// and rebuilt on every frame. Both outlive this page — the app root makes
+  /// them before it makes a window — so neither is ever swapped underneath it.
+  late final Listenable _toolbarSources = Listenable.merge([
+    widget.prefs,
+    widget.shortcuts,
+  ]);
+
   /// The welcome note while it is still exactly as it was written.
   ///
   /// Not persisted, and cleared the moment the reader types into it: from then
@@ -209,6 +222,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _reactToSelectedTotal();
   }
 
+  /// Walks the selection [delta] notes along the list the sidebar is showing,
+  /// wrapping round at both ends.
+  ///
+  /// The visible list rather than every note, so a walk under an active search
+  /// stays inside the results the reader is looking at. Selecting does not
+  /// reorder anything — only editing moves a note to the top — so holding the
+  /// key down passes each note exactly once.
+  void _cycleNote(int delta) {
+    final visible = _visibleNotes;
+    if (visible.length < 2) return;
+    final current = visible.indexWhere((note) => note.id == _selectedId);
+    // Nothing selected, or a selection the search has filtered out: start at
+    // whichever end the direction is coming from.
+    final next = current < 0
+        ? (delta > 0 ? 0 : visible.length - 1)
+        : (current + delta) % visible.length;
+    _select(visible[next].id);
+    _focusSelectedEditorAtEnd();
+  }
+
   void _createNote() {
     _recordKapyActivity();
     final note = widget.notes.create();
@@ -281,9 +314,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   VoidCallback? get _pinToggle =>
       AppPlatform.isDesktop ? widget.prefs.toggleAlwaysOnTop : null;
 
-  String get _pinShortcut => widget.shortcuts
+  /// Null once the pin's shortcut is cleared, which drops the chord from the
+  /// tooltip rather than leaving it promising a key that does nothing.
+  String? get _pinShortcut => widget.shortcuts
       .bindingFor(ShortcutAction.toggleAlwaysOnTop)
-      .displayLabel;
+      ?.displayLabel;
 
   void _recordKapyActivity() {
     if (_kapyHeader.needsWake) _kapyHeader.wake(hideAfter: true);
@@ -363,7 +398,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               if (!widget.prefs.sidebarVisible) widget.prefs.toggleSidebar();
               _searchFocus.requestFocus();
             },
+            onNextNote: () => _cycleNote(1),
+            onPreviousNote: () => _cycleNote(-1),
             onToggleSidebar: widget.prefs.toggleSidebar,
+            onToggleResults: widget.prefs.toggleResults,
             onToggleAlwaysOnTop: AppPlatform.isDesktop
                 ? widget.prefs.toggleAlwaysOnTop
                 : null,
@@ -393,7 +431,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       child: Padding(
         padding: EdgeInsets.only(bottom: keyboardInset),
         child: ListenableBuilder(
-          listenable: widget.prefs,
+          listenable: _toolbarSources,
           builder: (context, _) => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -523,8 +561,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Builder(
-              builder: (scaffoldContext) => NoteToolbar(
+            // Listening, because the pin it carries draws itself from the
+            // preference: without this the icon kept the old state until
+            // something unrelated happened to rebuild the page, while the
+            // window itself had already gone on top. The wide layout has
+            // covered its own toolbar this way all along.
+            //
+            // The builder's context is below the Scaffold, which is the other
+            // thing this has to be — [Scaffold.of] cannot see it from the
+            // context that built the Scaffold.
+            ListenableBuilder(
+              listenable: _toolbarSources,
+              builder: (scaffoldContext, _) => NoteToolbar(
                 mascotController: _kapyHeader,
                 sidebarVisible: false,
                 showActions: !_drawerOpen,
@@ -654,7 +702,10 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.child,
     required this.onNewNote,
     required this.onFindNotes,
+    required this.onNextNote,
+    required this.onPreviousNote,
     required this.onToggleSidebar,
+    required this.onToggleResults,
     required this.onToggleAlwaysOnTop,
     required this.onDeleteNote,
     required this.shortcuts,
@@ -664,7 +715,10 @@ class _DesktopShortcuts extends StatelessWidget {
   final Widget child;
   final VoidCallback onNewNote;
   final VoidCallback onFindNotes;
+  final VoidCallback onNextNote;
+  final VoidCallback onPreviousNote;
   final VoidCallback onToggleSidebar;
+  final VoidCallback onToggleResults;
   final VoidCallback? onToggleAlwaysOnTop;
   final VoidCallback? onDeleteNote;
   final ShortcutPrefs shortcuts;
@@ -672,15 +726,22 @@ class _DesktopShortcuts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A cleared shortcut leaves no entry behind: the action keeps whatever
+    // button it has, and the keyboard simply says nothing about it.
     return CallbackShortcuts(
       bindings: {
-        shortcuts.bindingFor(ShortcutAction.newNote).activator: onNewNote,
-        shortcuts.bindingFor(ShortcutAction.findNotes).activator: onFindNotes,
-        shortcuts.bindingFor(ShortcutAction.toggleSidebar).activator:
+        ?shortcuts.bindingFor(ShortcutAction.newNote)?.activator: onNewNote,
+        ?shortcuts.bindingFor(ShortcutAction.findNotes)?.activator: onFindNotes,
+        ?shortcuts.bindingFor(ShortcutAction.nextNote)?.activator: onNextNote,
+        ?shortcuts.bindingFor(ShortcutAction.previousNote)?.activator:
+            onPreviousNote,
+        ?shortcuts.bindingFor(ShortcutAction.toggleSidebar)?.activator:
             onToggleSidebar,
-        shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop).activator:
+        ?shortcuts.bindingFor(ShortcutAction.toggleResults)?.activator:
+            onToggleResults,
+        ?shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop)?.activator:
             ?onToggleAlwaysOnTop,
-        shortcuts.bindingFor(ShortcutAction.deleteNote).activator:
+        ?shortcuts.bindingFor(ShortcutAction.deleteNote)?.activator:
             ?onDeleteNote,
       },
       child: Focus(autofocus: autofocus, child: child),

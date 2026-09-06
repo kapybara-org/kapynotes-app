@@ -9,6 +9,13 @@ import '../compact_icon_button.dart';
 import '../glass_surface.dart';
 import 'editor_formatting.dart';
 
+/// What a button is called, with the key that does it after a separator.
+///
+/// A shortcut the user has cleared leaves the name on its own, rather than a
+/// tooltip trailing off after a dot into nothing.
+String _withShortcut(String label, ShortcutBinding? shortcut) =>
+    shortcut == null ? label : '$label · ${shortcut.displayLabel}';
+
 /// Persistent note status bar inspired by the compact footer in Numi.
 class NoteFooter extends StatelessWidget {
   const NoteFooter({
@@ -39,11 +46,11 @@ class NoteFooter extends StatelessWidget {
   });
 
   final String? total;
-  final ShortcutBinding paragraphStyleShortcut;
-  final ShortcutBinding boldShortcut;
-  final ShortcutBinding italicShortcut;
-  final ShortcutBinding bulletsShortcut;
-  final ShortcutBinding checklistShortcut;
+  final ShortcutBinding? paragraphStyleShortcut;
+  final ShortcutBinding? boldShortcut;
+  final ShortcutBinding? italicShortcut;
+  final ShortcutBinding? bulletsShortcut;
+  final ShortcutBinding? checklistShortcut;
   final VoidCallback onSettingsPressed;
   final VoidCallback onParagraphStylePressed;
   final VoidCallback onBoldPressed;
@@ -158,31 +165,34 @@ class NoteFooter extends StatelessWidget {
                           _FormatButton(
                             key: const ValueKey('format-bold'),
                             icon: Icons.format_bold_rounded,
-                            tooltip: 'Bold \u00b7 ${boldShortcut.displayLabel}',
+                            tooltip: _withShortcut('Bold', boldShortcut),
                             active: boldActive,
                             onPressed: onBoldPressed,
                           ),
                           _FormatButton(
                             key: const ValueKey('format-italic'),
                             icon: Icons.format_italic_rounded,
-                            tooltip:
-                                'Italic \u00b7 ${italicShortcut.displayLabel}',
+                            tooltip: _withShortcut('Italic', italicShortcut),
                             active: italicActive,
                             onPressed: onItalicPressed,
                           ),
                           _FormatButton(
                             key: const ValueKey('format-bullets'),
                             icon: Icons.format_list_bulleted_rounded,
-                            tooltip:
-                                'Bulleted list \u00b7 ${bulletsShortcut.displayLabel}',
+                            tooltip: _withShortcut(
+                              'Bulleted list',
+                              bulletsShortcut,
+                            ),
                             active: bulletsActive,
                             onPressed: onBulletsPressed,
                           ),
                           _FormatButton(
                             key: const ValueKey('format-checklist'),
                             icon: Icons.checklist_rounded,
-                            tooltip:
-                                'Checklist \u00b7 ${checklistShortcut.displayLabel}',
+                            tooltip: _withShortcut(
+                              'Checklist',
+                              checklistShortcut,
+                            ),
                             active: checklistActive,
                             onPressed: onChecklistPressed,
                           ),
@@ -259,7 +269,7 @@ class _StyleCycleButton extends StatelessWidget {
   });
 
   final NoteParagraphStyle? style;
-  final ShortcutBinding shortcut;
+  final ShortcutBinding? shortcut;
   final VoidCallback onPressed;
 
   @override
@@ -273,8 +283,10 @@ class _StyleCycleButton extends StatelessWidget {
     };
     return CompactIconButton(
       key: const ValueKey('format-style'),
-      tooltip:
-          'Text style: ${style?.label ?? 'Mixed'} · ${shortcut.displayLabel}',
+      tooltip: _withShortcut(
+        'Text style: ${style?.label ?? 'Mixed'}',
+        shortcut,
+      ),
       selected: active,
       foregroundColor: active ? palette.textPrimary : palette.textTertiary,
       onPressed: onPressed,

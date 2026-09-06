@@ -258,26 +258,32 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   Future<void> _recordShortcut(ShortcutAction action) async {
-    final candidate = await showDialog<ShortcutBinding>(
+    final current = widget.shortcuts.bindingFor(action);
+    final choice = await showDialog<ShortcutChoice>(
       context: context,
-      builder: (context) => _ShortcutRecorderDialog(
-        action: action,
-        current: widget.shortcuts.bindingFor(action),
-      ),
+      builder: (context) =>
+          _ShortcutRecorderDialog(action: action, current: current),
     );
-    if (candidate == null || candidate == widget.shortcuts.bindingFor(action)) {
-      return;
+    // Nothing came back at all: the dialog was dismissed.
+    if (choice == null) return;
+    final candidate = choice.binding;
+    // Or it came back with what the action already had.
+    if (candidate == current) return;
+
+    // Nothing can collide with a shortcut that is being taken away.
+    if (candidate != null) {
+      final conflict = widget.shortcuts.conflictFor(action, candidate);
+      if (conflict != null) {
+        setState(() {
+          _shortcutError =
+              '${candidate.displayLabel} is already used for ${conflict.label.toLowerCase()}.';
+        });
+        return;
+      }
     }
 
-    final conflict = widget.shortcuts.conflictFor(action, candidate);
-    if (conflict != null) {
-      setState(() {
-        _shortcutError =
-            '${candidate.displayLabel} is already used for ${conflict.label.toLowerCase()}.';
-      });
-      return;
-    }
-
+    // Told to the OS first either way: a system-wide chord has to be handed
+    // back before the preference forgets which one it was.
     if (action.isGlobal && widget.desktopIntegration != null) {
       final error = await widget.desktopIntegration!.trySystemShortcut(
         action,
@@ -290,7 +296,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
       }
     }
 
-    widget.shortcuts.update(action, candidate);
+    if (candidate == null) {
+      widget.shortcuts.clear(action);
+    } else {
+      widget.shortcuts.update(action, candidate);
+    }
     if (mounted) setState(() => _shortcutError = null);
   }
 
@@ -1804,7 +1814,10 @@ class _ShortcutRow extends StatelessWidget {
   });
 
   final ShortcutAction action;
-  final ShortcutBinding binding;
+
+  /// Null where the user has cleared it. The row stays, because it is also
+  /// how the shortcut is given back.
+  final ShortcutBinding? binding;
   final VoidCallback onPressed;
 
   @override
@@ -1831,10 +1844,13 @@ class _ShortcutRow extends StatelessWidget {
               ),
             ),
             child: Text(
-              binding.displayLabel,
-              style: const TextStyle(
+              binding?.displayLabel ?? 'None',
+              style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: _settingsMediumWeight,
+                // Dimmed rather than absent: an empty button would look
+                // broken, and this one still opens the recorder.
+                color: binding == null ? palette.textTertiary : null,
               ),
             ),
           ),
@@ -2028,11 +2044,20 @@ class _TimeZoneOption extends StatelessWidget {
   }
 }
 
+/// What the recorder came back with.
+///
+/// A record rather than a bare binding because there are three answers, not
+/// two: bind this chord, leave the action with no key at all, or nothing —
+/// the dialog was dismissed. Only the last is a null result.
+typedef ShortcutChoice = ({ShortcutBinding? binding});
+
 class _ShortcutRecorderDialog extends StatefulWidget {
   const _ShortcutRecorderDialog({required this.action, required this.current});
 
   final ShortcutAction action;
-  final ShortcutBinding current;
+
+  /// Null when the action has already been cleared.
+  final ShortcutBinding? current;
 
   @override
   State<_ShortcutRecorderDialog> createState() =>
@@ -2041,6 +2066,8 @@ class _ShortcutRecorderDialog extends StatefulWidget {
 
 class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
   String? _error;
+
+  void _clear() => Navigator.of(context).pop<ShortcutChoice>((binding: null));
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.handled;
@@ -2051,6 +2078,17 @@ class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
     if (_isModifier(event.logicalKey)) return KeyEventResult.handled;
 
     final keyboard = HardwareKeyboard.instance;
+    // Backspace on its own takes the shortcut away, which is what the same
+    // key does in macOS's own shortcut editor. Nothing is lost by spending it
+    // here: a chord that binds must carry a modifier, so a bare Backspace
+    // could never have been recorded anyway.
+    if (!_hasModifier(keyboard) &&
+        (event.logicalKey == LogicalKeyboardKey.backspace ||
+            event.logicalKey == LogicalKeyboardKey.delete)) {
+      _clear();
+      return KeyEventResult.handled;
+    }
+
     final binding = ShortcutBinding(
       logicalKey: event.logicalKey,
       physicalKey: event.physicalKey,
@@ -2068,9 +2106,15 @@ class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
       return KeyEventResult.handled;
     }
 
-    Navigator.of(context).pop(binding);
+    Navigator.of(context).pop<ShortcutChoice>((binding: binding));
     return KeyEventResult.handled;
   }
+
+  static bool _hasModifier(HardwareKeyboard keyboard) =>
+      keyboard.isMetaPressed ||
+      keyboard.isControlPressed ||
+      keyboard.isAltPressed ||
+      keyboard.isShiftPressed;
 
   static bool _isModifier(LogicalKeyboardKey key) => {
     LogicalKeyboardKey.altLeft,
@@ -2128,7 +2172,9 @@ class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
                     ),
                     const SizedBox(height: 5),
                     Text(
-                      'Current: ${widget.current.displayLabel}',
+                      widget.current == null
+                          ? 'Currently not set'
+                          : 'Current: ${widget.current!.displayLabel}',
                       style: TextStyle(
                         fontSize: 11.5,
                         color: palette.textTertiary,
@@ -2151,6 +2197,22 @@ class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
           ),
         ),
         actions: [
+          // Only where there is something to take away. Offering it against
+          // an action that already has no key would be a button that does
+          // nothing, which is worse than no button.
+          if (widget.current != null)
+            TextButton(
+              key: const ValueKey('shortcut-remove'),
+              onPressed: _clear,
+              // Styled like Cancel rather than in the error colour. The light
+              // theme's accent is a terracotta a shade off that red, so the
+              // emphasis would only read in the dark one — and taking a
+              // shortcut away is a click to undo, not a deletion.
+              child: const Text(
+                'Remove',
+                style: TextStyle(fontWeight: _settingsMediumWeight),
+              ),
+            ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text(

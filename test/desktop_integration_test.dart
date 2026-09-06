@@ -88,7 +88,18 @@ void main() {
   /// or two after the assignment.
   Future<void> settle() => Future<void>.delayed(Duration.zero);
 
+  /// Desktop now starts with the tray on, so anything testing the way there
+  /// has to ask for the other end rather than inherit it from the default.
+  Future<void> startWithoutTray() async {
+    prefs.keepRunningInBackground = false;
+    await settle();
+    window.calls.clear();
+    tray.calls.clear();
+  }
+
   test('the tray and the close button follow the preference', () async {
+    await startWithoutTray();
+
     prefs.keepRunningInBackground = true;
     await settle();
 
@@ -102,6 +113,8 @@ void main() {
   });
 
   test('a close is a hide only while the app is set to stay', () async {
+    await startWithoutTray();
+
     // Both platforms report the close whether or not it was prevented, so
     // doing nothing has to be the answer when it was not.
     integration.onWindowClose();
@@ -184,6 +197,41 @@ void main() {
       sequence.indexOf('tray_manager.destroy'),
       lessThan(sequence.indexOf('window_manager.destroy')),
     );
+  });
+
+  test('a first launch opens at login, and later ones leave it alone', () async {
+    final store = _MemoryStore();
+    final shortcuts = ShortcutPrefs(_MemoryStore())..load();
+
+    final first = DesktopIntegration(layoutPrefs: LayoutPrefs(store)..load());
+    addTearDown(first.dispose);
+    await first.initialize(shortcuts);
+
+    expect(loginItem.calls, contains('setEnabled'));
+    expect((LayoutPrefs(store)..load()).loginItemDefaultApplied, isTrue);
+
+    // Whatever the user did with it afterwards is the last word. A default
+    // that reasserted itself every launch would not be a default.
+    loginItem.calls.clear();
+    final second = DesktopIntegration(layoutPrefs: LayoutPrefs(store)..load());
+    addTearDown(second.dispose);
+    await second.initialize(shortcuts);
+
+    expect(loginItem.calls, isNot(contains('setEnabled')));
+  });
+
+  test('a host with no mechanism keeps its one chance for later', () async {
+    // macOS 12 has no login-item API this sandbox may use. Spending the
+    // default against it would mean an upgrade to 13 never got one.
+    loginItem.answers['isSupported'] = false;
+    final store = _MemoryStore();
+
+    final integration = DesktopIntegration(layoutPrefs: LayoutPrefs(store)..load());
+    addTearDown(integration.dispose);
+    await integration.initialize(ShortcutPrefs(_MemoryStore())..load());
+
+    expect(loginItem.calls, isNot(contains('setEnabled')));
+    expect((LayoutPrefs(store)..load()).loginItemDefaultApplied, isFalse);
   });
 
   test('the login item is read back from the OS, not assumed', () async {

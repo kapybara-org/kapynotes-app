@@ -9,7 +9,10 @@ enum ShortcutAction {
   newNoteAnywhere,
   newNote,
   findNotes,
+  nextNote,
+  previousNote,
   toggleSidebar,
+  toggleResults,
   toggleAlwaysOnTop,
   deleteNote,
   cycleTextStyle,
@@ -25,7 +28,10 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.newNoteAnywhere => 'New note from anywhere',
     ShortcutAction.newNote => 'New note',
     ShortcutAction.findNotes => 'Search notes',
-    ShortcutAction.toggleSidebar => 'Toggle sidebar',
+    ShortcutAction.nextNote => 'Next note',
+    ShortcutAction.previousNote => 'Previous note',
+    ShortcutAction.toggleSidebar => 'Toggle notes list',
+    ShortcutAction.toggleResults => 'Toggle results column',
     ShortcutAction.toggleAlwaysOnTop => 'Keep window on top',
     ShortcutAction.deleteNote => 'Delete current note',
     ShortcutAction.cycleTextStyle => 'Cycle text style',
@@ -41,7 +47,11 @@ extension ShortcutActionCopy on ShortcutAction {
       'Come forward on a blank note, whatever you were in',
     ShortcutAction.newNote => 'Create and focus a blank note',
     ShortcutAction.findNotes => 'Open the sidebar and search',
-    ShortcutAction.toggleSidebar => 'Show or hide the notes list',
+    ShortcutAction.nextNote => 'Open the next note down the list',
+    ShortcutAction.previousNote => 'Open the note above it',
+    ShortcutAction.toggleSidebar => 'Show or hide the notes list on the left',
+    ShortcutAction.toggleResults =>
+      'Show or hide the results column on the right',
     ShortcutAction.toggleAlwaysOnTop =>
       'Float the window over other apps, or let it fall behind again',
     ShortcutAction.deleteNote => 'Remove the note you are editing',
@@ -102,6 +112,7 @@ class ShortcutBinding {
 
   String get keyLabel {
     if (logicalKey == LogicalKeyboardKey.space) return 'Space';
+    if (logicalKey == LogicalKeyboardKey.tab) return 'Tab';
     if (logicalKey == LogicalKeyboardKey.backspace) return 'Backspace';
     if (logicalKey == LogicalKeyboardKey.delete) return 'Delete';
     if (logicalKey == LogicalKeyboardKey.backslash) return r'\';
@@ -177,7 +188,18 @@ class ShortcutPrefs extends ChangeNotifier {
 
   static const String _key = 'shortcuts.v1';
 
+  /// What a deliberately cleared shortcut looks like on disk.
+  ///
+  /// A missing entry cannot mean this: an action added in a later version is
+  /// missing from every file written before it existed, and those installs
+  /// must get its default rather than nothing. So "the user removed this" is
+  /// written down, in a word rather than as an absence.
+  static const String _unbound = 'unbound';
+
   final LocalStore _store;
+
+  /// Only the actions that have a key. An action missing from here is one the
+  /// user cleared, which is why [bindingFor] can answer null.
   late Map<ShortcutAction, ShortcutBinding> _bindings;
 
   void load() {
@@ -185,8 +207,10 @@ class ShortcutPrefs extends ChangeNotifier {
     final saved = raw is Map ? raw : const <Object?, Object?>{};
     _bindings = {
       for (final action in ShortcutAction.values)
-        action:
-            ShortcutBinding.fromJson(saved[action.name]) ?? defaultFor(action),
+        if (saved[action.name] != _unbound)
+          action:
+              ShortcutBinding.fromJson(saved[action.name]) ??
+              defaultFor(action),
     };
 
     // Changing the default alone would only reach new installs. Anyone still
@@ -216,7 +240,13 @@ class ShortcutPrefs extends ChangeNotifier {
     shift: true,
   );
 
-  ShortcutBinding bindingFor(ShortcutAction action) => _bindings[action]!;
+  /// The key [action] answers to, or null where the user has cleared it.
+  ///
+  /// Nullable on purpose: every caller has to decide what an action with no
+  /// key does, and the compiler is a better reminder than a comment. Callers
+  /// that only want to say the shortcut out loud drop the mention; callers
+  /// that bind keys leave the entry out of the map entirely.
+  ShortcutBinding? bindingFor(ShortcutAction action) => _bindings[action];
 
   ShortcutAction? conflictFor(
     ShortcutAction action,
@@ -234,6 +264,13 @@ class ShortcutPrefs extends ChangeNotifier {
     _persist();
   }
 
+  /// Leaves [action] with no key at all. The action stays reachable wherever
+  /// it has a button; it simply stops answering the keyboard.
+  void clear(ShortcutAction action) {
+    if (_bindings.remove(action) == null) return;
+    _persist();
+  }
+
   void resetAll() {
     _bindings = {
       for (final action in ShortcutAction.values) action: defaultFor(action),
@@ -243,8 +280,8 @@ class ShortcutPrefs extends ChangeNotifier {
 
   void _persist() {
     _store.putNow(_key, {
-      for (final entry in _bindings.entries)
-        entry.key.name: entry.value.toJson(),
+      for (final action in ShortcutAction.values)
+        action.name: _bindings[action]?.toJson() ?? _unbound,
     });
     notifyListeners();
   }
@@ -305,9 +342,37 @@ class ShortcutPrefs extends ChangeNotifier {
         meta: useMeta,
         control: !useMeta,
       ),
+      // Control on both platforms, and the one pair of defaults that does not
+      // follow [useMeta]. Cmd+Tab is the macOS application switcher: the window
+      // server takes it before any app is told a key moved, so a Cmd default
+      // here would simply never fire. Ctrl+Tab is free on both, and is
+      // already what every tabbed app means by "the next one".
+      ShortcutAction.nextNote => const ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.tab,
+        physicalKey: PhysicalKeyboardKey.tab,
+        control: true,
+      ),
+      ShortcutAction.previousNote => const ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.tab,
+        physicalKey: PhysicalKeyboardKey.tab,
+        control: true,
+        shift: true,
+      ),
       ShortcutAction.toggleSidebar => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.backslash,
         physicalKey: PhysicalKeyboardKey.backslash,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      // R for results. The obvious pairing would be Shift plus the sidebar's
+      // own backslash, but the logical key a shifted punctuation key reports
+      // is the character it produces, and that is layout-dependent — on a US
+      // keyboard Shift+\ arrives as `|`, so a default written as backslash
+      // would match nothing. Letters carry their unshifted identity
+      // everywhere, which is why every other modified default here is one.
+      ShortcutAction.toggleResults => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyR,
+        physicalKey: PhysicalKeyboardKey.keyR,
         meta: useMeta,
         control: !useMeta,
       ),

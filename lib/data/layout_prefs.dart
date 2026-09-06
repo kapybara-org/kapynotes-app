@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../calc/format.dart';
 import '../core/editor_font.dart';
+import '../core/platform.dart';
 import 'local_store.dart';
 import 'time_zones.dart';
 
@@ -93,6 +94,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _timeZoneKey = 'timeZone.v1';
   static const String _keepRunningKey = 'keepRunningInBackground.v1';
   static const String _alwaysOnTopKey = 'alwaysOnTop.v1';
+  static const String _loginItemDefaultKey = 'loginItemDefaulted.v1';
 
   final LocalStore _store;
 
@@ -111,6 +113,7 @@ class LayoutPrefs extends ChangeNotifier {
   WritingFont _writingFont = WritingFont.handwritten;
   String? _timeZoneId;
   bool _keepRunningInBackground = false;
+  bool _loginItemDefaultApplied = false;
   bool _alwaysOnTop = false;
 
   LayoutPrefs(this._store, {Locale Function()? locale})
@@ -127,9 +130,31 @@ class LayoutPrefs extends ChangeNotifier {
   String? get timeZoneId => _timeZoneId;
 
   /// Whether closing the window tucks the app into the tray instead of
-  /// ending it. Off unless asked for: an app that will not go away when you
-  /// close it is a decision the user gets to make, not one made for them.
+  /// ending it.
+  ///
+  /// On by default on desktop, because everything this app is for assumes it
+  /// is already running: a global summon shortcut, a new-note shortcut, and a
+  /// tray icon to reach both from. An app that quit whenever its window was
+  /// closed would answer none of them until it was launched again.
+  ///
+  /// The switch in Settings still turns it off, and that choice is written
+  /// down — so this default only ever reaches somebody who has not expressed
+  /// one. Never true on mobile, which has no window to close and no tray to
+  /// close it into.
   bool get keepRunningInBackground => _keepRunningInBackground;
+
+  /// Whether this install has already introduced itself to the login items.
+  ///
+  /// "Open at login" is not a preference this class stores — it lives in the
+  /// OS, and [DesktopIntegration] reads it back from there every launch, since
+  /// System Settings and the Task Manager can both revoke it behind the app's
+  /// back. So the default cannot be expressed as a fallback value the way the
+  /// one above is; it has to be an action taken once.
+  ///
+  /// This is the record of having taken it. Without it, a user who turned the
+  /// login item off would find it back on at the next launch, which is not a
+  /// default — it is refusing to take no for an answer.
+  bool get loginItemDefaultApplied => _loginItemDefaultApplied;
 
   /// Whether the window floats over other applications. Persisted like every
   /// other window preference here, so a window pinned for a task is still
@@ -174,7 +199,9 @@ class LayoutPrefs extends ChangeNotifier {
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
     _timeZoneId = AppTimeZones.normalize(_store.read<String>(_timeZoneKey));
-    _keepRunningInBackground = _store.read<bool>(_keepRunningKey) ?? false;
+    _keepRunningInBackground =
+        _store.read<bool>(_keepRunningKey) ?? AppPlatform.isDesktop;
+    _loginItemDefaultApplied = _store.read<bool>(_loginItemDefaultKey) ?? false;
     _alwaysOnTop = _store.read<bool>(_alwaysOnTopKey) ?? false;
     notifyListeners();
   }
@@ -280,7 +307,24 @@ class LayoutPrefs extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Records that the login-item default has had its one chance, whether or
+  /// not the OS accepted it. A machine whose policy forbids login items would
+  /// otherwise be asked again on every launch, forever.
+  ///
+  /// Deliberately silent: nothing on screen reads this, and notifying here
+  /// would wake [DesktopIntegration] in the middle of its own startup.
+  void markLoginItemDefaultApplied() {
+    if (_loginItemDefaultApplied) return;
+    _loginItemDefaultApplied = true;
+    _store.putNow(_loginItemDefaultKey, true);
+  }
+
   void toggleAlwaysOnTop() => alwaysOnTop = !_alwaysOnTop;
+
+  /// The right-hand column's counterpart to [toggleSidebar]. The divider's
+  /// own handle already collapses and restores it; this is the same door for
+  /// anyone whose hands are on the keyboard.
+  void toggleResults() => resultsVisible = !_resultsVisible;
 
   void toggleSidebar() {
     _sidebarVisible = !_sidebarVisible;

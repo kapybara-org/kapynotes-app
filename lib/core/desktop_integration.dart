@@ -78,7 +78,30 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     // window rather than waiting for the preference to change again.
     await _applyAlwaysOnTop();
     await refreshLoginItem();
+    await _applyLoginItemDefault();
     notifyListeners();
+  }
+
+  /// Adds the app to the user's login items the first time it is able to, and
+  /// never again.
+  ///
+  /// The app is built to be already running — a summon shortcut, a new-note
+  /// shortcut and a tray icon are all worth less if it is not — so it starts
+  /// with the machine unless told otherwise.
+  ///
+  /// Once only, and the record of having done it is kept even when the OS
+  /// refuses. Turning the switch off in Settings, or removing the item from
+  /// System Settings, is the last word: this never runs again to undo either.
+  Future<void> _applyLoginItemDefault() async {
+    // Nothing to record on a host with no mechanism — macOS 12 has none this
+    // sandbox may use — so a later OS upgrade still gets its one chance.
+    if (!_loginItemSupported || layoutPrefs.loginItemDefaultApplied) return;
+    layoutPrefs.markLoginItemDefaultApplied();
+    // Through the same path the switch uses, which reads the result back from
+    // the OS rather than assuming it. A refusal needs no message of its own:
+    // it leaves the switch showing off, which is the truth, and flicking it
+    // there reports why.
+    await setLoginItemEnabled(true);
   }
 
   /// Re-reads the login item from the OS. Worth doing whenever the settings
@@ -156,9 +179,14 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
 
   /// Registers [binding] before the preference is committed. A system-level
   /// collision therefore leaves the last working shortcut intact.
+  ///
+  /// A null [binding] hands the chord back to the OS instead, which is the
+  /// point of clearing a system-wide shortcut: until it is released, this app
+  /// goes on swallowing a key combination it no longer does anything with.
+  /// Releasing cannot collide with anything, so it never reports an error.
   Future<String?> trySystemShortcut(
     ShortcutAction action,
-    ShortcutBinding binding,
+    ShortcutBinding? binding,
   ) async {
     final error = await _replaceHotKey(action, binding);
     _registrationError = error;
@@ -171,10 +199,11 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
 
   Future<String?> _replaceHotKey(
     ShortcutAction action,
-    ShortcutBinding binding,
+    ShortcutBinding? binding,
   ) async {
     final previous = _hotKeys.remove(action);
     if (previous != null) await hotKeyManager.unregister(previous);
+    if (binding == null) return null;
 
     final candidate = HotKey(
       identifier: 'kapynotes.${action.name}',

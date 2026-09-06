@@ -93,6 +93,19 @@ Future<void> pumpApp(
   await tester.pumpAndSettle();
 }
 
+/// The [TextField] of the note the editor is currently showing.
+TextField openNoteField(WidgetTester tester) => tester.widget<TextField>(
+  find.descendant(
+    of: find.byType(NoteEditor),
+    matching: find.byType(TextField),
+  ),
+);
+
+/// What that note says, without the blank line the editor keeps below it to
+/// type into. Leading whitespace is left alone: list indentation is content.
+String openNoteBody(WidgetTester tester) =>
+    openNoteField(tester).controller!.text.trimRight();
+
 /// Opens settings and selects [section].
 ///
 /// Whichever affordance the layout is showing: the sidebar's labelled row when
@@ -835,12 +848,19 @@ void main() {
 
     final keepRunning = find.byKey(const ValueKey('keep-running-toggle'));
     await tester.ensureVisible(keepRunning);
+
+    // Desktop starts here rather than arriving by being asked.
+    expect(prefs.keepRunningInBackground, isTrue);
+
     await tester.tap(keepRunning);
     await tester.pumpAndSettle();
+    expect(prefs.keepRunningInBackground, isFalse);
 
+    await tester.tap(keepRunning);
+    await tester.pumpAndSettle();
     expect(prefs.keepRunningInBackground, isTrue);
-    // Nothing goes in the tray until it is asked for, and the close button
-    // only changes meaning at the same moment.
+    // The tray and the close button change meaning together, whichever way
+    // the switch was moved.
     expect(native, containsAll(['setPreventClose', 'setIcon']));
 
     final login = find.byKey(const ValueKey('login-item-toggle'));
@@ -947,10 +967,246 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
     await tester.pumpAndSettle();
 
-    final recorded = shortcuts.bindingFor(ShortcutAction.findNotes);
+    final recorded = shortcuts.bindingFor(ShortcutAction.findNotes)!;
     expect(recorded.logicalKey, LogicalKeyboardKey.keyP);
     expect(recorded.meta, isTrue);
     expect(recorded.shift, isTrue);
+  });
+
+  testWidgets('the pin icon answers the click on a narrow window', (
+    tester,
+  ) async {
+    // The default window is 600 wide, under the two-pane breakpoint, so this
+    // is the layout a fresh install actually opens in — and the one where the
+    // toolbar was reading a preference nothing was listening to.
+    await pumpApp(tester, size: LayoutPrefs.defaultWindowSize);
+    notes.create(body: 'alpha');
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.push_pin_outlined), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.push_pin_outlined));
+    await tester.pumpAndSettle();
+
+    // The window really did go on top; the icon has to say so in the same
+    // frame, without waiting for something else to redraw the page.
+    expect(prefs.alwaysOnTop, isTrue);
+    expect(find.byIcon(Icons.push_pin_rounded), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.push_pin_rounded));
+    await tester.pumpAndSettle();
+
+    expect(prefs.alwaysOnTop, isFalse);
+    expect(find.byIcon(Icons.push_pin_outlined), findsOneWidget);
+  });
+
+  testWidgets('rebinding a shortcut updates the hints already on screen', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    notes.create(body: 'alpha');
+    await tester.pumpAndSettle();
+
+    final before = shortcuts.bindingFor(ShortcutAction.formatBold)!;
+    expect(find.byTooltip('Bold · ${before.displayLabel}'), findsOneWidget);
+
+    // What the settings pane does when somebody records a new chord. The
+    // pane promises the footer hints keep up with it.
+    shortcuts.update(
+      ShortcutAction.formatBold,
+      const ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyK,
+        physicalKey: PhysicalKeyboardKey.keyK,
+        meta: true,
+        shift: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Bold · Cmd + Shift + K'), findsOneWidget);
+
+    // The toolbar spells its pin shortcut out too, from the same source.
+    final pin = shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop)!;
+    expect(find.byTooltip('Keep on top  ${pin.displayLabel}'), findsOneWidget);
+
+    shortcuts.update(
+      ShortcutAction.toggleAlwaysOnTop,
+      const ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyJ,
+        physicalKey: PhysicalKeyboardKey.keyJ,
+        meta: true,
+        shift: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Keep on top  Cmd + Shift + J'), findsOneWidget);
+  });
+
+  testWidgets('a shortcut can be removed, and then answers nothing', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    notes.create(body: '2 + 2');
+    await tester.pumpAndSettle();
+    expect(prefs.resultsVisible, isTrue);
+
+    await openSettings(tester, section: SettingsSection.shortcuts);
+    final row = find.byKey(const ValueKey('shortcut-toggleResults'));
+    await tester.ensureVisible(row);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('shortcut-remove')));
+    await tester.pumpAndSettle();
+
+    expect(shortcuts.bindingFor(ShortcutAction.toggleResults), isNull);
+    // The row stays where it was — it is also the way to give the key back.
+    expect(
+      find.descendant(of: row, matching: find.text('None')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyR);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyR);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+
+    expect(prefs.resultsVisible, isTrue, reason: 'the chord is nobody\'s now');
+  });
+
+  testWidgets('Backspace on its own clears the shortcut being recorded', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await openSettings(tester, section: SettingsSection.shortcuts);
+
+    final row = find.byKey(const ValueKey('shortcut-findNotes'));
+    await tester.ensureVisible(row);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    // Bare Backspace cannot be recorded as a chord — a binding needs a
+    // modifier — so it is free to mean "take this one away".
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.backspace);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.backspace);
+    await tester.pumpAndSettle();
+
+    expect(shortcuts.bindingFor(ShortcutAction.findNotes), isNull);
+    expect(find.text('Press your new shortcut'), findsNothing);
+  });
+
+  testWidgets('Ctrl+Tab walks the notes list, and Shift walks it back', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    notes.create(body: 'alpha');
+    notes.create(body: 'bravo');
+    notes.create(body: 'charlie');
+    await tester.pumpAndSettle();
+
+    // Newest first. Selecting a note never reorders the list — only editing
+    // one does — so a walk passes each note exactly once.
+    expect(notes.notes.map((note) => note.body), ['charlie', 'bravo', 'alpha']);
+
+    Future<void> tab({bool shift = false}) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
+      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+    }
+
+    expect(openNoteBody(tester), 'alpha');
+    // Off the bottom of the list and round to the top.
+    await tab();
+    expect(openNoteBody(tester), 'charlie');
+    await tab();
+    expect(openNoteBody(tester), 'bravo');
+    await tab(shift: true);
+    expect(openNoteBody(tester), 'charlie');
+  });
+
+  testWidgets('Ctrl+Tab leaves a list line alone on its way past', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    notes.create(body: '\u2022 bravo');
+    notes.create(body: 'alpha');
+    await tester.pumpAndSettle();
+    expect(openNoteBody(tester), '\u2022 bravo');
+
+    // Opening a note parks the caret on the blank line underneath, and Tab
+    // only claims a line that is actually a list item.
+    Future<void> caretOnTheListLine() async {
+      openNoteField(tester).controller!.selection =
+          const TextSelection.collapsed(offset: 4);
+      await tester.pump();
+    }
+
+    const ctrl = LogicalKeyboardKey.controlLeft;
+    Future<void> tab({bool control = false}) async {
+      if (control) await tester.sendKeyDownEvent(ctrl);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
+      if (control) await tester.sendKeyUpEvent(ctrl);
+      await tester.pumpAndSettle();
+    }
+
+    // Plain Tab nests the item — which is what makes the next assertion mean
+    // something, rather than passing because the caret was somewhere inert.
+    await caretOnTheListLine();
+    await tab();
+    expect(openNoteBody(tester), '  \u25e6 bravo');
+
+    // The same key carrying Ctrl belongs to the walk between notes. It has to
+    // pass straight through the editor: nesting the item a second time on the
+    // way out would be a keystroke nobody asked for.
+    await caretOnTheListLine();
+    await tab(control: true);
+    expect(openNoteBody(tester), 'alpha');
+    expect(
+      notes.notes.map((note) => note.body.trimRight()),
+      contains('  \u25e6 bravo'),
+    );
+  });
+
+  testWidgets('the results column has a shortcut like the notes list', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    notes.create(body: '2 + 2');
+    await tester.pumpAndSettle();
+    expect(prefs.resultsVisible, isTrue);
+    expect(prefs.sidebarVisible, isTrue);
+
+    Future<void> press(LogicalKeyboardKey key) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyDownEvent(key);
+      await tester.sendKeyUpEvent(key);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+    }
+
+    // Cmd+R folds the right-hand column away, leaving the handle that brings
+    // it back; Cmd+\ does the same for the list on the left.
+    await press(LogicalKeyboardKey.keyR);
+    expect(prefs.resultsVisible, isFalse);
+    expect(
+      find.byKey(const ValueKey('results-restore-handle')),
+      findsOneWidget,
+    );
+
+    await press(LogicalKeyboardKey.keyR);
+    expect(prefs.resultsVisible, isTrue);
+
+    await press(LogicalKeyboardKey.backslash);
+    expect(prefs.sidebarVisible, isFalse);
   });
 
   testWidgets('searches note bodies and shows the matching line', (

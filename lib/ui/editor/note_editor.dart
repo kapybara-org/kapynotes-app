@@ -495,10 +495,20 @@ class NoteEditorState extends State<NoteEditor> {
     if (event.logicalKey != LogicalKeyboardKey.tab) {
       return KeyEventResult.ignored;
     }
+    // Shift is the only modifier this owns. Anything else means the Tab
+    // belongs to a shortcut passing through on its way up — Ctrl+Tab walks to
+    // the next note — and claiming it here would silently nest a list item
+    // instead, on exactly the lines where indenting is possible.
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isControlPressed ||
+        keyboard.isMetaPressed ||
+        keyboard.isAltPressed) {
+      return KeyEventResult.ignored;
+    }
     if (!_focusNode.hasFocus || !selectionHasListLine(_controller.value)) {
       return KeyEventResult.ignored;
     }
-    final pressed = HardwareKeyboard.instance.logicalKeysPressed;
+    final pressed = keyboard.logicalKeysPressed;
     final outdent =
         pressed.contains(LogicalKeyboardKey.shiftLeft) ||
         pressed.contains(LogicalKeyboardKey.shiftRight);
@@ -1108,25 +1118,29 @@ class NoteEditorState extends State<NoteEditor> {
         onPointerDown: _handlePointerDown,
         onPointerUp: _handlePointerUp,
         onPointerCancel: _handlePointerCancel,
+        // A cleared shortcut binds nothing; the footer button beside it is
+        // still there, and is now the only way in.
         child: CallbackShortcuts(
           bindings: {
-            widget.shortcuts
-                    .bindingFor(ShortcutAction.cycleTextStyle)
-                    .activator:
+            ?widget.shortcuts
+                .bindingFor(ShortcutAction.cycleTextStyle)
+                ?.activator:
                 _cycleParagraphStyle,
-            widget.shortcuts
+            ?widget.shortcuts
                 .bindingFor(ShortcutAction.formatBold)
-                .activator: () =>
+                ?.activator: () =>
                 _toggleInlineFormat(NoteFormat.bold),
-            widget.shortcuts
+            ?widget.shortcuts
                 .bindingFor(ShortcutAction.formatItalic)
-                .activator: () =>
+                ?.activator: () =>
                 _toggleInlineFormat(NoteFormat.italic),
-            widget.shortcuts.bindingFor(ShortcutAction.formatBullets).activator:
+            ?widget.shortcuts
+                .bindingFor(ShortcutAction.formatBullets)
+                ?.activator:
                 _toggleBullets,
-            widget.shortcuts
-                    .bindingFor(ShortcutAction.formatChecklist)
-                    .activator:
+            ?widget.shortcuts
+                .bindingFor(ShortcutAction.formatChecklist)
+                ?.activator:
                 _toggleChecklist,
           },
           child: TextField(

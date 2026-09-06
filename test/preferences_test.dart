@@ -190,15 +190,43 @@ void main() {
     expect(prefs.timeZoneId, isNull);
   });
 
-  test('keeping the app running past its window is off until asked for', () {
+  test('a desktop app stays in the tray, and a no is remembered', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+
+    final store = _MemoryStore();
+    // The summon shortcut, the new-note shortcut and the tray icon all
+    // assume the app is already running.
+    expect((LayoutPrefs(store)..load()).keepRunningInBackground, isTrue);
+
+    (LayoutPrefs(store)..load()).keepRunningInBackground = false;
+
+    // The default only ever reaches somebody who has not answered. Once they
+    // have, it stops having an opinion.
+    expect((LayoutPrefs(store)..load()).keepRunningInBackground, isFalse);
+  });
+
+  test('a phone has no window to close and no tray to close it into', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+
+    expect(
+      (LayoutPrefs(_MemoryStore())..load()).keepRunningInBackground,
+      isFalse,
+    );
+  });
+
+  test('the login-item default is spent once, and stays spent', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();
+    expect(prefs.loginItemDefaultApplied, isFalse);
 
-    // An app that will not go away when you close it is the user's call.
-    expect(prefs.keepRunningInBackground, isFalse);
+    prefs.markLoginItemDefaultApplied();
 
-    prefs.keepRunningInBackground = true;
-    expect((LayoutPrefs(store)..load()).keepRunningInBackground, isTrue);
+    // Written straight through rather than left in the coalescing window: a
+    // launch that ends before the flush would apply the default a second
+    // time, against a user who may have just turned it off.
+    expect((LayoutPrefs(store)..load()).loginItemDefaultApplied, isTrue);
   });
 
   // The summon shortcut is the only one registered system-wide, so the exact
@@ -280,14 +308,14 @@ void main() {
 
       final prefs = ShortcutPrefs(store)..load();
       expect(
-        prefs.bindingFor(ShortcutAction.openApp).displayLabel,
+        prefs.bindingFor(ShortcutAction.openApp)!.displayLabel,
         'Cmd + Option + X',
       );
 
       // Written back, so the move survives a restart.
       final reloaded = ShortcutPrefs(store)..load();
       expect(
-        reloaded.bindingFor(ShortcutAction.openApp).displayLabel,
+        reloaded.bindingFor(ShortcutAction.openApp)!.displayLabel,
         'Cmd + Option + X',
       );
     },
@@ -306,7 +334,7 @@ void main() {
     store.data['shortcuts.v1'] = {'openApp': chosen.toJson()};
 
     final prefs = ShortcutPrefs(store)..load();
-    expect(prefs.bindingFor(ShortcutAction.openApp), chosen);
+    expect(prefs.bindingFor(ShortcutAction.openApp)!, chosen);
   });
 
   test('shortcuts are editable, persistent, and cannot collide', () {
@@ -319,7 +347,7 @@ void main() {
       shift: true,
     );
 
-    expect(prefs.bindingFor(ShortcutAction.openApp).keyLabel, 'X');
+    expect(prefs.bindingFor(ShortcutAction.openApp)!.keyLabel, 'X');
     expect(prefs.conflictFor(ShortcutAction.findNotes, replacement), isNull);
 
     prefs.update(ShortcutAction.findNotes, replacement);
@@ -329,39 +357,155 @@ void main() {
     );
 
     final restored = ShortcutPrefs(store)..load();
-    expect(restored.bindingFor(ShortcutAction.findNotes), replacement);
+    expect(restored.bindingFor(ShortcutAction.findNotes)!, replacement);
   });
 
   test('formatting shortcuts have distinct OS-specific defaults', () {
     final prefs = ShortcutPrefs(_MemoryStore())..load();
     final defaults = [
-      for (final action in ShortcutAction.values) prefs.bindingFor(action),
+      for (final action in ShortcutAction.values) prefs.bindingFor(action)!,
     ];
 
     expect(defaults.toSet(), hasLength(ShortcutAction.values.length));
     expect(
-      prefs.bindingFor(ShortcutAction.cycleTextStyle).logicalKey,
+      prefs.bindingFor(ShortcutAction.cycleTextStyle)!.logicalKey,
       LogicalKeyboardKey.keyT,
     );
     expect(
-      prefs.bindingFor(ShortcutAction.formatBold).logicalKey,
+      prefs.bindingFor(ShortcutAction.formatBold)!.logicalKey,
       LogicalKeyboardKey.keyB,
     );
     expect(
-      prefs.bindingFor(ShortcutAction.formatItalic).logicalKey,
+      prefs.bindingFor(ShortcutAction.formatItalic)!.logicalKey,
       LogicalKeyboardKey.keyI,
     );
-    expect(prefs.bindingFor(ShortcutAction.formatBullets).shift, isTrue);
+    expect(prefs.bindingFor(ShortcutAction.formatBullets)!.shift, isTrue);
     expect(
-      prefs.bindingFor(ShortcutAction.formatChecklist).logicalKey,
+      prefs.bindingFor(ShortcutAction.formatChecklist)!.logicalKey,
       LogicalKeyboardKey.keyC,
     );
-    expect(prefs.bindingFor(ShortcutAction.formatChecklist).shift, isTrue);
+    expect(prefs.bindingFor(ShortcutAction.formatChecklist)!.shift, isTrue);
 
-    final bold = prefs.bindingFor(ShortcutAction.formatBold);
+    final bold = prefs.bindingFor(ShortcutAction.formatBold)!;
     expect(bold.meta, AppPlatform.isMacOS);
     expect(bold.control, !AppPlatform.isMacOS);
     expect(bold.displayLabel, contains(AppPlatform.isMacOS ? 'Cmd' : 'Ctrl'));
+  });
+
+  // Cmd+Tab is the macOS application switcher and never reaches an app, so
+  // walking the notes is the one pair of defaults that stays on Control
+  // wherever it runs.
+  test('the walk between notes is Ctrl+Tab on every platform', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final prefs = ShortcutPrefs(_MemoryStore())..load();
+
+      final next = prefs.bindingFor(ShortcutAction.nextNote)!;
+      expect(next.logicalKey, LogicalKeyboardKey.tab);
+      expect(next.control, isTrue);
+      expect(next.meta, isFalse);
+      expect(next.shift, isFalse);
+      expect(next.displayLabel, 'Ctrl + Tab');
+
+      final previous = prefs.bindingFor(ShortcutAction.previousNote)!;
+      expect(previous.logicalKey, LogicalKeyboardKey.tab);
+      expect(previous.control, isTrue);
+      expect(previous.shift, isTrue);
+      expect(previous.displayLabel, 'Ctrl + Shift + Tab');
+    }
+  });
+
+  test('both panels toggle from the keyboard, each on a letter or key that '
+      'survives a layout change', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final useMeta = platform == TargetPlatform.macOS;
+      final prefs = ShortcutPrefs(_MemoryStore())..load();
+
+      final left = prefs.bindingFor(ShortcutAction.toggleSidebar)!;
+      expect(left.logicalKey, LogicalKeyboardKey.backslash);
+      expect(left.meta, useMeta);
+      expect(left.control, !useMeta);
+      // Unshifted: a shifted punctuation key reports the character it makes,
+      // which is not the same key on every layout.
+      expect(left.shift, isFalse);
+
+      final right = prefs.bindingFor(ShortcutAction.toggleResults)!;
+      expect(right.logicalKey, LogicalKeyboardKey.keyR);
+      expect(right.meta, useMeta);
+      expect(right.control, !useMeta);
+      expect(right.shift, isFalse);
+    }
+  });
+
+  test('a cleared shortcut does not come back at the next launch', () {
+    final store = _MemoryStore();
+    final prefs = ShortcutPrefs(store)..load();
+    expect(prefs.bindingFor(ShortcutAction.toggleResults), isNotNull);
+
+    prefs.clear(ShortcutAction.toggleResults);
+    expect(prefs.bindingFor(ShortcutAction.toggleResults), isNull);
+    // And it stops standing in the way of anything else claiming that chord.
+    expect(
+      prefs.conflictFor(
+        ShortcutAction.formatBold,
+        ShortcutPrefs.defaultFor(ShortcutAction.toggleResults),
+      ),
+      isNull,
+    );
+
+    // The whole reason "cleared" is written down rather than left as a gap:
+    // a restart must not hand the default back.
+    expect(
+      (ShortcutPrefs(store)..load()).bindingFor(ShortcutAction.toggleResults),
+      isNull,
+    );
+  });
+
+  test('a shortcut the stored file predates still gets its default', () {
+    // What an install written before a later version's shortcut existed looks
+    // like: an entry for the actions of the day, and nothing for the rest.
+    final store = _MemoryStore()
+      ..put('shortcuts.v1', {
+        ShortcutAction.newNote.name: ShortcutPrefs.defaultFor(
+          ShortcutAction.newNote,
+        ).toJson(),
+      });
+
+    final prefs = ShortcutPrefs(store)..load();
+
+    expect(
+      prefs.bindingFor(ShortcutAction.toggleResults),
+      ShortcutPrefs.defaultFor(ShortcutAction.toggleResults),
+    );
+  });
+
+  test('restoring defaults hands a cleared shortcut back', () {
+    final prefs = ShortcutPrefs(_MemoryStore())..load();
+    prefs.clear(ShortcutAction.formatBold);
+    expect(prefs.bindingFor(ShortcutAction.formatBold), isNull);
+
+    prefs.resetAll();
+
+    expect(
+      prefs.bindingFor(ShortcutAction.formatBold),
+      ShortcutPrefs.defaultFor(ShortcutAction.formatBold),
+    );
+  });
+
+  test('the results column remembers being folded away', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.resultsVisible, isTrue);
+
+    prefs.toggleResults();
+    expect(prefs.resultsVisible, isFalse);
+
+    expect((LayoutPrefs(store)..load()).resultsVisible, isFalse);
   });
 
   test('the pin is off for a new install and survives a restart', () {
@@ -393,7 +537,7 @@ void main() {
       final prefs = ShortcutPrefs(_MemoryStore())..load();
       final seen = <String, ShortcutAction>{};
       for (final action in ShortcutAction.values) {
-        final label = prefs.bindingFor(action).displayLabel;
+        final label = prefs.bindingFor(action)!.displayLabel;
         expect(
           seen[label],
           isNull,
