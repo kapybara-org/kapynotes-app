@@ -2,4 +2,9 @@
 <resources>
     <color name="ic_launcher_background">#FCF6EA</color>
     <color name="launch_background">#FAF9F7</color>
+    <!-- The Write widget wears the same paper and ink as the surface it opens
+         onto, so the tap looks like the app growing rather than replacing it.
+         Matches InstantCaptureApp in lib/ui/instant_capture.dart. -->
+    <color name="widget_write_note_background">#F7F0DE</color>
+    <color name="widget_write_note_foreground">#26364A</color>
 </resources>

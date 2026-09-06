@@ -6,6 +6,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/update_checker.dart';
@@ -15,7 +16,11 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'test_fonts.dart';
 
 class _MemoryStore extends LocalStore {
-  _MemoryStore() : super(fileName: 'update-ui-test.json');
+  /// Every test here is about the update row in an install somebody already
+  /// uses, so none of them wants the note a first launch seeds.
+  _MemoryStore() : super(fileName: 'update-ui-test.json') {
+    data[Onboarding.storeKey] = Onboarding.welcomeRevision;
+  }
 
   @override
   Future<void> load() async {}

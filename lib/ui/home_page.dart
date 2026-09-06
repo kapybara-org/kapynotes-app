@@ -12,6 +12,7 @@ import '../data/local_store.dart';
 import '../data/note.dart';
 import '../data/note_format.dart';
 import '../data/notes_store.dart';
+import '../data/onboarding.dart';
 import '../sync/account.dart';
 import '../data/rates.dart';
 import '../data/shortcut_prefs.dart';
@@ -41,6 +42,7 @@ class HomePage extends StatefulWidget {
     this.desktopIntegration,
     this.account,
     required this.store,
+    this.welcomeNoteId,
   });
 
   /// Kapy settles into sleep after a full minute without local interaction.
@@ -55,6 +57,9 @@ class HomePage extends StatefulWidget {
   final DesktopIntegration? desktopIntegration;
   final Account? account;
   final LocalStore store;
+
+  /// The welcome note seeded by this launch, if this launch seeded one.
+  final String? welcomeNoteId;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -78,10 +83,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _drawerOpen = false;
   Timer? _kapyIdleTimer;
 
+  /// Lets the compact layout close its own drawer, which is otherwise only
+  /// reachable from a context below the Scaffold.
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  /// The welcome note while it is still exactly as it was written.
+  ///
+  /// Not persisted, and cleared the moment the reader types into it: from then
+  /// on it is one of their notes and behaves like one.
+  String? _untouchedWelcomeId;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _untouchedWelcomeId = widget.welcomeNoteId;
     _selectedId = widget.notes.lastEditedNote?.id;
     widget.notes.addListener(_onNotesChanged);
     // The system-wide new-note shortcut has already raised the window by the
@@ -120,6 +136,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _beginOpenSession() {
+    // A welcome note nobody has typed into yet is there to be read. Appending
+    // a dated line to it and dropping the cursor underneath is the opposite of
+    // that, and on a phone it would raise a keyboard over the half that
+    // explains itself.
+    if (_selectedId != null && _selectedId == _untouchedWelcomeId) return;
     if (!widget.prefs.readyToTypeOnOpen ||
         _drawerOpen ||
         _openSessionScheduled) {
@@ -202,6 +223,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _deleteNote(String id) {
     _recordKapyActivity();
     _totalAnimatedFor.remove(id);
+    if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
     final index = widget.notes.indexOf(id);
     final deletingSelected = id == _selectedId;
     widget.notes.delete(id);
@@ -214,8 +236,39 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _focusSelectedEditorAtEnd();
   }
 
+  /// Whether opening [note] should place the cursor at its end and raise the
+  /// keyboard.
+  ///
+  /// True of every note but an untouched welcome note, which is there to be
+  /// read: jumping to the bottom of it and covering the rest with a keyboard
+  /// would show a first-time reader the one part that says nothing.
+  bool _readyToTypeIn(Note note) =>
+      widget.prefs.readyToTypeOnOpen && note.id != _untouchedWelcomeId;
+
+  /// Opens the welcome note again, from settings.
+  ///
+  /// Selected rather than focused, and shown from the top, exactly as a first
+  /// launch shows it.
+  void _openWelcomeNote() {
+    _recordKapyActivity();
+    final note = Onboarding(widget.store).openWelcomeNote(widget.notes);
+    setState(() {
+      _query = '';
+      _setSelectedId(note.id);
+      _untouchedWelcomeId = note.id;
+    });
+    widget.store.put(_selectionKey, note.id);
+    // On a phone the settings sheet was opened from inside the notes drawer,
+    // which would otherwise stay over the note it just opened.
+    _scaffoldKey.currentState?.closeDrawer();
+  }
+
   void _updateDocument(String id, String body, List<NoteFormatRange> formats) {
     _recordKapyActivity();
+    // Typed in, so it is theirs now. Assigned rather than set: the editor
+    // holding the cursor is already mounted, and nothing on screen changes
+    // until it is next built.
+    if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
     widget.notes.updateDocument(id, body, formats);
   }
 
@@ -254,9 +307,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _showSettings() {
-    showDialog<void>(
-      context: context,
-      builder: (context) => SettingsDialog(
+    unawaited(
+      showSettings(
+        context,
         account: widget.account,
         notes: widget.notes,
         layoutPrefs: widget.prefs,
@@ -264,11 +317,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         rates: widget.rates,
         updates: widget.updates,
         desktopIntegration: widget.desktopIntegration,
+        onOpenWelcomeNote: _openWelcomeNote,
       ),
     );
   }
 
   void _focusSelectedEditorAtEnd() {
+    // Not into a welcome note nobody has typed into — including on the way
+    // out of the notes drawer, which is how settings is reached on a phone
+    // and would otherwise answer "open the welcome note" with a keyboard over
+    // the bottom half of it.
+    if (_selectedId != null && _selectedId == _untouchedWelcomeId) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final editor = _usesCompactLayout
@@ -407,6 +466,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
+        key: _scaffoldKey,
         backgroundColor: palette.editorBackground,
         // A drag rather than a free swipe, and only one that starts near the
         // left edge: anywhere else in a note, sideways dragging is how a
@@ -520,10 +580,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ? widget.prefs.resultsVisible
               : true,
           showDivider: desktopResultsDivider,
-          autofocus: widget.prefs.readyToTypeOnOpen,
-          startAtEnd: widget.prefs.readyToTypeOnOpen,
+          autofocus: _readyToTypeIn(note),
+          startAtEnd: _readyToTypeIn(note),
           ensureKeyboardVisible:
-              widget.prefs.readyToTypeOnOpen &&
+              _readyToTypeIn(note) &&
               (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,
@@ -563,10 +623,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           highlighter: widget.engines.highlighter,
           gutterWidth: widget.prefs.gutterWidth,
           resultsVisible: widget.prefs.resultsVisible,
-          autofocus: widget.prefs.readyToTypeOnOpen,
-          startAtEnd: widget.prefs.readyToTypeOnOpen,
+          autofocus: _readyToTypeIn(note),
+          startAtEnd: _readyToTypeIn(note),
           ensureKeyboardVisible:
-              widget.prefs.readyToTypeOnOpen &&
+              _readyToTypeIn(note) &&
               (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,

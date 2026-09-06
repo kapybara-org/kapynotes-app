@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Names the widget in the picker, and the one word it shows. -->
+    <string name="widget_write_note_label">Write</string>
+    <string name="widget_write_note_action">Write</string>
+    <string name="widget_write_note_description">Carry on the note you were writing, ready to type.</string>
+</resources>

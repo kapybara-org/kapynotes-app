@@ -308,9 +308,25 @@ The spec described an Electron build. These changed for Flutter:
 - **Windows / Linux** — native caption retained.
 - **iOS / Android:** accepts text on the first Flutter frame, then opens the
   most recently edited note when no launch text was entered. A launch draft
-  becomes a new note. Search and the full note list are built only when the
-  hamburger drawer first opens; the gutter is fixed-width and the divider is
-  hidden.
+  becomes a new note, unless the app was opened from the Write widget, which
+  carries it into the note being written instead. Search and the full note
+  list are built only when the hamburger drawer first opens; the gutter is
+  fixed-width and the divider is hidden.
+- **The Write widget (iOS / Android)** — one cell on the Home Screen, the same
+  action on the Lock Screen, and on iOS 18 a control for Control Centre and
+  the Action button. It shows a pencil and the word *Write*, and deliberately
+  no note text: a widget that previewed what somebody wrote would have to read
+  the note store, keep itself refreshed against a system budget, and show that
+  writing to whoever picks up a locked phone. Showing only the action costs
+  none of that, and means the widget is drawn once and never updated again.
+  Tapping it opens the **last note at its end**, keyboard up, rather than
+  making a new one — a way back into the notebook, not a way to fill it with
+  one-line fragments, and not something that spends a plan's note allowance on
+  a mis-tap. The platform reports that a launch came from the widget over a
+  single method channel, `kapynotes/quick_capture`; the only Dart that knows
+  is `lib/core/quick_capture.dart`, and everything else about the launch is
+  unchanged. Android names its own intent action; iOS opens `kapynotes://write`
+  and the scene delegate parks it.
 - **Every platform:** *Ready to type on open* is on by default. The latest note
   opens focused on a fresh line, and returning to the app starts another
   append position without saving empty lines. It can be disabled in Settings

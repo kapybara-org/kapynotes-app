@@ -30,6 +30,20 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- The Write widget. Not exported: the launcher and the keyguard
+             bind widget providers through the system, and nothing else has
+             any business broadcasting to this one. -->
+        <receiver
+            android:name=".WriteNoteWidget"
+            android:exported="false"
+            android:label="@string/widget_write_note_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_write_note_info" />
+        </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

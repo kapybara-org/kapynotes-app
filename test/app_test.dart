@@ -11,6 +11,7 @@ import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
@@ -60,7 +61,12 @@ Future<void> pumpApp(
   Size size = const Size(1100, 760),
   DesktopIntegration? desktopIntegration,
   bool sidebarVisible = true,
+  bool firstRun = false,
 }) async {
+  // Almost everything here speaks for somebody who has opened the app before,
+  // and they have already met the welcome note. The tests about a genuinely
+  // new install ask for one instead of every other test inheriting it.
+  if (!firstRun) store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
   tester.view.physicalSize = size * tester.view.devicePixelRatio;
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -140,8 +146,12 @@ void main() {
       deferredStore.completeLoad();
       await tester.pumpAndSettle();
 
-      expect(deferredNotes.notes, hasLength(1));
-      expect(deferredNotes.notes.single.body, 'Call the dentist at 9');
+      // A first launch that arrives with text keeps the text in front. The
+      // welcome note is still seeded, underneath it in the list rather than
+      // in its way, so a stray keystroke at launch does not cost the tour.
+      expect(deferredNotes.notes, hasLength(2));
+      expect(deferredNotes.notes.first.body, 'Call the dentist at 9');
+      expect(deferredNotes.notes.last.body, welcomeNoteBody);
       final hydratedEditor = tester.widget<TextField>(
         find.descendant(
           of: find.byType(NoteEditor),

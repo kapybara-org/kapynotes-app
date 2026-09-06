@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Deliberately static: an icon and a word, no note text. Nothing here ever
+     needs redrawing, which is what lets the widget cost nothing to keep and
+     show nothing private on a locked screen. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_write_note_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_write_note_background"
+    android:contentDescription="@string/widget_write_note_description"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <ImageView
+        android:layout_width="26dp"
+        android:layout_height="26dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_write_note"
+        android:tint="@color/widget_write_note_foreground" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="@string/widget_write_note_action"
+        android:textColor="@color/widget_write_note_foreground"
+        android:textSize="13sp" />
+</LinearLayout>

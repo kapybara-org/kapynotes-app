@@ -5,11 +5,13 @@ import 'package:material_ui/material_ui.dart';
 
 import 'core/platform.dart';
 import 'core/desktop_integration.dart';
+import 'core/quick_capture.dart';
 import 'core/theme.dart';
 import 'data/engine_provider.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
 import 'data/notes_store.dart';
+import 'data/onboarding.dart';
 import 'data/rates.dart';
 import 'data/shortcut_prefs.dart';
 import 'data/update_checker.dart';
@@ -63,6 +65,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   Timer? _updateCheckTimer;
   bool _ready = false;
 
+  /// The welcome note, on the launch that seeded it. Null every other time.
+  String? _welcomeNoteId;
+
   @override
   void initState() {
     super.initState();
@@ -80,22 +85,42 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   }
 
   Future<void> _hydrateInBackground() async {
+    // Asked before storage is read and collected once it has been. The
+    // platform knows the answer before Dart starts, so overlapping the two
+    // costs the launch nothing — and the await below is the last one, which
+    // keeps the draft handover under it synchronous.
+    final launch = QuickCapture.launchIntent();
     await widget.notes.load();
+    final intent = await launch;
     if (!mounted) return;
 
     widget.prefs.load();
     widget.shortcuts.load();
-    _activateLoadedApp(capturedText: _launchController.text);
+    _activateLoadedApp(capturedText: _launchController.text, intent: intent);
     setState(() {});
   }
 
-  void _activateLoadedApp({String capturedText = ''}) {
+  void _activateLoadedApp({
+    String capturedText = '',
+    LaunchIntent intent = LaunchIntent.open,
+  }) {
     if (_ready) return;
-    if (capturedText.isNotEmpty) {
+    // A new install opens on a note that teaches itself rather than on a blank
+    // page. Seeded ahead of the capture below so that a launch which arrives
+    // with text still puts that text on screen, with the welcome underneath it
+    // in the list rather than in its way.
+    _welcomeNoteId = Onboarding(widget.store).seedWelcomeNote(widget.notes)?.id;
+    if (capturedText.isNotEmpty || intent == LaunchIntent.continueWriting) {
       // The text snapshot and tree switch are synchronous. No platform text
       // event can land between capturing the draft and mounting its note.
-      widget.notes.create(body: capturedText);
-    } else if (AppPlatform.isMobile && widget.notes.isEmpty) {
+      //
+      // Which note that is depends on how the app was opened: the Write
+      // widget carries on the last one, and everything else starts a new one
+      // exactly as it always has.
+      QuickCapture.file(widget.notes, capturedText, intent);
+    } else if (_welcomeNoteId == null &&
+        AppPlatform.isMobile &&
+        widget.notes.isEmpty) {
       // HomePage can create this after its first frame, but doing it before the
       // handoff avoids flashing an empty state and reconnecting the keyboard.
       widget.notes.create();
@@ -162,14 +187,25 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final sync = widget.account?.sync;
     // Writes are coalesced while the app is in use; losing focus or being
     // backgrounded is the moment to make sure everything is on disk.
     if (state == AppLifecycleState.resumed) {
       _scheduleBackgroundFetches();
+      sync?.resume();
       // Coming back is the likeliest moment for another device to have moved
       // on without us.
-      unawaited(widget.account?.sync?.syncNow() ?? Future<void>.value());
+      unawaited(sync?.syncNow() ?? Future<void>.value());
     } else {
+      // Deliberately not on `inactive` or `hidden`. On desktop those mean a
+      // window that lost focus or was minimised, and an open window quietly
+      // going stale is the whole reason the wake-up channel exists. Only a
+      // real backgrounding is worth closing a socket for — and there the OS
+      // is about to close it anyway.
+      if (state == AppLifecycleState.paused ||
+          state == AppLifecycleState.detached) {
+        sync?.pause();
+      }
       unawaited(_flushAfterHydration());
     }
   }
@@ -204,6 +240,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         desktopIntegration: widget.desktopIntegration,
         account: widget.account,
         store: widget.store,
+        welcomeNoteId: _welcomeNoteId,
       ),
     );
   }

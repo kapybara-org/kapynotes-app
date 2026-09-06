@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One cell. The widget is an action, not a panel, so it neither resizes nor
+     configures. `keyguard` offers it to the lock screen on the Android
+     versions that host widgets there; elsewhere the value is ignored. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_write_note_description"
+    android:initialLayout="@layout/widget_write_note"
+    android:minHeight="57dp"
+    android:minWidth="57dp"
+    android:previewLayout="@layout/widget_write_note"
+    android:resizeMode="none"
+    android:targetCellHeight="1"
+    android:targetCellWidth="1"
+    android:widgetCategory="home_screen|keyguard" />
