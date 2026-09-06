@@ -4,8 +4,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/update_checker.dart';
@@ -51,7 +53,21 @@ Future<void> pumpForGolden(
   bool withNote = true,
   bool blankNote = false,
   bool withUpdates = false,
+  bool firstRun = false,
+  bool sidebarVisible = true,
+
+  /// Which build the image is of.
+  ///
+  /// Sizes in this app resolve from [AppPlatform.hasPointer], not from the
+  /// window, so a phone-sized window on a Mac still renders every control at
+  /// desktop density. Without this a "phone" golden documents a narrow desktop
+  /// window and nothing about the phone.
+  TargetPlatform? platform,
 }) async {
+  if (platform != null) {
+    AppPlatform.debugTargetPlatformOverride = platform;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+  }
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   tester.platformDispatcher.platformBrightnessTestValue = brightness;
@@ -59,6 +75,9 @@ Future<void> pumpForGolden(
   addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
 
   final store = MemoryStore();
+  // These images document the app in use rather than the moment it is
+  // installed; the welcome goldens below ask for that moment by name.
+  if (!firstRun) store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
   store.data['rates.v1'] = RateSnapshot(
     base: 'USD',
     date: '01 Sep 2026',
@@ -95,9 +114,9 @@ Future<void> pumpForGolden(
   await notes.load();
   prefs.load();
   // These images document the app in use, where the notes list has been
-  // opened at least once. A new install starts with it closed; the one
-  // golden that wants it that way toggles it back below.
-  if (!prefs.sidebarVisible) prefs.toggleSidebar();
+  // opened at least once. A new install starts with it closed, which is what
+  // the first-launch images ask for.
+  if (prefs.sidebarVisible != sidebarVisible) prefs.toggleSidebar();
   if (withNote) {
     final note = notes.create();
     if (!blankNote) notes.updateBody(note.id, _body);
@@ -268,6 +287,53 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_light.png'),
+    );
+  });
+
+  testWidgets('first launch, desktop dark', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      // Everything a new install actually is: no notes of its own, no list
+      // opened yet, and the welcome note in front of both.
+      withNote: false,
+      firstRun: true,
+      sidebarVisible: false,
+    );
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/welcome_desktop_dark.png'),
+    );
+  });
+
+  testWidgets('first launch, phone light', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(390, 760),
+      brightness: Brightness.light,
+      platform: TargetPlatform.iOS,
+      withNote: false,
+      firstRun: true,
+    );
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/welcome_phone_light.png'),
+    );
+  });
+
+  testWidgets('first launch, phone dark', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(390, 760),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.iOS,
+      withNote: false,
+      firstRun: true,
+    );
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/welcome_phone_dark.png'),
     );
   });
 
@@ -479,6 +545,7 @@ void main() {
       tester,
       size: const Size(390, 760),
       brightness: Brightness.dark,
+      platform: TargetPlatform.iOS,
     );
     await expectLater(
       find.byType(KapyNotesApp),
@@ -487,11 +554,15 @@ void main() {
   });
 
   testWidgets('phone settings', (tester) async {
-    // Too narrow for the rail, so every section stacks into one column.
+    // A touch screen gets the sheet: a list of categories, one pushed at a
+    // time. Declared, because these run on a desktop host.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpForGolden(
       tester,
       size: const Size(390, 760),
       brightness: Brightness.dark,
+      platform: TargetPlatform.iOS,
     );
     await tester.tap(find.byKey(const ValueKey('note-settings')));
     await tester.pumpAndSettle();
@@ -501,17 +572,54 @@ void main() {
     );
   });
 
+  testWidgets('phone settings, a category opened', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await pumpForGolden(
+      tester,
+      size: const Size(390, 760),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.iOS,
+    );
+    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('settings-section-general')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/phone_settings_general.png'),
+    );
+  });
+
   testWidgets('phone notes drawer', (tester) async {
     await pumpForGolden(
       tester,
       size: const Size(390, 760),
       brightness: Brightness.dark,
+      platform: TargetPlatform.iOS,
     );
     await tester.tap(find.byTooltip('Show notes'));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/phone_drawer.png'),
+    );
+  });
+
+  // The largest phone the app ships to, and the one where desktop-scale chrome
+  // was most obviously wrong: a 40pt footer of 17px glyphs reads as a toolbar
+  // belonging to some other, smaller application. Held at the full 932pt so
+  // the bars are judged against the screen they actually sit on.
+  testWidgets('phone editor at iPhone Pro Max size', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(430, 932),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.iOS,
+    );
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/phone_editor_large.png'),
     );
   });
 }

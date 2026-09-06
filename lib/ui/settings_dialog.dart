@@ -23,14 +23,45 @@ import '../data/time_zones.dart';
 /// The groups of settings, one per rail entry.
 ///
 /// Adding a section is meant to be the whole job of adding a category of
-/// options: name it here, give it a pane in [_SettingsDialogState], and both
-/// layouts pick it up.
+/// options: name it here, give it a pane in [_SettingsDialogState], and all
+/// three layouts pick it up.
 enum SettingsSection { general, sync, appearance, numbers, shortcuts, updates }
 
-const _settingsRowPadding = EdgeInsets.fromLTRB(11, 8, 10, 8);
+const _sheetCorners = BorderRadius.vertical(top: Radius.circular(22));
+const _sheetIndexKey = ValueKey('settings-sheet-index');
+
 const _settingsRegularWeight = FontWeight.w400;
 const _settingsMediumWeight = FontWeight.w500;
 const _settingsSemiboldWeight = FontWeight.w600;
+
+/// How big a settings row is allowed to be.
+///
+/// A pointer can hit an eight-pixel gap and read eleven-point type; a thumb
+/// can do neither. This is the same split [AppControlMetrics] already makes
+/// for icon buttons, applied to the rows those buttons sit beside.
+class _RowMetrics {
+  const _RowMetrics._();
+
+  static bool get _touch => !AppPlatform.hasPointer;
+
+  static EdgeInsets get padding => _touch
+      ? const EdgeInsets.fromLTRB(14, 12, 13, 12)
+      : const EdgeInsets.fromLTRB(11, 8, 10, 8);
+
+  /// A radio sits closer to its own edge than a switch does.
+  static EdgeInsets get choicePadding => _touch
+      ? const EdgeInsets.fromLTRB(14, 12, 14, 12)
+      : const EdgeInsets.fromLTRB(11, 8, 11, 8);
+  static double get iconSize => _touch ? 19 : 16;
+  static double get iconSlot => _touch ? 30 : 25;
+  static double get gap => _touch ? 11 : 9;
+  static double get titleSize => _touch ? 14.5 : 12.5;
+  static double get subtitleSize => _touch ? 12.25 : 10.75;
+  static double get chevronSize => _touch ? 21 : 18;
+
+  /// Lines the dividers up under the copy rather than under the icons.
+  static double get dividerIndent => _touch ? 58 : 48;
+}
 
 extension SettingsSectionCopy on SettingsSection {
   String get label => switch (this) {
@@ -50,6 +81,64 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.shortcuts => Icons.keyboard_outlined,
     SettingsSection.updates => Icons.system_update_alt_rounded,
   };
+
+  /// What is behind the label, for the layouts that show a list of categories
+  /// instead of the categories themselves. Names the contents rather than
+  /// selling them: this line is read while looking for something.
+  String get summary => switch (this) {
+    SettingsSection.general => 'Notes, export and import, time zone',
+    SettingsSection.sync => 'Your notes on every device',
+    SettingsSection.appearance => 'Writing font and paper',
+    SettingsSection.numbers => 'Number format and exchange rates',
+    SettingsSection.shortcuts => 'System-wide and in-app keys',
+    SettingsSection.updates => 'This build, and whether a newer one exists',
+  };
+}
+
+/// Opens settings in the shape the platform wants.
+///
+/// A pointer gets the dialog: a rail beside a pane, everything one click
+/// away. A thumb gets a sheet that opens on a list of categories and pushes
+/// into one at a time, because six panes stacked into one phone-width column
+/// is a scroll with no map.
+Future<void> showSettings(
+  BuildContext context, {
+  required LayoutPrefs layoutPrefs,
+  required ShortcutPrefs shortcuts,
+  required RatesRepository rates,
+  required NotesStore notes,
+  Account? account,
+  UpdateChecker? updates,
+  DesktopIntegration? desktopIntegration,
+  VoidCallback? onOpenWelcomeNote,
+}) {
+  SettingsDialog build({required bool asSheet}) => SettingsDialog(
+    layoutPrefs: layoutPrefs,
+    shortcuts: shortcuts,
+    rates: rates,
+    notes: notes,
+    account: account,
+    updates: updates,
+    desktopIntegration: desktopIntegration,
+    onOpenWelcomeNote: onOpenWelcomeNote,
+    asSheet: asSheet,
+  );
+
+  if (!AppPlatform.isMobile) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => build(asSheet: false),
+    );
+  }
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    // The sheet paints its own rounded top, and reaches the bottom edge
+    // rather than floating above the home indicator.
+    backgroundColor: Colors.transparent,
+    barrierColor: Theme.of(context).drawerTheme.scrimColor,
+    builder: (context) => build(asSheet: true),
+  );
 }
 
 class SettingsDialog extends StatefulWidget {
@@ -62,6 +151,8 @@ class SettingsDialog extends StatefulWidget {
     this.account,
     this.updates,
     this.desktopIntegration,
+    this.onOpenWelcomeNote,
+    this.asSheet = false,
   });
 
   final LayoutPrefs layoutPrefs;
@@ -73,6 +164,15 @@ class SettingsDialog extends StatefulWidget {
   final Account? account;
   final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
+
+  /// Reopens the note a first launch starts on. Null where there is no note
+  /// list to open it into — the export tests mount this dialog on its own.
+  final VoidCallback? onOpenWelcomeNote;
+
+  /// Present as the phone sheet — a list of categories you push through —
+  /// instead of the rail dialog. Set by [showSettings]. Both shapes are the
+  /// same widget so that a new section still only has to be written once.
+  final bool asSheet;
 
   @override
   State<SettingsDialog> createState() => _SettingsDialogState();
@@ -89,6 +189,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
   String? _shortcutError;
   String? _loginItemError;
   SettingsSection _section = SettingsSection.general;
+
+  /// Which section the sheet has pushed, or null while it is showing the
+  /// list of categories. Kept apart from [_section] because the dialog always
+  /// has one selected and the sheet deliberately starts with none.
+  SettingsSection? _sheetSection;
+  final GlobalKey<NavigatorState> _sheetNavigator = GlobalKey<NavigatorState>();
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -108,7 +214,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
     }
     // The gear that opened this is badged when a release is waiting, so open
     // on the pane that badge is about rather than making it be hunted for.
-    if (widget.updates?.hasUpdate ?? false) _section = SettingsSection.updates;
+    if (widget.updates?.hasUpdate ?? false) {
+      _section = SettingsSection.updates;
+      _sheetSection = SettingsSection.updates;
+    }
   }
 
   @override
@@ -130,6 +239,15 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   List<SettingsSection> get _sections =>
       SettingsSection.values.where(_isAvailable).toList();
+
+  void _openSheetSection(SettingsSection section) =>
+      setState(() => _sheetSection = section);
+
+  /// Back to the list of categories, whether that came from the button, the
+  /// system back gesture, or a swipe from the edge.
+  void _closeSheetSection() {
+    if (_sheetSection != null) setState(() => _sheetSection = null);
+  }
 
   void _showSection(SettingsSection section) {
     if (section == _section) return;
@@ -248,42 +366,135 @@ class _SettingsDialogState extends State<SettingsDialog> {
       listenable: widget.layoutPrefs,
       builder: (context, _) => ListenableBuilder(
         listenable: widget.shortcuts,
-        builder: (context, _) {
-          final media = MediaQuery.sizeOf(context);
-          final available = media.width - 80;
-          final paned = available >= _railBreakpoint;
-          final width = math.min(
-            paned ? _panedWidth : _stackedWidth,
-            available,
-          );
-          // A fixed height keeps the dialog from resizing under the pointer
-          // as sections of different lengths are selected.
-          final height = (media.height - 170).clamp(260.0, 470.0);
+        builder: (context, _) =>
+            widget.asSheet ? _buildSheet(context) : _buildDialog(context),
+      ),
+    );
+  }
 
-          return AlertDialog(
-            titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 0),
-            contentPadding: EdgeInsets.fromLTRB(paned ? 14 : 20, 14, 20, 0),
-            actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-            title: const Text(
-              'Settings',
-              style: TextStyle(fontWeight: _settingsSemiboldWeight),
-            ),
-            content: SizedBox(
-              width: width,
-              height: height,
-              child: paned ? _buildPaned(context) : _buildStacked(context),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text(
-                  'Done',
-                  style: TextStyle(fontWeight: _settingsMediumWeight),
+  Widget _buildDialog(BuildContext context) {
+    final media = MediaQuery.sizeOf(context);
+    final available = media.width - 80;
+    final paned = available >= _railBreakpoint;
+    final width = math.min(paned ? _panedWidth : _stackedWidth, available);
+    // A fixed height keeps the dialog from resizing under the pointer
+    // as sections of different lengths are selected.
+    final height = (media.height - 170).clamp(260.0, 470.0);
+
+    return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 0),
+      contentPadding: EdgeInsets.fromLTRB(paned ? 14 : 20, 14, 20, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+      title: const Text(
+        'Settings',
+        style: TextStyle(fontWeight: _settingsSemiboldWeight),
+      ),
+      content: SizedBox(
+        width: width,
+        height: height,
+        child: paned ? _buildPaned(context) : _buildStacked(context),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text(
+            'Done',
+            style: TextStyle(fontWeight: _settingsMediumWeight),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The phone shape: a sheet that opens on its categories and pushes one
+  /// pane at a time, so a screen only ever holds what its title says it does.
+  Widget _buildSheet(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final palette = context.palette;
+    // Leave enough of the note showing to remember what this is covering, and
+    // the status bar alone.
+    final topGap = math.max(media.padding.top, 24.0) + 8;
+    // Sign-in is in here, so a keyboard is not a hypothetical: give it the
+    // bottom of the screen rather than letting it cover the field being
+    // typed into.
+    final keyboard = media.viewInsets.bottom;
+    final section = _sheetSection;
+
+    return Padding(
+      // Lifted clear of the keyboard, and shortened by the same amount so the
+      // top edge stays where it was rather than climbing the screen.
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: SizedBox(
+        key: const ValueKey('settings-sheet'),
+        height: media.size.height - topGap - keyboard,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: palette.surfaceBackground,
+            borderRadius: _sheetCorners,
+            border: Border.all(color: palette.controlBorder, width: 0.5),
+          ),
+          child: ClipRRect(
+            borderRadius: _sheetCorners,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _SheetGrabber(),
+                Expanded(
+                  // The pages below are their own stack, so a back gesture steps
+                  // out of a category before it closes the sheet. The hero
+                  // controller above belongs to the app's navigator and cannot
+                  // be shared with this one.
+                  child: HeroControllerScope.none(
+                    child: NavigatorPopHandler(
+                      onPopWithResult: (_) =>
+                          _sheetNavigator.currentState?.pop(),
+                      child: Navigator(
+                        key: _sheetNavigator,
+                        onDidRemovePage: (page) {
+                          if (page.key != _sheetIndexKey) _closeSheetSection();
+                        },
+                        pages: [
+                          MaterialPage<void>(
+                            key: _sheetIndexKey,
+                            // Nothing here is worth keeping alive under a pane,
+                            // and one live page at a time keeps 'Done' meaning
+                            // one button.
+                            maintainState: false,
+                            child: _SheetPage(
+                              title: 'Settings',
+                              bottomInset: keyboard > 0
+                                  ? 0
+                                  : media.padding.bottom,
+                              children: [
+                                _CategoryList(
+                                  sections: _sections,
+                                  account: widget.account,
+                                  onSelect: _openSheetSection,
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (section != null)
+                            MaterialPage<void>(
+                              key: ValueKey('settings-sheet-${section.name}'),
+                              child: _SheetPage(
+                                title: section.label,
+                                onBack: _closeSheetSection,
+                                bottomInset: keyboard > 0
+                                    ? 0
+                                    : media.padding.bottom,
+                                children: _paneFor(section),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -384,6 +595,17 @@ class _SettingsDialogState extends State<SettingsDialog> {
           subtitle: 'Read a .zip back in, and see what it changes first',
           onTap: () => unawaited(runImport(context, widget.notes)),
         ),
+        if (widget.onOpenWelcomeNote case final openWelcome?)
+          _NavigationRow(
+            key: const ValueKey('open-welcome-note'),
+            icon: Icons.waving_hand_outlined,
+            title: 'Welcome note',
+            subtitle: 'Open the note a new install starts on',
+            onTap: () {
+              Navigator.of(context).pop();
+              openWelcome();
+            },
+          ),
       ],
     ),
     const SizedBox(height: 18),
@@ -622,6 +844,217 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 }
 
+/// The handle that says the sheet can be pulled back down.
+class _SheetGrabber extends StatelessWidget {
+  const _SheetGrabber();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 8, bottom: 6),
+    child: Center(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: context.palette.textTertiary.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: const SizedBox(width: 38, height: 4),
+      ),
+    ),
+  );
+}
+
+/// One screen of the sheet: a bar saying where you are, and the pane under it.
+class _SheetPage extends StatelessWidget {
+  const _SheetPage({
+    required this.title,
+    required this.bottomInset,
+    required this.children,
+    this.onBack,
+  });
+
+  final String title;
+
+  /// The home indicator, which the sheet reaches under but nothing scrolls
+  /// beneath.
+  final double bottomInset;
+  final List<Widget> children;
+
+  /// Null on the list of categories, which has nothing to go back to.
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final back = onBack;
+    // Opaque, because these pages slide over one another.
+    return ColoredBox(
+      color: palette.surfaceBackground,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(back == null ? 20 : 4, 0, 10, 6),
+            child: Row(
+              children: [
+                if (back != null)
+                  IconButton(
+                    key: const ValueKey('settings-sheet-back'),
+                    onPressed: back,
+                    tooltip: 'Back',
+                    color: palette.textSecondary,
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 17,
+                    ),
+                  ),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: _settingsSemiboldWeight,
+                      letterSpacing: -0.2,
+                      color: palette.textPrimary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                TextButton(
+                  key: const ValueKey('settings-sheet-done'),
+                  onPressed: () =>
+                      Navigator.of(context, rootNavigator: true).pop(),
+                  child: const Text(
+                    'Done',
+                    style: TextStyle(fontWeight: _settingsMediumWeight),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 0.5, thickness: 0.5, color: palette.separator),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The list the sheet opens on: every category, what is inside it, and the
+/// chevron that goes there.
+class _CategoryList extends StatelessWidget {
+  const _CategoryList({
+    required this.sections,
+    required this.account,
+    required this.onSelect,
+  });
+
+  final List<SettingsSection> sections;
+  final Account? account;
+  final ValueChanged<SettingsSection> onSelect;
+
+  /// Sync is the one category whose contents depend on where you already
+  /// stand in it, so its line answers that before it is opened.
+  String _summaryFor(SettingsSection section) {
+    final account = this.account;
+    if (section != SettingsSection.sync || account == null) {
+      return section.summary;
+    }
+    return switch (account.state) {
+      AccountState.restoring => 'Checking your account',
+      AccountState.signedOut => 'Sign in to sync between devices',
+      AccountState.needsPassphrase => 'Choose a passphrase to start syncing',
+      AccountState.locked => 'Unlock to read these notes here',
+      AccountState.needsAccountDecision => 'Waiting on what this device does',
+      AccountState.ready => account.user?.email ?? 'Signed in',
+    };
+  }
+
+  Widget _card() => _SettingsGroup(
+    children: [
+      for (final section in sections)
+        _CategoryRow(
+          key: ValueKey('settings-section-${section.name}'),
+          section: section,
+          summary: _summaryFor(section),
+          onTap: () => onSelect(section),
+        ),
+    ],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final account = this.account;
+    if (account == null) return _card();
+    return ListenableBuilder(
+      listenable: account,
+      builder: (context, _) => _card(),
+    );
+  }
+}
+
+/// One category on that list.
+class _CategoryRow extends StatelessWidget {
+  const _CategoryRow({
+    super.key,
+    required this.section,
+    required this.summary,
+    required this.onTap,
+  });
+
+  final SettingsSection section;
+  final String summary;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final accent = Theme.of(context).colorScheme.primary;
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+          child: Row(
+            children: [
+              // A tinted tile: on the way back, a category is found by shape
+              // and colour long before its label is read again.
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(section.icon, size: 18, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _RowCopy(title: section.label, subtitle: summary),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: _RowMetrics.chevronSize,
+                color: palette.textTertiary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The scrolling half of the dialog, whichever layout is in use.
 class _ScrollingPane extends StatelessWidget {
   const _ScrollingPane({required this.controller, required this.children});
@@ -790,7 +1223,7 @@ class _SettingsGroup extends StatelessWidget {
                 Divider(
                   height: 0.5,
                   thickness: 0.5,
-                  indent: 48,
+                  indent: _RowMetrics.dividerIndent,
                   color: palette.separator,
                 ),
               children[index],
@@ -867,14 +1300,18 @@ class _ToggleRow extends StatelessWidget {
       child: InkWell(
         onTap: () => onChanged(!value),
         child: Padding(
-          padding: _settingsRowPadding,
+          padding: _RowMetrics.padding,
           child: Row(
             children: [
               SizedBox(
-                width: 25,
-                child: Icon(icon, size: 16, color: palette.textSecondary),
+                width: _RowMetrics.iconSlot,
+                child: Icon(
+                  icon,
+                  size: _RowMetrics.iconSize,
+                  color: palette.textSecondary,
+                ),
               ),
-              const SizedBox(width: 9),
+              SizedBox(width: _RowMetrics.gap),
               Expanded(
                 child: _RowCopy(title: title, subtitle: subtitle),
               ),
@@ -901,8 +1338,8 @@ class _CompactSwitchIndicator extends StatelessWidget {
       key: const ValueKey('compact-switch-indicator'),
       duration: const Duration(milliseconds: 140),
       curve: Curves.easeOutCubic,
-      width: 34,
-      height: 18,
+      width: AppPlatform.hasPointer ? 34 : 44,
+      height: AppPlatform.hasPointer ? 18 : 25,
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         color: value ? scheme.primary : palette.controlBackground,
@@ -921,7 +1358,7 @@ class _CompactSwitchIndicator extends StatelessWidget {
             color: value ? scheme.onPrimary : palette.textTertiary,
             shape: BoxShape.circle,
           ),
-          child: const SizedBox.square(dimension: 14),
+          child: SizedBox.square(dimension: AppPlatform.hasPointer ? 14 : 21),
         ),
       ),
     );
@@ -950,21 +1387,25 @@ class _NavigationRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: _settingsRowPadding,
+          padding: _RowMetrics.padding,
           child: Row(
             children: [
               SizedBox(
-                width: 25,
-                child: Icon(icon, size: 16, color: palette.textSecondary),
+                width: _RowMetrics.iconSlot,
+                child: Icon(
+                  icon,
+                  size: _RowMetrics.iconSize,
+                  color: palette.textSecondary,
+                ),
               ),
-              const SizedBox(width: 9),
+              SizedBox(width: _RowMetrics.gap),
               Expanded(
                 child: _RowCopy(title: title, subtitle: subtitle),
               ),
               const SizedBox(width: 8),
               Icon(
                 Icons.chevron_right_rounded,
-                size: 18,
+                size: _RowMetrics.chevronSize,
                 color: palette.textTertiary,
               ),
             ],
@@ -1007,20 +1448,20 @@ class _ChoiceRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(11, 8, 11, 8),
+          padding: _RowMetrics.choicePadding,
           child: Row(
             children: [
               SizedBox(
-                width: 25,
+                width: _RowMetrics.iconSlot,
                 child: Icon(
                   selected
                       ? Icons.radio_button_checked_rounded
                       : Icons.radio_button_unchecked_rounded,
-                  size: 16,
+                  size: _RowMetrics.iconSize,
                   color: selected ? accent : palette.textTertiary,
                 ),
               ),
-              const SizedBox(width: 9),
+              SizedBox(width: _RowMetrics.gap),
               Expanded(
                 child: _RowCopy(title: title, subtitle: subtitle),
               ),
@@ -1069,14 +1510,14 @@ class _PaperDescription extends StatelessWidget {
         child: Row(
           children: [
             SizedBox(
-              width: 25,
+              width: _RowMetrics.iconSlot,
               child: Icon(
                 Icons.texture_rounded,
-                size: 16,
+                size: _RowMetrics.iconSize,
                 color: palette.textSecondary,
               ),
             ),
-            const SizedBox(width: 9),
+            SizedBox(width: _RowMetrics.gap),
             const Expanded(
               child: _RowCopy(
                 title: 'Notepad paper',
@@ -1130,18 +1571,18 @@ class _RateAttributionRow extends StatelessWidget {
             key: const ValueKey('rate-attribution'),
             onTap: () => _open(context),
             child: Padding(
-              padding: _settingsRowPadding,
+              padding: _RowMetrics.padding,
               child: Row(
                 children: [
                   SizedBox(
-                    width: 25,
+                    width: _RowMetrics.iconSlot,
                     child: Icon(
                       Icons.currency_exchange_rounded,
-                      size: 16,
+                      size: _RowMetrics.iconSize,
                       color: palette.textSecondary,
                     ),
                   ),
-                  const SizedBox(width: 9),
+                  SizedBox(width: _RowMetrics.gap),
                   Expanded(
                     child: _RowCopy(
                       title: rates.attributionLabel,
@@ -1185,18 +1626,18 @@ class _VersionRow extends StatelessWidget {
         final build = updates.currentBuild;
         return Padding(
           key: const ValueKey('app-version'),
-          padding: _settingsRowPadding,
+          padding: _RowMetrics.padding,
           child: Row(
             children: [
               SizedBox(
-                width: 25,
+                width: _RowMetrics.iconSlot,
                 child: Icon(
                   Icons.info_outline_rounded,
-                  size: 16,
+                  size: _RowMetrics.iconSize,
                   color: palette.textSecondary,
                 ),
               ),
-              const SizedBox(width: 9),
+              SizedBox(width: _RowMetrics.gap),
               Expanded(
                 child: _RowCopy(
                   title: version.isEmpty ? 'Kapy Notes' : 'Kapy Notes $version',
@@ -1285,22 +1726,22 @@ class _UpdateRow extends StatelessWidget {
         final available = updates.available;
         final busy = updates.isChecking || updates.isInstalling;
         return Padding(
-          padding: _settingsRowPadding,
+          padding: _RowMetrics.padding,
           child: Row(
             children: [
               SizedBox(
-                width: 25,
+                width: _RowMetrics.iconSlot,
                 child: Icon(
                   available != null
                       ? Icons.system_update_alt_rounded
                       : Icons.verified_outlined,
-                  size: 16,
+                  size: _RowMetrics.iconSize,
                   color: available != null
                       ? palette.chipCurrency
                       : palette.textSecondary,
                 ),
               ),
-              const SizedBox(width: 9),
+              SizedBox(width: _RowMetrics.gap),
               Expanded(
                 child: _RowCopy(title: _title(), subtitle: _subtitle()),
               ),
@@ -1418,7 +1859,7 @@ class _RowCopy extends StatelessWidget {
         Text(
           title,
           style: TextStyle(
-            fontSize: 12.5,
+            fontSize: _RowMetrics.titleSize,
             fontWeight: _settingsMediumWeight,
             color: palette.textPrimary,
           ),
@@ -1426,7 +1867,10 @@ class _RowCopy extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           subtitle,
-          style: TextStyle(fontSize: 10.75, color: palette.textSecondary),
+          style: TextStyle(
+            fontSize: _RowMetrics.subtitleSize,
+            color: palette.textSecondary,
+          ),
         ),
       ],
     );
