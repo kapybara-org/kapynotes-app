@@ -894,27 +894,64 @@ thing to get wrong.
 | Field | Value |
 | --- | --- |
 | Name | `Reviewer account (sharing demo)` |
-| Username | `hello+kapyreview-a@snowseo.com` |
+| Username | `review@kapynotes.com` |
 | Password | `KapyStoreReview!2026` |
 
-Other information required to access the app, 461 of the 500 characters
+Other information required to access the app, 491 of the 500 characters
 allowed, and the same text belongs in Apple's App Review notes:
 
-> After signing in you will be asked for an encryption passphrase, because
-> notes are end-to-end encrypted. Enter: kapy store review demo 2026
+> Sign in with the password: on the sign-in screen tap "Use a password" (a
+> code would have to be emailed to you). You will then be asked for an
+> encryption passphrase, because the notes are encrypted. Enter: kapy store
+> review demo 2026
 >
-> A shared space is already set up so sharing can be reviewed without setup.
-> The other member is a second account with the SAME password and passphrase:
-> hello+kapyreview-b@snowseo.com
+> A shared space is already set up. Its other member is a second account with
+> the SAME password and passphrase: review-b@kapynotes.com
 >
-> Block and report are in Settings > Sharing (on any invitation), and in a
-> note's Share sheet (the ... beside a member, and Report this note).
+> Block and report: Settings > Sharing (on any invitation), and a note's Share
+> sheet (beside a member, and Report this note).
 
-**The addresses are on `snowseo.com`**, which is a different product of ours,
-because that is the only mailbox these codes can be received at.
-`kapynotes.com` has an MX record but does not deliver to it. If that is ever
-fixed, re-run the seed against `hello+kapyreview-a@kapynotes.com` and swap the
-two fields; nothing else changes.
+The first sentence is the one that is easy to leave out and expensive to.
+Sign-in opens on "we will email you a code", and *Use a password* is a text
+button beside it — a reviewer who types the address and presses the obvious
+button lands on a code screen waiting for an email they will never get, which
+is indistinguishable from credentials that do not work.
+
+**Both addresses are on `kapynotes.com`**, so a reviewer reading them sees the
+product they are reviewing rather than a company they have never heard of. A
+reviewer never has to receive mail at either one: the password in the table is
+what they sign in with, and it does not expire.
+
+Getting them there took two codes each, and the two addresses are not equal.
+`review@kapynotes.com` is redirected to a mailbox we read, so its codes arrive
+by themselves. `review-b@kapynotes.com` is an alias: Google accepts mail for
+it, but the redirect matches `review@` exactly, so its codes land in the
+`review@` mailbox and have to be read there. Plus-addressing (`review+b@`)
+does not survive the redirect either, which is why the second account is
+hyphenated.
+
+The way to tell "this address does not exist" from "it exists but is not
+redirected" is to ask Google, since a code that never arrives looks the same
+either way:
+
+    python3 - <<'EOF'
+    import smtplib
+    s = smtplib.SMTP('smtp.google.com', 25, timeout=15)
+    s.ehlo('kapynotes.com')
+    s.docmd('MAIL FROM:', '<probe@kapynotes.com>')
+    print(s.docmd('RCPT TO:', '<review-b@kapynotes.com>'))
+    EOF
+
+`250` means the address resolves and the silence is a redirect problem; `550`
+means it was never created. There is no catch-all, so an address nobody made
+answers `550`.
+
+`test/sync/retire_old_review_accounts_test.dart` closes a superseded pair, and
+exists because the order is not obvious: an account that owns a team space is
+refused deletion, so the space is stopped first, which brings its notes home
+to the owner's personal space rather than destroying them. Same gating as the
+seed, and it deletes accounts in production, so it wants reading before it is
+run.
 
 ### Shipping 1.11.0, the first build with sharing
 
