@@ -48,6 +48,7 @@ void main() {
         keys: keys,
         notes: notes,
         state: state,
+        store: store,
       ),
       notes: notes,
       keys: keys,

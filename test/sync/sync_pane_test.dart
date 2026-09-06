@@ -31,6 +31,7 @@ class MemoryStore extends LocalStore {
       keys: KeyStore(InMemorySecureStore()),
       notes: notes,
       state: SyncState(store),
+      store: store,
     ),
     notes: notes,
     server: server,
@@ -272,6 +273,7 @@ void main() {
         keys: KeyStore(InMemorySecureStore()),
         notes: notes,
         state: SyncState(store),
+        store: store,
       );
       await second.restore();
       await second.signIn(email: 'a@b.co', password: 'x');

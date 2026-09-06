@@ -4,6 +4,7 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
 import '../data/update_checker.dart';
+import '../sync/sharing.dart';
 import 'app_logo.dart';
 import 'compact_icon_button.dart';
 import 'editor/note_footer.dart';
@@ -22,6 +23,8 @@ class Sidebar extends StatelessWidget {
     required this.onSelect,
     required this.onCreate,
     this.onDelete,
+    this.onShare,
+    this.sharing,
     this.onSettingsPressed,
     this.updates,
     this.searchFocusNode,
@@ -36,6 +39,15 @@ class Sidebar extends StatelessWidget {
   final ValueChanged<String> onSelect;
   final VoidCallback onCreate;
   final ValueChanged<String>? onDelete;
+
+  /// Null where there is nothing to share to: a build without a server.
+  /// The row then shows no share affordance rather than one that opens onto
+  /// an error.
+  final ValueChanged<String>? onShare;
+
+  /// Names the spaces shared notes are in. Null until the account is
+  /// unlocked; the list then reads exactly as it did before sharing existed.
+  final Sharing? sharing;
   final VoidCallback? onSettingsPressed;
 
   /// Drives the dot on the settings gear. Null where the app cannot update
@@ -72,24 +84,14 @@ class Sidebar extends StatelessWidget {
                           ? 'No notes yet'
                           : 'No matching notes',
                     )
+                  : _grouped
+                  ? _buildGrouped(context)
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
                       itemCount: notes.length,
                       itemExtent: AppControlMetrics.sidebarNoteRowExtent,
-                      itemBuilder: (context, index) {
-                        final note = notes[index];
-                        return NoteRow(
-                          key: ValueKey(note.id),
-                          note: note,
-                          query: query,
-                          displayTime: displayTime,
-                          selected: note.id == selectedId,
-                          onTap: () => onSelect(note.id),
-                          onDelete: onDelete == null
-                              ? null
-                              : () => onDelete!(note.id),
-                        );
-                      },
+                      itemBuilder: (context, index) =>
+                          _row(notes[index], shared: false),
                     ),
             ),
             if (onSettingsPressed != null)
@@ -99,6 +101,115 @@ class Sidebar extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+extension on Sidebar {
+  /// Sections appear only once a shared note exists, so a list of private
+  /// notes looks exactly as it always has.
+  bool get _grouped => sharing != null && notes.any((note) => note.isShared);
+
+  Widget _row(Note note, {required bool shared}) => NoteRow(
+    key: ValueKey(note.id),
+    note: note,
+    query: query,
+    displayTime: displayTime,
+    selected: note.id == selectedId,
+    shared: shared,
+    onTap: () => onSelect(note.id),
+    onShare: onShare == null ? null : () => onShare!(note.id),
+    onDelete: onDelete == null ? null : () => onDelete!(note.id),
+  );
+
+  /// Your own notes first, then one section per shared space, in the order
+  /// the spaces were made. A note whose space this device has not heard of
+  /// yet sits under "Shared", rather than nowhere.
+  Widget _buildGrouped(BuildContext context) {
+    final sharing = this.sharing!;
+    final mine = notes.where((note) => !note.isShared).toList();
+    final bySpace = <String?, List<Note>>{};
+    for (final note in notes) {
+      if (note.isShared) bySpace.putIfAbsent(note.spaceId, () => []).add(note);
+    }
+    final order = <String?>[
+      for (final space in sharing.teams)
+        if (bySpace.containsKey(space.id)) space.id,
+      for (final id in bySpace.keys)
+        if (!sharing.teams.any((space) => space.id == id)) id,
+    ];
+    final extent = AppControlMetrics.sidebarNoteRowExtent;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+      children: [
+        if (mine.isNotEmpty) ...[
+          const _SectionLabel(label: 'My notes'),
+          for (final note in mine)
+            SizedBox(height: extent, child: _row(note, shared: false)),
+        ],
+        for (final id in order) ...[
+          _SectionLabel(
+            label: sharing.spaceById(id)?.displayName ?? 'Shared',
+            shared: true,
+            attention: id != null && sharing.trust.warningsFor(id).isNotEmpty,
+          ),
+          for (final note in bySpace[id]!)
+            SizedBox(height: extent, child: _row(note, shared: true)),
+        ],
+      ],
+    );
+  }
+}
+
+/// A heading over a group of notes. Small and quiet: the notes are the
+/// content, this only says whose they are.
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({
+    required this.label,
+    this.shared = false,
+    this.attention = false,
+  });
+
+  final String label;
+  final bool shared;
+
+  /// A member's key changed and nobody has looked yet.
+  final bool attention;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final error = Theme.of(context).colorScheme.error;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Row(
+        children: [
+          if (shared) ...[
+            Icon(
+              attention
+                  ? Icons.warning_amber_rounded
+                  : Icons.people_outline_rounded,
+              size: AppControlMetrics.iconInline,
+              color: attention ? error : palette.textTertiary,
+            ),
+            const SizedBox(width: 5),
+          ],
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: AppTypeScale.caption,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
+                color: palette.textTertiary,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -392,7 +503,9 @@ class NoteRow extends StatefulWidget {
     required this.displayTime,
     required this.selected,
     required this.onTap,
+    this.onShare,
     this.onDelete,
+    this.shared = false,
   });
 
   final Note note;
@@ -400,7 +513,12 @@ class NoteRow extends StatefulWidget {
   final DateTime Function(DateTime) displayTime;
   final bool selected;
   final VoidCallback onTap;
+  final VoidCallback? onShare;
   final VoidCallback? onDelete;
+
+  /// Whether the note is in a shared space, which the row marks so a person
+  /// typing knows somebody else can see it.
+  final bool shared;
 
   @override
   State<NoteRow> createState() => _NoteRowState();
@@ -416,6 +534,7 @@ class _NoteRowState extends State<NoteRow> {
         Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (overlay == null) return;
 
+    final palette = context.palette;
     final choice = await showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(
@@ -423,6 +542,28 @@ class _NoteRowState extends State<NoteRow> {
         Offset.zero & overlay.size,
       ),
       items: [
+        if (widget.onShare != null)
+          PopupMenuItem(
+            value: 'share',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.people_outline_rounded,
+                  size: AppControlMetrics.iconControl,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  widget.shared ? 'Sharing…' : 'Share…',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.control,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
         PopupMenuItem(
           value: 'delete',
           height: 36,
@@ -444,6 +585,7 @@ class _NoteRowState extends State<NoteRow> {
       ],
     );
     if (choice == 'delete') widget.onDelete?.call();
+    if (choice == 'share') widget.onShare?.call();
   }
 
   @override
@@ -458,9 +600,11 @@ class _NoteRowState extends State<NoteRow> {
 
     final foreground = palette.textPrimary;
     final secondary = palette.textSecondary;
-    final deleteVisible =
-        widget.onDelete != null &&
-        (_hovering || widget.selected || !AppPlatform.hasPointer);
+    final actionsVisible =
+        _hovering || widget.selected || !AppPlatform.hasPointer;
+    final deleteVisible = widget.onDelete != null && actionsVisible;
+    final shareVisible = widget.onShare != null && actionsVisible;
+    final hasMenu = widget.onDelete != null || widget.onShare != null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
@@ -472,10 +616,10 @@ class _NoteRowState extends State<NoteRow> {
         onExit: (_) => setState(() => _hovering = false),
         child: GestureDetector(
           onTap: widget.onTap,
-          onSecondaryTapDown: widget.onDelete == null
+          onSecondaryTapDown: !hasMenu
               ? null
               : (details) => _showContextMenu(context, details.globalPosition),
-          onLongPressStart: widget.onDelete == null
+          onLongPressStart: !hasMenu
               ? null
               : (details) => _showContextMenu(context, details.globalPosition),
           behavior: HitTestBehavior.opaque,
@@ -523,14 +667,27 @@ class _NoteRowState extends State<NoteRow> {
                         _UpdatedAtMetadata(
                           updatedAt: widget.note.updatedAt,
                           displayTime: widget.displayTime,
+                          shared: widget.shared,
                         ),
                     ],
                   ),
                 ),
+                if (widget.onShare != null) ...[
+                  const SizedBox(width: 4),
+                  _RowAction(
+                    key: ValueKey('share-note-${widget.note.id}'),
+                    icon: Icons.people_outline_rounded,
+                    tooltip: widget.shared ? 'Sharing' : 'Share',
+                    visible: shareVisible,
+                    onPressed: widget.onShare!,
+                  ),
+                ],
                 if (widget.onDelete != null) ...[
                   const SizedBox(width: 4),
-                  _DeleteNoteButton(
-                    noteId: widget.note.id,
+                  _RowAction(
+                    key: ValueKey('delete-note-${widget.note.id}'),
+                    icon: Icons.delete_outline_rounded,
+                    tooltip: 'Delete note',
                     visible: deleteVisible,
                     onPressed: widget.onDelete!,
                   ),
@@ -544,14 +701,23 @@ class _NoteRowState extends State<NoteRow> {
   }
 }
 
-class _DeleteNoteButton extends StatelessWidget {
-  const _DeleteNoteButton({
-    required this.noteId,
+/// A trailing action on a note row.
+///
+/// Hidden by opacity rather than by being absent, so revealing it on hover
+/// cannot shift the title beside it — a row that reflows under the pointer is
+/// a row that is hard to click. [IgnorePointer] keeps the invisible state from
+/// being clickable anyway.
+class _RowAction extends StatelessWidget {
+  const _RowAction({
+    super.key,
+    required this.icon,
+    required this.tooltip,
     required this.visible,
     required this.onPressed,
   });
 
-  final String noteId;
+  final IconData icon;
+  final String tooltip;
   final bool visible;
   final VoidCallback onPressed;
 
@@ -562,13 +728,9 @@ class _DeleteNoteButton extends StatelessWidget {
       duration: const Duration(milliseconds: 120),
       opacity: visible ? 1 : 0,
       child: CompactIconButton(
-        key: ValueKey('delete-note-$noteId'),
-        tooltip: 'Delete note',
+        tooltip: tooltip,
         onPressed: onPressed,
-        icon: Icon(
-          Icons.delete_outline_rounded,
-          size: AppControlMetrics.iconAdornment,
-        ),
+        icon: Icon(icon, size: AppControlMetrics.iconAdornment),
         foregroundColor: context.palette.textTertiary,
       ),
     ),
@@ -579,10 +741,12 @@ class _UpdatedAtMetadata extends StatelessWidget {
   const _UpdatedAtMetadata({
     required this.updatedAt,
     required this.displayTime,
+    this.shared = false,
   });
 
   final DateTime updatedAt;
   final DateTime Function(DateTime) displayTime;
+  final bool shared;
 
   @override
   Widget build(BuildContext context) {
@@ -592,12 +756,12 @@ class _UpdatedAtMetadata extends StatelessWidget {
       displayTime: displayTime,
     );
     return Semantics(
-      label: 'Updated $timestamp',
+      label: shared ? 'Shared, updated $timestamp' : 'Updated $timestamp',
       child: ExcludeSemantics(
         child: Row(
           children: [
             Icon(
-              Icons.schedule_rounded,
+              shared ? Icons.people_outline_rounded : Icons.schedule_rounded,
               size: AppControlMetrics.iconInline,
               color: palette.textTertiary,
             ),

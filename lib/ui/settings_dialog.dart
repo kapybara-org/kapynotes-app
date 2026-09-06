@@ -13,6 +13,7 @@ import '../core/toast.dart';
 import '../data/layout_prefs.dart';
 import '../data/notes_store.dart';
 import '../sync/account.dart';
+import 'account/sharing_pane.dart';
 import 'account/sync_pane.dart';
 import 'export_import.dart';
 import '../data/rates.dart';
@@ -25,7 +26,15 @@ import '../data/time_zones.dart';
 /// Adding a section is meant to be the whole job of adding a category of
 /// options: name it here, give it a pane in [_SettingsDialogState], and all
 /// three layouts pick it up.
-enum SettingsSection { general, sync, appearance, numbers, shortcuts, updates }
+enum SettingsSection {
+  general,
+  sync,
+  sharing,
+  appearance,
+  numbers,
+  shortcuts,
+  updates,
+}
 
 const _sheetCorners = BorderRadius.vertical(top: Radius.circular(22));
 const _sheetIndexKey = ValueKey('settings-sheet-index');
@@ -67,6 +76,7 @@ extension SettingsSectionCopy on SettingsSection {
   String get label => switch (this) {
     SettingsSection.general => 'General',
     SettingsSection.sync => 'Sync',
+    SettingsSection.sharing => 'Sharing',
     SettingsSection.appearance => 'Appearance',
     SettingsSection.numbers => 'Numbers',
     SettingsSection.shortcuts => 'Shortcuts',
@@ -76,6 +86,7 @@ extension SettingsSectionCopy on SettingsSection {
   IconData get icon => switch (this) {
     SettingsSection.general => Icons.tune_rounded,
     SettingsSection.sync => Icons.cloud_outlined,
+    SettingsSection.sharing => Icons.people_outline_rounded,
     SettingsSection.appearance => Icons.auto_stories_outlined,
     SettingsSection.numbers => Icons.numbers_rounded,
     SettingsSection.shortcuts => Icons.keyboard_outlined,
@@ -88,6 +99,7 @@ extension SettingsSectionCopy on SettingsSection {
   String get summary => switch (this) {
     SettingsSection.general => 'Notes, export and import, time zone',
     SettingsSection.sync => 'Your notes on every device',
+    SettingsSection.sharing => 'Notes you share with other people',
     SettingsSection.appearance => 'Writing font and paper',
     SettingsSection.numbers => 'Number format and exchange rates',
     SettingsSection.shortcuts => 'System-wide and in-app keys',
@@ -234,6 +246,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     SettingsSection.updates => widget.updates != null,
     // Absent until the app is built with a server to talk to.
     SettingsSection.sync => widget.account != null,
+    SettingsSection.sharing => widget.account != null,
     _ => true,
   };
 
@@ -547,6 +560,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   List<Widget> _paneFor(SettingsSection section) => switch (section) {
     SettingsSection.general => _generalPane(),
     SettingsSection.sync => [SyncPane(account: widget.account!)],
+    SettingsSection.sharing => [SharingPane(account: widget.account!)],
     SettingsSection.appearance => _appearancePane(),
     SettingsSection.numbers => _numbersPane(),
     SettingsSection.shortcuts => _shortcutsPane(),

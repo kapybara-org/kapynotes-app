@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:isolate';
-import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cryptography_plus/cryptography_plus.dart';
 
+import 'aead.dart';
 import 'note_payload.dart';
 import 'sealed_box.dart';
 
@@ -12,7 +12,10 @@ import 'sealed_box.dart';
 ///
 ///   passphrase --Argon2id(salt)--> key-encryption key
 ///   key-encryption key ------------> unwraps the master key
-///   master key --------------------> seals every note payload
+///   master key --------------------> seals every personal note payload,
+///                                    and the identity private keys
+///   content key -------------------> seals a shared note, and is itself
+///                                    wrapped to the space key
 ///
 /// Wrapping rather than deriving the master key from the passphrase directly
 /// is what makes a passphrase change cheap: it re-seals one 32-byte key
@@ -35,7 +38,7 @@ class Vault {
 
   Vault._(this._masterKey);
 
-  /// Master and file keys are both 32 bytes.
+  /// Master, content and file keys are all 32 bytes.
   static const int keyLength = 32;
 
   /// Beneath this many plaintext bytes, spawning an isolate costs more than
@@ -49,10 +52,10 @@ class Vault {
   /// single thing standing between a forgotten passphrase and notes that are
   /// gone for good.
   static Future<VaultSetup> create({required String passphrase}) async {
-    final masterKey = _randomBytes(keyLength);
-    final recoveryKey = _randomBytes(keyLength);
+    final masterKey = randomBytes(keyLength);
+    final recoveryKey = randomBytes(keyLength);
     final kdf = KdfParams(
-      salt: _randomBytes(KdfParams.saltLength),
+      salt: randomBytes(KdfParams.saltLength),
       memory: KdfParams.defaultMemory,
       iterations: KdfParams.defaultIterations,
       parallelism: KdfParams.defaultParallelism,
@@ -61,8 +64,8 @@ class Vault {
     final kek = await _deriveKeyEncryptionKey(passphrase, kdf);
     // Both wraps seal the same master key, so either route recovers the same
     // notes and neither has to be re-done when the other changes.
-    final wrapped = await _sealBytes(masterKey, kek);
-    final recoveryWrapped = await _sealBytes(masterKey, recoveryKey);
+    final wrapped = await sealBytes(masterKey, kek);
+    final recoveryWrapped = await sealBytes(masterKey, recoveryKey);
 
     return VaultSetup(
       vault: Vault._(masterKey),
@@ -82,7 +85,7 @@ class Vault {
     required SealedBox wrappedMasterKey,
   }) async {
     final kek = await _deriveKeyEncryptionKey(passphrase, kdf);
-    final masterKey = await _openBytes(wrappedMasterKey, kek);
+    final masterKey = await openBytes(wrappedMasterKey, kek);
     return masterKey == null ? null : Vault._(masterKey);
   }
 
@@ -94,7 +97,7 @@ class Vault {
     required SealedBox recoveryWrappedMasterKey,
   }) async {
     if (recoveryKey.length != keyLength) return null;
-    final masterKey = await _openBytes(recoveryWrappedMasterKey, recoveryKey);
+    final masterKey = await openBytes(recoveryWrappedMasterKey, recoveryKey);
     return masterKey == null ? null : Vault._(masterKey);
   }
 
@@ -112,8 +115,9 @@ class Vault {
     return Vault._(masterKey);
   }
 
-  /// The master key, for handing to the platform keystore. Never send this
-  /// anywhere else — it is the whole secret.
+  /// The master key, for handing to the platform keystore and for sealing the
+  /// identity private keys. Never send this anywhere else — it is the whole
+  /// secret.
   Uint8List get masterKeyForKeystore => _masterKey;
 
   /// Re-seals the master key under a new passphrase. The master key itself is
@@ -122,51 +126,79 @@ class Vault {
     String passphrase,
   ) async {
     final kdf = KdfParams(
-      salt: _randomBytes(KdfParams.saltLength),
+      salt: randomBytes(KdfParams.saltLength),
       memory: KdfParams.defaultMemory,
       iterations: KdfParams.defaultIterations,
       parallelism: KdfParams.defaultParallelism,
     );
     final kek = await _deriveKeyEncryptionKey(passphrase, kdf);
-    return (wrappedMasterKey: await _sealBytes(_masterKey, kek), kdf: kdf);
+    return (wrappedMasterKey: await sealBytes(_masterKey, kek), kdf: kdf);
   }
 
   Future<SealedBox> seal(NotePayload payload) async =>
       (await sealAll([payload])).single;
 
-  /// Seals a batch in a single isolate hop.
+  /// Seals a batch under the master key in a single isolate hop.
+  Future<List<SealedBox>> sealAll(List<NotePayload> payloads) =>
+      sealAllWith(payloads, List.filled(payloads.length, null));
+
+  /// Seals a batch, each payload under its own key — or under the master key
+  /// where the entry is null, which is what a personal note uses.
   ///
   /// Batching is the point: a push carries up to 200 notes, and paying the
   /// isolate spawn once instead of 200 times is the difference between a few
   /// milliseconds and a visible stall. Small batches stay inline, where the
   /// spawn would cost more than the work.
-  Future<List<SealedBox>> sealAll(List<NotePayload> payloads) async {
+  Future<List<SealedBox>> sealAllWith(
+    List<NotePayload> payloads,
+    List<Uint8List?> keys,
+  ) async {
     if (payloads.isEmpty) return const [];
+    assert(payloads.length == keys.length);
 
     final encoded = List<Uint8List>.generate(
       payloads.length,
       (i) => _utf8Json(payloads[i].toJson()),
       growable: false,
     );
-    final key = _masterKey;
+    final master = _masterKey;
+    final resolved = List<Uint8List>.generate(
+      keys.length,
+      (i) => keys[i] ?? master,
+      growable: false,
+    );
     return _totalLength(encoded) < _isolateThreshold
-        ? _sealBatch(encoded, key)
-        : Isolate.run(() => _sealBatch(encoded, key));
+        ? _sealBatch(encoded, resolved)
+        : Isolate.run(() => _sealBatch(encoded, resolved));
   }
 
   Future<NotePayload?> open(SealedBox box) async => (await openAll([box])).single;
 
-  /// Opens a batch, returning null in place of any box that fails to
+  /// Opens a batch sealed under the master key.
+  Future<List<NotePayload?>> openAll(List<SealedBox> boxes) =>
+      openAllWith(boxes, List.filled(boxes.length, null));
+
+  /// Opens a batch, each box with its own key — or the master key where the
+  /// entry is null — returning null in place of any box that fails to
   /// authenticate. One unreadable note — sealed under a key this account no
   /// longer has, say — must not cost the user the other 199.
-  Future<List<NotePayload?>> openAll(List<SealedBox> boxes) async {
+  Future<List<NotePayload?>> openAllWith(
+    List<SealedBox> boxes,
+    List<Uint8List?> keys,
+  ) async {
     if (boxes.isEmpty) return const [];
+    assert(boxes.length == keys.length);
 
-    final key = _masterKey;
+    final master = _masterKey;
+    final resolved = List<Uint8List>.generate(
+      keys.length,
+      (i) => keys[i] ?? master,
+      growable: false,
+    );
     final total = boxes.fold<int>(0, (sum, b) => sum + b.cipherText.length);
     final plaintexts = total < _isolateThreshold
-        ? await _openBatch(boxes, key)
-        : await Isolate.run(() => _openBatch(boxes, key));
+        ? await _openBatch(boxes, resolved)
+        : await Isolate.run(() => _openBatch(boxes, resolved));
 
     return List<NotePayload?>.generate(plaintexts.length, (i) {
       final bytes = plaintexts[i];
@@ -235,53 +267,24 @@ Future<Uint8List> _deriveKeyEncryptionKey(
   });
 }
 
-/// Built once per isolate. Constructing it per call would re-resolve the
-/// algorithm against `Cryptography.instance` on every note in a batch.
-final Cipher _cipher = Xchacha20.poly1305Aead();
-
-Future<SealedBox> _sealBytes(Uint8List plaintext, Uint8List key) async {
-  final box = await _cipher.encrypt(plaintext, secretKey: SecretKey(key));
-  return SealedBox(
-    // The contract carries the tag appended to the ciphertext; the Dart API
-    // keeps them apart, so join here and split on the way back.
-    cipherText: _concat(box.cipherText, box.mac.bytes),
-    nonce: Uint8List.fromList(box.nonce),
-    version: SealedBox.currentVersion,
-  );
-}
-
-Future<Uint8List?> _openBytes(SealedBox box, Uint8List key) async {
-  try {
-    final split = box.cipherText.length - SealedBox.macLength;
-    if (split < 0) return null;
-    final clear = await _cipher.decrypt(
-      SecretBox(
-        Uint8List.sublistView(box.cipherText, 0, split),
-        nonce: box.nonce,
-        mac: Mac(Uint8List.sublistView(box.cipherText, split)),
-      ),
-      secretKey: SecretKey(key),
-    );
-    return Uint8List.fromList(clear);
-  } catch (_) {
-    // A failed tag check is the expected outcome of a wrong passphrase, not an
-    // exceptional one. The caller turns null into "that didn't unlock".
-    return null;
-  }
-}
-
-Future<List<SealedBox>> _sealBatch(List<Uint8List> plaintexts, Uint8List key) async {
+Future<List<SealedBox>> _sealBatch(
+  List<Uint8List> plaintexts,
+  List<Uint8List> keys,
+) async {
   final sealed = <SealedBox>[];
-  for (final plaintext in plaintexts) {
-    sealed.add(await _sealBytes(plaintext, key));
+  for (var i = 0; i < plaintexts.length; i++) {
+    sealed.add(await sealBytes(plaintexts[i], keys[i]));
   }
   return sealed;
 }
 
-Future<List<Uint8List?>> _openBatch(List<SealedBox> boxes, Uint8List key) async {
+Future<List<Uint8List?>> _openBatch(
+  List<SealedBox> boxes,
+  List<Uint8List> keys,
+) async {
   final opened = <Uint8List?>[];
-  for (final box in boxes) {
-    opened.add(await _openBytes(box, key));
+  for (var i = 0; i < boxes.length; i++) {
+    opened.add(await openBytes(boxes[i], keys[i]));
   }
   return opened;
 }
@@ -291,21 +294,3 @@ Uint8List _utf8Json(Map<String, Object?> json) =>
 
 int _totalLength(List<Uint8List> items) =>
     items.fold<int>(0, (sum, item) => sum + item.length);
-
-Uint8List _concat(List<int> a, List<int> b) {
-  final joined = Uint8List(a.length + b.length);
-  joined.setRange(0, a.length, a);
-  joined.setRange(a.length, joined.length, b);
-  return joined;
-}
-
-/// Key material only. [Random.secure] rather than the store's cheap PRNG:
-/// note ids are not credentials, these are.
-Uint8List _randomBytes(int length) {
-  final random = Random.secure();
-  final bytes = Uint8List(length);
-  for (var i = 0; i < length; i++) {
-    bytes[i] = random.nextInt(256);
-  }
-  return bytes;
-}

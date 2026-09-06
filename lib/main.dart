@@ -47,6 +47,7 @@ Future<void> main() async {
           keys: KeyStore(defaultSecureStore()),
           notes: notes,
           state: syncState,
+          store: store,
         )
       : null;
 

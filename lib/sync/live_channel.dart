@@ -4,10 +4,8 @@ import 'dart:math';
 
 import 'package:http/http.dart' as http;
 
-/// What the wake-up channel has to say. Never a note: see
-/// `packages/contract/src/live.ts` for why the stream carries no data.
-enum LiveSignal {
-  /// Something on this account changed on another device. Sync.
+enum LiveSignalKind {
+  /// Something changed on another device. Sync.
   wake,
 
   /// The stream is open. Emitted again on every reconnect, because a stream
@@ -17,6 +15,40 @@ enum LiveSignal {
   /// The stream dropped and a reconnect is scheduled. Until it lands, this
   /// device is back to finding things out for itself.
   disconnected,
+}
+
+/// What the wake-up channel has to say. Never a note: see
+/// `packages/contract/src/live.ts` for why the stream carries no data.
+///
+/// A wake names the space that changed where the server knows it, so the
+/// device pulls one space rather than all of them. A wake with no space means
+/// the list of spaces itself changed — an invitation accepted, a key granted,
+/// a membership ended — and the device should refresh it.
+class LiveSignal {
+  const LiveSignal._(this.kind, [this.space]);
+
+  final LiveSignalKind kind;
+  final String? space;
+
+  static const LiveSignal wake = LiveSignal._(LiveSignalKind.wake);
+  static const LiveSignal connected = LiveSignal._(LiveSignalKind.connected);
+  static const LiveSignal disconnected = LiveSignal._(
+    LiveSignalKind.disconnected,
+  );
+
+  factory LiveSignal.wakeFor(String? space) =>
+      space == null ? wake : LiveSignal._(LiveSignalKind.wake, space);
+
+  @override
+  bool operator ==(Object other) =>
+      other is LiveSignal && other.kind == kind && other.space == space;
+
+  @override
+  int get hashCode => Object.hash(kind, space);
+
+  @override
+  String toString() =>
+      space == null ? 'LiveSignal.${kind.name}' : 'LiveSignal.wake($space)';
 }
 
 /// SSE `event:` name for a wake-up. Matches `LIVE_EVENT`.
@@ -119,7 +151,13 @@ class LiveChannel {
           ..persistentConnection = true;
 
         final response = await _client.send(request).timeout(connectTimeout);
-        if (response.statusCode == 401 || response.statusCode == 403) return;
+        // Rejected, or too old to be served: neither is a network that will
+        // come back, and the next sync pass is what says so to the user.
+        if (response.statusCode == 401 ||
+            response.statusCode == 403 ||
+            response.statusCode == 426) {
+          return;
+        }
         if (response.statusCode != 200) {
           throw http.ClientException(
             'live returned ${response.statusCode}',
@@ -154,6 +192,7 @@ class LiveChannel {
     final finished = Completer<void>();
     _stream = finished;
     var event = '';
+    var data = '';
 
     _reading =
         response.stream
@@ -164,16 +203,20 @@ class LiveChannel {
                 if (line.isEmpty) {
                   // A blank line ends a frame. Only one kind of frame means
                   // anything; a heartbeat is a comment and never gets here.
-                  if (event == liveEventName) _emit(LiveSignal.wake);
+                  if (event == liveEventName) {
+                    _emit(LiveSignal.wakeFor(_spaceIn(data)));
+                  }
                   event = '';
+                  data = '';
                   return;
                 }
                 if (line.startsWith(':')) return;
                 final colon = line.indexOf(':');
                 if (colon < 0) return;
-                if (line.substring(0, colon) == 'event') {
-                  event = line.substring(colon + 1).trimLeft();
-                }
+                final field = line.substring(0, colon);
+                final value = line.substring(colon + 1).trimLeft();
+                if (field == 'event') event = value;
+                if (field == 'data') data = value;
               },
               onError: (Object _) => _release(finished),
               onDone: () => _release(finished),
@@ -181,6 +224,19 @@ class LiveChannel {
             );
 
     return finished.future;
+  }
+
+  /// The space a wake-up names, if the server said. Anything else — a build
+  /// from before spaces sent `1` — is a wake for everything.
+  static String? _spaceIn(String data) {
+    if (data.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(data);
+      final space = decoded is Map ? decoded['space'] : null;
+      return space is String && space.isNotEmpty ? space : null;
+    } on FormatException {
+      return null;
+    }
   }
 
   Future<void> _wait() {

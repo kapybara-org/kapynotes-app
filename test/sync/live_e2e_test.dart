@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/sync/key_bundle.dart';
+import 'package:kapy_notes/sync/space_keyring.dart';
+import 'package:kapy_notes/sync/trust.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
@@ -63,9 +65,20 @@ void main() {
     final store = MemoryStore();
     final notes = NotesStore(store);
     final state = SyncState(store)..load();
+    final connection = api();
     return (
       notes: notes,
-      sync: SyncService(notes: notes, state: state, api: api(), vault: vault),
+      sync: SyncService(
+        notes: notes,
+        state: state,
+        api: connection,
+        keyring: SpaceKeyring(
+          userId: 'e2e',
+          store: store,
+          trust: TrustStore(store),
+        ),
+        vault: vault,
+      ),
     );
   }
 

@@ -29,6 +29,7 @@ class Device {
       keys: keys,
       notes: notes,
       state: SyncState(store),
+      store: store,
     );
   }
 
@@ -142,6 +143,7 @@ void main() {
       keys: d.keys,
       notes: d.notes,
       state: SyncState(d.store),
+      store: d.store,
     );
     await restarted.restore();
 
@@ -164,6 +166,7 @@ void main() {
       keys: d.keys,
       notes: d.notes,
       state: SyncState(d.store),
+      store: d.store,
     );
     await restarted.restore();
 

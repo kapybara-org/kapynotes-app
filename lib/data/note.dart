@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'note_format.dart';
 
 /// A single note. Its title is derived from [body] rather than stored, so it
@@ -19,6 +22,30 @@ class Note {
   /// that edit away.
   final DateTime? syncedAt;
 
+  /// Which space this note lives in. Null means the personal space — the
+  /// only space a note written before sharing existed could be in, and the
+  /// one every note starts in.
+  final String? spaceId;
+
+  /// The 32-byte key this note's content is sealed under when it lives in a
+  /// shared space. Null for a personal note, which is sealed under the master
+  /// key exactly as before sharing existed. Minted the first time the note
+  /// moves into a team space, and only then.
+  ///
+  /// Kept beside the plaintext on local disk, which is no more sensitive than
+  /// the plaintext it opens.
+  final Uint8List? contentKey;
+
+  /// Bumped every time [contentKey] is replaced, so a stale writer can be
+  /// refused by an integer comparison rather than by cryptography.
+  final int contentKeyEpoch;
+
+  /// The space's key generation when [contentKey] was minted. A note whose
+  /// key predates a removal — its generation is behind the space's — gets a
+  /// fresh key on its next write, so the person removed cannot read what is
+  /// written after they left.
+  final int contentKeyGeneration;
+
   const Note({
     required this.id,
     required this.body,
@@ -26,10 +53,17 @@ class Note {
     required this.createdAt,
     required this.updatedAt,
     this.syncedAt,
+    this.spaceId,
+    this.contentKey,
+    this.contentKeyEpoch = 1,
+    this.contentKeyGeneration = 1,
   });
 
   static const String untitled = 'New Note';
   static const int _titleLimit = 60;
+
+  /// True when this note is in a shared space rather than the personal one.
+  bool get isShared => spaceId != null;
 
   Note copyWith({
     String? body,
@@ -43,6 +77,10 @@ class Note {
     updatedAt: updatedAt ?? this.updatedAt,
     // Deliberately carried over: an edit must not look synced.
     syncedAt: syncedAt,
+    spaceId: spaceId,
+    contentKey: contentKey,
+    contentKeyEpoch: contentKeyEpoch,
+    contentKeyGeneration: contentKeyGeneration,
   );
 
   /// Records that the server now holds this exact revision.
@@ -53,6 +91,51 @@ class Note {
     createdAt: createdAt,
     updatedAt: updatedAt,
     syncedAt: at,
+    spaceId: spaceId,
+    contentKey: contentKey,
+    contentKeyEpoch: contentKeyEpoch,
+    contentKeyGeneration: contentKeyGeneration,
+  );
+
+  /// The same note in another space under another key, as a write. A move is
+  /// an edit as far as last-writer-wins is concerned, so [updatedAt] moves and
+  /// the note goes back to being dirty.
+  Note movedTo({
+    required String? spaceId,
+    required Uint8List? contentKey,
+    required int contentKeyEpoch,
+    required int contentKeyGeneration,
+    required DateTime at,
+  }) => Note(
+    id: id,
+    body: body,
+    formats: formats,
+    createdAt: createdAt,
+    updatedAt: at,
+    syncedAt: null,
+    spaceId: spaceId,
+    contentKey: contentKey,
+    contentKeyEpoch: contentKeyEpoch,
+    contentKeyGeneration: contentKeyGeneration,
+  );
+
+  /// A new key for the same content, in place. Used when a write has to
+  /// rotate the content key: the body is unchanged, the envelope is not.
+  Note withKey({
+    required Uint8List contentKey,
+    required int contentKeyEpoch,
+    required int contentKeyGeneration,
+  }) => Note(
+    id: id,
+    body: body,
+    formats: formats,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    syncedAt: syncedAt,
+    spaceId: spaceId,
+    contentKey: contentKey,
+    contentKeyEpoch: contentKeyEpoch,
+    contentKeyGeneration: contentKeyGeneration,
   );
 
   /// True when the server does not yet have this revision.
@@ -120,6 +203,11 @@ class Note {
     // Omitted while null so a store that has never synced stays byte-identical
     // to what earlier builds wrote.
     if (syncedAt != null) 'syncedAt': syncedAt!.millisecondsSinceEpoch,
+    // Likewise: a personal note's record is exactly what it always was.
+    if (spaceId != null) 'spaceId': spaceId,
+    if (contentKey != null) 'contentKey': base64.encode(contentKey!),
+    if (contentKey != null) 'contentKeyEpoch': contentKeyEpoch,
+    if (contentKey != null) 'contentKeyGeneration': contentKeyGeneration,
   };
 
   static Note? fromJson(Object? raw) {
@@ -127,6 +215,9 @@ class Note {
     final id = raw['id'];
     final body = raw['body'];
     if (id is! String || body is! String) return null;
+    final spaceId = raw['spaceId'];
+    final epoch = raw['contentKeyEpoch'];
+    final generation = raw['contentKeyGeneration'];
     return Note(
       id: id,
       body: body,
@@ -134,6 +225,12 @@ class Note {
       createdAt: _date(raw['createdAt']),
       updatedAt: _date(raw['updatedAt']),
       syncedAt: _optionalDate(raw['syncedAt']),
+      spaceId: spaceId is String && spaceId.isNotEmpty ? spaceId : null,
+      contentKey: _optionalKey(raw['contentKey']),
+      contentKeyEpoch: epoch is int && epoch > 0 ? epoch : 1,
+      contentKeyGeneration: generation is int && generation > 0
+          ? generation
+          : 1,
     );
   }
 
@@ -142,4 +239,14 @@ class Note {
 
   static DateTime? _optionalDate(Object? value) =>
       value is int ? DateTime.fromMillisecondsSinceEpoch(value) : null;
+
+  static Uint8List? _optionalKey(Object? value) {
+    if (value is! String) return null;
+    try {
+      final bytes = base64.decode(value);
+      return bytes.length == 32 ? bytes : null;
+    } on FormatException {
+      return null;
+    }
+  }
 }

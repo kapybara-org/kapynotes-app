@@ -2,8 +2,8 @@ import 'dart:math';
 
 import '../data/local_store.dart';
 
-/// What sync needs to remember between runs: how far it has read, and whose
-/// notes these are.
+/// What sync needs to remember between runs: how far it has read in each
+/// space, whose notes these are, and which space is the personal one.
 ///
 /// Kept in the same JSON store as the other preferences rather than in the
 /// notes record, so a cursor update does not rewrite the note list.
@@ -14,13 +14,23 @@ class SyncState {
 
   static const String _key = 'sync.v1';
 
-  String? _cursor;
+  /// The cursor a build from before spaces kept. It was the personal space's,
+  /// and becomes that entry in [_cursors] the moment the personal space's id
+  /// is known.
+  String? _legacyCursor;
+  final Map<String, String> _cursors = {};
+  String? _personalSpaceId;
   String? _accountId;
   String? _deviceId;
   DateTime? _lastSyncedAt;
 
-  /// Opaque pull cursor. Fed back to the server verbatim.
-  String? get cursor => _cursor;
+  /// The pull cursor for one space. Fed back to the server verbatim.
+  String? cursorFor(String spaceId) =>
+      _cursors[spaceId] ??
+      (spaceId == _personalSpaceId ? _legacyCursor : null);
+
+  /// The personal space, once a sync has learned which it is.
+  String? get personalSpaceId => _personalSpaceId;
 
   /// The account these notes belong to.
   ///
@@ -54,16 +64,27 @@ class SyncState {
 
   DateTime? get lastSyncedAt => _lastSyncedAt;
 
-  bool get hasSynced => _cursor != null;
+  bool get hasSynced => _cursors.isNotEmpty || _legacyCursor != null;
 
   void load() {
     final stored = _store.read<Map<String, Object?>>(_key);
     if (stored == null) return;
     final cursor = stored['cursor'];
+    final cursors = stored['cursors'];
+    final personal = stored['personalSpaceId'];
     final accountId = stored['accountId'];
     final deviceId = stored['deviceId'];
     final lastSyncedAt = stored['lastSyncedAt'];
-    _cursor = cursor is String ? cursor : null;
+    _legacyCursor = cursor is String ? cursor : null;
+    _cursors.clear();
+    if (cursors is Map) {
+      for (final entry in cursors.entries) {
+        if (entry.key is String && entry.value is String) {
+          _cursors[entry.key as String] = entry.value as String;
+        }
+      }
+    }
+    _personalSpaceId = personal is String ? personal : null;
     _accountId = accountId is String ? accountId : null;
     _deviceId = deviceId is String && deviceId.isNotEmpty ? deviceId : null;
     _lastSyncedAt = lastSyncedAt is int
@@ -71,10 +92,29 @@ class SyncState {
         : null;
   }
 
-  void recordPull(String cursor) {
-    if (_cursor == cursor) return;
-    _cursor = cursor;
+  /// Records which space is the personal one, and hands it the cursor a
+  /// pre-spaces build left behind, which was that space's all along.
+  void adoptPersonalSpace(String spaceId) {
+    if (_personalSpaceId == spaceId) return;
+    _personalSpaceId = spaceId;
+    final legacy = _legacyCursor;
+    if (legacy != null && !_cursors.containsKey(spaceId)) {
+      _cursors[spaceId] = legacy;
+    }
+    _legacyCursor = null;
     _save();
+  }
+
+  void recordPull(String spaceId, String cursor) {
+    if (_cursors[spaceId] == cursor) return;
+    _cursors[spaceId] = cursor;
+    _save();
+  }
+
+  /// A space this account is no longer in: its cursor means nothing now, and
+  /// coming back to it later should start from the beginning.
+  void forgetSpace(String spaceId) {
+    if (_cursors.remove(spaceId) != null) _save();
   }
 
   void recordSync(DateTime at) {
@@ -85,22 +125,28 @@ class SyncState {
   void adopt(String accountId) {
     if (_accountId == accountId) return;
     _accountId = accountId;
-    // A different account means the old cursor points into somebody else's
+    // A different account means the old cursors point into somebody else's
     // history. Starting over is the only correct reading of it.
-    _cursor = null;
+    _cursors.clear();
+    _legacyCursor = null;
+    _personalSpaceId = null;
     _save();
   }
 
   /// Signing out. Keeps [accountId] so signing back in resumes rather than
   /// re-downloading everything.
   void clearCursor() {
-    _cursor = null;
+    _cursors.clear();
+    _legacyCursor = null;
+    _personalSpaceId = null;
     _lastSyncedAt = null;
     _save();
   }
 
   void _save() => _store.put(_key, {
-    'cursor': _cursor,
+    'cursor': _legacyCursor,
+    'cursors': Map<String, String>.of(_cursors),
+    'personalSpaceId': _personalSpaceId,
     'accountId': _accountId,
     // Deliberately outlives both [adopt] and [clearCursor]: signing out or
     // signing in as somebody else does not make this a different device.

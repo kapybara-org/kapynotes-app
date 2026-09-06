@@ -1,3 +1,4 @@
+import 'identity.dart';
 import 'sealed_box.dart';
 
 /// Everything a new device needs to reach the master key — and nothing that
@@ -11,16 +12,22 @@ class KeyBundle {
   /// created before recovery keys existed.
   final SealedBox? recoveryWrappedMasterKey;
 
+  /// The identity keypairs, sealed under the master key. Null for an account
+  /// that has not published them yet; the next unlock does.
+  final WireIdentity? identity;
+
   const KeyBundle({
     required this.wrappedMasterKey,
     required this.kdf,
     this.recoveryWrappedMasterKey,
+    this.identity,
   });
 
   Map<String, Object?> toJson() => {
     'wrappedMasterKey': wrappedMasterKey.toJson(),
     'kdf': kdf.toJson(),
     'recoveryWrappedMasterKey': recoveryWrappedMasterKey?.toJson(),
+    'identity': identity?.toJson(),
   };
 
   static KeyBundle? fromJson(Object? raw) {
@@ -34,6 +41,7 @@ class KeyBundle {
       recoveryWrappedMasterKey: SealedBox.fromJson(
         raw['recoveryWrappedMasterKey'],
       ),
+      identity: WireIdentity.fromJson(raw['identity']),
     );
   }
 }

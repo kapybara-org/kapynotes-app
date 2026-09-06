@@ -1,9 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/sync/space_keyring.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/sync/trust.dart';
 
 import 'fake_server.dart';
 
@@ -32,10 +34,19 @@ class Device {
     notes = NotesStore(store, now: () => clock);
     state = SyncState(store);
     api = FakeApi(server, device: name);
+    // An account that unlocked before sharing existed; the first pass adds
+    // its identity keys.
+    server.seedBundle(api.userId);
+    keyring = SpaceKeyring(
+      userId: api.userId,
+      store: store,
+      trust: TrustStore(store),
+    );
     sync = SyncService(
       notes: notes,
       state: state,
       api: api,
+      keyring: keyring,
       vault: sharedVault(),
       now: () => clock,
       debounce: const Duration(milliseconds: 1),
@@ -53,7 +64,12 @@ class Device {
   late final NotesStore notes;
   late final SyncState state;
   late final FakeApi api;
+  late final SpaceKeyring keyring;
   late final SyncService sync;
+
+  /// The personal space's cursor, which is what a single-account test means
+  /// by "the cursor".
+  String? get cursor => state.cursorFor(server.personal(api.userId).id);
 
   Future<void> boot() async {
     await notes.load();
@@ -162,12 +178,12 @@ void main() {
       // The second establishes a real cursor over the note just pushed.
       await one.sync.syncNow();
       await one.sync.syncNow();
-      final cursor = one.state.cursor;
+      final cursor = one.cursor;
       expect(cursor, isNotEmpty);
 
       await one.sync.syncNow();
 
-      expect(one.state.cursor, cursor);
+      expect(one.cursor, cursor);
       one.dispose();
     });
   });

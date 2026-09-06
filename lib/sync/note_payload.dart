@@ -115,14 +115,26 @@ class NotePayload {
     createdAt: note.createdAt.millisecondsSinceEpoch,
   );
 
-  /// Rebuilds a local note. [id] and [updatedAt] come from the wire row, since
-  /// the server needs them in plaintext to order and page.
-  Note toNote({required String id, required DateTime updatedAt}) => Note(
+  /// Rebuilds a local note. [id], [updatedAt] and the space come from the
+  /// wire row, since the server needs them in plaintext to order, page and
+  /// route; the content key is what this payload was just opened with.
+  Note toNote({
+    required String id,
+    required DateTime updatedAt,
+    String? spaceId,
+    Uint8List? contentKey,
+    int contentKeyEpoch = 1,
+    int contentKeyGeneration = 1,
+  }) => Note(
     id: id,
     body: body,
     formats: normalizeNoteFormats(formats, body.length),
     createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
     updatedAt: updatedAt,
+    spaceId: spaceId,
+    contentKey: contentKey,
+    contentKeyEpoch: contentKeyEpoch,
+    contentKeyGeneration: contentKeyGeneration,
   );
 
   Map<String, Object?> toJson() => {

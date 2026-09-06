@@ -1,14 +1,17 @@
-
 import 'package:flutter/foundation.dart';
 
+import '../data/local_store.dart';
 import '../data/notes_store.dart';
 import 'auth_api.dart';
 import 'key_bundle.dart';
 import 'key_store.dart';
 import 'recovery_key.dart';
+import 'sharing.dart';
+import 'space_keyring.dart';
 import 'sync_api.dart';
 import 'sync_service.dart';
 import 'sync_state.dart';
+import 'trust.dart';
 import 'vault.dart';
 
 /// Where the account stands, from the UI's point of view.
@@ -46,9 +49,11 @@ class Account extends ChangeNotifier {
     required KeyStore keys,
     required NotesStore notes,
     required SyncState state,
+    required LocalStore store,
     SyncService Function({
       required SyncApi api,
       required Vault vault,
+      required SpaceKeyring keyring,
     })?
     syncServiceFactory,
   }) : _auth = auth,
@@ -56,6 +61,7 @@ class Account extends ChangeNotifier {
        _keys = keys,
        _notes = notes,
        _state = state,
+       _store = store,
        _syncServiceFactory = syncServiceFactory;
 
   final AuthApi _auth;
@@ -63,19 +69,34 @@ class Account extends ChangeNotifier {
   final KeyStore _keys;
   final NotesStore _notes;
   final SyncState _state;
-  final SyncService Function({required SyncApi api, required Vault vault})?
+  final LocalStore _store;
+  final SyncService Function({
+    required SyncApi api,
+    required Vault vault,
+    required SpaceKeyring keyring,
+  })?
   _syncServiceFactory;
 
   AccountState _accountState = AccountState.restoring;
   AccountUser? _user;
   String? _token;
   SyncService? _sync;
+  Sharing? _sharing;
+  SpaceKeyring? _keyring;
+  TrustStore? _trust;
   String? _lastError;
 
   AccountState get state => _accountState;
   AccountUser? get user => _user;
+
+  /// The current session token, for API clients built outside this object.
+  String? get token => _token;
   String? get lastError => _lastError;
   SyncService? get sync => _sync;
+
+  /// Shared spaces, once the account is unlocked. Null before that: there is
+  /// no key to share anything with.
+  Sharing? get sharing => _sharing;
   bool get isSyncing => _sync?.status == SyncStatus.syncing;
 
   /// Restores whatever the last run left behind. Called once, off the first
@@ -263,16 +284,32 @@ class Account extends ChangeNotifier {
   }
 
   Future<void> _start(Vault vault) async {
+    final api = _syncApiFor(_token!);
+    final trust = _trust ??= TrustStore(_store)..load();
+    final keyring = SpaceKeyring(
+      userId: _user!.id,
+      store: _store,
+      trust: trust,
+    );
     final service =
-        _syncServiceFactory?.call(api: _syncApiFor(_token!), vault: vault) ??
+        _syncServiceFactory?.call(api: api, vault: vault, keyring: keyring) ??
         SyncService(
           notes: _notes,
           state: _state,
-          api: _syncApiFor(_token!),
+          api: api,
+          keyring: keyring,
           vault: vault,
         );
-    _sync?.dispose();
+    _teardownSync();
+    _keyring = keyring;
     _sync = service..addListener(notifyListeners);
+    _sharing = Sharing(
+      api: api,
+      vault: vault,
+      keyring: keyring,
+      notes: _notes,
+      sync: service,
+    )..addListener(notifyListeners);
     _moveTo(AccountState.ready);
     // Before the first pass rather than after it: the app is already in front
     // of the user by the time this runs, and a change that lands while that
@@ -281,13 +318,21 @@ class Account extends ChangeNotifier {
     await service.syncNow();
   }
 
+  void _teardownSync() {
+    _sharing?.dispose();
+    _sharing = null;
+    _sync?.dispose();
+    _sync = null;
+    _keyring?.clear();
+    _keyring = null;
+  }
+
   /// Signing out drops the session and the key. It never touches the notes:
   /// they are the user's, they are on their device, and a sign-out is not a
   /// delete.
   Future<void> signOut() async {
     final token = _token;
-    _sync?.dispose();
-    _sync = null;
+    _teardownSync();
     _token = null;
     _user = null;
     _state.clearCursor();
@@ -310,16 +355,38 @@ class Account extends ChangeNotifier {
   /// held for it, and the key material this device was holding.
   ///
   /// Returns false and sets [lastError] if the server refused, leaving the
-  /// session intact so it can be tried again.
+  /// session intact so it can be tried again. An account that still owns
+  /// shared spaces is refused: each has to be handed over or stopped first,
+  /// and [ownedSpacesBlockingDeletion] names them.
   Future<bool> deleteAccount(String confirmation) async {
     final token = _token;
     if (token == null) return false;
 
+    _ownedSpacesBlockingDeletion = const [];
     try {
       await _syncApiFor(token).deleteAccount(confirmation);
+    } on SyncRefusedException catch (error) {
+      if (error.code == 'owned-spaces') {
+        final spaces = error.body['spaces'];
+        _ownedSpacesBlockingDeletion = spaces is List
+            ? [
+                for (final space in spaces)
+                  if (space is Map && space['name'] is String)
+                    space['name'] as String,
+              ]
+            : const [];
+        _lastError =
+            'Hand over or stop sharing the spaces you own first: '
+            '${_ownedSpacesBlockingDeletion.join(', ')}.';
+      } else {
+        // A 400: the typed address did not match. Worth saying plainly,
+        // because the alternative reading — that deletion is broken — is
+        // worse.
+        _lastError = 'That is not the email address on this account.';
+      }
+      notifyListeners();
+      return false;
     } on SyncProtocolException {
-      // A 400: the typed address did not match. Worth saying plainly, because
-      // the alternative reading — that deletion is broken — is worse.
       _lastError = 'That is not the email address on this account.';
       notifyListeners();
       return false;
@@ -332,8 +399,7 @@ class Account extends ChangeNotifier {
     // The account is gone, so there is no session left to revoke: tear the
     // local half down directly rather than calling signOut, whose sign-out
     // request would now be answered with a 401.
-    _sync?.dispose();
-    _sync = null;
+    _teardownSync();
     _token = null;
     _user = null;
     _lastError = null;
@@ -342,6 +408,11 @@ class Account extends ChangeNotifier {
     _moveTo(AccountState.signedOut);
     return true;
   }
+
+  List<String> _ownedSpacesBlockingDeletion = const [];
+
+  /// The shared spaces the last deletion attempt was refused over, by name.
+  List<String> get ownedSpacesBlockingDeletion => _ownedSpacesBlockingDeletion;
 
   void _moveTo(AccountState next) {
     if (_accountState == next) {
@@ -354,7 +425,7 @@ class Account extends ChangeNotifier {
 
   @override
   void dispose() {
-    _sync?.dispose();
+    _teardownSync();
     super.dispose();
   }
 }

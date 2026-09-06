@@ -15,6 +15,7 @@ import '../data/notes_store.dart';
 import '../data/onboarding.dart';
 import '../sync/account.dart';
 import '../data/rates.dart';
+import 'share_dialog.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
 import 'editor/note_editor.dart';
@@ -98,6 +99,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   late final Listenable _toolbarSources = Listenable.merge([
     widget.prefs,
     widget.shortcuts,
+    // The sidebar groups shared notes by space once the account is unlocked,
+    // and that is a fact of the account, not of the notes.
+    ?widget.account,
   ]);
 
   /// The welcome note while it is still exactly as it was written.
@@ -341,6 +345,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_totalAnimatedFor.add(id)) _kapyHeader.think();
   }
 
+  /// Opens the share sheet for a note. Before the account is unlocked there
+  /// is no key to share with, so settings opens instead, on the pane that
+  /// explains what is missing.
+  void _shareNote(String id) {
+    _recordKapyActivity();
+    final note = widget.notes.byId(id);
+    final sharing = widget.account?.sharing;
+    if (note == null) return;
+    if (sharing == null) {
+      _showSettings();
+      return;
+    }
+    unawaited(showShareDialog(context, note: note, sharing: sharing));
+  }
+
   void _showSettings() {
     unawaited(
       showSettings(
@@ -466,6 +485,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onSelect: _select,
                       onCreate: _createNote,
                       onDelete: _deleteNote,
+                      onShare: widget.account == null ? null : _shareNote,
+                      sharing: widget.account?.sharing,
                       onSettingsPressed: _showSettings,
                       updates: widget.updates,
                       showHeader: false,
@@ -534,7 +555,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           child: _drawerContentReady
               ? Builder(
                   builder: (drawerContext) => ListenableBuilder(
-                    listenable: widget.prefs,
+                    listenable: _toolbarSources,
                     builder: (context, _) => Sidebar(
                       notes: _visibleNotes,
                       selectedId: _selectedId,
@@ -551,6 +572,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         Navigator.of(drawerContext).pop();
                       },
                       onDelete: _deleteNote,
+                      onShare: widget.account == null ? null : _shareNote,
+                      sharing: widget.account?.sharing,
                       onSettingsPressed: _showSettings,
                       updates: widget.updates,
                     ),
