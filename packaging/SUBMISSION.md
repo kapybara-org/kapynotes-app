@@ -855,6 +855,36 @@ Order that respects all three: upload to internal → push the corrected listing
 and Data Safety → promote to production. If a social login is ever added, Sign
 in with Apple becomes mandatory on iOS; email codes alone do not trigger it.
 
+### App access, and the demo accounts both stores need
+
+The App content declaration says *all functionality is available without
+special access*. That was true of 1.4.0 and has been false since sync. A
+reviewer cannot reach sync or sharing, which now means they cannot reach the
+blocking and reporting they are being told exists.
+
+Two things make handing over credentials harder here than in most apps, and
+both are solved rather than worked around:
+
+- **Signing in is a code we email.** A reviewer cannot receive it. So each
+  demo account was given a password through the ordinary reset flow, which is
+  reusable and does not expire — exactly what Play asks for.
+- **Signing in is not enough, because the notes are encrypted.** An account
+  with no key bundle lands on "choose a passphrase"; one whose passphrase we
+  did not hand over lands on a locked app. Either reads as a broken build, so
+  the passphrase goes in the *other information* field.
+
+`test/sync/seed_play_review_test.dart` does the encrypted half and is
+re-runnable: it signs in, creates or opens the key bundle, accepts the sharing
+terms, and leaves a shared space with a note in it so sharing can be reviewed
+without the reviewer having to build one out of two accounts and four syncs.
+
+Credentials live in Infisical, `prod`, as `PLAY_REVIEW_*`. Both accounts share
+one password and one passphrase deliberately: it is one thing to paste into
+the form and one thing to get wrong.
+
+Apple wants the same information in the App Review notes, plus the same
+demo-account caveat, so the field text below is written to be reusable there.
+
 ### Shipping 1.11.0, the first build with sharing
 
 **Internal already has it.** Version code 12 was uploaded to the internal
