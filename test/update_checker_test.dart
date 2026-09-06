@@ -98,6 +98,61 @@ void main() {
     checker.dispose();
   });
 
+  // Windows reports no build number at all: package_info_plus splits the
+  // executable's ProductVersion on "+", and Runner.rc writes the bare release
+  // triple there on purpose, because WinSparkle reads the same string. Read
+  // as a zero, the tie-break above fired on every Windows install of the
+  // current release and the notice never went away.
+  test('does not break a version tie against a build it cannot read', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    final store = _MemoryStore();
+    final checker = _checker(
+      store,
+      installed: _installed(version: '1.9.0', build: ''),
+      client: MockClient(
+        (_) async => http.Response(_manifest(version: '1.9.0', build: 10), 200),
+      ),
+    );
+
+    await checker.check();
+
+    expect(checker.hasUpdate, isFalse);
+    checker.dispose();
+  });
+
+  test('still offers a newer release where the build is unreadable', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    final store = _MemoryStore();
+    final checker = _checker(
+      store,
+      installed: _installed(version: '1.9.0', build: ''),
+      client: MockClient(
+        (_) async =>
+            http.Response(_manifest(version: '1.10.0', build: 11), 200),
+      ),
+    );
+
+    await checker.check();
+
+    expect(checker.hasUpdate, isTrue);
+    expect(checker.available!.version, '1.10.0');
+    checker.dispose();
+  });
+
+  test('says nothing when it cannot tell which build is running', () async {
+    final store = _MemoryStore();
+    final checker = _checker(
+      store,
+      installed: _installed(version: '', build: ''),
+      client: MockClient((_) async => http.Response(_manifest(), 200)),
+    );
+
+    await checker.check();
+
+    expect(checker.hasUpdate, isFalse);
+    checker.dispose();
+  });
+
   test('does not mistake an older manifest for an update', () async {
     final store = _MemoryStore();
     final checker = _checker(

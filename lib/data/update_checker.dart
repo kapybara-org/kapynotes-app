@@ -328,10 +328,31 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
 
   /// Compares the release triple first and the build number only as a
   /// tie-break, so a release that forgets to bump `+build` is still offered.
+  ///
+  /// A build number the platform will not tell us is not a zero. Windows has
+  /// nowhere to put one: package_info_plus recovers it by splitting the
+  /// executable's `ProductVersion` on `+`, and `windows/runner/Runner.rc`
+  /// deliberately writes the bare release triple there because WinSparkle
+  /// reads that same string and mis-orders `1.9.0+10` against a feed's
+  /// `1.9.0` — see the note in the .rc. So every Windows build reports an
+  /// empty build number, and reading that as 0 made the tie-break fire on
+  /// every release: 1.9.0 installed, 1.9.0 advertised, 10 > 0, update
+  /// available. Permanently, because the next daily check said it again, and
+  /// the panel the notice opened then said the app was up to date.
+  ///
+  /// Where the build is unknown the triple is the whole answer. Nothing is
+  /// lost by that on Windows: WinSparkle compares the same triple, so a
+  /// build-only bump could not have been installed from there anyway.
+  ///
+  /// A version that is missing entirely is treated the same way. It means the
+  /// running build could not be identified at all, and an app that does not
+  /// know what it is must not claim to be behind.
   static bool _isNewerThanInstalled(AvailableUpdate latest, PackageInfo info) {
+    if (info.version.trim().isEmpty) return false;
     final comparison = _compareVersions(latest.version, info.version);
     if (comparison != 0) return comparison > 0;
-    return latest.build > (int.tryParse(info.buildNumber) ?? 0);
+    final installedBuild = int.tryParse(info.buildNumber.trim());
+    return installedBuild != null && latest.build > installedBuild;
   }
 
   static int _compareVersions(String a, String b) {
