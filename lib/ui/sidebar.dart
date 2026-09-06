@@ -115,7 +115,7 @@ class _SidebarFooter extends StatelessWidget {
     final palette = context.palette;
     final updates = this.updates;
     return Container(
-      height: NoteFooter.height,
+      height: AppControlMetrics.scaleBar(context, NoteFooter.height),
       decoration: BoxDecoration(
         border: Border(top: BorderSide(color: palette.separator, width: 0.5)),
       ),
@@ -170,10 +170,7 @@ class _UpdateDot extends StatelessWidget {
                 shape: BoxShape.circle,
                 // A hairline of the sidebar behind it keeps the dot legible
                 // where it overlaps the gear's own strokes.
-                border: Border.all(
-                  color: palette.sidebarBackground,
-                  width: 1,
-                ),
+                border: Border.all(color: palette.sidebarBackground, width: 1),
               ),
             ),
           ),
@@ -190,11 +187,18 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 48,
+    height: AppControlMetrics.scaleBar(
+      context,
+      AppControlMetrics.toolbarHeight,
+    ),
     child: Stack(
       alignment: Alignment.center,
       children: [
-        const AppWordmark(markSize: 19, fontSize: 14.5, spacing: 6.5),
+        AppWordmark(
+          markSize: AppControlMetrics.wordmarkMark,
+          fontSize: AppTypeScale.wordmark,
+          spacing: 6.5,
+        ),
         Positioned(
           right: 10,
           child: _IconButton(
@@ -256,20 +260,26 @@ class _SearchFieldState extends State<_SearchField> {
         controller: _controller,
         focusNode: widget.focusNode,
         onChanged: widget.onChanged,
-        style: TextStyle(fontSize: 13, color: palette.textPrimary),
-        cursorHeight: 15,
+        style: TextStyle(
+          fontSize: AppTypeScale.control,
+          color: palette.textPrimary,
+        ),
+        cursorHeight: AppTypeScale.control + 2,
         decoration: InputDecoration(
           isDense: true,
           hintText: 'Search notes',
-          hintStyle: TextStyle(fontSize: 13, color: palette.textTertiary),
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            size: 15,
+          hintStyle: TextStyle(
+            fontSize: AppTypeScale.control,
             color: palette.textTertiary,
           ),
-          prefixIconConstraints: const BoxConstraints(
-            minWidth: 30,
-            minHeight: 28,
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            size: AppControlMetrics.iconAdornment,
+            color: palette.textTertiary,
+          ),
+          prefixIconConstraints: BoxConstraints(
+            minWidth: AppControlMetrics.fieldAdornmentSlot + 2,
+            minHeight: AppControlMetrics.fieldAdornmentSlot,
           ),
           suffixIcon: widget.query.isEmpty
               ? null
@@ -284,16 +294,18 @@ class _SearchFieldState extends State<_SearchField> {
                     },
                     child: Icon(
                       Icons.cancel_rounded,
-                      size: 14,
+                      size: AppControlMetrics.iconAdornment,
                       color: palette.textTertiary,
                     ),
                   ),
                 ),
-          suffixIconConstraints: const BoxConstraints(
-            minWidth: 28,
-            minHeight: 28,
+          suffixIconConstraints: BoxConstraints(
+            minWidth: AppControlMetrics.fieldAdornmentSlot,
+            minHeight: AppControlMetrics.fieldAdornmentSlot,
           ),
-          contentPadding: const EdgeInsets.symmetric(vertical: 9),
+          contentPadding: EdgeInsets.symmetric(
+            vertical: AppControlMetrics.fieldVerticalPadding,
+          ),
           filled: true,
           fillColor: palette.controlBackground,
           border: OutlineInputBorder(
@@ -359,9 +371,16 @@ class _NoteRowState extends State<NoteRow> {
           height: 36,
           child: Row(
             children: [
-              Icon(Icons.delete_outline_rounded, size: 16, color: error),
+              Icon(
+                Icons.delete_outline_rounded,
+                size: AppControlMetrics.iconControl,
+                color: error,
+              ),
               const SizedBox(width: 10),
-              Text('Delete Note', style: TextStyle(fontSize: 13, color: error)),
+              Text(
+                'Delete Note',
+                style: TextStyle(fontSize: AppTypeScale.control, color: error),
+              ),
             ],
           ),
         ),
@@ -425,7 +444,7 @@ class _NoteRowState extends State<NoteRow> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: AppTypeScale.control,
                           fontWeight: widget.selected
                               ? FontWeight.w600
                               : FontWeight.w500,
@@ -438,7 +457,10 @@ class _NoteRowState extends State<NoteRow> {
                           snippet,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11.5, color: secondary),
+                          style: TextStyle(
+                            fontSize: AppTypeScale.caption,
+                            color: secondary,
+                          ),
                         )
                       else
                         _UpdatedAtMetadata(
@@ -486,7 +508,10 @@ class _DeleteNoteButton extends StatelessWidget {
         key: ValueKey('delete-note-$noteId'),
         tooltip: 'Delete note',
         onPressed: onPressed,
-        icon: const Icon(Icons.delete_outline_rounded, size: 14),
+        icon: Icon(
+          Icons.delete_outline_rounded,
+          size: AppControlMetrics.iconAdornment,
+        ),
         foregroundColor: context.palette.textTertiary,
       ),
     ),
@@ -514,14 +539,21 @@ class _UpdatedAtMetadata extends StatelessWidget {
       child: ExcludeSemantics(
         child: Row(
           children: [
-            Icon(Icons.schedule_rounded, size: 11, color: palette.textTertiary),
+            Icon(
+              Icons.schedule_rounded,
+              size: AppControlMetrics.iconInline,
+              color: palette.textTertiary,
+            ),
             const SizedBox(width: 4),
             Expanded(
               child: Text(
                 timestamp,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11.5, color: palette.textSecondary),
+                style: TextStyle(
+                  fontSize: AppTypeScale.caption,
+                  color: palette.textSecondary,
+                ),
               ),
             ),
           ],
@@ -543,7 +575,10 @@ class _SidebarEmpty extends StatelessWidget {
       child: Text(
         message,
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 12.5, color: context.palette.textTertiary),
+        style: TextStyle(
+          fontSize: AppTypeScale.body,
+          color: context.palette.textTertiary,
+        ),
       ),
     ),
   );
@@ -565,7 +600,7 @@ class _IconButton extends StatelessWidget {
     return CompactIconButton(
       tooltip: tooltip,
       onPressed: onPressed,
-      icon: Icon(icon, size: 17),
+      icon: Icon(icon, size: AppControlMetrics.iconAction),
       foregroundColor: context.palette.textSecondary,
     );
   }

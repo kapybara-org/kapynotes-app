@@ -148,7 +148,7 @@ class _ImportDialogState extends State<_ImportDialog> {
                 'Exported ${_dateLabel(exportedAt)} · '
                 '${widget.contents.manifest!.notes.length} notes',
                 style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: AppTypeScale.body,
                   color: palette.textSecondary,
                   height: 1.45,
                 ),
@@ -182,7 +182,7 @@ class _ImportDialogState extends State<_ImportDialog> {
                   child: Text(
                     line,
                     style: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: AppTypeScale.body,
                       color: palette.textSecondary,
                       height: 1.4,
                     ),
@@ -195,7 +195,7 @@ class _ImportDialogState extends State<_ImportDialog> {
                   child: Text(
                     problem,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: AppTypeScale.small,
                       color: Theme.of(context).colorScheme.error,
                       height: 1.4,
                     ),
@@ -319,7 +319,7 @@ class _ModeChoice extends StatelessWidget {
                 selected
                     ? Icons.radio_button_checked_rounded
                     : Icons.radio_button_unchecked_rounded,
-                size: 16,
+                size: AppControlMetrics.iconControl,
                 color: selected ? scheme.primary : palette.textTertiary,
               ),
               const SizedBox(width: 9),
@@ -330,7 +330,7 @@ class _ModeChoice extends StatelessWidget {
                     Text(
                       label,
                       style: TextStyle(
-                        fontSize: 12.5,
+                        fontSize: AppTypeScale.body,
                         fontWeight: FontWeight.w600,
                         color: palette.textPrimary,
                       ),
@@ -339,7 +339,7 @@ class _ModeChoice extends StatelessWidget {
                     Text(
                       detail,
                       style: TextStyle(
-                        fontSize: 11.5,
+                        fontSize: AppTypeScale.caption,
                         color: palette.textSecondary,
                         height: 1.35,
                       ),

@@ -72,7 +72,7 @@ class _Panel extends StatelessWidget {
         Text(
           title,
           style: TextStyle(
-            fontSize: 14.5,
+            fontSize: AppTypeScale.title,
             fontWeight: FontWeight.w600,
             color: palette.textPrimary,
           ),
@@ -81,7 +81,7 @@ class _Panel extends StatelessWidget {
         Text(
           blurb,
           style: TextStyle(
-            fontSize: 12.5,
+            fontSize: AppTypeScale.body,
             color: palette.textSecondary,
             height: 1.4,
           ),
@@ -129,7 +129,7 @@ class _Field extends StatelessWidget {
         autocorrect: false,
         enableSuggestions: false,
         style: TextStyle(
-          fontSize: 13,
+          fontSize: AppTypeScale.control,
           color: palette.textPrimary,
           fontFamily: monospace ? AppPlatform.monoFontFallback.first : null,
           fontFamilyFallback: monospace ? AppPlatform.monoFontFallback : null,
@@ -183,7 +183,7 @@ class _InfoNote extends StatelessWidget {
             padding: const EdgeInsets.only(top: 1),
             child: Icon(
               Icons.lock_outline_rounded,
-              size: 15,
+              size: AppControlMetrics.iconAdornment,
               color: palette.textSecondary,
             ),
           ),
@@ -192,7 +192,7 @@ class _InfoNote extends StatelessWidget {
             child: Text(
               text,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: AppTypeScale.small,
                 color: palette.textSecondary,
                 height: 1.45,
               ),
@@ -214,7 +214,7 @@ class _Message extends StatelessWidget {
     child: Text(
       text,
       style: TextStyle(
-        fontSize: 12,
+        fontSize: AppTypeScale.small,
         color: context.palette.textSecondary,
         height: 1.4,
       ),
@@ -592,7 +592,7 @@ class _PassphraseFormState extends State<_PassphraseForm> {
                 onPressed: _copy,
                 icon: Icon(
                   _copied ? Icons.check_rounded : Icons.copy_rounded,
-                  size: 16,
+                  size: AppControlMetrics.iconControl,
                 ),
                 label: Text(_copied ? 'Copied' : 'Copy'),
               ),
@@ -612,7 +612,10 @@ class _PassphraseFormState extends State<_PassphraseForm> {
             dense: true,
             title: Text(
               'I have saved this somewhere safe',
-              style: TextStyle(fontSize: 12.5, color: palette.textPrimary),
+              style: TextStyle(
+                fontSize: AppTypeScale.body,
+                color: palette.textPrimary,
+              ),
             ),
           ),
         ] else
@@ -838,10 +841,11 @@ class _DeleteAccount extends StatelessWidget {
   );
 }
 
-Future<void> _confirm(BuildContext context, Account account) => showDialog<void>(
-  context: context,
-  builder: (context) => _DeleteAccountDialog(account: account),
-);
+Future<void> _confirm(BuildContext context, Account account) =>
+    showDialog<void>(
+      context: context,
+      builder: (context) => _DeleteAccountDialog(account: account),
+    );
 
 class _DeleteAccountDialog extends StatefulWidget {
   const _DeleteAccountDialog({required this.account});
@@ -912,7 +916,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
               'synced copy of your notes, their attachments, and the key your '
               'passphrase unlocks.',
               style: TextStyle(
-                fontSize: 13,
+                fontSize: AppTypeScale.control,
                 color: palette.textPrimary,
                 height: 1.4,
               ),
@@ -925,7 +929,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
               'our servers is unreadable to anyone. The notes on this device '
               'stay where they are.',
               style: TextStyle(
-                fontSize: 13,
+                fontSize: AppTypeScale.control,
                 color: palette.textSecondary,
                 height: 1.4,
               ),
@@ -934,7 +938,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
             Text(
               'Type $_email to confirm.',
               style: TextStyle(
-                fontSize: 12.5,
+                fontSize: AppTypeScale.body,
                 color: palette.textSecondary,
                 height: 1.4,
               ),

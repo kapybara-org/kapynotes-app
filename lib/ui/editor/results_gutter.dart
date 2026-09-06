@@ -171,7 +171,11 @@ class _ResultChipState extends State<ResultChip> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_justCopied) ...[
-            Icon(Icons.check_rounded, size: 12, color: color),
+            Icon(
+              Icons.check_rounded,
+              size: AppControlMetrics.iconInline,
+              color: color,
+            ),
             const SizedBox(width: 4),
           ],
           Flexible(
@@ -186,7 +190,7 @@ class _ResultChipState extends State<ResultChip> {
               style: TextStyle(
                 fontFamily: AppPlatform.monoFontFallback.first,
                 fontFamilyFallback: AppPlatform.monoFontFallback,
-                fontSize: 12.5,
+                fontSize: AppTypeScale.result,
                 height: 1.2,
                 color: color,
                 fontFeatures: const [FontFeature.tabularFigures()],
@@ -444,7 +448,11 @@ class _EdgeGrip extends StatelessWidget {
         border: Border.all(color: palette.controlBorder, width: 0.5),
         borderRadius: BorderRadius.circular(6.5),
       ),
-      child: Icon(icon, size: 12, color: palette.textSecondary),
+      child: Icon(
+        icon,
+        size: AppControlMetrics.iconInline,
+        color: palette.textSecondary,
+      ),
     );
   }
 }

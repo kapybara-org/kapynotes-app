@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
@@ -64,7 +66,18 @@ class NoteFooter extends StatelessWidget {
   final NoteParagraphStyle? paragraphStyle;
   final bool showSettingsButton;
 
-  static const double height = 40;
+  static double get height => AppControlMetrics.footerHeight;
+
+  /// Gap between the bar's edge and the control nearest it.
+  ///
+  /// The two sides differ by design. An icon button paints a hover surface
+  /// wider than its glyph, so its optical edge already sits inside its box; a
+  /// text run has no such padding and needs the margin spelled out to look
+  /// equally inset. Matching the two numbers would make the total look closer
+  /// to the edge than the gear, which is the sort of thing you see without
+  /// being able to name.
+  static const double _edgeInset = 8;
+  static const double _textEdgeInset = 10;
 
   @override
   Widget build(BuildContext context) {
@@ -85,105 +98,150 @@ class NoteFooter extends StatelessWidget {
             40.0,
             180.0,
           );
+          // The formatting controls sit in the true centre of the bar, which
+          // only holds if whatever flanks them claims the same width on both
+          // sides. A Stack used to give them that centring for free, and gave
+          // away collision detection with it: at 44pt targets a seven-button
+          // row is wider than the gap between the gear and the total, and the
+          // three simply drew on top of each other.
+          final settingsSlot = showSettingsButton
+              ? AppControlMetrics.iconButtonExtent + _edgeInset
+              : 0.0;
+          final totalSlot = total == null ? 0.0 : totalWidth + _textEdgeInset;
+
+          // Equal flanks put the controls in the true centre of the bar, which
+          // is what the layout wants and what a desktop window has room for.
+          // A phone does not always: at 44pt targets the row is wider than
+          // what is left after reserving the total's width twice over, and
+          // insisting on the symmetry is what pushed the last button under the
+          // total. So the symmetry is a preference, not a rule — when it does
+          // not fit, each side claims only what it uses and the controls
+          // centre in the gap between them instead. The row is a known number
+          // of fixed squares, so this needs no measuring pass.
+          final rowWidth =
+              (showIndentControls ? 7 : 5) * AppControlMetrics.iconButtonExtent;
+          final symmetric = math.max(settingsSlot, totalSlot);
+          final centresInBar = constraints.maxWidth - 2 * symmetric >= rowWidth;
+          final leftSlot = centresInBar ? symmetric : settingsSlot;
+          final rightSlot = centresInBar ? symmetric : totalSlot;
           return SizedBox(
-            height: height,
-            child: Stack(
-              alignment: Alignment.center,
+            height: AppControlMetrics.scaleBar(context, height),
+            child: Row(
               children: [
-                if (showSettingsButton)
-                  Positioned(
-                    left: 8,
-                    child: FooterSettingsButton(onPressed: onSettingsPressed),
-                  ),
-                ExcludeFocus(
-                  child: Row(
-                    key: const ValueKey('note-formatting-controls'),
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _StyleCycleButton(
-                        style: paragraphStyle,
-                        shortcut: paragraphStyleShortcut,
-                        onPressed: onParagraphStylePressed,
+                SizedBox(
+                  width: leftSlot,
+                  child: showSettingsButton
+                      ? Padding(
+                          padding: const EdgeInsets.only(left: _edgeInset),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: FooterSettingsButton(
+                              onPressed: onSettingsPressed,
+                            ),
+                          ),
+                        )
+                      : null,
+                ),
+                // Centred while the controls fit, scrolling once they do not.
+                // That second case is reachable on a narrow phone with the
+                // nesting buttons showing, and again at any width once the
+                // reader turns Dynamic Type up.
+                Expanded(
+                  child: _CentredOrScrolling(
+                    child: ExcludeFocus(
+                      child: Row(
+                        key: const ValueKey('note-formatting-controls'),
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _StyleCycleButton(
+                            style: paragraphStyle,
+                            shortcut: paragraphStyleShortcut,
+                            onPressed: onParagraphStylePressed,
+                          ),
+                          _FormatButton(
+                            key: const ValueKey('format-bold'),
+                            icon: Icons.format_bold_rounded,
+                            tooltip: 'Bold · ${boldShortcut.displayLabel}',
+                            active: boldActive,
+                            onPressed: onBoldPressed,
+                          ),
+                          _FormatButton(
+                            key: const ValueKey('format-italic'),
+                            icon: Icons.format_italic_rounded,
+                            tooltip: 'Italic · ${italicShortcut.displayLabel}',
+                            active: italicActive,
+                            onPressed: onItalicPressed,
+                          ),
+                          _FormatButton(
+                            key: const ValueKey('format-bullets'),
+                            icon: Icons.format_list_bulleted_rounded,
+                            tooltip:
+                                'Bulleted list · ${bulletsShortcut.displayLabel}',
+                            active: bulletsActive,
+                            onPressed: onBulletsPressed,
+                          ),
+                          _FormatButton(
+                            key: const ValueKey('format-checklist'),
+                            icon: Icons.checklist_rounded,
+                            tooltip:
+                                'Checklist · ${checklistShortcut.displayLabel}',
+                            active: checklistActive,
+                            onPressed: onChecklistPressed,
+                          ),
+                          if (showIndentControls) ...[
+                            _FormatButton(
+                              key: const ValueKey('format-outdent'),
+                              icon: Icons.format_indent_decrease_rounded,
+                              tooltip: 'Move out · Shift + Tab',
+                              active: false,
+                              onPressed: canOutdent ? onOutdentPressed : null,
+                            ),
+                            _FormatButton(
+                              key: const ValueKey('format-indent'),
+                              icon: Icons.format_indent_increase_rounded,
+                              tooltip: 'Move in · Tab',
+                              active: false,
+                              onPressed: canIndent ? onIndentPressed : null,
+                            ),
+                          ],
+                        ],
                       ),
-                      _FormatButton(
-                        key: const ValueKey('format-bold'),
-                        icon: Icons.format_bold_rounded,
-                        tooltip: 'Bold · ${boldShortcut.displayLabel}',
-                        active: boldActive,
-                        onPressed: onBoldPressed,
-                      ),
-                      _FormatButton(
-                        key: const ValueKey('format-italic'),
-                        icon: Icons.format_italic_rounded,
-                        tooltip: 'Italic · ${italicShortcut.displayLabel}',
-                        active: italicActive,
-                        onPressed: onItalicPressed,
-                      ),
-                      _FormatButton(
-                        key: const ValueKey('format-bullets'),
-                        icon: Icons.format_list_bulleted_rounded,
-                        tooltip:
-                            'Bulleted list · ${bulletsShortcut.displayLabel}',
-                        active: bulletsActive,
-                        onPressed: onBulletsPressed,
-                      ),
-                      _FormatButton(
-                        key: const ValueKey('format-checklist'),
-                        icon: Icons.checklist_rounded,
-                        tooltip:
-                            'Checklist · ${checklistShortcut.displayLabel}',
-                        active: checklistActive,
-                        onPressed: onChecklistPressed,
-                      ),
-                      if (showIndentControls) ...[
-                        _FormatButton(
-                          key: const ValueKey('format-outdent'),
-                          icon: Icons.format_indent_decrease_rounded,
-                          tooltip: 'Move out · Shift + Tab',
-                          active: false,
-                          onPressed: canOutdent ? onOutdentPressed : null,
-                        ),
-                        _FormatButton(
-                          key: const ValueKey('format-indent'),
-                          icon: Icons.format_indent_increase_rounded,
-                          tooltip: 'Move in · Tab',
-                          active: false,
-                          onPressed: canIndent ? onIndentPressed : null,
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
                 // A note with no calculations has nothing to total, so the
                 // footer drops the readout instead of showing a hollow zero.
-                if (total case final total?)
-                  Positioned(
-                    right: 10,
-                    width: totalWidth,
-                    child: Text.rich(
-                      key: const ValueKey('note-total'),
-                      TextSpan(
-                        text: compactTotal ? 'Σ ' : 'Total: ',
-                        style: TextStyle(
-                          fontSize: 11.25,
-                          fontWeight: FontWeight.w500,
-                          color: palette.textTertiary,
-                        ),
-                        children: [
-                          TextSpan(
-                            text: total,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: palette.textPrimary,
+                SizedBox(
+                  width: rightSlot,
+                  child: total == null
+                      ? null
+                      : Padding(
+                          padding: const EdgeInsets.only(right: _textEdgeInset),
+                          child: Text.rich(
+                            key: const ValueKey('note-total'),
+                            TextSpan(
+                              text: compactTotal ? 'Σ ' : 'Total: ',
+                              style: TextStyle(
+                                fontSize: AppTypeScale.caption,
+                                fontWeight: FontWeight.w500,
+                                color: palette.textTertiary,
+                              ),
+                              children: [
+                                TextSpan(
+                                  text: total,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: palette.textPrimary,
+                                  ),
+                                ),
+                              ],
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
                           ),
-                        ],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.right,
-                    ),
-                  ),
+                        ),
+                ),
               ],
             ),
           );
@@ -191,6 +249,26 @@ class NoteFooter extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Centres its child in the space available, and scrolls it instead of
+/// clipping it when there is not enough.
+class _CentredOrScrolling extends StatelessWidget {
+  const _CentredOrScrolling({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const ClampingScrollPhysics(),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minWidth: constraints.maxWidth),
+        child: Center(child: child),
+      ),
+    ),
+  );
 }
 
 class _StyleCycleButton extends StatelessWidget {
@@ -223,7 +301,9 @@ class _StyleCycleButton extends StatelessWidget {
       icon: Text(
         label,
         style: TextStyle(
-          fontSize: style == NoteParagraphStyle.heading ? 13 : 11.5,
+          fontSize: style == NoteParagraphStyle.heading
+              ? AppTypeScale.control
+              : AppTypeScale.caption,
           fontWeight: style == NoteParagraphStyle.heading
               ? FontWeight.w700
               : FontWeight.w600,
@@ -266,7 +346,7 @@ class _FormatButton extends StatelessWidget {
       selected: active,
       foregroundColor: foreground,
       onPressed: onPressed,
-      icon: Icon(icon, size: 17),
+      icon: Icon(icon, size: AppControlMetrics.iconAction),
     );
   }
 }
@@ -289,7 +369,7 @@ class FooterSettingsButton extends StatelessWidget {
   Widget build(BuildContext context) => CompactIconButton(
     key: const ValueKey('note-settings'),
     onPressed: onPressed,
-    icon: const Icon(Icons.settings_outlined, size: 16),
+    icon: Icon(Icons.settings_outlined, size: AppControlMetrics.iconControl),
     tooltip: tooltip,
     foregroundColor: context.palette.textTertiary,
   );

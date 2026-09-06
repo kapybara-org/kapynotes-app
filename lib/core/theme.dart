@@ -248,18 +248,183 @@ class EditorMetrics {
   );
 }
 
-/// Compact control geometry shared by every app surface.
+/// Control geometry shared by every app surface, resolved per input device.
+///
+/// This is two apps wearing one codebase: a dense desktop tool whose controls
+/// sit at macOS menu-bar scale, and a phone app that has to clear Apple's 44pt
+/// and Material's 48dp minimums with glyphs legible at arm's length. One
+/// number cannot serve both. A 17px icon in a 40pt bar is correct on a Mac and
+/// miniature on a 6.7" phone, which is exactly how the footer read before
+/// these tokens existed: the desktop geometry was the only geometry, and touch
+/// inherited it whole.
+///
+/// So every size the chrome uses is named here once and answers to
+/// [AppPlatform.hasPointer]. The pointer column is the desktop design as
+/// shipped and is deliberately byte-for-byte unchanged — the desktop goldens
+/// are the proof. The touch column is the part being fixed, and it is pitched
+/// from the iOS HIG and Material 3 rather than scaled down from the desktop.
 class AppControlMetrics {
   const AppControlMetrics._();
 
-  static double get iconButtonExtent => AppPlatform.hasPointer ? 24 : 40;
+  /// Fingers, so every target has to clear 44pt and every glyph has to read
+  /// without leaning in.
+  static bool get _touch => !AppPlatform.hasPointer;
+
+  // ── Tap targets ─────────────────────────────────────────────────────────
+
+  /// The painted extent of an icon action.
+  ///
+  /// Pointer devices get a compact hover chip barely larger than the glyph,
+  /// because a cursor lands where it is aimed. Touch gets 44, Apple's stated
+  /// minimum: [iconButtonTapTargetSize] then pads the hit area out to
+  /// Material's 48, so the target satisfies both guidelines while the painted
+  /// surface stays the size the layout was drawn around.
+  static double get iconButtonExtent => _touch ? 44 : 24;
 
   static MaterialTapTargetSize get iconButtonTapTargetSize =>
       AppPlatform.hasPointer
       ? MaterialTapTargetSize.shrinkWrap
       : MaterialTapTargetSize.padded;
 
-  static double get sidebarNoteRowExtent => AppPlatform.hasPointer ? 54 : 60;
+  /// Height of a text button, filled button or outlined button.
+  static double get buttonHeight => _touch ? 48 : 32;
+
+  /// Actions inside a popover, which is tighter than a dialog but still has to
+  /// be hittable. Below [iconButtonExtent] on touch only because a popover is
+  /// already anchored under the thumb that opened it.
+  static double get popoverActionExtent => _touch ? 40 : 26;
+
+  /// The square a text field reserves for a leading or trailing glyph, and the
+  /// padding above and below its text. Together these set how tall a field is:
+  /// a search box a thumb can land in cannot be built out of a 28pt slot.
+  static double get fieldAdornmentSlot => _touch ? 40 : 28;
+
+  static double get fieldVerticalPadding => _touch ? 13 : 9;
+
+  // ── Bars ────────────────────────────────────────────────────────────────
+
+  /// The title bar. 48 is right for a desktop window whose chrome should
+  /// disappear; 56 is the Material app-bar height and leaves a 44pt action
+  /// room to breathe above and below.
+  static double get toolbarHeight => _touch ? 56 : 48;
+
+  /// The note status bar and its twin at the foot of the sidebar.
+  ///
+  /// 40 fits a 24pt desktop action with margin. It cannot fit a 44pt one, and
+  /// clamping the row to 40 is what silently cut the phone's formatting
+  /// buttons back below the minimum target no matter what the button itself
+  /// asked for. 56 is 44 plus a 6pt gutter each side.
+  static double get footerHeight => _touch ? 56 : 40;
+
+  /// A row in the notes list. Touch carries a full point larger title and
+  /// snippet than pointer does, and needs the height to seat them.
+  static double get sidebarNoteRowExtent => _touch ? 64 : 54;
+
+  // ── Icon glyphs ─────────────────────────────────────────────────────────
+  //
+  // The desktop ramp had grown to eight steps between 11 and 21, most of them
+  // a pixel apart and none of them named. These five roles cover the same
+  // ground, and touch collapses them further into four distinct sizes:
+  // [iconControl] and [iconAction] are a pixel apart on a Mac, where that
+  // reads as the difference between a gear and a formatting button, and
+  // identical on a phone, where it would read as a mistake.
+
+  /// Inline marks set against text: the clock beside a timestamp, the tick in
+  /// a result chip.
+  static double get iconInline => _touch ? 14 : 12;
+
+  /// Adornments inside a control — a field's search glyph, a row's clear
+  /// button, a hover-revealed delete.
+  static double get iconAdornment => _touch ? 18 : 15;
+
+  /// A secondary icon that is itself the button.
+  static double get iconControl => _touch ? 22 : 16;
+
+  /// A primary icon that is itself the button. The workhorse of every bar.
+  static double get iconAction => _touch ? 22 : 17;
+
+  /// Feature icons that head a pane or an empty state.
+  static double get iconFeature => _touch ? 26 : 21;
+
+  /// What an `Icon` with no size of its own gets, via the theme.
+  static double get iconDefault => _touch ? 22 : 18;
+
+  /// The brand mark in the toolbar and sidebar lockups.
+  static double get wordmarkMark => _touch ? 22 : 19;
+
+  /// The same mark at empty-state size.
+  static double get wordmarkMarkLarge => _touch ? 56 : 48;
+
+  // ── Text scaling ────────────────────────────────────────────────────────
+
+  /// A fixed-height bar sized for the default text scale clips its own label
+  /// the moment the user raises Dynamic Type, which is the single most common
+  /// accessibility failure in a Flutter app that hardcodes bar heights. Bars
+  /// grow with the scale instead.
+  ///
+  /// Capped at 1.4: past that the chrome would eat the note it exists to
+  /// frame, and the label inside is already ellipsised rather than truncated.
+  static double scaleBar(BuildContext context, double height) =>
+      height * MediaQuery.textScalerOf(context).scale(1.0).clamp(1.0, 1.4);
+}
+
+/// The app's type ramp, in the same two densities as [AppControlMetrics].
+///
+/// Every size the chrome renders comes from here rather than from a literal at
+/// the call site. The pointer column is the desktop scale as shipped, which is
+/// roughly macOS's own 10–16px range for UI text. The touch column is pitched
+/// to iOS Dynamic Type at its default Large setting, where 17 is body and 13
+/// is the smallest size Apple sets anything a user is meant to actually read —
+/// a rule the phone build broke everywhere, since its whole ramp sat between
+/// 10.5 and 13.
+///
+/// As with the icons, touch is the shorter ramp on purpose: desktop steps half
+/// a pixel apart collapse into one touch size, because they were never telling
+/// the reader anything at that distance.
+class AppTypeScale {
+  const AppTypeScale._();
+
+  static bool get _touch => !AppPlatform.hasPointer;
+
+  /// The smallest legible annotation: an uppercase section label, a keycap
+  /// hint. 10.5 is a real size on a Mac and an unreadable one held at arm's
+  /// length, so touch jumps most of the ramp in one step to land on 13 — the
+  /// floor Apple sets for anything a reader is expected to parse.
+  static double get micro => _touch ? 13 : 10.5;
+
+  /// Metadata, list snippets, the helper line under a control.
+  static double get caption => _touch ? 13 : 11.5;
+
+  /// Dense secondary copy that is still read as a sentence.
+  static double get small => _touch ? 13.5 : 12;
+
+  /// Running paragraph copy inside dialogs and panes.
+  static double get body => _touch ? 15 : 12.5;
+
+  /// The result chip in the gutter.
+  ///
+  /// Its own step rather than [body], because it is monospace figures inside a
+  /// fixed column: the width the note gives up to it is a layout decision, so
+  /// the type has to be chosen against that column rather than against the
+  /// prose elsewhere. Touch gains what the column can actually seat without
+  /// pushing the writing area below half the screen.
+  static double get result => _touch ? 14 : 12.5;
+
+  /// Control labels: buttons, list rows, fields, menu items.
+  static double get control => _touch ? 15 : 13;
+
+  /// Section titles, the app-bar title, an empty state's first line.
+  static double get title => _touch ? 17 : 15;
+
+  /// Dialog titles — the largest step in ordinary chrome.
+  static double get heading => _touch ? 20 : 16;
+
+  /// The brand lockup, which is set in its own face and carries its own
+  /// optical size a half point off [title].
+  static double get wordmark => _touch ? 17 : 14.5;
+
+  /// The lockup on the empty state, the one display-sized thing in the app.
+  static double get display => _touch ? 34 : 31;
 }
 
 class KapyTheme {
@@ -345,7 +510,7 @@ class KapyTheme {
     final compactControls = AppPlatform.isDesktop;
     final accent = dark ? _darkAccent : _lightAccent;
     final onAccent = dark ? const Color(0xFF15171A) : Colors.white;
-    final buttonHeight = compactControls ? 32.0 : 40.0;
+    final buttonHeight = AppControlMetrics.buttonHeight;
     final iconButtonExtent = AppControlMetrics.iconButtonExtent;
     final tapTarget = compactControls
         ? MaterialTapTargetSize.shrinkWrap
@@ -390,7 +555,10 @@ class KapyTheme {
         selectionColor: palette.selection,
         selectionHandleColor: accent,
       ),
-      iconTheme: IconThemeData(color: palette.textSecondary, size: 18),
+      iconTheme: IconThemeData(
+        color: palette.textSecondary,
+        size: AppControlMetrics.iconDefault,
+      ),
       textTheme: base.textTheme.apply(
         bodyColor: palette.textPrimary,
         displayColor: palette.textPrimary,
@@ -403,7 +571,7 @@ class KapyTheme {
         foregroundColor: palette.textPrimary,
         titleTextStyle: base.textTheme.titleMedium?.copyWith(
           color: palette.textPrimary,
-          fontSize: 15,
+          fontSize: AppTypeScale.title,
           fontWeight: FontWeight.w600,
           letterSpacing: -0.1,
         ),
@@ -421,7 +589,7 @@ class KapyTheme {
         shadowColor: Colors.black.withValues(alpha: dark ? 0.24 : 0.10),
         titleTextStyle: base.textTheme.titleMedium?.copyWith(
           color: palette.textPrimary,
-          fontSize: 16,
+          fontSize: AppTypeScale.heading,
           fontWeight: FontWeight.w600,
         ),
         shape: RoundedRectangleBorder(
@@ -434,10 +602,10 @@ class KapyTheme {
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.black.withValues(alpha: dark ? 0.24 : 0.10),
         elevation: 2,
-        menuPadding: const EdgeInsets.all(6),
+        menuPadding: EdgeInsets.all(compactControls ? 6 : 8),
         position: PopupMenuPosition.under,
         textStyle: base.textTheme.bodyMedium?.copyWith(
-          fontSize: 13,
+          fontSize: AppTypeScale.control,
           color: palette.textPrimary,
         ),
         shape: RoundedRectangleBorder(
@@ -472,7 +640,7 @@ class KapyTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: Size(0, buttonHeight),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.symmetric(horizontal: compactControls ? 12 : 18),
           tapTargetSize: tapTarget,
           elevation: 0,
           shadowColor: Colors.transparent,
@@ -482,7 +650,7 @@ class KapyTheme {
           disabledForegroundColor: palette.textTertiary,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: base.textTheme.labelLarge?.copyWith(
-            fontSize: 13,
+            fontSize: AppTypeScale.control,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -490,14 +658,14 @@ class KapyTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           minimumSize: Size(0, buttonHeight),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.symmetric(horizontal: compactControls ? 12 : 18),
           tapTargetSize: tapTarget,
           elevation: 0,
           foregroundColor: palette.textPrimary,
           side: BorderSide(color: palette.controlBorder, width: 0.5),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: base.textTheme.labelLarge?.copyWith(
-            fontSize: 13,
+            fontSize: AppTypeScale.control,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -505,12 +673,12 @@ class KapyTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           minimumSize: Size(0, buttonHeight),
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: EdgeInsets.symmetric(horizontal: compactControls ? 10 : 14),
           tapTargetSize: tapTarget,
           foregroundColor: accent,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
           textStyle: base.textTheme.labelLarge?.copyWith(
-            fontSize: 13,
+            fontSize: AppTypeScale.control,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -536,7 +704,7 @@ class KapyTheme {
         trackOutlineWidth: const WidgetStatePropertyAll(0.5),
       ),
       scrollbarTheme: ScrollbarThemeData(
-        thickness: const WidgetStatePropertyAll(4),
+        thickness: WidgetStatePropertyAll(compactControls ? 4 : 6),
         radius: const Radius.circular(4),
         thumbColor: WidgetStatePropertyAll(
           palette.textTertiary.withValues(alpha: 0.44),
@@ -547,7 +715,7 @@ class KapyTheme {
         waitDuration: const Duration(milliseconds: 600),
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
         textStyle: base.textTheme.bodySmall?.copyWith(
-          fontSize: 11.5,
+          fontSize: AppTypeScale.caption,
           color: palette.textPrimary,
         ),
         decoration: BoxDecoration(

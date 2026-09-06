@@ -152,7 +152,8 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
                     active: checklistActive,
                     onPressed: () => _run(onChecklistPressed),
                   ),
-                  if (menuItems.isNotEmpty) _NativeActionsMenu(items: menuItems),
+                  if (menuItems.isNotEmpty)
+                    _NativeActionsMenu(items: menuItems),
                 ],
               ),
             ),
@@ -207,7 +208,7 @@ class _SelectionStyleCycle extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: palette.textPrimary,
-                      fontSize: 12,
+                      fontSize: AppTypeScale.small,
                       fontWeight: style == NoteParagraphStyle.heading
                           ? FontWeight.w700
                           : FontWeight.w600,
@@ -252,7 +253,7 @@ class _SelectionIconButton extends StatelessWidget {
           selected: active,
           onPressed: onPressed,
           foregroundColor: active ? palette.textPrimary : palette.textSecondary,
-          icon: Icon(icon, size: 16),
+          icon: Icon(icon, size: AppControlMetrics.iconControl),
         ),
       ),
     );
@@ -290,7 +291,10 @@ class _NativeActionsMenu extends StatelessWidget {
               if (selected != null) items[selected].onPressed?.call();
             },
             foregroundColor: context.palette.textSecondary,
-            icon: const Icon(Icons.more_horiz_rounded, size: 17),
+            icon: Icon(
+              Icons.more_horiz_rounded,
+              size: AppControlMetrics.iconAction,
+            ),
           ),
         ),
       ),
