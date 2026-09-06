@@ -93,12 +93,22 @@ Future<void> pumpApp(
   await tester.pumpAndSettle();
 }
 
-/// Opens settings from the note footer and selects [section].
+/// Opens settings and selects [section].
+///
+/// Whichever affordance the layout is showing: the sidebar's labelled row when
+/// the notes list is open, the note footer's gear when it is not.
+Finder settingsAffordance() {
+  final sidebar = find.byKey(const ValueKey('sidebar-settings'));
+  return sidebar.evaluate().isEmpty
+      ? find.byKey(const ValueKey('note-settings'))
+      : sidebar;
+}
+
 Future<void> openSettings(
   WidgetTester tester, {
   SettingsSection section = SettingsSection.general,
 }) async {
-  await tester.tap(find.byTooltip('Settings'));
+  await tester.tap(settingsAffordance().first);
   await tester.pumpAndSettle();
   if (section == SettingsSection.general) return;
   await tester.tap(find.byKey(ValueKey('settings-section-${section.name}')));
@@ -345,44 +355,45 @@ void main() {
     expect(find.byTooltip('Hide notes'), findsNothing);
   });
 
-  testWidgets('the pin survives every desktop width, and never reaches a phone', (
-    tester,
-  ) async {
-    // The bug this replaces: the compact toolbar is a second call site, and
-    // it was reached by a narrow desktop window as well as by a phone. The
-    // pin went missing on the desktop at small widths as a result.
-    for (final size in [
-      const Size(1100, 760),
-      const Size(700, 620),
-      LayoutPrefs.minimumWindowSize,
-    ]) {
-      await pumpApp(tester, size: size);
+  testWidgets(
+    'the pin survives every desktop width, and never reaches a phone',
+    (tester) async {
+      // The bug this replaces: the compact toolbar is a second call site, and
+      // it was reached by a narrow desktop window as well as by a phone. The
+      // pin went missing on the desktop at small widths as a result.
+      for (final size in [
+        const Size(1100, 760),
+        const Size(700, 620),
+        LayoutPrefs.minimumWindowSize,
+      ]) {
+        await pumpApp(tester, size: size);
+        expect(
+          find.byIcon(Icons.push_pin_outlined),
+          findsOneWidget,
+          reason: 'the pin went missing at $size',
+        );
+      }
+
+      // The drawer hides the note actions while it covers them. The pin is
+      // about the window, not the note, so it stays.
+      await pumpApp(tester, size: const Size(700, 620));
+      await tester.tap(find.byTooltip('Show notes'));
+      await tester.pumpAndSettle();
       expect(
         find.byIcon(Icons.push_pin_outlined),
         findsOneWidget,
-        reason: 'the pin went missing at $size',
+        reason: 'the pin went with the drawer',
       );
-    }
 
-    // The drawer hides the note actions while it covers them. The pin is
-    // about the window, not the note, so it stays.
-    await pumpApp(tester, size: const Size(700, 620));
-    await tester.tap(find.byTooltip('Show notes'));
-    await tester.pumpAndSettle();
-    expect(
-      find.byIcon(Icons.push_pin_outlined),
-      findsOneWidget,
-      reason: 'the pin went with the drawer',
-    );
-
-    // A phone has no window to float, so the control is absent rather than
-    // present and inert.
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    await pumpApp(tester, size: const Size(420, 800));
-    expect(find.byIcon(Icons.push_pin_outlined), findsNothing);
-    expect(find.byIcon(Icons.push_pin_rounded), findsNothing);
-  });
+      // A phone has no window to float, so the control is absent rather than
+      // present and inert.
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester, size: const Size(420, 800));
+      expect(find.byIcon(Icons.push_pin_outlined), findsNothing);
+      expect(find.byIcon(Icons.push_pin_rounded), findsNothing);
+    },
+  );
 
   testWidgets('keeps exchange-rate status out of the toolbar', (tester) async {
     await pumpApp(tester);
@@ -436,7 +447,7 @@ void main() {
       const Size.square(24),
     );
     expect(
-      tester.getSize(find.byKey(const ValueKey('note-settings'))),
+      tester.getSize(find.byKey(const ValueKey('format-bold'))),
       const Size.square(24),
     );
 
@@ -506,7 +517,7 @@ void main() {
           .toPlainText(),
       'Total: 256',
     );
-    expect(find.byTooltip('Settings'), findsOneWidget);
+    expect(settingsAffordance(), findsOneWidget);
     // Note identity stays in the note list instead of being repeated in the
     // app-level toolbar.
     expect(notes.notes.single.title, 'Weekend budget');
@@ -533,7 +544,8 @@ void main() {
 
     await openSettings(tester);
 
-    expect(find.text('Settings'), findsOneWidget);
+    // Twice over now: the sidebar row that opened it, and the dialog's title.
+    expect(find.text('Settings'), findsWidgets);
     expect(find.text('Desktop sidebar'), findsOneWidget);
     final dailyToggle = find.byKey(const ValueKey('daily-separators-toggle'));
     final compactSwitch = find.descendant(
@@ -760,13 +772,12 @@ void main() {
       WritingFont.handwritten.fontVariations,
     );
     final mixedPreview = tester.widget<Text>(
-      find
-          .descendant(
-            of: find.byKey(const ValueKey('writing-font-mixed')),
-            matching: find.byWidgetPredicate(
-              (widget) => widget is Text && widget.textSpan != null,
-            ),
-          ),
+      find.descendant(
+        of: find.byKey(const ValueKey('writing-font-mixed')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Text && widget.textSpan != null,
+        ),
+      ),
     );
     final mixedSpans = (mixedPreview.textSpan! as TextSpan).children!;
     expect(mixedSpans.first.style?.fontFamily, 'Shantell Sans');

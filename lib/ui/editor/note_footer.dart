@@ -73,11 +73,14 @@ class NoteFooter extends StatelessWidget {
   /// The two sides differ by design. An icon button paints a hover surface
   /// wider than its glyph, so its optical edge already sits inside its box; a
   /// text run has no such padding and needs the margin spelled out to look
-  /// equally inset. Matching the two numbers would make the total look closer
-  /// to the edge than the gear, which is the sort of thing you see without
-  /// being able to name.
+  /// equally inset.
   static const double _edgeInset = 8;
   static const double _textEdgeInset = 10;
+
+  /// Between the gear and the formatting cluster. They are different in kind —
+  /// one leaves the note, the rest change the text — and butted together they
+  /// would read as one group of six.
+  static const double _groupGap = 14;
 
   @override
   Widget build(BuildContext context) {
@@ -94,60 +97,54 @@ class NoteFooter extends StatelessWidget {
           // label until the window reaches the genuinely narrow breakpoint.
           final compactTotal =
               constraints.maxWidth < (AppPlatform.isMobile ? 520 : 420);
-          final totalWidth = ((constraints.maxWidth - 200) / 2 - 18).clamp(
-            40.0,
-            180.0,
-          );
-          // The formatting controls sit in the true centre of the bar, which
-          // only holds if whatever flanks them claims the same width on both
-          // sides. A Stack used to give them that centring for free, and gave
-          // away collision detection with it: at 44pt targets a seven-button
-          // row is wider than the gap between the gear and the total, and the
-          // three simply drew on top of each other.
-          final settingsSlot = showSettingsButton
-              ? AppControlMetrics.iconButtonExtent + _edgeInset
-              : 0.0;
-          final totalSlot = total == null ? 0.0 : totalWidth + _textEdgeInset;
 
-          // Equal flanks put the controls in the true centre of the bar, which
-          // is what the layout wants and what a desktop window has room for.
-          // A phone does not always: at 44pt targets the row is wider than
-          // what is left after reserving the total's width twice over, and
-          // insisting on the symmetry is what pushed the last button under the
-          // total. So the symmetry is a preference, not a rule — when it does
-          // not fit, each side claims only what it uses and the controls
-          // centre in the gap between them instead. The row is a known number
-          // of fixed squares, so this needs no measuring pass.
+          // The controls start at the left edge and grow rightward, which is
+          // the whole point of not centring them: the nesting buttons appear
+          // the moment the caret lands on a list line, and a centred row that
+          // grows from five squares to seven slides everything already in it
+          // sideways by a full button — 44pt under a thumb. Tap Bullets and
+          // Bold would leave from under the finger that just pressed it.
+          final gearSlot = showSettingsButton
+              ? AppControlMetrics.iconButtonExtent + _groupGap
+              : 0.0;
           final rowWidth =
               (showIndentControls ? 7 : 5) * AppControlMetrics.iconButtonExtent;
-          final symmetric = math.max(settingsSlot, totalSlot);
-          final centresInBar = constraints.maxWidth - 2 * symmetric >= rowWidth;
-          final leftSlot = centresInBar ? symmetric : settingsSlot;
-          final rightSlot = centresInBar ? symmetric : totalSlot;
+          final fixed =
+              _edgeInset + gearSlot + rowWidth + _groupGap + _textEdgeInset;
+          // Whatever is genuinely left over, up to a readable maximum. The
+          // floor is what makes the controls scroll instead of the readout
+          // shrinking to nothing on a narrow phone with nesting showing.
+          final totalSlot = total == null
+              ? 0.0
+              : (constraints.maxWidth - fixed).clamp(40.0, 180.0);
+
           return SizedBox(
             height: AppControlMetrics.scaleBar(context, height),
             child: Row(
               children: [
-                SizedBox(
-                  width: leftSlot,
-                  child: showSettingsButton
-                      ? Padding(
-                          padding: const EdgeInsets.only(left: _edgeInset),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: FooterSettingsButton(
-                              onPressed: onSettingsPressed,
-                            ),
-                          ),
-                        )
-                      : null,
-                ),
-                // Centred while the controls fit, scrolling once they do not.
-                // That second case is reachable on a narrow phone with the
-                // nesting buttons showing, and again at any width once the
-                // reader turns Dynamic Type up.
-                Expanded(
-                  child: _CentredOrScrolling(
+                const SizedBox(width: _edgeInset),
+                if (showSettingsButton) ...[
+                  FooterSettingsButton(onPressed: onSettingsPressed),
+                  const SizedBox(width: _groupGap),
+                ],
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: math.max(
+                      0,
+                      constraints.maxWidth -
+                          _edgeInset -
+                          gearSlot -
+                          totalSlot -
+                          _groupGap -
+                          _textEdgeInset,
+                    ),
+                  ),
+                  // Scrolls only when it cannot fit, which a narrow phone with
+                  // the nesting controls showing still cannot. Left-anchored,
+                  // so what is on screen stays where it was.
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const ClampingScrollPhysics(),
                     child: ExcludeFocus(
                       child: Row(
                         key: const ValueKey('note-formatting-controls'),
@@ -161,14 +158,15 @@ class NoteFooter extends StatelessWidget {
                           _FormatButton(
                             key: const ValueKey('format-bold'),
                             icon: Icons.format_bold_rounded,
-                            tooltip: 'Bold · ${boldShortcut.displayLabel}',
+                            tooltip: 'Bold \u00b7 ${boldShortcut.displayLabel}',
                             active: boldActive,
                             onPressed: onBoldPressed,
                           ),
                           _FormatButton(
                             key: const ValueKey('format-italic'),
                             icon: Icons.format_italic_rounded,
-                            tooltip: 'Italic · ${italicShortcut.displayLabel}',
+                            tooltip:
+                                'Italic \u00b7 ${italicShortcut.displayLabel}',
                             active: italicActive,
                             onPressed: onItalicPressed,
                           ),
@@ -176,7 +174,7 @@ class NoteFooter extends StatelessWidget {
                             key: const ValueKey('format-bullets'),
                             icon: Icons.format_list_bulleted_rounded,
                             tooltip:
-                                'Bulleted list · ${bulletsShortcut.displayLabel}',
+                                'Bulleted list \u00b7 ${bulletsShortcut.displayLabel}',
                             active: bulletsActive,
                             onPressed: onBulletsPressed,
                           ),
@@ -184,7 +182,7 @@ class NoteFooter extends StatelessWidget {
                             key: const ValueKey('format-checklist'),
                             icon: Icons.checklist_rounded,
                             tooltip:
-                                'Checklist · ${checklistShortcut.displayLabel}',
+                                'Checklist \u00b7 ${checklistShortcut.displayLabel}',
                             active: checklistActive,
                             onPressed: onChecklistPressed,
                           ),
@@ -192,14 +190,14 @@ class NoteFooter extends StatelessWidget {
                             _FormatButton(
                               key: const ValueKey('format-outdent'),
                               icon: Icons.format_indent_decrease_rounded,
-                              tooltip: 'Move out · Shift + Tab',
+                              tooltip: 'Move out \u00b7 Shift + Tab',
                               active: false,
                               onPressed: canOutdent ? onOutdentPressed : null,
                             ),
                             _FormatButton(
                               key: const ValueKey('format-indent'),
                               icon: Icons.format_indent_increase_rounded,
-                              tooltip: 'Move in · Tab',
+                              tooltip: 'Move in \u00b7 Tab',
                               active: false,
                               onPressed: canIndent ? onIndentPressed : null,
                             ),
@@ -209,39 +207,41 @@ class NoteFooter extends StatelessWidget {
                     ),
                   ),
                 ),
+                // Everything between the controls and the readout. The only
+                // flexible thing in the row, so the total is pinned right
+                // however wide the window is.
+                const Spacer(),
                 // A note with no calculations has nothing to total, so the
                 // footer drops the readout instead of showing a hollow zero.
-                SizedBox(
-                  width: rightSlot,
-                  child: total == null
-                      ? null
-                      : Padding(
-                          padding: const EdgeInsets.only(right: _textEdgeInset),
-                          child: Text.rich(
-                            key: const ValueKey('note-total'),
-                            TextSpan(
-                              text: compactTotal ? 'Σ ' : 'Total: ',
-                              style: TextStyle(
-                                fontSize: AppTypeScale.caption,
-                                fontWeight: FontWeight.w500,
-                                color: palette.textTertiary,
-                              ),
-                              children: [
-                                TextSpan(
-                                  text: total,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: palette.textPrimary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.right,
-                          ),
+                if (total case final total?) ...[
+                  SizedBox(
+                    width: totalSlot,
+                    child: Text.rich(
+                      key: const ValueKey('note-total'),
+                      TextSpan(
+                        text: compactTotal ? '\u03a3 ' : 'Total: ',
+                        style: TextStyle(
+                          fontSize: AppTypeScale.caption,
+                          fontWeight: FontWeight.w500,
+                          color: palette.textTertiary,
                         ),
-                ),
+                        children: [
+                          TextSpan(
+                            text: total,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: palette.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                  const SizedBox(width: _textEdgeInset),
+                ],
               ],
             ),
           );
@@ -249,26 +249,6 @@ class NoteFooter extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Centres its child in the space available, and scrolls it instead of
-/// clipping it when there is not enough.
-class _CentredOrScrolling extends StatelessWidget {
-  const _CentredOrScrolling({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      physics: const ClampingScrollPhysics(),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minWidth: constraints.maxWidth),
-        child: Center(child: child),
-      ),
-    ),
-  );
 }
 
 class _StyleCycleButton extends StatelessWidget {

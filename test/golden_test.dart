@@ -143,6 +143,17 @@ Future<void> pumpForGolden(
   await tester.pumpAndSettle();
 }
 
+/// Taps whichever settings affordance the layout is showing: the sidebar's
+/// labelled row when the notes list is open, the note footer's gear when it is
+/// not. They stopped sharing a key when the sidebar's became a row.
+Future<void> tapSettings(WidgetTester tester) async {
+  final sidebar = find.byKey(const ValueKey('sidebar-settings'));
+  final target = sidebar.evaluate().isEmpty
+      ? find.byKey(const ValueKey('note-settings'))
+      : sidebar;
+  await tester.tap(target.first);
+}
+
 void main() {
   setUpAll(loadTestFonts);
 
@@ -467,7 +478,7 @@ void main() {
       size: const Size(760, 520),
       brightness: Brightness.dark,
     );
-    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tapSettings(tester);
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
@@ -481,7 +492,7 @@ void main() {
       size: const Size(760, 520),
       brightness: Brightness.dark,
     );
-    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tapSettings(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('settings-section-numbers')));
     await tester.pumpAndSettle();
@@ -497,7 +508,7 @@ void main() {
       size: const Size(760, 520),
       brightness: Brightness.dark,
     );
-    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tapSettings(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('settings-section-shortcuts')));
     await tester.pumpAndSettle();
@@ -514,7 +525,7 @@ void main() {
       brightness: Brightness.dark,
       withUpdates: true,
     );
-    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tapSettings(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('settings-section-updates')));
     await tester.pumpAndSettle();
@@ -530,7 +541,7 @@ void main() {
       size: const Size(760, 520),
       brightness: Brightness.light,
     );
-    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tapSettings(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('settings-section-appearance')));
     await tester.pumpAndSettle();
@@ -564,7 +575,7 @@ void main() {
       brightness: Brightness.dark,
       platform: TargetPlatform.iOS,
     );
-    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tapSettings(tester);
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
@@ -581,7 +592,7 @@ void main() {
       brightness: Brightness.dark,
       platform: TargetPlatform.iOS,
     );
-    await tester.tap(find.byKey(const ValueKey('note-settings')));
+    await tapSettings(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('settings-section-general')));
     await tester.pumpAndSettle();

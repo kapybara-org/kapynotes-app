@@ -64,7 +64,10 @@ Future<void> pumpLaunch(
 }
 
 TextField _field(WidgetTester tester) => tester.widget<TextField>(
-  find.descendant(of: find.byType(NoteEditor), matching: find.byType(TextField)),
+  find.descendant(
+    of: find.byType(NoteEditor),
+    matching: find.byType(TextField),
+  ),
 );
 
 void main() {
@@ -293,11 +296,11 @@ void main() {
       // drawer is what normally puts the cursor back at the end of a note.
       await tester.tap(find.byTooltip('Show notes'));
       await tester.pumpAndSettle();
-      // The drawer's own settings button: the editor keeps one too, behind it.
+      // The drawer's own settings row: the editor keeps a gear too, behind it.
       await tester.tap(
         find.descendant(
           of: find.byType(Drawer),
-          matching: find.byTooltip('Settings'),
+          matching: find.byKey(const ValueKey('sidebar-settings')),
         ),
       );
       await tester.pumpAndSettle();

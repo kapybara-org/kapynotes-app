@@ -119,22 +119,79 @@ class _SidebarFooter extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border(top: BorderSide(color: palette.separator, width: 0.5)),
       ),
-      padding: const EdgeInsets.only(left: 8),
-      alignment: Alignment.centerLeft,
       child: updates == null
-          ? FooterSettingsButton(onPressed: onSettingsPressed)
+          ? _SettingsEntry(
+              key: const ValueKey('sidebar-settings'),
+              onPressed: onSettingsPressed,
+            )
           : ListenableBuilder(
               listenable: updates,
-              builder: (context, _) => _UpdateDot(
-                visible: updates.hasUpdate,
-                child: FooterSettingsButton(
-                  onPressed: onSettingsPressed,
-                  tooltip: updates.hasUpdate
-                      ? 'Settings — update available'
-                      : 'Settings',
-                ),
+              builder: (context, _) => _SettingsEntry(
+                key: const ValueKey('sidebar-settings'),
+                onPressed: onSettingsPressed,
+                hasUpdate: updates.hasUpdate,
               ),
             ),
+    );
+  }
+}
+
+/// The way out of the notes list and into settings.
+///
+/// A labelled row rather than a bare gear. The sidebar is never narrower than
+/// 150pt, so there has always been room for the word, and a tooltip is a poor
+/// substitute for one: it needs a pointer to hover, which is exactly what the
+/// phone build does not have. Naming it also lets the row match the notes
+/// above it instead of reading as a stray control under them.
+class _SettingsEntry extends StatelessWidget {
+  const _SettingsEntry({
+    super.key,
+    required this.onPressed,
+    this.hasUpdate = false,
+  });
+
+  final VoidCallback onPressed;
+  final bool hasUpdate;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Semantics(
+      button: true,
+      // The dot is the one part of this a screen reader cannot see.
+      label: hasUpdate ? 'Settings, update available' : 'Settings',
+      child: ExcludeSemantics(
+        child: InkWell(
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                _UpdateDot(
+                  visible: hasUpdate,
+                  child: Icon(
+                    Icons.settings_outlined,
+                    size: AppControlMetrics.iconControl,
+                    color: palette.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Settings',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppTypeScale.control,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -97,7 +97,14 @@ Future<UpdateChecker> _pump(
 }
 
 Future<void> _openSettings(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey('note-settings')).first);
+  // The sidebar's labelled row when the notes list is open, the note footer's
+  // gear when it is not. They stopped sharing a key when the sidebar's became
+  // a row with a word in it.
+  final sidebar = find.byKey(const ValueKey('sidebar-settings'));
+  final target = sidebar.evaluate().isEmpty
+      ? find.byKey(const ValueKey('note-settings'))
+      : sidebar;
+  await tester.tap(target.first);
   await tester.pumpAndSettle();
 }
 
@@ -212,7 +219,7 @@ void main() {
     _seedPendingUpdate(store);
     await _pump(tester, store);
 
-    expect(find.byTooltip('Settings — update available'), findsOneWidget);
+    expect(find.bySemanticsLabel('Settings, update available'), findsOneWidget);
   });
 
   testWidgets('the gear says nothing while the app is current', (tester) async {
@@ -220,8 +227,8 @@ void main() {
     _seedUpToDate(store);
     await _pump(tester, store);
 
-    expect(find.byTooltip('Settings'), findsWidgets);
-    expect(find.byTooltip('Settings — update available'), findsNothing);
+    expect(find.bySemanticsLabel('Settings'), findsWidgets);
+    expect(find.bySemanticsLabel('Settings, update available'), findsNothing);
   });
 
   testWidgets('the update row is absent where the app cannot update itself', (
@@ -240,9 +247,9 @@ void main() {
 
     await notes.load();
     prefs.load();
-  // The update row lives in the notes list, which a new install starts with
-  // closed. These tests are about the row, not about the default.
-  if (!prefs.sidebarVisible) prefs.toggleSidebar();
+    // The update row lives in the notes list, which a new install starts with
+    // closed. These tests are about the row, not about the default.
+    if (!prefs.sidebarVisible) prefs.toggleSidebar();
     shortcuts.load();
     await tester.pumpWidget(
       KapyNotesApp(

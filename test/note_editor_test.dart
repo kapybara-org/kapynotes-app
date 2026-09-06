@@ -504,7 +504,7 @@ void main() {
     expect(chipWithText('4'), findsOneWidget);
   });
 
-  testWidgets('keeps settings left, formatting centered, and total right', (
+  testWidgets('starts the controls at the left and pins the total right', (
     tester,
   ) async {
     await tester.pumpWidget(harness('2 + 2'));
@@ -519,10 +519,42 @@ void main() {
     );
     final total = tester.getRect(find.byKey(const ValueKey('note-total')));
 
-    expect(settings.center.dx, lessThan(formatting.center.dx));
-    expect(formatting.center.dx, closeTo(footer.center.dx, 1));
-    expect(total.center.dx, greaterThan(formatting.center.dx));
+    // Left-anchored, in reading order, rather than floating in the middle.
+    expect(settings.left, closeTo(footer.left + 8, 1));
+    expect(formatting.left, closeTo(settings.right + 14, 1));
+    expect(
+      formatting.center.dx,
+      lessThan(footer.center.dx),
+      reason: 'the controls belong at the edge the eye starts from',
+    );
     expect(total.right, closeTo(footer.right - 10, 1));
+  });
+
+  testWidgets('the controls do not move when the nesting buttons appear', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('2 + 2'));
+    await tester.pumpAndSettle();
+
+    double boldLeft() =>
+        tester.getRect(find.byKey(const ValueKey('format-bold'))).left;
+
+    final before = boldLeft();
+    expect(find.byKey(const ValueKey('format-indent')), findsNothing);
+
+    // Putting the caret on a list line grows the row from five buttons to
+    // seven. Centred, that used to slide everything already there sideways by
+    // a full button — so the control someone had just pressed left from under
+    // the finger that pressed it.
+    await tester.tap(find.byKey(const ValueKey('format-bullets')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('format-indent')), findsOneWidget);
+    expect(
+      boldLeft(),
+      closeTo(before, 0.01),
+      reason: 'a row that grows rightward leaves what is already in it alone',
+    );
   });
 
   testWidgets('uses one compact surface for every footer icon control', (
@@ -2100,7 +2132,7 @@ void main() {
           .toPlainText(),
       'Total: 46',
     );
-    expect(find.byTooltip('Settings'), findsOneWidget);
+    expect(find.byKey(const ValueKey('note-settings')), findsOneWidget);
   });
 
   testWidgets('hides the running total until the note has a calculation', (
