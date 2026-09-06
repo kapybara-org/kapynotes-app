@@ -22,12 +22,16 @@ class MemoryStore extends LocalStore {
 
 /// One simulated device: its own local store and clock, the shared server.
 class Device {
-  Device(this.server, {required this.name, DateTime? startAt})
-    : clock = startAt ?? DateTime.utc(2026, 9, 1) {
+  Device(
+    this.server, {
+    required this.name,
+    DateTime? startAt,
+    Duration pollInterval = const Duration(seconds: 60),
+  }) : clock = startAt ?? DateTime.utc(2026, 9, 1) {
     store = MemoryStore();
     notes = NotesStore(store, now: () => clock);
     state = SyncState(store);
-    api = FakeApi(server);
+    api = FakeApi(server, device: name);
     sync = SyncService(
       notes: notes,
       state: state,
@@ -35,6 +39,7 @@ class Device {
       vault: sharedVault(),
       now: () => clock,
       debounce: const Duration(milliseconds: 1),
+      pollInterval: pollInterval,
     );
   }
 
@@ -368,6 +373,110 @@ void main() {
 
       expect(server.calls.where((c) => c.startsWith('push')), hasLength(1));
       device.dispose();
+    });
+  });
+
+  group('wake-up channel', () {
+    test('an idle device catches up without being touched', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+
+      // Two is sitting open doing nothing at all — no edits, no resume, no
+      // button. This is the case the channel exists for.
+      two.sync.resume();
+      await until(() => server.live.containsKey('two'));
+
+      one.notes.create(body: 'Written on one');
+      await one.sync.syncNow();
+
+      await until(
+        () => two.bodies.contains('Written on one'),
+        reason: 'two was never woken by one\'s push',
+      );
+
+      one.dispose();
+      two.dispose();
+    });
+
+    test('the device that pushed is not woken by its own push', () async {
+      final device = Device(server, name: 'a');
+      await device.boot();
+      device.sync.resume();
+      await until(() => server.live.containsKey('a'));
+      await device.sync.syncNow();
+
+      device.notes.create(body: 'Mine');
+      await device.sync.syncNow();
+      final settled = server.calls.length;
+
+      // Long enough for a wake-up to have arrived and its debounce to have
+      // fired. Nothing should: the server skips the device that pushed, and
+      // without that this device would pull back the rows it just wrote —
+      // its cursor still sits behind them — on every single edit.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(server.calls.length, settled);
+      device.dispose();
+    });
+
+    test('a dropped channel falls back to polling', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(
+        server,
+        name: 'two',
+        pollInterval: const Duration(milliseconds: 30),
+      );
+      await one.boot();
+      await two.boot();
+
+      two.sync.resume();
+      await until(() => server.live.containsKey('two'));
+      // A proxy that will not carry an event stream, or a network that went
+      // away without saying so.
+      server.deliverWakeups = false;
+      server.dropChannels();
+
+      one.notes.create(body: 'Written while two was deaf');
+      await one.sync.syncNow();
+
+      await until(
+        () => two.bodies.contains('Written while two was deaf'),
+        reason: 'two never polled once its channel had gone',
+      );
+
+      one.dispose();
+      two.dispose();
+    });
+
+    test('backgrounding closes the channel, resuming reopens it', () async {
+      final device = Device(server, name: 'a');
+      await device.boot();
+
+      device.sync.resume();
+      await until(() => server.live.containsKey('a'));
+      expect(device.sync.isLive, isTrue);
+
+      device.sync.pause();
+      await until(() => server.live.isEmpty);
+      expect(device.sync.isLive, isFalse);
+
+      device.sync.resume();
+      await until(() => server.live.containsKey('a'));
+
+      device.dispose();
+    });
+
+    test('disposing lets go of the channel', () async {
+      final device = Device(server, name: 'a');
+      await device.boot();
+      device.sync.resume();
+      await until(() => server.live.containsKey('a'));
+
+      device.dispose();
+
+      await until(() => server.live.isEmpty);
     });
   });
 }

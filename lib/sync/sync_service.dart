@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../data/note.dart';
 import '../data/notes_store.dart';
 import '../data/tombstone.dart';
+import 'live_channel.dart';
 import 'note_payload.dart';
 import 'sync_api.dart';
 import 'sync_state.dart';
@@ -32,6 +33,15 @@ enum SyncStatus {
 
 /// Drives one sync pass, and decides when to run the next one.
 ///
+/// A pass runs on a local edit (debounced), on unlock, on app resume, on a
+/// wake-up from the server, and on a retry after a failure. The wake-up is
+/// what makes a device that is sitting open current: without one, an idle
+/// window has no reason to ever look, and shows yesterday's notes until
+/// somebody touches it. Polling for that would mean a handshake, a session
+/// lookup and a query every interval on every device, almost always to be
+/// told nothing happened — so it is the fallback, running only while the
+/// channel is down, and not the mechanism.
+///
 /// Order is pull, then push. Pulling first means a conflict is usually
 /// resolved before it reaches the server at all, which turns most of them into
 /// an ordinary merge instead of a rejected push and a conflicted copy.
@@ -50,6 +60,8 @@ class SyncService extends ChangeNotifier {
     this.debounce = const Duration(seconds: 2),
     this.minRetry = const Duration(seconds: 5),
     this.maxRetry = const Duration(minutes: 5),
+    this.pollInterval = const Duration(seconds: 60),
+    this.liveGrace = const Duration(seconds: 10),
   }) : _notes = notes,
        _state = state,
        _api = api,
@@ -67,6 +79,20 @@ class SyncService extends ChangeNotifier {
   final Duration minRetry;
   final Duration maxRetry;
 
+  /// How often to sync when there is no wake-up channel to sync on instead.
+  ///
+  /// Only runs while the channel is down — a captive portal, a corporate
+  /// proxy that will not carry an event stream, a server too old to offer
+  /// one. A minute is slow enough to cost almost nothing and fast enough that
+  /// nobody watching two windows notices.
+  final Duration pollInterval;
+
+  /// How recent a sync has to be for a reconnect to leave it alone.
+  ///
+  /// Coming back to the app reconnects the channel and syncs at the same
+  /// instant, and both of those want a pull. This is what keeps that at one.
+  final Duration liveGrace;
+
   /// A server that keeps claiming there is more is a bug we should not follow
   /// forever. The cursor is saved as we go, so stopping early costs nothing
   /// but a wait until the next pass.
@@ -74,6 +100,9 @@ class SyncService extends ChangeNotifier {
 
   Vault? _vault;
   Timer? _timer;
+  Timer? _poll;
+  StreamSubscription<LiveSignal>? _live;
+  bool _foreground = false;
   Future<void>? _inFlight;
   int _failures = 0;
   SyncStatus _status = SyncStatus.idle;
@@ -85,11 +114,34 @@ class SyncService extends ChangeNotifier {
   DateTime? get lastSyncedAt => _state.lastSyncedAt;
   bool get isUnlocked => _vault != null;
 
+  /// True while the server can reach this device without being asked.
+  bool get isLive => _live != null;
+
   /// Hands the service the master key. Called after an unlock, or at launch
   /// with the key read back from the platform keystore.
   void unlock(Vault vault) {
     _vault = vault;
     if (_status == SyncStatus.locked) _setStatus(SyncStatus.idle);
+    _attachLive();
+  }
+
+  /// Opens the wake-up channel and keeps it open.
+  ///
+  /// Called when the app is in the foreground — which on desktop includes a
+  /// window that has merely lost focus or been minimised, because a stale
+  /// open window is exactly the case this exists for.
+  void resume() {
+    _foreground = true;
+    _attachLive();
+  }
+
+  /// Closes it again. Worth doing only for a real backgrounding: a phone that
+  /// has been swapped away from will have the socket killed by the OS anyway,
+  /// and a radio held awake for it is battery nobody agreed to spend.
+  void pause() {
+    _foreground = false;
+    _detachLive();
+    _stopPolling();
   }
 
   /// Signing out. Sync stops; the notes stay exactly where they are.
@@ -97,6 +149,8 @@ class SyncService extends ChangeNotifier {
     _vault = null;
     _timer?.cancel();
     _timer = null;
+    _detachLive();
+    _stopPolling();
     _setStatus(SyncStatus.locked);
   }
 
@@ -249,6 +303,50 @@ class SyncService extends ChangeNotifier {
     }
   }
 
+  void _attachLive() {
+    if (_disposed || !_foreground || _vault == null || _live != null) return;
+    // Listening is what opens the socket; cancelling is what closes it. There
+    // is no separate connect to forget to call.
+    _live = _api.live().listen(_onLive);
+  }
+
+  void _detachLive() {
+    unawaited(_live?.cancel());
+    _live = null;
+  }
+
+  void _onLive(LiveSignal signal) {
+    if (_disposed) return;
+    switch (signal) {
+      case LiveSignal.wake:
+        requestSync();
+      case LiveSignal.connected:
+        _stopPolling();
+        // A reconnect is the one moment we know a wake-up may have gone to a
+        // socket that was no longer there. But coming back to the app
+        // reconnects and syncs at the same instant, and a launch does both
+        // too — so a pass that is already running, or one that has only just
+        // finished, is taken as covering it.
+        if (_inFlight != null) return;
+        final last = _state.lastSyncedAt;
+        if (last == null || _now().difference(last) > liveGrace) requestSync();
+      case LiveSignal.disconnected:
+        _startPolling();
+    }
+  }
+
+  /// The fallback, and only ever that: it runs while the channel is down and
+  /// stops the moment it comes back.
+  void _startPolling() {
+    if (_disposed || _poll != null) return;
+    _poll = Timer.periodic(pollInterval, (_) => unawaited(syncNow()));
+  }
+
+  void _stopPolling() {
+    _poll?.cancel();
+    _poll = null;
+  }
+
   void _scheduleRetry() {
     if (_disposed) return;
     _failures++;
@@ -274,6 +372,8 @@ class SyncService extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _stopPolling();
+    _detachLive();
     super.dispose();
   }
 }

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'key_bundle.dart';
+import 'live_channel.dart';
 import 'sealed_box.dart';
 
 /// A note as it crosses the wire: everything the server is allowed to read,
@@ -113,6 +114,14 @@ abstract class SyncApi {
   Future<PullPage> pull({String? cursor, int limit});
   Future<PushResult> push(List<WireNote> notes);
 
+  /// The wake-up channel: one [LiveSignal.wake] per "something on this
+  /// account changed somewhere else".
+  ///
+  /// Connects on the first listener and disconnects when it is cancelled.
+  /// Failures are the channel's own business — it reconnects, and stops
+  /// emitting while it cannot — so this never produces an error.
+  Stream<LiveSignal> live();
+
   /// Null when this account has no bundle yet — a fresh sign-up that still has
   /// to choose a passphrase.
   Future<KeyBundle?> fetchKeyBundle();
@@ -136,20 +145,39 @@ abstract class SyncApi {
 const int pushMaxNotes = 200;
 const int pullDefaultLimit = 200;
 
+/// Names the device a request came from. Matches `DEVICE_HEADER`.
+const String deviceHeader = 'x-kapynotes-device';
+
 class HttpSyncApi implements SyncApi {
   HttpSyncApi({
     required Uri baseUrl,
     required Future<String?> Function() token,
+    required String deviceId,
     http.Client? client,
     this.timeout = const Duration(seconds: 30),
   }) : _baseUrl = baseUrl,
        _token = token,
+       _deviceId = deviceId,
        _client = client ?? http.Client();
 
   final Uri _baseUrl;
   final Future<String?> Function() _token;
+  final String _deviceId;
   final http.Client _client;
   final Duration timeout;
+
+  /// One channel, however many times [live] is called. It shares [_client],
+  /// and so its connection pool: a second one would mean a second TLS
+  /// handshake to the same host for no reason.
+  LiveChannel? _live;
+
+  @override
+  Stream<LiveSignal> live() => (_live ??= LiveChannel(
+    url: _baseUrl.resolve('sync/live'),
+    token: _token,
+    headers: {deviceHeader: _deviceId},
+    client: _client,
+  )).signals;
 
   @override
   Future<PullPage> pull({String? cursor, int limit = pullDefaultLimit}) async {
@@ -240,7 +268,11 @@ class HttpSyncApi implements SyncApi {
 
     final request = http.Request(method, url)
       ..headers['authorization'] = 'Bearer $token'
-      ..headers['accept'] = 'application/json';
+      ..headers['accept'] = 'application/json'
+      // Only /sync/push reads it, but sending it everywhere costs a header
+      // and means the one endpoint that matters cannot be the one that
+      // forgets. The server already knows which device this is.
+      ..headers[deviceHeader] = _deviceId;
     if (payload != null) {
       request.headers['content-type'] = 'application/json';
       request.body = jsonEncode(payload);
@@ -280,5 +312,9 @@ class HttpSyncApi implements SyncApi {
     }
   }
 
-  void close() => _client.close();
+  void close() {
+    unawaited(_live?.dispose());
+    _live = null;
+    _client.close();
+  }
 }

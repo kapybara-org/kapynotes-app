@@ -36,14 +36,18 @@ void main() {
     final store = MemoryStore();
     final notes = NotesStore(store);
     final keys = KeyStore(InMemorySecureStore());
+    final state = SyncState(store);
     return (
       account: Account(
         auth: HttpAuthApi(baseUrl: base),
-        syncApi: (token) =>
-            HttpSyncApi(baseUrl: base, token: () async => token),
+        syncApi: (token) => HttpSyncApi(
+          baseUrl: base,
+          token: () async => token,
+          deviceId: state.deviceId,
+        ),
         keys: keys,
         notes: notes,
-        state: SyncState(store),
+        state: state,
       ),
       notes: notes,
       keys: keys,

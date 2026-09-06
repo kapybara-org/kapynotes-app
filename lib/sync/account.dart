@@ -274,6 +274,10 @@ class Account extends ChangeNotifier {
     _sync?.dispose();
     _sync = service..addListener(notifyListeners);
     _moveTo(AccountState.ready);
+    // Before the first pass rather than after it: the app is already in front
+    // of the user by the time this runs, and a change that lands while that
+    // pass is in flight would otherwise have nothing to arrive on.
+    service.resume();
     await service.syncNow();
   }
 

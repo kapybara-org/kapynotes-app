@@ -33,16 +33,20 @@ Future<void> main() async {
   // just hands it along. Constructed eagerly because it is cheap — nothing
   // here touches the keystore or the network until `restore()` runs, after
   // the first frame.
+  // Hoisted out of the constructor because the api needs the device id it
+  // holds. `restore()` loads it before anything can call this closure.
+  final syncState = SyncState(store);
   final account = kSyncEnabled
       ? Account(
           auth: HttpAuthApi(baseUrl: Uri.parse(kApiBaseUrl)),
           syncApi: (token) => HttpSyncApi(
             baseUrl: Uri.parse(kApiBaseUrl),
             token: () async => token,
+            deviceId: syncState.deviceId,
           ),
           keys: KeyStore(defaultSecureStore()),
           notes: notes,
-          state: SyncState(store),
+          state: syncState,
         )
       : null;
 

@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/sync/auth_api.dart';
 import 'package:kapy_notes/sync/key_bundle.dart';
+import 'package:kapy_notes/sync/live_channel.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/vault.dart';
 
@@ -26,6 +29,31 @@ class FakeServer {
   /// Set to fail the next call, to exercise the offline and signed-out paths.
   SyncException? failNext;
 
+  /// Open wake-up channels, by device. The real server keeps the same map,
+  /// and applies the same rule to it: everyone but the device that pushed.
+  final Map<String, void Function(LiveSignal)> live = {};
+
+  /// True to drop wake-ups on the floor, standing in for a proxy that will
+  /// not carry an event stream. The devices should still converge — slower,
+  /// on the poll.
+  bool deliverWakeups = true;
+
+  /// Drops every open channel, standing in for a network that went away
+  /// without telling anyone. The devices should fall back to polling.
+  void dropChannels() {
+    for (final notify in live.values.toList()) {
+      notify(LiveSignal.disconnected);
+    }
+  }
+
+  void _announce(String? origin) {
+    if (!deliverWakeups) return;
+    for (final entry in live.entries.toList()) {
+      if (entry.key == origin) continue;
+      entry.value(LiveSignal.wake);
+    }
+  }
+
   /// Notes returned per page, mirroring the real limit being smaller than the
   /// corpus.
   int pageSize = 200;
@@ -48,7 +76,7 @@ class FakeServer {
     bundle = null;
   }
 
-  PushResult push(List<WireNote> notes) {
+  PushResult push(List<WireNote> notes, {String? origin}) {
     calls.add('push:${notes.length}');
     final applied = <String>{};
     final conflicts = <WireNote>[];
@@ -63,6 +91,8 @@ class FakeServer {
         conflicts.add(existing);
       }
     }
+
+    if (applied.isNotEmpty) _announce(origin);
 
     return PushResult(
       applied: applied,
@@ -112,9 +142,13 @@ class FakeServer {
 
 /// One device's connection to [FakeServer].
 class FakeApi implements SyncApi {
-  FakeApi(this.server);
+  FakeApi(this.server, {this.device = 'device'});
 
   final FakeServer server;
+
+  /// Which device this connection belongs to, so the server can skip waking
+  /// the one that pushed.
+  final String device;
 
   void _maybeFail() {
     final failure = server.failNext;
@@ -133,7 +167,28 @@ class FakeApi implements SyncApi {
   @override
   Future<PushResult> push(List<WireNote> notes) async {
     _maybeFail();
-    return server.push(notes);
+    return server.push(notes, origin: device);
+  }
+
+  StreamController<LiveSignal>? _channel;
+
+  @override
+  Stream<LiveSignal> live() {
+    // One controller however many times this is called, and broadcast so it
+    // can be listened to again after a pause — both because that is what the
+    // real api does, and a fake that made a fresh single-subscription stream
+    // each time would hide the bug where resuming throws.
+    final channel = _channel ??= StreamController<LiveSignal>.broadcast(
+      onListen: () {
+        server.live[device] = (signal) {
+          final open = _channel;
+          if (open != null && !open.isClosed) open.add(signal);
+        };
+        _channel!.add(LiveSignal.connected);
+      },
+      onCancel: () => server.live.remove(device),
+    );
+    return channel.stream;
   }
 
   @override
@@ -220,4 +275,18 @@ class FakeAuth implements AuthApi {
   @override
   Future<AccountUser?> currentUser(String token) async =>
       sessionValid ? _user : null;
+}
+
+/// Waits for something that nothing in the test asked for — a wake-up, a
+/// reconnect — since there is no future to await for it. Fails rather than
+/// hanging: a signal that never arrives is the bug these tests exist to
+/// catch, and a timeout says so where a hang does not.
+Future<void> until(bool Function() done, {String? reason}) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (!done()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail(reason ?? 'the condition never became true');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
 }

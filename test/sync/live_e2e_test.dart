@@ -48,7 +48,15 @@ void main() {
     Platform.environment['KAPYNOTES_E2E_URL'] ?? 'https://api.kapynotes.com/',
   );
   final run = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
-  SyncApi api() => HttpSyncApi(baseUrl: base, token: () async => token);
+  // Distinct per connection, because the server skips waking the device that
+  // pushed: two "devices" sharing one id would be one device as far as the
+  // wake-up channel is concerned, and this suite would never see one.
+  var connections = 0;
+  SyncApi api() => HttpSyncApi(
+    baseUrl: base,
+    token: () async => token,
+    deviceId: '$run-${connections++}',
+  );
 
   /// A device: its own local storage, the shared account.
   ({NotesStore notes, SyncService sync}) device(Vault vault) {
