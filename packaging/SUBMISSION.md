@@ -860,30 +860,61 @@ in with Apple becomes mandatory on iOS; email codes alone do not trigger it.
 The App content declaration says *all functionality is available without
 special access*. That was true of 1.4.0 and has been false since sync. A
 reviewer cannot reach sync or sharing, which now means they cannot reach the
-blocking and reporting they are being told exists.
+blocking and reporting they are being told exists. Apple asks for the same
+thing in the App Review notes.
+
+**One pair of accounts serves both stores**, and the fields below are written
+to be pasted into either. Two pairs would double what has to be kept alive to
+buy protection against a case the instructions already handle: a reviewer who
+leaves the shared space can build another, because the steps are in the same
+field as the password.
 
 Two things make handing over credentials harder here than in most apps, and
 both are solved rather than worked around:
 
 - **Signing in is a code we email.** A reviewer cannot receive it. So each
-  demo account was given a password through the ordinary reset flow, which is
+  account was given a password through the ordinary reset flow, which is
   reusable and does not expire — exactly what Play asks for.
 - **Signing in is not enough, because the notes are encrypted.** An account
   with no key bundle lands on "choose a passphrase"; one whose passphrase we
   did not hand over lands on a locked app. Either reads as a broken build, so
   the passphrase goes in the *other information* field.
 
-`test/sync/seed_play_review_test.dart` does the encrypted half and is
+`test/sync/seed_review_accounts_test.dart` does the encrypted half and is
 re-runnable: it signs in, creates or opens the key bundle, accepts the sharing
-terms, and leaves a shared space with a note in it so sharing can be reviewed
+terms, and leaves a shared space with a note in it, so sharing can be reviewed
 without the reviewer having to build one out of two accounts and four syncs.
 
-Credentials live in Infisical, `prod`, as `PLAY_REVIEW_*`. Both accounts share
-one password and one passphrase deliberately: it is one thing to paste into
-the form and one thing to get wrong.
+Credentials live in Infisical, `prod`, as `STORE_REVIEW_*`. Both accounts
+share one password and one passphrase deliberately: one thing to paste, one
+thing to get wrong.
 
-Apple wants the same information in the App Review notes, plus the same
-demo-account caveat, so the field text below is written to be reusable there.
+**Google Play → App content → App access → Add new instructions:**
+
+| Field | Value |
+| --- | --- |
+| Name | `Reviewer account (sharing demo)` |
+| Username | `hello+kapyreview-a@snowseo.com` |
+| Password | `KapyStoreReview!2026` |
+
+Other information required to access the app, 461 of the 500 characters
+allowed, and the same text belongs in Apple's App Review notes:
+
+> After signing in you will be asked for an encryption passphrase, because
+> notes are end-to-end encrypted. Enter: kapy store review demo 2026
+>
+> A shared space is already set up so sharing can be reviewed without setup.
+> The other member is a second account with the SAME password and passphrase:
+> hello+kapyreview-b@snowseo.com
+>
+> Block and report are in Settings > Sharing (on any invitation), and in a
+> note's Share sheet (the ... beside a member, and Report this note).
+
+**The addresses are on `snowseo.com`**, which is a different product of ours,
+because that is the only mailbox these codes can be received at.
+`kapynotes.com` has an MX record but does not deliver to it. If that is ever
+fixed, re-run the seed against `hello+kapyreview-a@kapynotes.com` and swap the
+two fields; nothing else changes.
 
 ### Shipping 1.11.0, the first build with sharing
 

@@ -12,7 +12,7 @@ import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 
-/// Sets up the two accounts Google Play and App Review sign in as.
+/// Sets up the two accounts both stores sign in as.
 ///
 /// Both stores need working credentials for anything behind a login, and
 /// reviewers cannot create accounts, use their own, or ask us for help. Ours
@@ -36,11 +36,18 @@ import 'package:kapy_notes/sync/sync_state.dart';
 /// Re-runnable. Both accounts keep whatever they already have; a second run
 /// adds another shared note rather than breaking anything.
 ///
-///   KAPYNOTES_SEED_PLAY=1 \
-///   KAPYNOTES_PLAY_PASSWORD=... KAPYNOTES_PLAY_PASSPHRASE=... \
-///   flutter test test/sync/seed_play_review_test.dart --tags live
+/// One pair serves both stores rather than one each. The credentials are
+/// identical either way, and two pairs would double what has to be kept alive
+/// to buy protection against a case the instructions already handle: a
+/// reviewer who leaves the shared space can rebuild one, because the steps to
+/// do that are in the same field as the password.
+///
+///   KAPYNOTES_SEED_REVIEW=1 \
+///   KAPYNOTES_REVIEW_PASSWORD=... KAPYNOTES_REVIEW_PASSPHRASE=... \
+///   KAPYNOTES_REVIEW_EMAIL_A=... KAPYNOTES_REVIEW_EMAIL_B=... \
+///   flutter test test/sync/seed_review_accounts_test.dart --tags live
 class MemoryStore extends LocalStore {
-  MemoryStore() : super(fileName: 'play-review-seed.json');
+  MemoryStore() : super(fileName: 'store-review-seed.json');
   @override
   Future<void> load() async {}
   @override
@@ -52,19 +59,19 @@ class MemoryStore extends LocalStore {
 }
 
 void main() {
-  final go = Platform.environment['KAPYNOTES_SEED_PLAY'] ?? '';
-  final password = Platform.environment['KAPYNOTES_PLAY_PASSWORD'] ?? '';
-  final passphrase = Platform.environment['KAPYNOTES_PLAY_PASSPHRASE'] ?? '';
+  final go = Platform.environment['KAPYNOTES_SEED_REVIEW'] ?? '';
+  final password = Platform.environment['KAPYNOTES_REVIEW_PASSWORD'] ?? '';
+  final passphrase = Platform.environment['KAPYNOTES_REVIEW_PASSPHRASE'] ?? '';
   if (go.isEmpty || password.isEmpty || passphrase.isEmpty) {
-    test('seed the Play review accounts', () {}, skip: 'set KAPYNOTES_SEED_PLAY, _PASSWORD and _PASSPHRASE');
+    test('seed the store review accounts', () {}, skip: 'set KAPYNOTES_SEED_REVIEW, _PASSWORD and _PASSPHRASE');
     return;
   }
 
   final base = Uri.parse(
     Platform.environment['KAPYNOTES_API'] ?? 'https://api.kapynotes.com/',
   );
-  final emailA = Platform.environment['KAPYNOTES_PLAY_EMAIL_A']!;
-  final emailB = Platform.environment['KAPYNOTES_PLAY_EMAIL_B']!;
+  final emailA = Platform.environment['KAPYNOTES_REVIEW_EMAIL_A']!;
+  final emailB = Platform.environment['KAPYNOTES_REVIEW_EMAIL_B']!;
 
   /// Signs in, and makes sure the account is unlocked on the other side —
   /// creating the key bundle the first time, opening it every time after.
