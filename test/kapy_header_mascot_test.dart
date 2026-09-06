@@ -413,12 +413,12 @@ void main() {
     );
   });
 
-  testWidgets('sleep transition key frames', (tester) async {
+  testWidgets('natural sleep transition key frames', (tester) async {
     tester.view.physicalSize = const Size(436, 88);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    final controllers = List.generate(6, (_) => KapyHeaderController());
+    final controllers = List.generate(7, (_) => KapyHeaderController());
     for (final controller in controllers) {
       addTearDown(controller.dispose);
     }

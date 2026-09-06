@@ -83,7 +83,7 @@ class KapyHeaderMascot extends StatefulWidget {
   static const framesPerSecond = 30;
   static const emergeFrameCount = 30;
   static const thinkFrameCount = 180;
-  static const sleepFrameCount = 48;
+  static const sleepFrameCount = 72;
   static const sleepLoopFrameCount = 96;
   static const runtimeAssetPaths = [
     standingAssetPath,
@@ -96,8 +96,8 @@ class KapyHeaderMascot extends StatefulWidget {
 
   static const emergeDuration = Duration(milliseconds: 1000);
   static const thinkDuration = Duration(milliseconds: 6000);
-  static const sleepDuration = Duration(milliseconds: 1600);
-  static const wakeDuration = Duration(milliseconds: 1600);
+  static const sleepDuration = Duration(milliseconds: 2400);
+  static const wakeDuration = Duration(milliseconds: 2400);
   static const hideDuration = Duration(milliseconds: 1000);
   static const sleepLoopDuration = Duration(milliseconds: 3200);
 
@@ -568,7 +568,7 @@ class _KapyHeaderActor extends StatelessWidget {
         child: AppLogo(size: markSize, excludeFromSemantics: true),
       );
     }
-    if ((atlas.spec == _KapyAtlasSpec.sleep && atlas.frameIndex >= 25) ||
+    if ((atlas.spec == _KapyAtlasSpec.sleep && atlas.frameIndex >= 60) ||
         atlas.spec == _KapyAtlasSpec.sleepLoop) {
       return const _KapyPoseImage(
         assetPath: KapyHeaderMascot.sleepingAssetPath,
@@ -610,7 +610,7 @@ class _KapyAtlasSpec {
   static const sleep = _KapyAtlasSpec(
     assetPath: KapyHeaderMascot.sleepAtlasAssetPath,
     frameCount: KapyHeaderMascot.sleepFrameCount,
-    columns: 8,
+    columns: 12,
     rows: 6,
   );
   static const sleepLoop = _KapyAtlasSpec(

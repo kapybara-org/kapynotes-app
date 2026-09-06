@@ -34,7 +34,22 @@ private enum Pose: String {
   case countTwo = "kapy_count_2.webp"
   case countThree = "kapy_count_3.webp"
   case scratch = "kapy_scratch.webp"
+  case sleepBend = "kapy_sleep_bend.webp"
+  case sleepSquat = "kapy_sleep_squat.webp"
+  case sleepAllFours = "kapy_sleep_all_fours.webp"
+  case sleepTuck = "kapy_sleep_tuck.webp"
+  case sleepHeadDown = "kapy_sleep_head_down.webp"
   case sleeping = "kapy_sleeping.webp"
+
+  var usesFullFrame: Bool {
+    switch self {
+    case .standing, .countOne, .countTwo, .countThree, .scratch:
+      false
+    case .sleepBend, .sleepSquat, .sleepAllFours, .sleepTuck,
+      .sleepHeadDown, .sleeping:
+      true
+    }
+  }
 }
 
 private struct Transform {
@@ -134,20 +149,33 @@ private func withTransform(
 private func drawPose(
   _ pose: Pose,
   in context: CGContext,
-  transform: Transform = Transform()
+  transform: Transform = Transform(),
+  anchorRight: Bool = false
 ) {
-  let bounds = CGRect(
-    x: frameWidth - uprightSide,
-    y: 0,
-    width: uprightSide,
-    height: uprightSide
-  )
+  let bounds = pose.usesFullFrame
+    ? CGRect(x: 0, y: 0, width: frameWidth, height: frameHeight)
+    : CGRect(
+      x: frameWidth - uprightSide,
+      y: 0,
+      width: uprightSide,
+      height: uprightSide
+    )
   withTransform(
     context,
-    anchor: CGPoint(x: bounds.midX, y: bounds.minY),
+    anchor: CGPoint(
+      x: pose.usesFullFrame || anchorRight ? bounds.maxX : bounds.midX,
+      y: bounds.minY
+    ),
     transform: transform
   ) {
-    drawImage(poses[pose]!, in: aspectFit(poses[pose]!, in: bounds))
+    drawImage(
+      poses[pose]!,
+      in: aspectFit(
+        poses[pose]!,
+        in: bounds,
+        alignRight: pose.usesFullFrame
+      )
+    )
   }
 }
 
@@ -330,33 +358,135 @@ private func drawThink(_ context: CGContext, _ progress: CGFloat) {
 }
 
 private func drawSleep(_ context: CGContext, _ progress: CGFloat) {
-  if progress < 0.56 {
-    let fall = smoothstep(progress / 0.56)
-    drawPose(
-      .standing,
+  switch progress {
+  case ..<0.08:
+    drawHeldPose(
+      context,
+      pose: .standing,
+      progress: progress / 0.08,
+      bob: 0.08
+    )
+  case ..<0.24:
+    drawSleepPoseTransition(
+      context,
+      progress: (progress - 0.08) / 0.16,
+      from: .standing,
+      to: .sleepBend,
+      fromSwitchScaleX: 1.18,
+      fromSwitchScaleY: 0.96,
+      toSwitchScaleX: 0.99,
+      toSwitchScaleY: 0.96,
+      lean: 0.012
+    )
+  case ..<0.39:
+    drawSleepPoseTransition(
+      context,
+      progress: (progress - 0.24) / 0.15,
+      from: .sleepBend,
+      to: .sleepSquat,
+      fromSwitchScaleX: 1.25,
+      fromSwitchScaleY: 0.94,
+      toSwitchScaleX: 0.84,
+      toSwitchScaleY: 0.94,
+      lean: 0.010
+    )
+  case ..<0.53:
+    drawSleepPoseTransition(
+      context,
+      progress: (progress - 0.39) / 0.14,
+      from: .sleepSquat,
+      to: .sleepAllFours,
+      fromSwitchScaleX: 1.01,
+      fromSwitchScaleY: 1,
+      toSwitchScaleX: 0.99,
+      toSwitchScaleY: 1,
+      lean: 0.008
+    )
+  case ..<0.67:
+    drawSleepPoseTransition(
+      context,
+      progress: (progress - 0.53) / 0.14,
+      from: .sleepAllFours,
+      to: .sleepTuck,
+      fromSwitchScaleX: 1.08,
+      fromSwitchScaleY: 0.96,
+      toSwitchScaleX: 1,
+      toSwitchScaleY: 1,
+      lean: 0.006
+    )
+  case ..<0.83:
+    drawSleepPoseTransition(
+      context,
+      progress: (progress - 0.67) / 0.16,
+      from: .sleepTuck,
+      to: .sleepHeadDown,
+      fromSwitchScaleX: 1,
+      fromSwitchScaleY: 0.86,
+      toSwitchScaleX: 1,
+      toSwitchScaleY: 1,
+      lean: 0.005
+    )
+  case ..<0.96:
+    drawSleepPoseTransition(
+      context,
+      progress: (progress - 0.83) / 0.13,
+      from: .sleepHeadDown,
+      to: .sleeping,
+      fromSwitchScaleX: 1,
+      fromSwitchScaleY: 0.95,
+      toSwitchScaleX: 1,
+      toSwitchScaleY: 1,
+      lean: 0.004
+    )
+  default:
+    let settle = smoothstep((progress - 0.96) / 0.04)
+    let release = sin(settle * .pi) * (1 - settle)
+    drawSleeping(
       in: context,
       transform: Transform(
-        x: -fall * 20,
-        y: fall * 4,
-        scaleX: 1 - fall * 0.12,
-        scaleY: 1 - fall * 0.08,
-        rotation: fall * -1.34
+        scaleX: 1 + release * 0.008,
+        scaleY: 1 - release * 0.010
       )
     )
-    return
   }
+}
 
-  let settle = smoothstep((progress - 0.56) / 0.44)
-  let bounce = sin(settle * .pi) * (1 - settle)
-  drawSleeping(
+private func drawSleepPoseTransition(
+  _ context: CGContext,
+  progress: CGFloat,
+  from: Pose,
+  to: Pose,
+  fromSwitchScaleX: CGFloat,
+  fromSwitchScaleY: CGFloat,
+  toSwitchScaleX: CGFloat,
+  toSwitchScaleY: CGFloat,
+  lean: CGFloat
+) {
+  let phase = clamp(progress)
+  let action = smoothstep(phase)
+  let pulse = sin(action * .pi)
+  let firstHalf = phase < 0.5
+  let pose = firstHalf ? from : to
+  let local = firstHalf
+    ? smoothstep(phase * 2)
+    : smoothstep((phase - 0.5) * 2)
+  let scaleX = firstHalf
+    ? 1 + (fromSwitchScaleX - 1) * local
+    : toSwitchScaleX + (1 - toSwitchScaleX) * local
+  let scaleY = firstHalf
+    ? 1 + (fromSwitchScaleY - 1) * local
+    : toSwitchScaleY + (1 - toSwitchScaleY) * local
+  drawPose(
+    pose,
     in: context,
     transform: Transform(
-      x: (1 - settle) * 0.8,
-      y: (1 - settle) * 2,
-      scaleX: 0.84 + settle * 0.16 + bounce * 0.025,
-      scaleY: 0.84 + settle * 0.16 - bounce * 0.015,
-      rotation: (1 - settle) * 0.08
-    )
+      x: -pulse * 0.25,
+      y: pulse * 0.20,
+      scaleX: scaleX,
+      scaleY: scaleY,
+      rotation: sin(action * .pi * 2) * lean
+    ),
+    anchorRight: true
   )
 }
 
@@ -460,8 +590,8 @@ try fileManager.createDirectory(
   ),
   AtlasSpec(
     name: "kapy_header_sleep_30fps",
-    frameCount: 48,
-    columns: 8,
+    frameCount: 72,
+    columns: 12,
     drawFrame: drawSleep
   ),
   AtlasSpec(

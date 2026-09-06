@@ -5,8 +5,9 @@ import 'package:material_ui/material_ui.dart';
 /// Kapy briefly looks around the editor caret, then slips behind it again.
 ///
 /// The approved hero-peek pose already holds a straight vertical edge. This
-/// widget treats the caret as that edge and clips Kapy against its left side,
-/// so the motion reads as a real peek instead of an image fading over text.
+/// widget mirrors that pose, treats the caret as the edge, and clips Kapy on
+/// its right side, so the motion reads as a real peek instead of an image
+/// fading over text.
 /// It uses Flutter's own compositor and one small WebP, which keeps it
 /// identical across every platform the app supports.
 class KapyCursorPeek extends StatefulWidget {
@@ -28,7 +29,7 @@ class KapyCursorPeek extends StatefulWidget {
   // The image crop is 136 x 256. Pinning this here avoids decoding it merely
   // to discover layout, which keeps the first animation frame predictable.
   static const double _mascotAspectRatio = 136 / 256;
-  static const double _caretXFactor = 0.76;
+  static const double _caretXFactor = 0.24;
   static const double _caretTopFactor = 0.22;
   static const double _caretHeightFactor = 0.56;
 
@@ -229,38 +230,41 @@ class _KapyCursorPeekState extends State<KapyCursorPeek>
       child: Stack(
         children: [
           Positioned(
-            left: 0,
+            left: caretX,
             top: 0,
-            width: caretX,
+            width: size - caretX,
             height: size,
             child: ClipRect(
               child: Align(
-                alignment: Alignment.centerRight,
+                alignment: Alignment.centerLeft,
                 child: Transform.translate(
                   key: KapyCursorPeek.mascotKey,
-                  offset: Offset(hiddenDistance * (1 - reveal), bob),
+                  offset: Offset(-hiddenDistance * (1 - reveal), bob),
                   child: Transform.rotate(
-                    angle: curiousTilt,
-                    alignment: Alignment.bottomRight,
-                    child: SizedBox(
-                      width: mascotWidth,
-                      height: mascotHeight,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.asset(
-                            KapyCursorPeek.assetPath,
-                            fit: BoxFit.contain,
-                            filterQuality: FilterQuality.medium,
-                            isAntiAlias: true,
-                            gaplessPlayback: true,
-                          ),
-                          if (blink > 0)
-                            CustomPaint(
-                              key: KapyCursorPeek.blinkKey,
-                              painter: _PeekBlinkPainter(blink),
+                    angle: -curiousTilt,
+                    alignment: Alignment.bottomLeft,
+                    child: Transform.flip(
+                      flipX: true,
+                      child: SizedBox(
+                        width: mascotWidth,
+                        height: mascotHeight,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Image.asset(
+                              KapyCursorPeek.assetPath,
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.medium,
+                              isAntiAlias: true,
+                              gaplessPlayback: true,
                             ),
-                        ],
+                            if (blink > 0)
+                              CustomPaint(
+                                key: KapyCursorPeek.blinkKey,
+                                painter: _PeekBlinkPainter(blink),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
