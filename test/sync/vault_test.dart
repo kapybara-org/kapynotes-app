@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/sync/note_payload.dart';
 import 'package:kapy_notes/sync/sealed_box.dart';
@@ -46,11 +47,13 @@ void main() {
         attachments: [
           NoteAttachmentRef(
             offset: 7,
+            hash: 'f00d',
             attachmentId: '11111111-1111-4111-8111-111111111111',
             key: Uint8List.fromList(List.filled(32, 3)),
             mime: 'image/webp',
             width: 800,
             height: 600,
+            bytes: 4096,
             thumbId: '22222222-2222-4222-8222-222222222222',
           ),
         ],
@@ -63,6 +66,7 @@ void main() {
       expect(ref.mime, 'image/webp');
       expect(ref.key, hasLength(32));
       expect(ref.thumbId, '22222222-2222-4222-8222-222222222222');
+      expect(ref.hash, 'f00d');
     });
 
     test('every seal uses a fresh nonce', () async {

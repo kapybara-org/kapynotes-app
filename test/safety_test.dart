@@ -4,6 +4,7 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/sync/safety.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/sharing.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
 import 'package:kapy_notes/sync/sync_service.dart';
@@ -40,8 +41,9 @@ class Device {
       state: SyncState(store),
       api: api,
       keyring: keyring,
+      docs: DocStore(MemoryDocStorage(), replica: device),
       vault: vault,
-      debounce: const Duration(hours: 1),
+      sendDelay: const Duration(hours: 1),
     );
     sharing = Sharing(
       api: api,

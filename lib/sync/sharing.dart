@@ -7,7 +7,6 @@ import '../data/notes_store.dart';
 import 'aead.dart';
 import 'config.dart';
 import 'key_wrap.dart';
-import 'note_payload.dart';
 import 'safety.dart';
 import 'space_keyring.dart';
 import 'spaces.dart';
@@ -268,23 +267,9 @@ class Sharing extends ChangeNotifier {
     if (_sync.status != SyncStatus.idle) {
       throw const SyncTransientException('could not sync before stopping');
     }
-    final mine = _notes.notesIn(spaceId);
-    final at = DateTime.now();
-    final sealed = await _vault.sealAll([
-      for (final note in mine) NotePayload.fromNote(note),
-    ]);
-    final personal = _keyring.personal;
-    if (personal == null) throw const SyncProtocolException('no personal space');
-    await _api.stopSharing(spaceId, [
-      for (var i = 0; i < mine.length; i++)
-        WireNote(
-          id: mine[i].id,
-          spaceId: personal.id,
-          updatedAt: at,
-          payload: sealed[i],
-        ),
-    ]);
-    _notes.bringHome(mine.map((note) => note.id), at: at);
+    if (!await _sync.bringHome(spaceId)) {
+      throw const SyncTransientException('could not sync before stopping');
+    }
     await refresh();
     _sync.requestSync();
   }

@@ -4,9 +4,11 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   auto_updater_windows
+  desktop_drop
   file_selector_windows
   flutter_secure_storage_windows
   hotkey_manager_windows
+  pasteboard
   screen_retriever_windows
   tray_manager
   url_launcher_windows

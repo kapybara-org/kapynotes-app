@@ -32,6 +32,7 @@ class NoteFooter extends StatelessWidget {
     required this.onItalicPressed,
     required this.onBulletsPressed,
     required this.onChecklistPressed,
+    this.onInsertImagePressed,
     required this.onIndentPressed,
     required this.onOutdentPressed,
     required this.showIndentControls,
@@ -57,6 +58,11 @@ class NoteFooter extends StatelessWidget {
   final VoidCallback onItalicPressed;
   final VoidCallback onBulletsPressed;
   final VoidCallback onChecklistPressed;
+
+  /// Null where the editor has no image store to put a picture in, which is
+  /// only ever a test. The button is hidden rather than disabled: a control
+  /// that can never do anything is worse than no control.
+  final VoidCallback? onInsertImagePressed;
 
   /// Nesting only appears once the caret is on a list line. The row shares its
   /// width with the total readout, and on a narrow phone two permanent extra
@@ -89,6 +95,20 @@ class NoteFooter extends StatelessWidget {
   /// would read as one group of six.
   static const double _groupGap = 14;
 
+  /// Trims an available width down to a whole number of buttons.
+  ///
+  /// The formatting row scrolls when it will not fit, which is the right
+  /// behaviour, but a row cut mid-button reads as a rendering fault rather
+  /// than as something to scroll. Cutting on a button boundary makes it
+  /// obvious that there is more, and keeps every visible control tappable.
+  static double _snapToWholeButtons(double available, double rowWidth) {
+    if (available <= 0) return 0;
+    if (available >= rowWidth) return available;
+    final extent = AppControlMetrics.iconButtonExtent;
+    if (extent <= 0 || available <= extent) return available;
+    return (available / extent).floor() * extent;
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -114,8 +134,13 @@ class NoteFooter extends StatelessWidget {
           final gearSlot = showSettingsButton
               ? AppControlMetrics.iconButtonExtent + _groupGap
               : 0.0;
-          final rowWidth =
-              (showIndentControls ? 7 : 5) * AppControlMetrics.iconButtonExtent;
+          // Style, bold, italic, bullets, checklist, and the image button
+          // when there is anywhere to put an image; nesting adds two more.
+          final buttonCount =
+              5 +
+              (onInsertImagePressed == null ? 0 : 1) +
+              (showIndentControls ? 2 : 0);
+          final rowWidth = buttonCount * AppControlMetrics.iconButtonExtent;
           final fixed =
               _edgeInset + gearSlot + rowWidth + _groupGap + _textEdgeInset;
           // Whatever is genuinely left over, up to a readable maximum. The
@@ -136,14 +161,17 @@ class NoteFooter extends StatelessWidget {
                 ],
                 ConstrainedBox(
                   constraints: BoxConstraints(
-                    maxWidth: math.max(
-                      0,
-                      constraints.maxWidth -
-                          _edgeInset -
-                          gearSlot -
-                          totalSlot -
-                          _groupGap -
-                          _textEdgeInset,
+                    maxWidth: _snapToWholeButtons(
+                      math.max(
+                        0,
+                        constraints.maxWidth -
+                            _edgeInset -
+                            gearSlot -
+                            totalSlot -
+                            _groupGap -
+                            _textEdgeInset,
+                      ),
+                      rowWidth,
                     ),
                   ),
                   // Scrolls only when it cannot fit, which a narrow phone with
@@ -157,6 +185,19 @@ class NoteFooter extends StatelessWidget {
                         key: const ValueKey('note-formatting-controls'),
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          // Adding a picture is not a style, and it leads the
+                          // row rather than trailing it: on a narrow phone the
+                          // row scrolls, and the first slot is the only one
+                          // guaranteed to be on screen.
+                          if (onInsertImagePressed != null) ...[
+                            _FormatButton(
+                              key: const ValueKey('insert-image'),
+                              icon: Icons.image_outlined,
+                              tooltip: 'Add an image',
+                              active: false,
+                              onPressed: onInsertImagePressed,
+                            ),
+                          ],
                           _StyleCycleButton(
                             style: paragraphStyle,
                             shortcut: paragraphStyleShortcut,

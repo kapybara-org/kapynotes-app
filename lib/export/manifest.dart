@@ -19,6 +19,13 @@ const int exportSchemaVersion = 1;
 const String exportManifestPath = 'manifest.json';
 const String exportNotesDirectory = 'notes';
 
+/// Where pictures live in an archive, beside `notes/` rather than inside it.
+///
+/// One directory for the whole export, addressed by content hash, so the same
+/// picture used in four notes is written once — and a reader who opens the
+/// archive in a file browser sees a flat, obvious folder of images.
+const String exportImagesDirectory = 'images';
+
 /// `sha256:<hex>` over the UTF-8 of a rendered `.md` file.
 ///
 /// Import compares this against the file it finds. A match means the manifest
@@ -26,6 +33,55 @@ const String exportNotesDirectory = 'notes';
 /// human has been in there, and their edit is the more recent intent.
 String bodyHashOf(String markdown) =>
     'sha256:${sha256.convert(utf8.encode(markdown))}';
+
+/// One picture in an archive: enough to rebuild the note's reference to it
+/// without opening the file.
+class ExportedImage {
+  const ExportedImage({
+    required this.hash,
+    required this.path,
+    required this.mime,
+    required this.width,
+    required this.height,
+  });
+
+  /// sha256 of the bytes, which is also what the file is named.
+  final String hash;
+
+  /// Where the bytes live inside the archive, always under `images/`.
+  final String path;
+
+  final String mime;
+  final int width;
+  final int height;
+
+  Map<String, Object?> toJson() => {
+    'hash': hash,
+    'path': path,
+    'mime': mime,
+    'width': width,
+    'height': height,
+  };
+
+  static ExportedImage? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final hash = raw['hash'];
+    final path = raw['path'];
+    final mime = raw['mime'];
+    final width = raw['width'];
+    final height = raw['height'];
+    if (hash is! String || hash.isEmpty) return null;
+    if (path is! String || !isSafeArchivePath(path)) return null;
+    if (mime is! String || width is! int || height is! int) return null;
+    return ExportedImage(
+      hash: hash,
+      path: path,
+      mime: mime,
+      width: width,
+      height: height,
+    );
+  }
+}
 
 class ExportedNote {
   const ExportedNote({
@@ -35,6 +91,7 @@ class ExportedNote {
     required this.createdAt,
     required this.bodyHash,
     this.formats = const [],
+    this.images = const [],
   });
 
   /// Preserved so a restore puts the note back where it was rather than
@@ -52,6 +109,15 @@ class ExportedNote {
   final String bodyHash;
   final List<NoteFormatRange> formats;
 
+  /// The pictures this note holds, in the order they appear.
+  ///
+  /// Recorded so an import can restore a note's images without decoding every
+  /// file to rediscover its size. The file *key* is deliberately absent: an
+  /// archive is plaintext, the bytes are right there beside the manifest, and
+  /// a key that unlocks nothing is a secret with nowhere useful to go. Import
+  /// mints a fresh one.
+  final List<ExportedImage> images;
+
   Map<String, Object?> toJson() => {
     'id': id,
     'path': path,
@@ -60,6 +126,8 @@ class ExportedNote {
     'bodyHash': bodyHash,
     if (formats.isNotEmpty)
       'formats': formats.map((format) => format.toJson()).toList(),
+    if (images.isNotEmpty)
+      'images': images.map((image) => image.toJson()).toList(),
   };
 
   /// Returns null for an entry too damaged to place. Import reports those and
@@ -84,6 +152,12 @@ class ExportedNote {
       updatedAt: updatedAt.toLocal(),
       createdAt: createdAt is int && createdAt >= 0 ? createdAt : 0,
       bodyHash: bodyHash,
+      images: raw['images'] is List
+          ? (raw['images'] as List)
+                .map(ExportedImage.fromJson)
+                .whereType<ExportedImage>()
+                .toList(growable: false)
+          : const [],
       // Clipped against the body once it is read, not here: the manifest is
       // parsed before the file it describes.
       formats: raw['formats'] is List

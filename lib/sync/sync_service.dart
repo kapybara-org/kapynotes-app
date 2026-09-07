@@ -1,18 +1,22 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../crdt/crdt.dart';
 import '../data/note.dart';
 import '../data/notes_store.dart';
 import '../data/tombstone.dart';
 import 'aead.dart';
+import 'doc_store.dart';
+import 'image_sync.dart';
 import 'key_wrap.dart';
-import 'live_channel.dart';
-import 'note_payload.dart';
+import 'sealed_box.dart';
 import 'space_keyring.dart';
 import 'spaces.dart';
 import 'sync_api.dart';
+import 'sync_socket.dart';
 import 'sync_state.dart';
 import 'vault.dart';
 
@@ -40,90 +44,126 @@ enum SyncStatus {
   failed,
 }
 
-/// Drives one sync pass, and decides when to run the next one.
+/// The merge engine this build writes. Matches `ENGINE_FUGUE`.
+const String fugueEngine = 'fugue1';
+
+/// Keeps every device's copy of every note the same, as it is typed.
 ///
-/// A pass runs on a local edit (debounced), on unlock, on app resume, on a
-/// wake-up from the server, and on a retry after a failure. The wake-up is
-/// what makes a device that is sitting open current: without one, an idle
-/// window has no reason to ever look, and shows yesterday's notes until
-/// somebody touches it. Polling for that would mean a handshake, a session
-/// lookup and a query every interval on every device, almost always to be
-/// told nothing happened — so it is the fallback, running only while the
-/// channel is down, and not the mechanism.
+/// A note is not a blob any more. Each keystroke becomes an op in a CRDT
+/// document ([NoteDoc]) that merges on the device — the server holds only
+/// ciphertext and cannot — and each op goes to the server sealed, takes a
+/// place in its space's log, and reaches every other device over one socket
+/// the moment it lands. Two people typing in one note converge to one text.
+/// Nothing is ever resolved by timestamp, and nothing is forked off to the
+/// side as a "conflicted copy".
 ///
-/// A pass is: refresh the list of spaces and their keys; do whatever duties
-/// that list reveals — grant a key to a member waiting for one, rotate a
-/// space key after a removal, bring a lonely space's notes home; then pull
-/// every space this device holds a key for, then push. Pulling first means a
-/// conflict is usually resolved before it reaches the server at all, which
-/// turns most of them into an ordinary merge instead of a rejected push and a
-/// conflicted copy.
+/// Three loops, and only three:
 ///
-/// Everything expensive is batched: a page of pulled notes is decrypted in one
-/// isolate hop, and the dirty set is sealed in one more. The alternative —
-/// per-note crypto on the main isolate — is what makes sync visible to
-/// somebody who is typing.
+/// 1. **Reconcile.** The note list changes — a keystroke, a delete, a move —
+///    and every dirty note is diffed against its document. The diff becomes
+///    ops, the ops go to the note's outbox, and the note is marked absorbed.
+///    Runs in a microtask after each change, so it is done before any remote
+///    op can be applied on top.
+/// 2. **Send.** The outbox drains over the socket, one push per note in
+///    flight at a time, sealed at send time under the note's current key.
+///    An acknowledgement clears the entry; a disconnect puts it back; a
+///    refusal is answered — a key that moved, a note somebody else seeded
+///    first — and the entry goes again. With the socket down, the same
+///    pushes go over HTTP on the poll.
+/// 3. **Apply.** Ops arrive in seq order per space, are opened, applied to
+///    the document, and the document is rendered back into the note list.
+///    The editor holding that note learns of it through the list, and keeps
+///    its caret. The cursor moves once per batch, after the batch is applied.
+///
+/// The keyring, the duties a space list reveals — grants, rotations, trips
+/// home — and the attachment uploads are unchanged from the blob protocol and
+/// run over HTTP as they did.
 class SyncService extends ChangeNotifier {
   SyncService({
     required NotesStore notes,
     required SyncState state,
     required SyncApi api,
     required SpaceKeyring keyring,
+    required DocStore docs,
+    ImageSync? images,
     Vault? vault,
     DateTime Function()? now,
-    this.debounce = const Duration(seconds: 2),
+    this.sendDelay = const Duration(milliseconds: 60),
     this.minRetry = const Duration(seconds: 5),
     this.maxRetry = const Duration(minutes: 5),
     this.pollInterval = const Duration(seconds: 60),
-    this.liveGrace = const Duration(seconds: 10),
+    this.snapshotEvery = 150,
   }) : _notes = notes,
        _state = state,
        _api = api,
        _keyring = keyring,
+       _docs = docs,
+       _images = images,
        _vault = vault,
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now {
+    _notes.addListener(_onNotesChanged);
+  }
 
   final NotesStore _notes;
   final SyncState _state;
   final SyncApi _api;
   final SpaceKeyring _keyring;
+  final DocStore _docs;
+  final ImageSync? _images;
   final DateTime Function() _now;
 
-  /// How long to wait after an edit before syncing, so a burst of typing
-  /// produces one sync rather than one per keystroke.
-  final Duration debounce;
+  /// How long after an edit the outbox drains. Short: this is the whole
+  /// difference between "live" and "laggy", and a burst of typing inside it
+  /// still becomes one op rather than one per key.
+  final Duration sendDelay;
   final Duration minRetry;
   final Duration maxRetry;
 
-  /// How often to sync when there is no wake-up channel to sync on instead.
-  ///
-  /// Only runs while the channel is down — a captive portal, a corporate
-  /// proxy that will not carry an event stream, a server too old to offer
-  /// one. A minute is slow enough to cost almost nothing and fast enough that
-  /// nobody watching two windows notices.
+  /// How often to pull and push over HTTP while the socket is down. Only
+  /// then: a captive portal, a proxy that will not upgrade.
   final Duration pollInterval;
 
-  /// How recent a sync has to be for a reconnect to leave it alone.
-  ///
-  /// Coming back to the app reconnects the channel and syncs at the same
-  /// instant, and both of those want a pull. This is what keeps that at one.
-  final Duration liveGrace;
-
-  /// A server that keeps claiming there is more is a bug we should not follow
-  /// forever. The cursor is saved as we go, so stopping early costs nothing
-  /// but a wait until the next pass.
-  static const int _maxPagesPerPass = 100;
+  /// After this many ops on a note since its last snapshot, the next device
+  /// to write it also writes a snapshot, so a device that has been away can
+  /// take one document instead of replaying a year of keystrokes.
+  final int snapshotEvery;
 
   Vault? _vault;
-  Timer? _timer;
+  SyncSocket? _socket;
+  StreamSubscription<SocketEvent>? _socketEvents;
+  Timer? _sendTimer;
+  Timer? _retryTimer;
   Timer? _poll;
-  StreamSubscription<LiveSignal>? _live;
   bool _foreground = false;
+  bool _reconcileScheduled = false;
+  bool _live = false;
+
+  /// True once the socket has reported itself down on this foreground
+  /// stretch. Until then a socket that exists is merely connecting, and the
+  /// HTTP path waits for it rather than racing it.
+  bool _socketDown = false;
+
+  /// Notes whose pictures are on their way up, so a burst of typing does not
+  /// start a second upload per keystroke.
+  final Set<String> _uploading = {};
   Future<void>? _inFlight;
+  Future<void>? _queued;
   int _failures = 0;
+  int _requestCounter = 0;
   SyncStatus _status = SyncStatus.idle;
   String? _lastError;
   bool _disposed = false;
+
+  /// Spaces the socket has subscribed to on this connection.
+  final Set<String> _subscribed = {};
+
+  /// Spaces whose log this device has read to the end at least once. A note
+  /// with no history here is not seeded before that: the history may be on
+  /// the server already, and the seed would be refused.
+  final Set<String> _caughtUp = {};
+
+  /// Pushes awaiting an acknowledgement, by request id.
+  final Map<String, ({DocRecord record, OutboxEntry entry})> _awaiting = {};
 
   SyncStatus get status => _status;
   String? get lastError => _lastError;
@@ -131,64 +171,70 @@ class SyncService extends ChangeNotifier {
   bool get isUnlocked => _vault != null;
   SpaceKeyring get keyring => _keyring;
 
-  /// True while the server can reach this device without being asked.
-  bool get isLive => _live != null;
+  /// True while the socket is up: changes elsewhere reach this device
+  /// without being asked for.
+  bool get isLive => _live;
+
+  /// Changes the server has not acknowledged yet.
+  int get pendingCount => _docs.pendingCount;
+  bool get hasPendingChanges => pendingCount > 0 || _notes.hasPendingChanges;
+
+  // -------------------------------------------------------------------------
+  // Lifecycle
+  // -------------------------------------------------------------------------
 
   /// Hands the service the master key. Called after an unlock, or at launch
   /// with the key read back from the platform keystore.
   void unlock(Vault vault) {
     _vault = vault;
     if (_status == SyncStatus.locked) _setStatus(SyncStatus.idle);
-    _attachLive();
+    _connect();
+    _scheduleReconcile();
   }
 
-  /// Opens the wake-up channel and keeps it open.
-  ///
-  /// Called when the app is in the foreground — which on desktop includes a
-  /// window that has merely lost focus or been minimised, because a stale
-  /// open window is exactly the case this exists for.
+  /// Opens the socket and keeps it open. Called when the app is in the
+  /// foreground — which on desktop includes a window that has merely lost
+  /// focus, because a stale open window is exactly what this exists for.
   void resume() {
     _foreground = true;
-    _attachLive();
+    _connect();
   }
 
-  /// Closes it again. Worth doing only for a real backgrounding: a phone that
-  /// has been swapped away from will have the socket killed by the OS anyway,
-  /// and a radio held awake for it is battery nobody agreed to spend.
+  /// Closes it. Only for a real backgrounding: the OS is about to kill the
+  /// socket anyway, and a radio held awake for it is battery nobody agreed
+  /// to spend. Everything unsent stays in the outbox.
   void pause() {
     _foreground = false;
-    _detachLive();
+    _disconnect();
     _stopPolling();
+    unawaited(_docs.flush());
   }
 
   /// Signing out. Sync stops; the notes stay exactly where they are.
   void lock() {
     _vault = null;
-    _timer?.cancel();
-    _timer = null;
-    _detachLive();
+    _sendTimer?.cancel();
+    _sendTimer = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _disconnect();
     _stopPolling();
     _setStatus(SyncStatus.locked);
   }
 
-  /// Asks for a sync soon. Repeated calls inside [debounce] collapse into one.
+  /// Asks for a sync soon. Kept for callers that used to schedule a pass:
+  /// now it reconciles what changed and drains the outbox.
   void requestSync() {
     if (_disposed || _vault == null) return;
-    // A build the server no longer serves stops asking. The next launch is
-    // the next attempt, by which time it may be a newer build.
     if (_status == SyncStatus.outdated) return;
-    _timer?.cancel();
-    _timer = Timer(debounce, () => unawaited(syncNow()));
+    _scheduleReconcile();
+    if (!_live) _scheduleRetry(soon: true);
   }
 
-  /// Runs a pass now, or one straight after the pass already running.
-  ///
-  /// Single-flight on purpose: two passes at once would push the same dirty
-  /// notes twice and interleave two cursors over the same list. A call that
-  /// lands mid-pass is not simply joined to it, though: whatever it was asked
-  /// for — a note just moved, a membership just changed — may have happened
-  /// after that pass read its inputs, so one more pass follows, shared by
-  /// every caller that asked during the first.
+  /// Runs a full pass now: refreshes the spaces, does the duties, catches up
+  /// every space — over the socket if it is up, over HTTP if not — and
+  /// drains the outbox. Single-flight, with one follow-up for callers that
+  /// asked mid-pass.
   Future<void> syncNow() {
     final current = _inFlight;
     if (current != null) {
@@ -199,8 +245,6 @@ class SyncService extends ChangeNotifier {
     }
     return _startPass();
   }
-
-  Future<void>? _queued;
 
   Future<void> _startPass() {
     final pass = _run().whenComplete(() => _inFlight = null);
@@ -215,33 +259,35 @@ class SyncService extends ChangeNotifier {
       return;
     }
     if (_status == SyncStatus.outdated) return;
-
-    _timer?.cancel();
-    _timer = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _setStatus(SyncStatus.syncing);
 
     try {
+      await _docs.load();
       await _keyring.refresh(_api, vault);
       final personal = _keyring.personal;
       if (personal != null) _state.adoptPersonalSpace(personal.id);
       await _duties(vault);
       _forgetDepartedSpaces();
-      await _pullAll(vault);
-      await _pushWithRecovery(vault);
+      if (_live) {
+        _subscribeAll();
+      } else if (_socket == null || _socketDown) {
+        await _pullAllOverHttp();
+      }
+      _reconcileDirty();
+      await _drain();
       _failures = 0;
       _lastError = null;
       _state.recordSync(_now());
       _setStatus(SyncStatus.idle);
-      // A push that resolved a conflict leaves a conflicted copy behind, and
-      // that copy is itself unsynced. Come back for it.
-      if (_notes.hasPendingChanges) requestSync();
     } on SyncAuthException catch (error) {
       _lastError = error.message;
       _setStatus(SyncStatus.signedOut);
     } on SyncOutdatedException catch (error) {
       _lastError = error.message;
       _stopPolling();
-      _detachLive();
+      _disconnect();
       _setStatus(SyncStatus.outdated);
     } on SyncTransientException catch (error) {
       _lastError = error.message;
@@ -254,13 +300,870 @@ class SyncService extends ChangeNotifier {
   }
 
   // -------------------------------------------------------------------------
+  // The socket
+  // -------------------------------------------------------------------------
+
+  void _connect() {
+    if (_disposed || !_foreground || _vault == null) return;
+    if (_status == SyncStatus.outdated) return;
+    if (_socket != null) return;
+    final socket = _api.openSocket();
+    _socket = socket;
+    _socketEvents = socket.events.listen(_onSocketEvent);
+    socket.connect();
+  }
+
+  void _disconnect() {
+    final socket = _socket;
+    _socket = null;
+    unawaited(_socketEvents?.cancel());
+    _socketEvents = null;
+    _subscribed.clear();
+    _wentDown();
+    unawaited(socket?.close());
+  }
+
+  void _wentDown() {
+    if (_live) {
+      _live = false;
+      if (!_disposed) notifyListeners();
+    }
+    // Whatever was in flight may or may not have landed; the server will
+    // recognise a repeat by its device counter, so it simply goes again.
+    for (final waiting in _awaiting.values) {
+      waiting.entry.inFlight = false;
+    }
+    _awaiting.clear();
+  }
+
+  void _onSocketEvent(SocketEvent event) {
+    if (_disposed) return;
+    switch (event.kind) {
+      case SocketEventKind.connected:
+        _live = true;
+        _socketDown = false;
+        _subscribed.clear();
+        _stopPolling();
+        notifyListeners();
+        // A pass on every connect: the spaces may have changed while the
+        // socket was down, and the subscription needs the current list.
+        unawaited(syncNow());
+      case SocketEventKind.disconnected:
+        final first = !_socketDown;
+        _socketDown = true;
+        _wentDown();
+        _startPolling();
+        // The first time it goes down, catch up over HTTP at once rather
+        // than at the next poll; the outbox goes the same way.
+        if (first) unawaited(syncNow());
+      case SocketEventKind.message:
+        unawaited(_onMessage(event.message!));
+    }
+  }
+
+  /// Subscribes to every space this device can read that it has not
+  /// subscribed to on this connection.
+  void _subscribeAll() {
+    final socket = _socket;
+    if (socket == null || !_live) return;
+    final wanted = <String, int>{};
+    for (final space in _keyring.spaces) {
+      if (space.isTeam && !_keyring.holdsKey(space.id)) continue;
+      if (_subscribed.contains(space.id)) continue;
+      wanted[space.id] = _state.cursorFor(space.id);
+    }
+    if (wanted.isEmpty) return;
+    if (socket.send({'t': 'sub', 'spaces': wanted})) {
+      _subscribed.addAll(wanted.keys);
+    }
+  }
+
+  Future<void> _onMessage(Map<String, Object?> message) async {
+    final vault = _vault;
+    if (vault == null) return;
+    switch (message['t']) {
+      case 'ops':
+        final batch = OpsBatch.fromJson(message);
+        if (batch != null) await _applyBatch(vault, batch);
+      case 'synced':
+        final spaceId = message['spaceId'];
+        if (spaceId is String) {
+          _caughtUp.add(spaceId);
+          _reconcileDirty();
+          _scheduleSend();
+        }
+      case 'ack':
+        await _onAck(message);
+      case 'spaces':
+        unawaited(syncNow());
+      case 'error':
+        final spaceId = message['spaceId'];
+        if (spaceId is String) _subscribed.remove(spaceId);
+        debugPrint('KapyNotes: socket error: ${message['error']}');
+        unawaited(syncNow());
+      case 'pong':
+        break;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Reconcile: local edits become ops
+  // -------------------------------------------------------------------------
+
+  void _onNotesChanged() => _scheduleReconcile();
+
+  void _scheduleReconcile() {
+    if (_disposed || _reconcileScheduled) return;
+    _reconcileScheduled = true;
+    // A microtask, not a timer: it runs after the change that scheduled it
+    // and before any socket event, so a remote op is never applied on top of
+    // a keystroke the document has not absorbed yet.
+    scheduleMicrotask(() {
+      _reconcileScheduled = false;
+      if (_disposed) return;
+      _reconcileDirty();
+      _scheduleSend();
+    });
+  }
+
+  /// Diffs every dirty note against its document and turns the difference
+  /// into outbox entries. Synchronous once the store is loaded, which is
+  /// what lets [_applyBatch] rely on it.
+  void _reconcileDirty() {
+    if (_vault == null || !_docs.isLoaded) return;
+    final personal = _keyring.personal;
+    if (personal == null) return;
+
+    for (final note in _notes.dirtyNotes) {
+      final spaceId = note.spaceId ?? personal.id;
+      final space = _keyring.byId(spaceId);
+      if (space == null) continue;
+      if (space.isTeam && !_keyring.holdsKey(spaceId)) continue;
+
+      var current = note;
+      // A team note gets a content key on its first write, and a fresh one
+      // after a removal: the write that rotates must seal under a key the
+      // removed person never had.
+      if (space.isTeam) {
+        final stale =
+            current.contentKey == null ||
+            current.contentKeyGeneration < space.keyGeneration ||
+            space.rotationPending;
+        if (stale) {
+          _notes.adoptKey(
+            current.id,
+            contentKey: randomKey(),
+            contentKeyEpoch: current.contentKey == null
+                ? 1
+                : current.contentKeyEpoch + 1,
+            contentKeyGeneration: space.keyGeneration,
+          );
+          current = _notes.byId(current.id) ?? current;
+        }
+      }
+
+      // Pictures go up before the text that holds them: the ops carry the
+      // server ids, and a note described before its images exist would
+      // describe pictures nobody could ask for.
+      if (_images != null &&
+          current.attachments.any((ref) => ref.attachmentId == null)) {
+        if (_uploading.add(current.id)) unawaited(_uploadThenReconcile(current));
+        continue;
+      }
+
+      final record = _docs.get(current.id);
+      if (record == null) {
+        if (!_caughtUp.contains(spaceId)) continue;
+        _seed(current, spaceId);
+      } else {
+        _reconcileInto(record, current, spaceId);
+      }
+      _notes.markSynced(notes: [current]);
+    }
+
+    for (final stone in _notes.dirtyTombstones) {
+      final spaceId = stone.spaceId ?? personal.id;
+      if (_keyring.byId(spaceId) == null) continue;
+      final record = _docs.get(stone.id);
+      // A tombstone beside a live copy elsewhere is a move, and the move's
+      // own entry tells the server where the note went.
+      final live = _notes.byId(stone.id);
+      if (live != null && (live.spaceId ?? personal.id) != spaceId) {
+        if (record != null && record.spaceId == spaceId) continue;
+        _notes.markSynced(tombstones: [stone]);
+        continue;
+      }
+      if (record == null) {
+        // Deleted before it was ever seeded: the server never had it.
+        _notes.markSynced(tombstones: [stone]);
+        continue;
+      }
+      if (record.outbox.any((entry) => entry.deleted == true)) continue;
+      record.outbox.add(
+        OutboxEntry(id: _nextRequestId(), spaceId: spaceId, deleted: true),
+      );
+      _docs.markDirty(stone.id);
+    }
+  }
+
+  Future<void> _uploadThenReconcile(Note note) async {
+    final images = _images;
+    if (images == null) return;
+    try {
+      final uploaded = await images.upload(note);
+      if (!identical(uploaded, note)) {
+        _notes.adoptAttachments(note.id, uploaded.attachments);
+      }
+      _scheduleReconcile();
+    } on SyncException catch (error) {
+      debugPrint('KapyNotes: image upload deferred: ${error.message}');
+    } finally {
+      _uploading.remove(note.id);
+    }
+  }
+
+  /// The note's first bytes on the server: a snapshot, marked as a seed so
+  /// two devices holding the same old note cannot both write it.
+  void _seed(Note note, String spaceId) {
+    final record = _docs.create(note.id, spaceId);
+    record.doc.reconcile(
+      body: note.body,
+      formats: note.formats,
+      attachments: note.attachments,
+      createdAt: note.createdAt,
+      now: _now(),
+    );
+    record.outbox.add(
+      OutboxEntry(
+        id: _nextRequestId(),
+        spaceId: spaceId,
+        snapshot: record.doc.toSnapshot(),
+        covers: _state.cursorFor(spaceId),
+        seed: true,
+      ),
+    );
+    _docs.markDirty(note.id);
+  }
+
+  void _reconcileInto(DocRecord record, Note note, String spaceId) {
+    final ops = record.doc.reconcile(
+      body: note.body,
+      formats: note.formats,
+      attachments: note.attachments,
+      createdAt: note.createdAt,
+      now: _now(),
+    );
+    var changed = false;
+    if (record.spaceId != spaceId) {
+      // Moved. The whole document seeds the new space, and the server
+      // tombstones the old one in the same transaction.
+      record.outbox.removeWhere((entry) => !entry.inFlight);
+      record.outbox.add(
+        OutboxEntry(
+          id: _nextRequestId(),
+          spaceId: spaceId,
+          snapshot: record.doc.toSnapshot(),
+          covers: _state.cursorFor(spaceId),
+          seed: true,
+          from: record.spaceId,
+        ),
+      );
+      record.spaceId = spaceId;
+      record.opsSinceSnapshot = 0;
+      record.ownOpsSinceSnapshot = 0;
+      changed = true;
+    } else if (ops.isNotEmpty) {
+      record.opsSinceSnapshot++;
+      record.ownOpsSinceSnapshot++;
+      // Coalesce with an unsent batch: a burst of typing is one op.
+      final last = record.outbox.isEmpty ? null : record.outbox.last;
+      if (last != null &&
+          !last.inFlight &&
+          last.ops != null &&
+          last.spaceId == spaceId) {
+        last.ops!.addAll(ops);
+      } else {
+        record.outbox.add(
+          OutboxEntry(
+            id: _nextRequestId(),
+            spaceId: spaceId,
+            ops: List<Object?>.of(ops),
+            deviceSeq: ++record.deviceSeq,
+          ),
+        );
+      }
+      changed = true;
+    }
+    if (changed) _docs.markDirty(note.id);
+  }
+
+  // -------------------------------------------------------------------------
+  // Send: the outbox drains
+  // -------------------------------------------------------------------------
+
+  void _scheduleSend() {
+    if (_disposed || _vault == null || _docs.pendingCount == 0) return;
+    _sendTimer ??= Timer(sendDelay, () {
+      _sendTimer = null;
+      unawaited(_drain());
+    });
+  }
+
+  /// Sends the head of every note's outbox that is not already in flight.
+  /// Over the socket when it is up; over HTTP when it is not, in which case
+  /// the answer comes back inline.
+  Future<void> _drain() async {
+    final vault = _vault;
+    if (vault == null || _disposed) return;
+    for (final record in _docs.records.toList()) {
+      if (record.outbox.isEmpty) continue;
+      final entry = record.outbox.first;
+      if (entry.inFlight) continue;
+      final note = _notes.byId(record.noteId);
+      final push = await _preparePush(vault, record, entry, note);
+      if (push == null) continue;
+      entry.inFlight = true;
+      final socket = _socket;
+      if (_live && socket != null) {
+        _awaiting[entry.id] = (record: record, entry: entry);
+        if (!socket.send({'t': 'push', 'id': entry.id, ...push.toJson()})) {
+          _awaiting.remove(entry.id);
+          entry.inFlight = false;
+        }
+      } else {
+        try {
+          final result = await _api.pushOps(push);
+          _acknowledge(record, entry, result);
+        } on SyncRefusedException catch (error) {
+          entry.inFlight = false;
+          await _refused(record, entry, error.code, error.body);
+        } on SyncException catch (error) {
+          entry.inFlight = false;
+          _lastError = error.message;
+          if (error is SyncTransientException) {
+            _setStatus(SyncStatus.offline);
+            _scheduleRetry();
+          } else if (error is SyncAuthException) {
+            _setStatus(SyncStatus.signedOut);
+          } else if (error is SyncOutdatedException) {
+            _setStatus(SyncStatus.outdated);
+          }
+          return;
+        }
+      }
+    }
+  }
+
+  /// Seals one entry under the note's current key. Null when the note has no
+  /// key to seal under yet, in which case the entry waits.
+  Future<OpsPush?> _preparePush(
+    Vault vault,
+    DocRecord record,
+    OutboxEntry entry,
+    Note? note,
+  ) async {
+    final space = _keyring.byId(entry.spaceId);
+    if (space == null) return null;
+    Uint8List? contentKey;
+    var epoch = 1;
+    WireNoteKey? key;
+    if (space.isTeam) {
+      final spaceKey = _keyring.keyFor(space.id);
+      if (spaceKey == null) return null;
+      contentKey = note?.contentKey ?? record.keys.values.lastOrNull;
+      if (contentKey == null) {
+        if (entry.deleted == true && entry.ops == null && entry.snapshot == null) {
+          // A bare tombstone needs no key.
+        } else {
+          return null;
+        }
+      } else {
+        epoch = note?.contentKeyEpoch ?? record.keys.keys.reduce(max);
+        key = WireNoteKey(
+          wrapped: await wrapKey(contentKey, spaceKey),
+          keyGeneration: space.keyGeneration,
+          contentKeyEpoch: epoch,
+        );
+      }
+    }
+
+    final ops = <WireOp>[];
+    if (entry.ops != null) {
+      final plaintext = _encode({'ops': entry.ops});
+      ops.add(
+        WireOp(
+          deviceSeq: entry.deviceSeq!,
+          epoch: epoch,
+          engine: fugueEngine,
+          payload: await vault.sealRaw(plaintext, contentKey),
+        ),
+      );
+    }
+    WireSnapshot? snapshot;
+    final snap = entry.snapshot;
+    // A rotation — a local epoch ahead of the server's — must carry the
+    // whole document under the new key; so must a seed; and every
+    // `snapshotEvery` ops somebody writes one so nobody replays a year.
+    final rotating = record.serverEpoch != 0 && epoch > record.serverEpoch;
+    if (snap != null) {
+      snapshot = WireSnapshot(
+        covers: entry.covers,
+        epoch: epoch,
+        engine: fugueEngine,
+        payload: await vault.sealRaw(_encode({'snap': snap}), contentKey),
+      );
+    } else if (rotating || (_dueForSnapshot(record) && entry.ops != null)) {
+      snapshot = WireSnapshot(
+        covers: _state.cursorFor(entry.spaceId),
+        epoch: epoch,
+        engine: fugueEngine,
+        payload: await vault.sealRaw(
+          _encode({'snap': record.doc.toSnapshot()}),
+          contentKey,
+        ),
+      );
+    }
+
+    return OpsPush(
+      spaceId: entry.spaceId,
+      noteId: record.noteId,
+      ops: ops,
+      key: key,
+      deleted: entry.deleted,
+      from: entry.from,
+      seed: entry.seed,
+      snapshot: snapshot,
+    );
+  }
+
+  bool _dueForSnapshot(DocRecord record) =>
+      record.opsSinceSnapshot >= snapshotEvery &&
+      record.ownOpsSinceSnapshot * 4 >= snapshotEvery;
+
+  static Uint8List _encode(Map<String, Object?> json) =>
+      Uint8List.fromList(utf8.encode(jsonEncode(json)));
+
+  Future<void> _onAck(Map<String, Object?> message) async {
+    final id = message['id'];
+    if (id is! String) return;
+    final waiting = _awaiting.remove(id);
+    if (waiting == null) return;
+    final error = message['error'];
+    final result = message['result'];
+    if (error is String) {
+      waiting.entry.inFlight = false;
+      final status = message['status'];
+      if (status is int && status >= 500) {
+        _scheduleRetry();
+        return;
+      }
+      await _refused(waiting.record, waiting.entry, error, message);
+      return;
+    }
+    if (result is Map<String, Object?>) {
+      _acknowledge(waiting.record, waiting.entry, OpsPushResult.fromJson(result));
+    }
+  }
+
+  void _acknowledge(DocRecord record, OutboxEntry entry, OpsPushResult result) {
+    record.outbox.remove(entry);
+    record.seeded = true;
+    final note = _notes.byId(record.noteId);
+    if (note != null && note.spaceId != null) {
+      record.serverEpoch = note.contentKeyEpoch;
+    }
+    if (result.snapshotSeq != null) {
+      record.opsSinceSnapshot = 0;
+      record.ownOpsSinceSnapshot = 0;
+    }
+    if (entry.deleted != null) {
+      final stone = _notes.tombstones.where(
+        (s) =>
+            s.id == record.noteId &&
+            (s.spaceId ?? _keyring.personal?.id) == entry.spaceId,
+      );
+      if (stone.isNotEmpty) _notes.markSynced(tombstones: stone.toList());
+    }
+    if (entry.from != null) {
+      // The server tombstoned the old space in the same transaction.
+      final stones = _notes.tombstones.where(
+        (s) =>
+            s.id == record.noteId &&
+            (s.spaceId ?? _keyring.personal?.id) == entry.from,
+      );
+      if (stones.isNotEmpty) _notes.markSynced(tombstones: stones.toList());
+    }
+    _docs.markDirty(record.noteId);
+    _state.recordSync(_now());
+    if (_status == SyncStatus.offline || _status == SyncStatus.failed) {
+      _lastError = null;
+      _setStatus(SyncStatus.idle);
+    }
+    _scheduleSend();
+    notifyListeners();
+  }
+
+  /// The server refused a push for a reason it named. Most are answered by
+  /// refreshing what this device knows and sending again.
+  Future<void> _refused(
+    DocRecord record,
+    OutboxEntry entry,
+    String code,
+    Map<String, Object?> body,
+  ) async {
+    final vault = _vault;
+    if (vault == null) return;
+    switch (code) {
+      case 'seeded':
+        // Somebody else's copy of this note got there first. Ours goes —
+        // unless theirs has already arrived and replaced it, in which case
+        // only this entry does — and the local text is reconciled onto
+        // theirs, which the subscription delivers if it has not yet.
+        if (record.seeded) {
+          record.outbox.remove(entry);
+          _docs.markDirty(record.noteId);
+        } else {
+          _docs.remove(record.noteId);
+        }
+        if (_notes.byId(record.noteId) != null) _notes.touch(record.noteId);
+        if (entry.from != null) {
+          // A move that raced: the destination already holds it.
+          unawaited(syncNow());
+        }
+      case 'content-key-epoch':
+        await _adoptServerKey(vault, record.noteId, body);
+        _scheduleSend();
+      case 'stale-key-generation':
+      case 'not a member of this space':
+      case 'move-raced':
+        unawaited(syncNow());
+      case 'a content-key rotation carries a snapshot under the new epoch':
+        // A rotation went up without its snapshot: make the next send one.
+        record.opsSinceSnapshot = snapshotEvery;
+        record.ownOpsSinceSnapshot = snapshotEvery;
+        _scheduleSend();
+      default:
+        // Something this build cannot answer. The entry is replaced by a
+        // snapshot of the whole document, which carries every op it held,
+        // and the failure is shown rather than retried in a loop.
+        debugPrint('KapyNotes: push refused: $code');
+        record.outbox.remove(entry);
+        if (entry.deleted == null) {
+          record.outbox.insert(
+            0,
+            OutboxEntry(
+              id: _nextRequestId(),
+              spaceId: entry.spaceId,
+              snapshot: record.doc.toSnapshot(),
+              covers: _state.cursorFor(entry.spaceId),
+              seed: !record.seeded,
+              from: entry.from,
+            ),
+          );
+        }
+        _docs.markDirty(record.noteId);
+        _lastError = code;
+        _setStatus(SyncStatus.failed);
+    }
+  }
+
+  /// The server holds a newer content key for a note this device is about
+  /// to write. Take it, keep the local text, and let the write go up under it.
+  Future<void> _adoptServerKey(
+    Vault vault,
+    String noteId,
+    Map<String, Object?> body,
+  ) async {
+    final spaceId = body['spaceId'];
+    if (spaceId is! String) return;
+    await _keyring.refresh(_api, vault);
+    final space = _keyring.byId(spaceId);
+    final spaceKey = _keyring.keyFor(spaceId);
+    if (space == null || spaceKey == null) return;
+    for (final wire in await _api.fetchNoteKeys(spaceId)) {
+      if (wire.noteId != noteId) continue;
+      final content = await unwrapKey(wire.wrapped, spaceKey);
+      if (content == null) return;
+      _docs.get(noteId)?.keys[wire.contentKeyEpoch] = content;
+      _notes.adoptKey(
+        noteId,
+        contentKey: content,
+        contentKeyEpoch: wire.contentKeyEpoch,
+        contentKeyGeneration: wire.contentKeyGeneration ?? wire.keyGeneration,
+      );
+      return;
+    }
+    // No row at all: the server expects a fresh key at epoch one.
+    final local = _notes.byId(noteId);
+    if (local == null) return;
+    _notes.adoptKey(
+      noteId,
+      contentKey: local.contentKey ?? randomKey(),
+      contentKeyEpoch: 1,
+      contentKeyGeneration: space.keyGeneration,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Apply: the server's log lands
+  // -------------------------------------------------------------------------
+
+  Future<void> _pullAllOverHttp() async {
+    for (final space in _keyring.spaces) {
+      if (space.isTeam && !_keyring.holdsKey(space.id)) continue;
+      for (var page = 0; page < 100; page++) {
+        final batch = await _api.pullOps(
+          space: space.id,
+          after: _state.cursorFor(space.id),
+        );
+        if (!batch.isEmpty) await _applyBatch(_vault!, batch);
+        if (!batch.hasMore) break;
+      }
+      _caughtUp.add(space.id);
+    }
+  }
+
+  /// Applies one page of one space's log, in seq order, and moves the
+  /// cursor past it.
+  Future<void> _applyBatch(Vault vault, OpsBatch batch) async {
+    await _docs.load();
+    // Anything typed and not yet absorbed goes into the documents first, so
+    // the render at the end of this cannot overwrite it.
+    _reconcileDirty();
+
+    final space = _keyring.byId(batch.spaceId);
+    if (space == null) return;
+    final storedSpaceId = space.isPersonal ? null : space.id;
+    final personalId = _keyring.personal?.id;
+
+    final items = <_LogItem>[
+      for (final op in batch.ops) _LogItem.op(op),
+      for (final snap in batch.snapshots) _LogItem.snapshot(snap),
+    ]..sort((a, b) => a.seq.compareTo(b.seq));
+
+    final touched = <String, _Touched>{};
+    for (final item in items) {
+      if (item.seq <= _state.cursorFor(batch.spaceId)) continue;
+      final noteId = item.noteId;
+      final touch = touched.putIfAbsent(noteId, () => _Touched());
+      touch.deleted = item.deleted;
+      touch.at = item.at;
+
+      var record = _docs.get(noteId);
+      var fresh = record == null;
+      if (record == null) {
+        record = _docs.create(noteId, batch.spaceId);
+      } else if (!record.seeded && item.deviceId != _state.deviceId) {
+        // This device seeded the note and so did another, and theirs won:
+        // its history is what arrives here. Ours is discarded before
+        // anything merges, or the same words would land twice under two
+        // sets of ids. The local text is reconciled onto theirs afterwards.
+        record.doc = NoteDoc(replica: _docs.replica);
+        record.outbox.removeWhere((entry) => !entry.inFlight);
+        record.deviceSeq = 0;
+        fresh = true;
+      }
+      if (fresh) {
+        touch.arrived = true;
+        touch.localBefore ??= _notes.byId(noteId);
+      }
+      record.seeded = true;
+      if (!item.isMarker && item.epoch > record.serverEpoch) {
+        record.serverEpoch = item.epoch;
+      }
+      if (record.spaceId != batch.spaceId) {
+        // The log says the note is here now, wherever the local copy sits.
+        record.spaceId = batch.spaceId;
+      }
+
+      if (item.isMarker) {
+        _docs.markDirty(noteId);
+        continue;
+      }
+      if (item.deviceId == _state.deviceId && !fresh && !item.isSnapshot) {
+        // Our own op, echoed back: already applied when it was made.
+        record.opsSinceSnapshot++;
+        continue;
+      }
+      if (item.engine != fugueEngine) {
+        debugPrint('KapyNotes: op in unknown engine ${item.engine}');
+        continue;
+      }
+
+      Uint8List? contentKey;
+      if (space.isTeam) {
+        contentKey = await _contentKeyFor(record, noteId, space, item.epoch);
+        if (contentKey == null) {
+          debugPrint('KapyNotes: no key for note $noteId at epoch ${item.epoch}');
+          continue;
+        }
+      }
+      final opened = await vault.openRaw(item.payload, contentKey);
+      if (opened == null) {
+        debugPrint('KapyNotes: could not open op ${item.seq} of $noteId');
+        continue;
+      }
+      Object? decoded;
+      try {
+        decoded = jsonDecode(utf8.decode(opened));
+      } on FormatException {
+        continue;
+      }
+      if (decoded is! Map) continue;
+      final ops = decoded['ops'];
+      final snap = decoded['snap'];
+      var changed = false;
+      if (ops is List) {
+        changed = record.doc.apply(ops);
+        record.opsSinceSnapshot++;
+      } else if (snap is Map) {
+        changed = record.doc.mergeSnapshot(Map<String, Object?>.of(snap.cast()));
+        if (item.isSnapshot) {
+          record.opsSinceSnapshot = 0;
+          record.ownOpsSinceSnapshot = 0;
+        }
+      }
+      if (changed) touch.changed = true;
+      _docs.markDirty(noteId);
+    }
+
+    for (final entry in touched.entries) {
+      _render(
+        entry.key,
+        entry.value,
+        space: space,
+        storedSpaceId: storedSpaceId,
+        personalId: personalId,
+      );
+    }
+    _state.recordCursor(batch.spaceId, batch.cursor);
+    if (touched.isNotEmpty) notifyListeners();
+  }
+
+  /// Writes a document back into the note list after a batch touched it.
+  void _render(
+    String noteId,
+    _Touched touch, {
+    required Space space,
+    required String? storedSpaceId,
+    required String? personalId,
+  }) {
+    final record = _docs.get(noteId);
+    if (record == null) return;
+    final at = touch.at ?? _now();
+    final local = _notes.byId(noteId);
+
+    if (touch.deleted) {
+      if (local != null && (local.spaceId ?? personalId) == (storedSpaceId ?? personalId)) {
+        _notes.applyRemote(
+          tombstones: [
+            Tombstone(id: noteId, deletedAt: at, spaceId: storedSpaceId),
+          ],
+        );
+      } else if (local == null) {
+        _notes.applyRemote(
+          tombstones: [
+            Tombstone(id: noteId, deletedAt: at, spaceId: storedSpaceId),
+          ],
+        );
+      }
+      return;
+    }
+
+    // A local delete not yet acknowledged wins over anything the log says
+    // while it is on its way up.
+    final localStone = _notes.tombstones.where(
+      (s) => s.id == noteId && (s.spaceId ?? personalId) == (storedSpaceId ?? personalId),
+    );
+    if (localStone.any((s) => s.isDirty)) return;
+
+    if (!touch.changed && !touch.arrived && local != null) return;
+
+    final view = record.doc.view;
+    Uint8List? contentKey = local?.contentKey;
+    var epoch = local?.contentKeyEpoch ?? 1;
+    var generation = local?.contentKeyGeneration ?? 1;
+    if (space.isTeam && record.keys.isNotEmpty) {
+      final latest = record.keys.keys.reduce(max);
+      if (contentKey == null || latest > epoch) {
+        contentKey = record.keys[latest];
+        epoch = latest;
+        generation = record.keyGeneration ?? space.keyGeneration;
+      }
+    }
+
+    var rendered = Note(
+      id: noteId,
+      body: view.body,
+      formats: view.formats,
+      attachments: view.attachments,
+      createdAt: view.createdAt ?? local?.createdAt ?? at,
+      updatedAt: at,
+      syncedAt: at,
+      spaceId: storedSpaceId,
+      contentKey: contentKey,
+      contentKeyEpoch: epoch,
+      contentKeyGeneration: generation,
+    );
+
+    final before = touch.localBefore;
+    if (touch.arrived && before != null && before.body != view.body) {
+      // The first time this note's history reaches a device that already
+      // holds a copy of its own. Newer local words go onto the document as
+      // ops; older ones are kept beside it rather than lost — once, here,
+      // and never again, because from now on every edit is an op.
+      if (before.updatedAt.isAfter(at)) {
+        _notes.touch(noteId);
+        _scheduleReconcile();
+        return;
+      }
+      _notes.keepCopy(before);
+    }
+    _notes.applyDoc(rendered);
+  }
+
+  /// The content key an op was sealed under: from the note, from the
+  /// session's cache, or from the server, in that order.
+  Future<Uint8List?> _contentKeyFor(
+    DocRecord record,
+    String noteId,
+    Space space,
+    int epoch,
+  ) async {
+    final cached = record.keys[epoch];
+    if (cached != null) return cached;
+    final local = _notes.byId(noteId);
+    if (local?.contentKey != null && local!.contentKeyEpoch == epoch) {
+      record.keys[epoch] = local.contentKey!;
+      return local.contentKey;
+    }
+    final spaceKey = _keyring.keyFor(space.id);
+    if (spaceKey == null) return null;
+    try {
+      for (final wire in await _api.fetchNoteKeys(space.id)) {
+        final id = wire.noteId;
+        if (id == null) continue;
+        final content = await unwrapKey(wire.wrapped, spaceKey);
+        if (content == null) continue;
+        final target = _docs.get(id);
+        if (target != null) {
+          target.keys[wire.contentKeyEpoch] = content;
+          target.keyGeneration = wire.contentKeyGeneration ?? wire.keyGeneration;
+        }
+      }
+    } on SyncException catch (error) {
+      debugPrint('KapyNotes: note keys unavailable: ${error.message}');
+    }
+    return record.keys[epoch];
+  }
+
+  // -------------------------------------------------------------------------
   // Duties: what the list of spaces asks this device to do
   // -------------------------------------------------------------------------
 
   /// Grants, rotations and trips home. Each is best-effort and independent:
   /// a refusal on one — another device got there first — must not stop the
-  /// pull that follows, so refusals are logged and the next pass sees the
-  /// updated list.
+  /// rest, so refusals are logged and the next pass sees the updated list.
   Future<void> _duties(Vault vault) async {
     var changed = false;
     for (final space in _keyring.teams) {
@@ -269,9 +1172,7 @@ class SyncService extends ChangeNotifier {
       try {
         if (await _grantWaiting(space, key)) changed = true;
         if (space.rotationPending && await _rotate(space, key)) changed = true;
-        if (space.owedTripHome &&
-            space.isOwner &&
-            await _bringHome(vault, space, key)) {
+        if (space.owedTripHome && space.isOwner && await bringHome(space.id)) {
           changed = true;
         }
       } on SyncRefusedException catch (error) {
@@ -317,11 +1218,7 @@ class SyncService extends ChangeNotifier {
       final noteId = wire.noteId;
       if (noteId == null) continue;
       final content = await unwrapKey(wire.wrapped, oldKey);
-      if (content == null) {
-        // A key this device cannot open is one wrapped under a generation it
-        // does not hold. The refresh that follows sorts out which.
-        return false;
-      }
+      if (content == null) return false;
       noteKeys[noteId] = (
         key: await wrapKey(content, newKey),
         fromEpoch: wire.contentKeyEpoch,
@@ -338,32 +1235,56 @@ class SyncService extends ChangeNotifier {
     return true;
   }
 
-  /// A team space whose only member is its owner, with notes still in it, is
-  /// owed a trip home. Every note is re-sealed under the master key for the
-  /// personal space and the space ends; nothing is deleted.
-  Future<bool> _bringHome(Vault vault, Space space, Uint8List key) async {
+  /// Ends a team space and brings its notes home: every note moves to the
+  /// personal space as a seed under the master key, over HTTP, one at a
+  /// time, and then the space goes. Nothing is deleted. Returns false if
+  /// the notes are not all this device's to move yet.
+  Future<bool> bringHome(String spaceId) async {
+    final vault = _vault;
     final personal = _keyring.personal;
-    if (personal == null) return false;
-    // Anything this device holds that is not yet on the server goes up
-    // first, so that the set the server expects and the set sent agree.
-    final mine = _notes.notesIn(space.id);
+    final space = _keyring.byId(spaceId);
+    if (vault == null || personal == null || space == null) return false;
+    await _docs.load();
+    _reconcileDirty();
+    final mine = _notes.notesIn(spaceId);
     if (mine.any((note) => note.isDirty)) return false;
+    for (final note in mine) {
+      final record = _docs.get(note.id);
+      if (record == null || record.hasPending) return false;
+    }
 
     final at = _now();
-    final payloads = [for (final note in mine) NotePayload.fromNote(note)];
-    final sealed = await vault.sealAll(payloads);
-    final wire = <WireNote>[
-      for (var i = 0; i < mine.length; i++)
-        WireNote(
-          id: mine[i].id,
-          spaceId: personal.id,
-          updatedAt: at,
-          payload: sealed[i],
+    for (final note in mine) {
+      final record = _docs.get(note.id)!;
+      final snapshot = WireSnapshot(
+        covers: _state.cursorFor(personal.id),
+        epoch: 1,
+        engine: fugueEngine,
+        payload: await vault.sealRaw(
+          _encode({'snap': record.doc.toSnapshot()}),
+          null,
         ),
-    ];
-    await _api.stopSharing(space.id, wire);
+      );
+      await _api.pushOps(
+        OpsPush(
+          spaceId: personal.id,
+          noteId: note.id,
+          from: spaceId,
+          seed: true,
+          snapshot: snapshot,
+        ),
+      );
+      record.spaceId = personal.id;
+      record.opsSinceSnapshot = 0;
+      record.ownOpsSinceSnapshot = 0;
+      record.keys.clear();
+      _docs.markDirty(note.id);
+    }
+    await _api.stopSharing(spaceId, const []);
     _notes.bringHome(mine.map((note) => note.id), at: at);
-    _state.forgetSpace(space.id);
+    _state.forgetSpace(spaceId);
+    _subscribed.remove(spaceId);
+    _caughtUp.remove(spaceId);
     return true;
   }
 
@@ -375,6 +1296,11 @@ class SyncService extends ChangeNotifier {
       if (live.contains(spaceId)) continue;
       final kept = _notes.forgetSpace(spaceId);
       _state.forgetSpace(spaceId);
+      _subscribed.remove(spaceId);
+      _caughtUp.remove(spaceId);
+      for (final record in _docs.records.toList()) {
+        if (record.spaceId == spaceId) _docs.remove(record.noteId);
+      }
       if (kept.isNotEmpty) {
         debugPrint(
           'KapyNotes: kept ${kept.length} unsynced note(s) from a space '
@@ -385,341 +1311,13 @@ class SyncService extends ChangeNotifier {
   }
 
   // -------------------------------------------------------------------------
-  // Pull
+  // Polling and retries
   // -------------------------------------------------------------------------
 
-  Future<void> _pullAll(Vault vault) async {
-    for (final space in _keyring.spaces) {
-      // A member waiting on a grant can read nothing yet; pulling would
-      // only advance a cursor past notes it cannot open.
-      if (space.isTeam && !_keyring.holdsKey(space.id)) continue;
-      await _pull(vault, space);
-    }
-  }
-
-  Future<void> _pull(Vault vault, Space space) async {
-    for (var page = 0; page < _maxPagesPerPass; page++) {
-      final result = await _api.pull(
-        space: space.id,
-        cursor: _state.cursorFor(space.id),
-      );
-      if (result.notes.isNotEmpty) {
-        await _applyPage(vault, space, result.notes);
-      }
-      // Recorded after applying, so a crash between the two re-reads the page
-      // rather than skipping it. Applying twice is harmless; skipping is not.
-      _state.recordPull(space.id, result.cursor);
-      if (!result.hasMore) return;
-    }
-    debugPrint('KapyNotes: pull stopped after $_maxPagesPerPass pages');
-  }
-
-  /// Decrypts a page and merges it. The whole page is opened in one call so
-  /// the isolate is paid for once rather than per note.
-  ///
-  /// A team note's content key is unwrapped with the space key first; a key
-  /// that does not open is one wrapped under a generation this device has
-  /// not caught up with, and the page is retried after a refresh rather than
-  /// skipped past.
-  Future<void> _applyPage(Vault vault, Space space, List<WireNote> wire) async {
-    final tombstones = <Tombstone>[];
-    final sealed = <WireNote>[];
-    final keys = <Uint8List?>[];
-    final storedSpaceId = space.isPersonal ? null : space.id;
-    final spaceKey = _keyring.keyFor(space.id);
-
-    for (final note in wire) {
-      if (note.isTombstone) {
-        tombstones.add(
-          Tombstone(
-            id: note.id,
-            deletedAt: note.deletedAt!,
-            spaceId: storedSpaceId,
-          ),
-        );
-        continue;
-      }
-      if (note.payload == null) continue;
-      if (space.isPersonal) {
-        sealed.add(note);
-        keys.add(null);
-        continue;
-      }
-      final wrapped = note.key;
-      if (wrapped == null || spaceKey == null) {
-        debugPrint('KapyNotes: shared note ${note.id} arrived without a key');
-        continue;
-      }
-      final content = await unwrapKey(wrapped.wrapped, spaceKey);
-      if (content == null) {
-        throw const SyncTransientException('the space key has moved on');
-      }
-      sealed.add(note);
-      keys.add(content);
-    }
-
-    final opened = await vault.openAllWith([
-      for (final note in sealed) note.payload!,
-    ], keys);
-
-    final notes = <Note>[];
-    for (var i = 0; i < sealed.length; i++) {
-      final payload = opened[i];
-      if (payload == null) {
-        // Sealed under a key this account no longer holds. Skipping keeps the
-        // rest of the page usable; the note stays on the server untouched.
-        debugPrint('KapyNotes: could not open note ${sealed[i].id}');
-        continue;
-      }
-      final key = sealed[i].key;
-      notes.add(
-        payload.toNote(
-          id: sealed[i].id,
-          updatedAt: sealed[i].updatedAt,
-          spaceId: storedSpaceId,
-          contentKey: keys[i],
-          contentKeyEpoch: key?.contentKeyEpoch ?? 1,
-          contentKeyGeneration:
-              key?.contentKeyGeneration ?? key?.keyGeneration ?? 1,
-        ),
-      );
-    }
-
-    _notes.applyRemote(notes: notes, tombstones: tombstones);
-  }
-
-  // -------------------------------------------------------------------------
-  // Push
-  // -------------------------------------------------------------------------
-
-  /// Pushes, and answers the refusals a push can earn — a key generation that
-  /// moved on, an epoch behind the stored one, a space this device is no
-  /// longer in — by refreshing what it knows and trying once more.
-  Future<void> _pushWithRecovery(Vault vault) async {
-    try {
-      await _push(vault);
-    } on SyncRefusedException catch (error) {
-      switch (error.code) {
-        case 'stale-key-generation':
-        case 'move-raced':
-        case 'not a member of this space':
-          await _keyring.refresh(_api, vault);
-          _forgetDepartedSpaces();
-        case 'content-key-epoch':
-          await _adoptServerKey(vault, error);
-        default:
-          rethrow;
-      }
-      await _push(vault);
-    }
-  }
-
-  /// The server holds a newer content key for a note this device is about
-  /// to write. Take it, keep the local text, and let the write go up under it.
-  Future<void> _adoptServerKey(Vault vault, SyncRefusedException error) async {
-    final spaceId = error.body['spaceId'];
-    final noteId = error.body['noteId'];
-    if (spaceId is! String || noteId is! String) rethrow_(error);
-    await _keyring.refresh(_api, vault);
-    final space = _keyring.byId(spaceId);
-    final spaceKey = _keyring.keyFor(spaceId);
-    if (space == null || spaceKey == null) rethrow_(error);
-    for (final wire in await _api.fetchNoteKeys(spaceId)) {
-      if (wire.noteId != noteId) continue;
-      final content = await unwrapKey(wire.wrapped, spaceKey);
-      if (content == null) rethrow_(error);
-      _notes.adoptKey(
-        noteId,
-        contentKey: content,
-        contentKeyEpoch: wire.contentKeyEpoch,
-        contentKeyGeneration: wire.contentKeyGeneration ?? wire.keyGeneration,
-      );
-      return;
-    }
-    // No row at all: the server expects a fresh key at epoch one.
-    final local = _notes.byId(noteId);
-    if (local == null) rethrow_(error);
-    _notes.adoptKey(
-      noteId,
-      contentKey: local.contentKey ?? randomKey(),
-      contentKeyEpoch: 1,
-      contentKeyGeneration: space.keyGeneration,
-    );
-  }
-
-  static Never rethrow_(SyncRefusedException error) => throw error;
-
-  Future<void> _push(Vault vault) async {
-    final personal = _keyring.personal;
-    var dirtyNotes = _notes.dirtyNotes;
-    final dirtyTombstones = _notes.dirtyTombstones;
-    if (dirtyNotes.isEmpty && dirtyTombstones.isEmpty) return;
-
-    // Shared notes first: any whose key predates a removal, or that is in a
-    // space still waiting on its rotation, gets a fresh key now — the write
-    // that rotates must seal under a key the removed person never had.
-    final skipped = <String>{};
-    for (final note in dirtyNotes) {
-      final spaceId = note.spaceId;
-      if (spaceId == null) continue;
-      final space = _keyring.byId(spaceId);
-      if (space == null || !_keyring.holdsKey(spaceId)) {
-        // Not ours to write right now: the space is gone, or the key has not
-        // arrived. The note stays dirty and waits.
-        skipped.add(note.id);
-        continue;
-      }
-      final stale =
-          note.contentKey == null ||
-          note.contentKeyGeneration < space.keyGeneration ||
-          space.rotationPending;
-      if (stale) {
-        _notes.adoptKey(
-          note.id,
-          contentKey: randomKey(),
-          contentKeyEpoch: note.contentKey == null ? 1 : note.contentKeyEpoch + 1,
-          contentKeyGeneration: space.keyGeneration,
-        );
-      }
-    }
-    dirtyNotes = _notes.dirtyNotes
-        .where((note) => !skipped.contains(note.id))
-        .toList(growable: false);
-    final stones = dirtyTombstones
-        .where(
-          (stone) =>
-              stone.spaceId == null || _keyring.byId(stone.spaceId) != null,
-        )
-        .toList(growable: false);
-    if (dirtyNotes.isEmpty && stones.isEmpty) return;
-
-    // One isolate hop for every note being pushed, not one per note.
-    final payloads = await vault.sealAllWith(
-      [for (final note in dirtyNotes) NotePayload.fromNote(note)],
-      [for (final note in dirtyNotes) note.contentKey],
-    );
-
-    final wire = <WireNote>[];
-    for (var i = 0; i < dirtyNotes.length; i++) {
-      final note = dirtyNotes[i];
-      final spaceId = note.spaceId;
-      WireNoteKey? key;
-      if (spaceId != null) {
-        final space = _keyring.byId(spaceId)!;
-        key = WireNoteKey(
-          wrapped: await wrapKey(note.contentKey!, _keyring.keyFor(spaceId)!),
-          keyGeneration: space.keyGeneration,
-          contentKeyEpoch: note.contentKeyEpoch,
-        );
-      }
-      wire.add(
-        WireNote(
-          id: note.id,
-          spaceId: spaceId ?? personal?.id,
-          updatedAt: note.updatedAt,
-          payload: payloads[i],
-          key: key,
-        ),
-      );
-    }
-    for (final stone in stones) {
-      // A tombstone's deletion time is its `updatedAt`: that is the value the
-      // server compares, so a delete beats every edit older than it.
-      wire.add(
-        WireNote(
-          id: stone.id,
-          spaceId: stone.spaceId ?? personal?.id,
-          updatedAt: stone.deletedAt,
-          deletedAt: stone.deletedAt,
-        ),
-      );
-    }
-
-    // A move is a tombstone and a live note under one id, and the server
-    // applies both or neither — so they must travel in the same request.
-    // Sorting by id keeps the pair adjacent before chunking.
-    wire.sort((a, b) => a.id.compareTo(b.id));
-
-    for (var start = 0; start < wire.length; start += pushMaxNotes) {
-      var end = min(start + pushMaxNotes, wire.length);
-      // Never split a pair across the boundary.
-      while (end < wire.length && end > start && wire[end].id == wire[end - 1].id) {
-        end--;
-      }
-      final chunk = wire.sublist(start, end);
-      final result = await _api.push(chunk);
-
-      _notes.markSynced(
-        notes: [
-          for (final note in dirtyNotes)
-            if (result.applied.contains(note.id)) note,
-        ],
-        tombstones: [
-          for (final stone in stones)
-            if (result.applied.contains(stone.id)) stone,
-        ],
-      );
-
-      if (result.conflicts.isNotEmpty) await _applyConflicts(vault, result);
-    }
-  }
-
-  /// Winning copies come back grouped by whichever space they are in.
-  Future<void> _applyConflicts(Vault vault, PushResult result) async {
-    final bySpace = <String, List<WireNote>>{};
-    for (final note in result.conflicts) {
-      final id = note.spaceId ?? _keyring.personal?.id;
-      if (id == null) continue;
-      bySpace.putIfAbsent(id, () => []).add(note);
-    }
-    for (final entry in bySpace.entries) {
-      final space = _keyring.byId(entry.key);
-      if (space == null) continue;
-      await _applyPage(vault, space, entry.value);
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Wake-ups
-  // -------------------------------------------------------------------------
-
-  void _attachLive() {
-    if (_disposed || !_foreground || _vault == null || _live != null) return;
-    if (_status == SyncStatus.outdated) return;
-    // Listening is what opens the socket; cancelling is what closes it. There
-    // is no separate connect to forget to call.
-    _live = _api.live().listen(_onLive);
-  }
-
-  void _detachLive() {
-    unawaited(_live?.cancel());
-    _live = null;
-  }
-
-  void _onLive(LiveSignal signal) {
-    if (_disposed) return;
-    switch (signal.kind) {
-      case LiveSignalKind.wake:
-        requestSync();
-      case LiveSignalKind.connected:
-        _stopPolling();
-        // A reconnect is the one moment we know a wake-up may have gone to a
-        // socket that was no longer there. But coming back to the app
-        // reconnects and syncs at the same instant, and a launch does both
-        // too — so a pass that is already running, or one that has only just
-        // finished, is taken as covering it.
-        if (_inFlight != null) return;
-        final last = _state.lastSyncedAt;
-        if (last == null || _now().difference(last) > liveGrace) requestSync();
-      case LiveSignalKind.disconnected:
-        _startPolling();
-    }
-  }
-
-  /// The fallback, and only ever that: it runs while the channel is down and
+  /// The fallback, and only ever that: it runs while the socket is down and
   /// stops the moment it comes back.
   void _startPolling() {
-    if (_disposed || _poll != null) return;
+    if (_disposed || _poll != null || !_foreground) return;
     _poll = Timer.periodic(pollInterval, (_) => unawaited(syncNow()));
   }
 
@@ -728,20 +1326,24 @@ class SyncService extends ChangeNotifier {
     _poll = null;
   }
 
-  void _scheduleRetry() {
-    if (_disposed) return;
-    _failures++;
-    // Exponential, capped, with jitter so every device that lost the same
-    // network does not come back at the same instant.
-    final backoff = minRetry * pow(2, min(_failures - 1, 10)).toDouble();
+  void _scheduleRetry({bool soon = false}) {
+    if (_disposed || _retryTimer != null) return;
+    if (!soon) _failures++;
+    final backoff = soon
+        ? minRetry
+        : minRetry * pow(2, min(max(_failures - 1, 0), 10)).toDouble();
     final capped = backoff > maxRetry ? maxRetry : backoff;
     final jitter = Random().nextDouble() * 0.3 + 0.85;
-    _timer?.cancel();
-    _timer = Timer(
+    _retryTimer = Timer(
       Duration(milliseconds: (capped.inMilliseconds * jitter).round()),
-      () => unawaited(syncNow()),
+      () {
+        _retryTimer = null;
+        unawaited(syncNow());
+      },
     );
   }
+
+  String _nextRequestId() => '${_state.deviceId.substring(0, 8)}-${++_requestCounter}-${_now().millisecondsSinceEpoch}';
 
   void _setStatus(SyncStatus status) {
     if (_status == status) return;
@@ -752,9 +1354,60 @@ class SyncService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _timer?.cancel();
+    _notes.removeListener(_onNotesChanged);
+    _sendTimer?.cancel();
+    _retryTimer?.cancel();
     _stopPolling();
-    _detachLive();
+    _disconnect();
     super.dispose();
   }
+}
+
+/// One entry of a space's log, op or snapshot, in the order it was written.
+class _LogItem {
+  _LogItem.op(WireStoredOp op)
+    : seq = op.seq,
+      noteId = op.noteId,
+      deviceId = op.deviceId,
+      epoch = op.epoch,
+      engine = op.engine,
+      payload = op.payload,
+      deleted = op.deleted,
+      at = op.at,
+      isSnapshot = false,
+      isMarker = op.isMarker;
+
+  _LogItem.snapshot(WireStoredSnapshot snap)
+    : seq = snap.seq,
+      noteId = snap.noteId,
+      deviceId = snap.deviceId,
+      epoch = snap.epoch,
+      engine = snap.engine,
+      payload = snap.payload,
+      deleted = snap.deleted,
+      at = snap.at,
+      isSnapshot = true,
+      isMarker = false;
+
+  final int seq;
+  final String noteId;
+  final String deviceId;
+  final int epoch;
+  final String engine;
+  final SealedBox payload;
+  final bool deleted;
+  final DateTime at;
+  final bool isSnapshot;
+  final bool isMarker;
+}
+
+/// What a batch did to one note, for the render at the end.
+class _Touched {
+  bool changed = false;
+  bool arrived = false;
+  bool deleted = false;
+  DateTime? at;
+
+  /// The local copy as it stood before the note's history first arrived.
+  Note? localBefore;
 }

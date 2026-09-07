@@ -9,6 +9,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/export/archive.dart';
+import 'package:kapy_notes/images/image_store.dart';
 import 'package:kapy_notes/export/archive_service.dart';
 import 'package:kapy_notes/ui/export_import.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
@@ -37,7 +38,10 @@ class _FakeService extends NoteArchiveService {
   Future<ArchiveContents?> openArchive() async => opens;
 
   @override
-  Future<ExportResult> exportNotes(List<Note> notes) async {
+  Future<ExportResult> exportNotes(
+    List<Note> notes, {
+    ImageStore? images,
+  }) async {
     exported = notes;
     return export ??
         ExportResult(

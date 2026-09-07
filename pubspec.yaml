@@ -1,7 +1,7 @@
 name: kapy_notes
 description: "Notes where every line is a live calculator."
 publish_to: 'none'
-version: 1.12.0+13
+version: 1.13.0+14
 
 environment:
   sdk: ^3.10.0
@@ -56,10 +56,28 @@ dependencies:
   # the app's own documents directory instead.
   file_selector: ^1.0.3
 
+  # Decode-and-re-encode for image attachments. Pure Dart, so the same
+  # compression runs on all five platforms and inside a test with no plugin
+  # registrar — and inside an isolate, which is what keeps a 12MP paste from
+  # dropping frames. It has no WebP *encoder*, which is why the lossless path
+  # is PNG; see lib/images/image_codec.dart.
+  image: ^4.3.0
+
   # The master key, parked in Keychain / Keystore / libsecret / DPAPI after the
   # first unlock. This is what keeps Argon2id a once-per-device cost instead of
   # a once-per-launch one.
   flutter_secure_storage: ^11.0.0
+  # Dropping image files onto the note. Desktop and web only by design; on a
+  # phone the picker is the whole story, and the drop target simply is not
+  # built there. The macOS sandbox already grants what this needs — a drop is
+  # a user-selected file, covered by the same entitlement as the open panel.
+  desktop_drop: ^0.8.4
+  # Reading an image off the system clipboard, which Flutter's own
+  # `Clipboard` cannot do — it handles text and nothing else. Chosen over
+  # super_clipboard, which is more capable but needs a Rust toolchain on every
+  # build machine; that is a change to the release pipeline this does not
+  # justify. Covers all five platforms with plain native code.
+  pasteboard: ^0.5.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

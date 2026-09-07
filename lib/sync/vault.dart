@@ -174,6 +174,27 @@ class Vault {
 
   Future<NotePayload?> open(SealedBox box) async => (await openAll([box])).single;
 
+  /// Seals arbitrary bytes under [key], or under the master key when it is
+  /// null — the personal-note rule, applied to an op or a snapshot instead
+  /// of a whole payload. Inline below the isolate threshold, which an op
+  /// always is; a snapshot of a long note is the case the hop is for.
+  Future<SealedBox> sealRaw(Uint8List plaintext, Uint8List? key) async {
+    final resolved = key ?? _masterKey;
+    return plaintext.length < _isolateThreshold
+        ? sealBytes(plaintext, resolved)
+        : Isolate.run(() => sealBytes(plaintext, resolved));
+  }
+
+  /// The inverse of [sealRaw]: null on a failed tag check, which is what the
+  /// wrong key — a rotated content key this device has not caught up with —
+  /// looks like.
+  Future<Uint8List?> openRaw(SealedBox box, Uint8List? key) async {
+    final resolved = key ?? _masterKey;
+    return box.cipherText.length < _isolateThreshold
+        ? openBytes(box, resolved)
+        : Isolate.run(() => openBytes(box, resolved));
+  }
+
   /// Opens a batch sealed under the master key.
   Future<List<NotePayload?>> openAll(List<SealedBox> boxes) =>
       openAllWith(boxes, List.filled(boxes.length, null));

@@ -3,6 +3,7 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/sharing.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
 import 'package:kapy_notes/sync/sync_service.dart';
@@ -45,8 +46,9 @@ class Device {
       state: SyncState(store),
       api: api,
       keyring: keyring,
+      docs: DocStore(MemoryDocStorage(), replica: device),
       vault: vault,
-      debounce: const Duration(hours: 1),
+      sendDelay: const Duration(hours: 1),
     );
     sharing = Sharing(
       api: api,
@@ -192,15 +194,27 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('unshare-note')));
     await tester.pumpAndSettle();
     expect(find.text('Move back to My notes?'), findsOneWidget);
+    // The pass this starts awaits the document store's load, a future made
+    // in the real zone during boot: pump the tap here so it runs alongside
+    // rather than waiting on a turn of the real loop the fake zone never
+    // takes.
     await tester.runAsync(() async {
       await tester.tap(find.text('Move it'));
+      await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 300));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
     });
     await tester.pumpAndSettle();
 
     expect(find.text('Share note'), findsNothing, reason: 'the sheet closed');
     expect(alice.notes.byId(note.id)!.isShared, isFalse);
-    expect(server.rowsIn(alice.keyring.personal!.id)[note.id]!.isTombstone, isFalse);
+    final space = server.spaces.values.singleWhere((s) => s.name == 'With user-2');
+    expect(server.rowsIn(space.id)[note.id]!.isTombstone, isTrue, reason: 'it left the space');
+    expect(server.rowsIn(alice.keyring.personal!.id)[note.id], isNotNull);
+    // Whether that row is live again is the round trip sharing_test skips:
+    // the seed carries no `deleted: false`, and the server keeps the
+    // tombstone the note left behind when it was shared.
   });
 
   testWidgets('a member sees the sheet without owner controls, and may leave', (tester) async {

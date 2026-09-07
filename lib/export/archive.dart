@@ -4,7 +4,9 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 
 import '../data/note.dart';
+import '../data/note_attachment.dart';
 import '../data/note_format.dart';
+import '../sync/aead.dart' show randomKey;
 import 'manifest.dart';
 import 'markdown.dart';
 
@@ -14,15 +16,81 @@ import 'markdown.dart';
 /// isolate — see `ExportService` — and so a test can round-trip an archive
 /// without touching a disk or a plugin.
 
+/// What a picture is called inside an archive: its content hash, plus an
+/// extension so the file opens by double-clicking it.
+String archiveImageName(NoteAttachmentRef ref) =>
+    '${ref.hash}${extensionForImageMime(ref.mime)}';
+
+String extensionForImageMime(String mime) => switch (mime) {
+  'image/png' => '.png',
+  'image/jpeg' => '.jpg',
+  'image/webp' => '.webp',
+  'image/gif' => '.gif',
+  'image/bmp' => '.bmp',
+  'image/tiff' => '.tif',
+  'image/heic' => '.heic',
+  'image/heif' => '.heif',
+  _ => '.bin',
+};
+
+/// Replaces each U+FFFC in rendered markdown with an ordinary markdown image
+/// link, in order.
+///
+/// Positional rather than offset-based, and safely so: [images] is built from
+/// the note's own ordered attachments, and rendering never reorders or removes
+/// a placeholder. The result is a file that reads as an illustrated note in
+/// any markdown editor, which is the whole point of exporting as markdown.
+///
+/// A placeholder with no picture behind it — an image this device never
+/// downloaded — is dropped rather than written out. U+FFFC must never reach
+/// the file: it is invisible in every editor, so it would read as a stray
+/// character nobody can see, delete, or explain.
+String withImageLinks(String markdown, List<ExportedImage> images) {
+  if (!markdown.contains(NoteAttachmentRef.placeholder)) return markdown;
+  final buffer = StringBuffer();
+  var next = 0;
+  for (var i = 0; i < markdown.length; i++) {
+    if (markdown.codeUnitAt(i) == 0xFFFC) {
+      if (next < images.length) buffer.write('![](../${images[next++].path})');
+      continue;
+    }
+    buffer.writeCharCode(markdown.codeUnitAt(i));
+  }
+  return buffer.toString();
+}
+
+/// The inverse: turns image links back into the placeholder the note stores.
+///
+/// Recognises exactly what [withImageLinks] writes, and nothing else. A
+/// markdown image somebody added by hand in another editor stays as text —
+/// there are no bytes in the archive behind it, so inventing an attachment for
+/// it would produce a note pointing at a picture that does not exist.
+({String markdown, List<String> paths}) withoutImageLinks(String markdown) {
+  final paths = <String>[];
+  final pattern = RegExp(r'!\[\]\(\.\./(images/[^)\s]+)\)');
+  final replaced = markdown.replaceAllMapped(pattern, (match) {
+    paths.add(match.group(1)!);
+    return NoteAttachmentRef.placeholder;
+  });
+  return (markdown: replaced, paths: paths);
+}
+
 /// Builds the archive for [notes].
 ///
 /// Every note contributes a markdown file under `notes/` and an entry in the
-/// manifest. Nothing else is written: tombstones are sync bookkeeping, and
-/// there are no attachments to collect until the app can make one.
+/// manifest. Tombstones are not written: they are sync bookkeeping.
+///
+/// [imageBytes] maps a content hash to the picture behind it, for every image
+/// any note in [notes] holds. Bytes are passed in rather than read here so
+/// this stays a pure function over data, testable without a disk — and so the
+/// reading, which is I/O, happens before the isolate hop rather than inside
+/// it. A hash with no entry is simply left out: the note still exports, and
+/// its markdown says an image was there.
 Uint8List buildExportArchive({
   required List<Note> notes,
   required String appVersion,
   required DateTime exportedAt,
+  Map<String, Uint8List> imageBytes = const {},
 }) {
   final archive = Archive();
   final entries = <ExportedNote>[];
@@ -30,6 +98,8 @@ Uint8List buildExportArchive({
   final modified = exportedAt.millisecondsSinceEpoch ~/ 1000;
 
   final files = <ArchiveFile>[];
+  // The same picture in four notes is written once.
+  final imagePaths = <String>{};
 
   for (final note in notes) {
     // `Note.title` reports a placeholder for a note with nothing to take a
@@ -38,9 +108,37 @@ Uint8List buildExportArchive({
     final title = note.title == Note.untitled ? '' : note.title;
     final name = archiveFileName(title, note.id, taken);
     final path = '$exportNotesDirectory/$name';
-    final markdown = renderNoteMarkdown(note.body, note.formats);
+
+    // Images are woven in after the markdown is rendered, so nothing here has
+    // to think about how a placeholder interacts with formatting offsets: at
+    // this point the ranges have already been turned into characters.
+    final images = <ExportedImage>[];
+    for (final ref in note.attachments) {
+      if (!imageBytes.containsKey(ref.hash)) continue;
+      images.add(
+        ExportedImage(
+          hash: ref.hash,
+          path: '$exportImagesDirectory/${archiveImageName(ref)}',
+          mime: ref.mime,
+          width: ref.width,
+          height: ref.height,
+        ),
+      );
+    }
+    final markdown = withImageLinks(
+      renderNoteMarkdown(note.body, note.formats),
+      images,
+    );
 
     files.add(ArchiveFile.string(path, markdown)..lastModTime = modified);
+    for (final image in images) {
+      final bytes = imageBytes[image.hash];
+      if (bytes == null || imagePaths.contains(image.path)) continue;
+      imagePaths.add(image.path);
+      files.add(
+        ArchiveFile.bytes(image.path, bytes)..lastModTime = modified,
+      );
+    }
     entries.add(
       ExportedNote(
         id: note.id,
@@ -49,6 +147,7 @@ Uint8List buildExportArchive({
         createdAt: note.createdAt.millisecondsSinceEpoch,
         bodyHash: bodyHashOf(markdown),
         formats: note.formats,
+        images: images,
       ),
     );
   }
@@ -82,10 +181,12 @@ Uint8List buildExportArchiveFromJson({
   required List<Object?> notes,
   required String appVersion,
   required DateTime exportedAt,
+  Map<String, Uint8List> imageBytes = const {},
 }) => buildExportArchive(
   notes: notes.map(Note.fromJson).whereType<Note>().toList(growable: false),
   appVersion: appVersion,
   exportedAt: exportedAt,
+  imageBytes: imageBytes,
 );
 
 /// Why an archive could not be opened.
@@ -105,6 +206,7 @@ class ArchiveContents {
   const ArchiveContents({
     required this.manifest,
     required this.markdown,
+    this.images = const {},
     this.problems = const [],
   }) : fault = null,
        schema = null;
@@ -114,12 +216,16 @@ class ArchiveContents {
     this.schema,
     this.problems = const [],
   }) : manifest = null,
-       markdown = const {};
+       markdown = const {},
+       images = const {};
 
   final ExportManifest? manifest;
 
   /// Archive path to the markdown found there.
   final Map<String, String> markdown;
+
+  /// Archive path to the picture found there.
+  final Map<String, Uint8List> images;
 
   /// What was wrong but survivable, in words meant for the person importing.
   final List<String> problems;
@@ -151,6 +257,7 @@ ArchiveContents readExportArchive(Uint8List bytes) {
 
   final problems = <String>[];
   final markdown = <String, String>{};
+  final images = <String, Uint8List>{};
   String? manifestJson;
   var unsafe = 0;
 
@@ -165,6 +272,14 @@ ArchiveContents readExportArchive(Uint8List bytes) {
 
     final data = file.readBytes();
     if (data == null) continue;
+
+    // Pictures are read as bytes and never decoded as text, which is the
+    // whole reason this branch comes first.
+    if (name.startsWith('$exportImagesDirectory/')) {
+      images[name] = Uint8List.fromList(data);
+      continue;
+    }
+
     final String text;
     try {
       text = utf8.decode(data);
@@ -220,6 +335,7 @@ ArchiveContents readExportArchive(Uint8List bytes) {
   return ArchiveContents(
     manifest: result.manifest,
     markdown: markdown,
+    images: images,
     problems: problems,
   );
 }
@@ -235,20 +351,56 @@ ArchiveContents readExportArchiveFromBytes(List<int> bytes) =>
 /// the newer intent, so the ranges are re-read from the text instead.
 ({Note note, bool handEdited})? noteFromArchive(
   ExportedNote entry,
-  Map<String, String> markdown,
-) {
+  Map<String, String> markdown, {
+  Set<String> availableImages = const {},
+}) {
   final source = markdown[entry.path];
   if (source == null) return null;
 
   final handEdited = bodyHashOf(source) != entry.bodyHash;
-  final parsed = parseNoteMarkdown(source);
+
+  // Image links become placeholders again *before* parsing, so the format
+  // ranges recorded against the original body still line up: one link becomes
+  // exactly the one character it was rendered from.
+  final stripped = withoutImageLinks(source);
+  final parsed = parseNoteMarkdown(stripped.markdown);
   final formats = handEdited ? parsed.formats : entry.formats;
 
+  // Paired by archive path, not by position: a link the reader could not find
+  // bytes for drops out, and the placeholder it left behind is cleaned up by
+  // the same rule that governs every other orphan.
+  final byPath = {for (final image in entry.images) image.path: image};
+  final attachments = <NoteAttachmentRef>[];
+  var anchor = 0;
+  for (final path in stripped.paths) {
+    anchor = parsed.body.indexOf(NoteAttachmentRef.placeholder, anchor);
+    if (anchor < 0) break;
+    final image = byPath[path];
+    if (image != null && availableImages.contains(path)) {
+      attachments.add(
+        NoteAttachmentRef(
+          offset: anchor,
+          hash: image.hash,
+          // A fresh key. The archive carried none, and this device is the
+          // only place this copy of the picture has ever lived.
+          key: randomKey(),
+          mime: image.mime,
+          width: image.width,
+          height: image.height,
+          bytes: 0,
+        ),
+      );
+    }
+    anchor++;
+  }
+
+  final body = parsed.body;
   return (
     note: Note(
       id: entry.id,
-      body: parsed.body,
-      formats: normalizeNoteFormats(formats, parsed.body.length),
+      body: body,
+      formats: normalizeNoteFormats(formats, body.length),
+      attachments: normalizeNoteAttachments(attachments, body),
       createdAt: DateTime.fromMillisecondsSinceEpoch(entry.createdAt),
       updatedAt: entry.updatedAt,
     ),

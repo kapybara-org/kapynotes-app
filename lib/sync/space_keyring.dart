@@ -11,7 +11,7 @@ import 'vault.dart';
 /// What this device knows about the spaces it is in, and the keys to them.
 ///
 /// The server's list of spaces, refreshed at the start of every sync pass and
-/// on every wake-up that says the list changed; this account's identity
+/// on every notice from the socket that the list changed; this account's identity
 /// keypairs, generated on first unlock and unwrapped on every one after; and
 /// the space keys those identity keys open, held in memory only. The list is
 /// cached to disk so the sidebar can name a shared space while offline; the

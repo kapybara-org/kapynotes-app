@@ -8,6 +8,15 @@ import '../../core/theme.dart';
 import '../../data/note_format.dart';
 import 'editor_formatting.dart';
 
+/// One image, already sized and built, ready to be dropped into the span tree
+/// at its placeholder.
+///
+/// The controller is handed finished widgets rather than the refs to build
+/// them from, because sizing an image needs the layout width and the layout
+/// width is only known inside the editor's [LayoutBuilder]. Keeping that
+/// knowledge out here leaves the controller doing one thing: placing spans.
+typedef NoteImageSpan = ({double width, double height, Widget child});
+
 /// A [TextEditingController] that paints the note's own syntax.
 ///
 /// Flutter can style a text field's content directly, so there is no need for
@@ -29,6 +38,7 @@ class HighlightingController extends TextEditingController {
   CalcPalette _palette;
   WritingFont _writingFont;
   List<NoteFormatRange> _formats;
+  Map<int, NoteImageSpan> _imageSpans = const {};
 
   String? _cachedText;
   List<HighlightSpan> _cachedSpans = const [];
@@ -61,6 +71,30 @@ class HighlightingController extends TextEditingController {
     if (listEquals(_formats, value)) return;
     _formats = value;
     notifyListeners();
+  }
+
+  Map<int, NoteImageSpan> get imageSpans => _imageSpans;
+
+  /// Deliberately silent.
+  ///
+  /// This is set from inside the editor's build, once the layout width is
+  /// known and immediately before the span is built. Notifying here would ask
+  /// for a rebuild from inside a build, which is both an error and a loop.
+  void setImageSpansDuringLayout(Map<int, NoteImageSpan> value) {
+    _imageSpans = value;
+  }
+
+  /// The placeholder boxes [TextPainter] must be told about before it can lay
+  /// out a span containing [WidgetSpan]s, in the order they appear.
+  List<PlaceholderDimensions> placeholderDimensions() {
+    final offsets = _imageSpans.keys.toList()..sort();
+    return [
+      for (final offset in offsets)
+        PlaceholderDimensions(
+          size: Size(_imageSpans[offset]!.width, _imageSpans[offset]!.height),
+          alignment: PlaceholderAlignment.top,
+        ),
+    ];
   }
 
   void _invalidate() {
@@ -119,13 +153,18 @@ class HighlightingController extends TextEditingController {
       boundaries.add(range.start);
       boundaries.add(range.end);
     }
+    for (final offset in _imageSpans.keys) {
+      if (offset < 0 || offset >= source.length) continue;
+      boundaries.add(offset);
+      boundaries.add(offset + 1);
+    }
     if (composing != null) {
       boundaries.add(composing.start.clamp(0, source.length));
       boundaries.add(composing.end.clamp(0, source.length));
     }
 
     final cuts = boundaries.toList()..sort();
-    final children = <TextSpan>[];
+    final children = <InlineSpan>[];
     var spanIndex = 0;
     var linkIndex = 0;
     final linkColor = Theme.of(context).colorScheme.primary;
@@ -134,6 +173,20 @@ class HighlightingController extends TextEditingController {
       final start = cuts[i];
       final end = cuts[i + 1];
       if (end <= start) continue;
+
+      // A placeholder is exactly one character wide, and the image stands in
+      // its place. Emitting the widget rather than the U+FFFC glyph is the
+      // whole of how an image appears inside an otherwise ordinary text field.
+      final image = end == start + 1 ? _imageSpans[start] : null;
+      if (image != null) {
+        children.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.top,
+            child: image.child,
+          ),
+        );
+        continue;
+      }
 
       while (spanIndex < spans.length && spans[spanIndex].end <= start) {
         spanIndex++;

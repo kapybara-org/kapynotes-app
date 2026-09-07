@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' show PointerDeviceKind;
+
+import 'package:image/image.dart' as img;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +15,10 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/update_checker.dart';
+import 'package:kapy_notes/images/image_store.dart';
+import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -52,6 +60,7 @@ Future<void> pumpForGolden(
   required Brightness brightness,
   bool withNote = true,
   bool blankNote = false,
+  bool withImages = false,
   bool withUpdates = false,
   bool firstRun = false,
   bool sidebarVisible = true,
@@ -105,7 +114,11 @@ Future<void> pumpForGolden(
     );
   }
 
-  final notes = NotesStore(store, now: () => _goldenNow);
+  final notes = NotesStore(
+    store,
+    now: () => _goldenNow,
+    images: withImages ? _imageStore : null,
+  );
   final prefs = LayoutPrefs(store);
   goldenPrefs = prefs;
   final rates = RatesRepository(store);
@@ -119,10 +132,27 @@ Future<void> pumpForGolden(
   if (prefs.sidebarVisible != sidebarVisible) prefs.toggleSidebar();
   if (withNote) {
     final note = notes.create();
-    if (!blankNote) notes.updateBody(note.id, _body);
+    if (withImages) {
+      notes.updateDocument(note.id, _imageBody, const [], _imageAttachments());
+    } else if (!blankNote) {
+      notes.updateBody(note.id, _body);
+    }
   }
   // Publish the cached rates without going near the network.
   rates.loadCache();
+
+  // Warmed before a single frame is built. An `ImageProvider` that reads a
+  // real file can only finish under `runAsync`; resolved from an ordinary
+  // pump it waits on I/O the fake clock never delivers, and the stalled cache
+  // entry is what every later build then gets handed. The app has no fake
+  // clock, so this is a property of the harness and not of the feature.
+  if (withImages) {
+    await tester.runAsync(() async {
+      for (final hash in _imageHashes) {
+        await _warmNoteImage(hash);
+      }
+    });
+  }
 
   await tester.pumpWidget(
     KapyNotesApp(
@@ -143,6 +173,29 @@ Future<void> pumpForGolden(
   await tester.pumpAndSettle();
 }
 
+/// Resolves one note image to completion, so a golden captures the picture
+/// rather than the box it will appear in.
+Future<void> _warmNoteImage(String hash) {
+  final completer = Completer<void>();
+  final stream = NoteImageProvider(
+    hash: hash,
+    store: _imageStore,
+  ).resolve(ImageConfiguration.empty);
+  late ImageStreamListener listener;
+  listener = ImageStreamListener(
+    (_, _) {
+      stream.removeListener(listener);
+      if (!completer.isCompleted) completer.complete();
+    },
+    onError: (error, _) {
+      stream.removeListener(listener);
+      if (!completer.isCompleted) completer.completeError(error);
+    },
+  );
+  stream.addListener(listener);
+  return completer.future;
+}
+
 /// Taps whichever settings affordance the layout is showing: the sidebar's
 /// labelled row when the notes list is open, the note footer's gear when it is
 /// not. They stopped sharing a key when the sidebar's became a row.
@@ -154,8 +207,82 @@ Future<void> tapSettings(WidgetTester tester) async {
   await tester.tap(target.first);
 }
 
+/// Pictures for the image golden, written once outside any test body: real
+/// file I/O inside `testWidgets` never completes.
+late Directory _imageDir;
+late ImageStore _imageStore;
+late List<String> _imageHashes;
+
+/// Flat-coloured rectangles rather than photographs, so the golden is about
+/// the layout — where a picture sits, how wide it is, what it does to the
+/// lines around it — and not about a JPEG decoder's rounding.
+Uint8List _swatch(int width, int height, img.ColorRgb8 colour) {
+  final image = img.Image(width: width, height: height, numChannels: 3);
+  img.fill(image, color: colour);
+  img.fillRect(
+    image,
+    x1: 0,
+    y1: height - height ~/ 4,
+    x2: width,
+    y2: height,
+    color: img.ColorRgb8(
+      (colour.r * 0.7).round(),
+      (colour.g * 0.7).round(),
+      (colour.b * 0.7).round(),
+    ),
+  );
+  return Uint8List.fromList(img.encodePng(image, level: 1));
+}
+
+/// A note that reads the way the feature is meant to: a line of writing, one
+/// picture across the column, more writing, then three that became a row.
+const String _imageBody =
+    'Kitchen renovation\n'
+    'Quote came in at 4200 eur\n'
+    '\n'
+    '\u{FFFC}\n'
+    '\n'
+    'Tiles we shortlisted\n'
+    '\u{FFFC}\u{FFFC}\u{FFFC}\n'
+    '\n'
+    '4200 eur to usd';
+
+List<NoteAttachmentRef> _imageAttachments() {
+  final anchors = <int>[];
+  for (var i = 0; i < _imageBody.length; i++) {
+    if (_imageBody.codeUnitAt(i) == 0xFFFC) anchors.add(i);
+  }
+  const sizes = [(960, 600), (600, 600), (600, 600), (600, 600)];
+  return [
+    for (var i = 0; i < anchors.length; i++)
+      NoteAttachmentRef(
+        offset: anchors[i],
+        hash: _imageHashes[i],
+        key: Uint8List(32),
+        mime: 'image/png',
+        width: sizes[i].$1,
+        height: sizes[i].$2,
+        bytes: 4096,
+      ),
+  ];
+}
+
 void main() {
-  setUpAll(loadTestFonts);
+  setUpAll(() async {
+    await loadTestFonts();
+    _imageDir = await Directory.systemTemp.createTemp('kapy-golden-images');
+    _imageStore = ImageStore(directory: _imageDir);
+    _imageHashes = [
+      await _imageStore.put(_swatch(960, 600, img.ColorRgb8(86, 132, 196))),
+      await _imageStore.put(_swatch(600, 600, img.ColorRgb8(206, 128, 92))),
+      await _imageStore.put(_swatch(600, 600, img.ColorRgb8(104, 168, 128))),
+      await _imageStore.put(_swatch(600, 600, img.ColorRgb8(158, 130, 198))),
+    ];
+  });
+
+  tearDownAll(() async {
+    if (await _imageDir.exists()) await _imageDir.delete(recursive: true);
+  });
 
   testWidgets('desktop dark', (tester) async {
     await pumpForGolden(
@@ -358,6 +485,19 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_empty.png'),
+    );
+  });
+
+  testWidgets('desktop dark note with images', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 780),
+      brightness: Brightness.dark,
+      withImages: true,
+    );
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_images.png'),
     );
   });
 

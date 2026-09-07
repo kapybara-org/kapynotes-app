@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_bundle.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
 import 'package:kapy_notes/sync/trust.dart';
@@ -72,6 +73,7 @@ void main() {
         notes: notes,
         state: state,
         api: connection,
+        docs: DocStore(MemoryDocStorage(), replica: state.deviceId.substring(0, 12)),
         keyring: SpaceKeyring(
           userId: 'e2e',
           store: store,

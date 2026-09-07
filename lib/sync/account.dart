@@ -4,6 +4,8 @@ import '../data/local_store.dart';
 import '../data/notes_store.dart';
 import 'auth_api.dart';
 import 'key_bundle.dart';
+import 'doc_store.dart';
+import 'image_sync.dart';
 import 'key_store.dart';
 import 'recovery_key.dart';
 import 'sharing.dart';
@@ -56,13 +58,15 @@ class Account extends ChangeNotifier {
       required SpaceKeyring keyring,
     })?
     syncServiceFactory,
+    DocStorage? docStorage,
   }) : _auth = auth,
        _syncApiFor = syncApi,
        _keys = keys,
        _notes = notes,
        _state = state,
        _store = store,
-       _syncServiceFactory = syncServiceFactory;
+       _syncServiceFactory = syncServiceFactory,
+       _docStorage = docStorage;
 
   final AuthApi _auth;
   final SyncApi Function(String token) _syncApiFor;
@@ -80,8 +84,12 @@ class Account extends ChangeNotifier {
   AccountState _accountState = AccountState.restoring;
   AccountUser? _user;
   String? _token;
+  /// Where the merge state lives; in memory for a test.
+  final DocStorage? _docStorage;
+  DocStore? _docs;
   SyncService? _sync;
   Sharing? _sharing;
+  ImageSync? _images;
   SpaceKeyring? _keyring;
   TrustStore? _trust;
   String? _lastError;
@@ -97,6 +105,13 @@ class Account extends ChangeNotifier {
   /// Shared spaces, once the account is unlocked. Null before that: there is
   /// no key to share anything with.
   Sharing? get sharing => _sharing;
+
+  /// Fetches image bytes this device does not have yet.
+  ///
+  /// Null until the account is unlocked, which is correct: the file keys live
+  /// inside the sealed note payload, so before the vault opens there is no way
+  /// to decrypt a picture even if it downloaded.
+  Future<Uint8List?> Function(String hash)? get imageFetch => _images?.fetch;
   bool get isSyncing => _sync?.status == SyncStatus.syncing;
 
   /// Restores whatever the last run left behind. Called once, off the first
@@ -291,6 +306,14 @@ class Account extends ChangeNotifier {
       store: _store,
       trust: trust,
     );
+    final images = ImageSync(api: api, store: _notes.images, notes: _notes);
+    // The replica id every character this device writes is stamped with.
+    // Twelve hex digits of the install id: stable for the life of the
+    // install, and short enough to ride in every op without weighing on it.
+    final docs = _docs ??= DocStore(
+      _docStorage ?? FileDocStorage(),
+      replica: _state.deviceId.substring(0, 12),
+    );
     final service =
         _syncServiceFactory?.call(api: api, vault: vault, keyring: keyring) ??
         SyncService(
@@ -298,9 +321,12 @@ class Account extends ChangeNotifier {
           state: _state,
           api: api,
           keyring: keyring,
+          docs: docs,
+          images: images,
           vault: vault,
         );
     _teardownSync();
+    _images = images;
     _keyring = keyring;
     _sync = service..addListener(notifyListeners);
     _sharing = Sharing(
@@ -321,6 +347,7 @@ class Account extends ChangeNotifier {
   void _teardownSync() {
     _sharing?.dispose();
     _sharing = null;
+    _images = null;
     _sync?.dispose();
     _sync = null;
     _keyring?.clear();

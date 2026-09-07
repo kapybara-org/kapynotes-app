@@ -34,10 +34,16 @@ class LineMeasurer {
   double? _width;
   TextScaler? _scaler;
   Object? _layoutKey;
+  int? _placeholderKey;
   LineOffsets? _cached;
 
   /// [span] must be the very span the field renders — styled runs can differ
   /// in width from the same characters in the base style.
+  ///
+  /// [placeholders] must describe every [WidgetSpan] in [span], in order.
+  /// [TextPainter] refuses to lay out a span containing placeholders it has
+  /// not been given dimensions for, and an image is a placeholder — so a note
+  /// with pictures measures wrong, or not at all, without this.
   LineOffsets measure({
     required InlineSpan span,
     required String text,
@@ -45,11 +51,17 @@ class LineMeasurer {
     required StrutStyle strut,
     required TextScaler textScaler,
     required Object layoutKey,
+    List<PlaceholderDimensions> placeholders = const [],
   }) {
+    final placeholderKey = Object.hashAll([
+      for (final placeholder in placeholders)
+        Object.hash(placeholder.size.width, placeholder.size.height),
+    ]);
     if (_text == text &&
         _width == maxWidth &&
         _scaler == textScaler &&
         _layoutKey == layoutKey &&
+        _placeholderKey == placeholderKey &&
         _cached != null) {
       return _cached!;
     }
@@ -60,7 +72,9 @@ class LineMeasurer {
       textDirection: TextDirection.ltr,
       strutStyle: strut,
       textScaler: textScaler,
-    )..layout(maxWidth: maxWidth);
+    );
+    if (placeholders.isNotEmpty) painter.setPlaceholderDimensions(placeholders);
+    painter.layout(maxWidth: maxWidth);
 
     final tops = <double>[];
     var offset = 0;
@@ -82,6 +96,7 @@ class LineMeasurer {
     _width = maxWidth;
     _scaler = textScaler;
     _layoutKey = layoutKey;
+    _placeholderKey = placeholderKey;
     _cached = result;
     return result;
   }

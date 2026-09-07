@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/platform.dart';
 import '../data/note.dart';
+import '../images/image_store.dart';
 import 'archive.dart';
 
 /// Picks a place, and moves the bytes.
@@ -46,6 +47,25 @@ class NoteArchiveService {
   final DateTime Function() _now;
   String? _appVersion;
 
+  /// Every picture the given notes refer to, by hash, skipping any this
+  /// device does not hold. A missing image costs its note nothing.
+  Future<Map<String, Uint8List>> _readImages(
+    List<Note> notes,
+    ImageStore? images,
+  ) async {
+    if (images == null) return const {};
+    final wanted = {
+      for (final note in notes)
+        for (final ref in note.attachments) ref.hash,
+    };
+    final bytes = <String, Uint8List>{};
+    for (final hash in wanted) {
+      final data = await images.read(hash);
+      if (data != null) bytes[hash] = data;
+    }
+    return bytes;
+  }
+
   Future<String> _version() async {
     if (_appVersion != null) return _appVersion!;
     try {
@@ -59,7 +79,14 @@ class NoteArchiveService {
   }
 
   /// Writes every note in [notes] to a `.zip` the user chooses.
-  Future<ExportResult> exportNotes(List<Note> notes) async {
+  ///
+  /// [images] is where the pictures are read from. Null leaves them out, which
+  /// is what a build with no image store wants and what every export did
+  /// before there were any.
+  Future<ExportResult> exportNotes(
+    List<Note> notes, {
+    ImageStore? images,
+  }) async {
     final at = _now();
     final String path;
     try {
@@ -79,6 +106,10 @@ class NoteArchiveService {
     try {
       final json = notes.map((note) => note.toJson()).toList(growable: false);
       final version = await _version();
+      // Read here rather than in the isolate: this is disk I/O, and the
+      // archive builder is a pure function over bytes precisely so it does not
+      // have to care where they came from.
+      final imageBytes = await _readImages(notes, images);
       // Rendering every note and deflating the result is the one part of this
       // feature that can take a visible moment, so it happens off the thread
       // the user is typing on.
@@ -87,6 +118,7 @@ class NoteArchiveService {
           notes: json,
           appVersion: version,
           exportedAt: at,
+          imageBytes: imageBytes,
         ),
       );
       await File(path).writeAsBytes(bytes, flush: true);

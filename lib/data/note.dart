@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'note_attachment.dart';
 import 'note_format.dart';
 
 /// A single note. Its title is derived from [body] rather than stored, so it
@@ -9,6 +10,14 @@ class Note {
   final String id;
   final String body;
   final List<NoteFormatRange> formats;
+
+  /// Images anchored to U+FFFC placeholders in [body], ordered by offset.
+  ///
+  /// Held on the note rather than in a side table because an image is part of
+  /// the note's content: it has to move, sync, export and be thrown away with
+  /// it, and every one of those paths already carries a [Note].
+  final List<NoteAttachmentRef> attachments;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -50,6 +59,7 @@ class Note {
     required this.id,
     required this.body,
     this.formats = const [],
+    this.attachments = const [],
     required this.createdAt,
     required this.updatedAt,
     this.syncedAt,
@@ -68,11 +78,13 @@ class Note {
   Note copyWith({
     String? body,
     List<NoteFormatRange>? formats,
+    List<NoteAttachmentRef>? attachments,
     DateTime? updatedAt,
   }) => Note(
     id: id,
     body: body ?? this.body,
     formats: formats ?? this.formats,
+    attachments: attachments ?? this.attachments,
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     // Deliberately carried over: an edit must not look synced.
@@ -88,6 +100,7 @@ class Note {
     id: id,
     body: body,
     formats: formats,
+    attachments: attachments,
     createdAt: createdAt,
     updatedAt: updatedAt,
     syncedAt: at,
@@ -110,6 +123,7 @@ class Note {
     id: id,
     body: body,
     formats: formats,
+    attachments: attachments,
     createdAt: createdAt,
     updatedAt: at,
     syncedAt: null,
@@ -129,6 +143,7 @@ class Note {
     id: id,
     body: body,
     formats: formats,
+    attachments: attachments,
     createdAt: createdAt,
     updatedAt: updatedAt,
     syncedAt: syncedAt,
@@ -198,6 +213,8 @@ class Note {
     'body': body,
     if (formats.isNotEmpty)
       'formats': formats.map((format) => format.toJson()).toList(),
+    if (attachments.isNotEmpty)
+      'attachments': attachments.map((ref) => ref.toJson()).toList(),
     'createdAt': createdAt.millisecondsSinceEpoch,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
     // Omitted while null so a store that has never synced stays byte-identical
@@ -222,6 +239,7 @@ class Note {
       id: id,
       body: body,
       formats: noteFormatsFromJson(raw['formats'], body.length),
+      attachments: noteAttachmentsFromJson(raw['attachments'], body),
       createdAt: _date(raw['createdAt']),
       updatedAt: _date(raw['updatedAt']),
       syncedAt: _optionalDate(raw['syncedAt']),

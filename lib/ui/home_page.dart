@@ -10,6 +10,7 @@ import '../data/engine_provider.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
 import '../data/note.dart';
+import '../data/note_attachment.dart';
 import '../data/note_format.dart';
 import '../data/notes_store.dart';
 import '../data/onboarding.dart';
@@ -300,13 +301,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _scaffoldKey.currentState?.closeDrawer();
   }
 
-  void _updateDocument(String id, String body, List<NoteFormatRange> formats) {
+  void _updateDocument(
+    String id,
+    String body,
+    List<NoteFormatRange> formats,
+    List<NoteAttachmentRef> attachments,
+  ) {
     _recordKapyActivity();
     // Typed in, so it is theirs now. Assigned rather than set: the editor
     // holding the cursor is already mounted, and nothing on screen changes
     // until it is next built.
     if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
-    widget.notes.updateDocument(id, body, formats);
+    widget.notes.updateDocument(id, body, formats, attachments);
   }
 
   /// The pin's toggle, or null where there is no window to float.
@@ -661,8 +667,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           shortcuts: widget.shortcuts,
-          onDocumentChanged: (body, formats) =>
-              _updateDocument(note.id, body, formats),
+          initialAttachments: note.attachments,
+          images: widget.notes.images,
+          imageFetch: widget.account?.imageFetch,
+          onDocumentChanged: (body, formats, attachments) =>
+              _updateDocument(note.id, body, formats, attachments),
           onGutterWidthChanged: desktopResultsDivider
               ? (value) => widget.prefs.gutterWidth = value
               : (_) {},
@@ -704,8 +713,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           shortcuts: widget.shortcuts,
-          onDocumentChanged: (body, formats) =>
-              _updateDocument(note.id, body, formats),
+          initialAttachments: note.attachments,
+          images: widget.notes.images,
+          imageFetch: widget.account?.imageFetch,
+          onDocumentChanged: (body, formats, attachments) =>
+              _updateDocument(note.id, body, formats, attachments),
           onGutterWidthChanged: (value) => widget.prefs.gutterWidth = value,
           onResultsVisibilityChanged: (value) =>
               widget.prefs.resultsVisible = value,

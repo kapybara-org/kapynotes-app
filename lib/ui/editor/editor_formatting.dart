@@ -737,3 +737,52 @@ String plainTextFrom(String text) {
       })
       .join('\n');
 }
+
+
+/// Moves a selection across a replacement of the text it was made in.
+///
+/// The replacement is found as the editor finds every edit — a common prefix
+/// and a common suffix — and an offset before it stays, an offset after it
+/// shifts by the change in length, and an offset inside it lands at the same
+/// distance into the new text, bounded by its end. That is exactly right for
+/// one remote edit, and never wrong for several: a caret can land a word off,
+/// but it cannot land outside the text or on a character that moved.
+TextSelection mapSelectionAcrossEdit(
+  String oldText,
+  String newText,
+  TextSelection selection,
+) {
+  if (!selection.isValid) {
+    return TextSelection.collapsed(offset: newText.length);
+  }
+  final shorter = oldText.length < newText.length
+      ? oldText.length
+      : newText.length;
+  var prefix = 0;
+  while (prefix < shorter &&
+      oldText.codeUnitAt(prefix) == newText.codeUnitAt(prefix)) {
+    prefix++;
+  }
+  var suffix = 0;
+  while (suffix < shorter - prefix &&
+      oldText.codeUnitAt(oldText.length - 1 - suffix) ==
+          newText.codeUnitAt(newText.length - 1 - suffix)) {
+    suffix++;
+  }
+  final oldEnd = oldText.length - suffix;
+  final newEnd = newText.length - suffix;
+
+  int map(int offset) {
+    if (offset <= prefix) return offset.clamp(0, newText.length);
+    if (offset >= oldEnd) return (offset + (newEnd - oldEnd)).clamp(0, newText.length);
+    final into = offset - prefix;
+    return (prefix + into).clamp(prefix, newEnd);
+  }
+
+  return TextSelection(
+    baseOffset: map(selection.baseOffset),
+    extentOffset: map(selection.extentOffset),
+    affinity: selection.affinity,
+    isDirectional: selection.isDirectional,
+  );
+}

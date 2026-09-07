@@ -3,6 +3,7 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/sync/account.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/account/sync_pane.dart';
@@ -32,6 +33,7 @@ class MemoryStore extends LocalStore {
       notes: notes,
       state: SyncState(store),
       store: store,
+      docStorage: MemoryDocStorage(),
     ),
     notes: notes,
     server: server,
@@ -274,6 +276,7 @@ void main() {
         notes: notes,
         state: SyncState(store),
         store: store,
+        docStorage: MemoryDocStorage(),
       );
       await second.restore();
       await second.signIn(email: 'a@b.co', password: 'x');

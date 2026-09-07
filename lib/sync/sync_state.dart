@@ -14,20 +14,20 @@ class SyncState {
 
   static const String _key = 'sync.v1';
 
-  /// The cursor a build from before spaces kept. It was the personal space's,
-  /// and becomes that entry in [_cursors] the moment the personal space's id
-  /// is known.
-  String? _legacyCursor;
-  final Map<String, String> _cursors = {};
+  /// Per-space cursors into the op log: the last seq applied. Zero — and the
+  /// cursors a protocol-2 build kept, which named rows rather than seqs and
+  /// are dropped on load — means the beginning.
+  final Map<String, int> _cursors = {};
   String? _personalSpaceId;
   String? _accountId;
   String? _deviceId;
   DateTime? _lastSyncedAt;
 
-  /// The pull cursor for one space. Fed back to the server verbatim.
-  String? cursorFor(String spaceId) =>
-      _cursors[spaceId] ??
-      (spaceId == _personalSpaceId ? _legacyCursor : null);
+  /// The last seq applied from one space's log. Zero before any.
+  int cursorFor(String spaceId) => _cursors[spaceId] ?? 0;
+
+  /// Every space with a cursor, for the subscription on connect.
+  Map<String, int> get cursors => Map.unmodifiable(_cursors);
 
   /// The personal space, once a sync has learned which it is.
   String? get personalSpaceId => _personalSpaceId;
@@ -43,11 +43,10 @@ class SyncState {
   /// This install's id, minted once and kept for as long as the app is
   /// installed.
   ///
-  /// It exists so the server can skip waking the device that made a change.
-  /// Without it every push comes straight back to its own author as a wake-up,
-  /// and that author then pulls — its cursor still sits behind the rows it
-  /// just wrote — decrypting and re-merging notes it wrote itself, on every
-  /// edit.
+  /// It names this device on every op it writes — the idempotency key the
+  /// server deduplicates a retried push by, and how a device recognises its
+  /// own ops when the log echoes them back — and the first twelve hex digits
+  /// of it stamp every character this device inserts.
   ///
   /// Not an identity, and never treated as one: it survives sign-out, because
   /// the device is still the same device, and it is compared only against
@@ -64,23 +63,21 @@ class SyncState {
 
   DateTime? get lastSyncedAt => _lastSyncedAt;
 
-  bool get hasSynced => _cursors.isNotEmpty || _legacyCursor != null;
+  bool get hasSynced => _cursors.isNotEmpty;
 
   void load() {
     final stored = _store.read<Map<String, Object?>>(_key);
     if (stored == null) return;
-    final cursor = stored['cursor'];
-    final cursors = stored['cursors'];
+    final cursors = stored['opCursors'];
     final personal = stored['personalSpaceId'];
     final accountId = stored['accountId'];
     final deviceId = stored['deviceId'];
     final lastSyncedAt = stored['lastSyncedAt'];
-    _legacyCursor = cursor is String ? cursor : null;
     _cursors.clear();
     if (cursors is Map) {
       for (final entry in cursors.entries) {
-        if (entry.key is String && entry.value is String) {
-          _cursors[entry.key as String] = entry.value as String;
+        if (entry.key is String && entry.value is int) {
+          _cursors[entry.key as String] = entry.value as int;
         }
       }
     }
@@ -92,21 +89,17 @@ class SyncState {
         : null;
   }
 
-  /// Records which space is the personal one, and hands it the cursor a
-  /// pre-spaces build left behind, which was that space's all along.
+  /// Records which space is the personal one.
   void adoptPersonalSpace(String spaceId) {
     if (_personalSpaceId == spaceId) return;
     _personalSpaceId = spaceId;
-    final legacy = _legacyCursor;
-    if (legacy != null && !_cursors.containsKey(spaceId)) {
-      _cursors[spaceId] = legacy;
-    }
-    _legacyCursor = null;
     _save();
   }
 
-  void recordPull(String spaceId, String cursor) {
-    if (_cursors[spaceId] == cursor) return;
+  /// The log has been applied through [cursor]. Never moves backwards: a
+  /// late page from a slower path must not rewind what the socket did.
+  void recordCursor(String spaceId, int cursor) {
+    if ((_cursors[spaceId] ?? 0) >= cursor) return;
     _cursors[spaceId] = cursor;
     _save();
   }
@@ -128,7 +121,6 @@ class SyncState {
     // A different account means the old cursors point into somebody else's
     // history. Starting over is the only correct reading of it.
     _cursors.clear();
-    _legacyCursor = null;
     _personalSpaceId = null;
     _save();
   }
@@ -137,15 +129,13 @@ class SyncState {
   /// re-downloading everything.
   void clearCursor() {
     _cursors.clear();
-    _legacyCursor = null;
     _personalSpaceId = null;
     _lastSyncedAt = null;
     _save();
   }
 
   void _save() => _store.put(_key, {
-    'cursor': _legacyCursor,
-    'cursors': Map<String, String>.of(_cursors),
+    'opCursors': Map<String, int>.of(_cursors),
     'personalSpaceId': _personalSpaceId,
     'accountId': _accountId,
     // Deliberately outlives both [adopt] and [clearCursor]: signing out or

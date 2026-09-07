@@ -3,6 +3,7 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/sync/account.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/account/sharing_pane.dart';
@@ -33,6 +34,7 @@ class MemoryStore extends LocalStore {
       notes: notes,
       state: SyncState(store),
       store: store,
+      docStorage: MemoryDocStorage(),
     ),
     notes: notes,
   );
@@ -94,22 +96,18 @@ void main() {
     expect(find.textContaining('invited you to With user-2'), findsOneWidget);
     expect(find.text('None yet. Share a note with someone to start one.'), findsOneWidget);
 
+    // Alice's device is open beside him: her socket hears the acceptance,
+    // she grants the key at once, and his socket brings the note. Nobody
+    // presses anything.
     await tester.runAsync(() async {
       await tester.tap(find.byKey(ValueKey('accept-$token')));
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await settle(server);
+      await until(() => bob.notes.notes.isNotEmpty, reason: 'the note never arrived');
     });
     await tester.pumpAndSettle();
 
     expect(find.textContaining('invited you'), findsNothing);
     expect(find.text('With user-2 · shared with you'), findsOneWidget);
-    expect(find.text('Waiting for someone to let you in'), findsOneWidget);
-
-    // Alice's next sync lets him in; his next sync brings the note.
-    await tester.runAsync(() async {
-      await alice.account.sync!.syncNow();
-      await bob.account.sync!.syncNow();
-    });
-    await tester.pumpAndSettle();
     expect(find.text('Waiting for someone to let you in'), findsNothing);
     expect(find.text(server.user('user-1').email), findsOneWidget);
     expect(bob.notes.notes.single.body, 'For Bob');

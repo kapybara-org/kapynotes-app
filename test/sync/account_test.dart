@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/sync/account.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 
@@ -30,6 +31,7 @@ class Device {
       notes: notes,
       state: SyncState(store),
       store: store,
+      docStorage: MemoryDocStorage(),
     );
   }
 
@@ -80,7 +82,10 @@ void main() {
     expect(recovery, isNotNull);
     expect(recovery!.formatted, isNotEmpty);
     expect(d.account.state, AccountState.ready);
-    expect(server.rows, hasLength(1), reason: 'the note went up');
+    // The socket comes up, catches up, and the outbox drains over it.
+    await until(() => server.rows.isNotEmpty, reason: 'the note never went up');
+    expect(server.rows, hasLength(1));
+    expect(server.ciphertextIn(server.personal('user-1').id), isNot(contains('First note')));
     d.dispose();
   });
 
@@ -91,6 +96,7 @@ void main() {
     await first.account.createPassphrase('a good passphrase');
     first.notes.create(body: 'Written on the first device');
     await first.account.sync!.syncNow();
+    await until(() => server.rows.isNotEmpty);
     first.dispose();
 
     final second = Device(server);
@@ -103,6 +109,7 @@ void main() {
 
     expect(await second.account.unlock('a good passphrase'), isTrue);
     expect(second.account.state, AccountState.ready);
+    await until(() => second.notes.notes.isNotEmpty, reason: 'the note never came down');
     expect(second.notes.notes.single.body, 'Written on the first device');
     second.dispose();
   });
@@ -114,6 +121,7 @@ void main() {
     final recovery = await first.account.createPassphrase('forgotten already');
     first.notes.create(body: 'Still reachable');
     await first.account.sync!.syncNow();
+    await until(() => server.rows.isNotEmpty);
     first.dispose();
 
     final second = Device(server);
@@ -125,6 +133,7 @@ void main() {
       await second.account.unlockWithRecoveryKey(recovery!.formatted),
       isTrue,
     );
+    await until(() => second.notes.notes.isNotEmpty, reason: 'the note never came down');
     expect(second.notes.notes.single.body, 'Still reachable');
     second.dispose();
   });
@@ -144,6 +153,7 @@ void main() {
       notes: d.notes,
       state: SyncState(d.store),
       store: d.store,
+      docStorage: MemoryDocStorage(),
     );
     await restarted.restore();
 
@@ -167,6 +177,7 @@ void main() {
       notes: d.notes,
       state: SyncState(d.store),
       store: d.store,
+      docStorage: MemoryDocStorage(),
     );
     await restarted.restore();
 
@@ -220,7 +231,7 @@ void main() {
     await d.account.createPassphrase('a good passphrase');
     d.notes.create(body: 'Written before closing the account');
     await d.account.sync!.syncNow();
-    expect(server.rows, isNotEmpty);
+    await until(() => server.rows.isNotEmpty);
 
     final ok = await d.account.deleteAccount('someone@example.com');
 
@@ -267,6 +278,7 @@ void main() {
     await first.account.createPassphrase('a good passphrase');
     first.notes.create(body: 'Sealed with a passphrase nobody remembers');
     await first.account.sync!.syncNow();
+    await until(() => server.rows.isNotEmpty);
     first.dispose();
 
     final second = Device(server);

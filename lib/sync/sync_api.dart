@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
 import 'identity.dart';
 import 'key_bundle.dart';
 import 'key_wrap.dart';
-import 'live_channel.dart';
+import 'sync_socket.dart';
 import 'safety.dart';
 import 'sealed_box.dart';
 import 'spaces.dart';
@@ -120,33 +121,335 @@ class WireNote {
   }
 }
 
-class PullPage {
-  final List<WireNote> notes;
-  final String cursor;
+/// One op as this device sends it: a sealed delta, counted per (device,
+/// note) so a retried push is a no-op rather than a duplicate. Mirrors
+/// `NoteOp` in the contract.
+class WireOp {
+  final int deviceSeq;
+
+  /// The content-key epoch the payload is sealed under.
+  final int epoch;
+  final String engine;
+  final SealedBox payload;
+
+  const WireOp({
+    required this.deviceSeq,
+    required this.epoch,
+    required this.engine,
+    required this.payload,
+  });
+
+  Map<String, Object?> toJson() => {
+    'deviceSeq': deviceSeq,
+    'epoch': epoch,
+    'engine': engine,
+    'payload': payload.toJson(),
+  };
+}
+
+/// An op as the server stored and relayed it. Mirrors `StoredOp`.
+class WireStoredOp {
+  final int seq;
+  final String spaceId;
+  final String noteId;
+  final String deviceId;
+  final String authorId;
+  final int deviceSeq;
+  final int epoch;
+  final String engine;
+
+  /// Empty for a marker — the server's own record that the tombstone
+  /// changed — which carries nothing to open.
+  final SealedBox payload;
+
+  /// The note's tombstone state after this op.
+  final bool deleted;
+  final DateTime at;
+
+  const WireStoredOp({
+    required this.seq,
+    required this.spaceId,
+    required this.noteId,
+    required this.deviceId,
+    required this.authorId,
+    required this.deviceSeq,
+    required this.epoch,
+    required this.engine,
+    required this.payload,
+    required this.deleted,
+    required this.at,
+  });
+
+  bool get isMarker => engine == markerEngine;
+
+  Map<String, Object?> toJson() => {
+    'seq': seq,
+    'spaceId': spaceId,
+    'noteId': noteId,
+    'deviceId': deviceId,
+    'authorId': authorId,
+    'deviceSeq': deviceSeq,
+    'epoch': epoch,
+    'engine': engine,
+    'payload': payload.toJson(),
+    'deleted': deleted,
+    'at': at.toUtc().toIso8601String(),
+  };
+
+  static WireStoredOp? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final seq = raw['seq'];
+    final spaceId = raw['spaceId'];
+    final noteId = raw['noteId'];
+    final at = raw['at'];
+    final payload = SealedBox.fromJson(raw['payload'], allowEmpty: true);
+    if (seq is! int ||
+        spaceId is! String ||
+        noteId is! String ||
+        at is! String ||
+        payload == null) {
+      return null;
+    }
+    final parsedAt = DateTime.tryParse(at);
+    if (parsedAt == null) return null;
+    return WireStoredOp(
+      seq: seq,
+      spaceId: spaceId,
+      noteId: noteId,
+      deviceId: raw['deviceId'] is String ? raw['deviceId'] as String : '',
+      authorId: raw['authorId'] is String ? raw['authorId'] as String : '',
+      deviceSeq: raw['deviceSeq'] is int ? raw['deviceSeq'] as int : 0,
+      epoch: raw['epoch'] is int ? raw['epoch'] as int : 0,
+      engine: raw['engine'] is String ? raw['engine'] as String : '',
+      payload: payload,
+      deleted: raw['deleted'] == true,
+      at: parsedAt.toLocal(),
+    );
+  }
+}
+
+/// A snapshot as this device writes it: the whole note, sealed, and the
+/// space cursor it had applied when it took it. Mirrors `SnapshotPut`
+/// without the ids, which travel on the push.
+class WireSnapshot {
+  final int covers;
+  final int epoch;
+  final String engine;
+  final SealedBox payload;
+
+  const WireSnapshot({
+    required this.covers,
+    required this.epoch,
+    required this.engine,
+    required this.payload,
+  });
+
+  Map<String, Object?> toJson() => {
+    'covers': covers,
+    'epoch': epoch,
+    'engine': engine,
+    'payload': payload.toJson(),
+  };
+}
+
+/// A snapshot as the server stored and relayed it. Mirrors `StoredSnapshot`.
+class WireStoredSnapshot {
+  final int seq;
+  final String spaceId;
+  final String noteId;
+  final int covers;
+  final String deviceId;
+  final String authorId;
+  final int epoch;
+  final String engine;
+  final SealedBox payload;
+  final bool deleted;
+  final DateTime at;
+
+  const WireStoredSnapshot({
+    required this.seq,
+    required this.spaceId,
+    required this.noteId,
+    required this.covers,
+    required this.deviceId,
+    required this.authorId,
+    required this.epoch,
+    required this.engine,
+    required this.payload,
+    required this.deleted,
+    required this.at,
+  });
+
+  Map<String, Object?> toJson() => {
+    'seq': seq,
+    'spaceId': spaceId,
+    'noteId': noteId,
+    'covers': covers,
+    'deviceId': deviceId,
+    'authorId': authorId,
+    'epoch': epoch,
+    'engine': engine,
+    'payload': payload.toJson(),
+    'deleted': deleted,
+    'at': at.toUtc().toIso8601String(),
+  };
+
+  static WireStoredSnapshot? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final seq = raw['seq'];
+    final spaceId = raw['spaceId'];
+    final noteId = raw['noteId'];
+    final covers = raw['covers'];
+    final epoch = raw['epoch'];
+    final engine = raw['engine'];
+    final at = raw['at'];
+    final payload = SealedBox.fromJson(raw['payload']);
+    if (seq is! int ||
+        spaceId is! String ||
+        noteId is! String ||
+        covers is! int ||
+        epoch is! int ||
+        engine is! String ||
+        at is! String ||
+        payload == null) {
+      return null;
+    }
+    final parsedAt = DateTime.tryParse(at);
+    if (parsedAt == null) return null;
+    return WireStoredSnapshot(
+      seq: seq,
+      spaceId: spaceId,
+      noteId: noteId,
+      covers: covers,
+      deviceId: raw['deviceId'] is String ? raw['deviceId'] as String : '',
+      authorId: raw['authorId'] is String ? raw['authorId'] as String : '',
+      epoch: epoch,
+      engine: engine,
+      payload: payload,
+      deleted: raw['deleted'] == true,
+      at: parsedAt.toLocal(),
+    );
+  }
+}
+
+/// One push: a note's new ops, and whatever has to travel beside them.
+/// Mirrors `OpsPushRequest`.
+class OpsPush {
+  final String spaceId;
+  final String noteId;
+  final List<WireOp> ops;
+
+  /// A team note's content key, under the same generation and epoch rules
+  /// the blob push had. Null for a personal note.
+  final WireNoteKey? key;
+
+  /// Sets the tombstone. Not an op — the server has to see it — and may
+  /// travel with no ops at all.
+  final bool? deleted;
+
+  /// The space the note is leaving, for a move.
+  final String? from;
+
+  /// These are the note's first bytes here; refused with `seeded` if not.
+  final bool seed;
+  final WireSnapshot? snapshot;
+
+  const OpsPush({
+    required this.spaceId,
+    required this.noteId,
+    this.ops = const [],
+    this.key,
+    this.deleted,
+    this.from,
+    this.seed = false,
+    this.snapshot,
+  });
+
+  Map<String, Object?> toJson() => {
+    'spaceId': spaceId,
+    'noteId': noteId,
+    'ops': ops.map((op) => op.toJson()).toList(),
+    if (key != null) 'key': key!.toJson(),
+    if (deleted != null) 'deleted': deleted,
+    if (from != null) 'from': from,
+    if (seed) 'seed': true,
+    if (snapshot != null) 'snapshot': snapshot!.toJson(),
+  };
+}
+
+class OpsPushResult {
+  /// One per op sent, in order.
+  final List<int> seqs;
+  final int? snapshotSeq;
+  final DateTime serverTime;
+
+  const OpsPushResult({
+    required this.seqs,
+    required this.snapshotSeq,
+    required this.serverTime,
+  });
+
+  static OpsPushResult fromJson(Map<String, Object?> body) {
+    final seqs = body['seqs'];
+    final snapshotSeq = body['snapshotSeq'];
+    final serverTime = body['serverTime'];
+    return OpsPushResult(
+      seqs: seqs is List ? seqs.whereType<int>().toList() : const [],
+      snapshotSeq: snapshotSeq is int ? snapshotSeq : null,
+      serverTime: serverTime is String
+          ? (DateTime.tryParse(serverTime)?.toLocal() ?? DateTime.now())
+          : DateTime.now(),
+    );
+  }
+}
+
+/// A page of a space's log past a cursor: ops and snapshots, each in seq
+/// order, to be applied interleaved by seq. Mirrors `OpsBatch`.
+class OpsBatch {
+  final String spaceId;
+  final List<WireStoredOp> ops;
+  final List<WireStoredSnapshot> snapshots;
+
+  /// The highest seq here, or the cursor asked for when there is nothing.
+  final int cursor;
   final bool hasMore;
 
-  const PullPage({
-    required this.notes,
+  const OpsBatch({
+    required this.spaceId,
+    required this.ops,
+    required this.snapshots,
     required this.cursor,
     required this.hasMore,
   });
+
+  bool get isEmpty => ops.isEmpty && snapshots.isEmpty;
+
+  static OpsBatch? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final spaceId = raw['spaceId'];
+    final cursor = raw['cursor'];
+    if (spaceId is! String || cursor is! int) return null;
+    final ops = raw['ops'];
+    final snapshots = raw['snapshots'];
+    return OpsBatch(
+      spaceId: spaceId,
+      ops: ops is List
+          ? ops.map(WireStoredOp.fromJson).whereType<WireStoredOp>().toList()
+          : const [],
+      snapshots: snapshots is List
+          ? snapshots
+                .map(WireStoredSnapshot.fromJson)
+                .whereType<WireStoredSnapshot>()
+                .toList()
+          : const [],
+      cursor: cursor,
+      hasMore: raw['hasMore'] == true,
+    );
+  }
 }
 
-class PushResult {
-  /// Ids the server accepted.
-  final Set<String> applied;
-
-  /// The server's winning copies of everything it rejected, so a conflicted
-  /// copy can be written without a second round trip.
-  final List<WireNote> conflicts;
-  final DateTime serverTime;
-
-  const PushResult({
-    required this.applied,
-    required this.conflicts,
-    required this.serverTime,
-  });
-}
+/// The engine tag on a server-written marker. Matches `ENGINE_MARKER`.
+const String markerEngine = 'tomb';
 
 /// Sync failed for a reason worth distinguishing, because the right response
 /// differs: retry, sign in again, refresh and try once more, update the app,
@@ -202,18 +505,17 @@ class SyncOutdatedException extends SyncException {
 /// The sync endpoints. Abstract so the service can be tested end to end
 /// without a server, which is most of what there is to get wrong.
 abstract class SyncApi {
-  /// One page of one space. [space] null means the personal space, which is
-  /// what a build from before spaces asked for without knowing it.
-  Future<PullPage> pull({String? space, String? cursor, int limit});
-  Future<PushResult> push(List<WireNote> notes);
+  /// Appends a note's ops. The same rules the socket applies: the answer
+  /// names the seq each op took, and a retried push gets the same ones.
+  Future<OpsPushResult> pushOps(OpsPush push);
 
-  /// The wake-up channel: one [LiveSignal] per "something changed somewhere
-  /// else", naming the space where the server knows it.
-  ///
-  /// Connects on the first listener and disconnects when it is cancelled.
-  /// Failures are the channel's own business — it reconnects, and stops
-  /// emitting while it cannot — so this never produces an error.
-  Stream<LiveSignal> live();
+  /// One page of one space's log past [after]. The fallback for a socket
+  /// that cannot connect; the socket's catch-up is the same query.
+  Future<OpsBatch> pullOps({required String space, int after, int limit});
+
+  /// A fresh socket to the server, not yet connected. The caller owns it:
+  /// connects it, subscribes, pushes through it, and closes it.
+  SyncSocket openSocket();
 
   /// Null when this account has no bundle yet — a fresh sign-up that still has
   /// to choose a passphrase.
@@ -287,19 +589,58 @@ abstract class SyncApi {
     String? details,
     bool includeContent = false,
   });
+
+  /// Asks permission to store [bytes] and gets somewhere to put them.
+  ///
+  /// Quota is checked here, before anything moves, so an upload that will not
+  /// fit fails on a small JSON round trip rather than after a 20 MB transfer.
+  Future<AttachmentSlot> createAttachment({
+    required String noteId,
+    String? spaceId,
+    required int bytes,
+  });
+
+  /// Confirms the bytes landed. The server measures the object itself and
+  /// bills that, so a client cannot understate what it stored.
+  Future<void> completeAttachment(String id);
+
+  /// Presigned reads, in one round trip for a whole note's worth of images.
+  Future<Map<String, Uri>> attachmentUrls(List<String> ids);
+
+  /// Straight to object storage, carrying no session and no auth header.
+  ///
+  /// Bytes never pass through the API container: a phone on a slow connection
+  /// would otherwise hold one of its connections open for the whole transfer.
+  Future<void> putBlob(Uri url, Uint8List bytes);
+  Future<Uint8List?> getBlob(Uri url);
 }
 
-/// One request may not carry more than this. Matches `PUSH_MAX_NOTES`.
-const int pushMaxNotes = 200;
-const int pullDefaultLimit = 200;
+/// Somewhere to put one attachment's bytes.
+class AttachmentSlot {
+  const AttachmentSlot({required this.id, required this.uploadUrl});
+
+  final String id;
+  final Uri uploadUrl;
+}
+
+/// What every attachment is stored as, whatever the picture actually is.
+///
+/// The object is ciphertext, so its real type is not the server's business —
+/// and saying `image/png` on the bucket would leak one more fact about what
+/// the user keeps in their notes.
+const String attachmentMime = 'application/octet-stream';
+
+/// One push may not carry more ops than this. Matches `OPS_PUSH_MAX`.
+const int opsPushMax = 100;
+const int opsPullDefaultLimit = 500;
 
 /// Names the device a request came from. Matches `DEVICE_HEADER`.
 const String deviceHeader = 'x-kapynotes-device';
 
 /// Which sync protocol this build speaks. Matches `PROTOCOL_HEADER` and
-/// `PROTOCOL_VERSION`: version 2 is space-scoped sync.
+/// `PROTOCOL_VERSION`: version 3 is the encrypted op log over the socket.
 const String protocolHeader = 'x-kapynotes-protocol';
-const int protocolVersion = 2;
+const int protocolVersion = 3;
 
 class HttpSyncApi implements SyncApi {
   HttpSyncApi({
@@ -319,74 +660,43 @@ class HttpSyncApi implements SyncApi {
   final http.Client _client;
   final Duration timeout;
 
-  /// One channel, however many times [live] is called. It shares [_client],
-  /// and so its connection pool: a second one would mean a second TLS
-  /// handshake to the same host for no reason.
-  LiveChannel? _live;
+  @override
+  Future<OpsPushResult> pushOps(OpsPush push) async {
+    if (push.ops.length > opsPushMax) {
+      throw SyncProtocolException(
+        'push of ${push.ops.length} ops exceeds the $opsPushMax limit',
+      );
+    }
+    return OpsPushResult.fromJson(
+      await _send('POST', _baseUrl.resolve('sync/ops'), payload: push.toJson()),
+    );
+  }
 
   @override
-  Stream<LiveSignal> live() => (_live ??= LiveChannel(
-    url: _baseUrl.resolve('sync/live'),
-    token: _token,
-    headers: {deviceHeader: _deviceId, protocolHeader: '$protocolVersion'},
-    client: _client,
-  )).signals;
-
-  @override
-  Future<PullPage> pull({
-    String? space,
-    String? cursor,
-    int limit = pullDefaultLimit,
+  Future<OpsBatch> pullOps({
+    required String space,
+    int after = 0,
+    int limit = opsPullDefaultLimit,
   }) async {
     final body = await _send(
       'GET',
-      _baseUrl.resolve('sync/pull').replace(
-        queryParameters: {
-          'space': ?space,
-          if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
-          'limit': '$limit',
-        },
+      _baseUrl.resolve('sync/ops').replace(
+        queryParameters: {'space': space, 'after': '$after', 'limit': '$limit'},
       ),
     );
-
-    final notes = body['notes'];
-    return PullPage(
-      notes: notes is List
-          ? notes.map(WireNote.fromJson).whereType<WireNote>().toList()
-          : const [],
-      cursor: body['cursor'] is String ? body['cursor'] as String : '',
-      hasMore: body['hasMore'] == true,
-    );
+    final batch = OpsBatch.fromJson(body);
+    if (batch == null) {
+      throw const SyncProtocolException('ops response was malformed');
+    }
+    return batch;
   }
 
   @override
-  Future<PushResult> push(List<WireNote> notes) async {
-    if (notes.length > pushMaxNotes) {
-      throw SyncProtocolException(
-        'push of ${notes.length} exceeds the $pushMaxNotes limit',
-      );
-    }
-
-    final body = await _send(
-      'POST',
-      _baseUrl.resolve('sync/push'),
-      payload: {'notes': notes.map((note) => note.toJson()).toList()},
-    );
-
-    final applied = body['applied'];
-    final conflicts = body['conflicts'];
-    final serverTime = body['serverTime'];
-
-    return PushResult(
-      applied: applied is List ? applied.whereType<String>().toSet() : const {},
-      conflicts: conflicts is List
-          ? conflicts.map(WireNote.fromJson).whereType<WireNote>().toList()
-          : const [],
-      serverTime: serverTime is String
-          ? (DateTime.tryParse(serverTime)?.toLocal() ?? DateTime.now())
-          : DateTime.now(),
-    );
-  }
+  SyncSocket openSocket() => WebSocketSyncSocket(
+    url: _baseUrl.resolve('sync/ws'),
+    token: _token,
+    headers: {deviceHeader: _deviceId, protocolHeader: '$protocolVersion'},
+  );
 
   @override
   Future<KeyBundle?> fetchKeyBundle() async {
@@ -619,6 +929,73 @@ class HttpSyncApi implements SyncApi {
     );
   }
 
+  @override
+  Future<AttachmentSlot> createAttachment({
+    required String noteId,
+    String? spaceId,
+    required int bytes,
+  }) async {
+    final body = await _send(
+      'POST',
+      _baseUrl.resolve('attachments'),
+      payload: {'noteId': noteId, 'spaceId': ?spaceId, 'bytes': bytes},
+    );
+    final id = body['id'];
+    final url = body['uploadUrl'];
+    if (id is! String || url is! String) {
+      throw const SyncProtocolException('attachment response was malformed');
+    }
+    return AttachmentSlot(id: id, uploadUrl: Uri.parse(url));
+  }
+
+  @override
+  Future<void> completeAttachment(String id) =>
+      _send('POST', _baseUrl.resolve('attachments/$id/complete'));
+
+  @override
+  Future<Map<String, Uri>> attachmentUrls(List<String> ids) async {
+    if (ids.isEmpty) return const {};
+    final body = await _send(
+      'POST',
+      _baseUrl.resolve('attachments/urls'),
+      payload: {'ids': ids},
+    );
+    final urls = body['urls'];
+    if (urls is! Map) return const {};
+    return {
+      for (final entry in urls.entries)
+        if (entry.key is String && entry.value is Map)
+          if ((entry.value as Map)['url'] is String)
+            entry.key as String: Uri.parse((entry.value as Map)['url'] as String),
+    };
+  }
+
+  @override
+  Future<void> putBlob(Uri url, Uint8List bytes) async {
+    // No authorization header: the signature is in the URL, and sending a
+    // session token to object storage would leak it there for no gain.
+    final response = await _client
+        .put(url, body: bytes, headers: {'content-type': attachmentMime})
+        .timeout(timeout);
+    if (response.statusCode >= 400) {
+      throw SyncProtocolException(
+        'storing an image failed with ${response.statusCode}',
+      );
+    }
+  }
+
+  @override
+  Future<Uint8List?> getBlob(Uri url) async {
+    final response = await _client.get(url).timeout(timeout);
+    if (response.statusCode == 404) return null;
+    if (response.statusCode >= 400) {
+      throw SyncProtocolException(
+        'reading an image failed with ${response.statusCode}',
+      );
+    }
+    return response.bodyBytes;
+  }
+
   List<Space> _spaces(Object? raw) => raw is List
       ? raw.map(Space.fromJson).whereType<Space>().toList()
       : const [];
@@ -705,9 +1082,5 @@ class HttpSyncApi implements SyncApi {
     }
   }
 
-  void close() {
-    unawaited(_live?.dispose());
-    _live = null;
-    _client.close();
-  }
+  void close() => _client.close();
 }

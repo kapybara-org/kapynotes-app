@@ -238,14 +238,34 @@ class EditorMetrics {
   /// Forcing the strut makes every line exactly [lineHeight] tall regardless
   /// of which fallback font supplies a given glyph — the property the gutter
   /// alignment depends on.
-  static StrutStyle strut(WritingFont font) => StrutStyle(
-    fontFamily: font.fontFamily,
-    fontFamilyFallback: font.fontFamilyFallback,
-    fontSize: font.editorSize,
-    height: lineHeight / font.editorSize,
-    forceStrutHeight: true,
-    leading: 0,
-  );
+  /// The row geometry of a note.
+  ///
+  /// Forcing the strut pins every row to exactly [lineHeight] whatever it
+  /// contains, which is what gives a note its even rhythm and what the results
+  /// gutter was built against. It is the default and it stays the default.
+  ///
+  /// [allowTallRows] lifts that ceiling for the one case that cannot live
+  /// under it: an image is a `WidgetSpan`, and a forced strut clamps a
+  /// placeholder's line box to the height of the text, so a 400px picture
+  /// would paint straight through the writing beneath it.
+  ///
+  /// It is opt-in per note rather than switched on everywhere, because
+  /// relaxing the strut is not quite free. Flutter takes a line's height as
+  /// the union of the strut's ascent and descent with the run's, and two fonts
+  /// distribute the same 29px differently — so a heading in the mixed writing
+  /// font, which swaps in the handwritten face, comes out about 2px taller
+  /// once the strut stops overruling it. A note with pictures in it can afford
+  /// that. Every other note in the app should not have to pay it, and this way
+  /// none of them do.
+  static StrutStyle strut(WritingFont font, {bool allowTallRows = false}) =>
+      StrutStyle(
+        fontFamily: font.fontFamily,
+        fontFamilyFallback: font.fontFamilyFallback,
+        fontSize: font.editorSize,
+        height: lineHeight / font.editorSize,
+        forceStrutHeight: !allowTallRows,
+        leading: 0,
+      );
 }
 
 /// Control geometry shared by every app surface, resolved per input device.

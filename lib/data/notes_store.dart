@@ -3,7 +3,9 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import 'local_store.dart';
+import '../images/image_store.dart';
 import 'note.dart';
+import 'note_attachment.dart';
 import 'note_format.dart';
 import 'tombstone.dart';
 
@@ -43,8 +45,16 @@ class NotesStore extends ChangeNotifier {
   /// owns; with it, only the note actually edited is re-encoded.
   final Map<String, ({Note note, Map<String, Object?> json})> _encoded = {};
 
-  NotesStore(this._store, {DateTime Function()? now})
-    : _now = now ?? DateTime.now;
+  /// Where image bytes live.
+  ///
+  /// Held here because the store is the only thing that knows the whole set of
+  /// live notes, and that set is the only safe input to a sweep. Injectable so
+  /// a test can point it at a temporary directory.
+  final ImageStore images;
+
+  NotesStore(this._store, {DateTime Function()? now, ImageStore? images})
+    : _now = now ?? DateTime.now,
+      images = images ?? ImageStore();
 
   List<Note> get notes => _notes;
   List<Tombstone> get tombstones => _tombstones;
@@ -179,21 +189,53 @@ class NotesStore extends ChangeNotifier {
     updateDocument(id, body, const []);
   }
 
-  void updateDocument(String id, String body, List<NoteFormatRange> formats) {
+  void updateDocument(
+    String id,
+    String body,
+    List<NoteFormatRange> formats, [
+    List<NoteAttachmentRef>? attachments,
+  ]) {
     final index = indexOf(id);
     if (index < 0) return;
     final existing = _notes[index];
     final normalized = normalizeNoteFormats(formats, body.length);
-    if (existing.body == body && listEquals(existing.formats, normalized)) {
+    final images = normalizeNoteAttachments(
+      attachments ?? existing.attachments,
+      body,
+    );
+    if (existing.body == body &&
+        listEquals(existing.formats, normalized) &&
+        listEquals(existing.attachments, images)) {
       return;
     }
 
     final updatedNote = existing.copyWith(
       body: body,
       formats: normalized,
+      attachments: images,
       updatedAt: _now(),
     );
     _replace(index, updatedNote, toFront: true);
+  }
+
+  /// Every image hash any live note refers to, full images and previews alike.
+  ///
+  /// The complete input a sweep needs. Built from [_notes] rather than tracked
+  /// incrementally on purpose: an incremental count is a thing that can drift,
+  /// and drift here means deleting a picture somebody still has in a note.
+  Set<String> get liveImageHashes => {
+    for (final note in _notes)
+      for (final ref in note.attachments) ...[
+        ref.hash,
+        if (ref.thumbHash != null) ref.thumbHash!,
+      ],
+  };
+
+  /// Deletes image bytes no note refers to any more, and reports the bytes
+  /// reclaimed. Safe to call at any time; it reads the live set fresh.
+  Future<int> sweepImages() async {
+    if (!_loaded) return 0;
+    return images.sweep(liveImageHashes);
   }
 
   /// Removes a note from view and records that it was deleted, in the space
@@ -289,6 +331,21 @@ class NotesStore extends ChangeNotifier {
         contentKeyGeneration: contentKeyGeneration,
       ),
     );
+  }
+
+  /// Records the server ids an upload just minted for a note's images.
+  ///
+  /// Not an edit. The text is untouched, `updatedAt` does not move, and the
+  /// note keeps whatever sync state it had — so learning where a picture was
+  /// stored cannot drag the note to the top of the list or make a clean note
+  /// look dirty.
+  void adoptAttachments(String id, List<NoteAttachmentRef> attachments) {
+    final index = indexOf(id);
+    if (index < 0) return;
+    final existing = _notes[index];
+    final normalized = normalizeNoteAttachments(attachments, existing.body);
+    if (listEquals(existing.attachments, normalized)) return;
+    _replace(index, existing.copyWith(attachments: normalized));
   }
 
   /// Notes that came home when a space ended: personal, keyless, and already
@@ -510,6 +567,63 @@ class NotesStore extends ChangeNotifier {
     _persist();
 
     return conflicted.map((note) => note.id).toList(growable: false);
+  }
+
+  /// Writes a rendered document into the list, clean: the merge already
+  /// happened in the document, so there is nothing left to resolve here.
+  ///
+  /// Replaces the note if it is held, adds it if not, and re-sorts by
+  /// recency so a note somebody else just edited rises the way one edited
+  /// here does. A tombstone the server has confirmed for this note in this
+  /// space is dropped: the log says the note is live, and the log is later.
+  void applyDoc(Note note) {
+    final index = indexOf(note.id);
+    final remaining = index < 0
+        ? List<Note>.of(_notes)
+        : (List<Note>.of(_notes)..removeAt(index));
+    var at = 0;
+    while (at < remaining.length &&
+        remaining[at].updatedAt.isAfter(note.updatedAt)) {
+      at++;
+    }
+    remaining.insert(at, note);
+    _notes = List.unmodifiable(remaining);
+    final key = _stoneKey(note.spaceId, note.id);
+    if (_tombstones.any((s) => _stoneKey(s.spaceId, s.id) == key && !s.isDirty)) {
+      _tombstones = List.unmodifiable(
+        _tombstones.where((s) => _stoneKey(s.spaceId, s.id) != key),
+      );
+    }
+    _persist();
+  }
+
+  /// Marks a note as holding edits the document has not absorbed, without
+  /// changing its text. For a note whose history turned out to live on the
+  /// server: it is reconciled onto that history when it arrives.
+  void touch(String id) {
+    final index = indexOf(id);
+    if (index < 0) return;
+    _replace(index, _notes[index].copyWith(updatedAt: _now()));
+  }
+
+  /// Keeps a note's local text as a separate personal note.
+  ///
+  /// Only for the one moment a note's history first reaches a device that
+  /// holds an older copy with edits of its own: those words are not lost,
+  /// and they are not merged over newer ones either.
+  void keepCopy(Note local) {
+    _notes = List.unmodifiable([
+      Note(
+        id: newId(),
+        body: local.body,
+        formats: local.formats,
+        attachments: local.attachments,
+        createdAt: local.createdAt,
+        updatedAt: _now(),
+      ),
+      ..._notes,
+    ]);
+    _persist();
   }
 
   /// Writes notes an import decided to apply.

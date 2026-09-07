@@ -27,11 +27,27 @@ import 'highlighting_controller.dart';
 import 'line_metrics.dart';
 import 'link_popover.dart';
 import 'note_footer.dart';
+import '../../data/note_attachment.dart';
+import 'package:file_selector/file_selector.dart';
+
+import '../../images/image_clipboard.dart';
+import '../../images/image_ingest.dart';
+import '../../images/image_picker.dart';
+import '../../images/image_store.dart';
+import '../../images/note_image_provider.dart';
+import 'image_drop_target.dart';
+import 'image_insertion.dart';
+import 'note_image_layout.dart';
+import 'note_image_view.dart';
 import 'results_gutter.dart';
 import 'selection_formatting_toolbar.dart';
 
 typedef NoteDocumentChanged =
-    void Function(String body, List<NoteFormatRange> formats);
+    void Function(
+      String body,
+      List<NoteFormatRange> formats,
+      List<NoteAttachmentRef> attachments,
+    );
 
 /// The note surface: one syntax-coloured text field with a live results
 /// column pinned to it.
@@ -46,6 +62,11 @@ class NoteEditor extends StatefulWidget {
     required this.noteId,
     required this.initialBody,
     this.initialFormats = const [],
+    this.initialAttachments = const [],
+    this.images,
+    this.imageFetch,
+    this.clipboard = const ImageClipboard(),
+    this.onImagesRejected,
     required this.engine,
     required this.highlighter,
     required this.gutterWidth,
@@ -72,6 +93,22 @@ class NoteEditor extends StatefulWidget {
   final String noteId;
   final String initialBody;
   final List<NoteFormatRange> initialFormats;
+  final List<NoteAttachmentRef> initialAttachments;
+
+  /// Where image bytes are read from. Null in the handful of tests that build
+  /// an editor with no images in it.
+  final ImageStore? images;
+
+  /// Fetches bytes for an image that arrived by sync but has not downloaded.
+  final NoteImageFetcher? imageFetch;
+
+  /// Where a pasted picture comes from. Swapped in tests, which have no
+  /// system clipboard to put anything on.
+  final ImageClipboard clipboard;
+
+  /// Called when at least one file in a batch could not be added.
+  final ValueChanged<ImageBatch>? onImagesRejected;
+
   final CalcEngine engine;
   final Highlighter highlighter;
   final double gutterWidth;
@@ -131,10 +168,18 @@ class NoteEditorState extends State<NoteEditor> {
   String? _totalText;
   late TextEditingValue _lastValue;
   late List<NoteFormatRange> _formats;
+  late List<NoteAttachmentRef> _attachments;
   final Map<NoteFormat, bool> _typingOverrides = {};
   NoteParagraphStyle? _paragraphOverride;
   final Map<int, _PointerDownDetails> _pointerDownDetails = {};
   Set<NoteFormat>? _nextInsertedFormats;
+
+  /// The attachment list a programmatic edit has already worked out.
+  ///
+  /// Mirrors [_nextInsertedFormats]: an insert knows exactly where its images
+  /// land, so it says so rather than leaving the change handler to infer it
+  /// from a diff that cannot tell one placeholder from another.
+  List<NoteAttachmentRef>? _nextAttachments;
   bool _isEmpty = true;
 
   @override
@@ -147,6 +192,10 @@ class NoteEditorState extends State<NoteEditor> {
         ? DailySeparator.trailingEmptySectionLine(widget.initialBody)
         : null;
     _formats = normalizeNoteFormats(widget.initialFormats, initialText.length);
+    _attachments = normalizeNoteAttachments(
+      widget.initialAttachments,
+      initialText,
+    );
     _controller = HighlightingController(
       highlighter: widget.highlighter,
       palette: KapyTheme.darkPalette,
@@ -196,6 +245,14 @@ class NoteEditorState extends State<NoteEditor> {
       _controller.highlighter = widget.highlighter;
       _evaluate();
     }
+    // The note changed under the editor — another device, another person —
+    // and the text on screen is now behind the store. Take the new text and
+    // keep the caret where the user left it, relative to the words around
+    // it; only a store change that the editor did not itself send counts.
+    if (widget.initialBody != oldWidget.initialBody &&
+        widget.initialBody != _controller.text) {
+      _applyRemoteBody();
+    }
     if (widget.initialBody == _controller.text &&
         !listEquals(widget.initialFormats, _formats)) {
       _formats = normalizeNoteFormats(
@@ -203,6 +260,13 @@ class NoteEditorState extends State<NoteEditor> {
         _controller.text.length,
       );
       _controller.formats = _formats;
+    }
+    if (widget.initialBody == _controller.text &&
+        !listEquals(widget.initialAttachments, _attachments)) {
+      _attachments = normalizeNoteAttachments(
+        widget.initialAttachments,
+        _controller.text,
+      );
     }
     _dailySeparatorFormatter
       ..enabled = widget.dailySeparatorsEnabled
@@ -320,10 +384,66 @@ class NoteEditorState extends State<NoteEditor> {
     });
   }
 
+  /// Puts the store's text into the controller without treating it as an
+  /// edit, mapping the selection across the change so the caret stays with
+  /// the words it was between.
+  ///
+  /// Deferred while the IME is composing: replacing the text under an open
+  /// composition confuses every soft keyboard, and a composition ends at the
+  /// next word boundary at the latest.
+  void _applyRemoteBody() {
+    final value = _controller.value;
+    if (value.composing.isValid && !value.composing.isCollapsed) {
+      _remotePending = true;
+      return;
+    }
+    _remotePending = false;
+    final newText = widget.initialBody;
+    final selection = mapSelectionAcrossEdit(
+      value.text,
+      newText,
+      value.selection,
+    );
+    _formats = normalizeNoteFormats(widget.initialFormats, newText.length);
+    _attachments = normalizeNoteAttachments(widget.initialAttachments, newText);
+    _applyingRemote = true;
+    try {
+      _controller.formats = _formats;
+      _controller.value = TextEditingValue(text: newText, selection: selection);
+    } finally {
+      _applyingRemote = false;
+    }
+    _lastValue = _controller.value;
+    _dailySeparatorFormatter.syncLastUpdatedAt(widget.lastUpdatedAt);
+    setState(() {
+      _isEmpty = newText.isEmpty;
+      _evaluate();
+    });
+  }
+
+  bool _applyingRemote = false;
+  bool _remotePending = false;
+
+  /// The style ranges the editor is currently drawing.
+  @visibleForTesting
+  List<NoteFormatRange> get formatsForTest => _formats;
+
   void _onControllerChanged() {
     _recordKapyPeekActivity();
     final value = _controller.value;
     final previous = _lastValue;
+    if (_applyingRemote) {
+      _lastValue = value;
+      return;
+    }
+    if (_remotePending &&
+        !(value.composing.isValid && !value.composing.isCollapsed) &&
+        widget.initialBody != value.text) {
+      // The composition that held the remote text back has ended.
+      _lastValue = value;
+      _applyRemoteBody();
+      return;
+    }
     if (value.text == previous.text) {
       final selectionChanged = value.selection != previous.selection;
       _lastValue = value;
@@ -343,7 +463,9 @@ class NoteEditorState extends State<NoteEditor> {
     final insertedText = insertedTextForChange(previous.text, value.text);
     final forcedInsertedFormats = _nextInsertedFormats;
     _nextInsertedFormats = null;
-    final insertedFormats = forcedInsertedFormats ?? <NoteFormat>{};
+    // Copied rather than used in place: a caller that forces "no styles"
+    // passes a const set, and the newline branch below removes from this.
+    final insertedFormats = <NoteFormat>{...?forcedInsertedFormats};
     final previousParagraphStyle =
         _paragraphOverride ??
         paragraphStyleForSelection(previous.text, _formats, previous.selection);
@@ -362,6 +484,21 @@ class NoteEditorState extends State<NoteEditor> {
     if (insertedText.contains('\n')) {
       insertedFormats.removeWhere((format) => format.isParagraph);
     }
+    final forcedAttachments = _nextAttachments;
+    _nextAttachments = null;
+    final updatedAttachments =
+        forcedAttachments ??
+        rebaseNoteAttachments(
+          oldText: previous.text,
+          newText: value.text,
+          attachments: _attachments,
+          selectionStart: previous.selection.isValid
+              ? previous.selection.start
+              : null,
+          selectionEnd: previous.selection.isValid
+              ? previous.selection.end
+              : null,
+        );
     var updatedFormats = rebaseNoteFormats(
       oldText: previous.text,
       newText: value.text,
@@ -387,12 +524,13 @@ class NoteEditorState extends State<NoteEditor> {
     }
     _lastValue = value;
     _formats = updatedFormats;
+    _attachments = updatedAttachments;
     _controller.formats = updatedFormats;
     setState(() {
       _isEmpty = value.text.isEmpty;
       _evaluate();
     });
-    widget.onDocumentChanged(value.text, updatedFormats);
+    widget.onDocumentChanged(value.text, updatedFormats, updatedAttachments);
   }
 
   bool _formatActive(NoteFormat format) =>
@@ -436,11 +574,228 @@ class NoteEditorState extends State<NoteEditor> {
     _focusNode.requestFocus();
   }
 
+  /// Adds already-stored images to the note at the caret.
+  ///
+  /// Public because three different gestures end here — the toolbar button,
+  /// a drop onto the page, and whatever gets added next — and none of them
+  /// should have to know how a placeholder is anchored.
+  void insertImages(List<NoteAttachmentRef> refs) {
+    if (refs.isEmpty) return;
+    final selection = _controller.selection;
+    final caret = selection.isValid ? selection.end : _controller.text.length;
+    final result = insertImagesIntoBody(
+      body: _controller.text,
+      existing: _attachments,
+      caret: caret,
+      incoming: refs,
+    );
+    _nextAttachments = result.attachments;
+    // A picture carries no inline style, and must not inherit the bold the
+    // writer happened to have switched on.
+    _nextInsertedFormats = const {};
+    _controller.value = TextEditingValue(
+      text: result.body,
+      selection: TextSelection.collapsed(offset: result.selection),
+    );
+    _focusNode.requestFocus();
+  }
+
+  /// Routes the toolbar's own Paste button through [handlePaste].
+  ///
+  /// The keyboard shortcut goes through `PasteTextIntent`, which is
+  /// overridable; this button calls `pasteText` on the editable directly and
+  /// would otherwise quietly paste nothing when the clipboard holds a picture.
+  List<ContextMenuButtonItem> _withImagePaste(
+    List<ContextMenuButtonItem> items,
+  ) {
+    if (widget.images == null) return items;
+    return [
+      for (final item in items)
+        if (item.type == ContextMenuButtonType.paste)
+          ContextMenuButtonItem(
+            type: item.type,
+            label: item.label,
+            onPressed: () {
+              ContextMenuController.removeAny();
+              unawaited(handlePaste(SelectionChangedCause.toolbar));
+            },
+          )
+        else
+          item,
+    ];
+  }
+
+  /// Handles Paste, preferring a picture over text when the clipboard has one.
+  ///
+  /// Copying a screenshot and pressing Paste should put the screenshot in the
+  /// note; that is what every other editor does and what nobody thinks twice
+  /// about. Text is captured before those image checks because dictation apps
+  /// put their transcript on a promised clipboard only briefly, then restore
+  /// what was there before. Reading text again after the image awaits can paste
+  /// that previous value instead of what the person just said.
+  Future<void> handlePaste(SelectionChangedCause cause) async {
+    // Keep the insertion point from the moment Cmd+V arrived. An
+    // accessibility-driven refocus can briefly clear EditableText's selection
+    // while the promised clipboard value is being resolved.
+    final startingValue = _editableTextState()?.textEditingValue;
+    ClipboardData? capturedText;
+    try {
+      capturedText = await Clipboard.getData(Clipboard.kTextPlain);
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kapy Notes editor',
+          context: ErrorDescription('while capturing text for paste'),
+        ),
+      );
+    }
+    if (!mounted) return;
+
+    final store = widget.images;
+    if (store != null) {
+      // Raw bitmap data first — a screenshot tool, a browser's "copy image".
+      final pasted = await widget.clipboard.readImage();
+      if (!mounted) return;
+      if (pasted != null) {
+        final result = await ingestImage(
+          source: pasted.bytes,
+          sourceMime: mimeForFilename(pasted.name),
+          store: store,
+        );
+        if (!mounted) return;
+        if (result.isOk) {
+          insertImages([result.image!.ref]);
+          return;
+        }
+      }
+
+      // Then a file copied in Finder or Explorer, which arrives as a path.
+      final paths = await widget.clipboard.readImageFiles();
+      if (!mounted) return;
+      if (paths.isNotEmpty) {
+        await insertFiles([for (final path in paths) XFile(path)]);
+        return;
+      }
+    }
+    final text = capturedText?.text;
+    if (!mounted || text == null) return;
+    _insertPastedText(text, cause, startingValue: startingValue);
+  }
+
+  /// Inserts a captured clipboard value through the same formatter and undo
+  /// path as [EditableTextState.pasteText], without consulting a clipboard a
+  /// dictation app may already have restored.
+  void _insertPastedText(
+    String text,
+    SelectionChangedCause cause, {
+    TextEditingValue? startingValue,
+  }) {
+    final editable = _editableTextState();
+    if (editable == null) return;
+    final value = editable.textEditingValue;
+    bool selectionFits(TextSelection candidate) =>
+        candidate.isValid && candidate.end <= value.text.length;
+    final startingSelection = startingValue?.selection;
+    final selection =
+        startingValue?.text == value.text &&
+            startingSelection != null &&
+            selectionFits(startingSelection)
+        ? startingSelection
+        : selectionFits(value.selection)
+        ? value.selection
+        : TextSelection.collapsed(offset: value.text.length);
+    final collapsed = value.copyWith(
+      selection: TextSelection.collapsed(offset: selection.end),
+    );
+    editable.userUpdateTextEditingValue(
+      collapsed.replaced(selection, text),
+      cause,
+    );
+    _focusNode.requestFocus();
+  }
+
+  /// Sets one image's width, live, while the handle is being dragged.
+  ///
+  /// Only the editor's own copy moves here. Saving on every drag frame would
+  /// write the note — and bump `updatedAt`, and mark it dirty for sync —
+  /// dozens of times for one gesture, so the write waits for
+  /// [_commitAttachments] when the drag ends.
+  void _resizeImage(int offset, double factor) {
+    var changed = false;
+    final resized = [
+      for (final ref in _attachments)
+        if (ref.offset == offset && ref.widthFactor != factor)
+          (() {
+            changed = true;
+            return ref.copyWith(widthFactor: factor);
+          })()
+        else
+          ref,
+    ];
+    if (!changed) return;
+    setState(() => _attachments = resized);
+  }
+
+  void _commitAttachments() {
+    widget.onDocumentChanged(_controller.text, _formats, _attachments);
+  }
+
+  /// Removes the image anchored at [offset], placeholder and all.
+  ///
+  /// The character is what an image *is*, so this is a text edit and takes the
+  /// ordinary path: undo puts it back, and the ref falls away with the anchor
+  /// it was reconciled against.
+  void removeImage(int offset) {
+    final text = _controller.text;
+    if (offset < 0 || offset >= text.length) return;
+    if (text.codeUnitAt(offset) != 0xFFFC) return;
+
+    final next = text.substring(0, offset) + text.substring(offset + 1);
+    // Stated rather than inferred. The caret is wherever the writer left it,
+    // which is not necessarily on the picture they just chose to remove, and
+    // one U+FFFC looks exactly like another to a diff.
+    _nextAttachments = normalizeNoteAttachments([
+      for (final ref in _attachments)
+        if (ref.offset < offset)
+          ref
+        else if (ref.offset > offset)
+          ref.copyWith(offset: ref.offset - 1),
+    ], next);
+    _nextInsertedFormats = const {};
+    _controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: offset),
+    );
+    _focusNode.requestFocus();
+  }
+
+  /// Opens the system picker, compresses whatever comes back, and inserts it.
+  Future<void> pickAndInsertImages() async {
+    final store = widget.images;
+    if (store == null) return;
+    final files = await pickImageFiles();
+    if (files.isEmpty || !mounted) return;
+    await insertFiles(files);
+  }
+
+  /// Compresses and inserts files that arrived from anywhere — a picker or a
+  /// drop. Reports whatever could not be added, by name.
+  Future<void> insertFiles(List<XFile> files) async {
+    final store = widget.images;
+    if (store == null || files.isEmpty) return;
+    final batch = await ingestFiles(files, store: store);
+    if (!mounted) return;
+    insertImages(batch.images);
+    if (batch.rejections.isNotEmpty) widget.onImagesRejected?.call(batch);
+  }
+
   void _commitFormats(List<NoteFormatRange> formats) {
     _formats = formats;
     _controller.formats = formats;
     setState(() {});
-    widget.onDocumentChanged(_controller.text, formats);
+    widget.onDocumentChanged(_controller.text, formats, _attachments);
   }
 
   void _toggleBullets() {
@@ -895,6 +1250,67 @@ class NoteEditorState extends State<NoteEditor> {
 
   static DateTime _localTime(DateTime value) => value.toLocal();
 
+  /// Sizes and builds every image in this note, keyed by its anchor.
+  ///
+  /// A line holding one image gets the blog treatment: full writing width,
+  /// shortened only if it would otherwise push the text off the screen. A line
+  /// holding several becomes a gallery of equal tiles that wrap — which is
+  /// what the text engine does with adjacent inline widgets anyway, so the
+  /// grid costs no layout code of its own.
+  Map<int, NoteImageSpan> _buildImageSpans(
+    double columnWidth,
+    double viewportHeight,
+  ) {
+    final store = widget.images;
+    if (_attachments.isEmpty || store == null) return const {};
+
+    // Tall images are capped rather than allowed to fill the screen: a note is
+    // writing with pictures in it, not a gallery with captions.
+    final maxHeight = viewportHeight.isFinite && viewportHeight > 0
+        ? viewportHeight * 0.6
+        : 420.0;
+    final body = _controller.text;
+
+    final spans = <int, NoteImageSpan>{};
+    for (final ref in _attachments) {
+      final onLine = imagesOnLineAt(body, ref.offset, _attachments);
+      final box = imageBoxFor(
+        countOnLine: onLine,
+        columnWidth: columnWidth,
+        aspectRatio: ref.aspectRatio,
+        maxHeight: maxHeight,
+        widthFactor: ref.widthFactor,
+      );
+      spans[ref.offset] = (
+        width: box.width,
+        // The vertical padding the view draws is part of the box the text
+        // engine has to reserve, or the line clips its own image.
+        height: box.height + noteImageGap,
+        child: NoteImageView(
+          key: ValueKey('note-image-${ref.hash}-${ref.offset}'),
+          ref: ref,
+          box: box,
+          store: store,
+          columnWidth: columnWidth,
+          // Only a picture that has its line to itself: a tile's width comes
+          // from how many share the row.
+          resizable: onLine <= 1,
+          fetch: widget.imageFetch,
+          onTap: () => NoteImageViewer.open(
+            context,
+            ref: ref,
+            store: store,
+            fetch: widget.imageFetch,
+          ),
+          onResize: (factor) => _resizeImage(ref.offset, factor),
+          onResizeEnd: _commitAttachments,
+          onRemove: () => removeImage(ref.offset),
+        ),
+      );
+    }
+    return spans;
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -911,10 +1327,17 @@ class NoteEditorState extends State<NoteEditor> {
       palette.textPrimary,
       widget.writingFont,
     );
-    final strut = EditorMetrics.strut(widget.writingFont);
+    // Only a note that actually holds a picture gives up the forced row.
+    final strut = EditorMetrics.strut(
+      widget.writingFont,
+      allowTallRows: _attachments.isNotEmpty && widget.images != null,
+    );
     final textScaler = MediaQuery.textScalerOf(context);
 
-    return Container(
+    // A drop lands on the page as a whole, not on the text field: dragging a
+    // picture over a note and having to aim at the caret would be worse than
+    // useless. Where it goes is decided by the caret already in the note.
+    final page = Container(
       color: palette.editorBackground,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -953,6 +1376,13 @@ class NoteEditorState extends State<NoteEditor> {
 
                 // Measure the exact span the field will paint, at the exact
                 // width it will paint into.
+                // Images are sized here and nowhere else: this is the first
+                // point at which the writing column's width is known, and an
+                // image that fills the column has to be told what that is.
+                _controller.setImageSpansDuringLayout(
+                  _buildImageSpans(contentWidth, constraints.maxHeight),
+                );
+
                 final offsets = _measurer.measure(
                   span: _controller.buildTextSpan(
                     context: context,
@@ -964,6 +1394,7 @@ class NoteEditorState extends State<NoteEditor> {
                   strut: strut,
                   textScaler: textScaler,
                   layoutKey: (widget.writingFont, _formats),
+                  placeholders: _controller.placeholderDimensions(),
                 );
 
                 return Stack(
@@ -1058,6 +1489,15 @@ class NoteEditorState extends State<NoteEditor> {
             onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
             onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
             onBulletsPressed: _toggleBullets,
+            // Desktop only. A phone's control row is already full at 44pt a
+            // button, and a sixth pushes the running total into an ellipsis —
+            // which `app_test` rightly refuses. Touch adds an image from the
+            // press-and-hold menu instead, where every other insert action on
+            // both mobile platforms already lives.
+            onInsertImagePressed:
+                widget.images == null || !AppPlatform.hasPointer
+                ? null
+                : () => unawaited(pickAndInsertImages()),
             onChecklistPressed: _toggleChecklist,
             onIndentPressed: () => _indentList(outdent: false),
             onOutdentPressed: () => _indentList(outdent: true),
@@ -1079,6 +1519,12 @@ class NoteEditorState extends State<NoteEditor> {
           ),
         ],
       ),
+    );
+
+    return ImageDropTarget(
+      enabled: widget.images != null,
+      onFiles: (files) => unawaited(insertFiles(files)),
+      child: page,
     );
   }
 
@@ -1118,126 +1564,149 @@ class NoteEditorState extends State<NoteEditor> {
         onPointerDown: _handlePointerDown,
         onPointerUp: _handlePointerUp,
         onPointerCancel: _handlePointerCancel,
-        // A cleared shortcut binds nothing; the footer button beside it is
-        // still there, and is now the only way in.
-        child: CallbackShortcuts(
-          bindings: {
-            ?widget.shortcuts
-                .bindingFor(ShortcutAction.cycleTextStyle)
-                ?.activator:
-                _cycleParagraphStyle,
-            ?widget.shortcuts
-                .bindingFor(ShortcutAction.formatBold)
-                ?.activator: () =>
-                _toggleInlineFormat(NoteFormat.bold),
-            ?widget.shortcuts
-                .bindingFor(ShortcutAction.formatItalic)
-                ?.activator: () =>
-                _toggleInlineFormat(NoteFormat.italic),
-            ?widget.shortcuts
-                .bindingFor(ShortcutAction.formatBullets)
-                ?.activator:
-                _toggleBullets,
-            ?widget.shortcuts
-                .bindingFor(ShortcutAction.formatChecklist)
-                ?.activator:
-                _toggleChecklist,
+        // `EditableText` builds its paste action with `Action.overridable`,
+        // which looks an override up in the ancestor context — so this is the
+        // supported way in, rather than a shortcut racing the built-in one.
+        child: Actions(
+          actions: {
+            PasteTextIntent: CallbackAction<PasteTextIntent>(
+              onInvoke: (intent) {
+                unawaited(handlePaste(intent.cause));
+                return null;
+              },
+            ),
           },
-          child: TextField(
-            key: _textFieldKey,
-            mouseCursor: _hoverCursor,
-            controller: _controller,
-            focusNode: _focusNode,
-            scrollController: _scrollController,
-            autofocus: widget.autofocus,
-            expands: true,
-            maxLines: null,
-            minLines: null,
-            style: textStyle,
-            strutStyle: strut,
-            cursorWidth: EditorMetrics.cursorWidth,
-            cursorHeight: EditorMetrics.cursorHeight(widget.writingFont),
-            cursorRadius: const Radius.circular(1),
-            cursorColor: Theme.of(context).colorScheme.primary,
-            // Uniform selection rectangles: without this, a line whose glyphs
-            // come from a fallback font gets a differently sized highlight.
-            selectionHeightStyle: BoxHeightStyle.strut,
-            // A highlight stops at the end of its own line. Flutter defaults
-            // this to `max` off the web, which pads every selected line that
-            // carries a line break out to the width of the longest line in
-            // the whole note — so selecting two short lines under a long one
-            // paints a block of empty space that is not selected at all.
-            selectionWidthStyle: BoxWidthStyle.tight,
-            keyboardType: TextInputType.multiline,
-            textInputAction: TextInputAction.newline,
-            inputFormatters: [
-              _dailySeparatorFormatter,
-              const _ListContinuationFormatter(),
-              const _ListShorthandFormatter(),
-            ],
-            contextMenuBuilder: (context, editableTextState) {
-              final selection = editableTextState.textEditingValue.selection;
-              final link = _linkForSelection(selection);
-              final linkItems = _linkContextMenuItems(link);
-              if (selection.isCollapsed) {
-                return AdaptiveTextSelectionToolbar.buttonItems(
-                  anchors: editableTextState.contextMenuAnchors,
-                  buttonItems: [
-                    ...linkItems,
-                    if (_controller.text.isNotEmpty)
-                      ContextMenuButtonItem(
-                        label: 'Copy Plain Text',
-                        onPressed: () => unawaited(_copyPlainText(selection)),
-                      ),
-                    ...editableTextState.contextMenuButtonItems,
-                  ],
-                );
-              }
-              return NoteSelectionFormattingToolbar(
-                editableTextState: editableTextState,
-                paragraphStyle: _activeParagraphStyle,
-                boldActive: _formatActive(NoteFormat.bold),
-                italicActive: _formatActive(NoteFormat.italic),
-                bulletsActive: selectionHasLineStyle(
-                  _controller.value,
-                  NoteLineStyle.bullet,
-                ),
-                checklistActive: selectionHasLineStyle(
-                  _controller.value,
-                  NoteLineStyle.checklist,
-                ),
-                onParagraphStylePressed: _cycleParagraphStyle,
-                onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
-                onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
-                onBulletsPressed: _toggleBullets,
-                onChecklistPressed: _toggleChecklist,
-                onOpenLink: link == null
-                    ? null
-                    : () => unawaited(_openLink(link)),
-                onCopyLink: link == null
-                    ? null
-                    : () => unawaited(_copyLink(link)),
-                onCopyPlainText: () => unawaited(_copyPlainText(selection)),
-              );
+          // A cleared shortcut binds nothing; the footer button beside it is
+          // still there, and is now the only way in.
+          child: CallbackShortcuts(
+            bindings: {
+              ?widget.shortcuts
+                      .bindingFor(ShortcutAction.cycleTextStyle)
+                      ?.activator:
+                  _cycleParagraphStyle,
+              ?widget.shortcuts
+                  .bindingFor(ShortcutAction.formatBold)
+                  ?.activator: () =>
+                  _toggleInlineFormat(NoteFormat.bold),
+              ?widget.shortcuts
+                  .bindingFor(ShortcutAction.formatItalic)
+                  ?.activator: () =>
+                  _toggleInlineFormat(NoteFormat.italic),
+              ?widget.shortcuts
+                      .bindingFor(ShortcutAction.formatBullets)
+                      ?.activator:
+                  _toggleBullets,
+              ?widget.shortcuts
+                      .bindingFor(ShortcutAction.formatChecklist)
+                      ?.activator:
+                  _toggleChecklist,
             },
-            textAlignVertical: TextAlignVertical.top,
-            // This is a calculator surface, not prose: every helpful-guess input
-            // feature would fight the user.
-            autocorrect: false,
-            enableSuggestions: false,
-            textCapitalization: TextCapitalization.none,
-            smartDashesType: SmartDashesType.disabled,
-            smartQuotesType: SmartQuotesType.disabled,
-            scrollPadding: const EdgeInsets.all(80),
-            // No decoration padding: an InputDecorator positions its child by
-            // rules of its own, and the gutter needs the text origin to be
-            // exactly the padding it was told about.
-            decoration: const InputDecoration(
-              isCollapsed: true,
-              border: InputBorder.none,
-              filled: false,
-              hoverColor: Colors.transparent,
-              contentPadding: EdgeInsets.zero,
+            child: TextField(
+              key: _textFieldKey,
+              mouseCursor: _hoverCursor,
+              controller: _controller,
+              focusNode: _focusNode,
+              scrollController: _scrollController,
+              autofocus: widget.autofocus,
+              expands: true,
+              maxLines: null,
+              minLines: null,
+              style: textStyle,
+              strutStyle: strut,
+              cursorWidth: EditorMetrics.cursorWidth,
+              cursorHeight: EditorMetrics.cursorHeight(widget.writingFont),
+              cursorRadius: const Radius.circular(1),
+              cursorColor: Theme.of(context).colorScheme.primary,
+              // Uniform selection rectangles: without this, a line whose glyphs
+              // come from a fallback font gets a differently sized highlight.
+              selectionHeightStyle: BoxHeightStyle.strut,
+              // A highlight stops at the end of its own line. Flutter defaults
+              // this to `max` off the web, which pads every selected line that
+              // carries a line break out to the width of the longest line in
+              // the whole note — so selecting two short lines under a long one
+              // paints a block of empty space that is not selected at all.
+              selectionWidthStyle: BoxWidthStyle.tight,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              inputFormatters: [
+                _dailySeparatorFormatter,
+                const _ListContinuationFormatter(),
+                const _ListShorthandFormatter(),
+              ],
+              contextMenuBuilder: (context, editableTextState) {
+                final selection = editableTextState.textEditingValue.selection;
+                final link = _linkForSelection(selection);
+                final linkItems = _linkContextMenuItems(link);
+                if (selection.isCollapsed) {
+                  return AdaptiveTextSelectionToolbar.buttonItems(
+                    anchors: editableTextState.contextMenuAnchors,
+                    buttonItems: [
+                      ...linkItems,
+                      if (widget.images != null && !AppPlatform.hasPointer)
+                        ContextMenuButtonItem(
+                          label: 'Add Image',
+                          onPressed: () {
+                            ContextMenuController.removeAny();
+                            unawaited(pickAndInsertImages());
+                          },
+                        ),
+                      if (_controller.text.isNotEmpty)
+                        ContextMenuButtonItem(
+                          label: 'Copy Plain Text',
+                          onPressed: () => unawaited(_copyPlainText(selection)),
+                        ),
+                      ..._withImagePaste(
+                        editableTextState.contextMenuButtonItems,
+                      ),
+                    ],
+                  );
+                }
+                return NoteSelectionFormattingToolbar(
+                  editableTextState: editableTextState,
+                  paragraphStyle: _activeParagraphStyle,
+                  boldActive: _formatActive(NoteFormat.bold),
+                  italicActive: _formatActive(NoteFormat.italic),
+                  bulletsActive: selectionHasLineStyle(
+                    _controller.value,
+                    NoteLineStyle.bullet,
+                  ),
+                  checklistActive: selectionHasLineStyle(
+                    _controller.value,
+                    NoteLineStyle.checklist,
+                  ),
+                  onParagraphStylePressed: _cycleParagraphStyle,
+                  onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
+                  onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
+                  onBulletsPressed: _toggleBullets,
+                  onChecklistPressed: _toggleChecklist,
+                  onOpenLink: link == null
+                      ? null
+                      : () => unawaited(_openLink(link)),
+                  onCopyLink: link == null
+                      ? null
+                      : () => unawaited(_copyLink(link)),
+                  onCopyPlainText: () => unawaited(_copyPlainText(selection)),
+                );
+              },
+              textAlignVertical: TextAlignVertical.top,
+              // This is a calculator surface, not prose: every helpful-guess input
+              // feature would fight the user.
+              autocorrect: false,
+              enableSuggestions: false,
+              textCapitalization: TextCapitalization.none,
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
+              scrollPadding: const EdgeInsets.all(80),
+              // No decoration padding: an InputDecorator positions its child by
+              // rules of its own, and the gutter needs the text origin to be
+              // exactly the padding it was told about.
+              decoration: const InputDecoration(
+                isCollapsed: true,
+                border: InputBorder.none,
+                filled: false,
+                hoverColor: Colors.transparent,
+                contentPadding: EdgeInsets.zero,
+              ),
             ),
           ),
         ),

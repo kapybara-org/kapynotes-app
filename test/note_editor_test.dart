@@ -97,7 +97,7 @@ Widget harness(
         startAtEnd: startAtEnd,
         autofocus: autofocus,
         ensureKeyboardVisible: ensureKeyboardVisible,
-        onDocumentChanged: (body, formats) {
+        onDocumentChanged: (body, formats, attachments) {
           onBodyChanged?.call(body);
           onFormatsChanged?.call(formats);
         },

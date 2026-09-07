@@ -37,6 +37,34 @@ class SealedBox {
   /// Poly1305 tag width, in bytes.
   static const int macLength = 16;
 
+  /// The same box as a flat frame: `[version][nonce][ciphertext+tag]`.
+  ///
+  /// Notes travel as JSON, where base64 is a fair price for a readable
+  /// envelope. An image does not: base64 would add a third to every byte
+  /// stored and every byte billed, on the largest objects the app writes. The
+  /// server stores an attachment as opaque bytes and never looks inside, so
+  /// the framing is ours to choose.
+  Uint8List toBytes() {
+    final frame = Uint8List(1 + nonceLength + cipherText.length);
+    frame[0] = version;
+    frame.setRange(1, 1 + nonceLength, nonce);
+    frame.setRange(1 + nonceLength, frame.length, cipherText);
+    return frame;
+  }
+
+  /// Null for anything too short to be a box, as with [fromJson]: a corrupt
+  /// object is one picture we cannot show, not a sync run to abandon.
+  static SealedBox? fromBytes(Uint8List frame) {
+    if (frame.length < 1 + nonceLength + macLength) return null;
+    final version = frame[0];
+    if (version <= 0) return null;
+    return SealedBox(
+      version: version,
+      nonce: Uint8List.sublistView(frame, 1, 1 + nonceLength),
+      cipherText: Uint8List.sublistView(frame, 1 + nonceLength),
+    );
+  }
+
   Map<String, Object?> toJson() => {
     'ct': base64.encode(cipherText),
     'n': base64.encode(nonce),
@@ -45,12 +73,18 @@ class SealedBox {
 
   /// Returns null rather than throwing: a malformed box from the wire is a
   /// note we skip, not a sync run we abandon.
-  static SealedBox? fromJson(Object? raw) {
+  ///
+  /// [allowEmpty] admits a box with nothing in it — version 0, no nonce, no
+  /// ciphertext — which is how a server-written marker travels: an op that
+  /// says only that the tombstone changed, with nothing to open.
+  static SealedBox? fromJson(Object? raw, {bool allowEmpty = false}) {
     if (raw is! Map) return null;
     final ct = raw['ct'];
     final n = raw['n'];
     final v = raw['v'];
-    if (ct is! String || n is! String || v is! int || v <= 0) return null;
+    if (ct is! String || n is! String || v is! int) return null;
+    if (allowEmpty && v == 0 && ct.isEmpty && n.isEmpty) return empty;
+    if (v <= 0) return null;
 
     final Uint8List cipherText;
     final Uint8List nonce;
@@ -65,6 +99,15 @@ class SealedBox {
 
     return SealedBox(cipherText: cipherText, nonce: nonce, version: v);
   }
+
+  /// The marker's box: nothing sealed, nothing to open.
+  static final SealedBox empty = SealedBox(
+    cipherText: Uint8List(0),
+    nonce: Uint8List(0),
+    version: 0,
+  );
+
+  bool get isEmpty => version == 0 && cipherText.isEmpty;
 }
 
 /// Argon2id parameters, mirroring `KdfParams` in the contract.

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/note.dart';
 import '../data/notes_store.dart';
+import '../images/image_store.dart';
 import '../data/tombstone.dart';
 import 'archive.dart';
 import 'manifest.dart';
@@ -109,7 +110,11 @@ class ImportPlan {
     final entries = <ImportEntry>[];
 
     for (final source in manifest.notes) {
-      final read = noteFromArchive(source, archive.markdown);
+      final read = noteFromArchive(
+        source,
+        archive.markdown,
+        availableImages: archive.images.keys.toSet(),
+      );
       if (read == null) {
         entries.add(
           ImportEntry(source: source, outcome: ImportOutcome.missingFile),
@@ -192,6 +197,26 @@ bool _isSameRevision(Note local, Note incoming) =>
 ///
 /// Returns how many notes were written. The store leaves them dirty, so the
 /// next sync pass pushes them like any other edit.
+/// Writes an archive's pictures into the local store.
+///
+/// Every picture, not only the ones the plan applies: the store addresses by
+/// content, so a byte already here costs nothing to write again, and anything
+/// no note ends up referring to is collected by the next sweep. Deciding
+/// which images a plan will need, and getting it wrong, would leave a note
+/// pointing at a picture that was never restored.
+///
+/// A file whose contents do not hash to the name it had in the archive lands
+/// under its true address instead, where no note refers to it — so tampering
+/// with an export cannot substitute one picture for another.
+Future<void> restoreImportedImages(
+  ImageStore images,
+  ArchiveContents archive,
+) async {
+  for (final bytes in archive.images.values) {
+    await images.put(bytes);
+  }
+}
+
 int applyImportPlan(NotesStore store, ImportPlan plan) {
   final notes = plan.applying
       .map((entry) => entry.note!)

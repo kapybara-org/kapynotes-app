@@ -1,93 +1,8 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import '../data/note.dart';
+import '../data/note_attachment.dart';
 import '../data/note_format.dart';
-
-/// An image anchored to one U+FFFC placeholder in the body.
-///
-/// The placeholder exists because the calculator lexes every line: a markdown
-/// image or a bare URL sitting in the body would be tokenised and evaluated.
-/// One object-replacement character is inert to the lexer and still gives the
-/// editor a real caret position to render a WidgetSpan at.
-class NoteAttachmentRef {
-  /// Index of the U+FFFC character this image renders at.
-  final int offset;
-  final String attachmentId;
-
-  /// The 32-byte file key. It rides *inside* the sealed payload, so it is
-  /// already encrypted under the master key by the time it leaves the device
-  /// and the server never holds it — no second key-wrapping table.
-  final Uint8List key;
-
-  /// Real MIME type. Kept in here, not on the row: the server gets to know a
-  /// byte count and nothing else about what the user stored.
-  final String mime;
-  final int width;
-  final int height;
-
-  /// A ~400px preview stored as its own object, sealed under the *same* file
-  /// key with its own nonce. The note view fetches only these; the full image
-  /// is fetched on tap. Null when the image is small enough that a thumbnail
-  /// would cost more than it saves.
-  final String? thumbId;
-
-  const NoteAttachmentRef({
-    required this.offset,
-    required this.attachmentId,
-    required this.key,
-    required this.mime,
-    required this.width,
-    required this.height,
-    this.thumbId,
-  });
-
-  /// The character an attachment anchors to. Inert to the calculator lexer.
-  static const String placeholder = '￼';
-
-  Map<String, Object?> toJson() => {
-    'offset': offset,
-    'attachmentId': attachmentId,
-    'key': base64.encode(key),
-    'mime': mime,
-    'width': width,
-    'height': height,
-    'thumbId': thumbId,
-  };
-
-  static NoteAttachmentRef? fromJson(Object? raw) {
-    if (raw is! Map) return null;
-    final offset = raw['offset'];
-    final id = raw['attachmentId'];
-    final key = raw['key'];
-    final mime = raw['mime'];
-    final width = raw['width'];
-    final height = raw['height'];
-    final thumbId = raw['thumbId'];
-    if (offset is! int || offset < 0) return null;
-    if (id is! String || key is! String || mime is! String) return null;
-    if (width is! int || height is! int || width <= 0 || height <= 0) {
-      return null;
-    }
-
-    final Uint8List decoded;
-    try {
-      decoded = base64.decode(key);
-    } on FormatException {
-      return null;
-    }
-
-    return NoteAttachmentRef(
-      offset: offset,
-      attachmentId: id,
-      key: decoded,
-      mime: mime,
-      width: width,
-      height: height,
-      thumbId: thumbId is String ? thumbId : null,
-    );
-  }
-}
 
 /// The plaintext sealed into a note's `SealedBox`.
 ///
@@ -112,6 +27,7 @@ class NotePayload {
   factory NotePayload.fromNote(Note note) => NotePayload(
     body: note.body,
     formats: note.formats,
+    attachments: note.attachments,
     createdAt: note.createdAt.millisecondsSinceEpoch,
   );
 
@@ -129,6 +45,7 @@ class NotePayload {
     id: id,
     body: body,
     formats: normalizeNoteFormats(formats, body.length),
+    attachments: normalizeNoteAttachments(attachments, body),
     createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
     updatedAt: updatedAt,
     spaceId: spaceId,

@@ -98,6 +98,14 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     widget.shortcuts.load();
     _activateLoadedApp(capturedText: _launchController.text, intent: intent);
     setState(() {});
+
+    // Once a launch, after the notes are on screen and never before them: the
+    // sweep needs the complete set of live notes to be safe, and it is disk
+    // work nobody is waiting on. Images are deleted by deleting the character
+    // that holds them, which can happen through an edit, an undo, a sync or a
+    // note being thrown away — so no edit path counts references, and this
+    // answers the question in one place instead.
+    unawaited(widget.notes.sweepImages());
   }
 
   void _activateLoadedApp({
@@ -133,9 +141,6 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     final account = widget.account;
     if (account != null) {
       unawaited(account.restore());
-      // Every edit lands in the store; the service coalesces them into one
-      // pass rather than one per keystroke.
-      widget.notes.addListener(_onNotesChangedForSync);
     }
     _engines = EngineProvider(widget.rates, widget.prefs);
     _ready = true;
@@ -163,8 +168,6 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     );
   }
 
-  void _onNotesChangedForSync() => widget.account?.sync?.requestSync();
-
   Future<void> _flushAfterHydration() async {
     final hydration = _hydration;
     if (hydration != null) await hydration;
@@ -174,7 +177,6 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    widget.notes.removeListener(_onNotesChangedForSync);
     _rateRefreshTimer?.cancel();
     _updateCheckTimer?.cancel();
     _launchController.dispose();
@@ -199,7 +201,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     } else {
       // Deliberately not on `inactive` or `hidden`. On desktop those mean a
       // window that lost focus or was minimised, and an open window quietly
-      // going stale is the whole reason the wake-up channel exists. Only a
+      // going stale is the whole reason the socket stays open. Only a
       // real backgrounding is worth closing a socket for — and there the OS
       // is about to close it anyway.
       if (state == AppLifecycleState.paused ||
