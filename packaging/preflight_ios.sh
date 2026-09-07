@@ -171,10 +171,29 @@ PRIVACY_TRACKING="$(plutil -extract NSPrivacyTracking raw ios/Runner/PrivacyInfo
 PRIVACY_COLLECTED_COUNT="$(plutil -extract NSPrivacyCollectedDataTypes raw ios/Runner/PrivacyInfo.xcprivacy 2>/dev/null || true)"
 PRIVACY_TRACKING_DOMAIN_COUNT="$(plutil -extract NSPrivacyTrackingDomains raw ios/Runner/PrivacyInfo.xcprivacy 2>/dev/null || true)"
 PRIVACY_APIS="$(plutil -extract NSPrivacyAccessedAPITypes json -o - ios/Runner/PrivacyInfo.xcprivacy 2>/dev/null || true)"
-if [[ "$PRIVACY_TRACKING" == "false" && "$PRIVACY_COLLECTED_COUNT" == "0" && "$PRIVACY_TRACKING_DOMAIN_COUNT" == "0" ]]; then
-  pass "privacy manifest declares no tracking and no collected data"
+# The manifest has to agree with the App Privacy answers on the store record,
+# which since sync are four types collected for app functionality: the account
+# email, the account id, note content and the pictures in a note. All are
+# ciphertext to us and none is used to track, but "we cannot read it" is not a
+# category Apple offers — uploading it is collecting it.
+#
+# Tracking stays false and the tracking-domain list stays empty; an empty
+# collected-data list is what this check used to demand, and it went on passing
+# for the eleven versions after accounts shipped.
+PRIVACY_COLLECTED_JSON="$(plutil -extract NSPrivacyCollectedDataTypes json -o - ios/Runner/PrivacyInfo.xcprivacy 2>/dev/null || true)"
+if [[ "$PRIVACY_TRACKING" == "false" && "$PRIVACY_TRACKING_DOMAIN_COUNT" == "0" ]]; then
+  pass "privacy manifest declares no tracking and no tracking domains"
 else
-  fail "privacy manifest must declare no tracking, tracking domains, or collected data"
+  fail "privacy manifest must declare no tracking and no tracking domains"
+fi
+PRIVACY_MISSING=""
+for type in EmailAddress UserID OtherUserContent PhotosorVideos; do
+  [[ "$PRIVACY_COLLECTED_JSON" == *"NSPrivacyCollectedDataType$type"* ]] || PRIVACY_MISSING+=" $type"
+done
+if [[ "$PRIVACY_COLLECTED_COUNT" == "4" && -z "$PRIVACY_MISSING" ]]; then
+  pass "privacy manifest matches the App Privacy record" "4 types, app functionality"
+else
+  fail "privacy manifest does not match the App Privacy record; missing:${PRIVACY_MISSING:- none}"
 fi
 for category in FileTimestamp DiskSpace UserDefaults; do
   if [[ "$PRIVACY_APIS" == *"NSPrivacyAccessedAPICategory$category"* ]]; then

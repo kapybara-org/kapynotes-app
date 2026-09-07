@@ -212,7 +212,29 @@ is a dependency.
 - [x] Register the explicit App ID `com.kapybara.kapynotes` with no special capabilities. The exported IPA embeds `iOS Team Store Provisioning Profile: com.kapybara.kapynotes`, resolving `96V66447C6.com.kapybara.kapynotes`.
 - [x] Create the App Store Connect app record using the settled values above. Created as app id `6807810082`. The version record was renamed `1.0` to `1.0.0` so it matches `CFBundleShortVersionString`.
 - [x] Deploy the website. The homepage, privacy policy, support page, and terms all return HTTP 200 as of September 2, 2026.
-- [ ] Answer App Privacy as **Data Not Collected**. The app sends no notes, calculations, identifiers or analytics; whichever rate source is contacted receives only the connection metadata inherent to an HTTPS request, which the privacy policy discloses. Frankfurter says its API does not collect personal data, while Cloudflare receives basic analytics information. ExchangeRate-API remains a fallback, so request written confirmation from both providers if App Review requires it.
+- [x] App Privacy. **Was** *Data Not Collected*, which was true of 1.0.0 and
+  false from 1.5.0 onward. Corrected and published on 2026-09-07, before the
+  1.14.0 submission, to four types — account email, account id, note content
+  and the pictures in a note — each **App Functionality** and **Linked to
+  You**. All four are ciphertext to us and none is used to track, but "we
+  cannot read it" is not a category Apple offers: uploading it is collecting
+  it, and it is stored per account, so it is linked. The rate sources still
+  receive only the connection metadata inherent to an HTTPS request, which the
+  privacy policy discloses.
+
+  It is **not in the public API** — `asc capabilities` classifies it
+  `web-session`. Drive it with a web session and the canonical file:
+
+      asc web auth login --apple-id hello@kapybara.company   # password + 2FA, once
+      asc web privacy pull  --app 6807810082 --out packaging/privacy.json
+      asc web privacy plan  --app 6807810082 --file packaging/privacy.json
+      asc web privacy apply --app 6807810082 --file packaging/privacy.json --allow-deletes --confirm
+      asc web privacy publish --app 6807810082 --confirm
+
+  An app-specific password does **not** work for that login; it is the real
+  Apple ID password plus a 2FA code. `--allow-deletes` is what removes the old
+  `DATA_NOT_COLLECTED` tuple — without it you publish "collects nothing"
+  alongside four collected types.
 - [x] Complete the updated age-rating questionnaire. The repo audit supports **4+**: no in-app controls, messaging, user-generated network content, advertising, violence, sexual content, substances, gambling, loot boxes, or unrestricted web access. Submitted through the API; the record now reads `FOUR_PLUS` and Brazil `L`.
 - [x] Content Rights is **Yes, rights are secured** (`USES_THIRD_PARTY_CONTENT`) because the app displays third-party exchange-rate data.
 - [x] Export compliance answered itself. Build 1 processed `VALID` and reports
@@ -391,12 +413,18 @@ All three must be corrected **before** 1.7.0 is submitted:
    either — App Store Connect refuses a PATCH to the review detail unless the
    four contact fields go with it.
 
-3. **App Privacy.** Answered for an app that collected nothing. Sync collects an
-   email address for the account, and stores note ciphertext the server cannot
-   read. Email has to be declared; the note content is worth declaring as
-   *Other Data* with linking off, since we hold bytes we cannot decrypt. This
-   is answered on the record, not in a build, and a wrong answer here is a
-   post-release removal rather than a rejection.
+3. **App Privacy.** ~~Answered for an app that collected nothing.~~ Corrected
+   on 2026-09-07 — see the checklist item above for what was published and how.
+   The earlier plan here was *Other Data* with linking off; that was dropped for
+   the more literal reading, because the ciphertext is stored per account and
+   under-declaring is what gets an app removed rather than rejected.
+
+   **The manifest in the binary has to agree with it.**
+   `ios/Runner/PrivacyInfo.xcprivacy` declared an empty
+   `NSPrivacyCollectedDataTypes` for the same eleven versions, and
+   `preflight_ios.sh` asserted that emptiness as a PASS — so the gate agreed
+   with the stale answer instead of catching it. Both are fixed; the preflight
+   now checks the manifest against the four declared types by name.
 
 ### What's New
 
