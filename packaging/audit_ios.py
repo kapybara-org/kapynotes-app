@@ -229,8 +229,9 @@ else:
     check(False, "territory availability", f"unreadable ({availability})")
 
 print("\n" + "=" * 64)
-print(f"{DIM}App Privacy is not exposed by the API. Confirm 'Data Not Collected'"
-      f" is published in the UI.{RESET}")
+print(f"{DIM}App Privacy is not in the public API. Check it against"
+      f" packaging/privacy.json — four types, app functionality, linked —"
+      f" with: asc web privacy pull --app {APP_ID}{RESET}")
 print(f"BLOCKERS: {len(blockers)}")
 for item in blockers:
     print(f"   - {item}")
