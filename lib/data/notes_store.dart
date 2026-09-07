@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import 'local_store.dart';
-import '../images/image_store.dart';
+import 'blob_store.dart';
 import 'note.dart';
 import 'note_attachment.dart';
 import 'note_format.dart';
@@ -50,11 +50,11 @@ class NotesStore extends ChangeNotifier {
   /// Held here because the store is the only thing that knows the whole set of
   /// live notes, and that set is the only safe input to a sweep. Injectable so
   /// a test can point it at a temporary directory.
-  final ImageStore images;
+  final BlobStore blobs;
 
-  NotesStore(this._store, {DateTime Function()? now, ImageStore? images})
+  NotesStore(this._store, {DateTime Function()? now, BlobStore? blobs})
     : _now = now ?? DateTime.now,
-      images = images ?? ImageStore();
+      blobs = blobs ?? BlobStore();
 
   List<Note> get notes => _notes;
   List<Tombstone> get tombstones => _tombstones;
@@ -218,24 +218,29 @@ class NotesStore extends ChangeNotifier {
     _replace(index, updatedNote, toFront: true);
   }
 
-  /// Every image hash any live note refers to, full images and previews alike.
+  /// Every blob hash any live note refers to — images, previews, recordings,
+  /// and the attachments of kinds this build does not understand.
   ///
   /// The complete input a sweep needs. Built from [_notes] rather than tracked
   /// incrementally on purpose: an incremental count is a thing that can drift,
-  /// and drift here means deleting a picture somebody still has in a note.
-  Set<String> get liveImageHashes => {
+  /// and drift here means deleting something somebody still has in a note.
+  ///
+  /// Unknown kinds are counted deliberately. Their bytes belong to a newer
+  /// build's attachment, and sweeping them would quietly empty a note that
+  /// this device merely could not draw.
+  Set<String> get liveBlobHashes => {
     for (final note in _notes)
       for (final ref in note.attachments) ...[
         ref.hash,
-        if (ref.thumbHash != null) ref.thumbHash!,
+        if (ref is NoteImageRef && ref.thumbHash != null) ref.thumbHash!,
       ],
   };
 
-  /// Deletes image bytes no note refers to any more, and reports the bytes
-  /// reclaimed. Safe to call at any time; it reads the live set fresh.
-  Future<int> sweepImages() async {
+  /// Deletes attachment bytes no note refers to any more, and reports the
+  /// bytes reclaimed. Safe to call at any time; it reads the live set fresh.
+  Future<int> sweepBlobs() async {
     if (!_loaded) return 0;
-    return images.sweep(liveImageHashes);
+    return blobs.sweep(liveBlobHashes);
   }
 
   /// Removes a note from view and records that it was deleted, in the space
@@ -333,19 +338,61 @@ class NotesStore extends ChangeNotifier {
     );
   }
 
-  /// Records the server ids an upload just minted for a note's images.
+  /// Rewrites the one ref carrying [hash] in note [id], reading the note's
+  /// current list at call time.
   ///
-  /// Not an edit. The text is untouched, `updatedAt` does not move, and the
-  /// note keeps whatever sync state it had — so learning where a picture was
-  /// stored cannot drag the note to the top of the list or make a clean note
-  /// look dirty.
-  void adoptAttachments(String id, List<NoteAttachmentRef> attachments) {
+  /// Returns false when the note or the ref is gone, which a caller treats as
+  /// "nothing to do", never as an error: an upload or a transcription that
+  /// finishes after the user deleted the attachment has simply lost its race,
+  /// and that is fine.
+  ///
+  /// This is the *only* way an asynchronous job may write into a note, and it
+  /// takes a transform rather than a list for a reason. Handing over a whole
+  /// attachment list means handing over a snapshot read some seconds ago, so a
+  /// transcript arriving after the user moved a picture would put the picture
+  /// back where it was. Reading `_notes` here — synchronously, on the UI
+  /// isolate, at the moment of the write — means two jobs finishing at once
+  /// cannot lose each other's fields.
+  ///
+  /// [touch] is the difference between learning something and changing
+  /// something. A server id is not an edit: the text is untouched, so
+  /// `updatedAt` must not move and the note must not jump to the top of the
+  /// list. A transcript *is* content other devices need, and sync only pushes
+  /// dirty notes — so that one bumps `updatedAt`, without reordering.
+  bool updateAttachment(
+    String id,
+    String hash,
+    NoteAttachmentRef Function(NoteAttachmentRef current) transform, {
+    bool touch = false,
+  }) {
     final index = indexOf(id);
-    if (index < 0) return;
+    if (index < 0) return false;
     final existing = _notes[index];
-    final normalized = normalizeNoteAttachments(attachments, existing.body);
-    if (listEquals(existing.attachments, normalized)) return;
-    _replace(index, existing.copyWith(attachments: normalized));
+
+    var found = false;
+    final updated = [
+      for (final ref in existing.attachments)
+        if (!found && ref.hash == hash)
+          (() {
+            found = true;
+            return transform(ref);
+          })()
+        else
+          ref,
+    ];
+    if (!found) return false;
+
+    final normalized = normalizeNoteAttachments(updated, existing.body);
+    if (listEquals(existing.attachments, normalized)) return true;
+
+    _replace(
+      index,
+      existing.copyWith(
+        attachments: normalized,
+        updatedAt: touch ? _now() : existing.updatedAt,
+      ),
+    );
+    return true;
   }
 
   /// Notes that came home when a space ended: personal, keyless, and already

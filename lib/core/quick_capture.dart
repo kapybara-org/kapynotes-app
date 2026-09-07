@@ -12,19 +12,35 @@ enum LaunchIntent {
   /// way in becomes a note of its own.
   open,
 
-  /// The Write widget on the Home Screen, or its Lock Screen twin. A draft
-  /// continues the note last written in instead of starting another.
+  /// **Write**, from a widget on the Home Screen, its Lock Screen twin, or a
+  /// control. A draft continues the note last written in instead of starting
+  /// another, and there is nothing to do on arrival but be in it.
   continueWriting,
+
+  /// **Dictate**. The same note, with a recording started in it.
+  dictate,
+
+  /// **Capture**. The same note, with the picker open over it.
+  capture;
+
+  /// Whether this arrival belongs in the note last written in.
+  ///
+  /// Every widget action does. The widget is a way back into the notebook,
+  /// not a way to add to the pile: a note per tap would shred a notebook into
+  /// one-line fragments, and on a plan that caps how many notes an account
+  /// may hold it would spend that allowance on them. Only an ordinary launch
+  /// starts a note.
+  bool get continuesLastNote => this != LaunchIntent.open;
 }
 
-/// The Write widget's half of the app: one tap, and the user is back in the
-/// note they were writing, below where they stopped, with the keyboard up.
+/// The widgets' half of the app: one tap, and the user is back in the note
+/// they were writing, below where they stopped, with the keyboard up — and,
+/// for two of the three actions, with the picker or the recorder already
+/// going.
 ///
-/// Continuing rather than creating is the whole point. A widget that made a
-/// note per tap would shred a notebook into one-line fragments, and on a plan
-/// that caps how many notes an account may hold it would spend that allowance
-/// on them. The widget is a way back into the notebook, not a way to add to
-/// the pile.
+/// Which action was tapped is the only thing the platform has to say. It says
+/// it once, on the way in, and the app spends it: what to write, and where,
+/// is the app's own business and always was.
 class QuickCapture {
   const QuickCapture._();
 
@@ -46,20 +62,31 @@ class QuickCapture {
   /// nothing here touches a note. Answering [LaunchIntent.open] is the
   /// fallback for every failure, because opening normally is what an app that
   /// cannot tell should do.
+  ///
+  /// The platform answers once and then forgets, so this is also how a tap
+  /// that arrives while the app is already running is collected: whoever asks
+  /// next gets it, and nobody gets it twice.
   static Future<LaunchIntent> launchIntent() async {
     if (!AppPlatform.isMobile) return LaunchIntent.open;
     try {
       final name = await channel
           .invokeMethod<String>('launchIntent')
           .timeout(_answerDeadline);
-      return name == LaunchIntent.continueWriting.name
-          ? LaunchIntent.continueWriting
-          : LaunchIntent.open;
+      return _named(name);
     } catch (_) {
       // A desktop host, a platform with no handler registered, or one that
       // never answered. All three mean the same thing to the user.
       return LaunchIntent.open;
     }
+  }
+
+  /// The intent the platform named, or [LaunchIntent.open] for a name this
+  /// version of the app does not know — an older app under a newer widget.
+  static LaunchIntent _named(String? name) {
+    for (final intent in LaunchIntent.values) {
+      if (intent.name == name) return intent;
+    }
+    return LaunchIntent.open;
   }
 
   /// Files [draft] — whatever was typed on the launch surface before storage
@@ -72,7 +99,7 @@ class QuickCapture {
   /// gets created.
   static Note file(NotesStore notes, String draft, LaunchIntent intent) {
     final last = notes.lastEditedNote;
-    if (intent != LaunchIntent.continueWriting || last == null) {
+    if (!intent.continuesLastNote || last == null) {
       return notes.create(body: draft);
     }
     // Nothing was typed on the way in — the usual case, since storage loads

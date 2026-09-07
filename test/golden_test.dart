@@ -17,7 +17,7 @@ import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/update_checker.dart';
-import 'package:kapy_notes/images/image_store.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
@@ -117,7 +117,7 @@ Future<void> pumpForGolden(
   final notes = NotesStore(
     store,
     now: () => _goldenNow,
-    images: withImages ? _imageStore : null,
+    blobs: withImages ? _imageStore : null,
   );
   final prefs = LayoutPrefs(store);
   goldenPrefs = prefs;
@@ -210,7 +210,7 @@ Future<void> tapSettings(WidgetTester tester) async {
 /// Pictures for the image golden, written once outside any test body: real
 /// file I/O inside `testWidgets` never completes.
 late Directory _imageDir;
-late ImageStore _imageStore;
+late BlobStore _imageStore;
 late List<String> _imageHashes;
 
 /// Flat-coloured rectangles rather than photographs, so the golden is about
@@ -255,7 +255,7 @@ List<NoteAttachmentRef> _imageAttachments() {
   const sizes = [(960, 600), (600, 600), (600, 600), (600, 600)];
   return [
     for (var i = 0; i < anchors.length; i++)
-      NoteAttachmentRef(
+      NoteImageRef(
         offset: anchors[i],
         hash: _imageHashes[i],
         key: Uint8List(32),
@@ -271,7 +271,7 @@ void main() {
   setUpAll(() async {
     await loadTestFonts();
     _imageDir = await Directory.systemTemp.createTemp('kapy-golden-images');
-    _imageStore = ImageStore(directory: _imageDir);
+    _imageStore = BlobStore(directory: _imageDir);
     _imageHashes = [
       await _imageStore.put(_swatch(960, 600, img.ColorRgb8(86, 132, 196))),
       await _imageStore.put(_swatch(600, 600, img.ColorRgb8(206, 128, 92))),

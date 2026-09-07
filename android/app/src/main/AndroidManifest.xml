@@ -30,20 +30,50 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <!-- The Write widget. Not exported: the launcher and the keyguard
-             bind widget providers through the system, and nothing else has
-             any business broadcasting to this one. -->
+        <!-- The square widget, one action of the three. Not exported: the
+             launcher and the keyguard bind widget providers through the
+             system, and nothing else has any business broadcasting to this
+             one. Its class name is the one it shipped as, for the reason
+             given in WriteNoteWidget.kt. -->
         <receiver
             android:name=".WriteNoteWidget"
             android:exported="false"
-            android:label="@string/widget_write_note_label">
+            android:label="@string/widget_quick_action_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/widget_write_note_info" />
+                android:resource="@xml/widget_quick_action_info" />
         </receiver>
+        <!-- The wide widget: all three actions at once. -->
+        <receiver
+            android:name=".QuickActionsWidget"
+            android:exported="false"
+            android:label="@string/widget_quick_actions_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_actions_info" />
+        </receiver>
+        <!-- Which action a square widget performs. Exported because the
+             launcher starts it, which is the whole of what a widget
+             configuration activity is; it is reachable no other way and does
+             nothing but write one word into its own preferences. Kept out of
+             Recents so that a question the Home Screen asked does not linger
+             there as if it were the app. -->
+        <activity
+            android:name=".QuickActionConfigureActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/widget_quick_action_label"
+            android:theme="@style/WidgetConfigureTheme">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

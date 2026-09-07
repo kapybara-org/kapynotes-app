@@ -45,7 +45,7 @@ void main() {
       final payload = NotePayload(
         body: 'before ${NoteAttachmentRef.placeholder} after',
         attachments: [
-          NoteAttachmentRef(
+          NoteImageRef(
             offset: 7,
             hash: 'f00d',
             attachmentId: '11111111-1111-4111-8111-111111111111',
@@ -61,7 +61,7 @@ void main() {
       );
 
       final opened = await vault.open(await vault.seal(payload));
-      final ref = opened!.attachments.single;
+      final ref = opened!.attachments.single as NoteImageRef;
       expect(ref.offset, 7);
       expect(ref.mime, 'image/webp');
       expect(ref.key, hasLength(32));

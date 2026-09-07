@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Three cells wide, one high: room for three actions side by side and
+     nothing else. It carries all three, so there is nothing to configure,
+     and it holds no text, so there is nothing to resize around. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_quick_actions_description"
+    android:initialLayout="@layout/widget_quick_actions"
+    android:minHeight="57dp"
+    android:minWidth="180dp"
+    android:previewLayout="@layout/widget_quick_actions"
+    android:resizeMode="horizontal"
+    android:targetCellHeight="1"
+    android:targetCellWidth="3"
+    android:widgetCategory="home_screen" />

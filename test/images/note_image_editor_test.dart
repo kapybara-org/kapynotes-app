@@ -14,7 +14,7 @@ import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/images/image_clipboard.dart';
-import 'package:kapy_notes/images/image_store.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_image_view.dart';
 import 'package:material_ui/material_ui.dart';
@@ -26,14 +26,14 @@ const anchor = NoteAttachmentRef.placeholder;
 late CalcEngine engine;
 late ShortcutPrefs shortcutPrefs;
 late Directory tempDir;
-late ImageStore store;
+late BlobStore store;
 
 /// Refs prepared once, outside any test body.
 ///
 /// Every byte of this has to be written before `testWidgets` starts: a test
 /// body runs inside a fake-async zone where real file I/O never completes, so
 /// awaiting a disk write in there hangs the run rather than failing it.
-late List<NoteAttachmentRef> refs;
+late List<NoteImageRef> refs;
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'note-image-test.json');
@@ -56,14 +56,14 @@ Uint8List pngOf(int width, int height, {int seed = 0}) {
   return Uint8List.fromList(img.encodePng(image, level: 1));
 }
 
-Future<NoteAttachmentRef> storeImage({
+Future<NoteImageRef> storeImage({
   int width = 800,
   int height = 600,
   int seed = 0,
 }) async {
   final bytes = pngOf(width, height, seed: seed);
   final hash = await store.put(bytes);
-  return NoteAttachmentRef(
+  return NoteImageRef(
     offset: 0,
     hash: hash,
     key: Uint8List(32),
@@ -74,8 +74,10 @@ Future<NoteAttachmentRef> storeImage({
   );
 }
 
+/// Ctrl/Cmd-Z through the real shortcut path, so the test exercises what a
+/// user's keyboard does rather than a method only tests call.
 /// One of the prepared images, anchored where the caller needs it.
-NoteAttachmentRef at(int offset, {int which = 0}) =>
+NoteImageRef at(int offset, {int which = 0}) =>
     refs[which].copyWith(offset: offset);
 
 /// A clipboard that holds whatever a test puts on it.
@@ -101,7 +103,7 @@ class FakeClipboard implements ImageClipboard {
 Widget harness(
   String body, {
   required List<NoteAttachmentRef> attachments,
-  ImageStore? images,
+  BlobStore? images,
   ImageClipboard? clipboard,
   ValueChanged<List<NoteAttachmentRef>>? onAttachmentsChanged,
   GlobalKey<NoteEditorState>? editorKey,
@@ -149,7 +151,7 @@ void main() {
     await loadTestFonts();
     engine = CalcEngine();
     tempDir = await Directory.systemTemp.createTemp('kapy-image-test');
-    store = ImageStore(directory: tempDir);
+    store = BlobStore(directory: tempDir);
     refs = [for (var seed = 0; seed < 4; seed++) await storeImage(seed: seed)];
   });
 
@@ -367,7 +369,7 @@ void main() {
       await mouse.up();
       await tester.pump();
       expect(reported, hasLength(1));
-      expect(reported.single.single.widthFactor, lessThan(1));
+      expect((reported.single.single as NoteImageRef).widthFactor, lessThan(1));
     });
   });
 
@@ -394,7 +396,129 @@ void main() {
       expect(reported!.map((r) => r.hash), [refs[0].hash, refs[2].hash]);
       expect(find.byType(NoteImageView), findsNWidgets(2));
     });
+
   });
+
+    group('undo restores the attachment, not just its character', () {
+      // Driven by putting the exact prior text back through the text input,
+      // rather than by sending ctrl/cmd-Z. Flutter's UndoHistory does not
+      // record a programmatic `controller.value` change under `flutter test` —
+      // verified with a bare focused TextField — so a keystroke here would
+      // assert on the framework's test-mode behaviour instead of on ours.
+      // Restoring the exact prior text is precisely what undo hands the
+      // editor, and it is the condition `_restoreUndone` matches on.
+
+      Future<void> restore(WidgetTester tester, String text) async {
+        await tester.enterText(find.byType(EditableText), text);
+        await tester.pump();
+      }
+
+      testWidgets('a removed picture comes back with its hash', (tester) async {
+        final editorKey = GlobalKey<NoteEditorState>();
+        List<NoteAttachmentRef>? reported;
+        await tester.pumpWidget(
+          harness(
+            'a$anchor b',
+            attachments: [at(1)],
+            editorKey: editorKey,
+            onAttachmentsChanged: (refs) => reported = refs,
+          ),
+        );
+        await tester.pump();
+
+        editorKey.currentState!.removeImage(1);
+        await tester.pump();
+        expect(reported, isEmpty);
+
+        await restore(tester, 'a$anchor b');
+        expect(reported, hasLength(1));
+        expect(reported!.single.hash, refs[0].hash);
+        expect(reported!.single.offset, 1);
+        expect(find.byType(NoteImageView), findsOneWidget);
+      });
+
+      testWidgets('an edit in between does not lose it', (tester) async {
+        final editorKey = GlobalKey<NoteEditorState>();
+        List<NoteAttachmentRef>? reported;
+        await tester.pumpWidget(
+          harness(
+            'a$anchor b',
+            attachments: [at(1)],
+            editorKey: editorKey,
+            onAttachmentsChanged: (refs) => reported = refs,
+          ),
+        );
+        await tester.pump();
+
+        editorKey.currentState!.removeImage(1);
+        await tester.pump();
+        await restore(tester, 'a b typed');
+        expect(reported, isEmpty);
+
+        await restore(tester, 'a$anchor b');
+        expect(reported!.map((r) => r.hash), [refs[0].hash]);
+      });
+
+      testWidgets('two adjacent removals come back one step at a time', (
+        tester,
+      ) async {
+        final editorKey = GlobalKey<NoteEditorState>();
+        List<NoteAttachmentRef>? reported;
+        await tester.pumpWidget(
+          harness(
+            '$anchor$anchor',
+            attachments: [at(0), at(1, which: 1)],
+            editorKey: editorKey,
+            onAttachmentsChanged: (refs) => reported = refs,
+          ),
+        );
+        await tester.pump();
+
+        editorKey.currentState!.removeImage(1);
+        await tester.pump();
+        editorKey.currentState!.removeImage(0);
+        await tester.pump();
+        expect(reported, isEmpty);
+
+        // Undo walks back through the states it passed, so the test does too.
+        await restore(tester, anchor);
+        expect(reported!.map((r) => r.hash), [refs[0].hash]);
+
+        await restore(tester, '$anchor$anchor');
+        expect(reported!.map((r) => r.hash), [refs[0].hash, refs[1].hash]);
+        expect(reported!.map((r) => r.offset), [0, 1]);
+      });
+
+      testWidgets('removing it again after a restore is remembered again', (
+        tester,
+      ) async {
+        // The redo half: the second removal arrives as an ordinary rebase drop
+        // rather than through removeImage, and has to be recorded just the same
+        // or the next undo restores nothing.
+        final editorKey = GlobalKey<NoteEditorState>();
+        List<NoteAttachmentRef>? reported;
+        await tester.pumpWidget(
+          harness(
+            'a$anchor b',
+            attachments: [at(1)],
+            editorKey: editorKey,
+            onAttachmentsChanged: (refs) => reported = refs,
+          ),
+        );
+        await tester.pump();
+
+        editorKey.currentState!.removeImage(1);
+        await tester.pump();
+        await restore(tester, 'a$anchor b');
+        expect(reported, hasLength(1));
+
+        await restore(tester, 'a b');
+        expect(reported, isEmpty);
+
+        await restore(tester, 'a$anchor b');
+        expect(reported!.single.hash, refs[0].hash);
+      });
+    });
 
   group('pasting', () {
     testWidgets('an image on the clipboard is inserted', (tester) async {

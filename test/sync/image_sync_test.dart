@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
-import 'package:kapy_notes/images/image_store.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/sync/aead.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/image_sync.dart';
@@ -35,8 +35,8 @@ class MemoryStore extends LocalStore {
 class Device {
   Device(this.server, {required this.name, required Directory dir}) {
     store = MemoryStore();
-    images = ImageStore(directory: dir);
-    notes = NotesStore(store, now: () => clock, images: images);
+    images = BlobStore(directory: dir);
+    notes = NotesStore(store, now: () => clock, blobs: images);
     state = SyncState(store);
     api = FakeApi(server, device: name);
     server.seedBundle(api.userId);
@@ -65,7 +65,7 @@ class Device {
   DateTime clock = DateTime.utc(2026, 9, 1);
 
   late final MemoryStore store;
-  late final ImageStore images;
+  late final BlobStore images;
   late final NotesStore notes;
   late final SyncState state;
   late final FakeApi api;
@@ -122,7 +122,7 @@ void main() {
 
     final id = one.notes.create().id;
     one.notes.updateDocument(id, 'look at this\n$anchor', const [], [
-      NoteAttachmentRef(
+      NoteImageRef(
         offset: 13,
         hash: hash,
         key: key,
@@ -171,7 +171,7 @@ void main() {
     final hash = await one.images.put(bytes);
     final id = one.notes.create().id;
     one.notes.updateDocument(id, 'over quota\n$anchor', const [], [
-      NoteAttachmentRef(
+      NoteImageRef(
         offset: 11,
         hash: hash,
         key: randomKey(),
@@ -218,7 +218,7 @@ void main() {
     final bytes = picture(3);
     final hash = await one.images.put(bytes);
     final key = randomKey();
-    NoteAttachmentRef ref(int offset) => NoteAttachmentRef(
+    NoteAttachmentRef ref(int offset) => NoteImageRef(
       offset: offset,
       hash: hash,
       key: key,

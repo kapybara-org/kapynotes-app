@@ -8,7 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/platform.dart';
 import '../data/note.dart';
-import '../images/image_store.dart';
+import '../data/blob_store.dart';
 import 'archive.dart';
 
 /// Picks a place, and moves the bytes.
@@ -51,7 +51,7 @@ class NoteArchiveService {
   /// device does not hold. A missing image costs its note nothing.
   Future<Map<String, Uint8List>> _readImages(
     List<Note> notes,
-    ImageStore? images,
+    BlobStore? images,
   ) async {
     if (images == null) return const {};
     final wanted = {
@@ -85,7 +85,7 @@ class NoteArchiveService {
   /// before there were any.
   Future<ExportResult> exportNotes(
     List<Note> notes, {
-    ImageStore? images,
+    BlobStore? images,
   }) async {
     final at = _now();
     final String path;

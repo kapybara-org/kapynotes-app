@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../data/note_attachment.dart';
 import 'image_codec.dart';
 import 'image_ingest.dart';
-import 'image_store.dart';
+import '../data/blob_store.dart';
 
 /// What a batch of files turned into.
 class ImageBatch {
@@ -59,7 +59,7 @@ Future<List<XFile>> pickImageFiles() async {
 /// gallery reads left to right in the order they were selected or dropped.
 Future<ImageBatch> ingestFiles(
   List<XFile> files, {
-  required ImageStore store,
+  required BlobStore store,
   int limit = 20,
 }) async {
   final images = <NoteAttachmentRef>[];

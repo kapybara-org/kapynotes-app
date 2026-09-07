@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/note.dart';
 import '../data/notes_store.dart';
-import '../images/image_store.dart';
+import '../data/blob_store.dart';
 import '../data/tombstone.dart';
 import 'archive.dart';
 import 'manifest.dart';
@@ -209,7 +209,7 @@ bool _isSameRevision(Note local, Note incoming) =>
 /// under its true address instead, where no note refers to it — so tampering
 /// with an export cannot substitute one picture for another.
 Future<void> restoreImportedImages(
-  ImageStore images,
+  BlobStore images,
   ArchiveContents archive,
 ) async {
   for (final bytes in archive.images.values) {

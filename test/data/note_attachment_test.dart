@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -5,7 +6,7 @@ import 'package:kapy_notes/data/note_attachment.dart';
 
 const anchor = NoteAttachmentRef.placeholder;
 
-NoteAttachmentRef ref(int offset, {String hash = 'a'}) => NoteAttachmentRef(
+NoteImageRef ref(int offset, {String hash = 'a'}) => NoteImageRef(
   offset: offset,
   hash: hash,
   key: Uint8List(32),
@@ -201,7 +202,7 @@ void main() {
 
   group('json', () {
     test('round-trips every field', () {
-      final original = NoteAttachmentRef(
+      final original = NoteImageRef(
         offset: 3,
         hash: 'abc123',
         key: Uint8List.fromList(List.generate(32, (i) => i)),
@@ -238,13 +239,14 @@ void main() {
       expect(ref(0).toJson().containsKey('widthFactor'), isFalse);
       final narrow = ref(0).copyWith(widthFactor: 0.4);
       expect(narrow.toJson()['widthFactor'], 0.4);
-      expect(NoteAttachmentRef.fromJson(narrow.toJson())!.widthFactor, 0.4);
+      final read = NoteAttachmentRef.fromJson(narrow.toJson());
+      expect((read as NoteImageRef).widthFactor, 0.4);
     });
 
     test('a nonsense width reads back as full rather than failing', () {
       for (final broken in [0, -1, 5, double.nan]) {
         final json = ref(0).toJson()..['widthFactor'] = broken;
-        final back = NoteAttachmentRef.fromJson(json)!;
+        final back = NoteAttachmentRef.fromJson(json)! as NoteImageRef;
         expect(back.widthFactor, inInclusiveRange(0.25, 1));
       }
     });
@@ -254,4 +256,155 @@ void main() {
       expect(noteAttachmentsFromJson(json, anchor).length, 1);
     });
   });
+
+  group('kinds', () {
+    NoteVoiceRef voice(int offset, {VoiceTranscript? transcript}) => NoteVoiceRef(
+      offset: offset,
+      hash: 'v',
+      key: Uint8List(32),
+      bytes: 2048,
+      durationMs: 5000,
+      transcript: transcript,
+    );
+
+    test('a voice ref round-trips', () {
+      final original = voice(0).copyWith(
+        transcript: VoiceTranscript(
+          lang: 'en',
+          engine: 'cf/deepgram-nova-3',
+          at: 17,
+          segments: const [TranscriptSegment(s: 0, e: 900, t: 'hello')],
+        ),
+      );
+      final back = NoteAttachmentRef.fromJson(original.toJson());
+      expect(back, isA<NoteVoiceRef>());
+      final read = back! as NoteVoiceRef;
+      expect(read.durationMs, 5000);
+      expect(read.mime, 'audio/mp4');
+      expect(read.transcript!.segments.single.t, 'hello');
+      expect(read, original);
+    });
+
+    test('a ref with no kind is still an image, as every stored note has', () {
+      final json = ref(0).toJson();
+      expect(json.containsKey('kind'), isFalse);
+      expect(NoteAttachmentRef.fromJson(json), isA<NoteImageRef>());
+    });
+
+    test('a voice ref with no duration is refused', () {
+      final json = voice(0).toJson()..remove('durationMs');
+      expect(NoteAttachmentRef.fromJson(json), isNull);
+    });
+
+    test('a broken transcript is dropped; the recording is not', () {
+      final json = voice(0).toJson()..['transcript'] = {'lang': 'en'};
+      final back = NoteAttachmentRef.fromJson(json)! as NoteVoiceRef;
+      expect(back.transcript, isNull);
+      expect(back.durationMs, 5000);
+    });
+
+    test('peaks survive only at exactly 100 bytes', () {
+      final json = voice(0).toJson();
+      json['peaks'] = base64.encode(Uint8List(100));
+      expect((NoteAttachmentRef.fromJson(json)! as NoteVoiceRef).peaks, hasLength(100));
+      json['peaks'] = base64.encode(Uint8List(64));
+      expect((NoteAttachmentRef.fromJson(json)! as NoteVoiceRef).peaks, isNull);
+    });
+
+    test('an unknown kind survives toJson byte for byte, rebased', () {
+      // The whole promise of the sealed hierarchy: an older build must be able
+      // to open, edit and push a note full of things it cannot draw.
+      final raw = <String, Object?>{
+        'kind': 'chart',
+        'offset': 0,
+        'hash': 'c',
+        'key': base64.encode(Uint8List(32)),
+        'mime': 'application/x-kapy-chart',
+        'bytes': 12,
+        'series': [1, 2, 3],
+        'palette': {'from': '#fff', 'to': '#000'},
+      };
+      final parsed = NoteAttachmentRef.fromJson(raw);
+      expect(parsed, isA<NoteUnknownRef>());
+
+      final moved = parsed!.copyWith(offset: 4);
+      final out = moved.toJson();
+      expect(out['offset'], 4);
+      expect(out['series'], [1, 2, 3]);
+      expect(out['palette'], {'from': '#fff', 'to': '#000'});
+      expect({...out}..remove('offset'), {...raw}..remove('offset'));
+    });
+
+    test('an unknown kind missing the shared fields is still refused', () {
+      expect(
+        NoteAttachmentRef.fromJson({'kind': 'chart', 'offset': 0, 'hash': 'c'}),
+        isNull,
+      );
+    });
+
+    test('a mixed list rebases across three adjacent placeholders', () {
+      final refs = <NoteAttachmentRef>[
+        ref(0, hash: 'i'),
+        voice(1),
+        NoteAttachmentRef.fromJson({
+          'kind': 'chart',
+          'offset': 2,
+          'hash': 'c',
+          'key': base64.encode(Uint8List(32)),
+          'mime': 'x/y',
+        })!,
+      ];
+      // Delete the middle one with the caret saying so.
+      final after = rebaseNoteAttachments(
+        oldText: '$anchor$anchor$anchor',
+        newText: '$anchor$anchor',
+        attachments: refs,
+        selectionStart: 1,
+        selectionEnd: 2,
+      );
+      expect(after.map((r) => r.hash), ['i', 'c']);
+      expect(after.map((r) => r.offset), [0, 1]);
+    });
+
+    test('comparing voice refs is constant in the size of the transcript', () {
+      // Every keystroke rebases the attachment list and compares the result
+      // against the old one to decide whether the note is dirty. If this
+      // walked the segments, typing into a note holding a long recording would
+      // stutter — so the guard is a real measurement, not a comment.
+      //
+      // Measured as a ratio between a tiny transcript and a huge one, both
+      // timed in the same run: an absolute duration would only be measuring
+      // how loaded the machine is when the whole suite runs in parallel.
+      VoiceTranscript transcript(int segments) => VoiceTranscript(
+        lang: 'en',
+        engine: 'e',
+        at: 1,
+        segments: [
+          for (var i = 0; i < segments; i++)
+            TranscriptSegment(s: i, e: i + 1, t: 'word $i'),
+        ],
+      );
+
+      Duration timeComparing(int segments) {
+        final a = voice(0, transcript: transcript(segments));
+        final b = voice(0, transcript: transcript(segments));
+        for (var i = 0; i < 1000; i++) {
+          a == b; // warm up, so the first run is not the one being measured
+        }
+        final watch = Stopwatch()..start();
+        for (var i = 0; i < 20000; i++) {
+          if (!(a == b)) fail('refs that are equal compared unequal');
+        }
+        return watch.elapsed;
+      }
+
+      final small = timeComparing(1).inMicroseconds;
+      final large = timeComparing(100000).inMicroseconds;
+      // Content comparison would be five orders of magnitude apart here, so a
+      // generous bound still catches the only regression that matters.
+      expect(large / (small == 0 ? 1 : small), lessThan(5),
+          reason: 'small=${small}us large=${large}us');
+    });
+  });
 }
+

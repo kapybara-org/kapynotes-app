@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../crdt/crdt.dart';
+import '../data/note_attachment.dart';
 import '../data/note.dart';
 import '../data/notes_store.dart';
 import '../data/tombstone.dart';
@@ -512,7 +513,22 @@ class SyncService extends ChangeNotifier {
     try {
       final uploaded = await images.upload(note);
       if (!identical(uploaded, note)) {
-        _notes.adoptAttachments(note.id, uploaded.attachments);
+        // One ref at a time, against the note as it is *now*. The upload may
+        // have taken a while, and the user may have been typing throughout.
+        for (final ref in uploaded.attachments) {
+          if (ref.attachmentId == null) continue;
+          _notes.updateAttachment(note.id, ref.hash, (current) {
+            // A picture minted two ids, and both have to land or the preview
+            // is orphaned on the server and re-uploaded on every sync.
+            if (current is NoteImageRef && ref is NoteImageRef) {
+              return current.copyWith(
+                attachmentId: ref.attachmentId,
+                thumbId: ref.thumbId,
+              );
+            }
+            return current.copyWith(attachmentId: ref.attachmentId);
+          });
+        }
       }
       _scheduleReconcile();
     } on SyncException catch (error) {

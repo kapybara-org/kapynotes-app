@@ -11,7 +11,7 @@ const anchor = NoteAttachmentRef.placeholder;
 Uint8List picture(int seed) =>
     Uint8List.fromList(List.generate(512, (i) => (i * 7 + seed) & 0xFF));
 
-NoteAttachmentRef ref(int offset, String hash) => NoteAttachmentRef(
+NoteAttachmentRef ref(int offset, String hash) => NoteImageRef(
   offset: offset,
   hash: hash,
   key: Uint8List(32),
@@ -65,7 +65,7 @@ void main() {
 
     expect(read.handEdited, isFalse);
     expect(read.note.body, note.body);
-    final restored = read.note.attachments.single;
+    final restored = read.note.attachments.single as NoteImageRef;
     expect(restored.hash, hash);
     expect(restored.offset, 7);
     expect(restored.width, 640);

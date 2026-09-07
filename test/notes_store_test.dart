@@ -1,5 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'dart:typed_data';
+
+import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 
@@ -95,4 +98,95 @@ void main() {
     await restored.load();
     expect(restored.notes.single.formats, formats);
   });
+
+  group('updateAttachment', () {
+    const anchor = NoteAttachmentRef.placeholder;
+
+    NoteImageRef picture({String? attachmentId}) => NoteImageRef(
+      offset: 0,
+      hash: 'pic',
+      key: Uint8List(32),
+      mime: 'image/png',
+      width: 4,
+      height: 3,
+      bytes: 12,
+      attachmentId: attachmentId,
+    );
+
+    Future<NotesStore> seeded() async {
+      final store = NotesStore(_MemoryStore());
+      await store.load();
+      final note = store.create();
+      store.updateDocument(note.id, '$anchor Notes', const [], [picture()]);
+      return store;
+    }
+
+    test('learning a server id is not an edit', () async {
+      final store = await seeded();
+      final before = store.notes.single.updatedAt;
+
+      final ok = store.updateAttachment(
+        store.notes.single.id,
+        'pic',
+        (ref) => ref.copyWith(attachmentId: 'server-1'),
+      );
+
+      expect(ok, isTrue);
+      expect(store.notes.single.attachments.single.attachmentId, 'server-1');
+      expect(store.notes.single.updatedAt, before);
+    });
+
+    test('a transcript is an edit, and does not reorder the list', () async {
+      final store = await seeded();
+      final first = store.notes.single.id;
+      final second = store.create().id;
+      final before = store.byId(first)!.updatedAt;
+
+      final ok = store.updateAttachment(
+        first,
+        'pic',
+        (ref) => ref.copyWith(attachmentId: 'server-1'),
+        touch: true,
+      );
+
+      expect(ok, isTrue);
+      expect(store.byId(first)!.updatedAt.isAfter(before), isTrue);
+      // Bumped, but still where it was: a transcript arriving must not shuffle
+      // the sidebar under someone who is reading it.
+      expect(store.notes.first.id, second);
+    });
+
+    test('a write racing an edit keeps both', () async {
+      final store = await seeded();
+      final id = store.notes.single.id;
+
+      // The user types while an upload is in flight.
+      store.updateDocument(id, '$anchor Notes, edited', const [], [picture()]);
+      // ...and the upload lands afterwards, holding a stale snapshot.
+      store.updateAttachment(id, 'pic', (ref) => ref.copyWith(attachmentId: 'server-1'));
+
+      expect(store.byId(id)!.body, '$anchor Notes, edited');
+      expect(store.byId(id)!.attachments.single.attachmentId, 'server-1');
+    });
+
+    test('a note or a hash that is gone is not an error', () async {
+      final store = await seeded();
+      final id = store.notes.single.id;
+      NoteAttachmentRef keep(NoteAttachmentRef ref) => ref;
+
+      expect(store.updateAttachment('no-such-note', 'pic', keep), isFalse);
+      expect(store.updateAttachment(id, 'no-such-hash', keep), isFalse);
+    });
+  });
+
+  group('title', () {
+    test('a line holding only an attachment is not the title', () {
+      const anchor = NoteAttachmentRef.placeholder;
+      final store = NotesStore(_MemoryStore());
+      final note = store.create();
+      store.updateDocument(note.id, '$anchor\nGroceries', const [], const []);
+      expect(store.byId(note.id)!.title, 'Groceries');
+    });
+  });
 }
+

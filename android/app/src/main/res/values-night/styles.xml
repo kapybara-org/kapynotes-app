@@ -15,4 +15,7 @@
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">@color/launch_background</item>
     </style>
+    <style name="WidgetConfigureTheme" parent="@android:style/Theme.DeviceDefault.Dialog">
+        <item name="android:windowNoTitle">true</item>
+    </style>
 </resources>

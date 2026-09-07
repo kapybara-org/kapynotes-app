@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One cell. The widget is an action, not a panel, so it does not resize.
+     It does configure: which of the three actions it performs is the only
+     thing about it there is to choose, and `configuration_optional` means
+     choosing is optional — a widget dropped on the Home Screen is a Write
+     widget straight away, and `reconfigurable` is how it is changed later.
+     Both are Android 12 and up; below that the choice is made on placement.
+
+     `keyguard` offers it to the lock screen on the Android versions that host
+     widgets there; elsewhere the value is ignored. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configure="com.kapybara.kapynotes.QuickActionConfigureActivity"
+    android:description="@string/widget_quick_action_description"
+    android:initialLayout="@layout/widget_quick_action"
+    android:minHeight="57dp"
+    android:minWidth="57dp"
+    android:previewLayout="@layout/widget_quick_action"
+    android:resizeMode="none"
+    android:targetCellHeight="1"
+    android:targetCellWidth="1"
+    android:widgetCategory="home_screen|keyguard"
+    android:widgetFeatures="reconfigurable|configuration_optional" />

@@ -24,7 +24,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.kapybara.kapynotes.write</string>
+			<string>com.kapybara.kapynotes.quick-action</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>kapynotes</string>

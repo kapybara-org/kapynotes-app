@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/notes_store.dart';
-import '../images/image_store.dart';
+import '../data/blob_store.dart';
 import 'aead.dart';
 import 'sealed_box.dart';
 import 'sync_api.dart';
@@ -21,14 +21,14 @@ import 'sync_api.dart';
 class ImageSync {
   ImageSync({
     required SyncApi api,
-    required ImageStore store,
+    required BlobStore store,
     required NotesStore notes,
   }) : _api = api,
        _store = store,
        _notes = notes;
 
   final SyncApi _api;
-  final ImageStore _store;
+  final BlobStore _store;
   final NotesStore _notes;
 
   /// Hashes currently being fetched, so ten images in one note that all point
@@ -66,11 +66,16 @@ class ImageSync {
       final id = await _put(note, ref.hash, ref.key);
       if (id == null) return null;
 
-      String? thumbId;
-      if (ref.thumbHash != null) {
-        thumbId = await _put(note, ref.thumbHash!, ref.key);
+      // Only a picture has a second object to upload. Every other kind is one
+      // blob, and uploads by the same path.
+      if (ref is NoteImageRef) {
+        String? thumbId;
+        if (ref.thumbHash != null) {
+          thumbId = await _put(note, ref.thumbHash!, ref.key);
+        }
+        return ref.copyWith(attachmentId: id, thumbId: thumbId);
       }
-      return ref.copyWith(attachmentId: id, thumbId: thumbId);
+      return ref.copyWith(attachmentId: id);
     } catch (error) {
       // Quota refusals land here too, and are the ordinary reason an upload
       // does not happen. The note still syncs; the picture waits.
@@ -141,7 +146,7 @@ class ImageSync {
       }
       // Verified by construction: the store addresses by content, so writing
       // it back under a hash that did not match would be caught immediately.
-      if (ImageStore.hashOf(plaintext) != hash) {
+      if (BlobStore.hashOf(plaintext) != hash) {
         debugPrint('KapyNotes: image $hash did not match its address');
         return null;
       }
@@ -162,7 +167,9 @@ class ImageSync {
         if (ref.hash == hash && ref.attachmentId != null) {
           return (id: ref.attachmentId!, key: ref.key);
         }
-        if (ref.thumbHash == hash && ref.thumbId != null) {
+        if (ref is NoteImageRef &&
+            ref.thumbHash == hash &&
+            ref.thumbId != null) {
           return (id: ref.thumbId!, key: ref.key);
         }
       }

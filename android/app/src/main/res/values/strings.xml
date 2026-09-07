@@ -1,7 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Names the widget in the picker, and the one word it shows. -->
-    <string name="widget_write_note_label">Write</string>
-    <string name="widget_write_note_action">Write</string>
-    <string name="widget_write_note_description">Carry on the note you were writing, ready to type.</string>
+    <!-- The one word each widget surface shows, and the name of the action
+         everywhere it is offered. -->
+    <string name="widget_action_write">Write</string>
+    <string name="widget_action_dictate">Dictate</string>
+    <string name="widget_action_capture">Capture</string>
+
+    <!-- How the two widgets name and describe themselves in the picker. -->
+    <string name="widget_quick_action_label">Quick Action</string>
+    <string name="widget_quick_action_description">Write, dictate or capture, straight into the note you were writing.</string>
+    <string name="widget_quick_actions_label">Write, Dictate, Capture</string>
+    <string name="widget_quick_actions_description">All three, one tap each, into the note you were writing.</string>
+
+    <!-- Asked when a square widget is placed, and whenever it is changed. -->
+    <string name="widget_configure_title">What should this widget do?</string>
 </resources>

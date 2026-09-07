@@ -15,4 +15,10 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">@color/launch_background</item>
     </style>
+    <!-- The widget configuration screen. A dialog over the launcher rather
+         than a window of the app, and titled by its own layout rather than by
+         the window, so it reads as a question the Home Screen asked. -->
+    <style name="WidgetConfigureTheme" parent="@android:style/Theme.DeviceDefault.Light.Dialog">
+        <item name="android:windowNoTitle">true</item>
+    </style>
 </resources>

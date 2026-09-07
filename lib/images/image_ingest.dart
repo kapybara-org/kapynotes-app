@@ -7,7 +7,7 @@ import 'package:image/image.dart' as img;
 import '../data/note_attachment.dart';
 import '../sync/aead.dart';
 import 'image_codec.dart';
-import 'image_store.dart';
+import '../data/blob_store.dart';
 
 /// Largest file accepted from disk, before compression.
 ///
@@ -60,7 +60,7 @@ class ImageIngestResult {
 Future<ImageIngestResult> ingestImage({
   required Uint8List source,
   required String sourceMime,
-  required ImageStore store,
+  required BlobStore store,
 }) async {
   if (source.isEmpty) {
     return const ImageIngestResult.rejected(ImageRejection.empty);
@@ -91,7 +91,7 @@ Future<ImageIngestResult> ingestImage({
 
   return ImageIngestResult.ok(
     IngestedImage(
-      ref: NoteAttachmentRef(
+      ref: NoteImageRef(
         offset: 0,
         hash: hash,
         key: randomKey(),

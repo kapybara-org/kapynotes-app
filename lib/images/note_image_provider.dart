@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
-import 'image_store.dart';
+import '../data/blob_store.dart';
 
 /// Identifies one image by its content, and nothing else.
 ///
@@ -48,7 +48,7 @@ class NoteImageProvider extends ImageProvider<NoteImageKey> {
   });
 
   final String hash;
-  final ImageStore store;
+  final BlobStore store;
   final NoteImageFetcher? fetch;
   final double scale;
 

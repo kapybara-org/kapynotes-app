@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="20dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="8dp"
+        android:text="@string/widget_configure_title"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="20sp" />
+
+    <include
+        android:id="@+id/quick_action_choice_write"
+        layout="@layout/quick_action_row" />
+
+    <include
+        android:id="@+id/quick_action_choice_dictate"
+        layout="@layout/quick_action_row" />
+
+    <include
+        android:id="@+id/quick_action_choice_capture"
+        layout="@layout/quick_action_row" />
+</LinearLayout>

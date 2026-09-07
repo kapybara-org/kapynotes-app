@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/desktop_integration.dart';
 import '../core/platform.dart';
+import '../core/quick_capture.dart';
 import '../core/theme.dart';
 import '../data/engine_provider.dart';
 import '../data/layout_prefs.dart';
@@ -45,6 +46,7 @@ class HomePage extends StatefulWidget {
     this.account,
     required this.store,
     this.welcomeNoteId,
+    this.launchIntent = LaunchIntent.open,
   });
 
   /// Kapy settles into sleep after a full minute without local interaction.
@@ -62,6 +64,14 @@ class HomePage extends StatefulWidget {
 
   /// The welcome note seeded by this launch, if this launch seeded one.
   final String? welcomeNoteId;
+
+  /// Which widget this launch came through, if it came through one.
+  ///
+  /// The note it opens onto has already been chosen by the time this page is
+  /// built — see [QuickCapture.file]. What is left is the rest of the action:
+  /// Capture opens the picker, Dictate starts recording, Write is already
+  /// done by being here.
+  final LaunchIntent launchIntent;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -128,6 +138,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!mounted) return;
       _armKapyIdleTimer();
       _reactToSelectedTotal();
+      // After the frame, because the action is performed on the editor and
+      // the editor is what that frame just built.
+      unawaited(_runWidgetAction(widget.launchIntent));
     });
   }
 
@@ -148,6 +161,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _recordKapyActivity();
       _beginOpenSession();
+      // A widget tapped while the app was already running. The platform has
+      // been holding that fact since the intent or the URL arrived, and gives
+      // it up once, to whoever asks first — so asking on every resume costs
+      // an ordinary resume one unanswered question and nothing else.
+      unawaited(QuickCapture.launchIntent().then(_runWidgetAction));
     } else {
       _kapyIdleTimer?.cancel();
     }
@@ -168,12 +186,44 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _openSessionScheduled = false;
       if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
-      final editor = _usesCompactLayout
-          ? _compactEditorKey.currentState
-          : _wideEditorKey.currentState;
-      editor?.beginAppendSession();
+      _selectedEditor?.beginAppendSession();
     });
   }
+
+  /// The half of a widget tap that is not the note it opened.
+  ///
+  /// The note is already chosen and on screen: Write wanted nothing more than
+  /// that. Capture and Dictate are each one thing done *in* that note, and on
+  /// a tap that arrives while the app is already open that note is simply the
+  /// one being read — the same note the widget would have opened.
+  Future<void> _runWidgetAction(LaunchIntent intent) async {
+    if (!mounted) return;
+    switch (intent) {
+      case LaunchIntent.open:
+      case LaunchIntent.continueWriting:
+        return;
+      case LaunchIntent.capture:
+        await _selectedEditor?.pickAndInsertImages();
+      case LaunchIntent.dictate:
+        await _startVoiceRecording();
+    }
+  }
+
+  /// Dictate, once there is a recorder to start.
+  ///
+  /// Voice notes are specified but not built — `docs/voice-notes.md` in the
+  /// monorepo, Phase 1 — and this is the single place the widget reaches
+  /// them from, alongside the mic button and the shortcut that will land with
+  /// them. Until then a Dictate tap is a Write tap: the note is open, at the
+  /// end, with the keyboard up, which is the part of dictating the phone's
+  /// own keyboard can already finish.
+  Future<void> _startVoiceRecording() async {}
+
+  /// The editor the user is actually looking at, of the two this page keeps
+  /// keys for. Only one of them is mounted at a time.
+  NoteEditorState? get _selectedEditor => _usesCompactLayout
+      ? _compactEditorKey.currentState
+      : _wideEditorKey.currentState;
 
   void _onNotesChanged() {
     _reconcileSelection();
@@ -668,7 +718,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           writingFont: widget.prefs.writingFont,
           shortcuts: widget.shortcuts,
           initialAttachments: note.attachments,
-          images: widget.notes.images,
+          images: widget.notes.blobs,
           imageFetch: widget.account?.imageFetch,
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
@@ -714,7 +764,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           writingFont: widget.prefs.writingFont,
           shortcuts: widget.shortcuts,
           initialAttachments: note.attachments,
-          images: widget.notes.images,
+          images: widget.notes.blobs,
           imageFetch: widget.account?.imageFetch,
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),

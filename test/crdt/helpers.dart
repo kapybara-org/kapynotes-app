@@ -22,7 +22,7 @@ NoteFormatRange bold(int start, int end) =>
     NoteFormatRange(start: start, end: end, format: NoteFormat.bold);
 
 NoteAttachmentRef image(int offset, {String hash = 'abc'}) =>
-    NoteAttachmentRef(
+    NoteImageRef(
       offset: offset,
       hash: hash,
       key: Uint8List(32),

@@ -1,58 +1,49 @@
 import AppIntents
 import SwiftUI
-import UIKit
 import WidgetKit
 
-/// What every surface here opens. The app reads it as "carry on writing"
-/// rather than "new note" — see QuickCapture.swift in the Runner target.
-private let writeURL = URL(string: "kapynotes://write")!
-
-/// The paper and ink of the editor this opens onto, so the tap looks like the
-/// app unfolding rather than replacing something else. Matches
-/// InstantCaptureApp in lib/ui/instant_capture.dart.
-private let paper = Color(
-  uiColor: UIColor { traits in
-    traits.userInterfaceStyle == .dark
-      ? UIColor(red: 0.141, green: 0.125, blue: 0.094, alpha: 1)
-      : UIColor(red: 0.969, green: 0.941, blue: 0.871, alpha: 1)
-  })
-
-private let ink = Color(
-  uiColor: UIColor { traits in
-    traits.userInterfaceStyle == .dark
-      ? UIColor(red: 0.929, green: 0.886, blue: 0.792, alpha: 1)
-      : UIColor(red: 0.149, green: 0.212, blue: 0.290, alpha: 1)
-  })
-
-struct WriteNoteEntry: TimelineEntry {
-  let date: Date
-}
-
-/// Nothing on this widget changes, so nothing about it needs refreshing.
+/// The square widget: one action, chosen by whoever placed it.
+///
+/// Nothing on it changes, so nothing about it needs refreshing — the only
+/// thing that can change is which action it is, and that is a configuration,
+/// not a timeline.
 ///
 /// Showing no note text is the deliberate part. A preview of what somebody
 /// wrote would have to be shared out of the app, kept current against a
 /// refresh budget, and shown on a locked phone to whoever is holding it. The
 /// action alone costs none of that.
-struct WriteNoteProvider: TimelineProvider {
-  func placeholder(in context: Context) -> WriteNoteEntry {
-    WriteNoteEntry(date: .now)
+struct QuickActionEntry: TimelineEntry {
+  let date: Date
+  let action: QuickAction
+}
+
+struct QuickActionProvider: AppIntentTimelineProvider {
+  func placeholder(in context: Context) -> QuickActionEntry {
+    QuickActionEntry(date: .now, action: .write)
   }
 
-  func getSnapshot(in context: Context, completion: @escaping (WriteNoteEntry) -> Void) {
-    completion(WriteNoteEntry(date: .now))
+  func snapshot(for configuration: SelectQuickActionIntent, in context: Context) async
+    -> QuickActionEntry
+  {
+    QuickActionEntry(date: .now, action: configuration.action.action)
   }
 
-  func getTimeline(in context: Context, completion: @escaping (Timeline<WriteNoteEntry>) -> Void) {
-    completion(Timeline(entries: [WriteNoteEntry(date: .now)], policy: .never))
+  func timeline(for configuration: SelectQuickActionIntent, in context: Context) async
+    -> Timeline<QuickActionEntry>
+  {
+    Timeline(
+      entries: [QuickActionEntry(date: .now, action: configuration.action.action)],
+      policy: .never)
   }
 }
 
-struct WriteNoteView: View {
+struct QuickActionView: View {
   @Environment(\.widgetFamily) private var family
 
+  let action: QuickAction
+
   var body: some View {
-    content.widgetURL(writeURL)
+    content.widgetURL(action.url)
   }
 
   @ViewBuilder private var content: some View {
@@ -62,15 +53,15 @@ struct WriteNoteView: View {
     case .accessoryCircular:
       ZStack {
         AccessoryWidgetBackground()
-        Image(systemName: "square.and.pencil")
+        Image(systemName: action.symbol)
           .font(.system(size: 20, weight: .medium))
       }
       .containerBackground(.clear, for: .widget)
 
     case .accessoryRectangular:
       HStack(spacing: 6) {
-        Image(systemName: "square.and.pencil")
-        Text("Write")
+        Image(systemName: action.symbol)
+        Text(action.title)
           .font(.headline)
         Spacer(minLength: 0)
       }
@@ -78,9 +69,9 @@ struct WriteNoteView: View {
 
     default:
       VStack(spacing: 8) {
-        Image(systemName: "square.and.pencil")
+        Image(systemName: action.symbol)
           .font(.system(size: 30, weight: .regular))
-        Text("Write")
+        Text(action.title)
           .font(.system(size: 16, weight: .semibold, design: .rounded))
       }
       .foregroundStyle(ink)
@@ -89,33 +80,66 @@ struct WriteNoteView: View {
   }
 }
 
+/// Configurable since 1.14. The kind is the one this widget shipped with as
+/// Write-only, and must stay that way: it is the identity the Home Screen
+/// files an already-placed widget under, and changing it would leave those
+/// widgets behind. The intent's default is Write for the same reason.
 struct WriteNoteWidget: Widget {
   var body: some WidgetConfiguration {
-    StaticConfiguration(
+    AppIntentConfiguration(
       kind: "com.kapybara.kapynotes.write-note",
-      provider: WriteNoteProvider()
-    ) { _ in
-      WriteNoteView()
+      intent: SelectQuickActionIntent.self,
+      provider: QuickActionProvider()
+    ) { entry in
+      QuickActionView(action: entry.action)
     }
-    .configurationDisplayName("Write")
-    .description("Carry on the note you were writing, ready to type.")
+    .configurationDisplayName("Quick Action")
+    .description("Write, dictate or capture. Long-press to choose which.")
     .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular])
   }
 }
 
-/// The same action as a control: offered in Control Centre, as a Lock Screen
-/// button, and on the Action button. `OpenURLIntent` carries the URL through,
-/// so a control reaches the app saying the same thing the widget does.
+/// The same three actions as controls: offered in Control Centre, as Lock
+/// Screen buttons, and on the Action button. `OpenURLIntent` carries the URL
+/// through, so a control reaches the app saying what a widget would have said.
 @available(iOS 18.0, *)
 struct WriteNoteControl: ControlWidget {
   var body: some ControlWidgetConfiguration {
+    // The kind this control shipped with, kept for the same reason the
+    // widget's is.
     StaticControlConfiguration(kind: "com.kapybara.kapynotes.write-control") {
-      ControlWidgetButton(action: OpenURLIntent(writeURL)) {
-        Label("Write", systemImage: "square.and.pencil")
+      ControlWidgetButton(action: OpenURLIntent(QuickAction.write.url)) {
+        Label(QuickAction.write.title, systemImage: QuickAction.write.symbol)
       }
     }
     .displayName("Write")
-    .description("Carry on the note you were writing.")
+    .description(QuickAction.write.summary)
+  }
+}
+
+@available(iOS 18.0, *)
+struct DictateControl: ControlWidget {
+  var body: some ControlWidgetConfiguration {
+    StaticControlConfiguration(kind: "com.kapybara.kapynotes.dictate-control") {
+      ControlWidgetButton(action: OpenURLIntent(QuickAction.dictate.url)) {
+        Label(QuickAction.dictate.title, systemImage: QuickAction.dictate.symbol)
+      }
+    }
+    .displayName("Dictate")
+    .description(QuickAction.dictate.summary)
+  }
+}
+
+@available(iOS 18.0, *)
+struct CaptureControl: ControlWidget {
+  var body: some ControlWidgetConfiguration {
+    StaticControlConfiguration(kind: "com.kapybara.kapynotes.capture-control") {
+      ControlWidgetButton(action: OpenURLIntent(QuickAction.capture.url)) {
+        Label(QuickAction.capture.title, systemImage: QuickAction.capture.symbol)
+      }
+    }
+    .displayName("Capture")
+    .description(QuickAction.capture.summary)
   }
 }
 
@@ -123,8 +147,11 @@ struct WriteNoteControl: ControlWidget {
 struct WriteNoteWidgetBundle: WidgetBundle {
   var body: some Widget {
     WriteNoteWidget()
+    QuickActionsWidget()
     if #available(iOS 18.0, *) {
       WriteNoteControl()
+      DictateControl()
+      CaptureControl()
     }
   }
 }

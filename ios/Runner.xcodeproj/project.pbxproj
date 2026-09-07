@@ -10,6 +10,8 @@
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		A1B2C0D000000000000000C2 /* QuickCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000C1 /* QuickCapture.swift */; };
 		A1B2C0D000000000000000A4 /* WriteNoteWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000A2 /* WriteNoteWidget.swift */; };
+		A1B2C0D000000000000000D2 /* QuickAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000D1 /* QuickAction.swift */; };
+		A1B2C0D000000000000000D4 /* QuickActionsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000D3 /* QuickActionsWidget.swift */; };
 		A1B2C0D000000000000000A5 /* WriteNoteWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000A1 /* WriteNoteWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
@@ -85,6 +87,8 @@
 		A1B2C0D000000000000000C1 /* QuickCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCapture.swift; sourceTree = "<group>"; };
 		A1B2C0D000000000000000A1 /* WriteNoteWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WriteNoteWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C0D000000000000000A2 /* WriteNoteWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WriteNoteWidget.swift; sourceTree = "<group>"; };
+		A1B2C0D000000000000000D1 /* QuickAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickAction.swift; sourceTree = "<group>"; };
+		A1B2C0D000000000000000D3 /* QuickActionsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionsWidget.swift; sourceTree = "<group>"; };
 		A1B2C0D000000000000000A3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -169,7 +173,9 @@
 		A1B2C0D000000000000000A6 /* WriteNoteWidget */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C0D000000000000000D1 /* QuickAction.swift */,
 				A1B2C0D000000000000000A2 /* WriteNoteWidget.swift */,
+				A1B2C0D000000000000000D3 /* QuickActionsWidget.swift */,
 				A1B2C0D000000000000000A3 /* Info.plist */,
 			);
 			path = WriteNoteWidget;
@@ -370,7 +376,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C0D000000000000000D2 /* QuickAction.swift in Sources */,
 				A1B2C0D000000000000000A4 /* WriteNoteWidget.swift in Sources */,
+				A1B2C0D000000000000000D4 /* QuickActionsWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

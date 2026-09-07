@@ -306,7 +306,7 @@ class Account extends ChangeNotifier {
       store: _store,
       trust: trust,
     );
-    final images = ImageSync(api: api, store: _notes.images, notes: _notes);
+    final images = ImageSync(api: api, store: _notes.blobs, notes: _notes);
     // The replica id every character this device writes is stamped with.
     // Twelve hex digits of the install id: stable for the life of the
     // install, and short enough to ride in every op without weighing on it.

@@ -201,9 +201,17 @@ class Note {
     return null;
   }
 
+  /// The first line with words on it, with attachment anchors taken out.
+  ///
+  /// A line holding nothing but a picture or a recording is not a title. It
+  /// has to be skipped explicitly because U+FFFC is not whitespace, so `trim`
+  /// keeps it: without this, a note that opens with a photo is listed under an
+  /// invisible character, and one that is *only* a recording is titled with a
+  /// box glyph in every sidebar it appears in.
   String? _firstNonEmptyLine() {
     for (final line in body.split('\n')) {
-      if (line.trim().isNotEmpty) return line;
+      final text = line.replaceAll(NoteAttachmentRef.placeholder, '');
+      if (text.trim().isNotEmpty) return text;
     }
     return null;
   }

@@ -33,7 +33,7 @@ import 'package:file_selector/file_selector.dart';
 import '../../images/image_clipboard.dart';
 import '../../images/image_ingest.dart';
 import '../../images/image_picker.dart';
-import '../../images/image_store.dart';
+import '../../data/blob_store.dart';
 import '../../images/note_image_provider.dart';
 import 'image_drop_target.dart';
 import 'image_insertion.dart';
@@ -97,7 +97,7 @@ class NoteEditor extends StatefulWidget {
 
   /// Where image bytes are read from. Null in the handful of tests that build
   /// an editor with no images in it.
-  final ImageStore? images;
+  final BlobStore? images;
 
   /// Fetches bytes for an image that arrived by sync but has not downloaded.
   final NoteImageFetcher? imageFetch;
@@ -180,6 +180,22 @@ class NoteEditorState extends State<NoteEditor> {
   /// land, so it says so rather than leaving the change handler to infer it
   /// from a diff that cannot tell one placeholder from another.
   List<NoteAttachmentRef>? _nextAttachments;
+
+  /// Attachments a recent edit took out, kept so Undo can put them back.
+  ///
+  /// Removing a picture is a text edit — the placeholder goes, and the ref
+  /// falls away with its anchor. Undo restores the character but has nothing
+  /// to restore the ref from, so what comes back is an orphan U+FFFC that
+  /// renders as nothing and is stripped on the next load. The picture is gone,
+  /// and the user watched their Undo appear to work.
+  ///
+  /// The match is deliberately an equality on the whole prior text rather than
+  /// a heuristic: Undo restores exactly the text that was there, so anything
+  /// less exact would risk reattaching a picture into a note the user has
+  /// since retyped.
+  final List<({String textBefore, NoteAttachmentRef ref})> _removedRefs = [];
+  static const int _maxRemovedRefs = 20;
+
   bool _isEmpty = true;
 
   @override
@@ -486,7 +502,7 @@ class NoteEditorState extends State<NoteEditor> {
     }
     final forcedAttachments = _nextAttachments;
     _nextAttachments = null;
-    final updatedAttachments =
+    var updatedAttachments =
         forcedAttachments ??
         rebaseNoteAttachments(
           oldText: previous.text,
@@ -499,6 +515,8 @@ class NoteEditorState extends State<NoteEditor> {
               ? previous.selection.end
               : null,
         );
+    _rememberDropped(previous.text, _attachments, updatedAttachments);
+    updatedAttachments = _restoreUndone(value.text, updatedAttachments);
     var updatedFormats = rebaseNoteFormats(
       oldText: previous.text,
       newText: value.text,
@@ -531,6 +549,65 @@ class NoteEditorState extends State<NoteEditor> {
       _evaluate();
     });
     widget.onDocumentChanged(value.text, updatedFormats, updatedAttachments);
+  }
+
+  /// Records refs this edit took out, against the text they were taken from.
+  ///
+  /// Covers every way an attachment can go — the Remove menu item, a backspace
+  /// over the placeholder, a selection replaced, a paste over it — because all
+  /// of them arrive here as a shorter attachment list.
+  void _rememberDropped(
+    String textBefore,
+    List<NoteAttachmentRef> before,
+    List<NoteAttachmentRef> after,
+  ) {
+    if (before.length <= after.length) return;
+
+    // Survivors are consumed by hash, so a note holding the same picture twice
+    // records one removal rather than two. Which of the two copies it names
+    // may be wrong, and that is safe: a wrong offset simply fails to match on
+    // Undo and falls back to the old behaviour. It never restores the wrong
+    // attachment, because the offset has to match exactly.
+    final survivors = <String, int>{};
+    for (final ref in after) {
+      survivors[ref.hash] = (survivors[ref.hash] ?? 0) + 1;
+    }
+    for (final ref in before) {
+      final left = survivors[ref.hash] ?? 0;
+      if (left > 0) {
+        survivors[ref.hash] = left - 1;
+        continue;
+      }
+      _removedRefs.add((textBefore: textBefore, ref: ref));
+    }
+    while (_removedRefs.length > _maxRemovedRefs) {
+      _removedRefs.removeAt(0);
+    }
+  }
+
+  /// Reattaches anything an Undo just brought the placeholder back for.
+  ///
+  /// Redo removes it again by the ordinary rebase, which pushes it back onto
+  /// [_removedRefs] — so the pair keeps working however many times it is used.
+  List<NoteAttachmentRef> _restoreUndone(
+    String text,
+    List<NoteAttachmentRef> attachments,
+  ) {
+    if (_removedRefs.isEmpty) return attachments;
+    final orphans = orphanedAttachmentAnchors(text, attachments);
+    if (orphans.isEmpty) return attachments;
+
+    final restored = [...attachments];
+    var changed = false;
+    for (final offset in orphans) {
+      final index = _removedRefs.lastIndexWhere(
+        (entry) => entry.ref.offset == offset && entry.textBefore == text,
+      );
+      if (index < 0) continue;
+      restored.add(_removedRefs.removeAt(index).ref);
+      changed = true;
+    }
+    return changed ? normalizeNoteAttachments(restored, text) : attachments;
   }
 
   bool _formatActive(NoteFormat format) =>
@@ -726,7 +803,9 @@ class NoteEditorState extends State<NoteEditor> {
     var changed = false;
     final resized = [
       for (final ref in _attachments)
-        if (ref.offset == offset && ref.widthFactor != factor)
+        if (ref is NoteImageRef &&
+            ref.offset == offset &&
+            ref.widthFactor != factor)
           (() {
             changed = true;
             return ref.copyWith(widthFactor: factor);
@@ -1257,7 +1336,7 @@ class NoteEditorState extends State<NoteEditor> {
   /// holding several becomes a gallery of equal tiles that wrap — which is
   /// what the text engine does with adjacent inline widgets anyway, so the
   /// grid costs no layout code of its own.
-  Map<int, NoteImageSpan> _buildImageSpans(
+  Map<int, NoteImageSpan> _buildAttachmentSpans(
     double columnWidth,
     double viewportHeight,
   ) {
@@ -1273,6 +1352,18 @@ class NoteEditorState extends State<NoteEditor> {
 
     final spans = <int, NoteImageSpan>{};
     for (final ref in _attachments) {
+      // Every kind must be answered for. A ref this build cannot draw still
+      // occupies a placeholder, and leaving it out of the span map would leave
+      // the text engine rendering a bare U+FFFC — an invisible character the
+      // caret can land inside — where a newer build shows an attachment.
+      if (ref is! NoteImageRef) {
+        spans[ref.offset] = (
+          width: columnWidth,
+          height: _UnknownChip.height + noteImageGap,
+          child: const _UnknownChip(),
+        );
+        continue;
+      }
       final onLine = imagesOnLineAt(body, ref.offset, _attachments);
       final box = imageBoxFor(
         countOnLine: onLine,
@@ -1380,7 +1471,7 @@ class NoteEditorState extends State<NoteEditor> {
                 // point at which the writing column's width is known, and an
                 // image that fills the column has to be told what that is.
                 _controller.setImageSpansDuringLayout(
-                  _buildImageSpans(contentWidth, constraints.maxHeight),
+                  _buildAttachmentSpans(contentWidth, constraints.maxHeight),
                 );
 
                 final offsets = _measurer.measure(
@@ -2068,5 +2159,41 @@ class _DailySeparatorFormatter extends TextInputFormatter {
   static TextRange _shiftRange(TextRange range, int amount) {
     if (!range.isValid || range.isCollapsed) return TextRange.empty;
     return TextRange(start: range.start + amount, end: range.end + amount);
+  }
+}
+
+/// What an attachment written by a newer build looks like here.
+///
+/// Deliberately plain and deliberately short: it is a placeholder for one line
+/// of a note, not an upsell. The ref behind it is kept whole and pushed back
+/// untouched, so a user who edits this note on an older device loses nothing —
+/// this chip is the visible half of that promise.
+class _UnknownChip extends StatelessWidget {
+  const _UnknownChip();
+
+  static const double height = 32;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: noteImageGap),
+      child: Container(
+        height: height,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: palette.controlBackground,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: palette.controlBorder),
+        ),
+        child: Text(
+          'Needs a newer Kapy Notes',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: palette.textSecondary),
+        ),
+      ),
+    );
   }
 }

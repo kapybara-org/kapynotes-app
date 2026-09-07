@@ -50,6 +50,19 @@ void main() {
       expect(notes.notes.last.body, 'Groceries');
     });
 
+    test('every widget action carries on the last note, not a new one', () {
+      final existing = notes.create(body: 'Groceries');
+
+      for (final intent in [
+        LaunchIntent.continueWriting,
+        LaunchIntent.dictate,
+        LaunchIntent.capture,
+      ]) {
+        expect(QuickCapture.file(notes, '', intent).id, existing.id);
+      }
+      expect(notes.notes, hasLength(1));
+    });
+
     test('the Write widget carries the draft into the last note', () {
       final existing = notes.create(body: 'Groceries');
 
@@ -117,6 +130,22 @@ void main() {
       stubLaunchIntent('continueWriting');
 
       expect(await QuickCapture.launchIntent(), LaunchIntent.continueWriting);
+    });
+
+    test('reads Dictate and Capture off the same channel', () async {
+      stubLaunchIntent('dictate');
+      expect(await QuickCapture.launchIntent(), LaunchIntent.dictate);
+
+      stubLaunchIntent('capture');
+      expect(await QuickCapture.launchIntent(), LaunchIntent.capture);
+    });
+
+    test('an action this version has never heard of opens normally', () async {
+      // An app rolled back under a widget that outran it. Opening on the note
+      // is the part of every action this version can still honour.
+      stubLaunchIntent('teleport');
+
+      expect(await QuickCapture.launchIntent(), LaunchIntent.open);
     });
 
     test('anything else is an ordinary launch', () async {

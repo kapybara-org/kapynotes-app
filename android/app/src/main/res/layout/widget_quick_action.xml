@@ -1,31 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Deliberately static: an icon and a word, no note text. Nothing here ever
-     needs redrawing, which is what lets the widget cost nothing to keep and
-     show nothing private on a locked screen. -->
+<!-- Deliberately static: an icon and a word, no note text. Nothing here is
+     redrawn unless the widget's action is changed, which is what lets the
+     widget cost nothing to keep and show nothing private on a locked screen.
+     Both are set by WriteNoteWidget; what is here is the placeholder the
+     launcher previews. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_write_note_root"
+    android:id="@+id/widget_quick_action_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_write_note_background"
-    android:contentDescription="@string/widget_write_note_description"
+    android:background="@drawable/widget_background"
     android:gravity="center"
     android:orientation="vertical"
     android:padding="8dp">
 
     <ImageView
+        android:id="@+id/widget_quick_action_icon"
         android:layout_width="26dp"
         android:layout_height="26dp"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_write_note"
-        android:tint="@color/widget_write_note_foreground" />
+        android:tint="@color/widget_ink" />
 
     <TextView
+        android:id="@+id/widget_quick_action_label"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:ellipsize="end"
         android:maxLines="1"
-        android:text="@string/widget_write_note_action"
-        android:textColor="@color/widget_write_note_foreground"
+        android:text="@string/widget_action_write"
+        android:textColor="@color/widget_ink"
         android:textSize="13sp" />
 </LinearLayout>

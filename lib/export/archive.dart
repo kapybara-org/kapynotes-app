@@ -114,6 +114,9 @@ Uint8List buildExportArchive({
     // this point the ranges have already been turned into characters.
     final images = <ExportedImage>[];
     for (final ref in note.attachments) {
+      // Recordings get their own export path; a kind this build does not know
+      // is not something it can write a markdown image link for either.
+      if (ref is! NoteImageRef) continue;
       if (!imageBytes.containsKey(ref.hash)) continue;
       images.add(
         ExportedImage(
@@ -378,7 +381,7 @@ ArchiveContents readExportArchiveFromBytes(List<int> bytes) =>
     final image = byPath[path];
     if (image != null && availableImages.contains(path)) {
       attachments.add(
-        NoteAttachmentRef(
+        NoteImageRef(
           offset: anchor,
           hash: image.hash,
           // A fresh key. The archive carried none, and this device is the

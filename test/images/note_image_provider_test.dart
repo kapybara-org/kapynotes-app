@@ -5,19 +5,19 @@ import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:kapy_notes/images/image_store.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:material_ui/material_ui.dart';
 
 late Directory dir;
-late ImageStore store;
+late BlobStore store;
 late String hash;
 
 /// Resolves one note image to completion, the way a real frame would.
 ///
 /// Lives here rather than in the app because only a test needs it: outside
 /// `runAsync` there is no way to drive an image that touches the disk.
-Future<ui.Image> warmNoteImage(String hash, ImageStore store) {
+Future<ui.Image> warmNoteImage(String hash, BlobStore store) {
   final completer = Completer<ui.Image>();
   final stream = NoteImageProvider(
     hash: hash,
@@ -41,7 +41,7 @@ Future<ui.Image> warmNoteImage(String hash, ImageStore store) {
 void main() {
   setUpAll(() async {
     dir = await Directory.systemTemp.createTemp('kapy-provider');
-    store = ImageStore(directory: dir);
+    store = BlobStore(directory: dir);
     final image = img.Image(width: 40, height: 30, numChannels: 3);
     img.fill(image, color: img.ColorRgb8(10, 120, 200));
     hash = await store.put(Uint8List.fromList(img.encodePng(image)));

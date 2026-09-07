@@ -25,7 +25,7 @@ Future<void> runExport(
   final messenger = _Messenger(context);
   final result = await (service ?? NoteArchiveService()).exportNotes(
     notes.notes,
-    images: notes.images,
+    images: notes.blobs,
   );
   if (!context.mounted) return;
 
@@ -75,7 +75,7 @@ Future<void> runImport(
 
   // Pictures first: a note restored before its images would render holes
   // until something happened to look again.
-  await restoreImportedImages(notes.images, contents);
+  await restoreImportedImages(notes.blobs, contents);
   final written = applyImportPlan(notes, plan);
   messenger.ok(
     written == 0

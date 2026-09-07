@@ -68,6 +68,11 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// The welcome note, on the launch that seeded it. Null every other time.
   String? _welcomeNoteId;
 
+  /// Which widget, if any, this launch came through. Kept because the page
+  /// below acts on it after its first frame — Dictate and Capture each have
+  /// something to do in the note once the note is on screen.
+  LaunchIntent _launchIntent = LaunchIntent.open;
+
   @override
   void initState() {
     super.initState();
@@ -105,7 +110,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     // that holds them, which can happen through an edit, an undo, a sync or a
     // note being thrown away — so no edit path counts references, and this
     // answers the question in one place instead.
-    unawaited(widget.notes.sweepImages());
+    unawaited(widget.notes.sweepBlobs());
   }
 
   void _activateLoadedApp({
@@ -118,12 +123,13 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     // with text still puts that text on screen, with the welcome underneath it
     // in the list rather than in its way.
     _welcomeNoteId = Onboarding(widget.store).seedWelcomeNote(widget.notes)?.id;
-    if (capturedText.isNotEmpty || intent == LaunchIntent.continueWriting) {
+    _launchIntent = intent;
+    if (capturedText.isNotEmpty || intent.continuesLastNote) {
       // The text snapshot and tree switch are synchronous. No platform text
       // event can land between capturing the draft and mounting its note.
       //
-      // Which note that is depends on how the app was opened: the Write
-      // widget carries on the last one, and everything else starts a new one
+      // Which note that is depends on how the app was opened: every widget
+      // action carries on the last one, and everything else starts a new one
       // exactly as it always has.
       QuickCapture.file(widget.notes, capturedText, intent);
     } else if (_welcomeNoteId == null &&
@@ -243,6 +249,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         account: widget.account,
         store: widget.store,
         welcomeNoteId: _welcomeNoteId,
+        launchIntent: _launchIntent,
       ),
     );
   }

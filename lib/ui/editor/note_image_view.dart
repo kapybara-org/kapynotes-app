@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/note_attachment.dart';
-import '../../images/image_store.dart';
+import '../../data/blob_store.dart';
 import '../../images/note_image_provider.dart';
 import 'note_image_layout.dart';
 
@@ -42,9 +42,9 @@ class NoteImageView extends StatefulWidget {
     this.onRemove,
   });
 
-  final NoteAttachmentRef ref;
+  final NoteImageRef ref;
   final NoteImageBox box;
-  final ImageStore store;
+  final BlobStore store;
 
   /// Width of the writing column, which is what a width factor is a fraction
   /// of. Zero disables the handle: there is nothing to measure against.
@@ -385,14 +385,14 @@ class NoteImageViewer extends StatelessWidget {
     this.fetch,
   });
 
-  final NoteAttachmentRef ref;
-  final ImageStore store;
+  final NoteImageRef ref;
+  final BlobStore store;
   final NoteImageFetcher? fetch;
 
   static Future<void> open(
     BuildContext context, {
-    required NoteAttachmentRef ref,
-    required ImageStore store,
+    required NoteImageRef ref,
+    required BlobStore store,
     NoteImageFetcher? fetch,
   }) => Navigator.of(context).push(
     PageRouteBuilder<void>(

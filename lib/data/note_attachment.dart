@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-/// An image anchored to one U+FFFC placeholder in a note's body.
+/// Something anchored to one U+FFFC placeholder in a note's body.
 ///
 /// The placeholder exists because the calculator lexes every line: a markdown
 /// image or a bare URL sitting in the body would be tokenised and evaluated.
@@ -13,9 +13,9 @@ import 'dart:typed_data';
 ///
 ///   * [hash] is the local one — the sha256 of the bytes actually stored on
 ///     disk. It is the cache key, the dedupe key, and the only identity an
-///     image has on a device with no account. Images work fully offline, so
-///     this is never null.
-///   * [attachmentId] is the server's, minted when the image is uploaded, and
+///     attachment has on a device with no account. Attachments work fully
+///     offline, so this is never null.
+///   * [attachmentId] is the server's, minted when the file is uploaded, and
 ///     null until then. A note can be written, read and exported forever
 ///     without one.
 ///
@@ -23,9 +23,17 @@ import 'dart:typed_data';
 /// two people storing identical bytes produce different ciphertext and the
 /// server could not dedupe them even if it wanted to. Deriving the key from
 /// the content instead would buy cross-user dedupe by leaking which users hold
-/// the same image, which is not a trade this app makes.
-class NoteAttachmentRef {
-  /// Index of the U+FFFC character this image renders at.
+/// the same file, which is not a trade this app makes.
+///
+/// This is a sealed hierarchy so that every place which renders, exports or
+/// syncs an attachment has to say out loud what it does with a kind it does
+/// not know. [NoteUnknownRef] is the answer for all of them: keep the bytes of
+/// the record exactly as they arrived and put them back on the way out. A
+/// client that dropped an unknown ref instead would delete a newer device's
+/// attachment on its next push, which is the one failure this design exists to
+/// prevent.
+sealed class NoteAttachmentRef {
+  /// Index of the U+FFFC character this attachment renders at.
   final int offset;
 
   /// sha256 (lowercase hex) of the stored bytes. The local content address.
@@ -40,14 +48,107 @@ class NoteAttachmentRef {
   /// byte count and nothing else about what the user stored.
   final String mime;
 
+  /// Size of the stored bytes. What quota is billed on.
+  final int bytes;
+
+  /// Server id, null until this attachment has been uploaded.
+  final String? attachmentId;
+
+  const NoteAttachmentRef({
+    required this.offset,
+    required this.hash,
+    required this.key,
+    required this.mime,
+    required this.bytes,
+    this.attachmentId,
+  });
+
+  /// The character an attachment anchors to. Inert to the calculator lexer.
+  static const String placeholder = '￼';
+
+  bool get isUploaded => attachmentId != null;
+
+  /// Only the fields every kind has. Subclasses widen this with their own.
+  NoteAttachmentRef copyWith({int? offset, String? attachmentId});
+
+  Map<String, Object?> toJson();
+
+  /// Reads one ref, dispatching on `kind`.
+  ///
+  /// A record with no `kind` is an image: that is every attachment written
+  /// before voice notes existed, and there is no other thing it could be.
+  static NoteAttachmentRef? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+
+    final offset = raw['offset'];
+    final hash = raw['hash'];
+    final mime = raw['mime'];
+    if (offset is! int || offset < 0) return null;
+    if (hash is! String || hash.isEmpty) return null;
+    if (mime is! String || mime.isEmpty) return null;
+
+    final Uint8List key;
+    try {
+      final keyRaw = raw['key'];
+      key = base64.decode(keyRaw is String ? keyRaw : '');
+    } catch (_) {
+      return null;
+    }
+    if (key.length != 32) return null;
+
+    final bytesRaw = raw['bytes'];
+    final bytes = bytesRaw is int ? bytesRaw : 0;
+    final attachmentIdRaw = raw['attachmentId'];
+    final attachmentId = attachmentIdRaw is String ? attachmentIdRaw : null;
+
+    final kind = raw['kind'];
+    switch (kind) {
+      case null:
+      case 'image':
+        return NoteImageRef._fromJson(
+          raw,
+          offset: offset,
+          hash: hash,
+          key: key,
+          mime: mime,
+          bytes: bytes,
+          attachmentId: attachmentId,
+        );
+      case 'voice':
+        return NoteVoiceRef._fromJson(
+          raw,
+          offset: offset,
+          hash: hash,
+          key: key,
+          mime: mime,
+          bytes: bytes,
+          attachmentId: attachmentId,
+        );
+      default:
+        // Everything the shared fields need is here, so the record is
+        // well-formed — it is simply newer than this build. Keep it whole.
+        return NoteUnknownRef(
+          offset: offset,
+          hash: hash,
+          key: key,
+          mime: mime,
+          bytes: bytes,
+          attachmentId: attachmentId,
+          raw: Map<String, Object?>.unmodifiable(
+            raw.map((k, v) => MapEntry('$k', v)),
+          ),
+        );
+    }
+  }
+}
+
+/// An image. Everything attachments could be before voice notes existed.
+final class NoteImageRef extends NoteAttachmentRef {
   /// Intrinsic size of the stored image, in pixels. Held so the editor can
   /// reserve the right box *before* any bytes are decoded — without it every
   /// note with images would reflow as each one loaded.
   final int width;
   final int height;
-
-  /// Size of the stored bytes. What quota is billed on.
-  final int bytes;
 
   /// sha256 of a ~600px preview, stored as its own object under the *same*
   /// file key with its own nonce. The note view fetches only these; the full
@@ -55,8 +156,10 @@ class NoteAttachmentRef {
   /// thumbnail would cost more than it saves.
   final String? thumbHash;
 
+  final String? thumbId;
+
   /// How much of the writing column this image takes, from
-  /// [minImageWidthFactor] to 1.
+  /// [minWidthFactor] to 1.
   ///
   /// Part of the note's content, not a per-device view setting: a picture
   /// sized down to sit beside a paragraph should look the same on the laptop
@@ -65,26 +168,19 @@ class NoteAttachmentRef {
   /// of tiles decides the width instead.
   final double widthFactor;
 
-  /// Server ids, null until this image has been uploaded.
-  final String? attachmentId;
-  final String? thumbId;
-
-  const NoteAttachmentRef({
-    required this.offset,
-    required this.hash,
-    required this.key,
-    required this.mime,
+  const NoteImageRef({
+    required super.offset,
+    required super.hash,
+    required super.key,
+    required super.mime,
     required this.width,
     required this.height,
-    required this.bytes,
+    required super.bytes,
     this.thumbHash,
     this.widthFactor = 1,
-    this.attachmentId,
+    super.attachmentId,
     this.thumbId,
   });
-
-  /// The character an attachment anchors to. Inert to the calculator lexer.
-  static const String placeholder = '￼';
 
   /// Narrower than this and an image stops being a picture and starts being a
   /// smudge, so the handle refuses to go further.
@@ -94,14 +190,46 @@ class NoteAttachmentRef {
   /// the editor's layout down with it.
   double get aspectRatio => height <= 0 || width <= 0 ? 1 : width / height;
 
-  bool get isUploaded => attachmentId != null;
+  static NoteImageRef? _fromJson(
+    Map<Object?, Object?> raw, {
+    required int offset,
+    required String hash,
+    required Uint8List key,
+    required String mime,
+    required int bytes,
+    required String? attachmentId,
+  }) {
+    final width = raw['width'];
+    final height = raw['height'];
+    if (width is! int || height is! int) return null;
 
-  NoteAttachmentRef copyWith({
+    final thumbHash = raw['thumbHash'];
+    final widthFactor = raw['widthFactor'];
+    final thumbId = raw['thumbId'];
+    return NoteImageRef(
+      offset: offset,
+      hash: hash,
+      key: key,
+      mime: mime,
+      width: width,
+      height: height,
+      bytes: bytes,
+      thumbHash: thumbHash is String ? thumbHash : null,
+      widthFactor: widthFactor is num
+          ? clampImageWidthFactor(widthFactor.toDouble())
+          : 1,
+      attachmentId: attachmentId,
+      thumbId: thumbId is String ? thumbId : null,
+    );
+  }
+
+  @override
+  NoteImageRef copyWith({
     int? offset,
     double? widthFactor,
     String? attachmentId,
     String? thumbId,
-  }) => NoteAttachmentRef(
+  }) => NoteImageRef(
     offset: offset ?? this.offset,
     hash: hash,
     key: key,
@@ -115,7 +243,11 @@ class NoteAttachmentRef {
     thumbId: thumbId ?? this.thumbId,
   );
 
+  @override
   Map<String, Object?> toJson() => {
+    // `kind` is omitted for images on purpose. It is the default on the way
+    // in, so writing it would change every existing note's bytes for nothing
+    // and make a no-op edit look like a real one to sync.
     'offset': offset,
     'hash': hash,
     'key': base64.encode(key),
@@ -131,52 +263,9 @@ class NoteAttachmentRef {
     if (thumbId != null) 'thumbId': thumbId,
   };
 
-  static NoteAttachmentRef? fromJson(Object? raw) {
-    if (raw is! Map) return null;
-    final offset = raw['offset'];
-    final hash = raw['hash'];
-    final keyRaw = raw['key'];
-    final mime = raw['mime'];
-    final width = raw['width'];
-    final height = raw['height'];
-    if (offset is! int || offset < 0) return null;
-    if (hash is! String || hash.isEmpty) return null;
-    if (mime is! String || mime.isEmpty) return null;
-    if (width is! int || height is! int) return null;
-
-    Uint8List key;
-    try {
-      key = base64.decode(keyRaw is String ? keyRaw : '');
-    } catch (_) {
-      return null;
-    }
-    if (key.length != 32) return null;
-
-    final bytes = raw['bytes'];
-    final thumbHash = raw['thumbHash'];
-    final widthFactor = raw['widthFactor'];
-    final attachmentId = raw['attachmentId'];
-    final thumbId = raw['thumbId'];
-    return NoteAttachmentRef(
-      offset: offset,
-      hash: hash,
-      key: key,
-      mime: mime,
-      width: width,
-      height: height,
-      bytes: bytes is int ? bytes : 0,
-      thumbHash: thumbHash is String ? thumbHash : null,
-      widthFactor: widthFactor is num
-          ? clampImageWidthFactor(widthFactor.toDouble())
-          : 1,
-      attachmentId: attachmentId is String ? attachmentId : null,
-      thumbId: thumbId is String ? thumbId : null,
-    );
-  }
-
   @override
   bool operator ==(Object other) =>
-      other is NoteAttachmentRef &&
+      other is NoteImageRef &&
       other.offset == offset &&
       other.hash == hash &&
       other.mime == mime &&
@@ -203,12 +292,390 @@ class NoteAttachmentRef {
   );
 }
 
+/// One span of transcribed speech.
+///
+/// The field names are single letters because a half-hour recording runs to
+/// thousands of these and the whole list rides inside the note's sealed
+/// payload, which is pushed on every edit.
+class TranscriptSegment {
+  /// Milliseconds from the start of the recording.
+  final int s;
+  final int e;
+  final String t;
+
+  const TranscriptSegment({required this.s, required this.e, required this.t});
+
+  static TranscriptSegment? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final s = raw['s'];
+    final e = raw['e'];
+    final t = raw['t'];
+    if (s is! int || s < 0) return null;
+    if (e is! int || e < 0) return null;
+    if (t is! String) return null;
+    return TranscriptSegment(s: s, e: e, t: t);
+  }
+
+  Map<String, Object?> toJson() => {'s': s, 'e': e, 't': t};
+
+  @override
+  bool operator ==(Object other) =>
+      other is TranscriptSegment && other.s == s && other.e == e && other.t == t;
+
+  @override
+  int get hashCode => Object.hash(s, e, t);
+}
+
+/// What an engine heard, and when.
+///
+/// [engine] and [at] together are the transcript's identity. Comparing those
+/// two integers-and-a-string is how [NoteVoiceRef] tells two transcripts apart
+/// without ever walking the segments — see the note on [NoteVoiceRef.==].
+class VoiceTranscript {
+  /// ISO-639-1 where the provider knows it, else the provider's own word,
+  /// lowercased. Not an enum: providers invent labels.
+  final String lang;
+
+  /// e.g. `cf/deepgram-nova-3`, later `sherpa/...`.
+  final String engine;
+
+  /// Epoch milliseconds.
+  final int at;
+
+  final List<TranscriptSegment> segments;
+
+  VoiceTranscript({
+    required this.lang,
+    required this.engine,
+    required this.at,
+    required List<TranscriptSegment> segments,
+  }) : segments = List.unmodifiable(segments);
+
+  /// Everything the transcript says, joined. What search matches on.
+  String get text => segments.map((segment) => segment.t).join(' ');
+
+  static VoiceTranscript? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final lang = raw['lang'];
+    final engine = raw['engine'];
+    final at = raw['at'];
+    final segments = raw['segments'];
+    if (lang is! String || engine is! String || at is! int) return null;
+    if (segments is! List) return null;
+    return VoiceTranscript(
+      lang: lang,
+      engine: engine,
+      at: at,
+      segments: segments
+          .map(TranscriptSegment.fromJson)
+          .whereType<TranscriptSegment>()
+          .toList(growable: false),
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+    'lang': lang,
+    'engine': engine,
+    'at': at,
+    'segments': segments.map((segment) => segment.toJson()).toList(),
+  };
+
+  /// Identity, not content. See [NoteVoiceRef.==].
+  @override
+  bool operator ==(Object other) =>
+      other is VoiceTranscript &&
+      other.engine == engine &&
+      other.at == at &&
+      other.lang == lang &&
+      other.segments.length == segments.length;
+
+  @override
+  int get hashCode => Object.hash(engine, at, lang, segments.length);
+}
+
+/// What the recording was about, in a title and a few points.
+class VoiceSummary {
+  final String engine;
+  final int at;
+  final String title;
+  final List<String> points;
+
+  VoiceSummary({
+    required this.engine,
+    required this.at,
+    required this.title,
+    required List<String> points,
+  }) : points = List.unmodifiable(points);
+
+  static VoiceSummary? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final engine = raw['engine'];
+    final at = raw['at'];
+    final title = raw['title'];
+    final points = raw['points'];
+    if (engine is! String || at is! int || title is! String) return null;
+    if (points is! List) return null;
+    final kept = points.whereType<String>().toList(growable: false);
+    if (kept.isEmpty) return null;
+    return VoiceSummary(engine: engine, at: at, title: title, points: kept);
+  }
+
+  Map<String, Object?> toJson() => {
+    'engine': engine,
+    'at': at,
+    'title': title,
+    'points': points,
+  };
+
+  /// Identity, not content. See [NoteVoiceRef.==].
+  @override
+  bool operator ==(Object other) =>
+      other is VoiceSummary &&
+      other.engine == engine &&
+      other.at == at &&
+      other.points.length == points.length &&
+      other.title == title;
+
+  @override
+  int get hashCode => Object.hash(engine, at, title, points.length);
+}
+
+/// A recording.
+///
+/// [durationMs] and [peaks] are held for the same reason an image carries its
+/// intrinsic size: the chip draws itself, at the right size and with its
+/// waveform, before a single audio byte is read. Without them every note with
+/// a recording would reflow as each one loaded.
+///
+/// [transcript] and [summary] are optional at every moment of their life. A
+/// recording made offline, or by someone who never turned transcription on, is
+/// a complete and valid voice note forever — it is simply one you listen to.
+final class NoteVoiceRef extends NoteAttachmentRef {
+  final int durationMs;
+
+  /// Exactly 100 bytes when present: one unsigned level per 1% of the
+  /// recording, bucketed from 10 Hz amplitude samples rather than from PCM, so
+  /// nothing large ever crosses the UI isolate to draw a waveform.
+  final Uint8List? peaks;
+
+  final VoiceTranscript? transcript;
+  final VoiceSummary? summary;
+
+  const NoteVoiceRef({
+    required super.offset,
+    required super.hash,
+    required super.key,
+    required super.bytes,
+    required this.durationMs,
+    super.mime = voiceMime,
+    this.peaks,
+    this.transcript,
+    this.summary,
+    super.attachmentId,
+  });
+
+  /// What `record` writes on every platform: AAC-LC in an MPEG-4 container.
+  static const String voiceMime = 'audio/mp4';
+
+  /// The file extension the blob is stored under. Not cosmetic: iOS picks its
+  /// decoder from the extension, so a recording saved without one will not
+  /// play back there.
+  static const String voiceExtension = '.m4a';
+
+  static const int peaksLength = 100;
+
+  Duration get duration => Duration(milliseconds: durationMs);
+
+  static NoteVoiceRef? _fromJson(
+    Map<Object?, Object?> raw, {
+    required int offset,
+    required String hash,
+    required Uint8List key,
+    required String mime,
+    required int bytes,
+    required String? attachmentId,
+  }) {
+    final durationMs = raw['durationMs'];
+    if (durationMs is! int || durationMs <= 0) return null;
+
+    // A malformed transcript or summary is dropped on its own. Losing the
+    // words is a bad afternoon; losing the ref loses the recording.
+    return NoteVoiceRef(
+      offset: offset,
+      hash: hash,
+      key: key,
+      mime: mime,
+      bytes: bytes,
+      durationMs: durationMs,
+      peaks: _peaksFromJson(raw['peaks']),
+      transcript: VoiceTranscript.fromJson(raw['transcript']),
+      summary: VoiceSummary.fromJson(raw['summary']),
+      attachmentId: attachmentId,
+    );
+  }
+
+  static Uint8List? _peaksFromJson(Object? raw) {
+    if (raw is! String) return null;
+    try {
+      final decoded = base64.decode(raw);
+      return decoded.length == peaksLength ? decoded : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Sentinel telling [copyWith] "leave this alone", which a plain null cannot
+  /// do here: clearing a transcript and not touching one are different things.
+  static const Object _keep = Object();
+
+  @override
+  NoteVoiceRef copyWith({
+    int? offset,
+    String? attachmentId,
+    Object? transcript = _keep,
+    Object? summary = _keep,
+  }) => NoteVoiceRef(
+    offset: offset ?? this.offset,
+    hash: hash,
+    key: key,
+    mime: mime,
+    bytes: bytes,
+    durationMs: durationMs,
+    peaks: peaks,
+    transcript: identical(transcript, _keep)
+        ? this.transcript
+        : transcript as VoiceTranscript?,
+    summary: identical(summary, _keep) ? this.summary : summary as VoiceSummary?,
+    attachmentId: attachmentId ?? this.attachmentId,
+  );
+
+  /// Clears the server id, so the next sync uploads the bytes again.
+  ///
+  /// Used when a release has already freed the server's copy but the user
+  /// brought the attachment back with Undo.
+  NoteVoiceRef withoutAttachmentId() => NoteVoiceRef(
+    offset: offset,
+    hash: hash,
+    key: key,
+    mime: mime,
+    bytes: bytes,
+    durationMs: durationMs,
+    peaks: peaks,
+    transcript: transcript,
+    summary: summary,
+  );
+
+  @override
+  Map<String, Object?> toJson() => {
+    'kind': 'voice',
+    'offset': offset,
+    'hash': hash,
+    'key': base64.encode(key),
+    'mime': mime,
+    'bytes': bytes,
+    'durationMs': durationMs,
+    if (peaks != null) 'peaks': base64.encode(peaks!),
+    if (transcript != null) 'transcript': transcript!.toJson(),
+    if (summary != null) 'summary': summary!.toJson(),
+    if (attachmentId != null) 'attachmentId': attachmentId,
+  };
+
+  /// Equality is deliberately constant-time in the length of the transcript.
+  ///
+  /// Every keystroke rebases the attachment list and compares the result
+  /// against the old one to decide whether the note is dirty. A half-hour
+  /// recording carries thousands of segments and tens of thousands of words;
+  /// comparing those on each keystroke would put a visible stutter into typing
+  /// in exactly the notes people record into. `engine` and `at` already
+  /// identify a transcript — the same engine cannot produce two different
+  /// transcripts in the same millisecond — so the content never needs walking.
+  ///
+  /// [peaks] is compared by presence and length for the same reason: it is a
+  /// pure function of the audio, which [hash] already pins down.
+  @override
+  bool operator ==(Object other) =>
+      other is NoteVoiceRef &&
+      other.offset == offset &&
+      other.hash == hash &&
+      other.mime == mime &&
+      other.bytes == bytes &&
+      other.durationMs == durationMs &&
+      other.peaks?.length == peaks?.length &&
+      other.transcript == transcript &&
+      other.summary == summary &&
+      other.attachmentId == attachmentId;
+
+  @override
+  int get hashCode => Object.hash(
+    offset,
+    hash,
+    mime,
+    bytes,
+    durationMs,
+    peaks?.length,
+    transcript,
+    summary,
+    attachmentId,
+  );
+}
+
+/// An attachment written by a newer build than this one.
+///
+/// It renders as a small "needs a newer Kapy Notes" chip and is otherwise
+/// inert — but it is kept, and [toJson] puts back exactly the record that
+/// arrived, with only [offset] moved to wherever the placeholder has slid to.
+/// That is the whole point: an older device may open, edit and push a note
+/// full of things it cannot draw, and nothing is lost when it does.
+final class NoteUnknownRef extends NoteAttachmentRef {
+  /// The record as it arrived, re-emitted verbatim.
+  final Map<String, Object?> raw;
+
+  const NoteUnknownRef({
+    required super.offset,
+    required super.hash,
+    required super.key,
+    required super.mime,
+    required super.bytes,
+    required super.attachmentId,
+    required this.raw,
+  });
+
+  /// What the newer build called it. Shown to nobody; useful in logs.
+  String get kind => raw['kind'] is String ? raw['kind'] as String : 'unknown';
+
+  @override
+  NoteUnknownRef copyWith({int? offset, String? attachmentId}) =>
+      NoteUnknownRef(
+        offset: offset ?? this.offset,
+        hash: hash,
+        key: key,
+        mime: mime,
+        bytes: bytes,
+        attachmentId: attachmentId ?? this.attachmentId,
+        raw: raw,
+      );
+
+  @override
+  Map<String, Object?> toJson() => {...raw, 'offset': offset};
+
+  @override
+  bool operator ==(Object other) =>
+      other is NoteUnknownRef &&
+      other.offset == offset &&
+      other.hash == hash &&
+      other.kind == kind &&
+      other.attachmentId == attachmentId;
+
+  @override
+  int get hashCode => Object.hash(offset, hash, kind, attachmentId);
+}
+
 /// Keeps a width inside the range the handle allows, and treats anything
 /// nonsensical — a NaN from a corrupt record, a negative from a bad edit — as
 /// full width rather than as a reason to fail.
 double clampImageWidthFactor(double value) {
   if (value.isNaN || value <= 0) return 1;
-  return value.clamp(NoteAttachmentRef.minWidthFactor, 1.0);
+  return value.clamp(NoteImageRef.minWidthFactor, 1.0);
 }
 
 /// Drops refs that no longer sit on a placeholder, and sorts what is left.

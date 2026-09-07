@@ -308,25 +308,42 @@ The spec described an Electron build. These changed for Flutter:
 - **Windows / Linux** — native caption retained.
 - **iOS / Android:** accepts text on the first Flutter frame, then opens the
   most recently edited note when no launch text was entered. A launch draft
-  becomes a new note, unless the app was opened from the Write widget, which
-  carries it into the note being written instead. Search and the full note
+  becomes a new note, unless the app was opened from a widget, which carries
+  it into the note being written instead. Search and the full note
   list are built only when the hamburger drawer first opens; the gutter is
   fixed-width and the divider is hidden.
-- **The Write widget (iOS / Android)** — one cell on the Home Screen, the same
-  action on the Lock Screen, and on iOS 18 a control for Control Centre and
-  the Action button. It shows a pencil and the word *Write*, and deliberately
-  no note text: a widget that previewed what somebody wrote would have to read
-  the note store, keep itself refreshed against a system budget, and show that
-  writing to whoever picks up a locked phone. Showing only the action costs
-  none of that, and means the widget is drawn once and never updated again.
-  Tapping it opens the **last note at its end**, keyboard up, rather than
+- **The widgets (iOS / Android)** — two of them, offering three actions:
+  **Write**, **Dictate** and **Capture**. The square widget is one cell and one
+  action, chosen when it is placed and changed afterwards — iOS through *Edit
+  Widget*, Android through a small configuration screen — and defaulting to
+  Write, which is what the widget did when Write was all it could do. The wide
+  widget is three cells with all three actions side by side, one tap target
+  each. The square one is also offered to the Lock Screen, and on iOS 18 each
+  action is a control for Control Centre and the Action button.
+
+  All of them show an icon and a word and deliberately no note text: a widget
+  that previewed what somebody wrote would have to read the note store, keep
+  itself refreshed against a system budget, and show that writing to whoever
+  picks up a locked phone. Showing only the action costs none of that, and
+  means a widget is drawn once and then left alone.
+
+  Every action opens the **last note at its end**, keyboard up, rather than
   making a new one — a way back into the notebook, not a way to fill it with
   one-line fragments, and not something that spends a plan's note allowance on
-  a mis-tap. The platform reports that a launch came from the widget over a
-  single method channel, `kapynotes/quick_capture`; the only Dart that knows
-  is `lib/core/quick_capture.dart`, and everything else about the launch is
-  unchanged. Android names its own intent action; iOS opens `kapynotes://write`
-  and the scene delegate parks it.
+  a mis-tap. What each adds on arrival is the rest of it: Capture opens the
+  image picker over that note, and Dictate will start a recording in it once
+  there is a recorder to start (see `docs/voice-notes.md` in the monorepo —
+  until then a Dictate tap is a Write tap, and `HomePage._startVoiceRecording`
+  is the one place it will be filled in).
+
+  The platform reports which action a launch came through over a single method
+  channel, `kapynotes/quick_capture`, and answers once: whoever asks first gets
+  it. Dart asks on the way up, and again on every resume, so a tap that reaches
+  an app already running is acted on too. The only Dart that knows is
+  `lib/core/quick_capture.dart`; everything else about the launch is unchanged.
+  Android names its own intent action per widget; iOS opens `kapynotes://write`,
+  `kapynotes://dictate` or `kapynotes://capture` and the scene delegate parks
+  it.
 - **Every platform:** *Ready to type on open* is on by default. The latest note
   opens focused on a fresh line, and returning to the app starts another
   append position without saving empty lines. It can be disabled in Settings
