@@ -123,6 +123,16 @@ if [[ "$EXPORT_COMPLIANCE" == "false" ]]; then
 else
   fail "ITSAppUsesNonExemptEncryption must be false for this network-only build"
 fi
+# Every permission the app asks for needs a purpose string, and a missing one
+# is a rejection rather than a warning: iOS kills the app at the moment it
+# asks. Checked here because the code that needs it and the plist that grants
+# it are edited months apart.
+MIC_PURPOSE="$(plutil -extract NSMicrophoneUsageDescription raw ios/Runner/Info.plist 2>/dev/null || true)"
+if [[ -n "$MIC_PURPOSE" ]]; then
+  pass "microphone purpose string is present"
+else
+  fail "NSMicrophoneUsageDescription is missing; voice notes cannot ask for the microphone"
+fi
 if plutil -extract UIRequiresFullScreen raw ios/Runner/Info.plist >/dev/null 2>&1; then
   fail "UIRequiresFullScreen is present; the iPad target must remain resizable"
 else
@@ -171,29 +181,60 @@ PRIVACY_TRACKING="$(plutil -extract NSPrivacyTracking raw ios/Runner/PrivacyInfo
 PRIVACY_COLLECTED_COUNT="$(plutil -extract NSPrivacyCollectedDataTypes raw ios/Runner/PrivacyInfo.xcprivacy 2>/dev/null || true)"
 PRIVACY_TRACKING_DOMAIN_COUNT="$(plutil -extract NSPrivacyTrackingDomains raw ios/Runner/PrivacyInfo.xcprivacy 2>/dev/null || true)"
 PRIVACY_APIS="$(plutil -extract NSPrivacyAccessedAPITypes json -o - ios/Runner/PrivacyInfo.xcprivacy 2>/dev/null || true)"
-# The manifest has to agree with the App Privacy answers on the store record,
-# which since sync are four types collected for app functionality: the account
-# email, the account id, note content and the pictures in a note. All are
-# ciphertext to us and none is used to track, but "we cannot read it" is not a
-# category Apple offers — uploading it is collecting it.
+# The manifest has to agree with the App Privacy answers on the store record.
+# Both sides are read rather than remembered: packaging/privacy.json is the
+# declaration as published, so adding a data type is one edit there and this
+# check follows. The list used to be spelled out here instead, which is how an
+# empty collected-data list went on passing for the eleven versions after
+# accounts shipped.
 #
-# Tracking stays false and the tracking-domain list stays empty; an empty
-# collected-data list is what this check used to demand, and it went on passing
-# for the eleven versions after accounts shipped.
+# Everything collected is ciphertext to us and none of it is used to track, but
+# "we cannot read it" is not a category Apple offers — uploading it is
+# collecting it.
 PRIVACY_COLLECTED_JSON="$(plutil -extract NSPrivacyCollectedDataTypes json -o - ios/Runner/PrivacyInfo.xcprivacy 2>/dev/null || true)"
 if [[ "$PRIVACY_TRACKING" == "false" && "$PRIVACY_TRACKING_DOMAIN_COUNT" == "0" ]]; then
   pass "privacy manifest declares no tracking and no tracking domains"
 else
   fail "privacy manifest must declare no tracking and no tracking domains"
 fi
-PRIVACY_MISSING=""
-for type in EmailAddress UserID OtherUserContent PhotosorVideos; do
-  [[ "$PRIVACY_COLLECTED_JSON" == *"NSPrivacyCollectedDataType$type"* ]] || PRIVACY_MISSING+=" $type"
-done
-if [[ "$PRIVACY_COLLECTED_COUNT" == "4" && -z "$PRIVACY_MISSING" ]]; then
-  pass "privacy manifest matches the App Privacy record" "4 types, app functionality"
+PRIVACY_REPORT="$(
+  MANIFEST_JSON="$PRIVACY_COLLECTED_JSON" python3 - <<'PYCHECK'
+import json, os, sys
+
+# App Store Connect's category names and Apple's manifest keys for the same
+# thing. An unmapped category is a hard error rather than a silent pass: a new
+# data type must be taught to this map before it can ship.
+KEYS = {
+    'EMAIL_ADDRESS': 'NSPrivacyCollectedDataTypeEmailAddress',
+    'USER_ID': 'NSPrivacyCollectedDataTypeUserID',
+    'OTHER_USER_CONTENT': 'NSPrivacyCollectedDataTypeOtherUserContent',
+    'PHOTOS_OR_VIDEOS': 'NSPrivacyCollectedDataTypePhotosorVideos',
+    'AUDIO_DATA': 'NSPrivacyCollectedDataTypeAudioData',
+}
+
+record = json.load(open('packaging/privacy.json'))
+wanted = [u['category'] for u in record['dataUsages']]
+unmapped = [c for c in wanted if c not in KEYS]
+if unmapped:
+    print('unmapped in preflight_ios.sh: ' + ', '.join(sorted(unmapped)))
+    sys.exit(0)
+
+manifest = json.loads(os.environ['MANIFEST_JSON'] or '[]')
+declared = {entry.get('NSPrivacyCollectedDataType') for entry in manifest}
+missing = [c for c in wanted if KEYS[c] not in declared]
+extra = sorted(declared - {KEYS[c] for c in wanted})
+if missing:
+    print('missing from the manifest: ' + ', '.join(missing))
+elif extra:
+    print('in the manifest but not the record: ' + ', '.join(extra))
+else:
+    print(f'OK {len(wanted)}')
+PYCHECK
+)"
+if [[ "$PRIVACY_REPORT" == OK* ]]; then
+  pass "privacy manifest matches the App Privacy record (${PRIVACY_REPORT#OK } types, app functionality)"
 else
-  fail "privacy manifest does not match the App Privacy record; missing:${PRIVACY_MISSING:- none}"
+  fail "privacy manifest does not match the App Privacy record: $PRIVACY_REPORT"
 fi
 for category in FileTimestamp DiskSpace UserDefaults; do
   if [[ "$PRIVACY_APIS" == *"NSPrivacyAccessedAPICategory$category"* ]]; then

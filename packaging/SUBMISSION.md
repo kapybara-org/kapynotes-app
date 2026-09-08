@@ -222,6 +222,21 @@ is a dependency.
   receive only the connection metadata inherent to an HTTPS request, which the
   privacy policy discloses.
 
+  **Updated again on 2026-09-08, before the 1.14.0 submission**, to add a
+  fifth type: **Audio Data**, App Functionality, Linked to You. Voice notes
+  record audio and — only for accounts that turned transcription on — send it
+  to our server, which passes it to Cloudflare Workers AI. It is the one thing
+  in this app that leaves the device readable, so the same rule the four above
+  were corrected under applies to it: uploading it is collecting it. The
+  recording is not retained by Cloudflare (`mip_opt_out=true`,
+  `cf-aig-collect-log-payload: false`) or by us, but "kept by nobody" is not a
+  category Apple offers either.
+
+  `packaging/preflight_ios.sh` now derives the expected list from
+  `packaging/privacy.json` instead of spelling it out, so a sixth type is one
+  edit rather than three, and a category the script has never heard of fails
+  loudly instead of passing.
+
   It is **not in the public API** — `asc capabilities` classifies it
   `web-session`. Drive it with a web session and the canonical file:
 
@@ -258,6 +273,19 @@ is a dependency.
   describe the build as paid.
 - [x] Release type is `MANUAL`. Note that it reverted to `AFTER_APPROVAL` once
   after a UI save, so re-check it just before submitting.
+- [ ] **1.14.0 review notes need a paragraph about voice notes.** A reviewer
+  who taps the microphone gets a permission prompt and a recording, and that
+  much needs no account. Transcription does: it is off until the account holder
+  turns it on, behind a sheet that names Cloudflare and says what is sent. Say
+  that plainly, because a reviewer who does not find the transcript will
+  otherwise report the feature as broken, and one who does find it will want to
+  know where the audio went.
+- [ ] **App Privacy must be published before the build is submitted**, not
+  after. It is a separate record from the version, and a build that ships
+  ahead of it is a build whose declaration is wrong for as long as the gap
+  lasts. `asc web auth login` needs the real Apple ID password plus a 2FA
+  code — an app-specific password is refused — so this step cannot be
+  automated.
 
 ### The two gates
 
@@ -617,9 +645,14 @@ below follow from the repo, not from intent.
 - The follow-up questions about encryption in transit, deletion requests and
   data types only appear once collection is declared, so the form ends there.
 - **Advertising ID:** **not used.** No dependency merges
-  `com.google.android.gms.permission.AD_ID` into the manifest; the only declared
-  permission in the release build is `INTERNET`.
-- **Photos, files, location, contacts, microphone:** none requested.
+  `com.google.android.gms.permission.AD_ID` into the manifest.
+- **Photos, files, location, contacts:** none requested.
+
+The two bullets above are the answers for **1.0.0**, and both of the
+statements that followed them have since stopped being true. The release
+build now declares `RECORD_AUDIO` beside `INTERNET`, and the microphone *is*
+requested — at the moment a recording starts, never at launch. What the form
+has to say now is below, under "When sync ships".
 
 Storing data locally is not "collection" under Play's definition, which covers
 data transmitted off the device. The rate refresh sends no note content: it is
@@ -840,6 +873,21 @@ a takedown rather than a rejection:
    whether data is *collected*, not whether it is legible to us — we transmit
    and store it, so it is. Nothing is *shared*: R2 is our own storage, not a
    third-party recipient.
+
+   **Voice notes add a third type and the first genuine third party.**
+
+   - **Audio → Voice or sound recordings.** Optional, App functionality.
+     Collected only for accounts that turn transcription on; a recording made
+     without it never leaves the device.
+   - The microphone permission is now declared, so the form's question about
+     it has to be answered rather than skipped.
+   - **This is the one to think about before answering "shared".** Everything
+     else goes to R2, which is our own storage and not a recipient. A
+     recording goes to Cloudflare Workers AI, which is a different company
+     processing content on our behalf. Play's service-provider carve-out
+     plausibly covers it, but that is a judgement rather than a fact, and it
+     is the sort of judgement worth writing down with a date and a name
+     against it before the form is submitted.
 
    Do not declare Photos and videos or Files and docs. Attachments have server
    routes and a payload type but no client: `lib/export/archive.dart` says
