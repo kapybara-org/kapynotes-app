@@ -197,40 +197,7 @@ if [[ "$PRIVACY_TRACKING" == "false" && "$PRIVACY_TRACKING_DOMAIN_COUNT" == "0" 
 else
   fail "privacy manifest must declare no tracking and no tracking domains"
 fi
-PRIVACY_REPORT="$(
-  MANIFEST_JSON="$PRIVACY_COLLECTED_JSON" python3 - <<'PYCHECK'
-import json, os, sys
-
-# App Store Connect's category names and Apple's manifest keys for the same
-# thing. An unmapped category is a hard error rather than a silent pass: a new
-# data type must be taught to this map before it can ship.
-KEYS = {
-    'EMAIL_ADDRESS': 'NSPrivacyCollectedDataTypeEmailAddress',
-    'USER_ID': 'NSPrivacyCollectedDataTypeUserID',
-    'OTHER_USER_CONTENT': 'NSPrivacyCollectedDataTypeOtherUserContent',
-    'PHOTOS_OR_VIDEOS': 'NSPrivacyCollectedDataTypePhotosorVideos',
-    'AUDIO_DATA': 'NSPrivacyCollectedDataTypeAudioData',
-}
-
-record = json.load(open('packaging/privacy.json'))
-wanted = [u['category'] for u in record['dataUsages']]
-unmapped = [c for c in wanted if c not in KEYS]
-if unmapped:
-    print('unmapped in preflight_ios.sh: ' + ', '.join(sorted(unmapped)))
-    sys.exit(0)
-
-manifest = json.loads(os.environ['MANIFEST_JSON'] or '[]')
-declared = {entry.get('NSPrivacyCollectedDataType') for entry in manifest}
-missing = [c for c in wanted if KEYS[c] not in declared]
-extra = sorted(declared - {KEYS[c] for c in wanted})
-if missing:
-    print('missing from the manifest: ' + ', '.join(missing))
-elif extra:
-    print('in the manifest but not the record: ' + ', '.join(extra))
-else:
-    print(f'OK {len(wanted)}')
-PYCHECK
-)"
+PRIVACY_REPORT="$(MANIFEST_JSON="$PRIVACY_COLLECTED_JSON" python3 packaging/check_privacy_manifest.py)"
 if [[ "$PRIVACY_REPORT" == OK* ]]; then
   pass "privacy manifest matches the App Privacy record (${PRIVACY_REPORT#OK } types, app functionality)"
 else
