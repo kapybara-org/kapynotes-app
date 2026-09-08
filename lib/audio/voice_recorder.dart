@@ -97,9 +97,22 @@ class VoiceRecorder implements VoiceRecorderBackend {
     return path;
   }
 
+  /// Stops, and leaves the file for the caller to delete.
+  ///
+  /// Deliberately not `AudioRecorder.cancel()`. That returns before Android has
+  /// finished with the recording: `MediaRecorder` finalises on its own thread,
+  /// so the file the caller then deletes does not exist yet, and the encoder
+  /// writes it a moment later — a recording the user threw away, still on disk.
+  /// Measured on an API 36 emulator, where `moov` was written after the delete
+  /// had already run and found nothing.
+  ///
+  /// `stop()` returns only once the container is complete, which is the whole
+  /// reason the too-short path can read a duration out of one. Finalising a
+  /// file we are about to remove costs a few milliseconds; losing track of
+  /// discarded audio costs rather more.
   @override
   Future<void> cancel() async {
-    await _live.cancel();
+    await _live.stop();
     await _stopListening();
   }
 

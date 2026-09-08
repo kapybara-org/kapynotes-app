@@ -100,6 +100,11 @@ dev_dependencies:
 
   flutter_test:
     sdk: flutter
+  # Drives the real app on a real device or simulator, with the real plugins
+  # behind it. `flutter test` runs against fakes by design; this is the only
+  # way to find out whether the microphone actually works on a platform.
+  integration_test:
+    sdk: flutter
   flutter_lints: ^6.0.0
 
 flutter:

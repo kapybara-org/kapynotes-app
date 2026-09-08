@@ -353,10 +353,18 @@ class VoiceRecordingController extends ChangeNotifier {
     _paused = null;
   }
 
+  /// Removes a recording nobody is going to keep.
+  ///
+  /// Failure is caught, because a leftover file is not worth taking a note
+  /// editor down for, but it is no longer silent: this is the only thing
+  /// standing between a discarded recording and the disk, so a regression here
+  /// should leave a trace rather than nothing at all.
   Future<void> _delete(File file) async {
     try {
       if (await file.exists()) await file.delete();
-    } catch (_) {}
+    } catch (error) {
+      debugPrint('KapyNotes: could not delete a discarded recording: $error');
+    }
   }
 
   /// Removes stray `voice-*.m4a` files an hour old or more.

@@ -90,14 +90,34 @@ class AppTray with TrayListener {
     // A Windows tray icon opens its app on click and its menu on right-click.
     // A macOS menu bar item opens its menu either way.
     if (AppPlatform.isMacOS) {
-      unawaited(trayManager.popUpContextMenu());
+      unawaited(_showMenu());
       return;
     }
     onOpen();
   }
 
   @override
-  void onTrayIconRightMouseDown() => unawaited(trayManager.popUpContextMenu());
+  void onTrayIconRightMouseDown() => unawaited(_showMenu());
+
+  /// Opens the menu, and on Windows makes it possible to close again.
+  ///
+  /// `TrackPopupMenu` only cancels on a click elsewhere when the window that
+  /// owns it is the foreground window. Microsoft has said so since KB135788,
+  /// and `tray_manager` calls `SetForegroundWindow` only when asked — which it
+  /// is not by default. Without this the menu opens over the notification area
+  /// and then will not go away: clicking outside does nothing, and it sits on
+  /// top of every other window until an item is picked.
+  ///
+  /// Upstream deprecates the parameter for being Windows-only, which is
+  /// exactly what it is wanted for, so the deprecation is the wrong signal
+  /// rather than a warning worth acting on. If a later `tray_manager` removes
+  /// it this stops compiling, which beats quietly returning to a menu nobody
+  /// can dismiss. There is nowhere newer to move: 0.5.3 is the latest release
+  /// and carries the same code.
+  Future<void> _showMenu() => trayManager.popUpContextMenu(
+    // ignore: deprecated_member_use
+    bringAppToFront: AppPlatform.isWindows,
+  );
 
   @override
   void onTrayMenuItemClick(MenuItem menuItem) {

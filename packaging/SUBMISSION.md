@@ -273,7 +273,9 @@ is a dependency.
   describe the build as paid.
 - [x] Release type is `MANUAL`. Note that it reverted to `AFTER_APPROVAL` once
   after a UI save, so re-check it just before submitting.
-- [ ] **1.14.0 review notes need a paragraph about voice notes.** A reviewer
+- [ ] **1.15.0 review notes need a paragraph about voice notes.** (1.14.0
+  shipped widgets and went live without them, so the paragraph belongs to the
+  version that actually carries the microphone.) A reviewer
   who taps the microphone gets a permission prompt and a recording, and that
   much needs no account. Transcription does: it is off until the account holder
   turns it on, behind a sheet that names Cloudflare and says what is sent. Say
@@ -986,6 +988,35 @@ allowed, and the same text belongs in Apple's App Review notes:
 >
 > Block and report: Settings > Sharing (on any invitation), and a note's Share
 > sheet (beside a member, and Report this note).
+
+Apple's notes carry that base text plus a paragraph per release, because App
+Review reads them against the build in front of them rather than against the
+listing. **1.15.0 adds voice notes**, and two sentences in the 1.14.0 notes
+become false the moment it ships:
+
+> New in 1.15.0: voice notes. Tap the microphone in a note's footer and talk;
+> the recording lands in the note as a chip you can play back. This needs no
+> account and no network — the audio stays on the device, and the microphone
+> prompt is the only thing you have to accept.
+>
+> Turning speech into text is a separate, opt-in step. It is off until the
+> account holder turns it on in Settings > Voice notes, behind a sheet that
+> names Cloudflare as the processor and says exactly what leaves the device.
+> Nothing is transcribed before that consent is given, so a reviewer who
+> records and never opens Settings will correctly see a recording with no
+> transcript — that is the intended behaviour, not a failure. Audio sent for
+> transcription is not retained by Cloudflare or by us; it is used only to
+> produce the text that comes back.
+>
+> Note that the wide widget's "Dictate" button now starts this recorder, where
+> in 1.14.0 it only raised the keyboard for system dictation.
+
+The second paragraph is the one that earns its place. A reviewer who records
+and finds no transcript has found the feature working exactly as designed, and
+without that sentence the obvious report is "transcription does not work". The
+third matters because 1.14.0's notes state in as many words that *the app does
+not record audio itself in this version* — a sentence that has to be retracted
+in the same breath as the build that retracts it.
 
 The first sentence is the one that is easy to leave out and expensive to.
 Sign-in opens on "we will email you a code", and *Use a password* is a text
