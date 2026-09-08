@@ -23,20 +23,25 @@ Future<void> runExport(
   NoteArchiveService? service,
 }) async {
   final messenger = _Messenger(context);
+  final progress = messenger.progress('Exporting notes…');
   final result = await (service ?? NoteArchiveService()).exportNotes(
-    notes.notes,
+    notes.allNotes,
     images: notes.blobs,
   );
-  if (!context.mounted) return;
+  if (!context.mounted) {
+    progress.dismiss();
+    return;
+  }
 
   switch (result.status) {
     case ExportStatus.cancelled:
+      progress.dismiss();
       return;
     case ExportStatus.failed:
-      messenger.error(result.error ?? 'Kapy Notes could not write the export.');
+      progress.error(result.error ?? 'Kapy Notes could not write the export.');
     case ExportStatus.written:
       final count = result.noteCount;
-      messenger.ok(
+      progress.success(
         AppPlatform.isDesktop
             ? 'Exported $count ${count == 1 ? 'note' : 'notes'}'
             // On a phone nobody chose the folder, so the message has to say
@@ -54,11 +59,15 @@ Future<void> runImport(
   NoteArchiveService? service,
 }) async {
   final messenger = _Messenger(context);
+  var progress = messenger.progress('Opening export…');
   final contents = await (service ?? NoteArchiveService()).openArchive();
-  if (contents == null || !context.mounted) return;
+  if (contents == null || !context.mounted) {
+    progress.dismiss();
+    return;
+  }
 
   if (!contents.isReadable) {
-    messenger.error(switch (contents.fault) {
+    progress.error(switch (contents.fault) {
       ArchiveFault.noManifest => 'That zip is not a Kapy Notes export.',
       ArchiveFault.futureSchema =>
         'That export was written by a newer version of Kapy Notes.',
@@ -67,17 +76,19 @@ Future<void> runImport(
     return;
   }
 
+  progress.dismiss();
   final plan = await showDialog<ImportPlan>(
     context: context,
     builder: (context) => _ImportDialog(contents: contents, notes: notes),
   );
   if (plan == null || !context.mounted) return;
 
+  progress = messenger.progress('Importing notes…');
   // Pictures first: a note restored before its images would render holes
   // until something happened to look again.
   await restoreImportedImages(notes.blobs, contents);
   final written = applyImportPlan(notes, plan);
-  messenger.ok(
+  progress.success(
     written == 0
         ? 'Everything in that export is already here'
         : 'Imported $written ${written == 1 ? 'note' : 'notes'}',
@@ -91,15 +102,8 @@ class _Messenger {
 
   final BuildContext context;
 
-  void ok(String message) {
-    if (context.mounted) Toast.show(context, message);
-  }
-
-  void error(String message) {
-    if (context.mounted) {
-      Toast.show(context, message, icon: Icons.error_outline, isError: true);
-    }
-  }
+  ToastProgress progress(String message) =>
+      Toast.showProgress(context, message);
 }
 
 class _ImportDialog extends StatefulWidget {
@@ -117,7 +121,7 @@ class _ImportDialogState extends State<_ImportDialog> {
 
   /// Whether the choice is the user's to make. On a device with nothing on it
   /// there is only one sensible answer, and asking would be noise.
-  bool get _hasNotes => widget.notes.notes.isNotEmpty;
+  bool get _hasNotes => widget.notes.allNotes.isNotEmpty;
 
   @override
   void initState() {
@@ -127,7 +131,7 @@ class _ImportDialogState extends State<_ImportDialog> {
 
   ImportPlan get _plan => ImportPlan.from(
     archive: widget.contents,
-    existing: widget.notes.notes,
+    existing: widget.notes.allNotes,
     tombstones: widget.notes.tombstones,
     mode: _mode,
     now: DateTime.now(),

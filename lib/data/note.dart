@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'note_attachment.dart';
 import 'note_format.dart';
 
+const Object _keepArchivedAt = Object();
+
 /// A single note. Its title is derived from [body] rather than stored, so it
 /// can never drift out of sync with the text.
 class Note {
@@ -20,6 +22,12 @@ class Note {
 
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// When the note left the main list, or null while it is active.
+  ///
+  /// Archiving is content state rather than a tombstone. It therefore travels
+  /// with the note, can be synced, and can be cleared to restore the note.
+  final DateTime? archivedAt;
 
   /// The [updatedAt] the server has confirmed it holds, or null if this note
   /// has never been pushed.
@@ -62,6 +70,7 @@ class Note {
     this.attachments = const [],
     required this.createdAt,
     required this.updatedAt,
+    this.archivedAt,
     this.syncedAt,
     this.spaceId,
     this.contentKey,
@@ -74,12 +83,14 @@ class Note {
 
   /// True when this note is in a shared space rather than the personal one.
   bool get isShared => spaceId != null;
+  bool get isArchived => archivedAt != null;
 
   Note copyWith({
     String? body,
     List<NoteFormatRange>? formats,
     List<NoteAttachmentRef>? attachments,
     DateTime? updatedAt,
+    Object? archivedAt = _keepArchivedAt,
   }) => Note(
     id: id,
     body: body ?? this.body,
@@ -87,6 +98,9 @@ class Note {
     attachments: attachments ?? this.attachments,
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    archivedAt: identical(archivedAt, _keepArchivedAt)
+        ? this.archivedAt
+        : archivedAt as DateTime?,
     // Deliberately carried over: an edit must not look synced.
     syncedAt: syncedAt,
     spaceId: spaceId,
@@ -103,6 +117,7 @@ class Note {
     attachments: attachments,
     createdAt: createdAt,
     updatedAt: updatedAt,
+    archivedAt: archivedAt,
     syncedAt: at,
     spaceId: spaceId,
     contentKey: contentKey,
@@ -126,6 +141,7 @@ class Note {
     attachments: attachments,
     createdAt: createdAt,
     updatedAt: at,
+    archivedAt: archivedAt,
     syncedAt: null,
     spaceId: spaceId,
     contentKey: contentKey,
@@ -146,6 +162,7 @@ class Note {
     attachments: attachments,
     createdAt: createdAt,
     updatedAt: updatedAt,
+    archivedAt: archivedAt,
     syncedAt: syncedAt,
     spaceId: spaceId,
     contentKey: contentKey,
@@ -164,9 +181,13 @@ class Note {
       syncedAt!.millisecondsSinceEpoch != updatedAt.millisecondsSinceEpoch;
 
   /// First non-empty line, without heading markers or a trailing colon.
+  ///
+  /// A note that is nothing but a recording has no line to take one from, so
+  /// it borrows the recording's own summary — which is the closest thing to
+  /// what the person would have typed if they had typed anything.
   String get title {
     final line = _firstNonEmptyLine();
-    if (line == null) return untitled;
+    if (line == null) return _spokenTitle() ?? untitled;
 
     var text = line.trimLeft();
     text = text.replaceFirst(RegExp(r'^#{1,6}\s*'), '');
@@ -183,9 +204,25 @@ class Note {
 
   bool get isEmpty => body.trim().isEmpty;
 
-  /// Case-insensitive match against the whole body, not just the title.
-  bool matches(String query) =>
-      body.toLowerCase().contains(query.toLowerCase());
+  /// Case-insensitive match against the whole body, and anything a recording
+  /// was heard to say.
+  ///
+  /// A transcript is searchable because that is most of the point of having
+  /// one: a recording you cannot find is a recording you will not listen to.
+  /// The words live inside the ref rather than in [body] — putting them in the
+  /// body would mean the user's own note filling with text they did not type —
+  /// so search has to look in both places.
+  bool matches(String query) {
+    final needle = query.toLowerCase();
+    if (body.toLowerCase().contains(needle)) return true;
+    for (final ref in attachments) {
+      if (ref is! NoteVoiceRef) continue;
+      if (_spokenText(ref).any((line) => line.toLowerCase().contains(needle))) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   /// The first line containing [query], shown while searching so the user can
   /// see why a note matched.
@@ -194,9 +231,55 @@ class Note {
     final needle = query.toLowerCase();
     for (final line in body.split('\n')) {
       if (line.toLowerCase().contains(needle)) {
-        final trimmed = line.trim();
+        final trimmed = line
+            .replaceAll(NoteAttachmentRef.placeholder, '')
+            .trim();
         if (trimmed.isNotEmpty) return trimmed;
       }
+    }
+    // Nothing in the text: the match was something said out loud. The glyph is
+    // what tells the reader why a note they never typed those words into is in
+    // their results.
+    for (final ref in attachments) {
+      if (ref is! NoteVoiceRef) continue;
+      for (final line in _spokenText(ref)) {
+        if (line.toLowerCase().contains(needle)) {
+          final trimmed = line.trim();
+          if (trimmed.isNotEmpty) return '🎙 $trimmed';
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Everything a recording is known to have said: its summary first, because
+  /// a hit there is the better snippet, then the transcript segment by segment.
+  static Iterable<String> _spokenText(NoteVoiceRef ref) sync* {
+    final summary = ref.summary;
+    if (summary != null) {
+      yield summary.title;
+      yield* summary.points;
+    }
+    final transcript = ref.transcript;
+    if (transcript != null) {
+      for (final segment in transcript.segments) {
+        yield segment.t;
+      }
+    }
+  }
+
+  /// The title of the first recording that has one.
+  String? _spokenTitle() {
+    for (final ref in attachments) {
+      if (ref is NoteVoiceRef && ref.summary != null) {
+        final title = ref.summary!.title.trim();
+        if (title.isNotEmpty) return title;
+      }
+    }
+    // A recording with no summary yet is still not "Untitled" — it is a note
+    // holding a voice note, and saying so beats saying nothing.
+    for (final ref in attachments) {
+      if (ref is NoteVoiceRef) return 'Voice note';
     }
     return null;
   }
@@ -225,6 +308,7 @@ class Note {
       'attachments': attachments.map((ref) => ref.toJson()).toList(),
     'createdAt': createdAt.millisecondsSinceEpoch,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
+    if (archivedAt != null) 'archivedAt': archivedAt!.millisecondsSinceEpoch,
     // Omitted while null so a store that has never synced stays byte-identical
     // to what earlier builds wrote.
     if (syncedAt != null) 'syncedAt': syncedAt!.millisecondsSinceEpoch,
@@ -250,6 +334,7 @@ class Note {
       attachments: noteAttachmentsFromJson(raw['attachments'], body),
       createdAt: _date(raw['createdAt']),
       updatedAt: _date(raw['updatedAt']),
+      archivedAt: _optionalDate(raw['archivedAt']),
       syncedAt: _optionalDate(raw['syncedAt']),
       spaceId: spaceId is String && spaceId.isNotEmpty ? spaceId : null,
       contentKey: _optionalKey(raw['contentKey']),

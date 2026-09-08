@@ -6,6 +6,10 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Recording a voice note. The sandbox treats the microphone as its own
+	     capability, so the usage string alone is not enough on macOS. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 	<!-- The export save panel and the import open panel. The sandbox grants
 	     access only to what the user picks in one, which is exactly the
 	     scope this feature wants. -->

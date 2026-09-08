@@ -61,6 +61,37 @@ void main() {
       expect(b.view.createdAt, created);
     });
 
+    test('archive and restore state converges between replicas', () {
+      final a = NoteDoc(replica: 'a');
+      final b = NoteDoc(replica: 'b');
+      b.apply(type(a, 'Keep this'));
+      final archivedAt = DateTime.utc(2026, 9, 7, 13);
+
+      final archiveOps = a.reconcile(
+        body: a.view.body,
+        formats: a.view.formats,
+        attachments: a.view.attachments,
+        createdAt: a.view.createdAt!,
+        archivedAt: archivedAt,
+        now: archivedAt,
+      );
+      b.apply(archiveOps);
+      expect(b.view.archivedAt, archivedAt);
+
+      final restoredAt = DateTime.utc(2026, 9, 7, 14);
+      final restoreOps = b.reconcile(
+        body: b.view.body,
+        formats: b.view.formats,
+        attachments: b.view.attachments,
+        createdAt: b.view.createdAt!,
+        archivedAt: null,
+        now: restoredAt,
+      );
+      a.apply(restoreOps);
+      expect(a.view.archivedAt, isNull);
+      expect(b.view.archivedAt, isNull);
+    });
+
     test('deleting a typed word is one op', () {
       final doc = NoteDoc(replica: 'a');
       type(doc, 'x');

@@ -21,6 +21,11 @@ import 'markdown.dart';
 String archiveImageName(NoteAttachmentRef ref) =>
     '${ref.hash}${extensionForImageMime(ref.mime)}';
 
+/// What a recording is called inside an archive. `.m4a` so it plays when a
+/// person double-clicks it, which is most of what an export is for.
+String archiveVoiceName(NoteVoiceRef ref) =>
+    '${ref.hash}${NoteVoiceRef.voiceExtension}';
+
 String extensionForImageMime(String mime) => switch (mime) {
   'image/png' => '.png',
   'image/jpeg' => '.jpg',
@@ -45,18 +50,40 @@ String extensionForImageMime(String mime) => switch (mime) {
 /// downloaded — is dropped rather than written out. U+FFFC must never reach
 /// the file: it is invisible in every editor, so it would read as a stray
 /// character nobody can see, delete, or explain.
-String withImageLinks(String markdown, List<ExportedImage> images) {
+String withImageLinks(String markdown, List<ExportedAttachment> images) {
   if (!markdown.contains(NoteAttachmentRef.placeholder)) return markdown;
   final buffer = StringBuffer();
   var next = 0;
   for (var i = 0; i < markdown.length; i++) {
     if (markdown.codeUnitAt(i) == 0xFFFC) {
-      if (next < images.length) buffer.write('![](../${images[next++].path})');
+      if (next < images.length) {
+        final attachment = images[next++];
+        // A recording is a plain link, not an image link: `![]()` on an audio
+        // file renders as a broken picture in every markdown editor there is.
+        buffer.write(
+          attachment.isVoice
+              ? '[${voiceLinkLabel(attachment)}](../${attachment.path})'
+              : '![](../${attachment.path})',
+        );
+      }
       continue;
     }
     buffer.writeCharCode(markdown.codeUnitAt(i));
   }
   return buffer.toString();
+}
+
+/// What a recording's link says. The summary's title when there is one, so an
+/// exported note reads as prose rather than as a row of identical links.
+String voiceLinkLabel(ExportedAttachment attachment) {
+  final title = attachment.summary?['title'];
+  final duration = Duration(milliseconds: attachment.durationMs ?? 0);
+  final seconds = duration.inSeconds;
+  final stamp = '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  if (title is String && title.trim().isNotEmpty) {
+    return '${title.trim()} $stamp';
+  }
+  return 'Voice note $stamp';
 }
 
 /// The inverse: turns image links back into the placeholder the note stores.
@@ -67,9 +94,15 @@ String withImageLinks(String markdown, List<ExportedImage> images) {
 /// it would produce a note pointing at a picture that does not exist.
 ({String markdown, List<String> paths}) withoutImageLinks(String markdown) {
   final paths = <String>[];
-  final pattern = RegExp(r'!\[\]\(\.\./(images/[^)\s]+)\)');
+  // Both shapes this writes: an image link, and a recording's titled link.
+  // Anything else a person typed by hand stays as text, because there are no
+  // bytes in the archive behind it.
+  final pattern = RegExp(
+    r'!\[\]\(\.\./(images/[^)\s]+)\)'
+    r'|\[[^\]]*\]\(\.\./(attachments/[^)\s]+)\)',
+  );
   final replaced = markdown.replaceAllMapped(pattern, (match) {
-    paths.add(match.group(1)!);
+    paths.add(match.group(1) ?? match.group(2)!);
     return NoteAttachmentRef.placeholder;
   });
   return (markdown: replaced, paths: paths);
@@ -112,21 +145,36 @@ Uint8List buildExportArchive({
     // Images are woven in after the markdown is rendered, so nothing here has
     // to think about how a placeholder interacts with formatting offsets: at
     // this point the ranges have already been turned into characters.
-    final images = <ExportedImage>[];
+    final images = <ExportedAttachment>[];
     for (final ref in note.attachments) {
-      // Recordings get their own export path; a kind this build does not know
-      // is not something it can write a markdown image link for either.
-      if (ref is! NoteImageRef) continue;
+      // Only what this device actually holds the bytes for. A placeholder with
+      // nothing behind it is dropped rather than written out.
       if (!imageBytes.containsKey(ref.hash)) continue;
-      images.add(
-        ExportedImage(
-          hash: ref.hash,
-          path: '$exportImagesDirectory/${archiveImageName(ref)}',
-          mime: ref.mime,
-          width: ref.width,
-          height: ref.height,
-        ),
-      );
+      if (ref is NoteImageRef) {
+        images.add(
+          ExportedAttachment(
+            hash: ref.hash,
+            path: '$exportImagesDirectory/${archiveImageName(ref)}',
+            mime: ref.mime,
+            width: ref.width,
+            height: ref.height,
+          ),
+        );
+      } else if (ref is NoteVoiceRef) {
+        images.add(
+          ExportedAttachment(
+            kind: 'voice',
+            hash: ref.hash,
+            path: '$exportAttachmentsDirectory/${archiveVoiceName(ref)}',
+            mime: ref.mime,
+            durationMs: ref.durationMs,
+            // The words go in the manifest, so a re-import restores a
+            // transcript that was paid for rather than transcribing it again.
+            transcript: ref.transcript?.toJson(),
+            summary: ref.summary?.toJson(),
+          ),
+        );
+      }
     }
     final markdown = withImageLinks(
       renderNoteMarkdown(note.body, note.formats),
@@ -138,9 +186,7 @@ Uint8List buildExportArchive({
       final bytes = imageBytes[image.hash];
       if (bytes == null || imagePaths.contains(image.path)) continue;
       imagePaths.add(image.path);
-      files.add(
-        ArchiveFile.bytes(image.path, bytes)..lastModTime = modified,
-      );
+      files.add(ArchiveFile.bytes(image.path, bytes)..lastModTime = modified);
     }
     entries.add(
       ExportedNote(
@@ -148,6 +194,7 @@ Uint8List buildExportArchive({
         path: path,
         updatedAt: note.updatedAt,
         createdAt: note.createdAt.millisecondsSinceEpoch,
+        archivedAt: note.archivedAt,
         bodyHash: bodyHashOf(markdown),
         formats: note.formats,
         images: images,
@@ -278,7 +325,8 @@ ArchiveContents readExportArchive(Uint8List bytes) {
 
     // Pictures are read as bytes and never decoded as text, which is the
     // whole reason this branch comes first.
-    if (name.startsWith('$exportImagesDirectory/')) {
+    if (name.startsWith('$exportImagesDirectory/') ||
+        name.startsWith('$exportAttachmentsDirectory/')) {
       images[name] = Uint8List.fromList(data);
       continue;
     }
@@ -380,19 +428,34 @@ ArchiveContents readExportArchiveFromBytes(List<int> bytes) =>
     if (anchor < 0) break;
     final image = byPath[path];
     if (image != null && availableImages.contains(path)) {
-      attachments.add(
-        NoteImageRef(
-          offset: anchor,
-          hash: image.hash,
-          // A fresh key. The archive carried none, and this device is the
-          // only place this copy of the picture has ever lived.
-          key: randomKey(),
-          mime: image.mime,
-          width: image.width,
-          height: image.height,
-          bytes: 0,
-        ),
-      );
+      // A fresh key in both branches. The archive carried none, and this
+      // device is the only place this copy has ever lived.
+      if (image.isVoice) {
+        attachments.add(
+          NoteVoiceRef(
+            offset: anchor,
+            hash: image.hash,
+            key: randomKey(),
+            mime: image.mime,
+            bytes: 0,
+            durationMs: image.durationMs ?? 1,
+            transcript: VoiceTranscript.fromJson(image.transcript),
+            summary: VoiceSummary.fromJson(image.summary),
+          ),
+        );
+      } else {
+        attachments.add(
+          NoteImageRef(
+            offset: anchor,
+            hash: image.hash,
+            key: randomKey(),
+            mime: image.mime,
+            width: image.width ?? 1,
+            height: image.height ?? 1,
+            bytes: 0,
+          ),
+        );
+      }
     }
     anchor++;
   }
@@ -406,6 +469,7 @@ ArchiveContents readExportArchiveFromBytes(List<int> bytes) =>
       attachments: normalizeNoteAttachments(attachments, body),
       createdAt: DateTime.fromMillisecondsSinceEpoch(entry.createdAt),
       updatedAt: entry.updatedAt,
+      archivedAt: entry.archivedAt,
     ),
     handEdited: handEdited,
   );

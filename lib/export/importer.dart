@@ -136,6 +136,7 @@ class ImportPlan {
               // import, so it survives even though the id does not.
               createdAt: read.note.createdAt,
               updatedAt: now,
+              archivedAt: read.note.archivedAt,
             ),
           ),
         );
@@ -190,6 +191,8 @@ class ImportPlan {
 bool _isSameRevision(Note local, Note incoming) =>
     local.body == incoming.body &&
     listEquals(local.formats, incoming.formats) &&
+    local.archivedAt?.millisecondsSinceEpoch ==
+        incoming.archivedAt?.millisecondsSinceEpoch &&
     local.updatedAt.millisecondsSinceEpoch ==
         incoming.updatedAt.millisecondsSinceEpoch;
 

@@ -23,6 +23,11 @@ class ImageSync {
     required SyncApi api,
     required BlobStore store,
     required NotesStore notes,
+    this.downloadRetryDelays = const [
+      Duration(milliseconds: 300),
+      Duration(milliseconds: 1200),
+      Duration(seconds: 3),
+    ],
   }) : _api = api,
        _store = store,
        _notes = notes;
@@ -30,6 +35,7 @@ class ImageSync {
   final SyncApi _api;
   final BlobStore _store;
   final NotesStore _notes;
+  final List<Duration> downloadRetryDelays;
 
   /// Hashes currently being fetched, so ten images in one note that all point
   /// at the same picture cost one download rather than ten.
@@ -61,26 +67,36 @@ class ImageSync {
     return note.copyWith(attachments: updated, updatedAt: note.updatedAt);
   }
 
-  Future<NoteAttachmentRef?> _uploadOne(Note note, NoteAttachmentRef ref) async {
+  Future<NoteAttachmentRef?> _uploadOne(
+    Note note,
+    NoteAttachmentRef ref,
+  ) async {
+    var current = ref;
     try {
-      final id = await _put(note, ref.hash, ref.key);
-      if (id == null) return null;
+      var id = current.attachmentId;
+      if (id == null) {
+        id = await _put(note, current.hash, current.key);
+        if (id == null) return null;
+        current = current.copyWith(attachmentId: id);
+      }
 
       // Only a picture has a second object to upload. Every other kind is one
       // blob, and uploads by the same path.
-      if (ref is NoteImageRef) {
-        String? thumbId;
-        if (ref.thumbHash != null) {
-          thumbId = await _put(note, ref.thumbHash!, ref.key);
+      if (current is NoteImageRef) {
+        var thumbId = current.thumbId;
+        if (current.thumbHash != null && thumbId == null) {
+          thumbId = await _put(note, current.thumbHash!, current.key);
+          if (thumbId == null) return current;
         }
-        return ref.copyWith(attachmentId: id, thumbId: thumbId);
+        return current.copyWith(attachmentId: id, thumbId: thumbId);
       }
-      return ref.copyWith(attachmentId: id);
+      return current;
     } catch (error) {
       // Quota refusals land here too, and are the ordinary reason an upload
-      // does not happen. The note still syncs; the picture waits.
-      debugPrint('KapyNotes: could not upload image ${ref.hash}: $error');
-      return null;
+      // does not happen. Preserve whichever object already completed so a
+      // thumbnail interruption never retransmits and bills the full image.
+      debugPrint('KapyNotes: could not upload image ${current.hash}: $error');
+      return current.attachmentId == null ? null : current;
     }
   }
 
@@ -127,11 +143,7 @@ class ImageSync {
     if (located == null) return null;
 
     try {
-      final urls = await _api.attachmentUrls([located.id]);
-      final url = urls[located.id];
-      if (url == null) return null;
-
-      final sealed = await _api.getBlob(url);
+      final sealed = await _download(located.id);
       if (sealed == null) return null;
 
       final box = SealedBox.fromBytes(sealed);
@@ -152,7 +164,7 @@ class ImageSync {
       }
       // Kept, so opening this note tomorrow is a disk read rather than
       // another download of bytes we already paid to transfer.
-      await _store.put(plaintext);
+      await _store.put(plaintext, extension: _extensionFor(hash));
       return plaintext;
     } catch (error) {
       debugPrint('KapyNotes: could not fetch image $hash: $error');
@@ -160,9 +172,47 @@ class ImageSync {
     }
   }
 
+  /// Presigned URLs and object-store reads can briefly lag the note op that
+  /// announced them, especially across a phone network transition. Retry only
+  /// that transport boundary; bad ciphertext and bad keys still fail once.
+  Future<Uint8List?> _download(String attachmentId) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        final urls = await _api.attachmentUrls([attachmentId]);
+        final url = urls[attachmentId];
+        final bytes = url == null ? null : await _api.getBlob(url);
+        if (bytes != null) return bytes;
+      } on SyncTransientException catch (error) {
+        if (attempt >= downloadRetryDelays.length) rethrow;
+        debugPrint('KapyNotes: image download retry: ${error.message}');
+      }
+      if (attempt >= downloadRetryDelays.length) return null;
+      await Future<void>.delayed(downloadRetryDelays[attempt]);
+    }
+  }
+
+  /// The file extension a hash must be stored under on this device.
+  ///
+  /// Not cosmetic for audio: iOS picks its decoder from the extension, so a
+  /// recording pulled down as a bare hash is silent there and nowhere else —
+  /// the kind of bug that only appears on one platform, after a sync, on
+  /// somebody else's device.
+  String _extensionFor(String hash) {
+    for (final note in _notes.allNotes) {
+      for (final ref in note.attachments) {
+        if (ref.hash != hash) continue;
+        if (ref is NoteVoiceRef) return NoteVoiceRef.voiceExtension;
+        // Images keep the empty extension they have always had, so nothing
+        // already on disk has to be migrated.
+        return '';
+      }
+    }
+    return '';
+  }
+
   /// The server id and file key for a hash, from whichever note refers to it.
   ({String id, Uint8List key})? _locate(String hash) {
-    for (final note in _notes.notes) {
+    for (final note in _notes.allNotes) {
       for (final ref in note.attachments) {
         if (ref.hash == hash && ref.attachmentId != null) {
           return (id: ref.attachmentId!, key: ref.key);

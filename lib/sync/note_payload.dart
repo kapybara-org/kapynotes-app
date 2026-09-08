@@ -13,6 +13,7 @@ class NotePayload {
   final String body;
   final List<NoteFormatRange> formats;
   final List<NoteAttachmentRef> attachments;
+  final int? archivedAt;
 
   /// Epoch milliseconds, matching the on-disk format of the Flutter model.
   final int createdAt;
@@ -21,6 +22,7 @@ class NotePayload {
     required this.body,
     this.formats = const [],
     this.attachments = const [],
+    this.archivedAt,
     required this.createdAt,
   });
 
@@ -28,6 +30,7 @@ class NotePayload {
     body: note.body,
     formats: note.formats,
     attachments: note.attachments,
+    archivedAt: note.archivedAt?.millisecondsSinceEpoch,
     createdAt: note.createdAt.millisecondsSinceEpoch,
   );
 
@@ -48,6 +51,9 @@ class NotePayload {
     attachments: normalizeNoteAttachments(attachments, body),
     createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
     updatedAt: updatedAt,
+    archivedAt: archivedAt == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(archivedAt!),
     spaceId: spaceId,
     contentKey: contentKey,
     contentKeyEpoch: contentKeyEpoch,
@@ -58,6 +64,7 @@ class NotePayload {
     'body': body,
     'formats': formats.map((format) => format.toJson()).toList(),
     'attachments': attachments.map((ref) => ref.toJson()).toList(),
+    if (archivedAt != null) 'archivedAt': archivedAt,
     'createdAt': createdAt,
   };
 
@@ -79,6 +86,7 @@ class NotePayload {
       body: body,
       formats: noteFormatsFromJson(raw['formats'], body.length),
       attachments: attachments,
+      archivedAt: raw['archivedAt'] is int ? raw['archivedAt']! as int : null,
       createdAt: createdAt is int && createdAt >= 0 ? createdAt : 0,
     );
   }

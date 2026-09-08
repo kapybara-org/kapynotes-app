@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
 import '../../core/theme.dart';
+import '../../core/toast.dart';
 import '../../sync/account.dart';
 import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
@@ -258,10 +261,27 @@ class _SignInFormState extends State<_SignInForm> {
 
   String get _address => _email.text.trim();
 
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _run(
+    Future<void> Function() action, {
+    required String waiting,
+    required String done,
+    required String failed,
+  }) async {
     setState(() => _busy = true);
-    await action();
-    if (mounted) setState(() => _busy = false);
+    final progress = Toast.showProgress(context, waiting);
+    try {
+      await action();
+      final error = widget.account.lastError;
+      if (error == null) {
+        progress.success(done);
+      } else {
+        progress.error(failed);
+      }
+    } catch (_) {
+      progress.error(failed);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _goTo(_SignInStep step, {String? note}) => setState(() {
@@ -270,29 +290,44 @@ class _SignInFormState extends State<_SignInForm> {
     _code.clear();
   });
 
-  Future<void> _sendSignInCode() => _run(() async {
-    if (await widget.account.sendCode(_address) && mounted) {
-      _goTo(_SignInStep.code);
-    }
-  });
+  Future<void> _sendSignInCode() => _run(
+    () async {
+      if (await widget.account.sendCode(_address) && mounted) {
+        _goTo(_SignInStep.code);
+      }
+    },
+    waiting: 'Sending sign-in code…',
+    done: 'Sign-in code sent',
+    failed: 'Could not send sign-in code',
+  );
 
-  Future<void> _sendResetCode() => _run(() async {
-    if (await widget.account.requestPasswordReset(_address) && mounted) {
-      _goTo(_SignInStep.resetCode);
-    }
-  });
+  Future<void> _sendResetCode() => _run(
+    () async {
+      if (await widget.account.requestPasswordReset(_address) && mounted) {
+        _goTo(_SignInStep.resetCode);
+      }
+    },
+    waiting: 'Sending reset code…',
+    done: 'Reset code sent',
+    failed: 'Could not send reset code',
+  );
 
-  Future<void> _resetPassword() => _run(() async {
-    final done = await widget.account.resetPassword(
-      email: _address,
-      code: _code.text.trim(),
-      password: _password.text,
-    );
-    if (done && mounted) {
-      _password.clear();
-      _goTo(_SignInStep.password, note: 'Password changed. Sign in with it.');
-    }
-  });
+  Future<void> _resetPassword() => _run(
+    () async {
+      final done = await widget.account.resetPassword(
+        email: _address,
+        code: _code.text.trim(),
+        password: _password.text,
+      );
+      if (done && mounted) {
+        _password.clear();
+        _goTo(_SignInStep.password, note: 'Password changed. Sign in with it.');
+      }
+    },
+    waiting: 'Changing password…',
+    done: 'Password updated',
+    failed: 'Could not change password',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -393,9 +428,15 @@ class _SignInFormState extends State<_SignInForm> {
         email: _address,
         code: _code.text.trim(),
       ),
+      waiting: 'Signing in…',
+      done: 'Signed in',
+      failed: 'Could not sign in',
     ),
     _SignInStep.password => _run(
       () => widget.account.signIn(email: _address, password: _password.text),
+      waiting: 'Signing in…',
+      done: 'Signed in',
+      failed: 'Could not sign in',
     ),
   };
 
@@ -537,15 +578,20 @@ class _PassphraseFormState extends State<_PassphraseForm> {
       _problem = null;
       _busy = true;
     });
+    final progress = Toast.showProgress(context, 'Securing sync…');
     final recovery = await widget.account.createPassphrase(passphrase);
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (recovery == null) {
-      setState(
-        () => _problem = widget.account.lastError ?? 'That did not work.',
-      );
+    if (!mounted) {
+      progress.dismiss();
       return;
     }
+    setState(() => _busy = false);
+    if (recovery == null) {
+      final message = widget.account.lastError ?? 'That did not work.';
+      setState(() => _problem = message);
+      progress.error('Could not secure sync');
+      return;
+    }
+    progress.success('Sync secured');
     await showRecoveryKeyDialog(context, recovery);
   }
 
@@ -667,18 +713,32 @@ class _UnlockFormState extends State<_UnlockForm> {
       _busy = true;
       _problem = null;
     });
+    final progress = Toast.showProgress(context, 'Unlocking notes…');
     final opened = _usingRecoveryKey
         ? await widget.account.unlockWithRecoveryKey(_input.text)
         : await widget.account.unlock(_input.text);
-    if (!mounted) return;
+    if (!mounted) {
+      if (opened) {
+        progress.success('Notes unlocked');
+      } else {
+        progress.dismiss();
+      }
+      return;
+    }
+    final problem = opened
+        ? null
+        : _usingRecoveryKey
+        ? 'That recovery key does not open this account.'
+        : 'That passphrase does not open this account.';
     setState(() {
       _busy = false;
-      _problem = opened
-          ? null
-          : _usingRecoveryKey
-          ? 'That recovery key does not open this account.'
-          : 'That passphrase does not open this account.';
+      _problem = problem;
     });
+    if (opened) {
+      progress.success('Notes unlocked');
+    } else {
+      progress.error('Could not unlock notes');
+    }
   }
 
   @override
@@ -719,7 +779,16 @@ class _UnlockFormState extends State<_UnlockForm> {
             ),
           ),
           TextButton(
-            onPressed: _busy ? null : widget.account.signOut,
+            onPressed: _busy
+                ? null
+                : () => unawaited(
+                    _runAccountAction(
+                      context,
+                      waiting: 'Signing out…',
+                      done: 'Signed out',
+                      action: widget.account.signOut,
+                    ),
+                  ),
             child: const Text('Sign out'),
           ),
         ],
@@ -751,12 +820,26 @@ class _AccountSwitch extends StatelessWidget {
           'they are not on any server to get back.',
       children: [
         FilledButton(
-          onPressed: () => account.resolveAccountSwitch(keepLocalNotes: true),
+          onPressed: () => unawaited(
+            _runAccountAction(
+              context,
+              waiting: 'Adding notes to this account…',
+              done: 'Notes added to this account',
+              action: () => account.resolveAccountSwitch(keepLocalNotes: true),
+            ),
+          ),
           child: Text('Add them to $email'),
         ),
         const SizedBox(height: 6),
         TextButton(
-          onPressed: () => account.resolveAccountSwitch(keepLocalNotes: false),
+          onPressed: () => unawaited(
+            _runAccountAction(
+              context,
+              waiting: 'Removing local notes…',
+              done: 'Local notes removed',
+              action: () => account.resolveAccountSwitch(keepLocalNotes: false),
+            ),
+          ),
           child: const Text('Discard them'),
         ),
       ],
@@ -789,6 +872,23 @@ class _Ready extends StatelessWidget {
     return 'Synced ${ago.inDays}d ago';
   }
 
+  Future<void> _syncNow(BuildContext context) async {
+    final sync = account.sync;
+    if (sync == null) return;
+    final progress = Toast.showProgress(context, 'Syncing notes…');
+    try {
+      await sync.syncNow();
+      if (sync.status == SyncStatus.failed ||
+          sync.status == SyncStatus.offline) {
+        progress.error(sync.lastError ?? 'Could not sync notes');
+      } else {
+        progress.success('Notes synced');
+      }
+    } catch (_) {
+      progress.error(sync.lastError ?? 'Could not sync notes');
+    }
+  }
+
   @override
   Widget build(BuildContext context) => _Panel(
     title: account.user?.email ?? 'Signed in',
@@ -797,11 +897,23 @@ class _Ready extends StatelessWidget {
       Row(
         children: [
           FilledButton(
-            onPressed: account.isSyncing ? null : () => account.sync?.syncNow(),
+            onPressed: account.isSyncing
+                ? null
+                : () => unawaited(_syncNow(context)),
             child: const Text('Sync now'),
           ),
           const SizedBox(width: 8),
-          TextButton(onPressed: account.signOut, child: const Text('Sign out')),
+          TextButton(
+            onPressed: () => unawaited(
+              _runAccountAction(
+                context,
+                waiting: 'Signing out…',
+                done: 'Signed out',
+                action: account.signOut,
+              ),
+            ),
+            child: const Text('Sign out'),
+          ),
         ],
       ),
       _Message(
@@ -847,6 +959,21 @@ Future<void> _confirm(BuildContext context, Account account) =>
       builder: (context) => _DeleteAccountDialog(account: account),
     );
 
+Future<void> _runAccountAction(
+  BuildContext context, {
+  required String waiting,
+  required String done,
+  required Future<void> Function() action,
+}) async {
+  final progress = Toast.showProgress(context, waiting);
+  try {
+    await action();
+    progress.success(done);
+  } catch (_) {
+    progress.error('Could not reach the server. Try again.');
+  }
+}
+
 class _DeleteAccountDialog extends StatefulWidget {
   const _DeleteAccountDialog({required this.account});
   final Account account;
@@ -885,18 +1012,29 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       _busy = true;
       _problem = null;
     });
+    final progress = Toast.showProgress(context, 'Deleting account…');
 
     final ok = await widget.account.deleteAccount(_typed.text.trim());
-    if (!mounted) return;
+    if (!mounted) {
+      if (ok) {
+        progress.success('Account deleted');
+      } else {
+        progress.dismiss();
+      }
+      return;
+    }
 
     if (ok) {
       Navigator.of(context).pop();
+      progress.success('Account deleted');
       return;
     }
+    final message = widget.account.lastError ?? 'That did not work.';
     setState(() {
       _busy = false;
-      _problem = widget.account.lastError ?? 'That did not work.';
+      _problem = message;
     });
+    progress.error('Could not delete account');
   }
 
   @override

@@ -12,7 +12,23 @@ import 'key_wrap.dart';
 /// turn wrapped to each member's public key.
 enum SpaceKind { personal, team }
 
-enum SpaceRole { owner, member }
+enum SpaceRole { owner, member, viewer }
+
+extension SpaceRoleAccess on SpaceRole {
+  bool get canEdit => this != SpaceRole.viewer;
+
+  String get accessLabel => switch (this) {
+    SpaceRole.owner => 'Owner',
+    SpaceRole.member => 'Editor',
+    SpaceRole.viewer => 'View only',
+  };
+}
+
+SpaceRole _spaceRole(Object? raw) => switch (raw) {
+  'owner' => SpaceRole.owner,
+  'viewer' => SpaceRole.viewer,
+  _ => SpaceRole.member,
+};
 
 class SpaceMember {
   final String userId;
@@ -40,6 +56,8 @@ class SpaceMember {
   });
 
   bool get isOwner => role == SpaceRole.owner;
+  bool get isViewer => role == SpaceRole.viewer;
+  bool get canEdit => role.canEdit;
 
   /// True when this member can be granted the key: they have a public key
   /// and do not hold the space key yet.
@@ -58,7 +76,7 @@ class SpaceMember {
     return SpaceMember(
       userId: userId,
       email: email,
-      role: raw['role'] == 'owner' ? SpaceRole.owner : SpaceRole.member,
+      role: _spaceRole(raw['role']),
       joinedAt: joined.toLocal(),
       hasKey: raw['hasKey'] == true,
       x25519Public: _bytes(raw['x25519Public']),
@@ -70,12 +88,14 @@ class SpaceMember {
 class SpaceInvite {
   final String token;
   final String email;
+  final SpaceRole role;
   final DateTime expiresAt;
   final DateTime createdAt;
 
   const SpaceInvite({
     required this.token,
     required this.email,
+    this.role = SpaceRole.member,
     required this.expiresAt,
     required this.createdAt,
   });
@@ -90,6 +110,7 @@ class SpaceInvite {
     return SpaceInvite(
       token: token,
       email: email,
+      role: _spaceRole(raw['role']),
       expiresAt: expires.toLocal(),
       createdAt: (created ?? expires).toLocal(),
     );
@@ -102,6 +123,7 @@ class PendingInvite {
   final String spaceId;
   final String spaceName;
   final String invitedBy;
+  final SpaceRole role;
   final DateTime expiresAt;
 
   const PendingInvite({
@@ -109,6 +131,7 @@ class PendingInvite {
     required this.spaceId,
     required this.spaceName,
     required this.invitedBy,
+    this.role = SpaceRole.member,
     required this.expiresAt,
   });
 
@@ -131,6 +154,7 @@ class PendingInvite {
       spaceId: spaceId,
       spaceName: name,
       invitedBy: by,
+      role: _spaceRole(raw['role']),
       expiresAt: expires.toLocal(),
     );
   }
@@ -181,6 +205,8 @@ class Space {
   bool get isPersonal => kind == SpaceKind.personal;
   bool get isTeam => kind == SpaceKind.team;
   bool get isOwner => role == SpaceRole.owner;
+  bool get isViewer => role == SpaceRole.viewer;
+  bool get canEdit => role.canEdit;
   bool get hasKey => spaceKey != null;
 
   /// What to call it in a list. The personal space has no name of its own.
@@ -233,6 +259,7 @@ class Space {
         {
           'token': i.token,
           'email': i.email,
+          'role': i.role.name,
           'expiresAt': i.expiresAt.toUtc().toIso8601String(),
           'createdAt': i.createdAt.toUtc().toIso8601String(),
         },
@@ -256,7 +283,7 @@ class Space {
       kind: raw['kind'] == 'team' ? SpaceKind.team : SpaceKind.personal,
       name: raw['name'] is String ? raw['name'] as String : null,
       ownerId: ownerId,
-      role: raw['role'] == 'owner' ? SpaceRole.owner : SpaceRole.member,
+      role: _spaceRole(raw['role']),
       keyGeneration: generation,
       rotationPending: raw['rotationPending'] == true,
       spaceKey: SealedToPublicKey.fromJson(raw['spaceKey']),
@@ -276,6 +303,7 @@ class Space {
 class InviteResult {
   final String token;
   final String email;
+  final SpaceRole role;
   final DateTime expiresAt;
 
   /// Whether the server managed to email the link. It works either way; a
@@ -285,6 +313,7 @@ class InviteResult {
   const InviteResult({
     required this.token,
     required this.email,
+    this.role = SpaceRole.member,
     required this.expiresAt,
     required this.emailed,
   });

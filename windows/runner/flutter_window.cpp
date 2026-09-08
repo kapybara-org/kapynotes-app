@@ -27,6 +27,8 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   login_item_channel_ =
       RegisterLoginItemChannel(flutter_controller_->engine()->messenger());
+  rich_clipboard_channel_ = RegisterRichClipboardChannel(
+      flutter_controller_->engine()->messenger(), GetHandle());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -44,6 +46,7 @@ bool FlutterWindow::OnCreate() {
 void FlutterWindow::OnDestroy() {
   // Before the engine it borrows its messenger from.
   login_item_channel_ = nullptr;
+  rich_clipboard_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

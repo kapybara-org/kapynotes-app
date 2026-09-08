@@ -1,8 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/calc/highlight.dart';
+import 'package:kapy_notes/calc/keyword_help.dart';
+import 'package:kapy_notes/calc/parser.dart';
 
 void main() {
+  test('every colored calculator keyword has an explanation', () {
+    expect(calcKeywordHelp.keys.toSet(), calcKeywords);
+  });
+
   test('highlights only the // suffix on prose and calculation lines', () {
     const body = '''Meeting notes // confirm date
 2 + 2 // rough estimate

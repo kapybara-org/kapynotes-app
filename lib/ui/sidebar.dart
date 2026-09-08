@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
@@ -22,13 +25,17 @@ class Sidebar extends StatelessWidget {
     required this.onQueryChanged,
     required this.onSelect,
     required this.onCreate,
-    this.onDelete,
+    this.onArchive,
+    this.onRestore,
+    this.onArchiveToggle,
     this.onShare,
     this.sharing,
     this.onSettingsPressed,
     this.updates,
     this.searchFocusNode,
     this.showHeader = true,
+    this.archiveMode = false,
+    this.archivedCount = 0,
   });
 
   final List<Note> notes;
@@ -38,7 +45,9 @@ class Sidebar extends StatelessWidget {
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<String> onSelect;
   final VoidCallback onCreate;
-  final ValueChanged<String>? onDelete;
+  final ValueChanged<String>? onArchive;
+  final ValueChanged<String>? onRestore;
+  final VoidCallback? onArchiveToggle;
 
   /// Null where there is nothing to share to: a build without a server.
   /// The row then shows no share affordance rather than one that opens onto
@@ -50,11 +59,13 @@ class Sidebar extends StatelessWidget {
   final Sharing? sharing;
   final VoidCallback? onSettingsPressed;
 
-  /// Drives the dot on the settings gear. Null where the app cannot update
-  /// itself, which is also where the dot would never have anything to say.
+  /// Drives the Update badge beside the installed version. Null where the app
+  /// store owns updates; the version still comes from the installed package.
   final UpdateChecker? updates;
   final FocusNode? searchFocusNode;
   final bool showHeader;
+  final bool archiveMode;
+  final int archivedCount;
 
   @override
   Widget build(BuildContext context) {
@@ -71,17 +82,21 @@ class Sidebar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (showHeader) _Header(onCreate: onCreate),
+            if (showHeader) const _Header(),
             _SearchField(
               query: query,
               onChanged: onQueryChanged,
+              onCreate: onCreate,
+              archiveMode: archiveMode,
               focusNode: searchFocusNode,
             ),
             Expanded(
               child: notes.isEmpty
                   ? _SidebarEmpty(
                       message: query.trim().isEmpty
-                          ? 'No notes yet'
+                          ? archiveMode
+                                ? 'Archive is empty'
+                                : 'No notes yet'
                           : 'No matching notes',
                     )
                   : _grouped
@@ -94,9 +109,12 @@ class Sidebar extends StatelessWidget {
                           _row(notes[index], shared: false),
                     ),
             ),
-            if (onSettingsPressed != null)
+            if (onSettingsPressed != null || onArchiveToggle != null)
               _SidebarFooter(
-                onSettingsPressed: onSettingsPressed!,
+                onSettingsPressed: onSettingsPressed,
+                onArchivePressed: onArchiveToggle,
+                showingArchive: archiveMode,
+                archivedCount: archivedCount,
                 updates: updates,
               ),
           ],
@@ -119,8 +137,19 @@ extension on Sidebar {
     selected: note.id == selectedId,
     shared: shared,
     onTap: () => onSelect(note.id),
-    onShare: onShare == null ? null : () => onShare!(note.id),
-    onDelete: onDelete == null ? null : () => onDelete!(note.id),
+    onShare: archiveMode || onShare == null ? null : () => onShare!(note.id),
+    onArchive:
+        archiveMode ||
+            onArchive == null ||
+            !(sharing?.canEdit(note) ?? !note.isShared)
+        ? null
+        : () => onArchive!(note.id),
+    onRestore:
+        !archiveMode ||
+            onRestore == null ||
+            !(sharing?.canEdit(note) ?? !note.isShared)
+        ? null
+        : () => onRestore!(note.id),
   );
 
   /// Your own notes first, then one section per shared space, in the order
@@ -215,34 +244,159 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _SidebarFooter extends StatelessWidget {
-  const _SidebarFooter({required this.onSettingsPressed, this.updates});
+class _SidebarFooter extends StatefulWidget {
+  const _SidebarFooter({
+    this.onSettingsPressed,
+    this.onArchivePressed,
+    required this.showingArchive,
+    required this.archivedCount,
+    this.updates,
+  });
 
-  final VoidCallback onSettingsPressed;
+  final VoidCallback? onSettingsPressed;
+  final VoidCallback? onArchivePressed;
+  final bool showingArchive;
+  final int archivedCount;
   final UpdateChecker? updates;
+
+  @override
+  State<_SidebarFooter> createState() => _SidebarFooterState();
+}
+
+class _SidebarFooterState extends State<_SidebarFooter> {
+  String _standaloneVersion = '';
+
+  @override
+  void initState() {
+    super.initState();
+    widget.updates?.addListener(_changed);
+    if (widget.updates == null && !AppPlatform.isFlutterTest) {
+      unawaited(_readInstalledVersion());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _SidebarFooter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.updates == widget.updates) return;
+    oldWidget.updates?.removeListener(_changed);
+    widget.updates?.addListener(_changed);
+    if (widget.updates == null &&
+        _standaloneVersion.isEmpty &&
+        !AppPlatform.isFlutterTest) {
+      unawaited(_readInstalledVersion());
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.updates?.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _readInstalledVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) setState(() => _standaloneVersion = info.version);
+    } catch (error) {
+      debugPrint('KapyNotes: could not show the installed version: $error');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final updates = this.updates;
+    final updates = widget.updates;
+    final version = updates?.currentVersion ?? _standaloneVersion;
+    final rows =
+        (widget.onArchivePressed == null ? 0 : 1) +
+        (widget.onSettingsPressed == null ? 0 : 1);
     return Container(
-      height: AppControlMetrics.scaleBar(context, NoteFooter.height),
+      height: AppControlMetrics.scaleBar(context, NoteFooter.height * rows),
       decoration: BoxDecoration(
         border: Border(top: BorderSide(color: palette.separator, width: 0.5)),
       ),
-      child: updates == null
-          ? _SettingsEntry(
-              key: const ValueKey('sidebar-settings'),
-              onPressed: onSettingsPressed,
-            )
-          : ListenableBuilder(
-              listenable: updates,
-              builder: (context, _) => _SettingsEntry(
-                key: const ValueKey('sidebar-settings'),
-                onPressed: onSettingsPressed,
-                hasUpdate: updates.hasUpdate,
+      child: Column(
+        children: [
+          if (widget.onArchivePressed != null)
+            Expanded(
+              child: _ArchiveEntry(
+                showingArchive: widget.showingArchive,
+                count: widget.archivedCount,
+                onPressed: widget.onArchivePressed!,
               ),
             ),
+          if (widget.onSettingsPressed != null)
+            Expanded(
+              child: _SettingsEntry(
+                key: const ValueKey('sidebar-settings'),
+                onPressed: widget.onSettingsPressed!,
+                version: version,
+                hasUpdate: updates?.hasUpdate ?? false,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArchiveEntry extends StatelessWidget {
+  const _ArchiveEntry({
+    required this.showingArchive,
+    required this.count,
+    required this.onPressed,
+  });
+
+  final bool showingArchive;
+  final int count;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final label = showingArchive ? 'All notes' : 'Archive';
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        key: ValueKey(showingArchive ? 'sidebar-all-notes' : 'sidebar-archive'),
+        onTap: onPressed,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              Icon(
+                showingArchive ? Icons.notes_rounded : Icons.archive_outlined,
+                size: AppControlMetrics.iconControl,
+                color: palette.textSecondary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: AppTypeScale.control,
+                    color: palette.textSecondary,
+                  ),
+                ),
+              ),
+              if (!showingArchive && count > 0)
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.small,
+                    color: palette.textTertiary,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -258,10 +412,12 @@ class _SettingsEntry extends StatelessWidget {
   const _SettingsEntry({
     super.key,
     required this.onPressed,
+    this.version = '',
     this.hasUpdate = false,
   });
 
   final VoidCallback onPressed;
+  final String version;
   final bool hasUpdate;
 
   @override
@@ -278,13 +434,10 @@ class _SettingsEntry extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
-                _UpdateDot(
-                  visible: hasUpdate,
-                  child: Icon(
-                    Icons.settings_outlined,
-                    size: AppControlMetrics.iconControl,
-                    color: palette.textSecondary,
-                  ),
+                Icon(
+                  Icons.settings_outlined,
+                  size: AppControlMetrics.iconControl,
+                  color: palette.textSecondary,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -298,6 +451,43 @@ class _SettingsEntry extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (version.isNotEmpty)
+                  Text(
+                    key: const ValueKey('sidebar-app-version'),
+                    'v$version',
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: AppTypeScale.small,
+                      fontWeight: FontWeight.w500,
+                      color: palette.textTertiary,
+                    ),
+                  ),
+                if (hasUpdate) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    key: const ValueKey('sidebar-update-badge'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: palette.selectedBackground,
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(
+                        color: palette.chipCurrency.withValues(alpha: 0.35),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Text(
+                      'Update',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: palette.chipCurrency,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -307,51 +497,8 @@ class _SettingsEntry extends StatelessWidget {
   }
 }
 
-/// The entire announcement outside the settings pane: a 6px dot on the gear.
-///
-/// It is painted over the button rather than beside it, so nothing in the
-/// footer moves when an update appears, and it ignores pointers so the gear
-/// keeps the whole hit target.
-class _UpdateDot extends StatelessWidget {
-  const _UpdateDot({required this.visible, required this.child});
-
-  final bool visible;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!visible) return child;
-    final palette = context.palette;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        child,
-        Positioned(
-          top: 3,
-          right: 3,
-          child: IgnorePointer(
-            child: Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: palette.chipCurrency,
-                shape: BoxShape.circle,
-                // A hairline of the sidebar behind it keeps the dot legible
-                // where it overlaps the gear's own strokes.
-                border: Border.all(color: palette.sidebarBackground, width: 1),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _Header extends StatelessWidget {
-  const _Header({required this.onCreate});
-
-  final VoidCallback onCreate;
+  const _Header();
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -359,23 +506,12 @@ class _Header extends StatelessWidget {
       context,
       AppControlMetrics.toolbarHeight,
     ),
-    child: Stack(
-      alignment: Alignment.center,
-      children: [
-        AppWordmark(
-          markSize: AppControlMetrics.wordmarkMark,
-          fontSize: AppTypeScale.wordmark,
-          spacing: 6.5,
-        ),
-        Positioned(
-          right: 10,
-          child: _IconButton(
-            icon: Icons.add_rounded,
-            tooltip: 'New note',
-            onPressed: onCreate,
-          ),
-        ),
-      ],
+    child: Center(
+      child: AppWordmark(
+        markSize: AppControlMetrics.wordmarkMark,
+        fontSize: AppTypeScale.wordmark,
+        spacing: 6.5,
+      ),
     ),
   );
 }
@@ -384,11 +520,15 @@ class _SearchField extends StatefulWidget {
   const _SearchField({
     required this.query,
     required this.onChanged,
+    required this.onCreate,
+    required this.archiveMode,
     this.focusNode,
   });
 
   final String query;
   final ValueChanged<String> onChanged;
+  final VoidCallback onCreate;
+  final bool archiveMode;
   final FocusNode? focusNode;
 
   @override
@@ -424,71 +564,95 @@ class _SearchFieldState extends State<_SearchField> {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 1, 10, 9),
-      child: TextField(
-        controller: _controller,
-        focusNode: widget.focusNode,
-        onChanged: widget.onChanged,
-        style: TextStyle(
-          fontSize: AppTypeScale.control,
-          color: palette.textPrimary,
-        ),
-        cursorHeight: AppTypeScale.control + 2,
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: 'Search notes',
-          hintStyle: TextStyle(
-            fontSize: AppTypeScale.control,
-            color: palette.textTertiary,
-          ),
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            size: AppControlMetrics.iconAdornment,
-            color: palette.textTertiary,
-          ),
-          prefixIconConstraints: BoxConstraints(
-            minWidth: AppControlMetrics.fieldAdornmentSlot + 2,
-            minHeight: AppControlMetrics.fieldAdornmentSlot,
-          ),
-          suffixIcon: widget.query.isEmpty
-              ? null
-              // Inside a text field, so without a cursor of its own it would
-              // inherit the field's I-beam and read as more text.
-              : MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: () {
-                      _controller.clear();
-                      widget.onChanged('');
-                    },
-                    child: Icon(
-                      Icons.cancel_rounded,
-                      size: AppControlMetrics.iconAdornment,
-                      color: palette.textTertiary,
-                    ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              focusNode: widget.focusNode,
+              onChanged: widget.onChanged,
+              style: TextStyle(
+                fontSize: AppTypeScale.control,
+                color: palette.textPrimary,
+              ),
+              cursorHeight: AppTypeScale.control + 2,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: widget.archiveMode
+                    ? 'Search archive'
+                    : 'Search notes',
+                hintStyle: TextStyle(
+                  fontSize: AppTypeScale.control,
+                  color: palette.textTertiary,
+                ),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  size: AppControlMetrics.iconAdornment,
+                  color: palette.textTertiary,
+                ),
+                prefixIconConstraints: BoxConstraints(
+                  minWidth: AppControlMetrics.fieldAdornmentSlot + 2,
+                  minHeight: AppControlMetrics.fieldAdornmentSlot,
+                ),
+                suffixIcon: widget.query.isEmpty
+                    ? null
+                    // Inside a text field, so without a cursor of its own it would
+                    // inherit the field's I-beam and read as more text.
+                    : MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: () {
+                            _controller.clear();
+                            widget.onChanged('');
+                          },
+                          child: Icon(
+                            Icons.cancel_rounded,
+                            size: AppControlMetrics.iconAdornment,
+                            color: palette.textTertiary,
+                          ),
+                        ),
+                      ),
+                suffixIconConstraints: BoxConstraints(
+                  minWidth: AppControlMetrics.fieldAdornmentSlot,
+                  minHeight: AppControlMetrics.fieldAdornmentSlot,
+                ),
+                contentPadding: EdgeInsets.symmetric(
+                  vertical: AppControlMetrics.fieldVerticalPadding,
+                ),
+                filled: true,
+                fillColor: palette.controlBackground,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: palette.controlBorder,
+                    width: 0.5,
                   ),
                 ),
-          suffixIconConstraints: BoxConstraints(
-            minWidth: AppControlMetrics.fieldAdornmentSlot,
-            minHeight: AppControlMetrics.fieldAdornmentSlot,
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: palette.controlBorder,
+                    width: 0.5,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: palette.selectedBorder,
+                    width: 0.75,
+                  ),
+                ),
+              ),
+            ),
           ),
-          contentPadding: EdgeInsets.symmetric(
-            vertical: AppControlMetrics.fieldVerticalPadding,
+          const SizedBox(width: 6),
+          _IconButton(
+            key: const ValueKey('sidebar-new-note'),
+            icon: Icons.add_rounded,
+            tooltip: 'New note',
+            onPressed: widget.onCreate,
           ),
-          filled: true,
-          fillColor: palette.controlBackground,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: palette.controlBorder, width: 0.5),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: palette.controlBorder, width: 0.5),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: palette.selectedBorder, width: 0.75),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -504,7 +668,8 @@ class NoteRow extends StatefulWidget {
     required this.selected,
     required this.onTap,
     this.onShare,
-    this.onDelete,
+    this.onArchive,
+    this.onRestore,
     this.shared = false,
   });
 
@@ -514,7 +679,8 @@ class NoteRow extends StatefulWidget {
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback? onShare;
-  final VoidCallback? onDelete;
+  final VoidCallback? onArchive;
+  final VoidCallback? onRestore;
 
   /// Whether the note is in a shared space, which the row marks so a person
   /// typing knows somebody else can see it.
@@ -529,7 +695,6 @@ class _NoteRowState extends State<NoteRow> {
 
   /// Right-click on desktop, long-press on touch.
   Future<void> _showContextMenu(BuildContext context, Offset position) async {
-    final error = Theme.of(context).colorScheme.error;
     final overlay =
         Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (overlay == null) return;
@@ -564,27 +729,54 @@ class _NoteRowState extends State<NoteRow> {
               ],
             ),
           ),
-        PopupMenuItem(
-          value: 'delete',
-          height: 36,
-          child: Row(
-            children: [
-              Icon(
-                Icons.delete_outline_rounded,
-                size: AppControlMetrics.iconControl,
-                color: error,
-              ),
-              const SizedBox(width: 10),
-              Text(
-                'Delete Note',
-                style: TextStyle(fontSize: AppTypeScale.control, color: error),
-              ),
-            ],
+        if (widget.onArchive != null)
+          PopupMenuItem(
+            value: 'archive',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.archive_outlined,
+                  size: AppControlMetrics.iconControl,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Archive Note',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.control,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+        if (widget.onRestore != null)
+          PopupMenuItem(
+            value: 'restore',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.unarchive_outlined,
+                  size: AppControlMetrics.iconControl,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Restore Note',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.control,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
-    if (choice == 'delete') widget.onDelete?.call();
+    if (choice == 'archive') widget.onArchive?.call();
+    if (choice == 'restore') widget.onRestore?.call();
     if (choice == 'share') widget.onShare?.call();
   }
 
@@ -602,9 +794,14 @@ class _NoteRowState extends State<NoteRow> {
     final secondary = palette.textSecondary;
     final actionsVisible =
         _hovering || widget.selected || !AppPlatform.hasPointer;
-    final deleteVisible = widget.onDelete != null && actionsVisible;
+    final lifecycleVisible =
+        (widget.onArchive != null || widget.onRestore != null) &&
+        actionsVisible;
     final shareVisible = widget.onShare != null && actionsVisible;
-    final hasMenu = widget.onDelete != null || widget.onShare != null;
+    final hasMenu =
+        widget.onArchive != null ||
+        widget.onRestore != null ||
+        widget.onShare != null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
@@ -682,14 +879,20 @@ class _NoteRowState extends State<NoteRow> {
                     onPressed: widget.onShare!,
                   ),
                 ],
-                if (widget.onDelete != null) ...[
+                if (widget.onArchive != null || widget.onRestore != null) ...[
                   const SizedBox(width: 4),
                   _RowAction(
-                    key: ValueKey('delete-note-${widget.note.id}'),
-                    icon: Icons.delete_outline_rounded,
-                    tooltip: 'Delete note',
-                    visible: deleteVisible,
-                    onPressed: widget.onDelete!,
+                    key: ValueKey(
+                      '${widget.onRestore != null ? 'restore' : 'archive'}-note-${widget.note.id}',
+                    ),
+                    icon: widget.onRestore != null
+                        ? Icons.unarchive_outlined
+                        : Icons.archive_outlined,
+                    tooltip: widget.onRestore != null
+                        ? 'Restore note'
+                        : 'Archive note',
+                    visible: lifecycleVisible,
+                    onPressed: widget.onRestore ?? widget.onArchive!,
                   ),
                 ],
               ],
@@ -807,6 +1010,7 @@ class _SidebarEmpty extends StatelessWidget {
 
 class _IconButton extends StatelessWidget {
   const _IconButton({
+    super.key,
     required this.icon,
     required this.tooltip,
     required this.onPressed,

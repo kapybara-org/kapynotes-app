@@ -177,8 +177,9 @@ class Lexer {
     return _make(TokenType.unknown, start);
   }
 
-  /// Reads a number, absorbing `,`/`_` group separators and an optional
-  /// exponent. A comma only counts as a separator when the digits after it
+  /// Reads a number, absorbing `,`/`_` group separators, an optional exponent,
+  /// and an attached `k` or `m` magnitude suffix. A comma only counts as a
+  /// separator when the digits after it
   /// complete a grouped integer — `1,250` and the Indian `12,34,567` are
   /// single numbers, while `max(1, 250)` stays two arguments.
   Token _number(int start) {
@@ -232,7 +233,19 @@ class Lexer {
       }
     }
 
-    final value = double.tryParse(buffer.toString());
+    var multiplier = 1.0;
+    if (_pos < source.length) {
+      final suffix = source[_pos];
+      final after = _peek(1);
+      if ((suffix == 'k' || suffix == 'K' || suffix == 'm' || suffix == 'M') &&
+          (after == null || !_isIdentPart(after))) {
+        multiplier = suffix == 'k' || suffix == 'K' ? 1000 : 1000000;
+        _pos++;
+      }
+    }
+
+    final parsed = double.tryParse(buffer.toString());
+    final value = parsed == null ? null : parsed * multiplier;
     return Token(
       type: TokenType.number,
       text: source.substring(start, _pos),

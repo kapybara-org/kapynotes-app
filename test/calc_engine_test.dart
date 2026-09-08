@@ -36,6 +36,15 @@ void main() {
   setUp(() => engine = CalcEngine(ratesPerUsd: _rates));
 
   group('number system', () {
+    test('understands attached thousand and million suffixes', () {
+      expect(line('6k'), '6,000');
+      expect(line('6k usd'), '6,000.00 USD');
+      expect(line('6m'), '6,000,000');
+      expect(line('2.5M USD'), '2,500,000.00 USD');
+      expect(line('6 m'), '6 m', reason: 'a spaced m remains metres');
+      expect(line('6km'), '6 km', reason: 'unit identifiers stay intact');
+    });
+
     test('groups in threes by default', () {
       expect(line('7000000'), '7,000,000');
       expect(line('1234.5678'), '1,234.5678');

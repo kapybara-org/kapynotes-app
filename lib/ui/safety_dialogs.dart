@@ -48,15 +48,25 @@ class _TermsSheetState extends State<_TermsSheet> {
       _busy = true;
       _error = null;
     });
+    final progress = Toast.showProgress(context, 'Enabling sharing…');
     try {
       await widget.sharing.acceptTerms();
-      if (mounted) Navigator.of(context).pop(true);
+      if (mounted) {
+        Navigator.of(context).pop(true);
+        progress.success('Sharing enabled');
+      } else {
+        progress.dismiss();
+      }
     } catch (error) {
+      final message = describeSharingError(error);
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = describeSharingError(error);
+          _error = message;
         });
+        progress.error('Could not enable sharing');
+      } else {
+        progress.dismiss();
       }
     }
   }
@@ -85,7 +95,8 @@ class _TermsSheetState extends State<_TermsSheet> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton(
-                  onPressed: () => unawaitedLaunch('https://kapynotes.com/terms'),
+                  onPressed: () =>
+                      unawaitedLaunch('https://kapynotes.com/terms'),
                   child: const Text('Read the full terms'),
                 ),
               ),
@@ -163,6 +174,7 @@ class _ReportDialogState extends State<_ReportDialog> {
       _busy = true;
       _error = null;
     });
+    final progress = Toast.showProgress(context, 'Sending report…');
     try {
       await widget.sharing.report(
         target: widget.target,
@@ -170,15 +182,22 @@ class _ReportDialogState extends State<_ReportDialog> {
         details: _details.text,
         includeContent: _includeContent,
       );
-      if (!mounted) return;
+      if (!mounted) {
+        progress.dismiss();
+        return;
+      }
       Navigator.of(context).pop(true);
-      Toast.show(context, 'Reported. We will look at it.');
+      progress.success('Reported. We will look at it.');
     } catch (error) {
+      final message = describeSharingError(error);
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = describeSharingError(error);
+          _error = message;
         });
+        progress.error('Could not send report');
+      } else {
+        progress.dismiss();
       }
     }
   }
@@ -253,7 +272,10 @@ class _ReportDialogState extends State<_ReportDialog> {
                   fillColor: palette.controlBackground,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: palette.controlBorder, width: 0.5),
+                    borderSide: BorderSide(
+                      color: palette.controlBorder,
+                      width: 0.5,
+                    ),
                   ),
                 ),
               ),
@@ -322,9 +344,8 @@ class _ReportDialogState extends State<_ReportDialog> {
 
 /// Opens a URL and swallows the failure. A link that will not open is worth
 /// less than a crash is expensive.
-void unawaitedLaunch(String url) => unawaited(
-  launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-);
+void unawaitedLaunch(String url) =>
+    unawaited(launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication));
 
 /// One sentence for whatever went wrong, in place of an exception nobody sees.
 ///
@@ -335,6 +356,7 @@ String describeSharingError(Object error) => switch (error) {
   SyncOutdatedException() => 'Update Kapy Notes to keep sharing.',
   SyncRefusedException(:final code) => switch (code) {
     termsRequiredCode => 'Agree to the sharing rules first.',
+    'view-only' => 'You have View only access to this space.',
     'already a member' => 'They are already in this space.',
     'too many pending invitations' => 'Too many people are still to accept.',
     'too many invitations today' => 'That is enough invitations for today.',

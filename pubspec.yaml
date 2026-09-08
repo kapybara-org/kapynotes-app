@@ -72,6 +72,20 @@ dependencies:
   # built there. The macOS sandbox already grants what this needs — a drop is
   # a user-selected file, covered by the same entitlement as the open panel.
   desktop_drop: ^0.8.4
+  # Recording a voice note. AAC-LC into an MPEG-4 container on all four
+  # platforms, which is the one format every one of them can both write and
+  # play without a codec of our own. Pauses itself on a phone call or a focus
+  # loss and reports it, so an interrupted recording is recoverable rather
+  # than truncated. Fully Swift Package Manager on iOS and macOS, so it forces
+  # no Podfile into `ios/`.
+  record: ^7.1.1
+  # Playing one back. Chosen over audioplayers for its position stream, which
+  # is what lets the waveform follow along at 4 Hz without polling.
+  just_audio: ^0.10.6
+  # just_audio has no Windows implementation of its own; this is the WinRT
+  # MediaPlayer one, and is a no-op everywhere else.
+  just_audio_windows: ^0.2.3
+
   # Reading an image off the system clipboard, which Flutter's own
   # `Clipboard` cannot do — it handles text and nothing else. Chosen over
   # super_clipboard, which is more capable but needs a Rust toolchain on every
@@ -79,6 +93,11 @@ dependencies:
   # justify. Covers all five platforms with plain native code.
   pasteboard: ^0.5.0
 dev_dependencies:
+  # Virtual timers, so the thirty-minute recording cap can be tested in a
+  # microsecond. Already present transitively through flutter_test; named here
+  # because this is a direct use.
+  fake_async: ^1.3.1
+
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0

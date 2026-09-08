@@ -6,6 +6,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/sharing.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
+import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
@@ -87,8 +88,10 @@ class Device {
   }
 }
 
-Widget harness(Widget child) =>
-    MaterialApp(theme: KapyTheme.dark(), home: Scaffold(body: child));
+Widget harness(Widget child) => MaterialApp(
+  theme: KapyTheme.dark(),
+  home: Scaffold(body: child),
+);
 
 /// Opens the sheet through a button, the way the app reaches it.
 Widget opener(Note note, Sharing sharing) => harness(
@@ -116,7 +119,9 @@ void main() {
     bob.dispose();
   });
 
-  testWidgets('a private note is shared with a person by email', (tester) async {
+  testWidgets('a private note is shared with a person by email', (
+    tester,
+  ) async {
     late Note note;
     await tester.runAsync(() async {
       await alice.boot();
@@ -133,13 +138,19 @@ void main() {
     // The promise, in the sheet: it stays encrypted.
     expect(find.textContaining('stays encrypted'), findsOneWidget);
     expect(find.byKey(const ValueKey('share-email')), findsOneWidget);
+    expect(find.text('Editor'), findsOneWidget);
+    expect(find.text('View only'), findsOneWidget);
 
     // An address is required.
     await tester.tap(find.byKey(const ValueKey('share-submit-Share')));
     await tester.pumpAndSettle();
     expect(find.text('Enter an email address.'), findsOneWidget);
 
-    await tester.enterText(find.byKey(const ValueKey('share-email')), bob.email);
+    await tester.enterText(
+      find.byKey(const ValueKey('share-email')),
+      bob.email,
+    );
+    await tester.tap(find.text('View only'));
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const ValueKey('share-submit-Share')));
       await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -151,14 +162,25 @@ void main() {
     expect(find.textContaining('Shared in With user-2'), findsOneWidget);
     expect(find.textContaining('Invitation sent to'), findsOneWidget);
     expect(find.text(bob.email), findsOneWidget);
-    expect(find.text('Invited · not yet accepted'), findsOneWidget);
+    expect(find.text('View only · invited · not yet accepted'), findsOneWidget);
     expect(find.byKey(const ValueKey('unshare-note')), findsOneWidget);
     expect(find.byKey(const ValueKey('stop-sharing')), findsOneWidget);
     expect(alice.notes.byId(note.id)!.isShared, isTrue);
     expect(server.outbox.single.to, bob.email);
+    expect(
+      server.spaces.values
+          .singleWhere((space) => space.kind == SpaceKind.team)
+          .invites
+          .values
+          .single
+          .role,
+      SpaceRole.viewer,
+    );
   });
 
-  testWidgets('a shared note lists who has access, and can be taken back', (tester) async {
+  testWidgets('a shared note lists who has access, and can be taken back', (
+    tester,
+  ) async {
     late Note note;
     await tester.runAsync(() async {
       await alice.boot();
@@ -173,7 +195,9 @@ void main() {
 
     await tester.pumpWidget(opener(note, alice.sharing));
     await tester.tap(find.text('open'));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('${alice.email} (you)'), findsOneWidget);
@@ -209,15 +233,23 @@ void main() {
 
     expect(find.text('Share note'), findsNothing, reason: 'the sheet closed');
     expect(alice.notes.byId(note.id)!.isShared, isFalse);
-    final space = server.spaces.values.singleWhere((s) => s.name == 'With user-2');
-    expect(server.rowsIn(space.id)[note.id]!.isTombstone, isTrue, reason: 'it left the space');
+    final space = server.spaces.values.singleWhere(
+      (s) => s.name == 'With user-2',
+    );
+    expect(
+      server.rowsIn(space.id)[note.id]!.isTombstone,
+      isTrue,
+      reason: 'it left the space',
+    );
     expect(server.rowsIn(alice.keyring.personal!.id)[note.id], isNotNull);
     // Whether that row is live again is the round trip sharing_test skips:
     // the seed carries no `deleted: false`, and the server keeps the
     // tombstone the note left behind when it was shared.
   });
 
-  testWidgets('a member sees the sheet without owner controls, and may leave', (tester) async {
+  testWidgets('a member sees the sheet without owner controls, and may leave', (
+    tester,
+  ) async {
     late Note theirs;
     await tester.runAsync(() async {
       await alice.boot();
@@ -233,7 +265,9 @@ void main() {
 
     await tester.pumpWidget(opener(theirs, bob.sharing));
     await tester.tap(find.text('open'));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('stop-sharing')), findsNothing);
@@ -264,7 +298,40 @@ void main() {
     bob.dispose();
   });
 
-  testWidgets('the sidebar groups shared notes under their space', (tester) async {
+  testWidgets('a view-only member cannot move the shared note', (tester) async {
+    late Note theirs;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      final note = alice.notes.create(body: 'Read only');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(
+        note.id,
+        email: bob.email,
+        role: SpaceRole.viewer,
+      );
+      await bob.sharing.acceptInvite(server.outbox.single.token);
+      await alice.sync.syncNow();
+      await bob.sync.syncNow();
+      theirs = bob.notes.notes.single;
+    });
+
+    await tester.pumpWidget(opener(theirs, bob.sharing));
+    await tester.tap(find.text('open'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('View only'), findsOneWidget);
+    expect(find.byKey(const ValueKey('unshare-note')), findsNothing);
+    expect(find.byKey(const ValueKey('leave-space')), findsOneWidget);
+    expect(find.byKey(const ValueKey('report-note')), findsOneWidget);
+  });
+
+  testWidgets('the sidebar groups shared notes under their space', (
+    tester,
+  ) async {
     await tester.runAsync(() async {
       await alice.boot();
       await bob.boot();
@@ -300,7 +367,9 @@ void main() {
     expect(find.text('Shared'), findsOneWidget);
   });
 
-  testWidgets('without a shared note the sidebar shows no sections', (tester) async {
+  testWidgets('without a shared note the sidebar shows no sections', (
+    tester,
+  ) async {
     await tester.runAsync(() async {
       await alice.boot();
       alice.notes.create(body: 'Only mine');

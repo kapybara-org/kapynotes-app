@@ -11,6 +11,10 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/layout_prefs.dart';
+import '../data/voice_prefs.dart';
+import 'voice_consent_sheet.dart';
+import '../speech/speech_errors.dart';
+import '../speech/speech_api.dart';
 import '../data/notes_store.dart';
 import '../sync/account.dart';
 import 'account/sharing_pane.dart';
@@ -32,6 +36,7 @@ enum SettingsSection {
   sharing,
   appearance,
   numbers,
+  voice,
   shortcuts,
   updates,
 }
@@ -77,6 +82,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.general => 'General',
     SettingsSection.sync => 'Sync',
     SettingsSection.sharing => 'Sharing',
+    SettingsSection.voice => 'Voice notes',
     SettingsSection.appearance => 'Appearance',
     SettingsSection.numbers => 'Numbers',
     SettingsSection.shortcuts => 'Shortcuts',
@@ -87,6 +93,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.general => Icons.tune_rounded,
     SettingsSection.sync => Icons.cloud_outlined,
     SettingsSection.sharing => Icons.people_outline_rounded,
+    SettingsSection.voice => Icons.mic_none_rounded,
     SettingsSection.appearance => Icons.auto_stories_outlined,
     SettingsSection.numbers => Icons.numbers_rounded,
     SettingsSection.shortcuts => Icons.keyboard_outlined,
@@ -100,6 +107,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.general => 'Notes, export and import, time zone',
     SettingsSection.sync => 'Your notes on every device',
     SettingsSection.sharing => 'Notes you share with other people',
+    SettingsSection.voice => 'Transcription, language, minutes',
     SettingsSection.appearance => 'Writing font and paper',
     SettingsSection.numbers => 'Number format and exchange rates',
     SettingsSection.shortcuts => 'System-wide and in-app keys',
@@ -123,6 +131,7 @@ Future<void> showSettings(
   UpdateChecker? updates,
   DesktopIntegration? desktopIntegration,
   VoidCallback? onOpenWelcomeNote,
+  VoicePrefs? voicePrefs,
 }) {
   SettingsDialog build({required bool asSheet}) => SettingsDialog(
     layoutPrefs: layoutPrefs,
@@ -133,6 +142,7 @@ Future<void> showSettings(
     updates: updates,
     desktopIntegration: desktopIntegration,
     onOpenWelcomeNote: onOpenWelcomeNote,
+    voicePrefs: voicePrefs,
     asSheet: asSheet,
   );
 
@@ -164,6 +174,7 @@ class SettingsDialog extends StatefulWidget {
     this.updates,
     this.desktopIntegration,
     this.onOpenWelcomeNote,
+    this.voicePrefs,
     this.asSheet = false,
   });
 
@@ -174,6 +185,7 @@ class SettingsDialog extends StatefulWidget {
 
   /// Null when the app was built without sync wired up.
   final Account? account;
+  final VoicePrefs? voicePrefs;
   final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
 
@@ -213,6 +225,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   void initState() {
     super.initState();
     _shortcutError = widget.desktopIntegration?.registrationError;
+    _loadSpeechState();
     // System Settings and the Task Manager can both drop the login item
     // without telling the app, so the switch is re-read every time this opens
     // rather than trusted from launch.
@@ -246,12 +259,217 @@ class _SettingsDialogState extends State<SettingsDialog> {
     SettingsSection.updates => widget.updates != null,
     // Absent until the app is built with a server to talk to.
     SettingsSection.sync => widget.account != null,
+    // Present even signed out, and even with no transcription configured:
+    // recording works without an account, and the pane says so rather than
+    // hiding and leaving the user to wonder where the setting went.
+    SettingsSection.voice => widget.voicePrefs != null,
     SettingsSection.sharing => widget.account != null,
     _ => true,
   };
 
   List<SettingsSection> get _sections =>
       SettingsSection.values.where(_isAvailable).toList();
+
+  SpeechConsentStatus? _speechConsent;
+  SpeechUsage? _speechUsage;
+  bool _speechBusy = false;
+  String? _speechError;
+
+  /// Asks the server what this account agreed to and how much it has used.
+  ///
+  /// Consent lives on the server rather than in a local flag so that a second
+  /// device shows the same answer, and so withdrawing it actually stops jobs
+  /// rather than merely hiding the toggle.
+  void _loadSpeechState() {
+    final speech = widget.account?.speech;
+    if (speech == null) return;
+    speech
+        .consent()
+        .then((value) {
+          if (mounted) setState(() => _speechConsent = value);
+        })
+        .catchError((Object _) {});
+    speech
+        .usage()
+        .then((value) {
+          if (mounted) setState(() => _speechUsage = value);
+        })
+        .catchError((Object _) {});
+  }
+
+  Future<void> _setTranscription(bool on) async {
+    final speech = widget.account?.speech;
+    if (speech == null || _speechBusy) return;
+
+    if (on) {
+      final accepted = await showSpeechConsentSheet(context);
+      if (!accepted) {
+        widget.voicePrefs?.transcriptionDeclinedVersion = speechConsentVersion;
+        return;
+      }
+      if (!mounted) return;
+    }
+    setState(() {
+      _speechBusy = true;
+      _speechError = null;
+    });
+    final progress = Toast.showProgress(
+      context,
+      on ? 'Turning on transcription…' : 'Turning off transcription…',
+    );
+    try {
+      // Version 0 withdraws.
+      final status = await speech.acceptConsent(on ? speechConsentVersion : 0);
+      if (on) widget.voicePrefs?.transcriptionDeclinedVersion = null;
+      if (mounted) {
+        setState(() => _speechConsent = status);
+        progress.success(
+          on ? 'Transcription turned on' : 'Transcription turned off',
+        );
+      } else {
+        progress.dismiss();
+      }
+    } catch (error) {
+      final message = describeSpeechError(error);
+      if (mounted) {
+        setState(() => _speechError = message);
+        progress.error(message);
+      } else {
+        progress.dismiss();
+      }
+    } finally {
+      if (mounted) setState(() => _speechBusy = false);
+    }
+  }
+
+  /// The languages worth offering: the ones a provider detects least reliably
+  /// are the ones somebody will want to state once and forget.
+  static const Map<String?, String> _speechLanguages = {
+    null: 'Detect automatically',
+    'en': 'English',
+    'es': 'Spanish',
+    'fr': 'French',
+    'de': 'German',
+    'hi': 'Hindi',
+    'pt': 'Portuguese',
+    'it': 'Italian',
+    'nl': 'Dutch',
+    'ja': 'Japanese',
+    'zh': 'Chinese',
+  };
+
+  Future<void> _pickSpeechLanguage(VoicePrefs prefs) async {
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Transcription language'),
+        children: [
+          for (final entry in _speechLanguages.entries)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(entry.key ?? ''),
+              child: Text(entry.value),
+            ),
+        ],
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    setState(() => prefs.language = chosen.isEmpty ? null : chosen);
+  }
+
+  String _speechMinutesLine() {
+    final usage = _speechUsage;
+    if (usage == null) {
+      return widget.account?.speech == null
+          ? 'Sign in to see how much transcription you have used'
+          : 'Checking…';
+    }
+    final used = (usage.usedSeconds / 60).floor();
+    final quota = (usage.quotaSeconds / 60).round();
+    return '$used of $quota minutes used · resets ${_shortMonthDay(usage.resetsAt)}';
+  }
+
+  static String _shortMonthDay(DateTime at) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${at.day} ${months[at.month - 1]}';
+  }
+
+  List<Widget> _voicePane() {
+    final prefs = widget.voicePrefs;
+    final signedIn = widget.account?.speech != null;
+    return [
+      const _SectionLabel('TRANSCRIPTION'),
+      _SettingsGroup(
+        children: [
+          _ToggleRow(
+            key: const ValueKey('voice-transcription-toggle'),
+            icon: Icons.mic_none_rounded,
+            title: 'Transcription',
+            subtitle: signedIn
+                ? 'Turn recordings into text and a summary'
+                : 'Sign in to use transcription',
+            value: _speechConsent?.isAccepted ?? false,
+            onChanged: signedIn && !_speechBusy
+                ? (value) => unawaited(_setTranscription(value))
+                : (_) {},
+          ),
+          if (prefs != null)
+            _ToggleRow(
+              key: const ValueKey('voice-summary-toggle'),
+              icon: Icons.subject_rounded,
+              title: 'Make a summary',
+              subtitle: 'A title and a few points, after the transcript',
+              value: prefs.summarize,
+              onChanged: (value) => setState(() => prefs.summarize = value),
+            ),
+          if (prefs != null)
+            _NavigationRow(
+              key: const ValueKey('voice-language-row'),
+              icon: Icons.translate_rounded,
+              title: 'Language',
+              subtitle:
+                  _speechLanguages[prefs.language] ?? 'Detect automatically',
+              onTap: () => unawaited(_pickSpeechLanguage(prefs)),
+            ),
+        ],
+      ),
+      if (_speechError != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Text(
+            _speechError!,
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ),
+        ),
+      const _SectionLabel('THIS MONTH'),
+      _SettingsGroup(
+        children: [
+          _NavigationRow(
+            key: const ValueKey('voice-minutes-row'),
+            icon: Icons.schedule_rounded,
+            title: 'Minutes',
+            subtitle: _speechMinutesLine(),
+            onTap: _loadSpeechState,
+          ),
+        ],
+      ),
+    ];
+  }
 
   void _openSheetSection(SettingsSection section) =>
       setState(() => _sheetSection = section);
@@ -278,7 +496,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
           _ShortcutRecorderDialog(action: action, current: current),
     );
     // Nothing came back at all: the dialog was dismissed.
-    if (choice == null) return;
+    if (!mounted || choice == null) return;
     final candidate = choice.binding;
     // Or it came back with what the action already had.
     if (candidate == current) return;
@@ -298,15 +516,21 @@ class _SettingsDialogState extends State<SettingsDialog> {
     // Told to the OS first either way: a system-wide chord has to be handed
     // back before the preference forgets which one it was.
     if (action.isGlobal && widget.desktopIntegration != null) {
+      final progress = Toast.showProgress(context, 'Updating shortcut…');
       final error = await widget.desktopIntegration!.trySystemShortcut(
         action,
         candidate,
       );
-      if (!mounted) return;
-      if (error != null) {
-        setState(() => _shortcutError = error);
+      if (!mounted) {
+        progress.dismiss();
         return;
       }
+      if (error != null) {
+        setState(() => _shortcutError = error);
+        progress.error(error);
+        return;
+      }
+      progress.success('Shortcut updated');
     }
 
     if (candidate == null) {
@@ -319,6 +543,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   Future<void> _restoreShortcutDefaults() async {
     final integration = widget.desktopIntegration;
+    final progress = integration == null
+        ? null
+        : Toast.showProgress(context, 'Restoring shortcuts…');
     if (integration != null) {
       final restored = <ShortcutAction>[];
       for (final action in ShortcutAction.values.where(
@@ -341,13 +568,26 @@ class _SettingsDialogState extends State<SettingsDialog> {
             widget.shortcuts.bindingFor(done),
           );
         }
-        if (!mounted) return;
+        if (!mounted) {
+          progress?.dismiss();
+          return;
+        }
         setState(() => _shortcutError = error);
+        progress?.error(error);
         return;
       }
     }
     widget.shortcuts.resetAll();
-    if (mounted) setState(() => _shortcutError = null);
+    if (mounted) {
+      setState(() => _shortcutError = null);
+      if (progress == null) {
+        Toast.show(context, 'Shortcuts restored');
+      } else {
+        progress.success('Shortcuts restored');
+      }
+    } else {
+      progress?.dismiss();
+    }
   }
 
   /// Turning this on changes what the close button does, which is worth
@@ -368,9 +608,21 @@ class _SettingsDialogState extends State<SettingsDialog> {
   Future<void> _setLoginItem(bool value) async {
     final integration = widget.desktopIntegration;
     if (integration == null) return;
+    final progress = Toast.showProgress(
+      context,
+      value ? 'Adding to startup…' : 'Removing from startup…',
+    );
     final error = await integration.setLoginItemEnabled(value);
-    if (!mounted) return;
+    if (!mounted) {
+      progress.dismiss();
+      return;
+    }
     setState(() => _loginItemError = error);
+    if (error == null) {
+      progress.success(value ? 'Opens at login' : 'Removed from startup');
+    } else {
+      progress.error(error);
+    }
   }
 
   Future<void> _chooseTimeZone() async {
@@ -561,6 +813,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     SettingsSection.general => _generalPane(),
     SettingsSection.sync => [SyncPane(account: widget.account!)],
     SettingsSection.sharing => [SharingPane(account: widget.account!)],
+    SettingsSection.voice => _voicePane(),
     SettingsSection.appearance => _appearancePane(),
     SettingsSection.numbers => _numbersPane(),
     SettingsSection.shortcuts => _shortcutsPane(),
@@ -1741,6 +1994,36 @@ class _UpdateRow extends StatelessWidget {
     );
   }
 
+  Future<void> _runAction(BuildContext context) async {
+    final installing = updates.available != null;
+    final progress = Toast.showProgress(
+      context,
+      installing ? 'Opening the updater…' : 'Checking for updates…',
+    );
+    final succeeded = installing
+        ? await updates.startInstall()
+        : await updates.check();
+    if (!context.mounted) {
+      progress.dismiss();
+      return;
+    }
+    if (!succeeded) {
+      progress.error(
+        installing
+            ? 'Could not open the updater'
+            : 'Could not check for updates',
+      );
+      return;
+    }
+    progress.success(
+      installing
+          ? 'Updater opened'
+          : updates.hasUpdate
+          ? 'Update available'
+          : 'Kapy Notes is up to date',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -1788,11 +2071,7 @@ class _UpdateRow extends StatelessWidget {
               const SizedBox(width: 8),
               TextButton(
                 key: const ValueKey('update-action'),
-                onPressed: busy
-                    ? null
-                    : available != null
-                    ? updates.startInstall
-                    : updates.check,
+                onPressed: busy ? null : () => unawaited(_runAction(context)),
                 style: TextButton.styleFrom(
                   minimumSize: const Size(78, 30),
                   padding: const EdgeInsets.symmetric(horizontal: 10),

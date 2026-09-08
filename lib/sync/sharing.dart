@@ -87,12 +87,19 @@ class Sharing extends ChangeNotifier {
   Space? spaceOf(Note note) =>
       note.spaceId == null ? null : _keyring.byId(note.spaceId);
 
-  /// Whether this device can read and write in a space right now.
+  /// Whether this device has the key needed to read a space right now.
   bool holdsKey(String spaceId) => _keyring.holdsKey(spaceId);
+
+  /// Personal notes and notes in spaces where this account may make changes.
+  bool canEdit(Note note) {
+    if (!note.isShared) return true;
+    return spaceOf(note)?.canEdit ?? false;
+  }
 
   /// Where an invitation link lands. The token is useless to anyone who
   /// cannot sign in as the invited address.
-  Uri inviteLink(String token) => Uri.parse(kSiteBaseUrl).resolve('join/$token');
+  Uri inviteLink(String token) =>
+      Uri.parse(kSiteBaseUrl).resolve('join/$token');
 
   /// Fetches the latest list of spaces and invitations, and the two
   /// account-level facts the sharing UI needs beside them.
@@ -134,6 +141,9 @@ class Sharing extends ChangeNotifier {
     if (space == null || !space.isTeam) {
       throw const SyncProtocolException('no such shared space');
     }
+    if (!space.canEdit) {
+      throw const SyncRefusedException(403, 'view-only', {});
+    }
     if (!_keyring.holdsKey(spaceId)) {
       throw const SyncProtocolException('waiting for the key to this space');
     }
@@ -148,23 +158,47 @@ class Sharing extends ChangeNotifier {
 
   /// Shares a note with one person: finds a space that is exactly the two of
   /// you, or makes one and invites them, then moves the note into it.
-  Future<Space> shareNoteWith(String noteId, {required String email}) async {
+  Future<Space> shareNoteWith(
+    String noteId, {
+    required String email,
+    SpaceRole role = SpaceRole.member,
+  }) async {
     final address = email.trim().toLowerCase();
-    final existing = _pairSpace(address);
+    final access = role == SpaceRole.viewer
+        ? SpaceRole.viewer
+        : SpaceRole.member;
+    final existing = _pairSpace(address, access);
     final space = existing ?? await createSpace(_pairName(address));
-    if (existing == null) await _api.invite(space.id, address);
+    if (existing == null) {
+      await _api.invite(space.id, address, role: access);
+    }
     await shareNote(noteId, spaceId: space.id);
     return _keyring.byId(space.id) ?? space;
   }
 
   /// A team space whose members and invitations are exactly this account and
   /// [email], if one exists.
-  Space? _pairSpace(String email) {
+  Space? _pairSpace(String email, SpaceRole role) {
     for (final space in teams) {
-      final others = space.othersThan(userId).map((m) => m.email.toLowerCase());
-      final invited = space.invites.map((i) => i.email.toLowerCase());
+      final otherMembers = space.othersThan(userId);
+      final otherInvites = space.invites;
+      final others = otherMembers.map((m) => m.email.toLowerCase());
+      final invited = otherInvites.map((i) => i.email.toLowerCase());
       final people = {...others, ...invited};
-      if (people.length == 1 && people.contains(email)) return space;
+      if (people.length != 1 || !people.contains(email)) continue;
+      final memberMatches =
+          otherMembers.isEmpty ||
+          otherMembers.every(
+            (member) =>
+                member.email.toLowerCase() == email && member.role == role,
+          );
+      final inviteMatches =
+          otherInvites.isEmpty ||
+          otherInvites.every(
+            (invite) =>
+                invite.email.toLowerCase() == email && invite.role == role,
+          );
+      if (memberMatches && inviteMatches) return space;
     }
     return null;
   }
@@ -179,6 +213,10 @@ class Sharing extends ChangeNotifier {
   /// a new key. Any member may do this: they could copy the text and delete
   /// the original anyway, so it is not a privilege.
   Future<void> unshareNote(String noteId) async {
+    final note = _notes.byId(noteId);
+    if (note == null || !canEdit(note)) {
+      throw const SyncRefusedException(403, 'view-only', {});
+    }
     _notes.moveToSpace(noteId, spaceId: null, contentKey: null);
     await _sync.syncNow();
   }
@@ -186,7 +224,10 @@ class Sharing extends ChangeNotifier {
   /// A new note straight into a shared space.
   Note createNoteIn(String spaceId) {
     final space = _keyring.byId(spaceId);
-    if (space == null || !space.isTeam || !_keyring.holdsKey(spaceId)) {
+    if (space == null ||
+        !space.isTeam ||
+        !space.canEdit ||
+        !_keyring.holdsKey(spaceId)) {
       throw const SyncProtocolException('no such shared space');
     }
     return _notes.create(
@@ -200,8 +241,19 @@ class Sharing extends ChangeNotifier {
   // Membership
   // -------------------------------------------------------------------------
 
-  Future<InviteResult> invite(String spaceId, String email) async {
-    final result = await _api.invite(spaceId, email.trim().toLowerCase());
+  Future<InviteResult> invite(
+    String spaceId,
+    String email, {
+    SpaceRole role = SpaceRole.member,
+  }) async {
+    final access = role == SpaceRole.viewer
+        ? SpaceRole.viewer
+        : SpaceRole.member;
+    final result = await _api.invite(
+      spaceId,
+      email.trim().toLowerCase(),
+      role: access,
+    );
     await refresh();
     return result;
   }

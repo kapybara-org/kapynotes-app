@@ -14,12 +14,14 @@ Note _note({
   required String body,
   List<NoteFormatRange> formats = const [],
   DateTime? updatedAt,
+  DateTime? archivedAt,
 }) => Note(
   id: id,
   body: body,
   formats: formats,
   createdAt: DateTime.utc(2026, 8, 1),
   updatedAt: updatedAt ?? DateTime.utc(2026, 9, 1),
+  archivedAt: archivedAt,
 );
 
 Uint8List _archiveOf(List<Note> notes) => buildExportArchive(
@@ -120,6 +122,25 @@ void main() {
       expect(
         read.note.updatedAt.millisecondsSinceEpoch,
         original.updatedAt.millisecondsSinceEpoch,
+      );
+    });
+
+    test('an archived note stays archived through an export', () {
+      final archivedAt = DateTime.utc(2026, 9, 2, 12, 30);
+      final contents = readExportArchive(
+        _archiveOf([
+          _note(id: 'safe', body: 'Recoverable', archivedAt: archivedAt),
+        ]),
+      );
+
+      final read = noteFromArchive(
+        contents.manifest!.notes.single,
+        contents.markdown,
+      )!;
+
+      expect(
+        read.note.archivedAt?.millisecondsSinceEpoch,
+        archivedAt.millisecondsSinceEpoch,
       );
     });
 
@@ -228,11 +249,14 @@ void main() {
     test('an archive from a newer version is refused, not guessed at', () {
       final contents = readExportArchive(
         _zipOf({
-          exportManifestPath: jsonEncode({'schema': 2, 'notes': const []}),
+          exportManifestPath: jsonEncode({
+            'schema': exportSchemaVersion + 1,
+            'notes': const [],
+          }),
         }),
       );
       expect(contents.fault, ArchiveFault.futureSchema);
-      expect(contents.schema, 2);
+      expect(contents.schema, exportSchemaVersion + 1);
     });
 
     test('one unreadable entry does not cost the rest of the archive', () {

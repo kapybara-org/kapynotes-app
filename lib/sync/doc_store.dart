@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -98,7 +99,9 @@ class MemoryDocStorage implements DocStorage {
   @override
   Future<Map<String, Object?>?> read(String noteId) async {
     final stored = files[noteId];
-    return stored == null ? null : jsonDecode(jsonEncode(stored)) as Map<String, Object?>;
+    return stored == null
+        ? null
+        : jsonDecode(jsonEncode(stored)) as Map<String, Object?>;
   }
 
   @override
@@ -176,7 +179,9 @@ class OutboxEntry {
       spaceId: spaceId,
       ops: ops is List ? List<Object?>.of(ops) : null,
       deviceSeq: raw['deviceSeq'] is int ? raw['deviceSeq'] as int : null,
-      snapshot: snapshot is Map ? Map<String, Object?>.of(snapshot.cast()) : null,
+      snapshot: snapshot is Map
+          ? Map<String, Object?>.of(snapshot.cast())
+          : null,
       covers: raw['covers'] is int ? raw['covers'] as int : 0,
       deleted: raw['deleted'] is bool ? raw['deleted'] as bool : null,
       from: raw['from'] is String ? raw['from'] as String : null,
@@ -189,17 +194,80 @@ class OutboxEntry {
 class DocRecord {
   DocRecord({
     required this.noteId,
-    required this.doc,
+    required NoteDoc doc,
+    required String replica,
     required this.spaceId,
     this.deviceSeq = 0,
     this.opsSinceSnapshot = 0,
     this.ownOpsSinceSnapshot = 0,
     this.seeded = false,
     List<OutboxEntry>? outbox,
-  }) : outbox = outbox ?? [];
+  }) : _doc = doc,
+       _replica = replica,
+       outbox = outbox ?? [];
+
+  DocRecord._compact({
+    required this.noteId,
+    required String snapshotJson,
+    required String replica,
+    required this.spaceId,
+    this.deviceSeq = 0,
+    this.opsSinceSnapshot = 0,
+    this.ownOpsSinceSnapshot = 0,
+    this.seeded = false,
+    List<OutboxEntry>? outbox,
+  }) : _snapshotJson = snapshotJson,
+       _replica = replica,
+       outbox = outbox ?? [];
 
   final String noteId;
-  NoteDoc doc;
+  final String _replica;
+  NoteDoc? _doc;
+  String? _snapshotJson;
+  void Function(DocRecord record)? onAccess;
+
+  /// Materializes the CRDT graph only while this note is being worked on.
+  NoteDoc get doc {
+    var value = _doc;
+    if (value == null) {
+      try {
+        final raw = jsonDecode(_snapshotJson!);
+        if (raw is! Map) throw const FormatException('snapshot is not a map');
+        value = NoteDoc.fromSnapshot(
+          Map<String, Object?>.of(raw.cast()),
+          replica: _replica,
+        );
+      } catch (error) {
+        // The rendered note is still the source the user sees. Starting an
+        // empty merge document lets the next reconcile rebuild its history,
+        // matching the old behavior of dropping an unreadable record.
+        debugPrint('KapyNotes: doc record for $noteId unreadable: $error');
+        value = NoteDoc(replica: _replica);
+      }
+      _doc = value;
+      _snapshotJson = null;
+    }
+    onAccess?.call(this);
+    return value;
+  }
+
+  set doc(NoteDoc value) {
+    _doc = value;
+    _snapshotJson = null;
+    onAccess?.call(this);
+  }
+
+  bool get isMaterialized => _doc != null;
+
+  /// Replaces the object-heavy character graph with compact JSON. The next
+  /// access restores it synchronously, so recent notes stay instant while old
+  /// notes stop occupying RAM twice alongside their rendered text.
+  void compact() {
+    final value = _doc;
+    if (value == null) return;
+    _snapshotJson = jsonEncode(value.toSnapshot());
+    _doc = null;
+  }
 
   /// The space the server holds this note in — the one the log lives in.
   /// A local note whose space differs is one that has been moved and not
@@ -243,9 +311,17 @@ class DocRecord {
     'ownOpsSinceSnapshot': ownOpsSinceSnapshot,
     'seeded': seeded,
     'serverEpoch': serverEpoch,
-    'doc': doc.toSnapshot(),
+    'doc': _snapshotForWrite(),
     'outbox': outbox.map((entry) => entry.toJson()).toList(),
   };
+
+  Map<String, Object?> _snapshotForWrite() {
+    final value = _doc;
+    if (value != null) return value.toSnapshot();
+    final raw = jsonDecode(_snapshotJson!);
+    if (raw is! Map) throw const FormatException('snapshot is not a map');
+    return Map<String, Object?>.of(raw.cast());
+  }
 
   static DocRecord? fromJson(
     String noteId,
@@ -257,25 +333,29 @@ class DocRecord {
     if (spaceId is! String || doc is! Map) return null;
     final outbox = raw['outbox'];
     try {
-      return DocRecord(
-        noteId: noteId,
-        doc: NoteDoc.fromSnapshot(
-          Map<String, Object?>.of(doc.cast()),
+      return DocRecord._compact(
+          noteId: noteId,
+          snapshotJson: jsonEncode(Map<String, Object?>.of(doc.cast())),
           replica: replica,
-        ),
-        spaceId: spaceId,
-        deviceSeq: raw['deviceSeq'] is int ? raw['deviceSeq'] as int : 0,
-        opsSinceSnapshot: raw['opsSinceSnapshot'] is int
-            ? raw['opsSinceSnapshot'] as int
-            : 0,
-        ownOpsSinceSnapshot: raw['ownOpsSinceSnapshot'] is int
-            ? raw['ownOpsSinceSnapshot'] as int
-            : 0,
-        seeded: raw['seeded'] == true,
-        outbox: outbox is List
-            ? outbox.map(OutboxEntry.fromJson).whereType<OutboxEntry>().toList()
-            : null,
-      )..serverEpoch = raw['serverEpoch'] is int ? raw['serverEpoch'] as int : 0;
+          spaceId: spaceId,
+          deviceSeq: raw['deviceSeq'] is int ? raw['deviceSeq'] as int : 0,
+          opsSinceSnapshot: raw['opsSinceSnapshot'] is int
+              ? raw['opsSinceSnapshot'] as int
+              : 0,
+          ownOpsSinceSnapshot: raw['ownOpsSinceSnapshot'] is int
+              ? raw['ownOpsSinceSnapshot'] as int
+              : 0,
+          seeded: raw['seeded'] == true,
+          outbox: outbox is List
+              ? outbox
+                    .map(OutboxEntry.fromJson)
+                    .whereType<OutboxEntry>()
+                    .toList()
+              : null,
+        )
+        ..serverEpoch = raw['serverEpoch'] is int
+            ? raw['serverEpoch'] as int
+            : 0;
     } catch (error) {
       debugPrint('KapyNotes: doc record for $noteId unreadable: $error');
       return null;
@@ -293,13 +373,17 @@ class DocStore {
     this._storage, {
     required String replica,
     this.writeDelay = const Duration(milliseconds: 250),
-  }) : _replica = replica;
+    this.maxHotRecords = 8,
+  }) : assert(maxHotRecords > 0),
+       _replica = replica;
 
   final DocStorage _storage;
   final String _replica;
   final Duration writeDelay;
+  final int maxHotRecords;
 
   final Map<String, DocRecord> _records = {};
+  final LinkedHashSet<String> _hot = LinkedHashSet<String>();
   final Set<String> _dirty = {};
   Timer? _timer;
   Future<void>? _loading;
@@ -308,6 +392,8 @@ class DocStore {
   String get replica => _replica;
   bool get isLoaded => _loaded;
   Iterable<DocRecord> get records => _records.values;
+  int get materializedCount =>
+      _records.values.where((record) => record.isMaterialized).length;
 
   /// Ops waiting for the server, across every note.
   int get pendingCount =>
@@ -321,7 +407,10 @@ class DocStore {
         final raw = await _storage.read(noteId);
         if (raw == null) continue;
         final record = DocRecord.fromJson(noteId, raw, replica: _replica);
-        if (record != null) _records[noteId] = record;
+        if (record != null) {
+          record.onAccess = _recordAccessed;
+          _records[noteId] = record;
+        }
       }
     } catch (error) {
       debugPrint('KapyNotes: doc store unreadable: $error');
@@ -336,9 +425,12 @@ class DocStore {
     final record = DocRecord(
       noteId: noteId,
       doc: NoteDoc(replica: _replica),
+      replica: _replica,
       spaceId: spaceId,
     );
+    record.onAccess = _recordAccessed;
     _records[noteId] = record;
+    _recordAccessed(record);
     markDirty(noteId);
     return record;
   }
@@ -347,6 +439,7 @@ class DocStore {
   /// whose history turned out to live on the server already.
   void remove(String noteId) {
     if (_records.remove(noteId) == null) return;
+    _hot.remove(noteId);
     _dirty.remove(noteId);
     unawaited(_storage.delete(noteId));
   }
@@ -372,6 +465,21 @@ class DocStore {
         _dirty.add(id);
       }
     }
+    _trimHotRecords();
+  }
+
+  void _recordAccessed(DocRecord record) {
+    _hot.remove(record.noteId);
+    _hot.add(record.noteId);
+    _trimHotRecords();
+  }
+
+  void _trimHotRecords() {
+    while (_hot.length > maxHotRecords) {
+      final id = _hot.first;
+      _hot.remove(id);
+      _records[id]?.compact();
+    }
   }
 
   /// Drops every record. For signing in as somebody else.
@@ -381,6 +489,7 @@ class DocStore {
     _dirty.clear();
     final ids = _records.keys.toList();
     _records.clear();
+    _hot.clear();
     for (final id in ids) {
       await _storage.delete(id);
     }

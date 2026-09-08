@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "login_item.h"
+#include "rich_clipboard.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -34,6 +35,8 @@ class FlutterWindow : public Win32Window {
   // answering as soon as OnCreate returns.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       login_item_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      rich_clipboard_channel_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

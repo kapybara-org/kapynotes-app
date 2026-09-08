@@ -3,10 +3,16 @@ import 'dart:async';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
+import '../audio/voice_availability.dart';
+import '../audio/voice_player.dart';
+import '../audio/voice_recording_controller.dart';
+import '../data/voice_prefs.dart';
+import '../speech/transcription_queue.dart';
 import '../core/desktop_integration.dart';
 import '../core/platform.dart';
 import '../core/quick_capture.dart';
 import '../core/theme.dart';
+import '../core/toast.dart';
 import '../data/engine_provider.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
@@ -15,6 +21,14 @@ import '../data/note_attachment.dart';
 import '../data/note_format.dart';
 import '../data/notes_store.dart';
 import '../data/onboarding.dart';
+import 'editor/voice_chip.dart';
+import 'editor/voice_insertion.dart';
+import 'voice_note_dialog.dart';
+import '../speech/speech_api.dart';
+import '../speech/speech_errors.dart';
+import 'voice_consent_sheet.dart';
+import '../sync/aead.dart';
+import '../sync/sync_api.dart';
 import '../sync/account.dart';
 import '../data/rates.dart';
 import 'share_dialog.dart';
@@ -23,6 +37,7 @@ import '../data/update_checker.dart';
 import 'editor/note_editor.dart';
 import 'empty_state.dart';
 import 'kapy_header_mascot.dart';
+import 'mobile_page_swipe.dart';
 import 'sidebar.dart';
 import 'settings_dialog.dart';
 import 'sidebar_swipe.dart';
@@ -47,6 +62,10 @@ class HomePage extends StatefulWidget {
     required this.store,
     this.welcomeNoteId,
     this.launchIntent = LaunchIntent.open,
+    this.recording,
+    this.player,
+    this.transcriptions,
+    this.voicePrefs,
   });
 
   /// Kapy settles into sleep after a full minute without local interaction.
@@ -73,6 +92,18 @@ class HomePage extends StatefulWidget {
   /// done by being here.
   final LaunchIntent launchIntent;
 
+  /// Owns the microphone. Created above this page so a recording survives the
+  /// page being rebuilt, and so the app's lifecycle hooks can end one.
+  final VoiceRecordingController? recording;
+
+  /// Plays recordings back. One for the whole app.
+  final VoicePlayer? player;
+
+  /// What is still to be transcribed, and what each chip should say.
+  final TranscriptionQueue? transcriptions;
+
+  final VoicePrefs? voicePrefs;
+
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -93,6 +124,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _openSessionScheduled = false;
   bool _drawerContentReady = false;
   bool _drawerOpen = false;
+  bool _archiveMode = false;
+  bool _voiceActionBusy = false;
   Timer? _kapyIdleTimer;
 
   /// Lets the compact layout close its own drawer, which is otherwise only
@@ -132,6 +165,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // time this runs; the note itself is this page's to make.
     widget.desktopIntegration?.onNewNoteRequested = _createNote;
     widget.desktopIntegration?.onOpenRequested = _beginOpenSession;
+    // The controller owns the microphone but knows nothing about notes or
+    // editors; this is where a finished recording becomes a ref in one.
+    widget.recording?.onFinished = _deliverRecording;
+    widget.recording?.addListener(_onRecordingChanged);
     _reconcileSelection();
     // Keep timers and mascot work behind the first editable frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -146,6 +183,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    widget.account?.sync?.stopTyping(_selectedId);
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
     widget.desktopIntegration?.onNewNoteRequested = null;
@@ -209,21 +247,217 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  /// Dictate, once there is a recorder to start.
+  /// Starts recording into the selected note, or stops one already running.
   ///
-  /// Voice notes are specified but not built — `docs/voice-notes.md` in the
-  /// monorepo, Phase 1 — and this is the single place the widget reaches
-  /// them from, alongside the mic button and the shortcut that will land with
-  /// them. Until then a Dictate tap is a Write tap: the note is open, at the
-  /// end, with the keyboard up, which is the part of dictating the phone's
-  /// own keyboard can already finish.
-  Future<void> _startVoiceRecording() async {}
+  /// The single place every entry point lands: the widget's Dictate tap, the
+  /// toolbar mic, the footer button, the shortcut and the context menu. While
+  /// [voiceNotesEnabled] is off a Dictate tap is a Write tap — the note is
+  /// open, at the end, with the keyboard up, which is the part of dictating
+  /// the phone's own keyboard can already finish.
+  Future<void> _startVoiceRecording() async {
+    if (!voiceNotesEnabled || _voiceActionBusy) return;
+    final recording = widget.recording;
+    final id = _selectedId;
+    if (recording == null || id == null) return;
+
+    final stopping = recording.isRecording;
+    if (!stopping && !_canEditNote(widget.notes.byId(id))) return;
+    setState(() => _voiceActionBusy = true);
+    final progress = Toast.showProgress(
+      context,
+      stopping ? 'Saving voice note…' : 'Starting recording…',
+    );
+    try {
+      if (stopping) {
+        await recording.finishRecordingAndFlush();
+        if (mounted) {
+          progress.success('Recording stopped');
+        } else {
+          progress.dismiss();
+        }
+        return;
+      }
+      final started = await recording.start(noteId: id);
+      if (!mounted) {
+        progress.dismiss();
+        return;
+      }
+      if (started) {
+        progress.success('Recording started');
+      } else {
+        progress.error('Kapy Notes needs microphone access to record');
+      }
+    } catch (error) {
+      if (mounted) {
+        progress.error(
+          stopping
+              ? 'Could not save the voice note'
+              : 'Could not start recording',
+        );
+      } else {
+        progress.dismiss();
+      }
+    } finally {
+      if (mounted) setState(() => _voiceActionBusy = false);
+    }
+  }
+
+  /// Delivers a finished recording into the note it was started in.
+  ///
+  /// Two paths, because the note may no longer be the one on screen: if its
+  /// editor is mounted the ref goes in at the caret, and if it is not it is
+  /// appended to the stored note directly. Both end with the same ref in the
+  /// same note; only the caret differs.
+  Future<void> _deliverRecording(
+    VoiceRecordingResult result,
+    String noteId,
+  ) async {
+    if (!_canEditNote(widget.notes.byId(noteId))) return;
+    final blobs = widget.notes.blobs;
+    final hash = await blobs.adoptFile(
+      result.file,
+      extension: NoteVoiceRef.voiceExtension,
+    );
+    final bytes = await result.file.exists()
+        ? await result.file.length()
+        : (await blobs.fileFor(hash))?.lengthSync() ?? 0;
+
+    final ref = NoteVoiceRef(
+      offset: 0,
+      hash: hash,
+      key: randomKey(),
+      bytes: bytes,
+      durationMs: result.duration.inMilliseconds,
+      peaks: result.peaks,
+    );
+
+    final editor = _selectedId == noteId ? _selectedEditor : null;
+    if (editor != null) {
+      editor.insertVoice(ref);
+    } else {
+      final note = widget.notes.byId(noteId);
+      if (note == null) return;
+      final placed = appendVoiceToBody(
+        body: note.body,
+        existing: note.attachments,
+        incoming: ref,
+      );
+      widget.notes.updateDocument(
+        noteId,
+        placed.body,
+        note.formats,
+        placed.attachments,
+      );
+    }
+
+    // Queued whatever happens next. A signed-out user, one who has not agreed,
+    // and one with no connection all end up with the same entry, and the queue
+    // works out which of those it is when it next drains.
+    widget.transcriptions?.enqueue(noteId, hash);
+    unawaited(_drainTranscriptions());
+  }
+
+  /// Drains the queue, offering the consent sheet the first time the server
+  /// asks for it.
+  Future<void> _drainTranscriptions() async {
+    final queue = widget.transcriptions;
+    if (queue == null) return;
+    await queue.drain();
+    if (!mounted || !queue.needsConsent) return;
+
+    final prefs = widget.voicePrefs;
+    // Asked once per version. Someone who said no is not asked again until the
+    // wording changes, because then it is a different question.
+    if (prefs != null && !prefs.shouldOfferConsent(speechConsentVersion)) {
+      return;
+    }
+
+    final accepted = await showSpeechConsentSheet(context);
+    if (!accepted) {
+      prefs?.transcriptionDeclinedVersion = speechConsentVersion;
+      return;
+    }
+    try {
+      await widget.account?.speech?.acceptConsent(speechConsentVersion);
+      prefs?.transcriptionDeclinedVersion = null;
+      queue.needsConsent = false;
+      for (final entry in queue.entries) {
+        queue.retry(entry.noteId, entry.hash);
+      }
+      await queue.drain();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text(describeSpeechError(error))));
+    }
+  }
+
+  VoiceChipState _voiceStateFor(NoteVoiceRef ref) =>
+      widget.transcriptions?.stateFor(ref) ?? VoiceChipState.idle;
+
+  Future<void> _openVoiceNote(NoteVoiceRef ref) async {
+    final noteId = _selectedId;
+    final note = widget.notes.byId(noteId ?? '');
+    final canEdit = _canEditNote(note);
+    await openVoiceNoteDialog(
+      context,
+      ref: ref,
+      state: _voiceStateFor(ref),
+      blobs: widget.notes.blobs,
+      player: widget.player,
+      recordedAt: note?.createdAt,
+      actions: VoiceNoteActions(
+        onInsert: canEdit
+            ? (text) => _selectedEditor?.insertPlainLines(
+                text,
+                afterOffset: ref.offset,
+              )
+            : null,
+        onDelete: canEdit
+            ? () => _selectedEditor?.removeAttachment(ref.offset)
+            : null,
+        onRetry: noteId == null
+            ? null
+            : () {
+                widget.transcriptions?.retry(noteId, ref.hash);
+                unawaited(_drainTranscriptions());
+              },
+        onTranscribeAgain: noteId == null
+            ? null
+            : () {
+                // A deliberate second transcription: a new intent, which the
+                // server bills for, rather than a free retry of the first.
+                widget.transcriptions?.enqueue(noteId, ref.hash, fresh: true);
+                unawaited(_drainTranscriptions());
+              },
+        onTurnOnTranscription: () => unawaited(_drainTranscriptions()),
+        failureReason: _failureReasonFor(ref),
+      ),
+    );
+  }
+
+  /// The caption under "Couldn't transcribe", when there is one to give.
+  String? _failureReasonFor(NoteVoiceRef ref) {
+    final entry = widget.transcriptions?.entries
+        .where((e) => e.hash == ref.hash)
+        .firstOrNull;
+    final code = entry?.lastError;
+    if (code == null) return null;
+    return describeSpeechError(SyncRefusedException(400, code, const {}));
+  }
 
   /// The editor the user is actually looking at, of the two this page keeps
   /// keys for. Only one of them is mounted at a time.
   NoteEditorState? get _selectedEditor => _usesCompactLayout
       ? _compactEditorKey.currentState
       : _wideEditorKey.currentState;
+
+  /// The recording bar is part of the footer, so its state is this page's to
+  /// rebuild on.
+  void _onRecordingChanged() {
+    if (mounted) setState(() {});
+  }
 
   void _onNotesChanged() {
     _reconcileSelection();
@@ -233,17 +467,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Keeps the selection pointing at a note that still exists.
   void _reconcileSelection() {
-    if (widget.notes.isEmpty) {
+    final available = _archiveMode
+        ? widget.notes.archivedNotes
+        : widget.notes.notes;
+    if (available.isEmpty) {
       _setSelectedId(null);
-      if (_usesCompactLayout) _scheduleInitialNote();
+      if (_usesCompactLayout && !_archiveMode) _scheduleInitialNote();
       return;
     }
-    if (widget.notes.byId(_selectedId) != null) return;
-    _setSelectedId(
-      _usesCompactLayout
-          ? widget.notes.lastEditedNote!.id
-          : widget.notes.notes.first.id,
-    );
+    if (available.any((note) => note.id == _selectedId)) return;
+    _setSelectedId(available.first.id);
   }
 
   /// Read from the window because selection is also reconciled outside build.
@@ -254,6 +487,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void _setSelectedId(String? id) {
     if (_selectedId != id) {
+      widget.account?.sync?.stopTyping(_selectedId);
       _compactEditorKey = GlobalKey<NoteEditorState>();
       _wideEditorKey = GlobalKey<NoteEditorState>();
     }
@@ -265,12 +499,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _initialNoteScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initialNoteScheduled = false;
-      if (!mounted || !_usesCompactLayout || !widget.notes.isEmpty) return;
+      if (!mounted ||
+          !_usesCompactLayout ||
+          _archiveMode ||
+          !widget.notes.isEmpty) {
+        return;
+      }
       _createNote();
     });
   }
 
   void _select(String id) {
+    // A recording running in a different note has to be delivered before the
+    // switch, or it would arrive after the editor holding its note is gone.
+    final recording = widget.recording;
+    if (recording != null &&
+        recording.isRecording &&
+        recording.session?.noteId != id) {
+      unawaited(
+        recording.finishRecordingAndFlush().then((_) {
+          if (mounted) _selectNow(id);
+        }),
+      );
+      return;
+    }
+    _selectNow(id);
+  }
+
+  void _selectNow(String id) {
     setState(() => _setSelectedId(id));
     widget.store.put(_selectionKey, id);
     _recordKapyActivity();
@@ -298,30 +554,76 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _createNote() {
+    final recording = widget.recording;
+    if (recording != null && recording.isRecording) {
+      unawaited(
+        recording.finishRecordingAndFlush().then((_) {
+          if (mounted) _createNoteNow();
+        }),
+      );
+      return;
+    }
+    _createNoteNow();
+  }
+
+  void _createNoteNow() {
     _recordKapyActivity();
     final note = widget.notes.create();
     setState(() {
       _query = '';
+      _archiveMode = false;
       _setSelectedId(note.id);
     });
     widget.store.put(_selectionKey, note.id);
     _focusSelectedEditorAtEnd();
   }
 
-  void _deleteNote(String id) {
+  void _archiveNote(String id) {
+    if (!_canEditNote(widget.notes.byId(id))) return;
     _recordKapyActivity();
     _totalAnimatedFor.remove(id);
     if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
-    final index = widget.notes.indexOf(id);
-    final deletingSelected = id == _selectedId;
-    widget.notes.delete(id);
-    if (!deletingSelected) return;
+    final index = widget.notes.activeIndexOf(id);
+    final archivingSelected = id == _selectedId;
+    widget.notes.archive(id);
+    Toast.show(context, 'Note moved to Archive', icon: Icons.archive_outlined);
+    if (!archivingSelected) return;
 
     final next = widget.notes.successorTo(index);
     setState(() => _setSelectedId(next));
     widget.store.put(_selectionKey, next);
     if (_usesCompactLayout && next == null) _scheduleInitialNote();
     _focusSelectedEditorAtEnd();
+  }
+
+  void _restoreNote(String id) {
+    if (!_canEditNote(widget.notes.byId(id))) return;
+    _recordKapyActivity();
+    final restoringSelected = id == _selectedId;
+    final index = _visibleNotes.indexWhere((note) => note.id == id);
+    widget.notes.restore(id);
+    Toast.show(context, 'Note restored', icon: Icons.unarchive_outlined);
+    if (!restoringSelected) return;
+
+    final remaining = _visibleNotes;
+    final next = remaining.isEmpty
+        ? null
+        : remaining[index.clamp(0, remaining.length - 1)].id;
+    setState(() => _setSelectedId(next));
+    widget.store.put(_selectionKey, next);
+  }
+
+  void _toggleArchive() {
+    _recordKapyActivity();
+    setState(() {
+      _archiveMode = !_archiveMode;
+      _query = '';
+      final notes = _archiveMode
+          ? widget.notes.archivedNotes
+          : widget.notes.notes;
+      _setSelectedId(notes.firstOrNull?.id);
+    });
+    widget.store.put(_selectionKey, _selectedId);
   }
 
   /// Whether opening [note] should place the cursor at its end and raise the
@@ -331,7 +633,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// read: jumping to the bottom of it and covering the rest with a keyboard
   /// would show a first-time reader the one part that says nothing.
   bool _readyToTypeIn(Note note) =>
-      widget.prefs.readyToTypeOnOpen && note.id != _untouchedWelcomeId;
+      _canEditNote(note) &&
+      widget.prefs.readyToTypeOnOpen &&
+      note.id != _untouchedWelcomeId;
+
+  bool _canEditNote(Note? note) {
+    if (note == null) return false;
+    if (!note.isShared) return true;
+    return widget.account?.sharing?.canEdit(note) ?? false;
+  }
 
   /// Opens the welcome note again, from settings.
   ///
@@ -342,6 +652,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final note = Onboarding(widget.store).openWelcomeNote(widget.notes);
     setState(() {
       _query = '';
+      _archiveMode = false;
       _setSelectedId(note.id);
       _untouchedWelcomeId = note.id;
     });
@@ -357,7 +668,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     List<NoteFormatRange> formats,
     List<NoteAttachmentRef> attachments,
   ) {
+    if (!_canEditNote(widget.notes.byId(id))) return;
     _recordKapyActivity();
+    widget.account?.sync?.reportTyping(id);
     // Typed in, so it is theirs now. Assigned rather than set: the editor
     // holding the cursor is already mounted, and nothing on screen changes
     // until it is next built.
@@ -428,6 +741,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         updates: widget.updates,
         desktopIntegration: widget.desktopIntegration,
         onOpenWelcomeNote: _openWelcomeNote,
+        voicePrefs: widget.voicePrefs,
       ),
     );
   }
@@ -447,7 +761,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  List<Note> get _visibleNotes => widget.notes.search(_query);
+  List<Note> get _visibleNotes => _archiveMode
+      ? widget.notes.searchArchived(_query)
+      : widget.notes.search(_query);
 
   @override
   Widget build(BuildContext context) {
@@ -480,9 +796,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onToggleAlwaysOnTop: AppPlatform.isDesktop
                 ? widget.prefs.toggleAlwaysOnTop
                 : null,
-            onDeleteNote: _selectedId == null
+            onDeleteNote:
+                _selectedId == null ||
+                    !_canEditNote(widget.notes.byId(_selectedId))
                 ? null
-                : () => _deleteNote(_selectedId!),
+                : () => _archiveNote(_selectedId!),
             autofocus: _selectedId == null || !widget.prefs.readyToTypeOnOpen,
             child: content,
           ),
@@ -540,7 +858,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onQueryChanged: (value) => setState(() => _query = value),
                       onSelect: _select,
                       onCreate: _createNote,
-                      onDelete: _deleteNote,
+                      onArchive: _archiveNote,
+                      onRestore: _restoreNote,
+                      onArchiveToggle: _toggleArchive,
+                      archiveMode: _archiveMode,
+                      archivedCount: widget.notes.archivedNotes.length,
                       onShare: widget.account == null ? null : _shareNote,
                       sharing: widget.account?.sharing,
                       onSettingsPressed: _showSettings,
@@ -572,21 +894,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       0.0,
       360.0,
     );
-    // A third of the window, so "show me my notes" does not need aiming.
+    // Narrow desktop windows retain Flutter's draggable edge. Phones use the
+    // full-page observer below, which can begin anywhere without taking the
+    // editor's vertical-scroll or text-selection gestures away from it.
     final drawerEdgeDragWidth = MediaQuery.sizeOf(context).width / 3;
     final overlayStyle = Theme.of(context).brightness == Brightness.dark
         ? SystemUiOverlayStyle.light
         : SystemUiOverlayStyle.dark;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
+    final compactPage = AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
         key: _scaffoldKey,
         backgroundColor: palette.editorBackground,
-        // A drag rather than a free swipe, and only one that starts near the
-        // left edge: anywhere else in a note, sideways dragging is how a
-        // touchscreen selects text. Flutter's default strip is about twenty
-        // pixels, which is a lot of precision to ask for.
+        drawerEnableOpenDragGesture: !AppPlatform.isMobile,
         drawerEdgeDragWidth: drawerEdgeDragWidth,
         onDrawerChanged: (isOpen) {
           setState(() {
@@ -627,7 +948,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         _createNote();
                         Navigator.of(drawerContext).pop();
                       },
-                      onDelete: _deleteNote,
+                      onArchive: _archiveNote,
+                      onRestore: _restoreNote,
+                      onArchiveToggle: _toggleArchive,
+                      archiveMode: _archiveMode,
+                      archivedCount: widget.notes.archivedNotes.length,
                       onShare: widget.account == null ? null : _shareNote,
                       sharing: widget.account?.sharing,
                       onSettingsPressed: _showSettings,
@@ -677,6 +1002,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       ),
     );
+
+    if (!AppPlatform.isMobile) return compactPage;
+    return MobilePageSwipe(
+      enabled: !_drawerOpen,
+      onOpenNotes: () {
+        FocusManager.instance.primaryFocus?.unfocus();
+        _scaffoldKey.currentState?.openDrawer();
+      },
+      onCreateNote: _createNote,
+      child: compactPage,
+    );
   }
 
   Widget _buildCompactEditor(Note note) {
@@ -692,9 +1028,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
-        listenable: widget.prefs,
+        listenable: _toolbarSources,
         builder: (context, _) => NoteEditor(
           key: _compactEditorKey,
+          player: widget.player,
+          voiceStateFor: _voiceStateFor,
+          onOpenVoiceNote: _openVoiceNote,
+          recording: widget.recording,
+          onRecordVoice: voiceNotesEnabled && _canEditNote(note)
+              ? () => unawaited(_startVoiceRecording())
+              : null,
+          voiceActionBusy: _voiceActionBusy,
           noteId: note.id,
           initialBody: note.body,
           initialFormats: note.formats,
@@ -720,6 +1064,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialAttachments: note.attachments,
           images: widget.notes.blobs,
           imageFetch: widget.account?.imageFetch,
+          typingNames:
+              widget.account?.sync?.typingNamesFor(note.id) ?? const [],
+          readOnly: !_canEditNote(note),
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
           onGutterWidthChanged: desktopResultsDivider
@@ -741,6 +1088,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
+        // The wide layout already listens to the account around this body.
         listenable: widget.prefs,
         builder: (context, _) => NoteEditor(
           // Remounting on note change keeps one note's editing state from
@@ -749,6 +1097,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           noteId: note.id,
           initialBody: note.body,
           initialFormats: note.formats,
+          player: widget.player,
+          voiceStateFor: _voiceStateFor,
+          onOpenVoiceNote: _openVoiceNote,
+          recording: widget.recording,
+          onRecordVoice: voiceNotesEnabled && _canEditNote(note)
+              ? () => unawaited(_startVoiceRecording())
+              : null,
+          voiceActionBusy: _voiceActionBusy,
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
           gutterWidth: widget.prefs.gutterWidth,
@@ -766,6 +1122,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialAttachments: note.attachments,
           images: widget.notes.blobs,
           imageFetch: widget.account?.imageFetch,
+          typingNames:
+              widget.account?.sync?.typingNamesFor(note.id) ?? const [],
+          readOnly: !_canEditNote(note),
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
           onGutterWidthChanged: (value) => widget.prefs.gutterWidth = value,

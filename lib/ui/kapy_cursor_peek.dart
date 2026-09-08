@@ -210,7 +210,7 @@ class _KapyCursorPeekState extends State<KapyCursorPeek>
     final caretX = size * KapyCursorPeek._caretXFactor;
     final caretHeight = size * KapyCursorPeek._caretHeightFactor;
     final caretWidth = (size * 0.042).clamp(1.5, 2.2);
-    final mascotHeight = size * 0.96;
+    final mascotHeight = caretHeight * 0.9;
     final mascotWidth = mascotHeight * KapyCursorPeek._mascotAspectRatio;
     final hiddenDistance = mascotWidth + caretWidth;
     final holdProgress = ((progress - 0.36) / 0.34).clamp(0.0, 1.0);

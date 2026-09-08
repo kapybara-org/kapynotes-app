@@ -14,7 +14,12 @@ import '../data/note_format.dart';
 /// writes. A reader that meets a higher number stops rather than guesses; the
 /// golden archives under `test/goldens/archives/` are what stop this changing
 /// by accident.
-const int exportSchemaVersion = 1;
+/// Bumped to 2 when recordings joined pictures in the archive.
+///
+/// An archive written by this build still reads in an older one: version 2
+/// only *adds* attachment kinds, and an older reader that meets a `voice`
+/// entry skips it rather than failing. Import accepts 1 and 2.
+const int exportSchemaVersion = 2;
 
 const String exportManifestPath = 'manifest.json';
 const String exportNotesDirectory = 'notes';
@@ -26,6 +31,11 @@ const String exportNotesDirectory = 'notes';
 /// archive in a file browser sees a flat, obvious folder of images.
 const String exportImagesDirectory = 'images';
 
+/// Where recordings live in an archive. Its own directory rather than sharing
+/// `images/`, so somebody opening the zip in a file browser finds their voice
+/// notes in an obvious place, playable by double-clicking.
+const String exportAttachmentsDirectory = 'attachments';
+
 /// `sha256:<hex>` over the UTF-8 of a rendered `.md` file.
 ///
 /// Import compares this against the file it finds. A match means the manifest
@@ -34,51 +44,94 @@ const String exportImagesDirectory = 'images';
 String bodyHashOf(String markdown) =>
     'sha256:${sha256.convert(utf8.encode(markdown))}';
 
-/// One picture in an archive: enough to rebuild the note's reference to it
+/// One attachment in an archive: enough to rebuild the note's reference to it
 /// without opening the file.
-class ExportedImage {
-  const ExportedImage({
+///
+/// Pictures and recordings share this rather than having a class each, because
+/// almost everything about them here is the same — a hash, a path, a MIME type
+/// — and the parts that differ are exactly the parts that are optional.
+class ExportedAttachment {
+  const ExportedAttachment({
     required this.hash,
     required this.path,
     required this.mime,
-    required this.width,
-    required this.height,
+    this.kind = 'image',
+    this.width,
+    this.height,
+    this.durationMs,
+    this.transcript,
+    this.summary,
   });
 
   /// sha256 of the bytes, which is also what the file is named.
   final String hash;
 
-  /// Where the bytes live inside the archive, always under `images/`.
+  /// Where the bytes live inside the archive.
   final String path;
 
   final String mime;
-  final int width;
-  final int height;
+
+  /// `image` or `voice`. Defaulted, so an archive written before recordings
+  /// existed reads correctly without a migration.
+  final String kind;
+
+  /// Pictures only.
+  final int? width;
+  final int? height;
+
+  /// Recordings only.
+  final int? durationMs;
+  final Map<String, Object?>? transcript;
+  final Map<String, Object?>? summary;
+
+  bool get isVoice => kind == 'voice';
 
   Map<String, Object?> toJson() => {
     'hash': hash,
     'path': path,
     'mime': mime,
-    'width': width,
-    'height': height,
+    // Omitted for pictures, which is what an older reader expects to find.
+    if (kind != 'image') 'kind': kind,
+    if (width != null) 'width': width,
+    if (height != null) 'height': height,
+    if (durationMs != null) 'durationMs': durationMs,
+    if (transcript != null) 'transcript': transcript,
+    if (summary != null) 'summary': summary,
   };
 
-  static ExportedImage? fromJson(Object? raw) {
+  static ExportedAttachment? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final hash = raw['hash'];
     final path = raw['path'];
     final mime = raw['mime'];
-    final width = raw['width'];
-    final height = raw['height'];
     if (hash is! String || hash.isEmpty) return null;
     if (path is! String || !isSafeArchivePath(path)) return null;
-    if (mime is! String || width is! int || height is! int) return null;
-    return ExportedImage(
+    if (mime is! String) return null;
+
+    final kind = raw['kind'] is String ? raw['kind']! as String : 'image';
+    final width = raw['width'];
+    final height = raw['height'];
+    final durationMs = raw['durationMs'];
+
+    // A picture with no size cannot be laid out, and a recording with no
+    // duration cannot be drawn; either way the entry is not usable.
+    if (kind == 'image' && (width is! int || height is! int)) return null;
+    if (kind == 'voice' && (durationMs is! int || durationMs <= 0)) return null;
+
+    return ExportedAttachment(
       hash: hash,
       path: path,
       mime: mime,
-      width: width,
-      height: height,
+      kind: kind,
+      width: width is int ? width : null,
+      height: height is int ? height : null,
+      durationMs: durationMs is int ? durationMs : null,
+      transcript: raw['transcript'] is Map
+          ? (raw['transcript']! as Map).cast<String, Object?>()
+          : null,
+      summary: raw['summary'] is Map
+          ? (raw['summary']! as Map).cast<String, Object?>()
+          : null,
     );
   }
 }
@@ -90,6 +143,7 @@ class ExportedNote {
     required this.updatedAt,
     required this.createdAt,
     required this.bodyHash,
+    this.archivedAt,
     this.formats = const [],
     this.images = const [],
   });
@@ -105,6 +159,7 @@ class ExportedNote {
 
   /// Epoch milliseconds, matching `NotePayload` and the on-disk note.
   final int createdAt;
+  final DateTime? archivedAt;
 
   final String bodyHash;
   final List<NoteFormatRange> formats;
@@ -116,13 +171,14 @@ class ExportedNote {
   /// archive is plaintext, the bytes are right there beside the manifest, and
   /// a key that unlocks nothing is a secret with nowhere useful to go. Import
   /// mints a fresh one.
-  final List<ExportedImage> images;
+  final List<ExportedAttachment> images;
 
   Map<String, Object?> toJson() => {
     'id': id,
     'path': path,
     'updatedAt': updatedAt.toUtc().toIso8601String(),
     'createdAt': createdAt,
+    if (archivedAt != null) 'archivedAt': archivedAt!.toUtc().toIso8601String(),
     'bodyHash': bodyHash,
     if (formats.isNotEmpty)
       'formats': formats.map((format) => format.toJson()).toList(),
@@ -145,17 +201,21 @@ class ExportedNote {
     final updatedAt = DateTime.tryParse('${raw['updatedAt']}');
     if (updatedAt == null) return null;
     final createdAt = raw['createdAt'];
+    final archivedAt = raw['archivedAt'] == null
+        ? null
+        : DateTime.tryParse('${raw['archivedAt']}');
 
     return ExportedNote(
       id: id,
       path: path,
       updatedAt: updatedAt.toLocal(),
       createdAt: createdAt is int && createdAt >= 0 ? createdAt : 0,
+      archivedAt: archivedAt?.toLocal(),
       bodyHash: bodyHash,
       images: raw['images'] is List
           ? (raw['images'] as List)
-                .map(ExportedImage.fromJson)
-                .whereType<ExportedImage>()
+                .map(ExportedAttachment.fromJson)
+                .whereType<ExportedAttachment>()
                 .toList(growable: false)
           : const [],
       // Clipped against the body once it is read, not here: the manifest is

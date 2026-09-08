@@ -33,7 +33,8 @@ PackageInfo _installed({String version = '1.0.0', String build = '1'}) =>
 String _manifest({String version = '1.0.1', int build = 2}) => jsonEncode({
   'version': version,
   'build': build,
-  'notesUrl': 'https://github.com/kapybara-org/kapynotes/releases/tag/v$version',
+  'notesUrl':
+      'https://github.com/kapybara-org/kapynotes/releases/tag/v$version',
   'publishedAt': '2026-09-03T00:00:00Z',
 });
 
@@ -196,23 +197,26 @@ void main() {
     checker.dispose();
   });
 
-  test('a malformed manifest is treated as a failure, not as up to date', () async {
-    final store = _MemoryStore();
-    final checker = _checker(
-      store,
-      client: MockClient((_) async => http.Response('{"version":42}', 200)),
-    );
-    store.put('updates.v1', {
-      'available': {'version': '1.0.1', 'build': 2, 'notesUrl': ''},
-      'checkedAt': DateTime(2026, 9, 1).toIso8601String(),
-    });
-    checker.loadCache();
+  test(
+    'a malformed manifest is treated as a failure, not as up to date',
+    () async {
+      final store = _MemoryStore();
+      final checker = _checker(
+        store,
+        client: MockClient((_) async => http.Response('{"version":42}', 200)),
+      );
+      store.put('updates.v1', {
+        'available': {'version': '1.0.1', 'build': 2, 'notesUrl': ''},
+        'checkedAt': DateTime(2026, 9, 1).toIso8601String(),
+      });
+      checker.loadCache();
 
-    await checker.check();
+      await checker.check();
 
-    expect(checker.hasUpdate, isTrue);
-    checker.dispose();
-  });
+      expect(checker.hasUpdate, isTrue);
+      checker.dispose();
+    },
+  );
 
   test('publishes the last known result before any network call', () async {
     final store = _MemoryStore();
@@ -235,38 +239,41 @@ void main() {
     checker.dispose();
   });
 
-  test('forgets a cached update the running build has caught up with', () async {
-    final store = _MemoryStore();
-    final checkedAt = DateTime.now().subtract(const Duration(minutes: 5));
-    store.put('updates.v1', {
-      'available': {'version': '1.0.1', 'build': 2, 'notesUrl': ''},
-      'checkedAt': checkedAt.toIso8601String(),
-    });
-    // What the disk looks like the moment after that update is installed: the
-    // notice that asked for it is still there, and the daily check that would
-    // overwrite it is not due for another 23 hours.
-    final checker = _checker(
-      store,
-      installed: _installed(version: '1.0.1', build: '2'),
-      client: MockClient((_) async => fail('must not reach the network')),
-    );
+  test(
+    'forgets a cached update the running build has caught up with',
+    () async {
+      final store = _MemoryStore();
+      final checkedAt = DateTime.now().subtract(const Duration(minutes: 5));
+      store.put('updates.v1', {
+        'available': {'version': '1.0.1', 'build': 2, 'notesUrl': ''},
+        'checkedAt': checkedAt.toIso8601String(),
+      });
+      // What the disk looks like the moment after that update is installed: the
+      // notice that asked for it is still there, and the daily check that would
+      // overwrite it is not due for another 23 hours.
+      final checker = _checker(
+        store,
+        installed: _installed(version: '1.0.1', build: '2'),
+        client: MockClient((_) async => fail('must not reach the network')),
+      );
 
-    checker.loadCache();
+      checker.loadCache();
 
-    expect(checker.hasUpdate, isFalse);
-    expect(checker.available, isNull);
-    expect(
-      (store.read<Map<String, Object?>>('updates.v1'))!['available'],
-      isNull,
-      reason: 'and it must not come back at the next launch',
-    );
-    expect(
-      checker.lastChecked,
-      checkedAt,
-      reason: 'the check still happened; only its subject is gone',
-    );
-    checker.dispose();
-  });
+      expect(checker.hasUpdate, isFalse);
+      expect(checker.available, isNull);
+      expect(
+        (store.read<Map<String, Object?>>('updates.v1'))!['available'],
+        isNull,
+        reason: 'and it must not come back at the next launch',
+      );
+      expect(
+        checker.lastChecked,
+        checkedAt,
+        reason: 'the check still happened; only its subject is gone',
+      );
+      checker.dispose();
+    },
+  );
 
   test('hides a cached update older than the installed release', () async {
     final store = _MemoryStore();
@@ -364,6 +371,26 @@ void main() {
 
     expect(checker.hasUpdate, isFalse);
     expect(checker.lastChecked, isNull);
+    checker.dispose();
+  });
+
+  test('a Windows install request quits the background app', () async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    final store = _MemoryStore();
+    final checker = _checker(
+      store,
+      client: MockClient((_) async => fail('must not reach the network')),
+    );
+    var quits = 0;
+    checker.onBeforeQuitForUpdate = () async => quits++;
+
+    checker.onUpdaterBeforeQuitForUpdate(null);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(quits, 1);
+    checker.onUpdaterBeforeQuitForUpdate(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(quits, 1, reason: 'the native callback may be delivered twice');
     checker.dispose();
   });
 }

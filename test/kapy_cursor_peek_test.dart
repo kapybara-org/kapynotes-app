@@ -50,7 +50,7 @@ void main() {
     final hiddenEnd = _mascotDx(tester);
     final caretEnd = tester.getRect(find.byKey(KapyCursorPeek.caretKey));
 
-    expect(hiddenStart, lessThan(visible - 15));
+    expect(hiddenStart, lessThan(visible - 10));
     expect(hiddenEnd, closeTo(hiddenStart, 0.01));
     expect(caretVisible, caretStart);
     expect(caretEnd, caretStart);
@@ -68,6 +68,18 @@ void main() {
     expect(mascot.center.dx, greaterThan(caret.center.dx));
   });
 
+  testWidgets('the mascot is slightly shorter than the caret', (tester) async {
+    await tester.pumpWidget(
+      _harness(animation: const AlwaysStoppedAnimation(0.5)),
+    );
+
+    final mascot = tester.getRect(find.byKey(KapyCursorPeek.mascotKey));
+    final caret = tester.getRect(find.byKey(KapyCursorPeek.caretKey));
+
+    expect(mascot.height, lessThan(caret.height));
+    expect(mascot.height / caret.height, closeTo(0.9, 0.02));
+  });
+
   testWidgets('plays once when no timeline is supplied', (tester) async {
     await tester.pumpWidget(_harness());
     final hiddenStart = _mascotDx(tester);
@@ -78,7 +90,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1050));
     final hiddenEnd = _mascotDx(tester);
 
-    expect(hiddenStart, lessThan(visible - 15));
+    expect(hiddenStart, lessThan(visible - 10));
     expect(hiddenEnd, closeTo(hiddenStart, 0.01));
   });
 

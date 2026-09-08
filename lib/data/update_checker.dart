@@ -63,6 +63,7 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
   static final Uri manifestUrl = Uri.parse(
     'https://dl.kapynotes.com/latest.json',
   );
+
   /// One feed per platform, because the two frameworks compare against
   /// different fields — Sparkle against `CFBundleVersion`, WinSparkle against
   /// the `.rc`'s `ProductVersion` string — and carry different signature
@@ -87,7 +88,13 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
   bool _cacheLoaded = false;
   bool _installing = false;
   bool _listening = false;
+  bool _quittingForUpdate = false;
   Timer? _timer;
+
+  /// Invoked when WinSparkle has launched the installer and needs this
+  /// process to leave. The app root wires this to the same orderly quit used
+  /// by the tray, which first flushes notes and disables close interception.
+  Future<void> Function()? onBeforeQuitForUpdate;
 
   UpdateChecker(this._store, {http.Client? client, PackageInfo? packageInfo})
     : _client = client,
@@ -182,30 +189,30 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
     }
   }
 
-  Future<void> check() async {
-    if (_disposed || _checking || !AppPlatform.hasAutoUpdate) return;
+  Future<bool> check() async {
+    if (_disposed || _checking || !AppPlatform.hasAutoUpdate) return false;
     _timer?.cancel();
     _checking = true;
     notifyListeners();
 
     try {
       final info = _packageInfo ??= await PackageInfo.fromPlatform();
-      if (_disposed) return;
+      if (_disposed) return false;
 
       final client = _client ??= http.Client();
       final response = await client.get(manifestUrl).timeout(timeout);
-      if (_disposed) return;
+      if (_disposed) return false;
       if (response.statusCode != 200) {
         debugPrint(
           'KapyNotes: update manifest returned HTTP ${response.statusCode}',
         );
-        return;
+        return false;
       }
 
       final latest = AvailableUpdate.fromJson(jsonDecode(response.body));
       if (latest == null) {
         debugPrint('KapyNotes: update manifest was malformed');
-        return;
+        return false;
       }
 
       // Only a check that actually reached the manifest may clear a pending
@@ -217,9 +224,11 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
         'available': _available?.toJson(),
         'checkedAt': _lastChecked!.toIso8601String(),
       });
+      return true;
     } catch (error) {
       // Offline, timed out, or malformed. The next resume tries again.
       debugPrint('KapyNotes: update check failed: $error');
+      return false;
     } finally {
       _checking = false;
       if (!_disposed) {
@@ -234,8 +243,8 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
   /// This is the first moment anything is downloaded. From here the native
   /// framework owns the flow: it verifies the release signature against the
   /// public key built into the app, installs, and relaunches.
-  Future<void> startInstall() async {
-    if (_disposed || _installing || !AppPlatform.hasAutoUpdate) return;
+  Future<bool> startInstall() async {
+    if (_disposed || _installing || !AppPlatform.hasAutoUpdate) return false;
     _installing = true;
     notifyListeners();
     try {
@@ -251,8 +260,10 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
       // check that should ever show native UI is this one.
       await autoUpdater.setScheduledCheckInterval(0);
       await autoUpdater.checkForUpdates();
+      return true;
     } catch (error) {
       debugPrint('KapyNotes: could not start the updater: $error');
+      return false;
     } finally {
       _installing = false;
       if (!_disposed) notifyListeners();
@@ -292,9 +303,24 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
 
   @override
   void onUpdaterBeforeQuitForUpdate(AppcastItem? item) {
-    // The install replaces the bundle the moment this returns, so anything
-    // still sitting in the debounced write queue has to reach disk now.
+    final quit = onBeforeQuitForUpdate;
+    if (AppPlatform.isWindows && quit != null) {
+      if (_quittingForUpdate) return;
+      _quittingForUpdate = true;
+      unawaited(_quitForUpdate(quit));
+      return;
+    }
+    // Sparkle quits its macOS host itself. Flush before it replaces the app.
     unawaited(_store.flush());
+  }
+
+  Future<void> _quitForUpdate(Future<void> Function() quit) async {
+    try {
+      await quit();
+    } catch (error) {
+      debugPrint('KapyNotes: could not quit cleanly for the update: $error');
+      await _store.flush();
+    }
   }
 
   /// Reads the running build's version once, and survives a platform channel
@@ -379,6 +405,7 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
   @override
   void dispose() {
     _disposed = true;
+    onBeforeQuitForUpdate = null;
     _timer?.cancel();
     _client?.close();
     if (_listening) autoUpdater.removeListener(this);

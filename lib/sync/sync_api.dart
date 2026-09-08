@@ -549,7 +549,11 @@ abstract class SyncApi {
     required SealedToPublicKey spaceKey,
   });
   Future<Space> renameSpace(String spaceId, String name);
-  Future<InviteResult> invite(String spaceId, String email);
+  Future<InviteResult> invite(
+    String spaceId,
+    String email, {
+    SpaceRole role = SpaceRole.member,
+  });
   Future<void> revokeInvite(String spaceId, String token);
   Future<List<PendingInvite>> fetchInvites();
   Future<Space> acceptInvite(String token);
@@ -680,9 +684,15 @@ class HttpSyncApi implements SyncApi {
   }) async {
     final body = await _send(
       'GET',
-      _baseUrl.resolve('sync/ops').replace(
-        queryParameters: {'space': space, 'after': '$after', 'limit': '$limit'},
-      ),
+      _baseUrl
+          .resolve('sync/ops')
+          .replace(
+            queryParameters: {
+              'space': space,
+              'after': '$after',
+              'limit': '$limit',
+            },
+          ),
     );
     final batch = OpsBatch.fromJson(body);
     if (batch == null) {
@@ -758,11 +768,18 @@ class HttpSyncApi implements SyncApi {
   );
 
   @override
-  Future<InviteResult> invite(String spaceId, String email) async {
+  Future<InviteResult> invite(
+    String spaceId,
+    String email, {
+    SpaceRole role = SpaceRole.member,
+  }) async {
     final body = await _send(
       'POST',
       _baseUrl.resolve('spaces/$spaceId/invites'),
-      payload: {'email': email},
+      payload: {
+        'email': email,
+        'role': role == SpaceRole.viewer ? 'viewer' : 'member',
+      },
     );
     final token = body['token'];
     final expires = DateTime.tryParse(body['expiresAt'] as String? ?? '');
@@ -772,6 +789,7 @@ class HttpSyncApi implements SyncApi {
     return InviteResult(
       token: token,
       email: body['email'] is String ? body['email'] as String : email,
+      role: body['role'] == 'viewer' ? SpaceRole.viewer : SpaceRole.member,
       expiresAt: expires.toLocal(),
       emailed: body['emailed'] == true,
     );
@@ -786,7 +804,10 @@ class HttpSyncApi implements SyncApi {
     final body = await _send('GET', _baseUrl.resolve('invites'));
     final invites = body['invites'];
     return invites is List
-        ? invites.map(PendingInvite.fromJson).whereType<PendingInvite>().toList()
+        ? invites
+              .map(PendingInvite.fromJson)
+              .whereType<PendingInvite>()
+              .toList()
         : const [];
   }
 
@@ -882,7 +903,9 @@ class HttpSyncApi implements SyncApi {
   @override
   Future<void> unblock(String email) => _send(
     'DELETE',
-    _baseUrl.resolve('blocks/${Uri.encodeComponent(email.trim().toLowerCase())}'),
+    _baseUrl.resolve(
+      'blocks/${Uri.encodeComponent(email.trim().toLowerCase())}',
+    ),
   );
 
   @override
@@ -966,7 +989,9 @@ class HttpSyncApi implements SyncApi {
       for (final entry in urls.entries)
         if (entry.key is String && entry.value is Map)
           if ((entry.value as Map)['url'] is String)
-            entry.key as String: Uri.parse((entry.value as Map)['url'] as String),
+            entry.key as String: Uri.parse(
+              (entry.value as Map)['url'] as String,
+            ),
     };
   }
 
@@ -974,9 +999,21 @@ class HttpSyncApi implements SyncApi {
   Future<void> putBlob(Uri url, Uint8List bytes) async {
     // No authorization header: the signature is in the URL, and sending a
     // session token to object storage would leak it there for no gain.
-    final response = await _client
-        .put(url, body: bytes, headers: {'content-type': attachmentMime})
-        .timeout(timeout);
+    final http.Response response;
+    try {
+      response = await _client
+          .put(url, body: bytes, headers: {'content-type': attachmentMime})
+          .timeout(timeout);
+    } on TimeoutException {
+      throw const SyncTransientException('image upload timed out');
+    } catch (error) {
+      throw SyncTransientException('$error');
+    }
+    if (response.statusCode == 429 || response.statusCode >= 500) {
+      throw SyncTransientException(
+        'storing an image failed with ${response.statusCode}',
+      );
+    }
     if (response.statusCode >= 400) {
       throw SyncProtocolException(
         'storing an image failed with ${response.statusCode}',
@@ -986,8 +1023,20 @@ class HttpSyncApi implements SyncApi {
 
   @override
   Future<Uint8List?> getBlob(Uri url) async {
-    final response = await _client.get(url).timeout(timeout);
+    final http.Response response;
+    try {
+      response = await _client.get(url).timeout(timeout);
+    } on TimeoutException {
+      throw const SyncTransientException('image download timed out');
+    } catch (error) {
+      throw SyncTransientException('$error');
+    }
     if (response.statusCode == 404) return null;
+    if (response.statusCode == 429 || response.statusCode >= 500) {
+      throw SyncTransientException(
+        'reading an image failed with ${response.statusCode}',
+      );
+    }
     if (response.statusCode >= 400) {
       throw SyncProtocolException(
         'reading an image failed with ${response.statusCode}',

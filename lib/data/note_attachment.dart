@@ -190,6 +190,13 @@ final class NoteImageRef extends NoteAttachmentRef {
   /// the editor's layout down with it.
   double get aspectRatio => height <= 0 || width <= 0 ? 1 : width / height;
 
+  /// A generated preview is part of the image upload. Treating the full-size
+  /// object alone as complete strands mobile readers without the lightweight
+  /// object they are meant to fetch.
+  @override
+  bool get isUploaded =>
+      attachmentId != null && (thumbHash == null || thumbId != null);
+
   static NoteImageRef? _fromJson(
     Map<Object?, Object?> raw, {
     required int offset,
@@ -320,7 +327,10 @@ class TranscriptSegment {
 
   @override
   bool operator ==(Object other) =>
-      other is TranscriptSegment && other.s == s && other.e == e && other.t == t;
+      other is TranscriptSegment &&
+      other.s == s &&
+      other.e == e &&
+      other.t == t;
 
   @override
   int get hashCode => Object.hash(s, e, t);
@@ -545,7 +555,9 @@ final class NoteVoiceRef extends NoteAttachmentRef {
     transcript: identical(transcript, _keep)
         ? this.transcript
         : transcript as VoiceTranscript?,
-    summary: identical(summary, _keep) ? this.summary : summary as VoiceSummary?,
+    summary: identical(summary, _keep)
+        ? this.summary
+        : summary as VoiceSummary?,
     attachmentId: attachmentId ?? this.attachmentId,
   );
 
@@ -792,10 +804,7 @@ List<NoteAttachmentRef> rebaseNoteAttachments({
       : delta < 0
       // A collapsed caret losing characters is either a backspace or a
       // forward delete. Both are offered; only one will reproduce [newText].
-      ? [
-          (start: start + delta, end: start),
-          (start: start, end: start - delta),
-        ]
+      ? [(start: start + delta, end: start), (start: start, end: start - delta)]
       : [(start: start, end: start)];
 
   for (final candidate in candidates) {

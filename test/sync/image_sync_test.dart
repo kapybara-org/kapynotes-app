@@ -10,6 +10,7 @@ import 'package:kapy_notes/sync/aead.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/image_sync.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
+import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
@@ -31,14 +32,53 @@ class MemoryStore extends LocalStore {
   void put(String key, Object? value) => data[key] = value;
 }
 
+class FailsSecondAttachmentOnce extends FakeApi {
+  FailsSecondAttachmentOnce(super.server, {required super.device});
+
+  var creates = 0;
+
+  @override
+  Future<AttachmentSlot> createAttachment({
+    required String noteId,
+    String? spaceId,
+    required int bytes,
+  }) {
+    creates++;
+    if (creates == 2) {
+      throw const SyncTransientException('thumbnail upload interrupted');
+    }
+    return super.createAttachment(noteId: noteId, spaceId: spaceId, bytes: bytes);
+  }
+}
+
+class FailsFirstDownloadOnce extends FakeApi {
+  FailsFirstDownloadOnce(super.server, {required super.device});
+
+  var attempts = 0;
+
+  @override
+  Future<Map<String, Uri>> attachmentUrls(List<String> ids) {
+    attempts++;
+    if (attempts == 1) {
+      throw const SyncTransientException('phone changed networks');
+    }
+    return super.attachmentUrls(ids);
+  }
+}
+
 /// One device, with its own disk for pictures.
 class Device {
-  Device(this.server, {required this.name, required Directory dir}) {
+  Device(
+    this.server, {
+    required this.name,
+    required Directory dir,
+    FakeApi Function(FakeServer server, String device)? apiFor,
+  }) {
     store = MemoryStore();
     images = BlobStore(directory: dir);
     notes = NotesStore(store, now: () => clock, blobs: images);
     state = SyncState(store);
-    api = FakeApi(server, device: name);
+    api = apiFor?.call(server, name) ?? FakeApi(server, device: name);
     server.seedBundle(api.userId);
     keyring = SpaceKeyring(
       userId: api.userId,
@@ -245,5 +285,81 @@ void main() {
     ]);
     expect(results, [bytes, bytes]);
     expect(server.blobs.length, before);
+  });
+
+  test('a transient mobile download retries inside the same image load', () async {
+    final one = Device(server, name: 'one', dir: await dirFor('one'));
+    final two = Device(
+      server,
+      name: 'two',
+      dir: await dirFor('two'),
+      apiFor: (server, device) => FailsFirstDownloadOnce(server, device: device),
+    );
+    addTearDown(one.dispose);
+    addTearDown(two.dispose);
+    await one.boot();
+    await two.boot();
+
+    final bytes = picture(6);
+    final hash = await one.images.put(bytes);
+    final note = one.notes.create();
+    one.notes.updateDocument(note.id, anchor, const [], [
+      NoteImageRef(
+        offset: 0,
+        hash: hash,
+        key: randomKey(),
+        mime: 'image/png',
+        width: 900,
+        height: 600,
+        bytes: bytes.length,
+      ),
+    ]);
+    await one.sync.syncNow();
+    await settle(server);
+    await two.sync.syncNow();
+
+    expect(await two.imageSync.fetch(hash), bytes);
+    expect((two.api as FailsFirstDownloadOnce).attempts, 2);
+  });
+
+  test('a failed thumbnail resumes without uploading the full image twice', () async {
+    final one = Device(
+      server,
+      name: 'one',
+      dir: await dirFor('one'),
+      apiFor: (server, device) => FailsSecondAttachmentOnce(server, device: device),
+    );
+    addTearDown(one.dispose);
+    await one.boot();
+
+    final full = picture(4);
+    final thumbnail = picture(5);
+    final fullHash = await one.images.put(full);
+    final thumbHash = await one.images.put(thumbnail);
+    final note = one.notes.create();
+    one.notes.updateDocument(note.id, anchor, const [], [
+      NoteImageRef(
+        offset: 0,
+        hash: fullHash,
+        thumbHash: thumbHash,
+        key: randomKey(),
+        mime: 'image/png',
+        width: 1200,
+        height: 800,
+        bytes: full.length,
+      ),
+    ]);
+
+    final first = await one.imageSync.upload(one.notes.byId(note.id)!);
+    final partial = first.attachments.single as NoteImageRef;
+    expect(partial.attachmentId, isNotNull);
+    expect(partial.thumbId, isNull);
+    expect(server.attachments, hasLength(1));
+
+    final second = await one.imageSync.upload(first);
+    final complete = second.attachments.single as NoteImageRef;
+    expect(complete.attachmentId, partial.attachmentId);
+    expect(complete.thumbId, isNotNull);
+    expect(server.attachments, hasLength(2));
   });
 }

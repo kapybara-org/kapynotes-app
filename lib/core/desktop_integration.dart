@@ -49,6 +49,14 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   /// app root, which owns the store.
   Future<void> Function()? onBeforeQuit;
 
+  /// Awaited before the window is put away.
+  ///
+  /// A window hidden to the tray is still a running app, so this is not a
+  /// flush point in general — but it *is* the point a recording has to stop.
+  /// An app with nothing on screen that is still holding the microphone is
+  /// the worst thing this feature could do.
+  Future<void> Function()? onBeforeClose;
+
   bool? _appliedKeepRunning;
   bool? _appliedAlwaysOnTop;
   bool _hidesOnClose = false;
@@ -171,9 +179,21 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   /// The tray goes first: an icon that outlives the app it belongs to is one
   /// the user clicks and clicks at.
   Future<void> quit() async {
-    await onBeforeQuit?.call();
-    await _tray.dispose();
-    await windowManager.setPreventClose(false);
+    try {
+      await onBeforeQuit?.call();
+    } catch (error) {
+      debugPrint('KapyNotes: could not finish saving before quit: $error');
+    }
+    try {
+      await _tray.dispose();
+    } catch (error) {
+      debugPrint('KapyNotes: could not remove the tray icon: $error');
+    }
+    try {
+      await windowManager.setPreventClose(false);
+    } catch (error) {
+      debugPrint('KapyNotes: could not release close interception: $error');
+    }
     await windowManager.destroy();
   }
 
@@ -261,7 +281,12 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   @override
   void onWindowClose() {
     if (!_hidesOnClose) return;
-    unawaited(windowManager.hide());
+    unawaited(_hideAfterClosing());
+  }
+
+  Future<void> _hideAfterClosing() async {
+    await onBeforeClose?.call();
+    await windowManager.hide();
   }
 
   @override
@@ -318,6 +343,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     onNewNoteRequested = null;
     onOpenRequested = null;
     onBeforeQuit = null;
+    onBeforeClose = null;
     for (final hotKey in _hotKeys.values) {
       unawaited(hotKeyManager.unregister(hotKey));
     }

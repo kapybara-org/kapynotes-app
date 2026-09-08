@@ -220,6 +220,10 @@ void main() {
     await _pump(tester, store);
 
     expect(find.bySemanticsLabel('Settings, update available'), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar-app-version')), findsOneWidget);
+    expect(find.text('v1.0.0'), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar-update-badge')), findsOneWidget);
+    expect(find.text('Update'), findsOneWidget);
   });
 
   testWidgets('the gear says nothing while the app is current', (tester) async {
@@ -229,6 +233,8 @@ void main() {
 
     expect(find.bySemanticsLabel('Settings'), findsWidgets);
     expect(find.bySemanticsLabel('Settings, update available'), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar-app-version')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar-update-badge')), findsNothing);
   });
 
   testWidgets('the update row is absent where the app cannot update itself', (

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
+import '../../core/toast.dart';
 import '../../sync/account.dart';
 import '../../sync/sharing.dart';
 import '../../sync/sync_api.dart' show SyncRefusedException;
@@ -91,45 +92,63 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
     }
   }
 
-  Future<void> _run(Future<void> Function() action, {String? done}) async {
+  Future<void> _run(
+    Future<void> Function() action, {
+    String waiting = 'Updating sharing…',
+    String? done,
+  }) async {
     setState(() {
       _busy = true;
       _message = null;
     });
+    var progress = Toast.showProgress(context, waiting);
+    var progressActive = true;
     try {
-      await _withTerms(action);
+      try {
+        await action();
+      } on SyncRefusedException catch (error) {
+        if (error.code != termsRequiredCode || !mounted) rethrow;
+
+        // Reading or declining the rules is not work in progress. Keep the
+        // pane disabled, but stop the spinner until acceptance resumes the
+        // server action.
+        progress.dismiss();
+        progressActive = false;
+        final accepted = await showSharingTermsSheet(
+          context,
+          sharing: widget.sharing,
+        );
+        if (!accepted || !mounted) return;
+        progress = Toast.showProgress(context, waiting);
+        progressActive = true;
+        await action();
+      }
       if (mounted) {
         setState(() {
           _message = done;
           _messageIsError = false;
         });
+        progress.success('Sharing updated');
+      } else {
+        progress.dismiss();
       }
     } catch (error) {
+      final message = describeSharingError(error);
       if (mounted) {
         setState(() {
-          _message = describeSharingError(error);
+          _message = message;
           _messageIsError = true;
         });
+        if (progressActive) {
+          progress.error('Sharing failed');
+        } else {
+          Toast.show(context, 'Sharing failed', isError: true);
+        }
+      } else {
+        progress.dismiss();
       }
     } finally {
       if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  /// Runs an action, showing the sharing rules first if the server says this
-  /// account has not agreed to them. Accepting an invitation is a door into
-  /// sharing exactly as sending one is, so it is gated the same way.
-  Future<void> _withTerms(Future<void> Function() action) async {
-    try {
-      await action();
-    } on SyncRefusedException catch (error) {
-      if (error.code != termsRequiredCode || !mounted) rethrow;
-      final accepted = await showSharingTermsSheet(
-        context,
-        sharing: widget.sharing,
-      );
-      if (!accepted) return;
-      await action();
     }
   }
 
@@ -137,7 +156,9 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
   static String tokenFrom(String typed) {
     final trimmed = typed.trim();
     final uri = Uri.tryParse(trimmed);
-    if (uri != null && uri.pathSegments.length >= 2 && uri.pathSegments.first == 'join') {
+    if (uri != null &&
+        uri.pathSegments.length >= 2 &&
+        uri.pathSegments.first == 'join') {
       return uri.pathSegments[1];
     }
     return trimmed.split('/').last;
@@ -186,13 +207,15 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
               busy: _busy,
               onAccept: () => _run(
                 () => sharing.acceptInvite(invite.token),
-                done: 'You are in ${invite.spaceName}. The notes arrive once '
+                done:
+                    'You are in ${invite.spaceName}. The notes arrive once '
                     'a member lets you in.',
               ),
               onDecline: () => _run(() => sharing.declineInvite(invite.token)),
               onBlock: () => _run(
                 () => sharing.blockPerson(invite.invitedBy),
-                done: 'Blocked ${invite.invitedBy}. They cannot invite you '
+                done:
+                    'Blocked ${invite.invitedBy}. They cannot invite you '
                     'again.',
               ),
               onReport: () => showReportDialog(
@@ -263,11 +286,8 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
             key: ValueKey('space-${team.id}'),
             space: team,
             sharing: sharing,
-            onTap: () => showSpaceDialog(
-              context,
-              spaceId: team.id,
-              sharing: sharing,
-            ),
+            onTap: () =>
+                showSpaceDialog(context, spaceId: team.id, sharing: sharing),
           ),
         if (sharing.blocks.isNotEmpty) ...[
           const SizedBox(height: 14),
@@ -378,6 +398,14 @@ class _InviteRow extends StatelessWidget {
               color: palette.textPrimary,
             ),
           ),
+          const SizedBox(height: 2),
+          Text(
+            '${invite.role.accessLabel} access',
+            style: TextStyle(
+              fontSize: AppTypeScale.caption,
+              color: palette.textSecondary,
+            ),
+          ),
           Row(
             children: [
               // The two quiet ways out sit at the far end from Accept, so the
@@ -427,7 +455,7 @@ class _TeamRow extends StatelessWidget {
     final palette = context.palette;
     final others = space.othersThan(sharing.userId);
     final warnings = sharing.trust.warningsFor(space.id);
-    final status = !sharing.holdsKey(space.id)
+    final detail = !sharing.holdsKey(space.id)
         ? 'Waiting for someone to let you in'
         : warnings.isNotEmpty
         ? "A member's key changed"
@@ -457,15 +485,34 @@ class _TeamRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '${space.displayName}${space.isOwner ? '' : ' · shared with you'}',
-                    style: TextStyle(
-                      fontSize: AppTypeScale.control,
-                      color: palette.textPrimary,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '${space.displayName}${space.isOwner ? '' : ' · shared with you'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: AppTypeScale.control,
+                            color: palette.textPrimary,
+                          ),
+                        ),
+                      ),
+                      if (!space.isOwner) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          space.role.accessLabel,
+                          style: TextStyle(
+                            fontSize: AppTypeScale.caption,
+                            fontWeight: FontWeight.w600,
+                            color: palette.textTertiary,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   Text(
-                    status,
+                    detail,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

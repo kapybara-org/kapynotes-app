@@ -16,11 +16,28 @@ import 'editor_formatting.dart';
 String _withShortcut(String label, ShortcutBinding? shortcut) =>
     shortcut == null ? label : '$label · ${shortcut.displayLabel}';
 
+/// Short enough for the footer while still naming every small collaboration.
+String? typingStatusText(List<String> names) {
+  final unique = <String>[];
+  for (final name in names) {
+    final clean = name.trim();
+    if (clean.isNotEmpty && !unique.contains(clean)) unique.add(clean);
+  }
+  return switch (unique.length) {
+    0 => null,
+    1 => '${unique[0]} is typing...',
+    2 => '${unique[0]} and ${unique[1]} are typing...',
+    _ => '${unique[0]} and ${unique.length - 1} others are typing...',
+  };
+}
+
 /// Persistent note status bar inspired by the compact footer in Numi.
 class NoteFooter extends StatelessWidget {
   const NoteFooter({
     super.key,
     required this.total,
+    this.typingNames = const [],
+    this.readOnly = false,
     required this.paragraphStyleShortcut,
     required this.boldShortcut,
     required this.italicShortcut,
@@ -33,6 +50,9 @@ class NoteFooter extends StatelessWidget {
     required this.onBulletsPressed,
     required this.onChecklistPressed,
     this.onInsertImagePressed,
+    this.imageBusy = false,
+    this.onRecordVoicePressed,
+    this.voiceBusy = false,
     required this.onIndentPressed,
     required this.onOutdentPressed,
     required this.showIndentControls,
@@ -47,6 +67,8 @@ class NoteFooter extends StatelessWidget {
   });
 
   final String? total;
+  final List<String> typingNames;
+  final bool readOnly;
   final ShortcutBinding? paragraphStyleShortcut;
   final ShortcutBinding? boldShortcut;
   final ShortcutBinding? italicShortcut;
@@ -63,6 +85,11 @@ class NoteFooter extends StatelessWidget {
   /// only ever a test. The button is hidden rather than disabled: a control
   /// that can never do anything is worse than no control.
   final VoidCallback? onInsertImagePressed;
+  final bool imageBusy;
+
+  /// Starts a recording, or stops the one running.
+  final VoidCallback? onRecordVoicePressed;
+  final bool voiceBusy;
 
   /// Nesting only appears once the caret is on a list line. The row shares its
   /// width with the total readout, and on a narrow phone two permanent extra
@@ -112,6 +139,7 @@ class NoteFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final typingText = typingStatusText(typingNames);
 
     return GlassSurface(
       color: palette.surfaceBackground.withValues(alpha: 0.94),
@@ -136,18 +164,22 @@ class NoteFooter extends StatelessWidget {
               : 0.0;
           // Style, bold, italic, bullets, checklist, and the image button
           // when there is anywhere to put an image; nesting adds two more.
-          final buttonCount =
-              5 +
-              (onInsertImagePressed == null ? 0 : 1) +
-              (showIndentControls ? 2 : 0);
+          final buttonCount = readOnly
+              ? 0
+              : 5 +
+                    (onInsertImagePressed == null ? 0 : 1) +
+                    (onRecordVoicePressed == null ? 0 : 1) +
+                    (showIndentControls ? 2 : 0);
           final rowWidth = buttonCount * AppControlMetrics.iconButtonExtent;
           final fixed =
               _edgeInset + gearSlot + rowWidth + _groupGap + _textEdgeInset;
           // Whatever is genuinely left over, up to a readable maximum. The
           // floor is what makes the controls scroll instead of the readout
           // shrinking to nothing on a narrow phone with nesting showing.
-          final totalSlot = total == null
+          final readoutSlot = typingText == null && !readOnly && total == null
               ? 0.0
+              : typingText != null || readOnly
+              ? (constraints.maxWidth - fixed).clamp(112.0, 220.0)
               : (constraints.maxWidth - fixed).clamp(40.0, 180.0);
 
           return SizedBox(
@@ -159,114 +191,201 @@ class NoteFooter extends StatelessWidget {
                   FooterSettingsButton(onPressed: onSettingsPressed),
                   const SizedBox(width: _groupGap),
                 ],
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: _snapToWholeButtons(
-                      math.max(
-                        0,
-                        constraints.maxWidth -
-                            _edgeInset -
-                            gearSlot -
-                            totalSlot -
-                            _groupGap -
-                            _textEdgeInset,
-                      ),
-                      rowWidth,
-                    ),
-                  ),
-                  // Scrolls only when it cannot fit, which a narrow phone with
-                  // the nesting controls showing still cannot. Left-anchored,
-                  // so what is on screen stays where it was.
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const ClampingScrollPhysics(),
-                    child: ExcludeFocus(
-                      child: Row(
-                        key: const ValueKey('note-formatting-controls'),
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Adding a picture is not a style, and it leads the
-                          // row rather than trailing it: on a narrow phone the
-                          // row scrolls, and the first slot is the only one
-                          // guaranteed to be on screen.
-                          if (onInsertImagePressed != null) ...[
-                            _FormatButton(
-                              key: const ValueKey('insert-image'),
-                              icon: Icons.image_outlined,
-                              tooltip: 'Add an image',
-                              active: false,
-                              onPressed: onInsertImagePressed,
-                            ),
-                          ],
-                          _StyleCycleButton(
-                            style: paragraphStyle,
-                            shortcut: paragraphStyleShortcut,
-                            onPressed: onParagraphStylePressed,
-                          ),
-                          _FormatButton(
-                            key: const ValueKey('format-bold'),
-                            icon: Icons.format_bold_rounded,
-                            tooltip: _withShortcut('Bold', boldShortcut),
-                            active: boldActive,
-                            onPressed: onBoldPressed,
-                          ),
-                          _FormatButton(
-                            key: const ValueKey('format-italic'),
-                            icon: Icons.format_italic_rounded,
-                            tooltip: _withShortcut('Italic', italicShortcut),
-                            active: italicActive,
-                            onPressed: onItalicPressed,
-                          ),
-                          _FormatButton(
-                            key: const ValueKey('format-bullets'),
-                            icon: Icons.format_list_bulleted_rounded,
-                            tooltip: _withShortcut(
-                              'Bulleted list',
-                              bulletsShortcut,
-                            ),
-                            active: bulletsActive,
-                            onPressed: onBulletsPressed,
-                          ),
-                          _FormatButton(
-                            key: const ValueKey('format-checklist'),
-                            icon: Icons.checklist_rounded,
-                            tooltip: _withShortcut(
-                              'Checklist',
-                              checklistShortcut,
-                            ),
-                            active: checklistActive,
-                            onPressed: onChecklistPressed,
-                          ),
-                          if (showIndentControls) ...[
-                            _FormatButton(
-                              key: const ValueKey('format-outdent'),
-                              icon: Icons.format_indent_decrease_rounded,
-                              tooltip: 'Move out \u00b7 Shift + Tab',
-                              active: false,
-                              onPressed: canOutdent ? onOutdentPressed : null,
-                            ),
-                            _FormatButton(
-                              key: const ValueKey('format-indent'),
-                              icon: Icons.format_indent_increase_rounded,
-                              tooltip: 'Move in \u00b7 Tab',
-                              active: false,
-                              onPressed: canIndent ? onIndentPressed : null,
-                            ),
-                          ],
-                        ],
+                if (!readOnly)
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: _snapToWholeButtons(
+                        math.max(
+                          0,
+                          constraints.maxWidth -
+                              _edgeInset -
+                              gearSlot -
+                              readoutSlot -
+                              _groupGap -
+                              _textEdgeInset,
+                        ),
+                        rowWidth,
                       ),
                     ),
+                    // Scrolls only when it cannot fit, which a narrow phone with
+                    // the nesting controls showing still cannot. Left-anchored,
+                    // so what is on screen stays where it was.
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const ClampingScrollPhysics(),
+                      child: ExcludeFocus(
+                        child: Row(
+                          key: const ValueKey('note-formatting-controls'),
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Adding a picture is not a style, and it leads the
+                            // row rather than trailing it: on a narrow phone the
+                            // row scrolls, and the first slot is the only one
+                            // guaranteed to be on screen.
+                            if (onInsertImagePressed != null) ...[
+                              _FormatButton(
+                                key: const ValueKey('insert-image'),
+                                icon: Icons.image_outlined,
+                                tooltip: imageBusy
+                                    ? 'Adding image…'
+                                    : 'Add an image',
+                                active: false,
+                                busy: imageBusy,
+                                progressKey: const ValueKey(
+                                  'insert-image-progress',
+                                ),
+                                onPressed: imageBusy
+                                    ? null
+                                    : onInsertImagePressed,
+                              ),
+                            ],
+                            if (onRecordVoicePressed != null)
+                              _FormatButton(
+                                key: const ValueKey('record-voice'),
+                                icon: Icons.mic_none_rounded,
+                                tooltip: voiceBusy
+                                    ? 'Starting recording…'
+                                    : 'Record a voice note',
+                                active: false,
+                                busy: voiceBusy,
+                                progressKey: const ValueKey(
+                                  'record-voice-progress',
+                                ),
+                                onPressed: voiceBusy
+                                    ? null
+                                    : onRecordVoicePressed,
+                              ),
+                            _StyleCycleButton(
+                              style: paragraphStyle,
+                              shortcut: paragraphStyleShortcut,
+                              onPressed: onParagraphStylePressed,
+                            ),
+                            _FormatButton(
+                              key: const ValueKey('format-bold'),
+                              icon: Icons.format_bold_rounded,
+                              tooltip: _withShortcut('Bold', boldShortcut),
+                              active: boldActive,
+                              onPressed: onBoldPressed,
+                            ),
+                            _FormatButton(
+                              key: const ValueKey('format-italic'),
+                              icon: Icons.format_italic_rounded,
+                              tooltip: _withShortcut('Italic', italicShortcut),
+                              active: italicActive,
+                              onPressed: onItalicPressed,
+                            ),
+                            _FormatButton(
+                              key: const ValueKey('format-bullets'),
+                              icon: Icons.format_list_bulleted_rounded,
+                              tooltip: _withShortcut(
+                                'Bulleted list',
+                                bulletsShortcut,
+                              ),
+                              active: bulletsActive,
+                              onPressed: onBulletsPressed,
+                            ),
+                            _FormatButton(
+                              key: const ValueKey('format-checklist'),
+                              icon: Icons.checklist_rounded,
+                              tooltip: _withShortcut(
+                                'Checklist',
+                                checklistShortcut,
+                              ),
+                              active: checklistActive,
+                              onPressed: onChecklistPressed,
+                            ),
+                            if (showIndentControls) ...[
+                              _FormatButton(
+                                key: const ValueKey('format-outdent'),
+                                icon: Icons.format_indent_decrease_rounded,
+                                tooltip: 'Move out \u00b7 Shift + Tab',
+                                active: false,
+                                onPressed: canOutdent ? onOutdentPressed : null,
+                              ),
+                              _FormatButton(
+                                key: const ValueKey('format-indent'),
+                                icon: Icons.format_indent_increase_rounded,
+                                tooltip: 'Move in \u00b7 Tab',
+                                active: false,
+                                onPressed: canIndent ? onIndentPressed : null,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                ),
                 // Everything between the controls and the readout. The only
                 // flexible thing in the row, so the total is pinned right
                 // however wide the window is.
                 const Spacer(),
-                // A note with no calculations has nothing to total, so the
-                // footer drops the readout instead of showing a hollow zero.
-                if (total case final total?) ...[
+                // Collaboration temporarily takes this quiet status slot;
+                // the calculation total returns as soon as typing stops.
+                if (typingText != null) ...[
                   SizedBox(
-                    width: totalSlot,
+                    width: readoutSlot,
+                    child: Semantics(
+                      liveRegion: true,
+                      label: typingText,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: palette.function,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              typingText,
+                              key: const ValueKey('typing-presence'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontSize: AppTypeScale.caption,
+                                fontWeight: FontWeight.w500,
+                                color: palette.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: _textEdgeInset),
+                ] else if (readOnly) ...[
+                  SizedBox(
+                    width: readoutSlot,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Icon(
+                          Icons.visibility_outlined,
+                          size: AppControlMetrics.iconAction,
+                          color: palette.textTertiary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'View only',
+                          key: const ValueKey('view-only-status'),
+                          style: TextStyle(
+                            fontSize: AppTypeScale.caption,
+                            fontWeight: FontWeight.w500,
+                            color: palette.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: _textEdgeInset),
+                ] else if (total case final total?) ...[
+                  SizedBox(
+                    width: readoutSlot,
                     child: Text.rich(
                       key: const ValueKey('note-total'),
                       TextSpan(
@@ -356,11 +475,15 @@ class _FormatButton extends StatelessWidget {
     required this.tooltip,
     required this.active,
     required this.onPressed,
+    this.busy = false,
+    this.progressKey,
   });
 
   final IconData icon;
   final String tooltip;
   final bool active;
+  final bool busy;
+  final Key? progressKey;
 
   /// Null disables the button, which is how the nesting controls show that a
   /// list is already at the margin or at the deepest level.
@@ -379,7 +502,16 @@ class _FormatButton extends StatelessWidget {
       selected: active,
       foregroundColor: foreground,
       onPressed: onPressed,
-      icon: Icon(icon, size: AppControlMetrics.iconAction),
+      icon: busy
+          ? SizedBox.square(
+              key: progressKey,
+              dimension: AppControlMetrics.iconAction,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: foreground,
+              ),
+            )
+          : Icon(icon, size: AppControlMetrics.iconAction),
     );
   }
 }

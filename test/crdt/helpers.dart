@@ -14,6 +14,7 @@ List<Object?> type(NoteDoc doc, String body, {DateTime? now}) {
     formats: view.formats,
     attachments: view.attachments,
     createdAt: view.createdAt ?? created,
+    archivedAt: view.archivedAt,
     now: now ?? created,
   );
 }
@@ -21,16 +22,15 @@ List<Object?> type(NoteDoc doc, String body, {DateTime? now}) {
 NoteFormatRange bold(int start, int end) =>
     NoteFormatRange(start: start, end: end, format: NoteFormat.bold);
 
-NoteAttachmentRef image(int offset, {String hash = 'abc'}) =>
-    NoteImageRef(
-      offset: offset,
-      hash: hash,
-      key: Uint8List(32),
-      mime: 'image/png',
-      width: 10,
-      height: 20,
-      bytes: 100,
-    );
+NoteAttachmentRef image(int offset, {String hash = 'abc'}) => NoteImageRef(
+  offset: offset,
+  hash: hash,
+  key: Uint8List(32),
+  mime: 'image/png',
+  width: 10,
+  height: 20,
+  bytes: 100,
+);
 
 /// Applies [ops] to every doc in [docs] except its author.
 void broadcast(List<NoteDoc> docs, NoteDoc from, List<Object?> ops) {

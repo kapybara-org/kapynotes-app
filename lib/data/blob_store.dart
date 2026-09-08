@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -125,6 +126,59 @@ class BlobStore {
     return hash;
   }
 
+  /// Hashes a file without its bytes ever crossing the UI isolate.
+  ///
+  /// A thirty-minute recording is 10 MB, and 20 MB from Windows. Reading that
+  /// on the main isolate to checksum it drops frames on the note the user is
+  /// still looking at, so the work goes somewhere else and is fed through the
+  /// digest in chunks rather than held whole.
+  static Future<String> hashFile(File file) {
+    final path = file.path;
+    return Isolate.run(() async {
+      final sink = _DigestSink();
+      final input = sha256.startChunkedConversion(sink);
+      await for (final chunk in File(path).openRead()) {
+        input.add(chunk);
+      }
+      input.close();
+      return sink.value.toString();
+    });
+  }
+
+  /// Takes ownership of a file already on disk, and returns its address.
+  ///
+  /// Moved rather than copied: a recording is already written, and copying it
+  /// would mean holding two of it while the copy runs. `rename` fails across
+  /// volumes — the temp directory and the support directory are not always on
+  /// the same one — so that case falls back to a copy and a delete.
+  Future<String> adoptFile(File source, {required String extension}) async {
+    final hash = await hashFile(source);
+    final names = await _index();
+    if (names.containsKey(hash)) {
+      await _quietlyDelete(source);
+      return hash;
+    }
+
+    final name = '$hash$extension';
+    final shard = await _shardFor(hash);
+    await shard.create(recursive: true);
+    final destination = File('${shard.path}/$name');
+    try {
+      await source.rename(destination.path);
+    } on FileSystemException {
+      await source.copy(destination.path);
+      await _quietlyDelete(source);
+    }
+    names[hash] = name;
+    return hash;
+  }
+
+  Future<void> _quietlyDelete(File file) async {
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
   /// The file holding [hash], or null when this device does not have it.
   ///
   /// Handed out so a player can stream from disk rather than being given the
@@ -223,4 +277,15 @@ class BlobStore {
     }
     return total;
   }
+}
+
+/// Collects the one digest a chunked conversion produces.
+class _DigestSink implements Sink<Digest> {
+  late Digest value;
+
+  @override
+  void add(Digest data) => value = data;
+
+  @override
+  void close() {}
 }

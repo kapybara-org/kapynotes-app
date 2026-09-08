@@ -10,6 +10,7 @@ import 'data/notes_store.dart';
 import 'data/rates.dart';
 import 'data/shortcut_prefs.dart';
 import 'data/update_checker.dart';
+import 'speech/speech_api.dart';
 import 'sync/account.dart';
 import 'sync/auth_api.dart';
 import 'sync/config.dart';
@@ -19,6 +20,13 @@ import 'sync/sync_state.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Flutter otherwise retains up to 100 MB of decoded images globally. Note
+  // previews are durable on disk and cheap to decode again, so a smaller
+  // screenful-sized cache saves real RAM without changing what stays visible.
+  final imageCache = PaintingBinding.instance.imageCache;
+  imageCache.maximumSize = AppPlatform.isMobile ? 80 : 160;
+  imageCache.maximumSizeBytes = AppPlatform.isMobile ? 24 << 20 : 48 << 20;
 
   final store = LocalStore(fileName: 'kapy-notes.json');
   final notes = NotesStore(store);
@@ -50,6 +58,10 @@ Future<void> main() async {
           store: store,
         )
       : null;
+  // Built here rather than inside Account so that a build with no
+  // transcription in it simply never sets this, and the queue never runs.
+  account?.speechApiFor = (token) =>
+      HttpSpeechApi(baseUrl: Uri.parse(kApiBaseUrl), token: () async => token);
 
   DesktopIntegration? desktopIntegration;
   if (AppPlatform.isDesktop) {

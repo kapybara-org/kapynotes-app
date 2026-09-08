@@ -85,13 +85,11 @@ class ReportTarget {
   final String? noteBody;
 
   /// An invitation, by its token. Nothing encrypted is involved.
-  const ReportTarget.invitation({
-    required String this.token,
-    this.email,
-  }) : kind = ReportKind.invitation,
-       spaceId = null,
-       noteId = null,
-       noteBody = null;
+  const ReportTarget.invitation({required String this.token, this.email})
+    : kind = ReportKind.invitation,
+      spaceId = null,
+      noteId = null,
+      noteBody = null;
 
   /// A note. [noteBody] is what *could* be attached, and is not attached
   /// unless the person reporting chooses to.
@@ -153,7 +151,9 @@ class TermsStatus {
     return TermsStatus(
       acceptedVersion: accepted,
       currentVersion: current,
-      acceptedAt: DateTime.tryParse(raw['acceptedAt'] as String? ?? '')?.toLocal(),
+      acceptedAt: DateTime.tryParse(
+        raw['acceptedAt'] as String? ?? '',
+      )?.toLocal(),
     );
   }
 }
@@ -181,7 +181,8 @@ const int reportResponseDays = 2;
 /// readable in the ten seconds somebody will actually give it, with the full
 /// terms a tap away.
 const String sharingTermsSummary =
-    'A shared space is somewhere other people can read and write. By sharing '
+    'A shared space is somewhere other people can read, and Editors can '
+    'write. By sharing '
     'you agree not to use it to harass anyone, to send unwanted invitations, '
     'or to share sexual content involving children, threats, or anything '
     'illegal.\n\n'

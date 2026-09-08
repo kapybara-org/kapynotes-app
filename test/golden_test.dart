@@ -141,19 +141,6 @@ Future<void> pumpForGolden(
   // Publish the cached rates without going near the network.
   rates.loadCache();
 
-  // Warmed before a single frame is built. An `ImageProvider` that reads a
-  // real file can only finish under `runAsync`; resolved from an ordinary
-  // pump it waits on I/O the fake clock never delivers, and the stalled cache
-  // entry is what every later build then gets handed. The app has no fake
-  // clock, so this is a property of the harness and not of the feature.
-  if (withImages) {
-    await tester.runAsync(() async {
-      for (final hash in _imageHashes) {
-        await _warmNoteImage(hash);
-      }
-    });
-  }
-
   await tester.pumpWidget(
     KapyNotesApp(
       store: store,
@@ -164,6 +151,13 @@ Future<void> pumpForGolden(
       updates: updates,
     ),
   );
+  if (withImages) {
+    await _warmVisibleNoteImages(tester);
+    // Existing Image states still point at the fake-zone streams evicted
+    // above. Re-resolve them against the now-warm target-sized cache entries.
+    unawaited(tester.binding.reassembleApplication());
+    await tester.pump();
+  }
   await tester.runAsync(
     () => precacheImage(
       const AssetImage(AppLogo.assetPath),
@@ -173,14 +167,40 @@ Future<void> pumpForGolden(
   await tester.pumpAndSettle();
 }
 
-/// Resolves one note image to completion, so a golden captures the picture
-/// rather than the box it will appear in.
-Future<void> _warmNoteImage(String hash) {
+/// Resolves the exact size-aware keys the first frame requested. File I/O only
+/// advances under `runAsync` in a widget test; the real app has no fake clock.
+Future<void> _warmVisibleNoteImages(WidgetTester tester) async {
+  final finder = find.byWidgetPredicate(
+    (widget) => widget is Image && widget.image is NoteImageProvider,
+  );
+  final pending = <(NoteImageProvider, ImageConfiguration)>[];
+  for (var index = 0; index < finder.evaluate().length; index++) {
+    final current = finder.at(index);
+    final image = tester.widget<Image>(current);
+    final size = image.width == null || image.height == null
+        ? null
+        : Size(image.width!, image.height!);
+    pending.add((
+      image.image as NoteImageProvider,
+      createLocalImageConfiguration(tester.element(current), size: size),
+    ));
+  }
+  await tester.runAsync(() async {
+    for (final (provider, configuration) in pending) {
+      // The first build starts this key in the fake-async zone. Replace that
+      // pending entry, then resolve it wholly on the real event loop.
+      await provider.evict(configuration: configuration);
+      await _warmNoteImage(provider, configuration);
+    }
+  });
+}
+
+Future<void> _warmNoteImage(
+  NoteImageProvider provider,
+  ImageConfiguration configuration,
+) {
   final completer = Completer<void>();
-  final stream = NoteImageProvider(
-    hash: hash,
-    store: _imageStore,
-  ).resolve(ImageConfiguration.empty);
+  final stream = provider.resolve(configuration);
   late ImageStreamListener listener;
   listener = ImageStreamListener(
     (_, _) {
@@ -196,15 +216,24 @@ Future<void> _warmNoteImage(String hash) {
   return completer.future;
 }
 
-/// Taps whichever settings affordance the layout is showing: the sidebar's
-/// labelled row when the notes list is open, the note footer's gear when it is
-/// not. They stopped sharing a key when the sidebar's became a row.
+/// Opens settings through the affordance the current layout owns. Phones keep
+/// settings in the notes drawer so the editor footer can stay focused on input.
 Future<void> tapSettings(WidgetTester tester) async {
   final sidebar = find.byKey(const ValueKey('sidebar-settings'));
-  final target = sidebar.evaluate().isEmpty
-      ? find.byKey(const ValueKey('note-settings'))
-      : sidebar;
-  await tester.tap(target.first);
+  if (sidebar.evaluate().isNotEmpty) {
+    await tester.tap(sidebar.first);
+    return;
+  }
+
+  final footer = find.byKey(const ValueKey('note-settings'));
+  if (footer.evaluate().isNotEmpty) {
+    await tester.tap(footer.first);
+    return;
+  }
+
+  await tester.tap(find.byTooltip('Show notes'));
+  await tester.pumpAndSettle();
+  await tester.tap(sidebar.first);
 }
 
 /// Pictures for the image golden, written once outside any test body: real

@@ -5,6 +5,10 @@ import 'package:material_ui/material_ui.dart';
 
 import 'core/platform.dart';
 import 'core/desktop_integration.dart';
+import 'audio/voice_player.dart';
+import 'data/voice_prefs.dart';
+import 'speech/transcription_queue.dart';
+import 'audio/voice_recording_controller.dart';
 import 'core/quick_capture.dart';
 import 'core/theme.dart';
 import 'data/engine_provider.dart';
@@ -32,6 +36,7 @@ class KapyNotesApp extends StatefulWidget {
     this.updates,
     this.desktopIntegration,
     this.account,
+    this.recording,
   });
 
   final LocalStore store;
@@ -47,6 +52,11 @@ class KapyNotesApp extends StatefulWidget {
   /// Null when the build has no server to sync with.
   final Account? account;
 
+  /// Owns the microphone. Injectable so a test can hand over a recorder with
+  /// no microphone behind it — the real one starts a one-second ticker that
+  /// `pumpAndSettle` would wait on forever.
+  final VoiceRecordingController? recording;
+
   @override
   State<KapyNotesApp> createState() => _KapyNotesAppState();
 }
@@ -54,15 +64,36 @@ class KapyNotesApp extends StatefulWidget {
 class _KapyNotesAppState extends State<KapyNotesApp>
     with WidgetsBindingObserver {
   static const _rateRefreshDelay = Duration(seconds: 2);
+
+  /// Behind the rate refresh on purpose: whatever else is happening after the
+  /// first frame, transcription is the least urgent of it.
+  static const _transcriptionDrainDelay = Duration(seconds: 3);
   // Behind the rate refresh: neither is urgent, and launch belongs to the
   // first frame rather than to two background fetches racing it.
   static const _updateCheckDelay = Duration(seconds: 5);
 
   final TextEditingController _launchController = TextEditingController();
+
+  /// Owns the microphone, and lives here rather than on the page below so a
+  /// recording survives the page rebuilding — and so every lifecycle hook in
+  /// this class can end one before the app goes away.
+  late final VoiceRecordingController _recording =
+      widget.recording ?? VoiceRecordingController();
+
+  /// One player for the whole app: starting a second recording stops the
+  /// first, and a phone never holds two claims on its audio session.
+  final VoicePlayer _player = VoicePlayer();
+
+  /// Turns recordings into words, across launches. Its file is only touched
+  /// once something has been recorded, so a device that never records pays a
+  /// single `File.exists` for it at startup and nothing else.
+  TranscriptionQueue? _transcriptions;
+  VoicePrefs? _voicePrefs;
   EngineProvider? _engines;
   Future<void>? _hydration;
   Timer? _rateRefreshTimer;
   Timer? _updateCheckTimer;
+  Timer? _transcriptionTimer;
   bool _ready = false;
 
   /// The welcome note, on the launch that seeded it. Null every other time.
@@ -81,7 +112,22 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     // request, so the flush that request would have triggered has to be
     // handed over explicitly. This state owns the store; nothing below it
     // does.
-    widget.desktopIntegration?.onBeforeQuit = _flushAfterHydration;
+    widget.desktopIntegration?.onBeforeQuit = _finishRecordingThenFlush;
+    widget.updates?.onBeforeQuitForUpdate = widget.desktopIntegration?.quit;
+    // Hiding to the tray must not leave the microphone open: an app with no
+    // window on screen that is still recording is the worst thing this feature
+    // could do.
+    widget.desktopIntegration?.onBeforeClose =
+        _recording.finishRecordingAndFlush;
+    _recording.onFlush = _flushAfterHydration;
+    _voicePrefs = VoicePrefs(widget.store);
+    _transcriptions = TranscriptionQueue(
+      store: LocalStore(fileName: 'attachments-queue.json'),
+      notes: widget.notes,
+      blobs: widget.notes.blobs,
+      prefs: _voicePrefs!,
+      api: () => widget.account?.speech,
+    );
     if (widget.notes.isLoaded) {
       _activateLoadedApp();
     } else {
@@ -101,6 +147,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
     widget.prefs.load();
     widget.shortcuts.load();
+    _voicePrefs?.load();
     _activateLoadedApp(capturedText: _launchController.text, intent: intent);
     setState(() {});
 
@@ -163,6 +210,21 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       () => unawaited(widget.rates.refreshIfStale()),
     );
 
+    // Behind the rate refresh, and only ever after the first frame. Starts
+    // with a `File.exists` on the queue file and does nothing more on a device
+    // that has never recorded.
+    _transcriptionTimer?.cancel();
+    _transcriptionTimer = Timer(_transcriptionDrainDelay, () async {
+      final queue = _transcriptions;
+      if (queue == null) return;
+      queue.load();
+      unawaited(queue.drain());
+    });
+
+    // Stray `voice-*.m4a` from a force quit: unreadable, unrecoverable, and
+    // nothing else will ever clean them up.
+    unawaited(VoiceRecordingController.sweepTempFiles());
+
     final updates = widget.updates;
     if (updates == null) return;
     _updateCheckTimer?.cancel();
@@ -174,6 +236,13 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     );
   }
 
+  /// Ends any recording, then flushes. The order matters: the recording has
+  /// to become a ref in a note *before* the note is written to disk.
+  Future<void> _finishRecordingThenFlush() async {
+    await _recording.finishRecordingAndFlush();
+    await _flushAfterHydration();
+  }
+
   Future<void> _flushAfterHydration() async {
     final hydration = _hydration;
     if (hydration != null) await hydration;
@@ -183,9 +252,16 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.updates?.onBeforeQuitForUpdate = null;
     _rateRefreshTimer?.cancel();
     _updateCheckTimer?.cancel();
+    _transcriptionTimer?.cancel();
+    _transcriptions?.dispose();
+    _voicePrefs?.dispose();
     _launchController.dispose();
+    // Not the injected one: whoever passed it in owns it.
+    if (widget.recording == null) _recording.dispose();
+    _player.dispose();
     _engines?.dispose();
     widget.rates.dispose();
     widget.updates?.dispose();
@@ -213,6 +289,14 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       if (state == AppLifecycleState.paused ||
           state == AppLifecycleState.detached) {
         sync?.pause();
+        // A phone that backgrounds the app has already stopped giving it the
+        // microphone, so the recording is delivered rather than left running.
+        // Deliberately not on `inactive`: that is the first moment of a phone
+        // call and the app switcher, and `record` has paused itself for both.
+        if (AppPlatform.isMobile) {
+          unawaited(_finishRecordingThenFlush());
+          return;
+        }
       }
       unawaited(_flushAfterHydration());
     }
@@ -220,7 +304,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
   @override
   Future<AppExitResponse> didRequestAppExit() async {
-    await _flushAfterHydration();
+    await _finishRecordingThenFlush();
     return AppExitResponse.exit;
   }
 
@@ -250,6 +334,10 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         store: widget.store,
         welcomeNoteId: _welcomeNoteId,
         launchIntent: _launchIntent,
+        recording: _recording,
+        player: _player,
+        transcriptions: _transcriptions,
+        voicePrefs: _voicePrefs,
       ),
     );
   }

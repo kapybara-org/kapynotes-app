@@ -34,6 +34,8 @@ class NotesStore extends ChangeNotifier {
   final LocalStore _store;
   final DateTime Function() _now;
   List<Note> _notes = const [];
+  List<Note> _activeNotes = const [];
+  List<Note> _archivedNotes = const [];
   List<Tombstone> _tombstones = const [];
   bool _loaded = false;
   Future<void>? _loadFuture;
@@ -56,13 +58,20 @@ class NotesStore extends ChangeNotifier {
     : _now = now ?? DateTime.now,
       blobs = blobs ?? BlobStore();
 
-  List<Note> get notes => _notes;
+  /// Notes shown in the main list, newest first.
+  List<Note> get notes => _activeNotes;
+
+  /// Notes kept out of the main list until restored.
+  List<Note> get archivedNotes => _archivedNotes;
+
+  /// Every recoverable note, for sync, export, and attachment retention.
+  List<Note> get allNotes => _notes;
   List<Tombstone> get tombstones => _tombstones;
   bool get isLoaded => _loaded;
-  bool get isEmpty => _notes.isEmpty;
+  bool get isEmpty => _activeNotes.isEmpty;
 
   /// The note whose contents changed most recently.
-  Note? get lastEditedNote => _notes.isEmpty ? null : _notes.first;
+  Note? get lastEditedNote => _activeNotes.isEmpty ? null : _activeNotes.first;
 
   /// Notes the server does not yet hold this revision of.
   List<Note> get dirtyNotes =>
@@ -110,6 +119,7 @@ class NotesStore extends ChangeNotifier {
       }
     }
 
+    _refreshViews();
     _loaded = true;
     notifyListeners();
   }
@@ -152,6 +162,9 @@ class NotesStore extends ChangeNotifier {
   }
 
   int indexOf(String id) => _notes.indexWhere((note) => note.id == id);
+
+  int activeIndexOf(String id) =>
+      _activeNotes.indexWhere((note) => note.id == id);
 
   /// Creates a note at the top of the list and returns it.
   ///
@@ -260,18 +273,49 @@ class NotesStore extends ChangeNotifier {
     _persist();
   }
 
-  /// The note that should be selected after the one at [removedIndex] is
-  /// deleted: the next one down, else the previous, else nothing.
+  /// Moves a note out of the main list without creating a tombstone.
+  void archive(String id) {
+    final index = indexOf(id);
+    if (index < 0 || _notes[index].isArchived) return;
+    final at = _now();
+    _replace(
+      index,
+      _notes[index].copyWith(archivedAt: at, updatedAt: at),
+      toFront: true,
+    );
+  }
+
+  /// Returns an archived note to the main list as the most recent change.
+  void restore(String id) {
+    final index = indexOf(id);
+    if (index < 0 || !_notes[index].isArchived) return;
+    _replace(
+      index,
+      _notes[index].copyWith(archivedAt: null, updatedAt: _now()),
+      toFront: true,
+    );
+  }
+
+  /// The active note to select after the one at [removedIndex] leaves the
+  /// main list: the next one down, else the previous, else nothing.
   String? successorTo(int removedIndex) {
-    if (_notes.isEmpty) return null;
-    final index = removedIndex.clamp(0, _notes.length - 1);
-    return _notes[index].id;
+    if (_activeNotes.isEmpty) return null;
+    final index = removedIndex.clamp(0, _activeNotes.length - 1);
+    return _activeNotes[index].id;
   }
 
   List<Note> search(String query) {
     final trimmed = query.trim();
-    if (trimmed.isEmpty) return _notes;
-    return _notes
+    if (trimmed.isEmpty) return _activeNotes;
+    return _activeNotes
+        .where((note) => note.matches(trimmed))
+        .toList(growable: false);
+  }
+
+  List<Note> searchArchived(String query) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return _archivedNotes;
+    return _archivedNotes
         .where((note) => note.matches(trimmed))
         .toList(growable: false);
   }
@@ -436,28 +480,32 @@ class NotesStore extends ChangeNotifier {
   List<String> forgetSpace(String spaceId) {
     final kept = <String>[];
     final at = _now();
-    _notes = List.unmodifiable([
-      for (final note in _notes)
-        if (note.spaceId != spaceId)
-          note
-        else if (note.isDirty)
-          () {
-            kept.add(note.id);
-            _encoded.remove(note.id);
-            return Note(
-              id: newId(),
-              body: note.body,
-              formats: note.formats,
-              createdAt: note.createdAt,
-              updatedAt: at,
-            );
-          }()
-        else
-          () {
-            _encoded.remove(note.id);
-            return null;
-          }(),
-    ].whereType<Note>());
+    _notes = List.unmodifiable(
+      [
+        for (final note in _notes)
+          if (note.spaceId != spaceId)
+            note
+          else if (note.isDirty)
+            () {
+              kept.add(note.id);
+              _encoded.remove(note.id);
+              return Note(
+                id: newId(),
+                body: note.body,
+                formats: note.formats,
+                attachments: note.attachments,
+                createdAt: note.createdAt,
+                updatedAt: at,
+                archivedAt: note.archivedAt,
+              );
+            }()
+          else
+            () {
+              _encoded.remove(note.id);
+              return null;
+            }(),
+      ].whereType<Note>(),
+    );
     _tombstones = List.unmodifiable(
       _tombstones.where((stone) => stone.spaceId != spaceId),
     );
@@ -534,7 +582,8 @@ class NotesStore extends ChangeNotifier {
     final byIdIndex = {for (var i = 0; i < _notes.length; i++) _notes[i].id: i};
     final live = List<Note>.of(_notes);
     final stones = {
-      for (final stone in _tombstones) _stoneKey(stone.spaceId, stone.id): stone,
+      for (final stone in _tombstones)
+        _stoneKey(stone.spaceId, stone.id): stone,
     };
     final conflicted = <Note>[];
     final removed = <int>{};
@@ -570,8 +619,10 @@ class NotesStore extends ChangeNotifier {
             id: newId(),
             body: local.body,
             formats: local.formats,
+            attachments: local.attachments,
             createdAt: local.createdAt,
             updatedAt: now,
+            archivedAt: local.archivedAt,
           ),
         );
       }
@@ -636,7 +687,9 @@ class NotesStore extends ChangeNotifier {
     remaining.insert(at, note);
     _notes = List.unmodifiable(remaining);
     final key = _stoneKey(note.spaceId, note.id);
-    if (_tombstones.any((s) => _stoneKey(s.spaceId, s.id) == key && !s.isDirty)) {
+    if (_tombstones.any(
+      (s) => _stoneKey(s.spaceId, s.id) == key && !s.isDirty,
+    )) {
       _tombstones = List.unmodifiable(
         _tombstones.where((s) => _stoneKey(s.spaceId, s.id) != key),
       );
@@ -667,6 +720,7 @@ class NotesStore extends ChangeNotifier {
         attachments: local.attachments,
         createdAt: local.createdAt,
         updatedAt: _now(),
+        archivedAt: local.archivedAt,
       ),
       ..._notes,
     ]);
@@ -688,7 +742,8 @@ class NotesStore extends ChangeNotifier {
 
     final incoming = {for (final note in notes) note.id: note};
     final stones = {
-      for (final stone in _tombstones) _stoneKey(stone.spaceId, stone.id): stone,
+      for (final stone in _tombstones)
+        _stoneKey(stone.spaceId, stone.id): stone,
     };
     for (final note in notes) {
       stones.removeWhere(
@@ -740,11 +795,17 @@ class NotesStore extends ChangeNotifier {
   static String _stoneKey(String? spaceId, String id) => '${spaceId ?? ''}:$id';
 
   void _persist() {
+    _refreshViews();
     _store.put(_key, {
       'notes': _encodeNotes(),
       'tombstones': _tombstones.map((stone) => stone.toJson()).toList(),
     });
     notifyListeners();
+  }
+
+  void _refreshViews() {
+    _activeNotes = List.unmodifiable(_notes.where((note) => !note.isArchived));
+    _archivedNotes = List.unmodifiable(_notes.where((note) => note.isArchived));
   }
 
   List<Object?> _encodeNotes() {

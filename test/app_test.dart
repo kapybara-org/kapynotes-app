@@ -16,6 +16,7 @@ import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
 import 'package:kapy_notes/ui/empty_state.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
@@ -1194,7 +1195,8 @@ void main() {
     }
 
     // Cmd+R folds the right-hand column away, leaving the handle that brings
-    // it back; Cmd+\ does the same for the list on the left.
+    // it back; Cmd+S does the same for the list on the left. Notes autosave,
+    // so the conventional save chord is free for the pane itself.
     await press(LogicalKeyboardKey.keyR);
     expect(prefs.resultsVisible, isFalse);
     expect(
@@ -1205,7 +1207,7 @@ void main() {
     await press(LogicalKeyboardKey.keyR);
     expect(prefs.resultsVisible, isTrue);
 
-    await press(LogicalKeyboardKey.backslash);
+    await press(LogicalKeyboardKey.keyS);
     expect(prefs.sidebarVisible, isFalse);
   });
 
@@ -1228,6 +1230,20 @@ void main() {
     // Search temporarily replaces the updated timestamp with the matching
     // line, so a body-only result still explains why it appeared.
     expect(find.widgetWithText(NoteRow, 'olive oil 12.50'), findsOneWidget);
+  });
+
+  testWidgets('creates a note from the plus beside search', (tester) async {
+    await pumpApp(tester);
+    final before = notes.notes.length;
+    final search = find.byType(TextField).first;
+    final add = find.byKey(const ValueKey('sidebar-new-note'));
+
+    expect(add, findsOneWidget);
+    expect(tester.getCenter(add).dx, greaterThan(tester.getRect(search).right));
+
+    await tester.tap(add);
+    await tester.pumpAndSettle();
+    expect(notes.notes, hasLength(before + 1));
   });
 
   testWidgets('shows updated times and keeps the latest note at the top', (
@@ -1277,7 +1293,9 @@ void main() {
     expect(find.text('3 Sep 2026 · 09:10'), findsOneWidget);
   });
 
-  testWidgets('deletes a note and selects its neighbour', (tester) async {
+  testWidgets('archives a note, then restores it from the archive', (
+    tester,
+  ) async {
     await pumpApp(tester);
     for (final body in ['First', 'Second', 'Third']) {
       notes.create();
@@ -1285,17 +1303,27 @@ void main() {
     }
     await tester.pumpAndSettle();
 
-    // Notes are newest-first; pick the top one, then delete it.
+    // Notes are newest-first; pick the top one, then archive it.
     await tester.tap(find.widgetWithText(NoteRow, 'Third'));
     await tester.pumpAndSettle();
 
     final third = notes.notes.singleWhere((note) => note.title == 'Third');
-    await tester.tap(find.byKey(ValueKey('delete-note-${third.id}')));
+    await tester.tap(find.byKey(ValueKey('archive-note-${third.id}')));
     await tester.pumpAndSettle();
 
     expect(notes.notes.map((n) => n.title), ['Second', 'First']);
+    expect(notes.archivedNotes.single.title, 'Third');
     expect(find.widgetWithText(NoteRow, 'Third'), findsNothing);
     expect(find.byType(NoteEditor), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(NoteRow, 'Third'), findsOneWidget);
+
+    await tester.tap(find.byKey(ValueKey('restore-note-${third.id}')));
+    await tester.pumpAndSettle();
+    expect(notes.archivedNotes, isEmpty);
+    expect(notes.notes.first.title, 'Third');
   });
 
   group('compact editor', () {
@@ -1402,7 +1430,7 @@ void main() {
       expect(tester.testTextInput.isVisible, isTrue);
     });
 
-    testWidgets('keeps complete currency totals visible on a wide phone', (
+    testWidgets('keeps complete currency results visible on a wide phone', (
       tester,
     ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
@@ -1436,11 +1464,38 @@ void main() {
         reason: 'the live result is the primary payoff and must not ellipsize',
       );
 
-      final total = find.byKey(const ValueKey('note-total'));
+      expect(find.byKey(const ValueKey('note-total')), findsNothing);
+    });
+
+    testWidgets('puts image and mic in a scrollable phone footer', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'phone-footer',
+          'body': 'Phone budget\n6 * 7',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(320, 720));
+
+      expect(find.byKey(const ValueKey('insert-image')), findsOneWidget);
+      expect(find.byKey(const ValueKey('record-voice')), findsOneWidget);
+      expect(find.byKey(const ValueKey('note-settings')), findsNothing);
+      expect(find.byKey(const ValueKey('note-total')), findsNothing);
+
+      final scroller = find.descendant(
+        of: find.byType(NoteFooter),
+        matching: find.byType(SingleChildScrollView),
+      );
+      expect(scroller, findsOneWidget);
       expect(
-        tester.renderObject<RenderParagraph>(total).didExceedMaxLines,
-        isFalse,
-        reason: 'the running total must remain complete on store-sized phones',
+        tester.widget<SingleChildScrollView>(scroller).scrollDirection,
+        Axis.horizontal,
       );
     });
 
@@ -1558,6 +1613,66 @@ void main() {
         field.controller!.text.length,
       );
       expect(field.focusNode!.hasFocus, isTrue);
+    });
+
+    testWidgets(
+      'opens the notes drawer from a right swipe anywhere on Android',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        store.data['notes.v1'] = [
+          {
+            'id': 'swipe-open',
+            'body': 'Swipe from here',
+            'createdAt': 1000,
+            'updatedAt': 1000,
+          },
+        ];
+
+        await pumpApp(tester, size: const Size(420, 800));
+        expect(find.byType(NoteRow), findsNothing);
+
+        // This begins in the right-hand quarter, far outside Flutter's old
+        // left-edge drawer strip, and still has enough deliberate travel.
+        await tester.dragFrom(const Offset(330, 400), const Offset(80, 0));
+        await tester.pumpAndSettle();
+
+        expect(find.widgetWithText(NoteRow, 'Swipe from here'), findsOneWidget);
+      },
+    );
+
+    testWidgets('previews and confirms a new note from a left swipe', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'swipe-create',
+          'body': 'Keep this note',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(420, 800));
+      final swipe = await tester.startGesture(const Offset(320, 400));
+      await swipe.moveBy(const Offset(-60, 0));
+      await tester.pump();
+      expect(find.text('Swipe left for new note'), findsOneWidget);
+      expect(notes.notes, hasLength(1));
+
+      await swipe.moveBy(const Offset(-100, 0));
+      await tester.pump();
+      expect(find.text('Release for new note'), findsOneWidget);
+      expect(notes.notes, hasLength(1));
+
+      await swipe.up();
+      await tester.pump();
+
+      expect(notes.notes, hasLength(2));
+      expect(openNoteBody(tester), isEmpty);
+      expect(find.text('New note created'), findsOneWidget);
     });
 
     testWidgets('creates a ready-to-type note when the store is empty', (

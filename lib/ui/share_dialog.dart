@@ -16,7 +16,7 @@ import 'safety_dialogs.dart';
 /// The share sheet for one note.
 ///
 /// A private note is offered two ways in: a person, by email, or a space the
-/// account is already in. A shared note shows who else can read it, who is
+/// account is already in. A shared note shows who else has access, who is
 /// still waiting for the key, and the ways out — back to your own notes, or
 /// for the owner, ending the space for everyone.
 Future<void> showShareDialog(
@@ -52,6 +52,7 @@ class _ShareDialog extends StatefulWidget {
 class _ShareDialogState extends State<_ShareDialog> {
   final _email = TextEditingController();
   bool _busy = false;
+  SpaceRole _inviteRole = SpaceRole.member;
   String? _error;
   String? _notice;
 
@@ -97,40 +98,58 @@ class _ShareDialogState extends State<_ShareDialog> {
     return note == null ? null : widget.sharing.spaceOf(note);
   }
 
-  Future<void> _run(Future<void> Function() action, {String? done}) async {
+  Future<void> _run(
+    Future<void> Function() action, {
+    String waiting = 'Updating sharing…',
+    String? done,
+  }) async {
     setState(() {
       _busy = true;
       _error = null;
       _notice = null;
     });
+    var progress = Toast.showProgress(context, waiting);
+    var progressActive = true;
     try {
-      await _withTerms(action);
-      if (mounted && done != null) setState(() => _notice = done);
+      try {
+        await action();
+      } on SyncRefusedException catch (error) {
+        if (error.code != termsRequiredCode || !mounted) rethrow;
+
+        // A confirmation is waiting on the person, not on the app. Remove the
+        // indefinite spinner while the rules are being read, then resume it
+        // only after they explicitly accept.
+        progress.dismiss();
+        progressActive = false;
+        final accepted = await showSharingTermsSheet(
+          context,
+          sharing: widget.sharing,
+        );
+        if (!accepted || !mounted) return;
+        progress = Toast.showProgress(context, waiting);
+        progressActive = true;
+        await action();
+      }
+      if (mounted) {
+        if (done != null) setState(() => _notice = done);
+        progress.success('Sharing updated');
+      } else {
+        progress.dismiss();
+      }
     } catch (error) {
-      if (mounted) setState(() => _error = describeSharingError(error));
+      final message = describeSharingError(error);
+      if (mounted) {
+        setState(() => _error = message);
+        if (progressActive) {
+          progress.error('Sharing failed');
+        } else {
+          Toast.show(context, 'Sharing failed', isError: true);
+        }
+      } else {
+        progress.dismiss();
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  /// Runs an action; if the server says the sharing rules have not been agreed
-  /// to, shows them and runs it again.
-  ///
-  /// Here rather than in front of every button that might need it, because the
-  /// rules are a step in the flow and not a failure of it — and because the
-  /// server is the only thing that actually knows, so asking it is what keeps
-  /// a second device from showing the sheet to somebody who already agreed.
-  Future<void> _withTerms(Future<void> Function() action) async {
-    try {
-      await action();
-    } on SyncRefusedException catch (error) {
-      if (error.code != termsRequiredCode || !mounted) rethrow;
-      final accepted = await showSharingTermsSheet(
-        context,
-        sharing: widget.sharing,
-      );
-      if (!accepted) return;
-      await action();
     }
   }
 
@@ -158,16 +177,26 @@ class _ShareDialogState extends State<_ShareDialog> {
     final noteId = widget.noteId;
     await _run(() async {
       if (noteId != null && _space == null) {
-        final space = await widget.sharing.shareNoteWith(noteId, email: email);
-        final invite = space.invites.where((i) => i.email == email.toLowerCase());
+        final space = await widget.sharing.shareNoteWith(
+          noteId,
+          email: email,
+          role: _inviteRole,
+        );
+        final invite = space.invites.where(
+          (i) => i.email == email.toLowerCase(),
+        );
         _lastInviteToken = invite.isEmpty ? null : invite.first.token;
       } else {
         final space = _space!;
-        final result = await widget.sharing.invite(space.id, email);
+        final result = await widget.sharing.invite(
+          space.id,
+          email,
+          role: _inviteRole,
+        );
         _lastInviteToken = result.token;
       }
       _email.clear();
-    }, done: 'Invitation sent to $email.');
+    }, done: 'Invitation sent to $email as ${_inviteRole.accessLabel}.');
   }
 
   Future<void> _copyLink(String token) async {
@@ -243,23 +272,29 @@ class _ShareDialogState extends State<_ShareDialog> {
             children: [
               if (space == null) ...[
                 _Blurb(
-                  'Share this note with someone and you both edit the same '
-                  'note. It stays encrypted on the way, so only the people '
-                  'you share it with can read it.',
+                  'Share this note with someone as an Editor or View only. '
+                  'It stays encrypted on the way, so only the people you '
+                  'share it with can read it.',
                 ),
                 const SizedBox(height: 14),
                 _Label('Share with a person'),
+                _RolePicker(
+                  value: _inviteRole,
+                  enabled: !_busy,
+                  onChanged: (role) => setState(() => _inviteRole = role),
+                ),
+                const SizedBox(height: 8),
                 _EmailRow(
                   controller: _email,
                   busy: _busy,
                   action: 'Share',
                   onSubmit: _shareWithEmail,
                 ),
-                if (sharing.teams.where(sharing.holdsKey_).isNotEmpty) ...[
+                if (sharing.teams.where(sharing.canAddNotesTo_).isNotEmpty) ...[
                   const SizedBox(height: 14),
                   _Label('Or add it to a space you are already in'),
                   for (final team in sharing.teams)
-                    if (sharing.holdsKey(team.id))
+                    if (sharing.canAddNotesTo_(team))
                       _SpaceRow(
                         key: ValueKey('share-into-${team.id}'),
                         space: team,
@@ -336,6 +371,12 @@ class _ShareDialogState extends State<_ShareDialog> {
                 if (space.isOwner) ...[
                   const SizedBox(height: 14),
                   _Label('Add someone'),
+                  _RolePicker(
+                    value: _inviteRole,
+                    enabled: !_busy && sharing.holdsKey(space.id),
+                    onChanged: (role) => setState(() => _inviteRole = role),
+                  ),
+                  const SizedBox(height: 8),
                   _EmailRow(
                     controller: _email,
                     busy: _busy || !sharing.holdsKey(space.id),
@@ -371,7 +412,7 @@ class _ShareDialogState extends State<_ShareDialog> {
         ),
       ),
       actions: [
-        if (space != null && note != null)
+        if (space != null && note != null && space.canEdit)
           TextButton(
             key: const ValueKey('unshare-note'),
             onPressed: _busy
@@ -436,10 +477,7 @@ class _ShareDialogState extends State<_ShareDialog> {
           ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            'Done',
-            style: TextStyle(color: palette.textPrimary),
-          ),
+          child: Text('Done', style: TextStyle(color: palette.textPrimary)),
         ),
       ],
     );
@@ -447,7 +485,7 @@ class _ShareDialogState extends State<_ShareDialog> {
 }
 
 extension on Sharing {
-  bool holdsKey_(Space space) => holdsKey(space.id);
+  bool canAddNotesTo_(Space space) => space.canEdit && holdsKey(space.id);
 }
 
 /// Who can read the notes in a space, and where each of them stands.
@@ -536,7 +574,7 @@ class _Members extends StatelessWidget {
                       ),
                       Text(
                         [
-                          if (member.isOwner) 'Owner',
+                          member.role.accessLabel,
                           if (!member.hasKey)
                             member.x25519Public == null
                                 ? 'Has not unlocked yet'
@@ -587,7 +625,7 @@ class _Members extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'Invited · not yet accepted',
+                        '${invite.role.accessLabel} · invited · not yet accepted',
                         style: TextStyle(
                           fontSize: AppTypeScale.caption,
                           color: palette.textTertiary,
@@ -737,6 +775,42 @@ class _SpaceRow extends StatelessWidget {
   }
 }
 
+class _RolePicker extends StatelessWidget {
+  const _RolePicker({
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final SpaceRole value;
+  final bool enabled;
+  final ValueChanged<SpaceRole> onChanged;
+
+  @override
+  Widget build(BuildContext context) => SegmentedButton<SpaceRole>(
+    key: const ValueKey('share-role'),
+    segments: const [
+      ButtonSegment(
+        value: SpaceRole.member,
+        icon: Icon(Icons.edit_outlined),
+        label: Text('Editor'),
+      ),
+      ButtonSegment(
+        value: SpaceRole.viewer,
+        icon: Icon(Icons.visibility_outlined),
+        label: Text('View only'),
+      ),
+    ],
+    selected: {value},
+    showSelectedIcon: false,
+    onSelectionChanged: enabled
+        ? (selection) {
+            if (selection.isNotEmpty) onChanged(selection.first);
+          }
+        : null,
+  );
+}
+
 class _EmailRow extends StatelessWidget {
   const _EmailRow({
     required this.controller,
@@ -780,7 +854,10 @@ class _EmailRow extends StatelessWidget {
               fillColor: palette.controlBackground,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: palette.controlBorder, width: 0.5),
+                borderSide: BorderSide(
+                  color: palette.controlBorder,
+                  width: 0.5,
+                ),
               ),
             ),
           ),
@@ -822,7 +899,9 @@ class _Banner extends StatelessWidget {
         color: palette.controlBackground,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isWarning ? color.withValues(alpha: 0.5) : palette.controlBorder,
+          color: isWarning
+              ? color.withValues(alpha: 0.5)
+              : palette.controlBorder,
           width: 0.5,
         ),
       ),

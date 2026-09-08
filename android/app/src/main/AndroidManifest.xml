@@ -4,10 +4,21 @@
          fails every rate refresh. -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- Recording a voice note. Runtime-requested on first use, never at
+         launch: a user who never records is never asked. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
     <application
         android:label="Kapy Notes"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- A copied image stays in app cache and is exposed only through the
+             temporary read grant ClipboardManager gives its receiving app. -->
+        <provider
+            android:name=".ClipboardImageProvider"
+            android:authorities="${applicationId}.clipboard"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

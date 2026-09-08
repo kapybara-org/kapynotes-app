@@ -166,6 +166,23 @@ class SyncService extends ChangeNotifier {
   /// Pushes awaiting an acknowledgement, by request id.
   final Map<String, ({DocRecord record, OutboxEntry entry})> _awaiting = {};
 
+  /// Presence is deliberately bounded and ephemeral. One local frame is
+  /// refreshed while keys are arriving, and at most one remote frame per
+  /// device is kept until its short expiry.
+  static const _typingIdle = Duration(milliseconds: 1500);
+  static const _presenceTtl = Duration(seconds: 30);
+  static const _presenceRefresh = Duration(seconds: 10);
+  static const _maxRemotePresence = 128;
+  final Map<String, _RemotePresence> _remotePresence = {};
+  final Map<String, int> _presenceMessageVersions = {};
+  int _presenceMessageSerial = 0;
+  _OutgoingPresence? _outgoingPresence;
+  String? _requestedTypingNoteId;
+  int _outgoingPresenceVersion = 0;
+  Timer? _presenceIdleTimer;
+  Timer? _presenceRefreshTimer;
+  Timer? _presenceExpiryTimer;
+
   SyncStatus get status => _status;
   String? get lastError => _lastError;
   DateTime? get lastSyncedAt => _state.lastSyncedAt;
@@ -175,6 +192,66 @@ class SyncService extends ChangeNotifier {
   /// True while the socket is up: changes elsewhere reach this device
   /// without being asked for.
   bool get isLive => _live;
+
+  /// Human-readable collaborators currently typing in [noteId], one label per
+  /// account even when the same person has the note open on two devices.
+  List<String> typingNamesFor(String noteId) {
+    final now = DateTime.now();
+    final byUser = <String, _RemotePresence>{};
+    for (final presence in _remotePresence.values) {
+      if (presence.noteId != noteId || !presence.expiresAt.isAfter(now)) {
+        continue;
+      }
+      byUser[presence.userId] = presence;
+    }
+    final names = [
+      for (final presence in byUser.values) _presenceLabel(presence),
+    ];
+    names.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return List.unmodifiable(names);
+  }
+
+  /// Records real editor activity. A sealed note id is sent once at the start
+  /// and then refreshed, rather than doing encryption and a socket write for
+  /// every key press.
+  void reportTyping(String noteId) {
+    if (_disposed || _vault == null) return;
+    final note = _notes.byId(noteId);
+    final spaceId = note?.spaceId;
+    final space = _keyring.byId(spaceId);
+    final key = spaceId == null ? null : _keyring.keyFor(spaceId);
+    if (spaceId == null ||
+        space == null ||
+        !space.isTeam ||
+        !space.canEdit ||
+        key == null) {
+      stopTyping();
+      return;
+    }
+
+    _presenceIdleTimer?.cancel();
+    _presenceIdleTimer = Timer(_typingIdle, () => stopTyping(noteId));
+    if (_requestedTypingNoteId == noteId) return;
+
+    _requestedTypingNoteId = noteId;
+    final version = ++_outgoingPresenceVersion;
+    unawaited(_beginPresence(noteId, spaceId, key, version));
+  }
+
+  /// Clears activity only when [noteId] is still the active editor. That guard
+  /// prevents a disposed old editor from cancelling a newer note's presence.
+  void stopTyping([String? noteId]) {
+    if (noteId != null && _requestedTypingNoteId != noteId) return;
+    _requestedTypingNoteId = null;
+    _outgoingPresenceVersion++;
+    _presenceIdleTimer?.cancel();
+    _presenceIdleTimer = null;
+    _presenceRefreshTimer?.cancel();
+    _presenceRefreshTimer = null;
+    final previous = _outgoingPresence;
+    _outgoingPresence = null;
+    if (previous != null) _writePresence(previous, active: false);
+  }
 
   /// Changes the server has not acknowledged yet.
   int get pendingCount => _docs.pendingCount;
@@ -206,6 +283,7 @@ class SyncService extends ChangeNotifier {
   /// to spend. Everything unsent stays in the outbox.
   void pause() {
     _foreground = false;
+    stopTyping();
     _disconnect();
     _stopPolling();
     unawaited(_docs.flush());
@@ -213,6 +291,7 @@ class SyncService extends ChangeNotifier {
 
   /// Signing out. Sync stops; the notes stay exactly where they are.
   void lock() {
+    stopTyping();
     _vault = null;
     _sendTimer?.cancel();
     _sendTimer = null;
@@ -335,6 +414,7 @@ class SyncService extends ChangeNotifier {
       waiting.entry.inFlight = false;
     }
     _awaiting.clear();
+    _clearRemotePresence();
   }
 
   void _onSocketEvent(SocketEvent event) {
@@ -390,6 +470,7 @@ class SyncService extends ChangeNotifier {
         final spaceId = message['spaceId'];
         if (spaceId is String) {
           _caughtUp.add(spaceId);
+          _resendPresence(spaceId);
           _reconcileDirty();
           _scheduleSend();
         }
@@ -404,7 +485,166 @@ class SyncService extends ChangeNotifier {
         unawaited(syncNow());
       case 'pong':
         break;
+      case 'presence':
+        await _onPresence(message);
     }
+  }
+
+  Future<void> _beginPresence(
+    String noteId,
+    String spaceId,
+    Uint8List key,
+    int version,
+  ) async {
+    final payload = await sealBytes(_encode({'noteId': noteId}), key);
+    if (_disposed ||
+        version != _outgoingPresenceVersion ||
+        _requestedTypingNoteId != noteId) {
+      return;
+    }
+    final previous = _outgoingPresence;
+    if (previous != null) _writePresence(previous, active: false);
+    final current = _OutgoingPresence(
+      noteId: noteId,
+      spaceId: spaceId,
+      payload: payload,
+    );
+    _outgoingPresence = current;
+    _writePresence(current, active: true);
+    _presenceRefreshTimer?.cancel();
+    _presenceRefreshTimer = Timer.periodic(
+      _presenceRefresh,
+      (_) => _writePresence(current, active: true),
+    );
+  }
+
+  void _writePresence(_OutgoingPresence presence, {required bool active}) {
+    final socket = _socket;
+    if (socket == null || !_live || !_subscribed.contains(presence.spaceId)) {
+      return;
+    }
+    socket.send({
+      't': 'presence',
+      'spaceId': presence.spaceId,
+      'active': active,
+      'payload': presence.payload.toJson(),
+    });
+  }
+
+  void _resendPresence(String spaceId) {
+    final presence = _outgoingPresence;
+    if (presence?.spaceId == spaceId) {
+      _writePresence(presence!, active: true);
+    }
+  }
+
+  Future<void> _onPresence(Map<String, Object?> message) async {
+    final userId = message['userId'];
+    final deviceId = message['deviceId'];
+    final spaceId = message['spaceId'];
+    final active = message['active'];
+    if (userId is! String ||
+        deviceId is! String ||
+        spaceId is! String ||
+        active is! bool ||
+        userId == _keyring.userId) {
+      return;
+    }
+    final id = '$userId\u0000$deviceId';
+    final version = ++_presenceMessageSerial;
+    _presenceMessageVersions[id] = version;
+    if (!active) {
+      final changed = _remotePresence.remove(id) != null;
+      _presenceMessageVersions.remove(id);
+      _schedulePresenceExpiry();
+      if (changed && !_disposed) notifyListeners();
+      return;
+    }
+
+    try {
+      final box = SealedBox.fromJson(message['payload']);
+      final key = _keyring.keyFor(spaceId);
+      if (box == null || key == null) return;
+      final clear = await openBytes(box, key);
+      if (clear == null || _presenceMessageVersions[id] != version) return;
+      final decoded = jsonDecode(utf8.decode(clear));
+      final noteId = decoded is Map ? decoded['noteId'] : null;
+      if (noteId is! String || noteId.length > 64) return;
+
+      final previous = _remotePresence[id];
+      if (previous == null && _remotePresence.length >= _maxRemotePresence) {
+        final oldest = _remotePresence.entries.reduce(
+          (a, b) => a.value.expiresAt.isBefore(b.value.expiresAt) ? a : b,
+        );
+        _remotePresence.remove(oldest.key);
+      }
+      _remotePresence[id] = _RemotePresence(
+        userId: userId,
+        spaceId: spaceId,
+        noteId: noteId,
+        expiresAt: DateTime.now().add(_presenceTtl),
+      );
+      _schedulePresenceExpiry();
+      final changed =
+          previous == null ||
+          previous.noteId != noteId ||
+          previous.spaceId != spaceId;
+      if (changed && !_disposed) notifyListeners();
+    } on FormatException {
+      // Opaque presence from a newer or corrupt client is safe to ignore.
+    } finally {
+      if (_presenceMessageVersions[id] == version) {
+        _presenceMessageVersions.remove(id);
+      }
+    }
+  }
+
+  String _presenceLabel(_RemotePresence presence) {
+    final space = _keyring.byId(presence.spaceId);
+    final member = space?.member(presence.userId);
+    final email = member?.email;
+    if (email == null || email.isEmpty) return 'Someone';
+    final local = email.split('@').first;
+    if (local.isEmpty) return email;
+    final collision = space!.members.any(
+      (other) =>
+          other.userId != presence.userId &&
+          other.email.split('@').first.toLowerCase() == local.toLowerCase(),
+    );
+    return collision ? email : local;
+  }
+
+  void _schedulePresenceExpiry() {
+    _presenceExpiryTimer?.cancel();
+    _presenceExpiryTimer = null;
+    if (_remotePresence.isEmpty) return;
+    final now = DateTime.now();
+    final expiry = _remotePresence.values
+        .map((presence) => presence.expiresAt)
+        .reduce((a, b) => a.isBefore(b) ? a : b);
+    final delay = expiry.difference(now);
+    _presenceExpiryTimer = Timer(
+      delay.isNegative ? Duration.zero : delay,
+      _expirePresence,
+    );
+  }
+
+  void _expirePresence() {
+    final now = DateTime.now();
+    final before = _remotePresence.length;
+    _remotePresence.removeWhere((_, value) => !value.expiresAt.isAfter(now));
+    _schedulePresenceExpiry();
+    if (_remotePresence.length != before && !_disposed) notifyListeners();
+  }
+
+  void _clearRemotePresence() {
+    _presenceExpiryTimer?.cancel();
+    _presenceExpiryTimer = null;
+    _presenceMessageSerial++;
+    _presenceMessageVersions.clear();
+    if (_remotePresence.isEmpty) return;
+    _remotePresence.clear();
+    if (!_disposed) notifyListeners();
   }
 
   // -------------------------------------------------------------------------
@@ -439,6 +679,7 @@ class SyncService extends ChangeNotifier {
       final spaceId = note.spaceId ?? personal.id;
       final space = _keyring.byId(spaceId);
       if (space == null) continue;
+      if (!space.canEdit) continue;
       if (space.isTeam && !_keyring.holdsKey(spaceId)) continue;
 
       var current = note;
@@ -467,8 +708,10 @@ class SyncService extends ChangeNotifier {
       // server ids, and a note described before its images exist would
       // describe pictures nobody could ask for.
       if (_images != null &&
-          current.attachments.any((ref) => ref.attachmentId == null)) {
-        if (_uploading.add(current.id)) unawaited(_uploadThenReconcile(current));
+          current.attachments.any((ref) => !ref.isUploaded)) {
+        if (_uploading.add(current.id)) {
+          unawaited(_uploadThenReconcile(current));
+        }
         continue;
       }
 
@@ -484,7 +727,8 @@ class SyncService extends ChangeNotifier {
 
     for (final stone in _notes.dirtyTombstones) {
       final spaceId = stone.spaceId ?? personal.id;
-      if (_keyring.byId(spaceId) == null) continue;
+      final space = _keyring.byId(spaceId);
+      if (space == null || !space.canEdit) continue;
       final record = _docs.get(stone.id);
       // A tombstone beside a live copy elsewhere is a move, and the move's
       // own entry tells the server where the note went.
@@ -530,7 +774,14 @@ class SyncService extends ChangeNotifier {
           });
         }
       }
-      _scheduleReconcile();
+      if (uploaded.attachments.every((ref) => ref.isUploaded)) {
+        _scheduleReconcile();
+      } else {
+        // A failed object-store request used to start another upload in the
+        // next microtask forever. Backoff keeps RAM, radio and quota use flat
+        // while the network or storage service is unavailable.
+        _scheduleRetry();
+      }
     } on SyncException catch (error) {
       debugPrint('KapyNotes: image upload deferred: ${error.message}');
     } finally {
@@ -547,6 +798,7 @@ class SyncService extends ChangeNotifier {
       formats: note.formats,
       attachments: note.attachments,
       createdAt: note.createdAt,
+      archivedAt: note.archivedAt,
       now: _now(),
     );
     record.outbox.add(
@@ -567,6 +819,7 @@ class SyncService extends ChangeNotifier {
       formats: note.formats,
       attachments: note.attachments,
       createdAt: note.createdAt,
+      archivedAt: note.archivedAt,
       now: _now(),
     );
     var changed = false;
@@ -679,7 +932,11 @@ class SyncService extends ChangeNotifier {
     Note? note,
   ) async {
     final space = _keyring.byId(entry.spaceId);
-    if (space == null) return null;
+    if (space == null || !space.canEdit) return null;
+    if (entry.from case final sourceId?) {
+      final source = _keyring.byId(sourceId);
+      if (source == null || !source.canEdit) return null;
+    }
     Uint8List? contentKey;
     var epoch = 1;
     WireNoteKey? key;
@@ -688,7 +945,9 @@ class SyncService extends ChangeNotifier {
       if (spaceKey == null) return null;
       contentKey = note?.contentKey ?? record.keys.values.lastOrNull;
       if (contentKey == null) {
-        if (entry.deleted == true && entry.ops == null && entry.snapshot == null) {
+        if (entry.deleted == true &&
+            entry.ops == null &&
+            entry.snapshot == null) {
           // A bare tombstone needs no key.
         } else {
           return null;
@@ -777,7 +1036,11 @@ class SyncService extends ChangeNotifier {
       return;
     }
     if (result is Map<String, Object?>) {
-      _acknowledge(waiting.record, waiting.entry, OpsPushResult.fromJson(result));
+      _acknowledge(
+        waiting.record,
+        waiting.entry,
+        OpsPushResult.fromJson(result),
+      );
     }
   }
 
@@ -1010,7 +1273,9 @@ class SyncService extends ChangeNotifier {
       if (space.isTeam) {
         contentKey = await _contentKeyFor(record, noteId, space, item.epoch);
         if (contentKey == null) {
-          debugPrint('KapyNotes: no key for note $noteId at epoch ${item.epoch}');
+          debugPrint(
+            'KapyNotes: no key for note $noteId at epoch ${item.epoch}',
+          );
           continue;
         }
       }
@@ -1033,7 +1298,9 @@ class SyncService extends ChangeNotifier {
         changed = record.doc.apply(ops);
         record.opsSinceSnapshot++;
       } else if (snap is Map) {
-        changed = record.doc.mergeSnapshot(Map<String, Object?>.of(snap.cast()));
+        changed = record.doc.mergeSnapshot(
+          Map<String, Object?>.of(snap.cast()),
+        );
         if (item.isSnapshot) {
           record.opsSinceSnapshot = 0;
           record.ownOpsSinceSnapshot = 0;
@@ -1070,7 +1337,8 @@ class SyncService extends ChangeNotifier {
     final local = _notes.byId(noteId);
 
     if (touch.deleted) {
-      if (local != null && (local.spaceId ?? personalId) == (storedSpaceId ?? personalId)) {
+      if (local != null &&
+          (local.spaceId ?? personalId) == (storedSpaceId ?? personalId)) {
         _notes.applyRemote(
           tombstones: [
             Tombstone(id: noteId, deletedAt: at, spaceId: storedSpaceId),
@@ -1089,7 +1357,9 @@ class SyncService extends ChangeNotifier {
     // A local delete not yet acknowledged wins over anything the log says
     // while it is on its way up.
     final localStone = _notes.tombstones.where(
-      (s) => s.id == noteId && (s.spaceId ?? personalId) == (storedSpaceId ?? personalId),
+      (s) =>
+          s.id == noteId &&
+          (s.spaceId ?? personalId) == (storedSpaceId ?? personalId),
     );
     if (localStone.any((s) => s.isDirty)) return;
 
@@ -1115,6 +1385,7 @@ class SyncService extends ChangeNotifier {
       attachments: view.attachments,
       createdAt: view.createdAt ?? local?.createdAt ?? at,
       updatedAt: at,
+      archivedAt: view.archivedAt,
       syncedAt: at,
       spaceId: storedSpaceId,
       contentKey: contentKey,
@@ -1164,7 +1435,8 @@ class SyncService extends ChangeNotifier {
         final target = _docs.get(id);
         if (target != null) {
           target.keys[wire.contentKeyEpoch] = content;
-          target.keyGeneration = wire.contentKeyGeneration ?? wire.keyGeneration;
+          target.keyGeneration =
+              wire.contentKeyGeneration ?? wire.keyGeneration;
         }
       }
     } on SyncException catch (error) {
@@ -1184,7 +1456,7 @@ class SyncService extends ChangeNotifier {
     var changed = false;
     for (final space in _keyring.teams) {
       final key = _keyring.keyFor(space.id);
-      if (key == null) continue;
+      if (key == null || !space.canEdit) continue;
       try {
         if (await _grantWaiting(space, key)) changed = true;
         if (space.rotationPending && await _rotate(space, key)) changed = true;
@@ -1199,7 +1471,7 @@ class SyncService extends ChangeNotifier {
     if (changed) await _keyring.refresh(_api, vault);
   }
 
-  /// Any member holding the key wraps it for a member who has none.
+  /// Any Editor holding the key wraps it for a member who has none.
   Future<bool> _grantWaiting(Space space, Uint8List key) async {
     var granted = false;
     for (final member in space.members) {
@@ -1359,7 +1631,8 @@ class SyncService extends ChangeNotifier {
     );
   }
 
-  String _nextRequestId() => '${_state.deviceId.substring(0, 8)}-${++_requestCounter}-${_now().millisecondsSinceEpoch}';
+  String _nextRequestId() =>
+      '${_state.deviceId.substring(0, 8)}-${++_requestCounter}-${_now().millisecondsSinceEpoch}';
 
   void _setStatus(SyncStatus status) {
     if (_status == status) return;
@@ -1369,14 +1642,42 @@ class SyncService extends ChangeNotifier {
 
   @override
   void dispose() {
+    stopTyping();
     _disposed = true;
     _notes.removeListener(_onNotesChanged);
     _sendTimer?.cancel();
     _retryTimer?.cancel();
+    _presenceExpiryTimer?.cancel();
     _stopPolling();
     _disconnect();
     super.dispose();
   }
+}
+
+class _OutgoingPresence {
+  const _OutgoingPresence({
+    required this.noteId,
+    required this.spaceId,
+    required this.payload,
+  });
+
+  final String noteId;
+  final String spaceId;
+  final SealedBox payload;
+}
+
+class _RemotePresence {
+  const _RemotePresence({
+    required this.userId,
+    required this.spaceId,
+    required this.noteId,
+    required this.expiresAt,
+  });
+
+  final String userId;
+  final String spaceId;
+  final String noteId;
+  final DateTime expiresAt;
 }
 
 /// One entry of a space's log, op or snapshot, in the order it was written.

@@ -17,12 +17,20 @@ late String hash;
 ///
 /// Lives here rather than in the app because only a test needs it: outside
 /// `runAsync` there is no way to drive an image that touches the disk.
-Future<ui.Image> warmNoteImage(String hash, BlobStore store) {
+Future<ui.Image> warmNoteImage(
+  String hash,
+  BlobStore store, {
+  ImageConfiguration configuration = ImageConfiguration.empty,
+  bool cover = false,
+  String? fallbackHash,
+}) {
   final completer = Completer<ui.Image>();
   final stream = NoteImageProvider(
     hash: hash,
+    fallbackHash: fallbackHash,
     store: store,
-  ).resolve(ImageConfiguration.empty);
+    cover: cover,
+  ).resolve(configuration);
   late ImageStreamListener listener;
   listener = ImageStreamListener(
     (info, _) {
@@ -42,7 +50,7 @@ void main() {
   setUpAll(() async {
     dir = await Directory.systemTemp.createTemp('kapy-provider');
     store = BlobStore(directory: dir);
-    final image = img.Image(width: 40, height: 30, numChannels: 3);
+    final image = img.Image(width: 400, height: 300, numChannels: 3);
     img.fill(image, color: img.ColorRgb8(10, 120, 200));
     hash = await store.put(Uint8List.fromList(img.encodePng(image)));
   });
@@ -61,16 +69,21 @@ void main() {
     await tester.runAsync(() async {
       decoded = await warmNoteImage(hash, store);
     });
-    expect(decoded.width, 40);
-    expect(decoded.height, 30);
+    expect(decoded.width, 400);
+    expect(decoded.height, 300);
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Image(image: NoteImageProvider(hash: hash, store: store)),
+        home: Image(
+          image: NoteImageProvider(hash: hash, store: store),
+        ),
       ),
     );
     await tester.pump();
-    expect(tester.widget<Image>(find.byType(Image)).image, isA<NoteImageProvider>());
+    expect(
+      tester.widget<Image>(find.byType(Image)).image,
+      isA<NoteImageProvider>(),
+    );
   });
 
   testWidgets('reports a miss rather than hanging', (tester) async {
@@ -83,5 +96,72 @@ void main() {
       }
     });
     expect(failure, isNotNull);
+  });
+
+  testWidgets('decodes near the painted size instead of source resolution', (
+    tester,
+  ) async {
+    late final ui.Image decoded;
+    await tester.runAsync(() async {
+      decoded = await warmNoteImage(
+        hash,
+        store,
+        configuration: const ImageConfiguration(
+          size: Size(40, 30),
+          devicePixelRatio: 2,
+        ),
+      );
+    });
+
+    expect(decoded.width, 80);
+    expect(decoded.height, 60);
+  });
+
+  testWidgets('cover decoding stays sharp without retaining the source size', (
+    tester,
+  ) async {
+    late final ui.Image decoded;
+    await tester.runAsync(() async {
+      decoded = await warmNoteImage(
+        hash,
+        store,
+        configuration: const ImageConfiguration(
+          size: Size(40, 40),
+          devicePixelRatio: 2,
+        ),
+        cover: true,
+      );
+    });
+
+    expect(decoded.width, 107);
+    expect(decoded.height, 80);
+  });
+
+  testWidgets('falls back to the full image when a thumbnail is unavailable', (
+    tester,
+  ) async {
+    late final ui.Image decoded;
+    await tester.runAsync(() async {
+      decoded = await warmNoteImage(
+        'missing-thumbnail',
+        store,
+        fallbackHash: hash,
+        configuration: const ImageConfiguration(size: Size(40, 30)),
+      );
+    });
+
+    expect(decoded.width, 40);
+    expect(decoded.height, 30);
+  });
+
+  test('becoming able to fetch remote bytes invalidates a failed provider', () {
+    final offline = NoteImageProvider(hash: hash, store: store);
+    final online = NoteImageProvider(
+      hash: hash,
+      store: store,
+      fetch: (_) async => null,
+    );
+
+    expect(online, isNot(offline));
   });
 }

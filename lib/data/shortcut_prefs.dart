@@ -20,6 +20,7 @@ enum ShortcutAction {
   formatItalic,
   formatBullets,
   formatChecklist,
+  recordVoiceNote,
 }
 
 extension ShortcutActionCopy on ShortcutAction {
@@ -33,12 +34,13 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.toggleSidebar => 'Toggle notes list',
     ShortcutAction.toggleResults => 'Toggle results column',
     ShortcutAction.toggleAlwaysOnTop => 'Keep window on top',
-    ShortcutAction.deleteNote => 'Delete current note',
+    ShortcutAction.deleteNote => 'Archive current note',
     ShortcutAction.cycleTextStyle => 'Cycle text style',
     ShortcutAction.formatBold => 'Bold',
     ShortcutAction.formatItalic => 'Italic',
     ShortcutAction.formatBullets => 'Bulleted list',
     ShortcutAction.formatChecklist => 'Checklist',
+    ShortcutAction.recordVoiceNote => 'Record a voice note',
   };
 
   String get description => switch (this) {
@@ -54,7 +56,7 @@ extension ShortcutActionCopy on ShortcutAction {
       'Show or hide the results column on the right',
     ShortcutAction.toggleAlwaysOnTop =>
       'Float the window over other apps, or let it fall behind again',
-    ShortcutAction.deleteNote => 'Remove the note you are editing',
+    ShortcutAction.deleteNote => 'Move the note you are editing to Archive',
     ShortcutAction.cycleTextStyle =>
       'Switch between Text, Heading, and Subtitle',
     ShortcutAction.formatBold => 'Toggle bold on the selection or new text',
@@ -62,6 +64,8 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.formatBullets =>
       'Toggle a bulleted list on the current lines',
     ShortcutAction.formatChecklist => 'Toggle a checklist on the current lines',
+    ShortcutAction.recordVoiceNote =>
+      'Start recording into this note, or stop the one running',
   };
 
   /// Registered with the operating system rather than the widget tree, so it
@@ -77,7 +81,8 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.formatBold ||
     ShortcutAction.formatItalic ||
     ShortcutAction.formatBullets ||
-    ShortcutAction.formatChecklist => true,
+    ShortcutAction.formatChecklist ||
+    ShortcutAction.recordVoiceNote => true,
     _ => false,
   };
 }
@@ -217,8 +222,18 @@ class ShortcutPrefs extends ChangeNotifier {
     // carrying the superseded binding never chose it — it was simply what
     // shipped — so move them across and write it back once. A binding they
     // actually picked, even an unlucky one, is theirs to keep.
+    var migrated = false;
     if (_bindings[ShortcutAction.openApp] == _supersededOpenApp()) {
       _bindings[ShortcutAction.openApp] = defaultFor(ShortcutAction.openApp);
+      migrated = true;
+    }
+    if (_bindings[ShortcutAction.toggleSidebar] == _supersededToggleSidebar()) {
+      _bindings[ShortcutAction.toggleSidebar] = defaultFor(
+        ShortcutAction.toggleSidebar,
+      );
+      migrated = true;
+    }
+    if (migrated) {
       _persist();
       return;
     }
@@ -238,6 +253,15 @@ class ShortcutPrefs extends ChangeNotifier {
     meta: AppPlatform.isMacOS,
     control: !AppPlatform.isMacOS,
     shift: true,
+  );
+
+  /// The previous notes-list default. Cmd/Ctrl+S is now a better fit because
+  /// every note saves itself and there is no manual Save command to displace.
+  static ShortcutBinding _supersededToggleSidebar() => ShortcutBinding(
+    logicalKey: LogicalKeyboardKey.backslash,
+    physicalKey: PhysicalKeyboardKey.backslash,
+    meta: AppPlatform.isMacOS,
+    control: !AppPlatform.isMacOS,
   );
 
   /// The key [action] answers to, or null where the user has cleared it.
@@ -359,8 +383,8 @@ class ShortcutPrefs extends ChangeNotifier {
         shift: true,
       ),
       ShortcutAction.toggleSidebar => ShortcutBinding(
-        logicalKey: LogicalKeyboardKey.backslash,
-        physicalKey: PhysicalKeyboardKey.backslash,
+        logicalKey: LogicalKeyboardKey.keyS,
+        physicalKey: PhysicalKeyboardKey.keyS,
         meta: useMeta,
         control: !useMeta,
       ),
@@ -426,6 +450,15 @@ class ShortcutPrefs extends ChangeNotifier {
       ShortcutAction.formatChecklist => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyC,
         physicalKey: PhysicalKeyboardKey.keyC,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      // Shift is what keeps this off ⌘R, which browsers and half the desktop
+      // world have trained people to read as "reload".
+      ShortcutAction.recordVoiceNote => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyR,
+        physicalKey: PhysicalKeyboardKey.keyR,
         meta: useMeta,
         control: !useMeta,
         shift: true,

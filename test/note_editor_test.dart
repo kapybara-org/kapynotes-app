@@ -68,6 +68,7 @@ Widget harness(
   bool startAtEnd = false,
   bool autofocus = false,
   bool ensureKeyboardVisible = false,
+  bool readOnly = false,
   ValueChanged<String>? onBodyChanged,
   ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
   ValueChanged<double>? onGutterWidthChanged,
@@ -97,6 +98,7 @@ Widget harness(
         startAtEnd: startAtEnd,
         autofocus: autofocus,
         ensureKeyboardVisible: ensureKeyboardVisible,
+        readOnly: readOnly,
         onDocumentChanged: (body, formats, attachments) {
           onBodyChanged?.call(body);
           onFormatsChanged?.call(formats);
@@ -236,6 +238,46 @@ void main() {
     expect(find.byKey(Celebrate.burstKey), findsOneWidget);
     expect(find.byKey(Celebrate.finaleKey), findsNothing);
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('view-only notes remain selectable without mutation controls', (
+    tester,
+  ) async {
+    var changed = false;
+    const body = '☐ read this\n12 km to miles';
+    await tester.pumpWidget(
+      harness(
+        body,
+        readOnly: true,
+        autofocus: true,
+        onBodyChanged: (_) => changed = true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<TextField>(find.byType(TextField)).readOnly, isTrue);
+    expect(
+      find.byKey(const ValueKey('note-formatting-controls')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('view-only-status')), findsOneWidget);
+
+    final topLeft = tester.getTopLeft(find.byType(EditableText));
+    await tester.tapAt(topLeft + const Offset(6, 14));
+    await tester.pump();
+    tester
+        .state<NoteEditorState>(find.byType(NoteEditor))
+        .insertPlainLines('must not appear');
+    await tester.pump();
+
+    expect(
+      tester
+          .state<EditableTextState>(find.byType(EditableText))
+          .textEditingValue
+          .text,
+      body,
+    );
+    expect(changed, isFalse);
   });
 
   testWidgets('Kapy peeks once after five seconds without typing', (
@@ -985,6 +1027,54 @@ void main() {
     expect(launched, ['https://www.example.com/path']);
     expect(find.byKey(const ValueKey('link-popover')), findsNothing);
   });
+
+  testWidgets(
+    'calculator keywords explain themselves without changing the text',
+    (tester) async {
+      const body = '12 km to miles\n20 over 4';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+
+      await tester.tapAt(_centerOf(tester, body, 'to'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('calc-keyword-tooltip')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Converts the value to another unit or currency.'),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        body,
+      );
+
+      await tester.tapAt(_centerOf(tester, body, 'over'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Divides the value on the left by the value on the right.'),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        body,
+      );
+
+      final controller = tester
+          .widget<TextField>(find.byType(TextField))
+          .controller!;
+      final keywordSelection = controller.selection;
+      await tester.tapAt(_centerOf(tester, body, '12'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('calc-keyword-tooltip')), findsNothing);
+      expect(controller.selection, isNot(keywordSelection));
+      expect(controller.text, body);
+    },
+  );
 
   testWidgets('the panel copies the link exactly as it is written', (
     tester,
@@ -2106,6 +2196,36 @@ void main() {
     final lineAfter = lineRect(tester, body, 9).center.dy;
     expect(after, lessThan(before), reason: 'the note should have scrolled');
     expect(after, closeTo(lineAfter, 1.5));
+  });
+
+  testWidgets('scrolling down a mobile note dismisses the keyboard to read', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final body = List.generate(
+      80,
+      (index) => 'A line to read ${index + 1}',
+    ).join('\n');
+    await tester.pumpWidget(
+      harness(body, autofocus: true, ensureKeyboardVisible: true),
+    );
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.focusNode!.hasFocus, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
+    final scrollBefore = field.scrollController!.offset;
+    expect(scrollBefore, greaterThan(0));
+
+    // The app opens at the end ready to type. Pulling the page down moves
+    // towards the earlier writing while making the whole viewport available.
+    await tester.drag(find.byType(TextField), const Offset(0, 140));
+    await tester.pumpAndSettle();
+
+    expect(field.focusNode!.hasFocus, isFalse);
+    expect(tester.testTextInput.isVisible, isFalse);
+    expect(field.scrollController!.offset, lessThan(scrollBefore));
   });
 
   testWidgets('recalculates as the user types', (tester) async {

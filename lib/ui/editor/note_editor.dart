@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../calc/engine.dart';
 import '../../calc/highlight.dart';
+import '../../calc/keyword_help.dart';
 import '../../core/editor_font.dart';
 import '../../core/note_link.dart';
 import '../../core/platform.dart';
@@ -26,6 +27,7 @@ import 'editor_formatting.dart';
 import 'highlighting_controller.dart';
 import 'line_metrics.dart';
 import 'link_popover.dart';
+import 'keyword_tooltip.dart';
 import 'note_footer.dart';
 import '../../data/note_attachment.dart';
 import 'package:file_selector/file_selector.dart';
@@ -33,11 +35,16 @@ import 'package:file_selector/file_selector.dart';
 import '../../images/image_clipboard.dart';
 import '../../images/image_ingest.dart';
 import '../../images/image_picker.dart';
+import '../../audio/voice_player.dart';
 import '../../data/blob_store.dart';
 import '../../images/note_image_provider.dart';
 import 'image_drop_target.dart';
 import 'image_insertion.dart';
 import 'note_image_layout.dart';
+import '../../audio/voice_recording_controller.dart';
+import 'voice_chip.dart';
+import 'voice_recording_bar.dart';
+import 'voice_insertion.dart';
 import 'note_image_view.dart';
 import 'results_gutter.dart';
 import 'selection_formatting_toolbar.dart';
@@ -48,6 +55,11 @@ typedef NoteDocumentChanged =
       List<NoteFormatRange> formats,
       List<NoteAttachmentRef> attachments,
     );
+
+/// Swappable at the slow boundary so the editor can prove its waiting state
+/// without asking a widget test to decode a photograph in a real isolate.
+typedef ImageBatchIngestor =
+    Future<ImageBatch> Function(List<XFile> files, BlobStore store);
 
 /// The note surface: one syntax-coloured text field with a live results
 /// column pinned to it.
@@ -65,8 +77,17 @@ class NoteEditor extends StatefulWidget {
     this.initialAttachments = const [],
     this.images,
     this.imageFetch,
+    this.player,
+    this.voiceStateFor,
+    this.onOpenVoiceNote,
+    this.recording,
+    this.onRecordVoice,
+    this.voiceActionBusy = false,
     this.clipboard = const ImageClipboard(),
+    this.imageIngestor,
     this.onImagesRejected,
+    this.typingNames = const [],
+    this.readOnly = false,
     required this.engine,
     required this.highlighter,
     required this.gutterWidth,
@@ -102,12 +123,43 @@ class NoteEditor extends StatefulWidget {
   /// Fetches bytes for an image that arrived by sync but has not downloaded.
   final NoteImageFetcher? imageFetch;
 
+  /// Plays recordings. App-wide and shared, so starting one chip stops
+  /// whichever was playing. Null in tests with no audio in them.
+  final VoicePlayer? player;
+
+  /// What the transcription queue currently thinks of a recording. A function
+  /// rather than a value so the editor does not have to listen to the queue:
+  /// the chip is rebuilt when the note is, which is often enough for a label.
+  final VoiceChipState Function(NoteVoiceRef ref)? voiceStateFor;
+
+  /// Opens the Summary/Transcript dialog.
+  final void Function(NoteVoiceRef ref)? onOpenVoiceNote;
+
+  /// The recording in progress, if this note is the one being recorded into.
+  /// The footer shows the bar in place of the formatting row while it is.
+  final VoiceRecordingController? recording;
+
+  /// Starts a recording, or stops the one running.
+  final VoidCallback? onRecordVoice;
+  final bool voiceActionBusy;
+
   /// Where a pasted picture comes from. Swapped in tests, which have no
   /// system clipboard to put anything on.
   final ImageClipboard clipboard;
 
+  /// Defaults to the production compression pipeline. Tests replace only this
+  /// boundary and still exercise the real footer and toast lifecycle.
+  final ImageBatchIngestor? imageIngestor;
+
   /// Called when at least one file in a batch could not be added.
   final ValueChanged<ImageBatch>? onImagesRejected;
+
+  /// Other members actively editing this shared note.
+  final List<String> typingNames;
+
+  /// Keeps the note selectable and its links usable, while removing every
+  /// local mutation path for a View only collaborator.
+  final bool readOnly;
 
   final CalcEngine engine;
   final Highlighter highlighter;
@@ -161,11 +213,13 @@ class NoteEditorState extends State<NoteEditor> {
   late final _DailySeparatorFormatter _dailySeparatorFormatter;
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
+  Timer? _keywordHoverTimer;
   Timer? _kapyPeekIdleTimer;
   VoidCallback? _kapyPeekDismiss;
 
   Map<int, LineResult> _results = const {};
   String? _totalText;
+  String? _hoveredKeywordId;
   late TextEditingValue _lastValue;
   late List<NoteFormatRange> _formats;
   late List<NoteAttachmentRef> _attachments;
@@ -173,6 +227,8 @@ class NoteEditorState extends State<NoteEditor> {
   NoteParagraphStyle? _paragraphOverride;
   final Map<int, _PointerDownDetails> _pointerDownDetails = {};
   Set<NoteFormat>? _nextInsertedFormats;
+  bool _imageActionBusy = false;
+  bool _copyingRichSelection = false;
 
   /// The attachment list a programmatic edit has already worked out.
   ///
@@ -201,10 +257,11 @@ class NoteEditorState extends State<NoteEditor> {
   @override
   void initState() {
     super.initState();
-    final initialText = widget.startAtEnd
+    final appendSession = widget.startAtEnd && !widget.readOnly;
+    final initialText = appendSession
         ? DailySeparator.prepareForAppend(widget.initialBody)
         : widget.initialBody;
-    final pendingSeparatorLine = widget.startAtEnd
+    final pendingSeparatorLine = appendSession
         ? DailySeparator.trailingEmptySectionLine(widget.initialBody)
         : null;
     _formats = normalizeNoteFormats(widget.initialFormats, initialText.length);
@@ -226,7 +283,7 @@ class NoteEditorState extends State<NoteEditor> {
       displayTime: widget.displayTime ?? _localTime,
       pendingSeparatorLine: pendingSeparatorLine,
     );
-    if (widget.startAtEnd) {
+    if (appendSession) {
       _controller.selection = TextSelection.collapsed(
         offset: initialText.length,
       );
@@ -240,7 +297,7 @@ class NoteEditorState extends State<NoteEditor> {
     widget.shortcuts.addListener(_onShortcutsChanged);
     _isEmpty = initialText.isEmpty;
     _evaluate();
-    if (widget.autofocus && widget.startAtEnd) {
+    if (!widget.readOnly && widget.autofocus && widget.startAtEnd) {
       WidgetsBinding.instance.addPostFrameCallback((_) => focusAtEnd());
     }
   }
@@ -248,6 +305,11 @@ class NoteEditorState extends State<NoteEditor> {
   @override
   void didUpdateWidget(NoteEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!oldWidget.readOnly && widget.readOnly) {
+      _keyboardRetryTimer?.cancel();
+      _focusNode.unfocus();
+      _dismissKapyPeek();
+    }
     if (!identical(oldWidget.shortcuts, widget.shortcuts)) {
       oldWidget.shortcuts.removeListener(_onShortcutsChanged);
       widget.shortcuts.addListener(_onShortcutsChanged);
@@ -299,12 +361,14 @@ class NoteEditorState extends State<NoteEditor> {
   @override
   void dispose() {
     LinkPopover.hide();
+    KeywordTooltip.hide();
     _controller.removeListener(_onControllerChanged);
     _focusNode.removeListener(_handleFocusChanged);
     _scrollController.removeListener(_handleEditorScroll);
     widget.shortcuts.removeListener(_onShortcutsChanged);
     _keyboardRetryTimer?.cancel();
     _selectionToolbarTimer?.cancel();
+    _keywordHoverTimer?.cancel();
     _kapyPeekIdleTimer?.cancel();
     _dismissKapyPeek();
     _controller.dispose();
@@ -319,10 +383,31 @@ class NoteEditorState extends State<NoteEditor> {
 
   void _handleEditorScroll() {
     LinkPopover.hide();
+    _clearKeywordTooltip();
     _recordKapyPeekActivity();
   }
 
+  bool _handleEditorScrollNotification(ScrollNotification notification) {
+    if (!AppPlatform.isMobile ||
+        notification.metrics.axis != Axis.vertical ||
+        !_focusNode.hasFocus) {
+      return false;
+    }
+    // A drag-backed start is a real reader gesture. Programmatic scrolling
+    // (including keeping the caret visible) reports no drag details and keeps
+    // the keyboard up. Dismissing at the start also works when the note is
+    // already at an edge and the gesture produces overscroll rather than an
+    // update.
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _keyboardRetryTimer?.cancel();
+      _focusNode.unfocus();
+    }
+    return false;
+  }
+
   void focus() {
+    if (widget.readOnly) return;
     _focusNode.requestFocus();
     _recordKapyPeekActivity();
     _scheduleKeyboardRetry();
@@ -331,7 +416,7 @@ class NoteEditorState extends State<NoteEditor> {
   /// Opens a fresh append position without writing empty lines to the note.
   /// The prepared spacing becomes durable only if the user actually types.
   void beginAppendSession() {
-    if (!mounted) return;
+    if (!mounted || widget.readOnly) return;
     final currentText = _controller.text;
     final pendingSeparatorLine = DailySeparator.trailingEmptySectionLine(
       currentText,
@@ -362,7 +447,7 @@ class NoteEditorState extends State<NoteEditor> {
 
   /// Places the caret after the note's final character and brings it on screen.
   void focusAtEnd() {
-    if (!mounted) return;
+    if (!mounted || widget.readOnly) return;
     _controller.selection = TextSelection.collapsed(
       offset: _controller.text.length,
     );
@@ -377,7 +462,7 @@ class NoteEditorState extends State<NoteEditor> {
 
   void _scheduleKeyboardRetry() {
     _keyboardRetryTimer?.cancel();
-    if (!widget.ensureKeyboardVisible) return;
+    if (widget.readOnly || !widget.ensureKeyboardVisible) return;
     // Try as soon as the editable connection exists, then probe quickly while
     // Android is still promoting FlutterView to the served input view.
     unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
@@ -475,6 +560,7 @@ class NoteEditorState extends State<NoteEditor> {
     // The text moved under the panel, so the rect it is pinned to no longer
     // describes the link.
     LinkPopover.hide();
+    _clearKeywordTooltip();
 
     final insertedText = insertedTextForChange(previous.text, value.text);
     final forcedInsertedFormats = _nextInsertedFormats;
@@ -551,6 +637,58 @@ class NoteEditorState extends State<NoteEditor> {
     widget.onDocumentChanged(value.text, updatedFormats, updatedAttachments);
   }
 
+  /// The recording running in *this* note, if there is one.
+  ///
+  /// A recording started in another note carries on in the background; only
+  /// the note it belongs to shows the bar, because only there does stopping it
+  /// mean "put it here".
+  VoiceRecordingSession? get _liveSession {
+    final session = widget.recording?.session;
+    return session != null && session.noteId == widget.noteId ? session : null;
+  }
+
+  Widget _voiceChip(NoteVoiceRef ref) {
+    final player = widget.player;
+    return NoteVoiceChip(
+      key: ValueKey('note-voice-${ref.hash}-${ref.offset}'),
+      ref: ref,
+      state: widget.voiceStateFor?.call(ref) ?? VoiceChipState.idle,
+      progress:
+          player?.progressFor(ref.hash) ??
+          const AlwaysStoppedAnimation<double?>(null),
+      playing: player?.isPlaying(ref.hash) ?? false,
+      onPlayPause: player == null ? null : () => _playPause(ref),
+      onOpen: widget.onOpenVoiceNote == null
+          ? null
+          : () => widget.onOpenVoiceNote!(ref),
+      onRemove: widget.readOnly ? null : () => removeAttachment(ref.offset),
+      onSeekFraction: player == null ? null : (f) => _seekVoice(ref, f),
+    );
+  }
+
+  Future<void> _playPause(NoteVoiceRef ref) async {
+    final player = widget.player;
+    final store = widget.images;
+    if (player == null || store == null) return;
+    if (player.isPlaying(ref.hash)) {
+      await player.pause();
+      return;
+    }
+    final file = await store.fileFor(ref.hash);
+    // Not on this device yet: it arrived by sync and the bytes have not come
+    // down. Silence is the honest outcome; the chip already says so.
+    if (file == null) return;
+    await player.play(ref.hash, file);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _seekVoice(NoteVoiceRef ref, double fraction) async {
+    final player = widget.player;
+    if (player == null || player.activeHash != ref.hash) return;
+    final total = player.duration ?? ref.duration;
+    await player.seek(total * fraction);
+  }
+
   /// Records refs this edit took out, against the text they were taken from.
   ///
   /// Covers every way an attachment can go — the Remove menu item, a backspace
@@ -623,10 +761,12 @@ class NoteEditorState extends State<NoteEditor> {
       );
 
   void _cycleParagraphStyle() {
+    if (widget.readOnly) return;
     _applyParagraphStyle(nextParagraphStyle(_activeParagraphStyle));
   }
 
   void _applyParagraphStyle(NoteParagraphStyle style) {
+    if (widget.readOnly) return;
     final selection = _controller.selection;
     if (!selection.isValid) return;
     _paragraphOverride = selection.isCollapsed ? style : null;
@@ -637,6 +777,7 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   void _toggleInlineFormat(NoteFormat format) {
+    if (widget.readOnly) return;
     final selection = _controller.selection;
     if (!selection.isValid) return;
     ContextMenuController.removeAny();
@@ -657,7 +798,7 @@ class NoteEditorState extends State<NoteEditor> {
   /// a drop onto the page, and whatever gets added next — and none of them
   /// should have to know how a placeholder is anchored.
   void insertImages(List<NoteAttachmentRef> refs) {
-    if (refs.isEmpty) return;
+    if (widget.readOnly || refs.isEmpty) return;
     final selection = _controller.selection;
     final caret = selection.isValid ? selection.end : _controller.text.length;
     final result = insertImagesIntoBody(
@@ -677,6 +818,65 @@ class NoteEditorState extends State<NoteEditor> {
     _focusNode.requestFocus();
   }
 
+  /// Adds a finished recording to the note at the caret.
+  ///
+  /// The same shape as [insertImages] and for the same reason: the recording
+  /// controller lives above the editor and must not know how a placeholder is
+  /// anchored.
+  void insertVoice(NoteVoiceRef ref) {
+    if (widget.readOnly) return;
+    final selection = _controller.selection;
+    final caret = selection.isValid ? selection.end : _controller.text.length;
+    final result = insertVoiceIntoBody(
+      body: _controller.text,
+      existing: _attachments,
+      caret: caret,
+      incoming: ref,
+    );
+    _nextAttachments = result.attachments;
+    _nextInsertedFormats = const {};
+    _controller.value = TextEditingValue(
+      text: result.body,
+      selection: TextSelection.collapsed(offset: result.selection),
+    );
+  }
+
+  /// Inserts plain lines after the attachment at [afterOffset], or at the
+  /// caret when there is none.
+  ///
+  /// What **Insert into note** does with a summary or a transcript. The text
+  /// goes in as ordinary lines carrying no styles: it is the user's note now,
+  /// to edit like anything else they typed.
+  void insertPlainLines(String text, {int? afterOffset}) {
+    if (widget.readOnly || text.isEmpty) return;
+    final body = _controller.text;
+    final int at;
+    if (afterOffset != null && afterOffset < body.length) {
+      final lineEnd = body.indexOf('\n', afterOffset);
+      at = lineEnd < 0 ? body.length : lineEnd + 1;
+    } else {
+      final selection = _controller.selection;
+      at = selection.isValid ? selection.end : body.length;
+    }
+
+    final needsLeading = at > 0 && body.codeUnitAt(at - 1) != 0x0A;
+    final inserted = '${needsLeading ? '\n' : ''}$text\n';
+    final next = body.substring(0, at) + inserted + body.substring(at);
+
+    _nextAttachments = [
+      for (final ref in _attachments)
+        if (ref.offset < at)
+          ref
+        else
+          ref.copyWith(offset: ref.offset + inserted.length),
+    ];
+    _nextInsertedFormats = const {};
+    _controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: at + inserted.length),
+    );
+  }
+
   /// Routes the toolbar's own Paste button through [handlePaste].
   ///
   /// The keyboard shortcut goes through `PasteTextIntent`, which is
@@ -685,7 +885,7 @@ class NoteEditorState extends State<NoteEditor> {
   List<ContextMenuButtonItem> _withImagePaste(
     List<ContextMenuButtonItem> items,
   ) {
-    if (widget.images == null) return items;
+    if (widget.readOnly || widget.images == null) return items;
     return [
       for (final item in items)
         if (item.type == ContextMenuButtonType.paste)
@@ -711,6 +911,7 @@ class NoteEditorState extends State<NoteEditor> {
   /// what was there before. Reading text again after the image awaits can paste
   /// that previous value instead of what the person just said.
   Future<void> handlePaste(SelectionChangedCause cause) async {
+    if (widget.readOnly) return;
     // Keep the insertion point from the moment Cmd+V arrived. An
     // accessibility-driven refocus can briefly clear EditableText's selection
     // while the promised clipboard value is being resolved.
@@ -732,19 +933,56 @@ class NoteEditorState extends State<NoteEditor> {
 
     final store = widget.images;
     if (store != null) {
+      // Kapy Notes rich HTML comes first because it carries the positions of
+      // every selected image. Reading only the clipboard's native bitmap here
+      // would reduce a mixed selection to its first picture and lose its text.
+      final fragment = await widget.clipboard.readFragment();
+      if (!mounted) return;
+      if (fragment != null) {
+        await _insertClipboardFragment(
+          fragment,
+          cause,
+          startingValue: startingValue,
+        );
+        return;
+      }
+
       // Raw bitmap data first — a screenshot tool, a browser's "copy image".
       final pasted = await widget.clipboard.readImage();
       if (!mounted) return;
       if (pasted != null) {
-        final result = await ingestImage(
-          source: pasted.bytes,
-          sourceMime: mimeForFilename(pasted.name),
-          store: store,
-        );
-        if (!mounted) return;
-        if (result.isOk) {
-          insertImages([result.image!.ref]);
-          return;
+        if (!_beginImageAction()) return;
+        final progress = Toast.showProgress(context, 'Adding image…');
+        try {
+          final result = await ingestImage(
+            source: pasted.bytes,
+            sourceMime: mimeForFilename(pasted.name),
+            store: store,
+          );
+          if (!mounted) {
+            progress.dismiss();
+            return;
+          }
+          if (result.isOk) {
+            insertImages([result.image!.ref]);
+            progress.success('Image added');
+            return;
+          }
+          progress.error(
+            '${pasted.name} ${describeRejection(result.rejection!)}',
+          );
+        } catch (error, stack) {
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stack,
+              library: 'Kapy Notes editor',
+              context: ErrorDescription('while adding a pasted image'),
+            ),
+          );
+          progress.error('Could not add that image');
+        } finally {
+          _endImageAction();
         }
       }
 
@@ -761,6 +999,119 @@ class NoteEditorState extends State<NoteEditor> {
     _insertPastedText(text, cause, startingValue: startingValue);
   }
 
+  Future<void> _insertClipboardFragment(
+    NoteClipboardFragment fragment,
+    SelectionChangedCause cause, {
+    TextEditingValue? startingValue,
+  }) async {
+    final store = widget.images;
+    if (store == null || fragment.images.isEmpty) return;
+    if (!_beginImageAction()) return;
+    final progress = Toast.showProgress(context, 'Pasting with images…');
+    try {
+      final incoming = <NoteImageRef>[];
+      for (final image in fragment.images) {
+        final result = await ingestImage(
+          source: image.bytes,
+          sourceMime: image.mime,
+          store: store,
+        );
+        if (!mounted) {
+          progress.dismiss();
+          return;
+        }
+        if (!result.isOk || result.image!.ref is! NoteImageRef) {
+          progress.error('Could not paste one of those images');
+          return;
+        }
+        incoming.add(
+          (result.image!.ref as NoteImageRef).copyWith(
+            offset: image.offset,
+            widthFactor: image.widthFactor,
+          ),
+        );
+      }
+      if (!_replaceSelectionWithFragment(
+        fragment.body,
+        incoming,
+        cause,
+        startingValue: startingValue,
+      )) {
+        progress.error('Could not paste that selection');
+        return;
+      }
+      progress.success('Pasted with images');
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kapy Notes editor',
+          context: ErrorDescription('while pasting a rich note selection'),
+        ),
+      );
+      progress.error('Could not paste that selection');
+    } finally {
+      _endImageAction();
+    }
+  }
+
+  TextSelection _selectionForPaste(
+    TextEditingValue value,
+    TextEditingValue? startingValue,
+  ) {
+    bool fits(TextSelection candidate) =>
+        candidate.isValid && candidate.end <= value.text.length;
+    final startingSelection = startingValue?.selection;
+    return startingValue?.text == value.text &&
+            startingSelection != null &&
+            fits(startingSelection)
+        ? startingSelection
+        : fits(value.selection)
+        ? value.selection
+        : TextSelection.collapsed(offset: value.text.length);
+  }
+
+  bool _replaceSelectionWithFragment(
+    String body,
+    List<NoteImageRef> images,
+    SelectionChangedCause cause, {
+    TextEditingValue? startingValue,
+  }) {
+    final editable = _editableTextState();
+    if (editable == null) return false;
+    final value = editable.textEditingValue;
+    final selection = _selectionForPaste(value, startingValue);
+    final nextText = value.text.replaceRange(
+      selection.start,
+      selection.end,
+      body,
+    );
+    final delta = body.length - (selection.end - selection.start);
+    _nextAttachments = normalizeNoteAttachments([
+      for (final ref in _attachments)
+        if (ref.offset < selection.start)
+          ref
+        else if (ref.offset >= selection.end)
+          ref.copyWith(offset: ref.offset + delta),
+      for (final image in images)
+        image.copyWith(offset: selection.start + image.offset),
+    ], nextText);
+    _nextInsertedFormats = const {};
+    editable.userUpdateTextEditingValue(
+      value.copyWith(
+        text: nextText,
+        selection: TextSelection.collapsed(
+          offset: selection.start + body.length,
+        ),
+        composing: TextRange.empty,
+      ),
+      cause,
+    );
+    _focusNode.requestFocus();
+    return true;
+  }
+
   /// Inserts a captured clipboard value through the same formatter and undo
   /// path as [EditableTextState.pasteText], without consulting a clipboard a
   /// dictation app may already have restored.
@@ -769,20 +1120,11 @@ class NoteEditorState extends State<NoteEditor> {
     SelectionChangedCause cause, {
     TextEditingValue? startingValue,
   }) {
+    if (widget.readOnly) return;
     final editable = _editableTextState();
     if (editable == null) return;
     final value = editable.textEditingValue;
-    bool selectionFits(TextSelection candidate) =>
-        candidate.isValid && candidate.end <= value.text.length;
-    final startingSelection = startingValue?.selection;
-    final selection =
-        startingValue?.text == value.text &&
-            startingSelection != null &&
-            selectionFits(startingSelection)
-        ? startingSelection
-        : selectionFits(value.selection)
-        ? value.selection
-        : TextSelection.collapsed(offset: value.text.length);
+    final selection = _selectionForPaste(value, startingValue);
     final collapsed = value.copyWith(
       selection: TextSelection.collapsed(offset: selection.end),
     );
@@ -800,6 +1142,7 @@ class NoteEditorState extends State<NoteEditor> {
   /// dozens of times for one gesture, so the write waits for
   /// [_commitAttachments] when the drag ends.
   void _resizeImage(int offset, double factor) {
+    if (widget.readOnly) return;
     var changed = false;
     final resized = [
       for (final ref in _attachments)
@@ -818,6 +1161,7 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   void _commitAttachments() {
+    if (widget.readOnly) return;
     widget.onDocumentChanged(_controller.text, _formats, _attachments);
   }
 
@@ -826,7 +1170,8 @@ class NoteEditorState extends State<NoteEditor> {
   /// The character is what an image *is*, so this is a text edit and takes the
   /// ordinary path: undo puts it back, and the ref falls away with the anchor
   /// it was reconciled against.
-  void removeImage(int offset) {
+  void removeAttachment(int offset) {
+    if (widget.readOnly) return;
     final text = _controller.text;
     if (offset < 0 || offset >= text.length) return;
     if (text.codeUnitAt(offset) != 0xFFFC) return;
@@ -843,34 +1188,117 @@ class NoteEditorState extends State<NoteEditor> {
           ref.copyWith(offset: ref.offset - 1),
     ], next);
     _nextInsertedFormats = const {};
-    _controller.value = TextEditingValue(
+    final value = TextEditingValue(
       text: next,
       selection: TextSelection.collapsed(offset: offset),
     );
+    final editable = _editableTextState();
+    if (editable != null) {
+      editable.userUpdateTextEditingValue(value, SelectionChangedCause.toolbar);
+    } else {
+      _controller.value = value;
+    }
     _focusNode.requestFocus();
   }
 
   /// Opens the system picker, compresses whatever comes back, and inserts it.
   Future<void> pickAndInsertImages() async {
     final store = widget.images;
-    if (store == null) return;
-    final files = await pickImageFiles();
-    if (files.isEmpty || !mounted) return;
-    await insertFiles(files);
+    if (store == null || !_beginImageAction()) return;
+    try {
+      final files = await pickImageFiles();
+      if (files.isEmpty || !mounted) return;
+      await _ingestAndInsertFiles(files, store);
+    } finally {
+      _endImageAction();
+    }
   }
 
   /// Compresses and inserts files that arrived from anywhere — a picker or a
   /// drop. Reports whatever could not be added, by name.
   Future<void> insertFiles(List<XFile> files) async {
     final store = widget.images;
-    if (store == null || files.isEmpty) return;
-    final batch = await ingestFiles(files, store: store);
-    if (!mounted) return;
-    insertImages(batch.images);
-    if (batch.rejections.isNotEmpty) widget.onImagesRejected?.call(batch);
+    if (store == null || files.isEmpty || !_beginImageAction()) return;
+    try {
+      await _ingestAndInsertFiles(files, store);
+    } finally {
+      _endImageAction();
+    }
+  }
+
+  bool _beginImageAction() {
+    if (widget.readOnly) return false;
+    if (_imageActionBusy) {
+      Toast.show(
+        context,
+        'Another image is still being added',
+        icon: Icons.hourglass_top_rounded,
+      );
+      return false;
+    }
+    setState(() => _imageActionBusy = true);
+    return true;
+  }
+
+  void _endImageAction() {
+    if (mounted && _imageActionBusy) {
+      setState(() => _imageActionBusy = false);
+    }
+  }
+
+  Future<void> _ingestAndInsertFiles(List<XFile> files, BlobStore store) async {
+    final count = files.length;
+    final progress = Toast.showProgress(
+      context,
+      count == 1 ? 'Adding image…' : 'Adding $count images…',
+    );
+    try {
+      final batch = await (widget.imageIngestor ?? _ingestImageFiles)(
+        files,
+        store,
+      );
+      if (!mounted) {
+        progress.dismiss();
+        return;
+      }
+      insertImages(batch.images);
+      if (batch.rejections.isNotEmpty) widget.onImagesRejected?.call(batch);
+
+      final added = batch.images.length;
+      final rejected = batch.rejections.length;
+      if (added == 0) {
+        final first = batch.rejections.firstOrNull;
+        progress.error(
+          first == null
+              ? 'Could not add that image'
+              : '${first.name} ${describeRejection(first.reason)}',
+        );
+      } else if (rejected > 0) {
+        progress.success(
+          'Added $added ${added == 1 ? 'image' : 'images'}; '
+          '$rejected could not be added',
+          icon: Icons.warning_amber_rounded,
+        );
+      } else {
+        progress.success(added == 1 ? 'Image added' : '$added images added');
+      }
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kapy Notes editor',
+          context: ErrorDescription('while adding image files'),
+        ),
+      );
+      progress.error(
+        count == 1 ? 'Could not add that image' : 'Could not add those images',
+      );
+    }
   }
 
   void _commitFormats(List<NoteFormatRange> formats) {
+    if (widget.readOnly) return;
     _formats = formats;
     _controller.formats = formats;
     setState(() {});
@@ -878,6 +1306,7 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   void _toggleBullets() {
+    if (widget.readOnly) return;
     ContextMenuController.removeAny();
     _typingOverrides.clear();
     _nextInsertedFormats = const {};
@@ -889,6 +1318,7 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   void _toggleChecklist() {
+    if (widget.readOnly) return;
     ContextMenuController.removeAny();
     _typingOverrides.clear();
     _nextInsertedFormats = const {};
@@ -900,6 +1330,7 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   void _indentList({required bool outdent}) {
+    if (widget.readOnly) return;
     ContextMenuController.removeAny();
     _nextInsertedFormats = const {};
     _controller.value = indentSelection(_controller.value, outdent: outdent);
@@ -912,6 +1343,7 @@ class NoteEditorState extends State<NoteEditor> {
   KeyEventResult _handleEditorKey(FocusNode node, KeyEvent event) {
     if (event is KeyDownEvent) {
       LinkPopover.hide();
+      _clearKeywordTooltip();
       _recordKapyPeekActivity();
     }
     return _handleTabIndent(node, event);
@@ -923,6 +1355,7 @@ class NoteEditorState extends State<NoteEditor> {
   /// Tab is left to move focus, which is the only way to leave the editor from
   /// the keyboard.
   KeyEventResult _handleTabIndent(FocusNode node, KeyEvent event) {
+    if (widget.readOnly) return KeyEventResult.ignored;
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
@@ -955,6 +1388,7 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   void _handlePointerDown(PointerDownEvent event) {
+    _clearKeywordTooltip();
     _recordKapyPeekActivity();
     _pointerDownDetails[event.pointer] = _PointerDownDetails(
       position: event.position,
@@ -986,7 +1420,7 @@ class NoteEditorState extends State<NoteEditor> {
 
     final offset = editable.getPositionForPoint(event.position).offset;
     final checkboxStart = _checkboxAt(editable, event.position, offset);
-    if (checkboxStart >= 0) {
+    if (!widget.readOnly && checkboxStart >= 0) {
       _nextInsertedFormats = const {};
       final wasUnchecked = _controller.text.startsWith(
         uncheckedPrefix,
@@ -1001,14 +1435,18 @@ class NoteEditorState extends State<NoteEditor> {
     }
 
     final hit = _linkAtPoint(editable, event.position, offset);
-    if (hit == null) return;
-    // The shortcut stays: someone who already knows it should not be made to
-    // read a panel first.
-    if (_isDirectOpenShortcut()) {
-      unawaited(_openLink(hit.link));
+    if (hit != null) {
+      // The shortcut stays: someone who already knows it should not be made to
+      // read a panel first.
+      if (_isDirectOpenShortcut()) {
+        unawaited(_openLink(hit.link));
+        return;
+      }
+      _showLinkPopover(hit);
       return;
     }
-    _showLinkPopover(hit);
+    final keyword = _keywordAtPoint(editable, event.position, offset);
+    if (keyword != null) _showKeywordTooltip(keyword);
   }
 
   /// Confetti over the box just ticked, with a fuller burst for the last one.
@@ -1049,6 +1487,7 @@ class NoteEditorState extends State<NoteEditor> {
       return;
     }
     _kapyPeekIdleTimer?.cancel();
+    _clearKeywordTooltip();
     _kapyPeekIdleTimer = null;
     _dismissKapyPeek();
   }
@@ -1057,7 +1496,7 @@ class NoteEditorState extends State<NoteEditor> {
     _kapyPeekIdleTimer?.cancel();
     _kapyPeekIdleTimer = null;
     _dismissKapyPeek();
-    if (!mounted || !_focusNode.hasFocus) return;
+    if (!mounted || widget.readOnly || !_focusNode.hasFocus) return;
     _kapyPeekIdleTimer = Timer(
       NoteEditor.kapyPeekIdleDelay,
       _showKapyPeekIfStillIdle,
@@ -1116,8 +1555,8 @@ class NoteEditorState extends State<NoteEditor> {
     return rect.inflate(6).contains(globalPosition) ? start : -1;
   }
 
-  /// Turns the pointer into a hand over the things a click acts on, and
-  /// leaves it as an I-beam over everything else.
+  /// Turns the pointer into a hand over things a click acts on, a help cursor
+  /// over explained calculator words, and leaves an I-beam everywhere else.
   ///
   /// Checkboxes and links are characters inside an editable field rather than
   /// widgets, so nothing gives them a cursor for free — without this the
@@ -1127,24 +1566,97 @@ class NoteEditorState extends State<NoteEditor> {
     final root = _textFieldKey.currentContext?.findRenderObject();
     final editable = root == null ? null : _findRenderEditable(root);
     var wanted = _textCursor;
+    _KeywordHit? keyword;
 
     if (editable != null) {
       final offset = editable.getPositionForPoint(event.position).offset;
       // Link scanning is cached against the text, so hovering re-uses the
       // spans the highlighter already built rather than re-scanning the note.
-      if (_checkboxAt(editable, event.position, offset) >= 0 ||
+      if ((!widget.readOnly &&
+              _checkboxAt(editable, event.position, offset) >= 0) ||
           _linkAtPoint(editable, event.position, offset) != null) {
         wanted = SystemMouseCursors.click;
+      } else {
+        keyword = _keywordAtPoint(editable, event.position, offset);
+        if (keyword != null) wanted = SystemMouseCursors.help;
       }
     }
+    _scheduleKeywordTooltip(keyword);
     // Only on a change: a rebuild per mouse-move would be a needless frame.
     if (wanted != _hoverCursor) setState(() => _hoverCursor = wanted);
   }
 
   void _handleHoverExit() {
+    _clearKeywordTooltip();
     if (_hoverCursor != _textCursor) {
       setState(() => _hoverCursor = _textCursor);
     }
+  }
+
+  _KeywordHit? _keywordAtPoint(
+    RenderEditable editable,
+    Offset globalPosition,
+    int textOffset,
+  ) {
+    final source = _controller.text;
+    for (final span in _controller.spansFor(source)) {
+      if (span.kind != HighlightKind.keyword ||
+          textOffset < span.start ||
+          textOffset > span.end) {
+        continue;
+      }
+      final keyword = source.substring(span.start, span.end).toLowerCase();
+      final message = calcKeywordHelp[keyword];
+      if (message == null) continue;
+      final boxes = editable.getBoxesForSelection(
+        TextSelection(baseOffset: span.start, extentOffset: span.end),
+      );
+      for (final box in boxes) {
+        final origin = editable.localToGlobal(Offset(box.left, box.top));
+        final rect = origin & Size(box.right - box.left, box.bottom - box.top);
+        if (rect.inflate(2).contains(globalPosition)) {
+          return _KeywordHit(
+            id: '${span.start}:${span.end}',
+            keyword: keyword,
+            message: message,
+            rect: rect,
+          );
+        }
+      }
+    }
+    return null;
+  }
+
+  void _scheduleKeywordTooltip(_KeywordHit? hit) {
+    if (hit?.id == _hoveredKeywordId) return;
+    _clearKeywordTooltip();
+    if (hit == null) return;
+    _hoveredKeywordId = hit.id;
+    _keywordHoverTimer = Timer(const Duration(milliseconds: 500), () {
+      _keywordHoverTimer = null;
+      if (!mounted || _hoveredKeywordId != hit.id) return;
+      _showKeywordTooltip(hit);
+    });
+  }
+
+  void _showKeywordTooltip(_KeywordHit hit) {
+    _keywordHoverTimer?.cancel();
+    _keywordHoverTimer = null;
+    _hoveredKeywordId = hit.id;
+    LinkPopover.hide();
+    KeywordTooltip.show(
+      context,
+      anchor: hit.rect,
+      keyword: hit.keyword,
+      message: hit.message,
+    );
+  }
+
+  void _clearKeywordTooltip() {
+    _keywordHoverTimer?.cancel();
+    _keywordHoverTimer = null;
+    _hoveredKeywordId = null;
+    KeywordTooltip.hide();
   }
 
   /// The clicked link and the rect of the line it was clicked on, in global
@@ -1181,6 +1693,7 @@ class NoteEditorState extends State<NoteEditor> {
       : HardwareKeyboard.instance.isControlPressed;
 
   void _showLinkPopover(_LinkHit hit) {
+    _clearKeywordTooltip();
     LinkPopover.show(
       context,
       anchor: hit.rect,
@@ -1242,6 +1755,245 @@ class NoteEditorState extends State<NoteEditor> {
         label: 'Copy Link',
         onPressed: () => unawaited(_copyLink(link)),
       ),
+    ];
+  }
+
+  bool _selectionContainsImage(TextSelection selection) =>
+      selection.isValid &&
+      !selection.isCollapsed &&
+      _attachments.any(
+        (ref) =>
+            ref is NoteImageRef &&
+            ref.offset >= selection.start &&
+            ref.offset < selection.end,
+      );
+
+  /// Makes a picture a real one-character editor selection.
+  ///
+  /// A selection that already includes it is preserved, which is what makes
+  /// right-clicking one picture inside a mixed text-and-image selection copy
+  /// the whole selection instead of silently narrowing it first.
+  void _selectImage(NoteImageRef ref) {
+    final current = _controller.selection;
+    if (!(current.isValid &&
+        !current.isCollapsed &&
+        current.start <= ref.offset &&
+        current.end > ref.offset)) {
+      _controller.selection = TextSelection(
+        baseOffset: ref.offset,
+        extentOffset: ref.offset + 1,
+      );
+    }
+    _focusNode.requestFocus();
+  }
+
+  void _copyImageFromMenu(NoteImageRef ref) {
+    _selectImage(ref);
+    unawaited(_copyRichSelection(_controller.selection));
+  }
+
+  Future<Uint8List?> _clipboardBytes(NoteImageRef ref) async {
+    final store = widget.images;
+    if (store == null) return null;
+    var bytes = await store.read(ref.hash);
+    if (bytes != null) return bytes;
+    final fetch = widget.imageFetch;
+    if (fetch == null) return null;
+    bytes = await fetch(ref.hash);
+    if (bytes == null || BlobStore.hashOf(bytes) != ref.hash) return null;
+    await store.put(bytes);
+    return bytes;
+  }
+
+  /// Materialises only the images inside [selection], preserving their exact
+  /// positions among the selected text. Non-image attachments become readable
+  /// labels because this clipboard contract is intentionally image-specific.
+  Future<NoteClipboardFragment?> _clipboardFragment(
+    TextSelection selection,
+  ) async {
+    if (!selection.isValid || selection.isCollapsed) return null;
+    final text = _controller.text;
+    if (selection.start < 0 || selection.end > text.length) return null;
+
+    final selected = [
+      for (final ref in _attachments)
+        if (ref.offset >= selection.start && ref.offset < selection.end) ref,
+    ]..sort((a, b) => a.offset.compareTo(b.offset));
+    final selectedImages = selected.whereType<NoteImageRef>().toList();
+    if (selectedImages.isEmpty ||
+        selectedImages.length > maxClipboardFragmentImages ||
+        selectedImages.fold<int>(0, (sum, ref) => sum + ref.bytes) >
+            maxClipboardFragmentBytes) {
+      return null;
+    }
+
+    final body = StringBuffer();
+    final images = <ClipboardFragmentImage>[];
+    var cursor = selection.start;
+    for (final ref in selected) {
+      body.write(
+        text
+            .substring(cursor, ref.offset)
+            .replaceAll(NoteAttachmentRef.placeholder, '[Attachment]'),
+      );
+      if (ref is NoteImageRef) {
+        final bytes = await _clipboardBytes(ref);
+        if (bytes == null) return null;
+        final relativeOffset = body.length;
+        body.write(NoteAttachmentRef.placeholder);
+        images.add(
+          ClipboardFragmentImage(
+            offset: relativeOffset,
+            bytes: bytes,
+            mime: ref.mime,
+            width: ref.width,
+            height: ref.height,
+            widthFactor: ref.widthFactor,
+          ),
+        );
+      } else if (ref is NoteVoiceRef) {
+        body.write('[Voice note]');
+      } else {
+        body.write('[Attachment]');
+      }
+      cursor = ref.offset + 1;
+    }
+    body.write(
+      text
+          .substring(cursor, selection.end)
+          .replaceAll(NoteAttachmentRef.placeholder, '[Attachment]'),
+    );
+    return NoteClipboardFragment(body: body.toString(), images: images);
+  }
+
+  Future<bool> _copyRichSelection(TextSelection selection) async {
+    ContextMenuController.removeAny();
+    if (!selection.isValid ||
+        selection.isCollapsed ||
+        selection.start < 0 ||
+        selection.end > _controller.text.length) {
+      return false;
+    }
+    final selectedImages = [
+      for (final ref in _attachments)
+        if (ref is NoteImageRef &&
+            ref.offset >= selection.start &&
+            ref.offset < selection.end)
+          ref,
+    ];
+    final selectionBytes = selectedImages.fold<int>(
+      0,
+      (sum, ref) => sum + ref.bytes,
+    );
+    if (selectedImages.length > maxClipboardFragmentImages ||
+        selectionBytes > maxClipboardFragmentBytes) {
+      if (mounted) {
+        Toast.show(
+          context,
+          selectedImages.length > maxClipboardFragmentImages
+              ? 'Copy up to $maxClipboardFragmentImages images at a time'
+              : 'That image selection is too large to copy at once',
+          icon: Icons.error_outline_rounded,
+          isError: true,
+        );
+      }
+      return false;
+    }
+    if (_copyingRichSelection) return false;
+    _copyingRichSelection = true;
+    try {
+      final fragment = await _clipboardFragment(selection);
+      if (!mounted) return false;
+      if (fragment == null) {
+        Toast.show(
+          context,
+          'Could not copy that image',
+          icon: Icons.error_outline_rounded,
+          isError: true,
+        );
+        return false;
+      }
+      await widget.clipboard.writeFragment(fragment);
+      if (!mounted) return true;
+      final imageOnly =
+          fragment.images.length == 1 &&
+          fragment.body == NoteAttachmentRef.placeholder;
+      Toast.show(context, imageOnly ? 'Image copied' : 'Copied with images');
+      return true;
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kapy Notes editor',
+          context: ErrorDescription('while copying images from a note'),
+        ),
+      );
+      if (mounted) {
+        Toast.show(
+          context,
+          'Could not copy that image',
+          icon: Icons.error_outline_rounded,
+          isError: true,
+        );
+      }
+      return false;
+    } finally {
+      _copyingRichSelection = false;
+    }
+  }
+
+  Future<void> _copyAndCutRichSelection(
+    TextSelection selection,
+    SelectionChangedCause cause,
+  ) async {
+    final before = _controller.value;
+    if (!await _copyRichSelection(selection) || !mounted) return;
+    if (_controller.value != before || _controller.selection != selection) {
+      return;
+    }
+    _editableTextState()?.userUpdateTextEditingValue(
+      before.replaced(selection, ''),
+      cause,
+    );
+    _focusNode.requestFocus();
+  }
+
+  void _handleCopyIntent(CopySelectionTextIntent intent) {
+    if (intent.collapseSelection && widget.readOnly) return;
+    final editable = _editableTextState();
+    if (editable == null) return;
+    final selection = editable.textEditingValue.selection;
+    if (!_selectionContainsImage(selection)) {
+      if (intent.collapseSelection) {
+        editable.cutSelection(intent.cause);
+      } else {
+        editable.copySelection(intent.cause);
+      }
+      return;
+    }
+    if (intent.collapseSelection) {
+      unawaited(_copyAndCutRichSelection(selection, intent.cause));
+    } else {
+      unawaited(_copyRichSelection(selection));
+    }
+  }
+
+  List<ContextMenuButtonItem> _withRichCopy(
+    List<ContextMenuButtonItem> items,
+    TextSelection selection,
+  ) {
+    if (!_selectionContainsImage(selection)) return items;
+    return [
+      for (final item in items)
+        if (item.type == ContextMenuButtonType.copy)
+          ContextMenuButtonItem(
+            type: item.type,
+            label: item.label,
+            onPressed: () => unawaited(_copyRichSelection(selection)),
+          )
+        else
+          item,
     ];
   }
 
@@ -1356,6 +2108,14 @@ class NoteEditorState extends State<NoteEditor> {
       // occupies a placeholder, and leaving it out of the span map would leave
       // the text engine rendering a bare U+FFFC — an invisible character the
       // caret can land inside — where a newer build shows an attachment.
+      if (ref is NoteVoiceRef) {
+        spans[ref.offset] = (
+          width: columnWidth,
+          height: noteVoiceChipHeight + noteImageGap,
+          child: _voiceChip(ref),
+        );
+        continue;
+      }
       if (ref is! NoteImageRef) {
         spans[ref.offset] = (
           width: columnWidth,
@@ -1372,6 +2132,12 @@ class NoteEditorState extends State<NoteEditor> {
         maxHeight: maxHeight,
         widthFactor: ref.widthFactor,
       );
+      final selection = _controller.selection;
+      final selected =
+          selection.isValid &&
+          !selection.isCollapsed &&
+          selection.start <= ref.offset &&
+          selection.end > ref.offset;
       spans[ref.offset] = (
         width: box.width,
         // The vertical padding the view draws is part of the box the text
@@ -1385,17 +2151,22 @@ class NoteEditorState extends State<NoteEditor> {
           columnWidth: columnWidth,
           // Only a picture that has its line to itself: a tile's width comes
           // from how many share the row.
-          resizable: onLine <= 1,
+          resizable: !widget.readOnly && onLine <= 1,
+          selected: selected,
           fetch: widget.imageFetch,
-          onTap: () => NoteImageViewer.open(
+          onSelect: () => _selectImage(ref),
+          onOpen: () => NoteImageViewer.open(
             context,
             ref: ref,
             store: store,
             fetch: widget.imageFetch,
           ),
-          onResize: (factor) => _resizeImage(ref.offset, factor),
-          onResizeEnd: _commitAttachments,
-          onRemove: () => removeImage(ref.offset),
+          onCopy: () => _copyImageFromMenu(ref),
+          onResize: widget.readOnly
+              ? null
+              : (factor) => _resizeImage(ref.offset, factor),
+          onResizeEnd: widget.readOnly ? null : _commitAttachments,
+          onRemove: widget.readOnly ? null : () => removeAttachment(ref.offset),
         ),
       );
     }
@@ -1558,62 +2329,73 @@ class NoteEditorState extends State<NoteEditor> {
               },
             ),
           ),
-          NoteFooter(
-            total: _totalText,
-            paragraphStyleShortcut: widget.shortcuts.bindingFor(
-              ShortcutAction.cycleTextStyle,
+          if (!widget.readOnly && _liveSession != null)
+            VoiceRecordingBar(
+              session: _liveSession!,
+              onPause: widget.recording?.pause,
+              onResume: widget.recording?.resume,
+              onStop: widget.onRecordVoice,
+              onCancel: () => unawaited(widget.recording!.cancel()),
+            )
+          else
+            NoteFooter(
+              total: AppPlatform.isMobile ? null : _totalText,
+              typingNames: widget.typingNames,
+              readOnly: widget.readOnly,
+              paragraphStyleShortcut: widget.shortcuts.bindingFor(
+                ShortcutAction.cycleTextStyle,
+              ),
+              boldShortcut: widget.shortcuts.bindingFor(
+                ShortcutAction.formatBold,
+              ),
+              italicShortcut: widget.shortcuts.bindingFor(
+                ShortcutAction.formatItalic,
+              ),
+              bulletsShortcut: widget.shortcuts.bindingFor(
+                ShortcutAction.formatBullets,
+              ),
+              checklistShortcut: widget.shortcuts.bindingFor(
+                ShortcutAction.formatChecklist,
+              ),
+              onSettingsPressed: widget.onSettingsPressed,
+              onParagraphStylePressed: _cycleParagraphStyle,
+              onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
+              onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
+              onBulletsPressed: _toggleBullets,
+              onInsertImagePressed: widget.readOnly || widget.images == null
+                  ? null
+                  : () => unawaited(pickAndInsertImages()),
+              imageBusy: _imageActionBusy,
+              onRecordVoicePressed: widget.readOnly
+                  ? null
+                  : widget.onRecordVoice,
+              voiceBusy: widget.voiceActionBusy,
+              onChecklistPressed: _toggleChecklist,
+              onIndentPressed: () => _indentList(outdent: false),
+              onOutdentPressed: () => _indentList(outdent: true),
+              showIndentControls: selectionHasListLine(_controller.value),
+              canIndent: canIndentSelection(_controller.value, outdent: false),
+              canOutdent: canIndentSelection(_controller.value, outdent: true),
+              boldActive: _formatActive(NoteFormat.bold),
+              italicActive: _formatActive(NoteFormat.italic),
+              bulletsActive: selectionHasLineStyle(
+                _controller.value,
+                NoteLineStyle.bullet,
+              ),
+              checklistActive: selectionHasLineStyle(
+                _controller.value,
+                NoteLineStyle.checklist,
+              ),
+              paragraphStyle: _activeParagraphStyle,
+              showSettingsButton:
+                  widget.showSettingsButton && !AppPlatform.isMobile,
             ),
-            boldShortcut: widget.shortcuts.bindingFor(
-              ShortcutAction.formatBold,
-            ),
-            italicShortcut: widget.shortcuts.bindingFor(
-              ShortcutAction.formatItalic,
-            ),
-            bulletsShortcut: widget.shortcuts.bindingFor(
-              ShortcutAction.formatBullets,
-            ),
-            checklistShortcut: widget.shortcuts.bindingFor(
-              ShortcutAction.formatChecklist,
-            ),
-            onSettingsPressed: widget.onSettingsPressed,
-            onParagraphStylePressed: _cycleParagraphStyle,
-            onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
-            onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
-            onBulletsPressed: _toggleBullets,
-            // Desktop only. A phone's control row is already full at 44pt a
-            // button, and a sixth pushes the running total into an ellipsis —
-            // which `app_test` rightly refuses. Touch adds an image from the
-            // press-and-hold menu instead, where every other insert action on
-            // both mobile platforms already lives.
-            onInsertImagePressed:
-                widget.images == null || !AppPlatform.hasPointer
-                ? null
-                : () => unawaited(pickAndInsertImages()),
-            onChecklistPressed: _toggleChecklist,
-            onIndentPressed: () => _indentList(outdent: false),
-            onOutdentPressed: () => _indentList(outdent: true),
-            showIndentControls: selectionHasListLine(_controller.value),
-            canIndent: canIndentSelection(_controller.value, outdent: false),
-            canOutdent: canIndentSelection(_controller.value, outdent: true),
-            boldActive: _formatActive(NoteFormat.bold),
-            italicActive: _formatActive(NoteFormat.italic),
-            bulletsActive: selectionHasLineStyle(
-              _controller.value,
-              NoteLineStyle.bullet,
-            ),
-            checklistActive: selectionHasLineStyle(
-              _controller.value,
-              NoteLineStyle.checklist,
-            ),
-            paragraphStyle: _activeParagraphStyle,
-            showSettingsButton: widget.showSettingsButton,
-          ),
         ],
       ),
     );
 
     return ImageDropTarget(
-      enabled: widget.images != null,
+      enabled: !widget.readOnly && widget.images != null,
       onFiles: (files) => unawaited(insertFiles(files)),
       child: page,
     );
@@ -1644,159 +2426,210 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   Widget _textField(TextStyle textStyle, StrutStyle strut) {
-    return MouseRegion(
-      // Hover only. The cursor itself goes to the TextField below: it builds
-      // its own MouseRegion around the text, and the innermost region under
-      // the pointer is the one that decides, so setting it here would be
-      // silently overridden.
-      onHover: _handleHover,
-      onExit: (_) => _handleHoverExit(),
-      child: Listener(
-        onPointerDown: _handlePointerDown,
-        onPointerUp: _handlePointerUp,
-        onPointerCancel: _handlePointerCancel,
-        // `EditableText` builds its paste action with `Action.overridable`,
-        // which looks an override up in the ancestor context — so this is the
-        // supported way in, rather than a shortcut racing the built-in one.
-        child: Actions(
-          actions: {
-            PasteTextIntent: CallbackAction<PasteTextIntent>(
-              onInvoke: (intent) {
-                unawaited(handlePaste(intent.cause));
-                return null;
-              },
-            ),
-          },
-          // A cleared shortcut binds nothing; the footer button beside it is
-          // still there, and is now the only way in.
-          child: CallbackShortcuts(
-            bindings: {
-              ?widget.shortcuts
-                      .bindingFor(ShortcutAction.cycleTextStyle)
-                      ?.activator:
-                  _cycleParagraphStyle,
-              ?widget.shortcuts
-                  .bindingFor(ShortcutAction.formatBold)
-                  ?.activator: () =>
-                  _toggleInlineFormat(NoteFormat.bold),
-              ?widget.shortcuts
-                  .bindingFor(ShortcutAction.formatItalic)
-                  ?.activator: () =>
-                  _toggleInlineFormat(NoteFormat.italic),
-              ?widget.shortcuts
-                      .bindingFor(ShortcutAction.formatBullets)
-                      ?.activator:
-                  _toggleBullets,
-              ?widget.shortcuts
-                      .bindingFor(ShortcutAction.formatChecklist)
-                      ?.activator:
-                  _toggleChecklist,
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleEditorScrollNotification,
+      child: MouseRegion(
+        // Hover only. The cursor itself goes to the TextField below: it builds
+        // its own MouseRegion around the text, and the innermost region under
+        // the pointer is the one that decides, so setting it here would be
+        // silently overridden.
+        onHover: _handleHover,
+        onExit: (_) => _handleHoverExit(),
+        child: Listener(
+          onPointerDown: _handlePointerDown,
+          onPointerUp: _handlePointerUp,
+          onPointerCancel: _handlePointerCancel,
+          // `EditableText` builds its paste action with `Action.overridable`,
+          // which looks an override up in the ancestor context — so this is the
+          // supported way in, rather than a shortcut racing the built-in one.
+          child: Actions(
+            actions: {
+              CopySelectionTextIntent: CallbackAction<CopySelectionTextIntent>(
+                onInvoke: (intent) {
+                  _handleCopyIntent(intent);
+                  return null;
+                },
+              ),
+              PasteTextIntent: CallbackAction<PasteTextIntent>(
+                onInvoke: (intent) {
+                  unawaited(handlePaste(intent.cause));
+                  return null;
+                },
+              ),
             },
-            child: TextField(
-              key: _textFieldKey,
-              mouseCursor: _hoverCursor,
-              controller: _controller,
-              focusNode: _focusNode,
-              scrollController: _scrollController,
-              autofocus: widget.autofocus,
-              expands: true,
-              maxLines: null,
-              minLines: null,
-              style: textStyle,
-              strutStyle: strut,
-              cursorWidth: EditorMetrics.cursorWidth,
-              cursorHeight: EditorMetrics.cursorHeight(widget.writingFont),
-              cursorRadius: const Radius.circular(1),
-              cursorColor: Theme.of(context).colorScheme.primary,
-              // Uniform selection rectangles: without this, a line whose glyphs
-              // come from a fallback font gets a differently sized highlight.
-              selectionHeightStyle: BoxHeightStyle.strut,
-              // A highlight stops at the end of its own line. Flutter defaults
-              // this to `max` off the web, which pads every selected line that
-              // carries a line break out to the width of the longest line in
-              // the whole note — so selecting two short lines under a long one
-              // paints a block of empty space that is not selected at all.
-              selectionWidthStyle: BoxWidthStyle.tight,
-              keyboardType: TextInputType.multiline,
-              textInputAction: TextInputAction.newline,
-              inputFormatters: [
-                _dailySeparatorFormatter,
-                const _ListContinuationFormatter(),
-                const _ListShorthandFormatter(),
-              ],
-              contextMenuBuilder: (context, editableTextState) {
-                final selection = editableTextState.textEditingValue.selection;
-                final link = _linkForSelection(selection);
-                final linkItems = _linkContextMenuItems(link);
-                if (selection.isCollapsed) {
-                  return AdaptiveTextSelectionToolbar.buttonItems(
-                    anchors: editableTextState.contextMenuAnchors,
-                    buttonItems: [
-                      ...linkItems,
-                      if (widget.images != null && !AppPlatform.hasPointer)
-                        ContextMenuButtonItem(
-                          label: 'Add Image',
-                          onPressed: () {
-                            ContextMenuController.removeAny();
-                            unawaited(pickAndInsertImages());
-                          },
-                        ),
-                      if (_controller.text.isNotEmpty)
-                        ContextMenuButtonItem(
-                          label: 'Copy Plain Text',
-                          onPressed: () => unawaited(_copyPlainText(selection)),
-                        ),
-                      ..._withImagePaste(
-                        editableTextState.contextMenuButtonItems,
-                      ),
-                    ],
-                  );
-                }
-                return NoteSelectionFormattingToolbar(
-                  editableTextState: editableTextState,
-                  paragraphStyle: _activeParagraphStyle,
-                  boldActive: _formatActive(NoteFormat.bold),
-                  italicActive: _formatActive(NoteFormat.italic),
-                  bulletsActive: selectionHasLineStyle(
-                    _controller.value,
-                    NoteLineStyle.bullet,
-                  ),
-                  checklistActive: selectionHasLineStyle(
-                    _controller.value,
-                    NoteLineStyle.checklist,
-                  ),
-                  onParagraphStylePressed: _cycleParagraphStyle,
-                  onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
-                  onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
-                  onBulletsPressed: _toggleBullets,
-                  onChecklistPressed: _toggleChecklist,
-                  onOpenLink: link == null
-                      ? null
-                      : () => unawaited(_openLink(link)),
-                  onCopyLink: link == null
-                      ? null
-                      : () => unawaited(_copyLink(link)),
-                  onCopyPlainText: () => unawaited(_copyPlainText(selection)),
-                );
+            // A cleared shortcut binds nothing; the footer button beside it is
+            // still there, and is now the only way in.
+            child: CallbackShortcuts(
+              bindings: {
+                ?widget.shortcuts
+                        .bindingFor(ShortcutAction.cycleTextStyle)
+                        ?.activator:
+                    _cycleParagraphStyle,
+                ?widget.shortcuts
+                    .bindingFor(ShortcutAction.formatBold)
+                    ?.activator: () =>
+                    _toggleInlineFormat(NoteFormat.bold),
+                ?widget.shortcuts
+                    .bindingFor(ShortcutAction.formatItalic)
+                    ?.activator: () =>
+                    _toggleInlineFormat(NoteFormat.italic),
+                ?widget.shortcuts
+                        .bindingFor(ShortcutAction.formatBullets)
+                        ?.activator:
+                    _toggleBullets,
+                ?widget.shortcuts
+                        .bindingFor(ShortcutAction.formatChecklist)
+                        ?.activator:
+                    _toggleChecklist,
+                if (!widget.readOnly && widget.onRecordVoice != null)
+                  ?widget.shortcuts
+                          .bindingFor(ShortcutAction.recordVoiceNote)
+                          ?.activator:
+                      widget.onRecordVoice!,
               },
-              textAlignVertical: TextAlignVertical.top,
-              // This is a calculator surface, not prose: every helpful-guess input
-              // feature would fight the user.
-              autocorrect: false,
-              enableSuggestions: false,
-              textCapitalization: TextCapitalization.none,
-              smartDashesType: SmartDashesType.disabled,
-              smartQuotesType: SmartQuotesType.disabled,
-              scrollPadding: const EdgeInsets.all(80),
-              // No decoration padding: an InputDecorator positions its child by
-              // rules of its own, and the gutter needs the text origin to be
-              // exactly the padding it was told about.
-              decoration: const InputDecoration(
-                isCollapsed: true,
-                border: InputBorder.none,
-                filled: false,
-                hoverColor: Colors.transparent,
-                contentPadding: EdgeInsets.zero,
+              child: TextField(
+                key: _textFieldKey,
+                mouseCursor: _hoverCursor,
+                controller: _controller,
+                focusNode: _focusNode,
+                scrollController: _scrollController,
+                autofocus: !widget.readOnly && widget.autofocus,
+                readOnly: widget.readOnly,
+                expands: true,
+                maxLines: null,
+                minLines: null,
+                style: textStyle,
+                strutStyle: strut,
+                cursorWidth: EditorMetrics.cursorWidth,
+                cursorHeight: EditorMetrics.cursorHeight(widget.writingFont),
+                cursorRadius: const Radius.circular(1),
+                cursorColor: Theme.of(context).colorScheme.primary,
+                // Uniform selection rectangles: without this, a line whose glyphs
+                // come from a fallback font gets a differently sized highlight.
+                selectionHeightStyle: BoxHeightStyle.strut,
+                // A highlight stops at the end of its own line. Flutter defaults
+                // this to `max` off the web, which pads every selected line that
+                // carries a line break out to the width of the longest line in
+                // the whole note — so selecting two short lines under a long one
+                // paints a block of empty space that is not selected at all.
+                selectionWidthStyle: BoxWidthStyle.tight,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                inputFormatters: [
+                  _dailySeparatorFormatter,
+                  const _ListContinuationFormatter(),
+                  const _ListShorthandFormatter(),
+                ],
+                contextMenuBuilder: (context, editableTextState) {
+                  final selection =
+                      editableTextState.textEditingValue.selection;
+                  final link = _linkForSelection(selection);
+                  final linkItems = _linkContextMenuItems(link);
+                  if (widget.readOnly) {
+                    return AdaptiveTextSelectionToolbar.buttonItems(
+                      anchors: editableTextState.contextMenuAnchors,
+                      buttonItems: [
+                        ...linkItems,
+                        ..._withRichCopy(
+                          editableTextState.contextMenuButtonItems,
+                          selection,
+                        ),
+                        if (_controller.text.isNotEmpty)
+                          ContextMenuButtonItem(
+                            label: 'Copy Plain Text',
+                            onPressed: () =>
+                                unawaited(_copyPlainText(selection)),
+                          ),
+                      ],
+                    );
+                  }
+                  if (selection.isCollapsed) {
+                    return AdaptiveTextSelectionToolbar.buttonItems(
+                      anchors: editableTextState.contextMenuAnchors,
+                      buttonItems: [
+                        ...linkItems,
+                        if (widget.images != null && !AppPlatform.hasPointer)
+                          ContextMenuButtonItem(
+                            label: 'Add Image',
+                            onPressed: () {
+                              ContextMenuController.removeAny();
+                              unawaited(pickAndInsertImages());
+                            },
+                          ),
+                        // Touch only, beside Add Image: on a phone the footer
+                        // row has no space left, so the press-and-hold menu is
+                        // where every insert action already lives.
+                        if (widget.onRecordVoice != null &&
+                            !AppPlatform.hasPointer)
+                          ContextMenuButtonItem(
+                            label: 'Record Voice Note',
+                            onPressed: () {
+                              ContextMenuController.removeAny();
+                              widget.onRecordVoice!();
+                            },
+                          ),
+                        if (_controller.text.isNotEmpty)
+                          ContextMenuButtonItem(
+                            label: 'Copy Plain Text',
+                            onPressed: () =>
+                                unawaited(_copyPlainText(selection)),
+                          ),
+                        ..._withImagePaste(
+                          editableTextState.contextMenuButtonItems,
+                        ),
+                      ],
+                    );
+                  }
+                  return NoteSelectionFormattingToolbar(
+                    editableTextState: editableTextState,
+                    paragraphStyle: _activeParagraphStyle,
+                    boldActive: _formatActive(NoteFormat.bold),
+                    italicActive: _formatActive(NoteFormat.italic),
+                    bulletsActive: selectionHasLineStyle(
+                      _controller.value,
+                      NoteLineStyle.bullet,
+                    ),
+                    checklistActive: selectionHasLineStyle(
+                      _controller.value,
+                      NoteLineStyle.checklist,
+                    ),
+                    onParagraphStylePressed: _cycleParagraphStyle,
+                    onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
+                    onItalicPressed: () =>
+                        _toggleInlineFormat(NoteFormat.italic),
+                    onBulletsPressed: _toggleBullets,
+                    onChecklistPressed: _toggleChecklist,
+                    onOpenLink: link == null
+                        ? null
+                        : () => unawaited(_openLink(link)),
+                    onCopyLink: link == null
+                        ? null
+                        : () => unawaited(_copyLink(link)),
+                    onCopy: _selectionContainsImage(selection)
+                        ? () => unawaited(_copyRichSelection(selection))
+                        : null,
+                    onCopyPlainText: () => unawaited(_copyPlainText(selection)),
+                  );
+                },
+                textAlignVertical: TextAlignVertical.top,
+                // This is a calculator surface, not prose: every helpful-guess input
+                // feature would fight the user.
+                autocorrect: false,
+                enableSuggestions: false,
+                textCapitalization: TextCapitalization.none,
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
+                scrollPadding: const EdgeInsets.all(80),
+                // No decoration padding: an InputDecorator positions its child by
+                // rules of its own, and the gutter needs the text origin to be
+                // exactly the padding it was told about.
+                decoration: const InputDecoration(
+                  isCollapsed: true,
+                  border: InputBorder.none,
+                  filled: false,
+                  hoverColor: Colors.transparent,
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
             ),
           ),
@@ -1806,11 +2639,28 @@ class NoteEditorState extends State<NoteEditor> {
   }
 }
 
+Future<ImageBatch> _ingestImageFiles(List<XFile> files, BlobStore store) =>
+    ingestFiles(files, store: store);
+
 /// A link and where it was drawn, paired so the panel can be put against it.
 class _LinkHit {
   const _LinkHit({required this.link, required this.rect});
 
   final NoteLink link;
+  final Rect rect;
+}
+
+class _KeywordHit {
+  const _KeywordHit({
+    required this.id,
+    required this.keyword,
+    required this.message,
+    required this.rect,
+  });
+
+  final String id;
+  final String keyword;
+  final String message;
   final Rect rect;
 }
 

@@ -306,7 +306,11 @@ class FakeServer {
   // The op log
   // -------------------------------------------------------------------------
 
-  Never _refuse(int status, String code, [Map<String, Object?> extra = const {}]) {
+  Never _refuse(
+    int status,
+    String code, [
+    Map<String, Object?> extra = const {},
+  ]) {
     refusals.add(code);
     throw SyncRefusedException(status, code, {'error': code, ...extra});
   }
@@ -315,6 +319,14 @@ class FakeServer {
     final space = spaces[spaceId];
     if (space == null || !space.members.containsKey(userId)) {
       _refuse(404, 'no such space');
+    }
+    return space;
+  }
+
+  FakeSpace _editor(String userId, String spaceId) {
+    final space = _member(userId, spaceId);
+    if (space.members[userId] == SpaceRole.viewer) {
+      _refuse(403, 'view-only', {'spaceId': spaceId});
     }
     return space;
   }
@@ -334,31 +346,43 @@ class FakeServer {
     return (first: space.opSeq - n + 1, last: space.opSeq);
   }
 
-  WireStoredOp _marker(FakeSpace space, String noteId, String device, String userId, int seq, bool deleted, DateTime at) =>
-      WireStoredOp(
-        seq: seq,
-        spaceId: space.id,
-        noteId: noteId,
-        deviceId: device,
-        authorId: userId,
-        // Unique per space, and never a number a device would send.
-        deviceSeq: -seq,
-        epoch: 0,
-        engine: markerEngine,
-        payload: SealedBox.empty,
-        deleted: deleted,
-        at: at,
-      );
+  WireStoredOp _marker(
+    FakeSpace space,
+    String noteId,
+    String device,
+    String userId,
+    int seq,
+    bool deleted,
+    DateTime at,
+  ) => WireStoredOp(
+    seq: seq,
+    spaceId: space.id,
+    noteId: noteId,
+    deviceId: device,
+    authorId: userId,
+    // Unique per space, and never a number a device would send.
+    deviceSeq: -seq,
+    epoch: 0,
+    engine: markerEngine,
+    payload: SealedBox.empty,
+    deleted: deleted,
+    at: at,
+  );
 
   /// One push, applied whole or not at all. Mirrors `applyOps`.
   OpsPushResult pushOps(String userId, String device, OpsPush push) {
-    if (push.from == push.spaceId) _refuse(400, 'a move names two different spaces');
+    if (push.from == push.spaceId) {
+      _refuse(400, 'a move names two different spaces');
+    }
 
     final spaceIds = [push.spaceId, if (push.from != null) push.from!];
     for (final id in spaceIds) {
       final space = spaces[id];
       if (space == null || !space.members.containsKey(userId)) {
         _refuse(403, 'not a member of this space', {'spaceId': id});
+      }
+      if (space.members[userId] == SpaceRole.viewer) {
+        _refuse(403, 'view-only', {'spaceId': id});
       }
     }
     final space = spaces[push.spaceId]!;
@@ -406,11 +430,16 @@ class FakeServer {
           );
           epoch = 1;
         }
-      } else if (key == null || key.contentKeyEpoch == current.contentKeyEpoch) {
+      } else if (key == null ||
+          key.contentKeyEpoch == current.contentKeyEpoch) {
         epoch = current.contentKeyEpoch;
       } else if (key.contentKeyEpoch == current.contentKeyEpoch + 1) {
-        if (push.snapshot == null || push.snapshot!.epoch != key.contentKeyEpoch) {
-          _refuse(400, 'a content-key rotation carries a snapshot under the new epoch');
+        if (push.snapshot == null ||
+            push.snapshot!.epoch != key.contentKeyEpoch) {
+          _refuse(
+            400,
+            'a content-key rotation carries a snapshot under the new epoch',
+          );
         }
         pendingKey = FakeNoteKey(
           wrapped: key.wrapped,
@@ -439,7 +468,10 @@ class FakeServer {
     if (push.seed || push.from != null) {
       if (_hasHistory(space, push.noteId)) {
         if (!wasDeleted) {
-          _refuse(409, 'seeded', {'spaceId': push.spaceId, 'noteId': push.noteId});
+          _refuse(409, 'seeded', {
+            'spaceId': push.spaceId,
+            'noteId': push.noteId,
+          });
         }
         dropHistory = true;
       }
@@ -469,11 +501,15 @@ class FakeServer {
     if (sent.length != push.ops.length) _refuse(400, 'an op appears twice');
     final known = <int, int>{};
     for (final op in space.ops) {
-      if (op.noteId == push.noteId && op.deviceId == device && sent.contains(op.deviceSeq)) {
+      if (op.noteId == push.noteId &&
+          op.deviceId == device &&
+          sent.contains(op.deviceSeq)) {
         known[op.deviceSeq] = op.seq;
       }
     }
-    final fresh = push.ops.where((op) => !known.containsKey(op.deviceSeq)).toList();
+    final fresh = push.ops
+        .where((op) => !known.containsKey(op.deviceSeq))
+        .toList();
 
     if (push.snapshot != null && push.snapshot!.covers > space.opSeq) {
       _refuse(400, 'snapshot covers seqs that do not exist');
@@ -494,11 +530,13 @@ class FakeServer {
       deletedAt: deletedAt,
     );
 
-    final marker = push.deleted != null &&
+    final marker =
+        push.deleted != null &&
         push.deleted != wasDeleted &&
         fresh.isEmpty &&
         push.snapshot == null;
-    final count = fresh.length + (push.snapshot != null ? 1 : 0) + (marker ? 1 : 0);
+    final count =
+        fresh.length + (push.snapshot != null ? 1 : 0) + (marker ? 1 : 0);
     final ranges = <({String spaceId, int from, int to})>[];
     final seqs = Map<int, int>.of(known);
     int? snapshotSeq;
@@ -545,14 +583,20 @@ class FakeServer {
         );
         // Only what the writer had applied. An op that landed between its
         // cursor and this seq was not in the snapshot and stays.
-        space.ops.removeWhere((op) => op.noteId == push.noteId && op.seq <= snap.covers);
+        space.ops.removeWhere(
+          (op) => op.noteId == push.noteId && op.seq <= snap.covers,
+        );
         if (rotatedFrom != null) {
-          space.ops.removeWhere((op) => op.noteId == push.noteId && op.epoch < epoch);
+          space.ops.removeWhere(
+            (op) => op.noteId == push.noteId && op.epoch < epoch,
+          );
         }
       }
       if (marker) {
         final seq = next++;
-        space.ops.add(_marker(space, push.noteId, device, userId, seq, deletedAfter, at));
+        space.ops.add(
+          _marker(space, push.noteId, device, userId, seq, deletedAfter, at),
+        );
       }
     }
 
@@ -577,7 +621,9 @@ class FakeServer {
       _forgetHistory(source, push.noteId);
       _moveAttachments(push.noteId, source, space);
       final range = _allocate(source, 1);
-      source.ops.add(_marker(source, push.noteId, device, userId, range.first, true, at));
+      source.ops.add(
+        _marker(source, push.noteId, device, userId, range.first, true, at),
+      );
       ranges.add((spaceId: source.id, from: range.first, to: range.first));
       if (source.kind == SpaceKind.team) reaped.addAll(_reapIfEmpty(source.id));
     }
@@ -608,12 +654,21 @@ class FakeServer {
   OpsBatch _rangeOps(String spaceId, int from, int to) {
     final space = spaces[spaceId];
     if (space == null) {
-      return OpsBatch(spaceId: spaceId, ops: const [], snapshots: const [], cursor: from - 1, hasMore: false);
+      return OpsBatch(
+        spaceId: spaceId,
+        ops: const [],
+        snapshots: const [],
+        cursor: from - 1,
+        hasMore: false,
+      );
     }
     final ops = space.ops.where((op) => op.seq >= from && op.seq <= to).toList()
       ..sort((a, b) => a.seq.compareTo(b.seq));
-    final snaps = space.snapshots.values.where((s) => s.seq >= from && s.seq <= to).toList()
-      ..sort((a, b) => a.seq.compareTo(b.seq));
+    final snaps =
+        space.snapshots.values
+            .where((s) => s.seq >= from && s.seq <= to)
+            .toList()
+          ..sort((a, b) => a.seq.compareTo(b.seq));
     return _pageOf(spaceId, from - 1, 1 << 30, ops, snaps);
   }
 
@@ -629,7 +684,8 @@ class FakeServer {
     var i = 0;
     var j = 0;
     var last = after;
-    while (pageOps.length + pageSnaps.length < limit && (i < ops.length || j < snaps.length)) {
+    while (pageOps.length + pageSnaps.length < limit &&
+        (i < ops.length || j < snaps.length)) {
       final op = i < ops.length ? ops[i] : null;
       final snap = j < snaps.length ? snaps[j] : null;
       if (op != null && (snap == null || op.seq < snap.seq)) {
@@ -656,20 +712,29 @@ class FakeServer {
   // -------------------------------------------------------------------------
 
   int _readyBytes(String spaceId, String noteId) => attachments.values
-      .where((a) => a.spaceId == spaceId && a.noteId == noteId && a.ready && !a.deleted)
+      .where(
+        (a) =>
+            a.spaceId == spaceId && a.noteId == noteId && a.ready && !a.deleted,
+      )
       .fold(0, (sum, a) => sum + a.bytes);
 
   void _releaseAttachments(String spaceId, String noteId) {
     for (final row in attachments.values) {
-      if (row.spaceId != spaceId || row.noteId != noteId || row.deleted) continue;
+      if (row.spaceId != spaceId || row.noteId != noteId || row.deleted) {
+        continue;
+      }
       row.deleted = true;
-      if (row.ready) storageUsed[row.owner] = (storageUsed[row.owner] ?? 0) - row.bytes;
+      if (row.ready) {
+        storageUsed[row.owner] = (storageUsed[row.owner] ?? 0) - row.bytes;
+      }
     }
   }
 
   void _moveAttachments(String noteId, FakeSpace from, FakeSpace to) {
     for (final row in attachments.values) {
-      if (row.spaceId != from.id || row.noteId != noteId || row.deleted) continue;
+      if (row.spaceId != from.id || row.noteId != noteId || row.deleted) {
+        continue;
+      }
       row.spaceId = to.id;
       if (row.owner != to.ownerId) {
         if (row.ready) {
@@ -718,7 +783,8 @@ class FakeServer {
       for (final entry in space.invites.entries)
         SpaceInvite(
           token: entry.key,
-          email: entry.value,
+          email: entry.value.email,
+          role: entry.value.role,
           expiresAt: DateTime.utc(2027),
           createdAt: DateTime.utc(2026, 9, 1),
         ),
@@ -753,19 +819,26 @@ class FakeServer {
   Space createSpace(String userId, String name, SealedToPublicKey key) {
     calls.add('createSpace');
     _requireTerms(userId);
-    final space = FakeSpace(
-      id: 'space-${spaces.length + 1}-$name',
-      kind: SpaceKind.team,
-      name: name,
-      ownerId: userId,
-    )
-      ..members[userId] = SpaceRole.owner
-      ..keys[userId] = key;
+    final space =
+        FakeSpace(
+            id: 'space-${spaces.length + 1}-$name',
+            kind: SpaceKind.team,
+            name: name,
+            ownerId: userId,
+          )
+          ..members[userId] = SpaceRole.owner
+          ..keys[userId] = key;
     spaces[space.id] = space;
     return _wire(space, userId);
   }
 
-  InviteResult invite(String userId, String spaceId, String email) {
+  InviteResult invite(
+    String userId,
+    String spaceId,
+    String email, {
+    SpaceRole role = SpaceRole.member,
+  }) {
+    role = role == SpaceRole.viewer ? SpaceRole.viewer : SpaceRole.member;
     calls.add('invite:$email');
     _requireTerms(userId);
     final space = _member(userId, spaceId);
@@ -773,20 +846,25 @@ class FakeServer {
       _refuse(403, 'only the owner can do this');
     }
     for (final member in space.members.keys) {
-      if (user(member).email.toLowerCase() == email) _refuse(409, 'already a member');
+      if (user(member).email.toLowerCase() == email) {
+        _refuse(409, 'already a member');
+      }
     }
-    space.invites.removeWhere((_, existing) => existing == email);
+    space.invites.removeWhere((_, existing) => existing.email == email);
     final token = 'invite-${email.split('@').first}-${space.invites.length}';
-    space.invites[token] = email;
+    space.invites[token] = (email: email, role: role);
     // Blocked: written, never delivered, and the sender is told nothing.
     final blockedBy = users.values.where(
-      (u) => u.email.toLowerCase() == email && u.blocks.contains(user(userId).email.toLowerCase()),
+      (u) =>
+          u.email.toLowerCase() == email &&
+          u.blocks.contains(user(userId).email.toLowerCase()),
     );
     if (blockedBy.isEmpty) outbox.add((to: email, token: token));
     announceSpace(spaceId);
     return InviteResult(
       token: token,
       email: email,
+      role: role,
       expiresAt: DateTime.utc(2027),
       emailed: true,
     );
@@ -798,13 +876,14 @@ class FakeServer {
     return [
       for (final space in spaces.values)
         for (final entry in space.invites.entries)
-          if (entry.value == email &&
+          if (entry.value.email == email &&
               !blocked.contains(user(space.ownerId).email.toLowerCase()))
             PendingInvite(
               token: entry.key,
               spaceId: space.id,
               spaceName: space.name ?? 'Shared notes',
               invitedBy: user(space.ownerId).email,
+              role: entry.value.role,
               expiresAt: DateTime.utc(2027),
             ),
     ];
@@ -814,15 +893,18 @@ class FakeServer {
     calls.add('accept');
     final email = user(userId).email.toLowerCase();
     for (final space in spaces.values) {
-      if (space.invites[token] != email) continue;
+      final invite = space.invites[token];
+      if (invite?.email != email) continue;
       // A blocked sender's invitation does not exist, however its link
       // travelled, and the rules are agreed to before joining.
-      if (user(userId).blocks.contains(user(space.ownerId).email.toLowerCase())) {
+      if (user(
+        userId,
+      ).blocks.contains(user(space.ownerId).email.toLowerCase())) {
         _refuse(404, 'no such invitation');
       }
       _requireTerms(userId);
       space.invites.remove(token);
-      space.members[userId] = SpaceRole.member;
+      space.members[userId] = invite!.role;
       announceSpace(space.id);
       return _wire(space, userId);
     }
@@ -832,7 +914,7 @@ class FakeServer {
   void declineInvite(String userId, String token) {
     final email = user(userId).email.toLowerCase();
     for (final space in spaces.values) {
-      if (space.invites[token] == email) {
+      if (space.invites[token]?.email == email) {
         space.invites.remove(token);
         return;
       }
@@ -840,13 +922,23 @@ class FakeServer {
     _refuse(404, 'no such invitation');
   }
 
-  void grantKey(String userId, String spaceId, String target, int generation, SealedToPublicKey key) {
+  void grantKey(
+    String userId,
+    String spaceId,
+    String target,
+    int generation,
+    SealedToPublicKey key,
+  ) {
     calls.add('grant:$target');
-    final space = _member(userId, spaceId);
-    if (!space.keys.containsKey(userId)) _refuse(403, 'you do not hold this space key');
+    final space = _editor(userId, spaceId);
+    if (!space.keys.containsKey(userId)) {
+      _refuse(403, 'you do not hold this space key');
+    }
     if (!space.members.containsKey(target)) _refuse(404, 'not a member');
     if (space.keyGeneration != generation) {
-      _refuse(409, 'stale-key-generation', {'keyGeneration': space.keyGeneration});
+      _refuse(409, 'stale-key-generation', {
+        'keyGeneration': space.keyGeneration,
+      });
     }
     if (space.keys.containsKey(target)) _refuse(409, 'already granted');
     space.keys[target] = key;
@@ -898,12 +990,16 @@ class FakeServer {
     Map<String, ({WrappedKey key, int fromEpoch})> wraps,
   ) {
     calls.add('rotate');
-    final space = _member(userId, spaceId);
+    final space = _editor(userId, spaceId);
     if (space.keyGeneration != expected) {
-      _refuse(409, 'stale-key-generation', {'keyGeneration': space.keyGeneration});
+      _refuse(409, 'stale-key-generation', {
+        'keyGeneration': space.keyGeneration,
+      });
     }
     for (final holder in space.keys.keys) {
-      if (!spaceKeys.containsKey(holder)) _refuse(409, 'incomplete', {'missingMember': holder});
+      if (!spaceKeys.containsKey(holder)) {
+        _refuse(409, 'incomplete', {'missingMember': holder});
+      }
     }
     for (final target in spaceKeys.keys) {
       if (!space.members.containsKey(target)) _refuse(409, 'not a member');
@@ -911,7 +1007,9 @@ class FakeServer {
     for (final note in _liveNotes(spaceId)) {
       final wrap = wraps[note.id];
       final stored = space.noteKeys[note.id];
-      if (wrap == null || stored == null) _refuse(409, 'incomplete', {'missingNote': note.id});
+      if (wrap == null || stored == null) {
+        _refuse(409, 'incomplete', {'missingNote': note.id});
+      }
       if (wrap.fromEpoch != stored.contentKeyEpoch) {
         _refuse(409, 'content-key-epoch', {'noteId': note.id});
       }
@@ -937,9 +1035,13 @@ class FakeServer {
 
   Space transfer(String userId, String spaceId, String target) {
     final space = _member(userId, spaceId);
-    if (space.members[userId] != SpaceRole.owner) _refuse(403, 'only the owner can do this');
+    if (space.members[userId] != SpaceRole.owner) {
+      _refuse(403, 'only the owner can do this');
+    }
     if (space.members[target] != SpaceRole.member) _refuse(404, 'not a member');
-    if (!space.keys.containsKey(target)) _refuse(409, 'the new owner does not hold the key yet');
+    if (!space.keys.containsKey(target)) {
+      _refuse(409, 'the new owner does not hold the key yet');
+    }
     space.ownerId = target;
     space.members[userId] = SpaceRole.member;
     space.members[target] = SpaceRole.owner;
@@ -952,7 +1054,9 @@ class FakeServer {
   void stopSharing(String userId, String spaceId, List<WireNote> notes) {
     calls.add('stop');
     final space = _member(userId, spaceId);
-    if (space.members[userId] != SpaceRole.owner) _refuse(403, 'only the owner can do this');
+    if (space.members[userId] != SpaceRole.owner) {
+      _refuse(403, 'only the owner can do this');
+    }
     if (notes.isNotEmpty) {
       _refuse(400, 'notes come home as moves under protocol 3');
     }
@@ -971,8 +1075,13 @@ class FakeServer {
   void deleteAccount(String userId, String confirmation) {
     calls.add('deleteAccount');
     final account = user(userId);
-    if (confirmation.trim().toLowerCase() != account.email.trim().toLowerCase()) {
-      throw const SyncRefusedException(400, 'confirmation does not match this account', {});
+    if (confirmation.trim().toLowerCase() !=
+        account.email.trim().toLowerCase()) {
+      throw const SyncRefusedException(
+        400,
+        'confirmation does not match this account',
+        {},
+      );
     }
     final owned = [
       for (final space in spaces.values)
@@ -980,7 +1089,10 @@ class FakeServer {
           {'id': space.id, 'name': space.name},
     ];
     if (owned.isNotEmpty) {
-      throw SyncRefusedException(409, 'owned-spaces', {'error': 'owned-spaces', 'spaces': owned});
+      throw SyncRefusedException(409, 'owned-spaces', {
+        'error': 'owned-spaces',
+        'spaces': owned,
+      });
     }
     for (final space in spaces.values.toList()) {
       if (space.kind == SpaceKind.team && space.members.containsKey(userId)) {
@@ -1095,7 +1207,7 @@ class FakeSpace {
   bool rotationPending = false;
   final Map<String, SpaceRole> members = {};
   final Map<String, SealedToPublicKey> keys = {};
-  final Map<String, String> invites = {};
+  final Map<String, ({String email, SpaceRole role})> invites = {};
   final Map<String, FakeNoteKey> noteKeys = {};
 
   /// The space's clock: the last seq handed out.
@@ -1143,7 +1255,12 @@ class _Subscription {
 /// before `synced`, and nothing the client does inside a handler can see the
 /// server's answer to it.
 class FakeSocket implements SyncSocket {
-  FakeSocket(this.server, {required this.device, required this.userId, required this.protocol});
+  FakeSocket(
+    this.server, {
+    required this.device,
+    required this.userId,
+    required this.protocol,
+  });
 
   final FakeServer server;
   final String device;
@@ -1156,6 +1273,7 @@ class FakeSocket implements SyncSocket {
   bool _wanted = false;
   bool _connected = false;
   bool _closed = false;
+  Map<String, Object?>? _presence;
 
   @override
   Stream<SocketEvent> get events => _events.stream;
@@ -1218,6 +1336,7 @@ class FakeSocket implements SyncSocket {
   }
 
   void _teardown() {
+    _clearPresence();
     if (identical(server.sockets[device], this)) server.sockets.remove(device);
     for (final spaceId in _subs.keys.toList()) {
       server._removeFrom(spaceId, this);
@@ -1285,6 +1404,8 @@ class FakeSocket implements SyncSocket {
       case 'unsub':
         final spaceId = frame['spaceId'];
         if (spaceId is String) _unsubscribe(spaceId);
+      case 'presence':
+        _setPresence(frame);
       case 'push':
         final id = frame['id'];
         if (id is! String) {
@@ -1292,7 +1413,9 @@ class FakeSocket implements SyncSocket {
           return;
         }
         server._busy++;
-        _chain = _chain.then((_) => _push(id, frame)).whenComplete(() => server._busy--);
+        _chain = _chain
+            .then((_) => _push(id, frame))
+            .whenComplete(() => server._busy--);
       default:
         _send({'t': 'error', 'error': 'bad-message'});
     }
@@ -1313,6 +1436,10 @@ class FakeSocket implements SyncSocket {
       final sub = _Subscription(cursor is int ? cursor : 0);
       _subs[spaceId] = sub;
       server._addTo(spaceId, this);
+      for (final peer in server._bySpace[spaceId] ?? const <FakeSocket>{}) {
+        if (peer == this || peer._presence == null) continue;
+        _send(peer._presence!);
+      }
       unawaited(_catchUp(spaceId, sub));
     }
   }
@@ -1354,7 +1481,58 @@ class FakeSocket implements SyncSocket {
 
   void _unsubscribe(String spaceId) {
     if (_subs.remove(spaceId) == null) return;
+    _clearPresence(spaceId);
     server._removeFrom(spaceId, this);
+  }
+
+  void _setPresence(Map<String, Object?> frame) {
+    final spaceId = frame['spaceId'];
+    final active = frame['active'];
+    final payload = frame['payload'];
+    if (spaceId is! String ||
+        active is! bool ||
+        payload is! Map ||
+        !_subs.containsKey(spaceId)) {
+      _send({'t': 'error', 'error': 'bad-message'});
+      return;
+    }
+    if (!active) {
+      _clearPresence(spaceId);
+      return;
+    }
+    if (server.spaces[spaceId]?.members[userId] == SpaceRole.viewer) {
+      _send({'t': 'error', 'spaceId': spaceId, 'error': 'view-only'});
+      return;
+    }
+    final presence = <String, Object?>{
+      't': 'presence',
+      'spaceId': spaceId,
+      'active': true,
+      'userId': userId,
+      'deviceId': device,
+      'payload': Map<String, Object?>.of(payload.cast()),
+    };
+    _presence = presence;
+    _fanOutPresence(presence);
+  }
+
+  void _clearPresence([String? spaceId]) {
+    final current = _presence;
+    if (current == null || (spaceId != null && current['spaceId'] != spaceId)) {
+      return;
+    }
+    _presence = null;
+    _fanOutPresence({...current, 'active': false});
+  }
+
+  void _fanOutPresence(Map<String, Object?> frame) {
+    if (!server.deliverLive) return;
+    final spaceId = frame['spaceId'];
+    if (spaceId is! String) return;
+    for (final peer
+        in server._bySpace[spaceId]?.toList() ?? const <FakeSocket>[]) {
+      if (peer != this) peer._send(frame);
+    }
   }
 
   /// A live batch for one space: held during catch-up, trimmed to what the
@@ -1388,7 +1566,13 @@ class FakeSocket implements SyncSocket {
     if (!_connected) return;
     final push = _parsePush(frame);
     if (push == null) {
-      _send({'t': 'ack', 'id': id, 'result': null, 'error': 'bad-message', 'status': 400});
+      _send({
+        't': 'ack',
+        'id': id,
+        'result': null,
+        'error': 'bad-message',
+        'status': 400,
+      });
       return;
     }
     try {
@@ -1413,7 +1597,13 @@ class FakeSocket implements SyncSocket {
           if (entry.key != 'error') entry.key: entry.value,
       });
     } on SyncException {
-      _send({'t': 'ack', 'id': id, 'result': null, 'error': 'internal', 'status': 500});
+      _send({
+        't': 'ack',
+        'id': id,
+        'result': null,
+        'error': 'internal',
+        'status': 500,
+      });
     }
   }
 
@@ -1450,10 +1640,20 @@ class FakeSocket implements SyncSocket {
         final deviceSeq = raw['deviceSeq'];
         final epoch = raw['epoch'];
         final engine = raw['engine'];
-        if (payload == null || deviceSeq is! int || epoch is! int || engine is! String) {
+        if (payload == null ||
+            deviceSeq is! int ||
+            epoch is! int ||
+            engine is! String) {
           return null;
         }
-        ops.add(WireOp(deviceSeq: deviceSeq, epoch: epoch, engine: engine, payload: payload));
+        ops.add(
+          WireOp(
+            deviceSeq: deviceSeq,
+            epoch: epoch,
+            engine: engine,
+            payload: payload,
+          ),
+        );
       }
     }
     WireSnapshot? snapshot;
@@ -1463,10 +1663,18 @@ class FakeSocket implements SyncSocket {
       final covers = rawSnap['covers'];
       final epoch = rawSnap['epoch'];
       final engine = rawSnap['engine'];
-      if (payload == null || covers is! int || epoch is! int || engine is! String) {
+      if (payload == null ||
+          covers is! int ||
+          epoch is! int ||
+          engine is! String) {
         return null;
       }
-      snapshot = WireSnapshot(covers: covers, epoch: epoch, engine: engine, payload: payload);
+      snapshot = WireSnapshot(
+        covers: covers,
+        epoch: epoch,
+        engine: engine,
+        payload: payload,
+      );
     }
     final deleted = frame['deleted'];
     final from = frame['from'];
@@ -1571,7 +1779,9 @@ class FakeApi implements SyncApi {
     _gate();
     final account = server.user(userId);
     final existing = account.bundle;
-    if (existing == null) throw const SyncRefusedException(404, 'no key bundle', {});
+    if (existing == null) {
+      throw const SyncRefusedException(404, 'no key bundle', {});
+    }
     if (existing.identity != null) {
       throw const SyncRefusedException(409, 'identity keys already exist', {});
     }
@@ -1597,7 +1807,10 @@ class FakeApi implements SyncApi {
   }
 
   @override
-  Future<Space> createSpace({required String name, required SealedToPublicKey spaceKey}) async {
+  Future<Space> createSpace({
+    required String name,
+    required SealedToPublicKey spaceKey,
+  }) async {
     _gate();
     return server.createSpace(userId, name, spaceKey);
   }
@@ -1611,9 +1824,13 @@ class FakeApi implements SyncApi {
   }
 
   @override
-  Future<InviteResult> invite(String spaceId, String email) async {
+  Future<InviteResult> invite(
+    String spaceId,
+    String email, {
+    SpaceRole role = SpaceRole.member,
+  }) async {
     _gate();
-    return server.invite(userId, spaceId, email);
+    return server.invite(userId, spaceId, email, role: role);
   }
 
   @override
@@ -1707,7 +1924,7 @@ class FakeApi implements SyncApi {
     for (final space in server.spaces.values) {
       space.invites.removeWhere(
         (_, invited) =>
-            invited == server.user(userId).email.toLowerCase() &&
+            invited.email == server.user(userId).email.toLowerCase() &&
             server.user(space.ownerId).email.toLowerCase() == address,
       );
     }
@@ -1745,8 +1962,10 @@ class FakeApi implements SyncApi {
     required int bytes,
   }) async {
     _gate();
-    final space = spaceId == null ? server.personal(userId) : server.spaces[spaceId];
-    final owner = space?.ownerId ?? userId;
+    final space = spaceId == null
+        ? server.personal(userId)
+        : server._editor(userId, spaceId);
+    final owner = space.ownerId;
     final used = server.storageUsed[owner] ?? 0;
     if (used + bytes > server.storageQuota) {
       throw const SyncProtocolException('over quota');
@@ -1755,7 +1974,7 @@ class FakeApi implements SyncApi {
     server.attachments[id] = FakeAttachment(
       id: id,
       noteId: noteId,
-      spaceId: space?.id ?? spaceId!,
+      spaceId: space.id,
       owner: owner,
       bytes: bytes,
     );
@@ -1769,11 +1988,14 @@ class FakeApi implements SyncApi {
   Future<void> completeAttachment(String id) async {
     _gate();
     final row = server.attachments[id];
-    if (row == null || row.ready) return;
+    if (row == null) return;
+    server._editor(userId, row.spaceId);
+    if (row.ready) return;
     // Billed on what actually landed, never on what was claimed.
     row.bytes = server.blobs[id]?.length ?? 0;
     row.ready = true;
-    server.storageUsed[row.owner] = (server.storageUsed[row.owner] ?? 0) + row.bytes;
+    server.storageUsed[row.owner] =
+        (server.storageUsed[row.owner] ?? 0) + row.bytes;
   }
 
   @override

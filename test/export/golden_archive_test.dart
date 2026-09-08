@@ -78,6 +78,9 @@ void main() {
       'notes/weekly-review-2.md',
       'notes/note-55555555.md',
     });
-    expect(exportSchemaVersion, 1, reason: 'bump the golden when this moves');
+    // The golden above is a schema 1 archive and stays one: its whole job is
+    // proving that archives written before this build still open. This line is
+    // the reminder to add a golden for the *new* schema when it moves.
+    expect(exportSchemaVersion, 2, reason: 'add a golden when this moves');
   });
 }

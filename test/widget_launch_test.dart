@@ -1,6 +1,10 @@
 import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/services.dart';
+import 'dart:async';
+import 'dart:io';
+import 'package:kapy_notes/audio/voice_recorder.dart';
+import 'package:kapy_notes/audio/voice_recording_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -32,7 +36,11 @@ late List<MethodCall> pickerCalls;
 ///
 /// Deliberately not preloaded. A store that is already loaded takes the path
 /// an app resuming from memory takes, which never asks anything.
-Future<void> pumpLaunch(WidgetTester tester, {String? action}) async {
+Future<void> pumpLaunch(
+  WidgetTester tester, {
+  String? action,
+  VoiceRecordingController? recording,
+}) async {
   stubLaunchIntent(action);
   tester.view.physicalSize = const Size(400, 800);
   tester.view.devicePixelRatio = 1;
@@ -45,6 +53,7 @@ Future<void> pumpLaunch(WidgetTester tester, {String? action}) async {
       rates: rates,
       prefs: prefs,
       shortcuts: shortcuts,
+      recording: recording,
     ),
   );
   await tester.pumpAndSettle();
@@ -112,16 +121,51 @@ void main() {
     expect(pickerCalls, isEmpty);
   });
 
-  // Until voice notes land — docs/voice-notes.md, Phase 1 — Dictate is Write:
-  // the note, open, at the end of itself. This is the test that will change
-  // when there is a recorder for it to start.
-  testWidgets('a Dictate tap opens the note, and starts no picker', (
+  testWidgets('a Dictate tap starts recording into the note it opened', (
     tester,
   ) async {
-    await pumpLaunch(tester, action: 'dictate');
+    // The recorder is a fake: the real one would want a microphone, and its
+    // one-second ticker would keep `pumpAndSettle` waiting forever.
+    final recorder = _SilentRecorder();
+    final recording = VoiceRecordingController(
+      recorder: recorder,
+      tempDirectory: Directory.systemTemp,
+    );
+    addTearDown(recording.dispose);
 
-    expect(pickerCalls, isEmpty);
+    await pumpLaunch(tester, action: 'dictate', recording: recording);
+
+    // Still the note that was already there. Dictate is no more a new note
+    // than Write is.
     expect(notes.notes.single.id, 'last');
+    expect(pickerCalls, isEmpty);
+    expect(recording.isRecording, isTrue);
+    expect(recording.session!.noteId, 'last');
+    expect(recorder.startedAt, endsWith('.m4a'));
+
+    // Put the microphone down before the test ends: a live recording keeps a
+    // one-second ticker, and flutter_test refuses to leave one pending.
+    // Through `runAsync` because cancelling touches the filesystem, and real
+    // I/O never completes inside the fake-async zone `testWidgets` runs in.
+    await tester.runAsync(recording.cancel);
+  });
+
+  testWidgets('a Dictate tap with no microphone opens the note anyway', (
+    tester,
+  ) async {
+    // Permission refused, or a platform with no recorder at all. The note is
+    // still open at the end of itself, which is the part of dictating a
+    // phone's own keyboard can finish.
+    final recording = VoiceRecordingController(
+      recorder: _SilentRecorder(permitted: false),
+      tempDirectory: Directory.systemTemp,
+    );
+    addTearDown(recording.dispose);
+
+    await pumpLaunch(tester, action: 'dictate', recording: recording);
+
+    expect(notes.notes.single.id, 'last');
+    expect(recording.isRecording, isFalse);
   });
 
   testWidgets('a Capture tap at an app already running still opens it', (
@@ -149,4 +193,45 @@ void main() {
     expect(pickerCalls.map((call) => call.method), ['openFile']);
     expect(notes.notes, hasLength(1));
   });
+}
+
+/// A recorder with no microphone behind it, and no ticker worth waiting on.
+class _SilentRecorder implements VoiceRecorderBackend {
+  _SilentRecorder({this.permitted = true});
+
+  final bool permitted;
+  String? startedAt;
+
+  final _amplitude = StreamController<double>.broadcast();
+  final _paused = StreamController<bool>.broadcast();
+
+  @override
+  Future<bool> hasPermission() async => permitted;
+
+  @override
+  Future<void> start(String path) async => startedAt = path;
+
+  @override
+  Future<void> pause() async {}
+
+  @override
+  Future<void> resume() async {}
+
+  @override
+  Future<String?> stop() async => startedAt;
+
+  @override
+  Future<void> cancel() async {}
+
+  @override
+  Stream<double> get amplitude => _amplitude.stream;
+
+  @override
+  Stream<bool> get paused => _paused.stream;
+
+  @override
+  Future<void> dispose() async {
+    await _amplitude.close();
+    await _paused.close();
+  }
 }

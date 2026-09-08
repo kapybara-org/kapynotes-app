@@ -199,26 +199,40 @@ void main() {
     );
   });
 
-  test('a first launch opens at login, and later ones leave it alone', () async {
-    final store = _MemoryStore();
-    final shortcuts = ShortcutPrefs(_MemoryStore())..load();
+  test('quitting still closes the window when the final save fails', () async {
+    integration.onBeforeQuit = () async => throw StateError('disk failed');
 
-    final first = DesktopIntegration(layoutPrefs: LayoutPrefs(store)..load());
-    addTearDown(first.dispose);
-    await first.initialize(shortcuts);
+    await integration.quit();
 
-    expect(loginItem.calls, contains('setEnabled'));
-    expect((LayoutPrefs(store)..load()).loginItemDefaultApplied, isTrue);
-
-    // Whatever the user did with it afterwards is the last word. A default
-    // that reasserted itself every launch would not be a default.
-    loginItem.calls.clear();
-    final second = DesktopIntegration(layoutPrefs: LayoutPrefs(store)..load());
-    addTearDown(second.dispose);
-    await second.initialize(shortcuts);
-
-    expect(loginItem.calls, isNot(contains('setEnabled')));
+    expect(window.calls, contains('setPreventClose'));
+    expect(window.calls, contains('destroy'));
   });
+
+  test(
+    'a first launch opens at login, and later ones leave it alone',
+    () async {
+      final store = _MemoryStore();
+      final shortcuts = ShortcutPrefs(_MemoryStore())..load();
+
+      final first = DesktopIntegration(layoutPrefs: LayoutPrefs(store)..load());
+      addTearDown(first.dispose);
+      await first.initialize(shortcuts);
+
+      expect(loginItem.calls, contains('setEnabled'));
+      expect((LayoutPrefs(store)..load()).loginItemDefaultApplied, isTrue);
+
+      // Whatever the user did with it afterwards is the last word. A default
+      // that reasserted itself every launch would not be a default.
+      loginItem.calls.clear();
+      final second = DesktopIntegration(
+        layoutPrefs: LayoutPrefs(store)..load(),
+      );
+      addTearDown(second.dispose);
+      await second.initialize(shortcuts);
+
+      expect(loginItem.calls, isNot(contains('setEnabled')));
+    },
+  );
 
   test('a host with no mechanism keeps its one chance for later', () async {
     // macOS 12 has no login-item API this sandbox may use. Spending the
@@ -226,7 +240,9 @@ void main() {
     loginItem.answers['isSupported'] = false;
     final store = _MemoryStore();
 
-    final integration = DesktopIntegration(layoutPrefs: LayoutPrefs(store)..load());
+    final integration = DesktopIntegration(
+      layoutPrefs: LayoutPrefs(store)..load(),
+    );
     addTearDown(integration.dispose);
     await integration.initialize(ShortcutPrefs(_MemoryStore())..load());
 
@@ -280,25 +296,28 @@ void main() {
     },
   );
 
-  test('the pin reaches the window manager, and only when it changes', () async {
-    expect(window.calls, isNot(contains('setAlwaysOnTop')));
+  test(
+    'the pin reaches the window manager, and only when it changes',
+    () async {
+      expect(window.calls, isNot(contains('setAlwaysOnTop')));
 
-    prefs.alwaysOnTop = true;
-    await settle();
-    expect(window.calls, contains('setAlwaysOnTop'));
+      prefs.alwaysOnTop = true;
+      await settle();
+      expect(window.calls, contains('setAlwaysOnTop'));
 
-    // LayoutPrefs notifies for every dragged pixel of the sidebar, so an
-    // unguarded listener would cross the channel on each one.
-    window.calls.clear();
-    prefs.sidebarWidth = LayoutPrefs.defaultSidebarWidth + 40;
-    prefs.sidebarWidth = LayoutPrefs.defaultSidebarWidth + 80;
-    await settle();
-    expect(window.calls, isNot(contains('setAlwaysOnTop')));
+      // LayoutPrefs notifies for every dragged pixel of the sidebar, so an
+      // unguarded listener would cross the channel on each one.
+      window.calls.clear();
+      prefs.sidebarWidth = LayoutPrefs.defaultSidebarWidth + 40;
+      prefs.sidebarWidth = LayoutPrefs.defaultSidebarWidth + 80;
+      await settle();
+      expect(window.calls, isNot(contains('setAlwaysOnTop')));
 
-    prefs.alwaysOnTop = false;
-    await settle();
-    expect(window.calls, contains('setAlwaysOnTop'));
-  });
+      prefs.alwaysOnTop = false;
+      await settle();
+      expect(window.calls, contains('setAlwaysOnTop'));
+    },
+  );
 
   test('a pin saved last time is re-asserted on the new window', () async {
     // A fresh window starts unpinned however the preference was left, so

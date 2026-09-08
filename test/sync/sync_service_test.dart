@@ -160,7 +160,10 @@ void main() {
       await device.boot();
       device.notes.create(body: 'Salary is 95000 GBP');
       await device.sync.syncNow();
-      device.notes.updateBody(device.notes.notes.single.id, 'Salary is 96000 GBP');
+      device.notes.updateBody(
+        device.notes.notes.single.id,
+        'Salary is 96000 GBP',
+      );
       await device.sync.syncNow();
 
       final stored = server.ciphertextIn(device.personalId);
@@ -220,6 +223,39 @@ void main() {
       one.dispose();
       two.dispose();
     });
+
+    test(
+      'archive and restore state follows the note between devices',
+      () async {
+        final one = Device(server, name: 'one');
+        final two = Device(server, name: 'two');
+        await one.boot();
+        await two.boot();
+
+        final note = one.notes.create(body: 'Recover me');
+        await one.sync.syncNow();
+        await two.sync.syncNow();
+
+        one.clock = DateTime.utc(2026, 9, 2);
+        one.notes.archive(note.id);
+        await one.sync.syncNow();
+        await two.sync.syncNow();
+
+        expect(two.notes.notes, isEmpty);
+        expect(two.notes.archivedNotes.single.id, note.id);
+        expect(two.notes.tombstones, isEmpty);
+
+        two.clock = DateTime.utc(2026, 9, 3);
+        two.notes.restore(note.id);
+        await two.sync.syncNow();
+        await one.sync.syncNow();
+
+        expect(one.notes.archivedNotes, isEmpty);
+        expect(one.notes.notes.single.id, note.id);
+        one.dispose();
+        two.dispose();
+      },
+    );
 
     test('follows pagination to the end', () async {
       final one = Device(server, name: 'one');
@@ -282,7 +318,10 @@ void main() {
       await until(() => two.bodyOf(note.id) == 'Typed on one, then more');
 
       // Nobody called syncNow: it all went over the socket.
-      expect(server.calls.sublist(before).where((c) => c.startsWith('pullOps')), isEmpty);
+      expect(
+        server.calls.sublist(before).where((c) => c.startsWith('pullOps')),
+        isEmpty,
+      );
       expect(server.calls.sublist(before), contains('ws:push'));
       expect(server.ciphertextIn(one.personalId), isNot(contains('Typed')));
       expect(two.notes.notes.single.isDirty, isFalse);
@@ -290,22 +329,25 @@ void main() {
       two.dispose();
     });
 
-    test('the author is handed its own op back and does not reapply it', () async {
-      final one = Device(server, name: 'one');
-      await one.boot();
-      await one.goLive();
+    test(
+      'the author is handed its own op back and does not reapply it',
+      () async {
+        final one = Device(server, name: 'one');
+        await one.boot();
+        await one.goLive();
 
-      final note = one.notes.create(body: 'Mine');
-      await settle(server);
-      one.notes.updateBody(note.id, 'Mine, edited');
-      await settle(server);
+        final note = one.notes.create(body: 'Mine');
+        await settle(server);
+        one.notes.updateBody(note.id, 'Mine, edited');
+        await settle(server);
 
-      expect(one.bodyOf(note.id), 'Mine, edited');
-      expect(one.sync.pendingCount, 0);
-      // The echo moved the cursor past the device's own writes.
-      expect(one.cursor, server.opSeqOf(one.personalId));
-      one.dispose();
-    });
+        expect(one.bodyOf(note.id), 'Mine, edited');
+        expect(one.sync.pendingCount, 0);
+        // The echo moved the cursor past the device's own writes.
+        expect(one.cursor, server.opSeqOf(one.personalId));
+        one.dispose();
+      },
+    );
 
     test('two devices editing the same note concurrently converge', () async {
       final one = Device(server, name: 'one');
@@ -359,7 +401,10 @@ void main() {
       await until(() => two.notes.byId(note.id) != null);
 
       one.notes.delete(note.id);
-      await until(() => two.notes.byId(note.id) == null, reason: 'the delete never reached two');
+      await until(
+        () => two.notes.byId(note.id) == null,
+        reason: 'the delete never reached two',
+      );
       expect(one.notes.dirtyTombstones, isEmpty);
       expect(two.notes.tombstones.single.isDirty, isFalse);
       expect(server.rows[note.id]!.isTombstone, isTrue);
@@ -400,52 +445,64 @@ void main() {
   });
 
   group('offline', () {
-    test('a device without a socket still syncs over HTTP, and converges when it is back', () async {
-      final one = Device(server, name: 'one');
-      final two = Device(server, name: 'two');
-      await one.boot();
-      await two.boot();
-      await one.goLive();
-      await two.goLive();
-      // Two's network stops carrying a socket: the one it had drops, and no
-      // reconnect gets through.
-      server.socketsAllowed = false;
-      two.socket.drop();
-      await settle(server);
-      expect(two.isConnected, isFalse);
-      expect(two.sync.isLive, isFalse);
-      // One's is still up.
-      expect(one.isConnected, isTrue);
+    test(
+      'a device without a socket still syncs over HTTP, and converges when it is back',
+      () async {
+        final one = Device(server, name: 'one');
+        final two = Device(server, name: 'two');
+        await one.boot();
+        await two.boot();
+        await one.goLive();
+        await two.goLive();
+        // Two's network stops carrying a socket: the one it had drops, and no
+        // reconnect gets through.
+        server.socketsAllowed = false;
+        two.socket.drop();
+        await settle(server);
+        expect(two.isConnected, isFalse);
+        expect(two.sync.isLive, isFalse);
+        // One's is still up.
+        expect(one.isConnected, isTrue);
 
-      final note = one.notes.create(body: 'From one');
-      await settle(server);
-      expect(two.notes.byId(note.id), isNull, reason: 'nothing to deliver it on');
+        final note = one.notes.create(body: 'From one');
+        await settle(server);
+        expect(
+          two.notes.byId(note.id),
+          isNull,
+          reason: 'nothing to deliver it on',
+        );
 
-      // Two asks: the whole pass goes over HTTP.
-      server.calls.clear();
-      await two.sync.syncNow();
-      expect(two.bodyOf(note.id), 'From one');
-      expect(server.calls.where((c) => c.startsWith('pullOps')), isNotEmpty);
+        // Two asks: the whole pass goes over HTTP.
+        server.calls.clear();
+        await two.sync.syncNow();
+        expect(two.bodyOf(note.id), 'From one');
+        expect(server.calls.where((c) => c.startsWith('pullOps')), isNotEmpty);
 
-      // Two edits while socketless: the outbox drains over HTTP too.
-      two.notes.updateBody(note.id, 'From one\nand two');
-      await settle(server);
-      expect(server.calls, contains('pushOps'));
-      expect(two.sync.pendingCount, 0);
-      await until(() => one.bodyOf(note.id) == 'From one\nand two');
+        // Two edits while socketless: the outbox drains over HTTP too.
+        two.notes.updateBody(note.id, 'From one\nand two');
+        await settle(server);
+        expect(server.calls, contains('pushOps'));
+        expect(two.sync.pendingCount, 0);
+        await until(() => one.bodyOf(note.id) == 'From one\nand two');
 
-      // The socket comes back; the edits made meanwhile flow both ways.
-      server.socketsAllowed = true;
-      await until(() => two.sync.isLive, reason: 'two never reconnected');
-      await settle(server);
-      one.notes.updateBody(note.id, 'From one\nand two\nand one again');
-      await until(() => two.bodyOf(note.id) == 'From one\nand two\nand one again');
-      two.notes.updateBody(note.id, 'From one\nand two\nand one again\nand two again');
-      await until(() => one.bodyOf(note.id) == two.bodyOf(note.id));
-      expect(server.calls.where((c) => c == 'ws:push'), isNotEmpty);
-      one.dispose();
-      two.dispose();
-    });
+        // The socket comes back; the edits made meanwhile flow both ways.
+        server.socketsAllowed = true;
+        await until(() => two.sync.isLive, reason: 'two never reconnected');
+        await settle(server);
+        one.notes.updateBody(note.id, 'From one\nand two\nand one again');
+        await until(
+          () => two.bodyOf(note.id) == 'From one\nand two\nand one again',
+        );
+        two.notes.updateBody(
+          note.id,
+          'From one\nand two\nand one again\nand two again',
+        );
+        await until(() => one.bodyOf(note.id) == two.bodyOf(note.id));
+        expect(server.calls.where((c) => c == 'ws:push'), isNotEmpty);
+        one.dispose();
+        two.dispose();
+      },
+    );
 
     test('edits made offline go up when the network returns', () async {
       final one = Device(server, name: 'one');
@@ -466,7 +523,12 @@ void main() {
       await settle(server);
       expect(two.sync.status, SyncStatus.offline);
       expect(two.sync.pendingCount, 1, reason: 'held, not lost');
-      expect(server.opsIn(one.personalId).where((op) => op.deviceId == two.api.device), isEmpty);
+      expect(
+        server
+            .opsIn(one.personalId)
+            .where((op) => op.deviceId == two.api.device),
+        isEmpty,
+      );
 
       // Meanwhile one keeps typing.
       one.notes.updateBody(note.id, 'Start\nwritten at a desk');
@@ -621,7 +683,11 @@ void main() {
       final space = one.personalId;
       final ops = server.opsIn(space).where((op) => op.noteId == note.id);
       final snapshot = server.snapshotOf(space, note.id)!;
-      expect(snapshot.seq, greaterThan(1), reason: 'a fresh snapshot was written');
+      expect(
+        snapshot.seq,
+        greaterThan(1),
+        reason: 'a fresh snapshot was written',
+      );
       expect(ops.length, lessThan(8), reason: 'the covered ops were pruned');
       for (final op in ops) {
         expect(op.seq, greaterThan(snapshot.covers));
@@ -684,31 +750,34 @@ void main() {
       device.dispose();
     });
 
-    test('a build the server no longer serves stops, and closes its socket', () async {
-      final device = Device(server, name: 'a');
-      await device.boot();
-      await device.goLive();
-      expect(device.isConnected, isTrue);
-      device.notes.create(body: 'Held');
-      await settle(server);
+    test(
+      'a build the server no longer serves stops, and closes its socket',
+      () async {
+        final device = Device(server, name: 'a');
+        await device.boot();
+        await device.goLive();
+        expect(device.isConnected, isTrue);
+        device.notes.create(body: 'Held');
+        await settle(server);
 
-      server.minProtocol = protocolVersion + 1;
-      await device.sync.syncNow();
+        server.minProtocol = protocolVersion + 1;
+        await device.sync.syncNow();
 
-      expect(device.sync.status, SyncStatus.outdated);
-      expect(device.sync.lastError, contains('update'));
-      expect(device.isConnected, isFalse);
-      expect(device.sync.isLive, isFalse);
+        expect(device.sync.status, SyncStatus.outdated);
+        expect(device.sync.lastError, contains('update'));
+        expect(device.isConnected, isFalse);
+        expect(device.sync.isLive, isFalse);
 
-      // No retry is scheduled and further requests are not made.
-      device.notes.create(body: 'Also held');
-      device.sync.requestSync();
-      final before = server.calls.length;
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(server.calls.length, before);
-      expect(device.isConnected, isFalse);
-      device.dispose();
-    });
+        // No retry is scheduled and further requests are not made.
+        device.notes.create(body: 'Also held');
+        device.sync.requestSync();
+        final before = server.calls.length;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(server.calls.length, before);
+        expect(device.isConnected, isFalse);
+        device.dispose();
+      },
+    );
 
     test('two concurrent passes collapse into one', () async {
       final device = Device(server, name: 'a');

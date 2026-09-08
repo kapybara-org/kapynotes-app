@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart' show kDoubleTapSlop, kDoubleTapTimeout;
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
@@ -18,11 +19,8 @@ const Map<String, double> noteImageSizeChoices = {
 /// One image, as it appears in the middle of somebody's writing.
 ///
 /// Deliberately quiet: rounded corners, a hairline border that only separates
-/// a pale image from a pale page, and nothing else at rest. The controls —
-/// the width handle, the menu — appear on hover or on a deliberate press,
-/// because the thing being designed here is a page that reads well, and an
-/// affordance painted permanently over a picture is one more thing between
-/// the reader and it.
+/// a pale image from a pale page, and a small close control for immediate
+/// removal. Resizing stays on hover because it is a desktop-only refinement.
 ///
 /// The box is sized before any bytes are read, from the width and height
 /// stored on the ref. That is what keeps a note with ten images from reflowing
@@ -35,8 +33,11 @@ class NoteImageView extends StatefulWidget {
     required this.store,
     this.columnWidth = 0,
     this.resizable = false,
+    this.selected = false,
     this.fetch,
-    this.onTap,
+    this.onSelect,
+    this.onOpen,
+    this.onCopy,
     this.onResize,
     this.onResizeEnd,
     this.onRemove,
@@ -54,8 +55,13 @@ class NoteImageView extends StatefulWidget {
   /// line rather than from a setting of its own.
   final bool resizable;
 
+  /// Whether the image's U+FFFC anchor is inside the editor selection.
+  final bool selected;
+
   final NoteImageFetcher? fetch;
-  final VoidCallback? onTap;
+  final VoidCallback? onSelect;
+  final VoidCallback? onOpen;
+  final VoidCallback? onCopy;
 
   /// Called continuously while dragging, so the picture follows the pointer.
   final ValueChanged<double>? onResize;
@@ -72,8 +78,14 @@ class NoteImageView extends StatefulWidget {
 class _NoteImageViewState extends State<NoteImageView> {
   bool _hovering = false;
   bool _dragging = false;
+  DateTime? _lastTapAt;
+  Offset? _lastTapPosition;
 
-  bool get _hasMenu => widget.onRemove != null || widget.onResize != null;
+  bool get _hasMenu =>
+      widget.onOpen != null ||
+      widget.onCopy != null ||
+      widget.onRemove != null ||
+      widget.onResize != null;
 
   bool get _showsHandle =>
       widget.resizable &&
@@ -89,6 +101,37 @@ class _NoteImageViewState extends State<NoteImageView> {
     onResize(
       clampImageWidthFactor((widget.box.width + dx) / widget.columnWidth),
     );
+  }
+
+  void _tap(TapUpDetails details) {
+    if (!AppPlatform.hasPointer) {
+      widget.onOpen?.call();
+      return;
+    }
+    final now = DateTime.now();
+    final lastAt = _lastTapAt;
+    final lastPosition = _lastTapPosition;
+    final isDoubleTap =
+        lastAt != null &&
+        now.difference(lastAt) <= kDoubleTapTimeout &&
+        lastPosition != null &&
+        (details.globalPosition - lastPosition).distance <= kDoubleTapSlop;
+    _lastTapAt = isDoubleTap ? null : now;
+    _lastTapPosition = isDoubleTap ? null : details.globalPosition;
+    if (isDoubleTap) {
+      widget.onOpen?.call();
+    } else {
+      widget.onSelect?.call();
+    }
+  }
+
+  void _selectAndShowMenu(Offset position) {
+    widget.onSelect?.call();
+    // Selecting the U+FFFC asks EditableText to rebuild its WidgetSpans. Let
+    // the pointer gesture finish before the menu consults that new tree.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showMenu(position);
+    });
   }
 
   Future<void> _showMenu(Offset position) async {
@@ -108,6 +151,50 @@ class _NoteImageViewState extends State<NoteImageView> {
         Offset.zero & overlay.size,
       ),
       items: [
+        if (widget.onOpen != null)
+          PopupMenuItem(
+            value: 'open',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.open_in_full_rounded,
+                  size: AppControlMetrics.iconControl,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Open Image',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.control,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (widget.onCopy != null)
+          PopupMenuItem(
+            value: 'copy',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.content_copy_rounded,
+                  size: AppControlMetrics.iconControl,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Copy Image',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.control,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (widget.resizable && widget.onResize != null)
           for (final entry in noteImageSizeChoices.entries)
             PopupMenuItem(
@@ -164,6 +251,14 @@ class _NoteImageViewState extends State<NoteImageView> {
       ],
     );
     if (choice == null) return;
+    if (choice == 'open') {
+      widget.onOpen?.call();
+      return;
+    }
+    if (choice == 'copy') {
+      widget.onCopy?.call();
+      return;
+    }
     if (choice == 'remove') {
       widget.onRemove?.call();
       return;
@@ -184,26 +279,36 @@ class _NoteImageViewState extends State<NoteImageView> {
     // the full image is what the viewer opens. Fetching the original to paint
     // it 320px wide is the difference between a note that opens instantly and
     // one that does not.
-    final source = widget.box.cropped && widget.ref.thumbHash != null
-        ? widget.ref.thumbHash!
-        : widget.ref.hash;
+    final wantsThumbnail =
+        (widget.box.cropped || AppPlatform.isMobile) &&
+        widget.ref.thumbHash != null;
+    // A source device can use its thumbnail before either object has an id.
+    // Once the full object has an id, a missing thumb id means an interrupted
+    // upload or legacy note, so mobile must use the full object until the
+    // lightweight one is repaired rather than showing an empty rectangle.
+    final thumbnailAvailable =
+        wantsThumbnail &&
+        (widget.ref.thumbId != null || widget.ref.attachmentId == null);
+    final source = thumbnailAvailable ? widget.ref.thumbHash! : widget.ref.hash;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: noteImageGap / 2),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovering = true),
         onExit: (_) => setState(() => _hovering = false),
-        cursor: widget.onTap == null
+        cursor: widget.onSelect == null && widget.onOpen == null
             ? MouseCursor.defer
             : SystemMouseCursors.click,
         child: GestureDetector(
-          onTap: widget.onTap,
-          onSecondaryTapDown: !_hasMenu
+          onTapUp: widget.onSelect == null && widget.onOpen == null
               ? null
-              : (details) => _showMenu(details.globalPosition),
+              : _tap,
+          onSecondaryTapUp: !_hasMenu
+              ? null
+              : (details) => _selectAndShowMenu(details.globalPosition),
           onLongPressStart: !_hasMenu
               ? null
-              : (details) => _showMenu(details.globalPosition),
+              : (details) => _selectAndShowMenu(details.globalPosition),
           child: SizedBox(
             width: widget.box.width,
             height: widget.box.height,
@@ -224,8 +329,12 @@ class _NoteImageViewState extends State<NoteImageView> {
                       child: Image(
                         image: NoteImageProvider(
                           hash: source,
+                          fallbackHash: source == widget.ref.hash
+                              ? null
+                              : widget.ref.hash,
                           store: widget.store,
                           fetch: widget.fetch,
+                          cover: widget.box.cropped,
                         ),
                         width: widget.box.width,
                         height: widget.box.height,
@@ -250,6 +359,41 @@ class _NoteImageViewState extends State<NoteImageView> {
                     ),
                   ),
                 ),
+                if (widget.selected)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        key: const ValueKey('selected-image-outline'),
+                        decoration: BoxDecoration(
+                          borderRadius: radius,
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.primary,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (widget.onRemove != null)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: IconButton(
+                      key: ValueKey(
+                        'remove-image-${widget.ref.hash}-${widget.ref.offset}',
+                      ),
+                      tooltip: 'Remove image',
+                      onPressed: widget.onRemove,
+                      icon: const Icon(Icons.close_rounded, size: 17),
+                      color: Colors.white,
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.black.withValues(alpha: 0.58),
+                        minimumSize: const Size.square(30),
+                        maximumSize: const Size.square(30),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ),
                 if (_showsHandle)
                   Positioned(
                     top: 0,
@@ -377,7 +521,7 @@ class _Unavailable extends StatelessWidget {
 /// Pinch or scroll to zoom, drag to move, tap the backdrop or press Escape to
 /// leave. Nothing is cropped here and nothing is capped: this is the screen
 /// that exists so the reading view never has to show the whole thing.
-class NoteImageViewer extends StatelessWidget {
+class NoteImageViewer extends StatefulWidget {
   const NoteImageViewer({
     super.key,
     required this.ref,
@@ -408,6 +552,53 @@ class NoteImageViewer extends StatelessWidget {
   );
 
   @override
+  State<NoteImageViewer> createState() => _NoteImageViewerState();
+}
+
+class _NoteImageViewerState extends State<NoteImageViewer> {
+  static const double _tapSlop = 12;
+
+  final GlobalKey _imageKey = GlobalKey();
+  final GlobalKey _closeKey = GlobalKey();
+  final Map<int, Offset> _outsideDown = {};
+  final Set<int> _activePointers = {};
+
+  bool _contains(GlobalKey key, Offset globalPosition) {
+    final box = key.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return false;
+    final bounds = Rect.fromPoints(
+      box.localToGlobal(Offset.zero),
+      box.localToGlobal(box.size.bottomRight(Offset.zero)),
+    );
+    return bounds.contains(globalPosition);
+  }
+
+  void _pointerDown(PointerDownEvent event) {
+    _activePointers.add(event.pointer);
+    if (!_contains(_imageKey, event.position) &&
+        !_contains(_closeKey, event.position)) {
+      _outsideDown[event.pointer] = event.position;
+    }
+  }
+
+  void _pointerUp(PointerUpEvent event) {
+    _activePointers.remove(event.pointer);
+    final down = _outsideDown.remove(event.pointer);
+    if (down == null || _activePointers.isNotEmpty) return;
+    if ((event.position - down).distance > _tapSlop) return;
+    if (_contains(_imageKey, event.position) ||
+        _contains(_closeKey, event.position)) {
+      return;
+    }
+    Navigator.of(context).maybePop();
+  }
+
+  void _pointerCancel(PointerCancelEvent event) {
+    _activePointers.remove(event.pointer);
+    _outsideDown.remove(event.pointer);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -423,50 +614,50 @@ class NoteImageViewer extends StatelessWidget {
           },
           child: Focus(
             autofocus: true,
-            child: Stack(
-              children: [
-                // The backdrop is the dismiss target, so there is always a
-                // large safe place to tap to get out.
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.of(context).maybePop(),
-                  ),
-                ),
-                Positioned.fill(
-                  child: SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: InteractiveViewer(
-                        maxScale: 8,
-                        child: Center(
-                          child: Image(
-                            image: NoteImageProvider(
-                              hash: ref.hash,
-                              store: store,
-                              fetch: fetch,
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: _pointerDown,
+              onPointerUp: _pointerUp,
+              onPointerCancel: _pointerCancel,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: InteractiveViewer(
+                          maxScale: 8,
+                          child: Center(
+                            child: Image(
+                              key: _imageKey,
+                              image: NoteImageProvider(
+                                hash: widget.ref.hash,
+                                store: widget.store,
+                                fetch: widget.fetch,
+                              ),
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.high,
                             ),
-                            fit: BoxFit.contain,
-                            filterQuality: FilterQuality.high,
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: SafeArea(
-                    child: IconButton(
-                      tooltip: 'Close',
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: const Icon(Icons.close_rounded),
-                      color: Colors.white,
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: SafeArea(
+                      child: IconButton(
+                        key: _closeKey,
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(Icons.close_rounded),
+                        color: Colors.white,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

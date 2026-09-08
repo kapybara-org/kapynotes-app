@@ -5,6 +5,7 @@ class MainFlutterWindow: NSWindow {
   /// Held for the window's lifetime: a channel whose only owner is a local
   /// stops answering as soon as `awakeFromNib` returns.
   private var loginItemChannel: FlutterMethodChannel?
+  private var richClipboardChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -38,6 +39,9 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
     loginItemChannel = LoginItem.register(
+      with: flutterViewController.engine.binaryMessenger
+    )
+    richClipboardChannel = RichClipboard.register(
       with: flutterViewController.engine.binaryMessenger
     )
 

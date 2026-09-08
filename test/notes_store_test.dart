@@ -78,6 +78,47 @@ void main() {
     ]);
   });
 
+  test('archives a note without deleting it and restores it later', () async {
+    var now = DateTime.utc(2026, 9, 4, 8);
+    final store = _MemoryStore();
+    final notes = NotesStore(store, now: () => now);
+    await notes.load();
+    final kept = notes.create(body: 'Keep me');
+    final archived = notes.create(body: 'Bring me back');
+
+    now = DateTime.utc(2026, 9, 4, 9);
+    notes.archive(archived.id);
+
+    expect(notes.notes.map((note) => note.id), [kept.id]);
+    expect(notes.archivedNotes.single.id, archived.id);
+    expect(notes.allNotes, hasLength(2));
+    expect(notes.byId(archived.id)?.archivedAt, now);
+    expect(notes.search('bring'), isEmpty);
+    expect(notes.searchArchived('bring').single.id, archived.id);
+    expect(notes.tombstones, isEmpty, reason: 'archive is not a deletion');
+
+    now = DateTime.utc(2026, 9, 4, 10);
+    notes.restore(archived.id);
+
+    expect(notes.archivedNotes, isEmpty);
+    expect(notes.notes.first.id, archived.id);
+    expect(notes.byId(archived.id)?.archivedAt, isNull);
+  });
+
+  test('archive state survives a restart', () async {
+    final store = _MemoryStore();
+    final notes = NotesStore(store, now: () => DateTime.utc(2026, 9, 4));
+    await notes.load();
+    final note = notes.create(body: 'Stored safely');
+    notes.archive(note.id);
+
+    final restored = NotesStore(store);
+    await restored.load();
+
+    expect(restored.notes, isEmpty);
+    expect(restored.archivedNotes.single.id, note.id);
+  });
+
   test('persists text formatting and restores it with the note', () async {
     final store = _MemoryStore();
     final notes = NotesStore(store);
@@ -163,7 +204,11 @@ void main() {
       // The user types while an upload is in flight.
       store.updateDocument(id, '$anchor Notes, edited', const [], [picture()]);
       // ...and the upload lands afterwards, holding a stale snapshot.
-      store.updateAttachment(id, 'pic', (ref) => ref.copyWith(attachmentId: 'server-1'));
+      store.updateAttachment(
+        id,
+        'pic',
+        (ref) => ref.copyWith(attachmentId: 'server-1'),
+      );
 
       expect(store.byId(id)!.body, '$anchor Notes, edited');
       expect(store.byId(id)!.attachments.single.attachmentId, 'server-1');
@@ -189,4 +234,3 @@ void main() {
     });
   });
 }
-

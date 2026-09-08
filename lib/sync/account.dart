@@ -10,6 +10,7 @@ import 'key_store.dart';
 import 'recovery_key.dart';
 import 'sharing.dart';
 import 'space_keyring.dart';
+import '../speech/speech_api.dart';
 import 'sync_api.dart';
 import 'sync_service.dart';
 import 'sync_state.dart';
@@ -70,6 +71,11 @@ class Account extends ChangeNotifier {
 
   final AuthApi _auth;
   final SyncApi Function(String token) _syncApiFor;
+
+  /// Builds the speech client for a token. Null when this build has no
+  /// transcription in it — a test, or a server with none configured — in which
+  /// case [speech] stays null and the queue never runs.
+  SpeechApi Function(String token)? speechApiFor;
   final KeyStore _keys;
   final NotesStore _notes;
   final SyncState _state;
@@ -84,11 +90,13 @@ class Account extends ChangeNotifier {
   AccountState _accountState = AccountState.restoring;
   AccountUser? _user;
   String? _token;
+
   /// Where the merge state lives; in memory for a test.
   final DocStorage? _docStorage;
   DocStore? _docs;
   SyncService? _sync;
   Sharing? _sharing;
+  SpeechApi? _speech;
   ImageSync? _images;
   SpaceKeyring? _keyring;
   TrustStore? _trust;
@@ -105,6 +113,13 @@ class Account extends ChangeNotifier {
   /// Shared spaces, once the account is unlocked. Null before that: there is
   /// no key to share anything with.
   Sharing? get sharing => _sharing;
+
+  /// Transcription, once there is a session to do it under.
+  ///
+  /// Null while signed out, which is the honest answer: consent, minutes and
+  /// job ids all hang off an account, and there is nothing sensible to do with
+  /// any of them without one.
+  SpeechApi? get speech => _speech;
 
   /// Fetches image bytes this device does not have yet.
   ///
@@ -211,7 +226,7 @@ class Account extends ChangeNotifier {
     // one thing that must not be decided quietly.
     if (_state.accountId != null &&
         _state.accountId != user.id &&
-        _notes.notes.isNotEmpty) {
+        _notes.allNotes.isNotEmpty) {
       return _moveTo(AccountState.needsAccountDecision);
     }
     _state.adopt(user.id);
@@ -255,12 +270,13 @@ class Account extends ChangeNotifier {
   /// Returns false for a passphrase that does not open the bundle. There is
   /// nothing to distinguish that from a tampered one, and the answer a person
   /// needs is the same either way.
-  Future<bool> unlock(String passphrase) =>
-      _unlockWith((bundle) => Vault.unlockWithPassphrase(
-            passphrase: passphrase,
-            kdf: bundle.kdf,
-            wrappedMasterKey: bundle.wrappedMasterKey,
-          ));
+  Future<bool> unlock(String passphrase) => _unlockWith(
+    (bundle) => Vault.unlockWithPassphrase(
+      passphrase: passphrase,
+      kdf: bundle.kdf,
+      wrappedMasterKey: bundle.wrappedMasterKey,
+    ),
+  );
 
   Future<bool> unlockWithRecoveryKey(String typed) {
     final key = RecoveryKey.parse(typed);
@@ -307,6 +323,7 @@ class Account extends ChangeNotifier {
       trust: trust,
     );
     final images = ImageSync(api: api, store: _notes.blobs, notes: _notes);
+    _speech = speechApiFor?.call(_token!);
     // The replica id every character this device writes is stamped with.
     // Twelve hex digits of the install id: stable for the life of the
     // install, and short enough to ride in every op without weighing on it.
@@ -348,6 +365,7 @@ class Account extends ChangeNotifier {
     _sharing?.dispose();
     _sharing = null;
     _images = null;
+    _speech = null;
     _sync?.dispose();
     _sync = null;
     _keyring?.clear();

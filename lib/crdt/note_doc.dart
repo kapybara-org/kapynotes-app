@@ -17,12 +17,14 @@ class DocView {
     required this.formats,
     required this.attachments,
     required this.createdAt,
+    required this.archivedAt,
   });
 
   final String body;
   final List<NoteFormatRange> formats;
   final List<NoteAttachmentRef> attachments;
   final DateTime? createdAt;
+  final DateTime? archivedAt;
 }
 
 /// A last-writer-wins cell. Ties on [ts] break on [replica] so every client
@@ -99,6 +101,7 @@ class NoteDoc {
   static const String _fmtKey = 'fmt';
   static const String _attKey = 'att';
   static const String _createdKey = 'created';
+  static const String _archivedKey = 'archived';
 
   final String replica;
 
@@ -140,6 +143,7 @@ class NoteDoc {
     formats: _renderFormats(),
     attachments: _renderAttachments(),
     createdAt: _createdAt(),
+    archivedAt: _archivedAt(),
   );
 
   // ---------------------------------------------------------------------------
@@ -158,6 +162,7 @@ class NoteDoc {
     required List<NoteFormatRange> formats,
     required List<NoteAttachmentRef> attachments,
     required DateTime createdAt,
+    DateTime? archivedAt,
     DateTime? now,
   }) {
     final ops = <Object?>[];
@@ -208,6 +213,12 @@ class NoteDoc {
     final createdMs = createdAt.millisecondsSinceEpoch;
     if (_regs[_createdKey]?.value != createdMs) {
       ops.add(_setLocal(_createdKey, createdMs, nowMs));
+    }
+
+    final archivedMs = archivedAt?.millisecondsSinceEpoch;
+    if ((archivedMs != null || _regs.containsKey(_archivedKey)) &&
+        _regs[_archivedKey]?.value != archivedMs) {
+      ops.add(_setLocal(_archivedKey, archivedMs, nowMs));
     }
 
     _drain();
@@ -552,6 +563,13 @@ class NoteDoc {
 
   DateTime? _createdAt() {
     final ms = _asInt(_regs[_createdKey]?.value);
+    return ms == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+  }
+
+  DateTime? _archivedAt() {
+    final ms = _asInt(_regs[_archivedKey]?.value);
     return ms == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);

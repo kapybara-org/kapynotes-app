@@ -417,28 +417,52 @@ void main() {
     }
   });
 
-  test('both panels toggle from the keyboard, each on a letter or key that '
-      'survives a layout change', () {
+  test(
+    'both panels toggle from keyboard shortcuts that survive layout changes',
+    () {
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+      for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        final useMeta = platform == TargetPlatform.macOS;
+        final prefs = ShortcutPrefs(_MemoryStore())..load();
+
+        final left = prefs.bindingFor(ShortcutAction.toggleSidebar)!;
+        expect(left.logicalKey, LogicalKeyboardKey.keyS);
+        expect(left.meta, useMeta);
+        expect(left.control, !useMeta);
+        expect(left.shift, isFalse);
+
+        final right = prefs.bindingFor(ShortcutAction.toggleResults)!;
+        expect(right.logicalKey, LogicalKeyboardKey.keyR);
+        expect(right.meta, useMeta);
+        expect(right.control, !useMeta);
+        expect(right.shift, isFalse);
+      }
+    },
+  );
+
+  test('the old sidebar default moves to Cmd or Ctrl S', () {
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
     for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
       AppPlatform.debugTargetPlatformOverride = platform;
       final useMeta = platform == TargetPlatform.macOS;
-      final prefs = ShortcutPrefs(_MemoryStore())..load();
+      final store = _MemoryStore();
+      store.data['shortcuts.v1'] = {
+        'toggleSidebar': ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.backslash,
+          physicalKey: PhysicalKeyboardKey.backslash,
+          meta: useMeta,
+          control: !useMeta,
+        ).toJson(),
+      };
 
-      final left = prefs.bindingFor(ShortcutAction.toggleSidebar)!;
-      expect(left.logicalKey, LogicalKeyboardKey.backslash);
-      expect(left.meta, useMeta);
-      expect(left.control, !useMeta);
-      // Unshifted: a shifted punctuation key reports the character it makes,
-      // which is not the same key on every layout.
-      expect(left.shift, isFalse);
-
-      final right = prefs.bindingFor(ShortcutAction.toggleResults)!;
-      expect(right.logicalKey, LogicalKeyboardKey.keyR);
-      expect(right.meta, useMeta);
-      expect(right.control, !useMeta);
-      expect(right.shift, isFalse);
+      final prefs = ShortcutPrefs(store)..load();
+      final migrated = prefs.bindingFor(ShortcutAction.toggleSidebar)!;
+      expect(migrated.logicalKey, LogicalKeyboardKey.keyS);
+      expect(migrated.meta, useMeta);
+      expect(migrated.control, !useMeta);
     }
   });
 

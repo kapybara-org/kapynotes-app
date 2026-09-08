@@ -24,6 +24,7 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
     required this.onChecklistPressed,
     this.onOpenLink,
     this.onCopyLink,
+    this.onCopy,
     this.onCopyPlainText,
   });
 
@@ -40,6 +41,7 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
   final VoidCallback onChecklistPressed;
   final VoidCallback? onOpenLink;
   final VoidCallback? onCopyLink;
+  final VoidCallback? onCopy;
   final VoidCallback? onCopyPlainText;
 
   static const double _screenPadding = 8;
@@ -62,6 +64,15 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
             context,
             item,
           ).isNotEmpty,
+        )
+        .map(
+          (item) => item.type == ContextMenuButtonType.copy && onCopy != null
+              ? ContextMenuButtonItem(
+                  type: item.type,
+                  label: item.label,
+                  onPressed: () => _run(onCopy!),
+                )
+              : item,
         )
         .toList(growable: false);
     // Sits with the native Copy rather than out on the row: it is the same
