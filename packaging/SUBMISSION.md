@@ -906,22 +906,19 @@ a takedown rather than a rejection:
    `asc web privacy pull --app 6807810082`; today it is five types — Audio,
    Email address, Other user content, Photos or videos, User ID — all
    App functionality, all linked to the user, none shared.
-2. **In-app account deletion — which does not exist, in either half.** This is
-   the blocker, and it is missing code rather than a form. `lib/ui/account/
-   sync_pane.dart` offers Sign out and nothing else, and the server has three
-   routes — `attachments`, `keys`, `sync` — with no account route at all. The
-   1.5.0 entry in `releases.ts` claims "Deleting your account, from the same
-   place, removes everything"; that shipped as copy and not as a feature, and
-   the claim is live on kapynotes.com today.
+2. **In-app account deletion — done, as of the sync release.** Recorded here
+   because the form asks and the answer used to be no.
+   `lib/ui/account/sync_pane.dart` has a Delete account flow behind a typed
+   confirmation, `DELETE /account` erases the user on the server (refused with
+   `owned-spaces` while the caller still owns a shared space), and
+   kapynotes.com/support carries both `#deleting-your-data` and
+   `#delete-your-account`. The second is the URL Play's form wants: it asks for
+   a route that does not require installing the app, which matters for someone
+   who has lost the device.
 
    Both stores require it once an app can create accounts: Apple under review
    guideline 5.1.1(v), where it is a rejection, and Play under its User Data
-   policy, where it also wants a deletion URL reachable without installing the
-   app and enforces after publication. So this has to be built before either
-   store gets a 1.7.0 with sync in it — deletion in the app, a route on the
-   server that erases the user, their notes and their key bundle, and a page on
-   the site describing how to ask. `kapynotes.com/support` currently says the
-   opposite: "there is no account to delete".
+   policy, which enforces after publication as well as before.
 3. **The store description contradicts the build.** `play_listing.json` says
    "Notes are stored on your device, not on our servers" and "No account and no
    login" under PRIVATE BY DEFAULT. Both are accurate for the 1.4.0 that is
