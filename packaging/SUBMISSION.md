@@ -891,10 +891,21 @@ a takedown rather than a rejection:
      is the sort of judgement worth writing down with a date and a name
      against it before the form is submitted.
 
-   Do not declare Photos and videos or Files and docs. Attachments have server
-   routes and a payload type but no client: `lib/export/archive.dart` says
-   there are none to collect until the app can make one, and no image picker
-   exists. That changes the day attachments ship.
+   **Photos and videos → Photos.** That day came: images shipped in 1.13.0,
+   `lib/images/image_picker.dart` exists, and `lib/sync/image_sync.dart`
+   uploads them through `createAttachment`. Optional, App functionality.
+
+   **Personal info → User IDs**, for the account id a synced note is stored
+   against. Optional, App functionality and Account management.
+
+   Still do **not** declare Files and docs: that is for user files and
+   documents, and nothing here collects one.
+
+   The published iOS App Privacy record is the list to mirror, because it is
+   the one that has been checked against the code and submitted. Read it with
+   `asc web privacy pull --app 6807810082`; today it is five types — Audio,
+   Email address, Other user content, Photos or videos, User ID — all
+   App functionality, all linked to the user, none shared.
 2. **In-app account deletion — which does not exist, in either half.** This is
    the blocker, and it is missing code rather than a form. `lib/ui/account/
    sync_pane.dart` offers Sign out and nothing else, and the server has three
