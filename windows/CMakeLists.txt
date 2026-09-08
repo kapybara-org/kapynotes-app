@@ -32,6 +32,22 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# Let just_audio_windows compile on a current MSVC.
+#
+# It includes <experimental/coroutine>, which the toolchain now refuses with a
+# hard error rather than a warning (STL1011) — so a Windows release build stops
+# dead at the plugin, and the error names this define as the way through. It is
+# deliberately here rather than in APPLY_STANDARD_SETTINGS: this is one
+# dependency's problem, not a standard we want applied to our own code, and
+# putting it above the add_subdirectory calls is what carries it into the
+# plugin targets that generated_plugins.cmake adds further down.
+#
+# It suppresses a deprecation, not a bug: the headers still work, Microsoft has
+# said they will not forever. The real fix belongs upstream in
+# just_audio_windows, which has no release with it — 0.2.3 is the latest and
+# still includes the experimental header.
+add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by
