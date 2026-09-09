@@ -98,6 +98,34 @@ the artwork, then commit the result:
 packaging/release.sh dmg-template
 ```
 
+### The installer's artwork
+
+The Windows wizard would otherwise wear Inno Setup's own pictures. Two replace
+them, both committed under `packaging/windows/`: `wizard-small.png` is the mark
+in the top right of every page, and `wizard-image.png` the tall panel down the
+left of the Setup Completed page. The `.exe`'s icon is separate again, and
+already the app's — that is `SetupIconFile`.
+
+They are drawn by AppKit, from the same palette and the same waving Kapy as the
+disk image, so the two downloads read as one product. Which also means they
+cannot be drawn on the Windows runner that builds the installer, so the output
+is committed and `iscc` only ever reads it:
+
+```bash
+swift tool/generate_windows_installer_art.swift
+```
+
+Kapy himself comes from `design/mascot/` in the `kapynotes` repository beside
+this one; the script fails rather than draw the panel without him. Both images
+are written at Inno's 250% DPI sizes — 534x1022 and 159x159 — and Inno scales
+them down, as far as 202x386 on a 100% DPI screen. That last number is why the
+panel carries no body copy: a tagline survives the scaling at about eight
+pixels tall.
+
+The Welcome page, which would show the panel at the start rather than the end,
+is off by default in Inno 6 and left that way. It is a page whose only job is
+to be looked at, and skipping it is one less click.
+
 ### In-app updates
 
 Desktop builds schedule a quiet check of `dl.kapynotes.com/latest.json` five
@@ -160,9 +188,56 @@ installation goes through Sparkle's `Installer.xpc`. That needs
 remove either and updates fail at install time, after the download.
 
 On Windows, WinSparkle runs the Inno installer with `/VERYSILENT`, which skips
-its `[Run]` entry; `RestartApplications=yes` is what brings the app back
-afterwards. The install is per-user, so it raises no UAC prompt — but see below
-for what SmartScreen still does.
+the `[Run]` entry the Setup Completed checkbox lives on; a second `[Run]` entry
+guarded by `Check: WizardSilent` brings the app back instead. It cannot be left
+to Restart Manager, whose restart only reaches applications that called
+`RegisterApplicationRestart`. The install is per-user, so it raises no UAC
+prompt — but see below for what SmartScreen still does.
+
+**Closing the running copy is the app's job, not just the installer's.** Setup
+uses Restart Manager, which asks a window to end with `WM_QUERYENDSESSION`,
+then `WM_ENDSESSION`, and only falls back to `WM_CLOSE` for an app still
+running after both. Flutter's runner answers none of the first two, and with
+"keep running in the background" on — which is the default on desktop —
+`window_manager` answers the third with `-1` and the app hides to the tray. So
+the window vanished, the process survived, its DLLs stayed locked and the
+install failed on them.
+
+`windows/runner/flutter_window.cpp` now answers all three. `WM_QUERYENDSESSION`
+returns `TRUE` and nothing else, because Windows asks every application before
+it tells any of them to go and one of the others can still call it off.
+`WM_ENDSESSION` is the one that means it: it sends `kapynotes/system_shutdown`
+to Dart, where `DesktopIntegration.quit()` does the same orderly exit the tray's
+Quit does. The `WM_CLOSE` that follows is swallowed rather than acted on — that
+quit is already writing, and it ends by destroying the window itself. If it has
+not in ten seconds the runner leaves anyway, and `CloseApplications=force` lets
+Setup terminate a copy that still has not, which is what every build older than
+this one is.
+
+### Staying signed in across an update
+
+An update replaces the app, not the account. The session token and the master
+key live in the platform keystore — Keychain on macOS, and on Windows a
+DPAPI-sealed file under `%APPDATA%\com.kapybara\Kapy Notes`, a path derived
+from the `CompanyName` and `ProductName` in `windows/runner/Runner.rc` and so
+stable across versions. The Inno installer only ever writes to
+`%LOCALAPPDATA%\Programs\Kapy Notes`, and Sparkle only swaps the bundle, so
+neither goes near either store.
+
+What did sign people out was the app itself. `Account.restore` asked the server
+who the stored token belonged to and read *every* failure as a revocation —
+offline, DNS, a timeout, a 502 — and deleted the master key on the way out. So
+a launch with no network came back signed out and asking for a passphrase, and
+an update is exactly when that happens: the installer relaunches the app the
+instant it lets go, and the app opens at login by default, often before the
+network is up.
+
+`AuthApi.checkSession` now answers with three states rather than two, and only
+`SessionRejected` — the server actually saying no — clears anything.
+`SessionUnreachable` keeps the session and carries on. That needs the account
+to be known offline, so the signed-in user is cached beside the token in the
+keystore and cleared with it; without that, a session restored offline would be
+valid and belong to nobody.
 
 ### Windows signing
 
@@ -217,6 +292,26 @@ rule: a bare trailing number is refused, because `Lunch 12` and `Room 12` are
 the same shape and nothing in the text separates them. Writing a currency or a
 unit is the user saying which one they meant. This is tried only after the
 whole line has failed to parse, so `100 km / 2 h` is still a division.
+
+**A number may say what it counts, and still be a number.** `20 domains`,
+`20 domains * 2`, `3 users * $10` and `$2/mailbox` all give the amount, because
+a word the calculator has no meaning for is a label rather than an error. The
+labels are taken out and what is left is evaluated as ordinary arithmetic.
+
+Two rules keep that from swallowing prose, and both are about position. The
+line has to *open* with something the calculator understands, which is what
+separates `20 domains` from `I have 3 apples` and `Room 12`. And a word only
+counts as a label directly after an amount, or after another label — which is
+what separates `12 mangoes`, where the word is what the number counts, from
+`10 min break`, where the amount has already said what it is and everything
+after it is prose. A word after an *operator* is an operand, so `12 + mangoes`
+stays a line still being typed. `$2/mailbox` is the one shape that needs more:
+the label is what the rate is per, so the divide goes with it — while
+`$120 / 3 months`, whose denominator means something, stays a rate.
+
+**`x` between two amounts multiplies.** `3 x 4`, `1920 x 1080`, `2 x 3 widgets`.
+Only between two amounts, and never in a note that has assigned `x` itself,
+because `x` is also the first name anyone gives a variable.
 
 **Running scope.** A variable assigned on one line is available below it, and
 `prev`, `sum`, `total` and `avg` accumulate as the note is read downward. A

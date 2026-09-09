@@ -504,6 +504,55 @@ void main() {
       expect(line('☐ 12 mangoes'), isNull);
     });
 
+    // A label names what the number counts; it should not stop the number
+    // being counted with. Everything here read as prose before.
+    test('a labelled quantity is still a number to work with', () {
+      expect(line('20 domains * 2'), '40');
+      expect(line('20 domains + 5 domains'), '25');
+      expect(line(r'3 users * $10'), '30.00 USD');
+      expect(line('12 boxes / 4'), '3');
+      expect(line('100 credits - 40 credits'), '60');
+    });
+
+    test('a rate reads as the amount it is a rate of', () {
+      expect(line(r'$2/mailbox'), '2.00 USD');
+      expect(line(r'$50/user'), '50.00 USD');
+      expect(line('100/domain'), '100');
+      expect(line(r'$2 per mailbox'), '2.00 USD');
+      expect(line(r'$2/mailbox * 40 mailboxes'), '80.00 USD');
+    });
+
+    // The per-word only disappears when what follows it is meaningless. A
+    // real rate is still a rate.
+    test('a real rate is left alone', () {
+      expect(line('100 km / 2 h'), '50 km/h');
+      expect(line(r'$120 / 3 months'), '40 USD/month');
+    });
+
+    // `x` between two amounts, which is how most people write a product by
+    // hand and how every screen size is written.
+    test('an x between two amounts multiplies them', () {
+      expect(line('3 x 4'), '12');
+      expect(line('1920 x 1080'), '2,073,600');
+      expect(line('2 x 3 widgets'), '6');
+      expect(line('5 users X 10'), '50');
+      expect(line(r'12 seats x $8'), '96.00 USD');
+    });
+
+    test('but x is still the name everyone gives a variable', () {
+      expect(doc('x = 5\nx * 2'), {0: '5', 1: '10'});
+      // Defined by the note, so it stays a name wherever it appears.
+      expect(doc('x = 5\n3 x 4'), {0: '5'});
+      expect(line('x'), isNull);
+    });
+
+    test('a word with a digit in it is not a label', () {
+      // `2x3` lexes as `2` and `x3`. Answering 2 was worse than answering
+      // nothing, which is what the rest of the engine does when unsure.
+      expect(line('2x3'), isNull);
+      expect(line('20 domains v2'), isNull);
+    });
+
     test('quantities feed the running total', () {
       final evaluation = engine.evaluateDocumentWithSummary(
         'Shopping\n12 mangoes\n13 bananas\ntotal',

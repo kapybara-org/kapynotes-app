@@ -104,7 +104,7 @@ extension SettingsSectionCopy on SettingsSection {
   /// instead of the categories themselves. Names the contents rather than
   /// selling them: this line is read while looking for something.
   String get summary => switch (this) {
-    SettingsSection.general => 'Notes, export and import, time zone',
+    SettingsSection.general => 'Notes, spelling, export and import, time zone',
     SettingsSection.sync => 'Your notes on every device',
     SettingsSection.sharing => 'Notes you share with other people',
     SettingsSection.voice => 'Transcription, language, minutes',
@@ -840,6 +840,14 @@ class _SettingsDialogState extends State<SettingsDialog> {
           value: widget.layoutPrefs.dailySeparatorsEnabled,
           onChanged: (value) =>
               widget.layoutPrefs.dailySeparatorsEnabled = value,
+        ),
+        _ToggleRow(
+          key: const ValueKey('spell-check-toggle'),
+          icon: Icons.spellcheck_rounded,
+          title: 'Check spelling',
+          subtitle: 'Underline possible misspellings without changing text',
+          value: widget.layoutPrefs.spellCheckEnabled,
+          onChanged: (value) => widget.layoutPrefs.spellCheckEnabled = value,
         ),
         if (AppPlatform.isDesktop)
           _ToggleRow(

@@ -279,10 +279,10 @@ class EditorMetrics {
 /// inherited it whole.
 ///
 /// So every size the chrome uses is named here once and answers to
-/// [AppPlatform.hasPointer]. The pointer column is the desktop design as
-/// shipped and is deliberately byte-for-byte unchanged — the desktop goldens
-/// are the proof. The touch column is the part being fixed, and it is pitched
-/// from the iOS HIG and Material 3 rather than scaled down from the desktop.
+/// [AppPlatform.hasPointer]. Pointer controls stay compact, but bar-specific
+/// roles are allowed to differ: a repeated formatting strip needs more rhythm
+/// than a pair of title-bar actions. The touch column is pitched from the iOS
+/// HIG and Material 3 rather than scaled down from the desktop.
 class AppControlMetrics {
   const AppControlMetrics._();
 
@@ -300,6 +300,22 @@ class AppControlMetrics {
   /// Material's 48, so the target satisfies both guidelines while the painted
   /// surface stays the size the layout was drawn around.
   static double get iconButtonExtent => _touch ? 44 : 24;
+
+  /// The painted surface of an action in the persistent bottom bars.
+  ///
+  /// A footer is read as a strip of tools, not isolated title-bar actions. Its
+  /// desktop controls therefore get a 32pt surface: large enough to scan and
+  /// acquire without making the low-priority chrome feel touch-sized.
+  static double get footerButtonExtent => _touch ? 44 : 32;
+
+  /// Air between adjacent actions in the footer formatting group.
+  ///
+  /// Touch targets remain contiguous at 44pt so the strip still fits a phone.
+  /// A pointer has enough width for a visible 4pt beat between hover surfaces.
+  static double get footerButtonGap => _touch ? 0 : 4;
+
+  static double get footerButtonSlotExtent =>
+      footerButtonExtent + footerButtonGap;
 
   static MaterialTapTargetSize get iconButtonTapTargetSize =>
       AppPlatform.hasPointer
@@ -330,11 +346,10 @@ class AppControlMetrics {
 
   /// The note status bar and its twin at the foot of the sidebar.
   ///
-  /// 40 fits a 24pt desktop action with margin. It cannot fit a 44pt one, and
-  /// clamping the row to 40 is what silently cut the phone's formatting
-  /// buttons back below the minimum target no matter what the button itself
-  /// asked for. 56 is 44 plus a 6pt gutter each side.
-  static double get footerHeight => _touch ? 56 : 40;
+  /// 48 matches the desktop title-bar rhythm while leaving 8pt around a 32pt
+  /// footer action. It cannot fit a 44pt touch action, so phones use 56: the
+  /// action plus a 6pt gutter on each side.
+  static double get footerHeight => _touch ? 56 : 48;
 
   /// A row in the notes list. Touch carries a full point larger title and
   /// snippet than pointer does, and needs the height to seat them.
@@ -362,6 +377,13 @@ class AppControlMetrics {
 
   /// A primary icon that is itself the button. The workhorse of every bar.
   static double get iconAction => _touch ? 22 : 17;
+
+  /// Primary and secondary glyphs inside the roomier footer controls.
+  ///
+  /// These sit one or two points above title-bar glyphs so the repeated strip
+  /// reads at the same visual weight as the surrounding editor and sidebar.
+  static double get footerIconAction => _touch ? 22 : 19;
+  static double get footerIconControl => _touch ? 22 : 18;
 
   /// Feature icons that head a pane or an empty state.
   static double get iconFeature => _touch ? 26 : 21;

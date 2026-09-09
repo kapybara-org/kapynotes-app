@@ -88,11 +88,22 @@ class VoicePlayer extends ChangeNotifier {
   double _speed = 1;
   bool _disposed = false;
 
+  /// Whether the active recording played all the way to its end.
+  ///
+  /// Kept because "play" means two different things at that point. Everywhere
+  /// else it resumes; here it starts again, and without this the engine was
+  /// asked to carry on from the last millisecond of the file and did exactly
+  /// that — nothing.
+  bool _completed = false;
+
   StreamSubscription<Duration>? _positions;
   StreamSubscription<void>? _completions;
   Timer? _idle;
 
   final Map<String, ValueNotifier<double?>> _progress = {};
+  final ValueNotifier<Duration> _positionNotifier = ValueNotifier(
+    Duration.zero,
+  );
 
   String? get activeHash => _activeHash;
   bool get playing => _playing;
@@ -104,6 +115,14 @@ class VoicePlayer extends ChangeNotifier {
   /// recording being played, which is what tells a chip to draw itself idle.
   ValueListenable<double?> progressFor(String hash) => _notifierFor(hash);
 
+  /// The play head, for anything that shows an elapsed time or a scrubber.
+  ///
+  /// Separate from [ChangeNotifier] for the same reason [progressFor] is: this
+  /// moves four times a second, and the editor listens to the player itself.
+  /// A dialog that wants the moving figure listens here and rebuilds only its
+  /// own row.
+  ValueListenable<Duration> get positionListenable => _positionNotifier;
+
   /// Created on demand from both sides. Playback can begin before a chip is
   /// ever built — scrolling a long note, or opening the dialog first — and a
   /// chip that mounted late must still find the position waiting for it.
@@ -112,11 +131,24 @@ class VoicePlayer extends ChangeNotifier {
 
   bool isPlaying(String hash) => _playing && _activeHash == hash;
 
-  Future<void> play(String hash, File file) async {
+  /// Starts or resumes [hash], optionally [from] a position.
+  ///
+  /// [from] is what a tap on the waveform of a recording nobody has played yet
+  /// means: start it, and start it there.
+  Future<void> play(String hash, File file, {Duration? from}) async {
     _idle?.cancel();
     if (_activeHash == hash) {
       // Same recording: this is a resume, not a reload. Reloading would jump
       // the position back to zero, which is not what a play button means.
+      //
+      // Unless it finished, in which case the head is sitting on the last
+      // millisecond and resuming from there plays nothing at all. A play
+      // pressed on a recording that has ended means play it again.
+      if (from != null) {
+        await _moveTo(from);
+      } else if (_completed) {
+        await _moveTo(Duration.zero);
+      }
       _playing = true;
       _notify();
       await _backend.play();
@@ -126,11 +158,13 @@ class VoicePlayer extends ChangeNotifier {
     await _releaseActive();
     _activeHash = hash;
     _position = Duration.zero;
+    _completed = false;
     _notify();
 
     try {
       _duration = await _backend.load(file);
       await _backend.setSpeed(_speed);
+      if (from != null) await _moveTo(from);
     } catch (error) {
       debugPrint('KapyNotes: could not open recording $hash: $error');
       _activeHash = null;
@@ -155,9 +189,16 @@ class VoicePlayer extends ChangeNotifier {
 
   Future<void> seek(Duration position) async {
     if (_activeHash == null) return;
+    await _moveTo(position);
+    _notify();
+  }
+
+  /// Moves the head, and stops the next play from treating the recording as
+  /// finished — wherever it has been put, there is something after it.
+  Future<void> _moveTo(Duration position) async {
+    _completed = false;
     _position = position;
     _publishProgress();
-    _notify();
     await _backend.seek(position);
   }
 
@@ -182,6 +223,7 @@ class VoicePlayer extends ChangeNotifier {
   void _onCompleted() {
     if (_disposed) return;
     _playing = false;
+    _completed = true;
     _position = _duration ?? _position;
     _publishProgress();
     _notify();
@@ -201,6 +243,7 @@ class VoicePlayer extends ChangeNotifier {
         ? 0.0
         : (_position.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
     _notifierFor(hash).value = fraction;
+    _positionNotifier.value = _position;
   }
 
   Future<void> _releaseActive() async {
@@ -214,8 +257,10 @@ class VoicePlayer extends ChangeNotifier {
     _notifierFor(hash).value = null;
     _activeHash = null;
     _playing = false;
+    _completed = false;
     _position = Duration.zero;
     _duration = null;
+    _positionNotifier.value = Duration.zero;
     try {
       await _backend.stop();
     } catch (_) {}
@@ -252,6 +297,7 @@ class VoicePlayer extends ChangeNotifier {
       notifier.dispose();
     }
     _progress.clear();
+    _positionNotifier.dispose();
     super.dispose();
   }
 }

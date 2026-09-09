@@ -169,11 +169,13 @@ void main() {
     recorder.amplitudes.add(0);
     await pumpEventQueue();
     expect(controller.session!.level, 1);
+    expect(controller.session!.sampleSequence, 1);
 
     await controller.pause();
     recorder.amplitudes.add(0);
     await pumpEventQueue();
     expect(controller.session!.level, 0);
+    expect(controller.session!.sampleSequence, 1);
   });
 
   test('two callers of the finish path share one future', () async {

@@ -64,6 +64,7 @@ Future<void> pumpForGolden(
   bool withUpdates = false,
   bool firstRun = false,
   bool sidebarVisible = true,
+  bool withPinnedNote = false,
 
   /// Which build the image is of.
   ///
@@ -136,6 +137,10 @@ Future<void> pumpForGolden(
       notes.updateDocument(note.id, _imageBody, const [], _imageAttachments());
     } else if (!blankNote) {
       notes.updateBody(note.id, _body);
+    }
+    if (withPinnedNote) {
+      notes.togglePinned(note.id);
+      notes.create(body: 'Today\nFollow up on the launch checklist');
     }
   }
   // Publish the cached rates without going near the network.
@@ -339,6 +344,19 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_pinned.png'),
+    );
+  });
+
+  testWidgets('desktop dark pinned note section', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      withPinnedNote: true,
+    );
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_note_pinned.png'),
     );
   });
 

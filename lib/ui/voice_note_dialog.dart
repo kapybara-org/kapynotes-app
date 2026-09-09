@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../audio/voice_player.dart';
@@ -100,6 +102,27 @@ class VoiceNoteView extends StatefulWidget {
 }
 
 class _VoiceNoteViewState extends State<VoiceNoteView> {
+  /// Moves playback of *this* recording to [position], starting it if it is
+  /// not the one loaded.
+  ///
+  /// Both halves were wrong before. A tap on a transcript line went straight
+  /// to the player, which seeks whatever it happens to be holding — so with
+  /// another note's recording playing it moved that one instead. And with
+  /// nothing playing it moved nothing, which is the more likely case: reading
+  /// the transcript first and tapping the line you want to hear is the point
+  /// of having timings at all.
+  Future<void> _seekTo(Duration position) async {
+    final player = widget.player;
+    if (player == null) return;
+    if (player.activeHash == widget.ref.hash) {
+      await player.seek(position);
+      return;
+    }
+    final file = await widget.blobs.fileFor(widget.ref.hash);
+    if (file == null) return;
+    await player.play(widget.ref.hash, file, from: position);
+  }
+
   late bool _onSummary;
 
   @override
@@ -294,14 +317,17 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
                 ),
               ),
               Expanded(
-                child: GestureDetector(
-                  onTap: () => widget.player?.seek(
-                    Duration(milliseconds: paragraph.first.s),
+                // SelectableText's own onTap, not a GestureDetector around
+                // it: the selection recognisers inside are deeper in the
+                // arena and win every tap, so the wrapper this used to have
+                // was never called once. Selecting a quote out of the
+                // transcript still works; this is only the tap.
+                child: SelectableText(
+                  paragraph.map((segment) => segment.t).join(' ').trim(),
+                  onTap: () => unawaited(
+                    _seekTo(Duration(milliseconds: paragraph.first.s)),
                   ),
-                  child: SelectableText(
-                    paragraph.map((segment) => segment.t).join(' ').trim(),
-                    style: TextStyle(color: palette.textPrimary, height: 1.5),
-                  ),
+                  style: TextStyle(color: palette.textPrimary, height: 1.5),
                 ),
               ),
             ],
@@ -476,60 +502,93 @@ class VoiceNotePlayerRow extends StatefulWidget {
 class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
   static const List<double> _speeds = [1, 1.5, 2];
 
+  /// Where the thumb has been dragged to on a recording that is not playing.
+  ///
+  /// A slider needs somewhere to put the value while the finger is down, and
+  /// on an untouched recording there is no play head to put it in yet.
+  double? _scrubbing;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final player = widget.player;
     if (player == null) return const SizedBox(height: 8);
 
+    // Two listeners, because they move at different rates. The outer one is
+    // play, pause, speed and which recording is loaded — a handful of events.
+    // The inner one is the play head, four times a second, and it rebuilds
+    // this row alone rather than everything watching the player.
     return AnimatedBuilder(
       animation: player,
       builder: (context, _) {
         final active = player.activeHash == widget.ref.hash;
-        final total = active ? (player.duration ?? widget.ref.duration) : widget.ref.duration;
-        final position = active ? player.position : Duration.zero;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: Row(
-            children: [
-              IconButton(
-                icon: Icon(
-                  player.isPlaying(widget.ref.hash)
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
-                ),
-                tooltip: player.isPlaying(widget.ref.hash) ? 'Pause' : 'Play',
-                onPressed: _toggle,
+        final total = active
+            ? (player.duration ?? widget.ref.duration)
+            : widget.ref.duration;
+        return ValueListenableBuilder<Duration>(
+          valueListenable: player.positionListenable,
+          builder: (context, head, _) {
+            final position = active ? head : Duration.zero;
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      player.isPlaying(widget.ref.hash)
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                    ),
+                    tooltip: player.isPlaying(widget.ref.hash)
+                        ? 'Pause'
+                        : 'Play',
+                    onPressed: _toggle,
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value:
+                          _scrubbing ??
+                          (total.inMilliseconds == 0
+                              ? 0
+                              : (position.inMilliseconds / total.inMilliseconds)
+                                    .clamp(0.0, 1.0)),
+                      // Scrubbing a recording nobody has started is a request to
+                      // hear it from there, which is worth more than a disabled
+                      // slider. It only becomes one on release, so a drag does not
+                      // restart playback on every frame of itself.
+                      onChanged: active
+                          ? (value) => player.seek(total * value)
+                          : (value) => setState(() => _scrubbing = value),
+                      onChangeEnd: active
+                          ? null
+                          : (value) {
+                              setState(() => _scrubbing = null);
+                              unawaited(_start(from: total * value));
+                            },
+                    ),
+                  ),
+                  Text(
+                    '${formatVoiceDuration(_scrubbing == null ? position : total * _scrubbing!)}'
+                    ' / ${formatVoiceDuration(total)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      final next =
+                          _speeds[(_speeds.indexOf(player.speed) + 1) %
+                              _speeds.length];
+                      player.setSpeed(next);
+                    },
+                    child: Text('${_trim(player.speed)}×'),
+                  ),
+                ],
               ),
-              Expanded(
-                child: Slider(
-                  value: total.inMilliseconds == 0
-                      ? 0
-                      : (position.inMilliseconds / total.inMilliseconds)
-                            .clamp(0.0, 1.0),
-                  onChanged: active
-                      ? (value) => player.seek(total * value)
-                      : null,
-                ),
-              ),
-              Text(
-                '${formatVoiceDuration(position)} / ${formatVoiceDuration(total)}',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  color: palette.textSecondary,
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  final next =
-                      _speeds[(_speeds.indexOf(player.speed) + 1) % _speeds.length];
-                  player.setSpeed(next);
-                },
-                child: Text('${_trim(player.speed)}×'),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -545,9 +604,15 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
       await player.pause();
       return;
     }
+    await _start();
+  }
+
+  Future<void> _start({Duration? from}) async {
+    final player = widget.player;
+    if (player == null) return;
     final file = await widget.blobs.fileFor(widget.ref.hash);
     if (file == null) return;
-    await player.play(widget.ref.hash, file);
+    await player.play(widget.ref.hash, file, from: from);
   }
 }
 

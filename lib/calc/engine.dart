@@ -138,7 +138,7 @@ class CalcEngine {
 
     return _evaluateExpression(source, index, evaluator, scope) ??
         _labelledAmount(source, index, evaluator, scope) ??
-        _quantityWithLabel(source, index, evaluator, scope);
+        _labelledArithmetic(source, index, evaluator, scope);
   }
 
   _EvaluatedLine? _evaluateExpression(
@@ -225,27 +225,31 @@ class CalcEngine {
     return null;
   }
 
-  /// Reads `12 mangoes` or `3 shirts`: the amount first, then plain words
-  /// naming what was counted.
+  /// Reads a line whose numbers carry words naming what they count:
+  /// `12 mangoes`, `20 domains * 2`, `$2/mailbox`.
   ///
   /// The mirror of [_labelledAmount], and safe where that one needs a unit to
-  /// be safe. Word order carries the meaning here: a line that *opens* with a
-  /// number is stating a quantity, while `Room 12`, `Chapter 4` and `iPhone
-  /// 15` put the number last and are naming something instead. So the amount
-  /// has to come first, with the words that name it after.
+  /// be safe. Word order carries the meaning: a line that *opens* with a word
+  /// is naming something — `Room 12`, `Chapter 4`, `iPhone 15` — while one
+  /// that opens with an amount is stating a quantity. So the first word of the
+  /// line has to be one the calculator already understands.
   ///
-  /// Every word after the amount must be one the calculator has no meaning
-  /// for. A unit, a currency, a function, a keyword or a name the note has
-  /// defined all say the line is a calculation still being typed — `100 usd
-  /// to` is on its way to somewhere, and answering `100 usd` while the user
-  /// is mid-word would be worse than staying quiet.
+  /// After that the labels are simply taken out and what remains is evaluated
+  /// as ordinary arithmetic. A label only counts as a label where it can only
+  /// be one: directly after an amount, or after another label already dropped.
+  /// That single rule is what separates `12 mangoes` from `10 min break` — in
+  /// the first the word follows a bare number and is what the number counts,
+  /// in the second it follows a unit that has already said what the amount is,
+  /// and everything after that is prose. It is also what keeps `12 + mangoes`
+  /// out: a word after an operator is an operand, and an operand nobody has
+  /// defined is a line still being typed rather than a line about mangoes.
   ///
-  /// The amount itself must be pure arithmetic, with no word of its own. That
-  /// is the whole difference between `12 mangoes` and `10 min break`: in the
-  /// first the words are what the number counts, while in the second the
-  /// amount already says what it is and `break` is prose that happens to
-  /// follow it. Only the first is a quantity someone wanted totalled.
-  _EvaluatedLine? _quantityWithLabel(
+  /// `$2/mailbox` is the one shape that needs more than that. The label is the
+  /// thing the rate is *per*, so the divide belongs to it and goes too, and
+  /// what is left is the amount — which is what someone writing a price per
+  /// mailbox means by it. A rate over something the calculator does know,
+  /// `$120 / 3 months`, is untouched and stays a rate.
+  _EvaluatedLine? _labelledArithmetic(
     String source,
     int index,
     Evaluator evaluator,
@@ -256,23 +260,39 @@ class CalcEngine {
         .where((t) => t.isSignificant && t.type != TokenType.eof)
         .toList();
     if (tokens.length < 2) return null;
+    // Named, not counted.
+    if (_isLabelWord(tokens.first, scope)) return null;
 
-    // Walk back over the trailing words that mean nothing here; where they
-    // start is where the amount ends. No such words, and the line is naming
-    // something rather than counting it: `Room 12` stops here.
-    var split = tokens.length;
-    while (split > 1 && _isLabelWord(tokens[split - 1], scope)) {
-      split--;
+    final dropped = <int>{};
+    for (var i = 1; i < tokens.length; i++) {
+      if (!_isLabelWord(tokens[i], scope)) continue;
+      // `2 x 3 widgets`: the parser reads that x as a multiplication sign, so
+      // taking it out as a label here would leave two numbers side by side and
+      // lose the line. See Parser's own rule for the shape.
+      if (_isTimesLetter(
+        tokens[i],
+        i + 1 < tokens.length ? tokens[i + 1] : null,
+      )) {
+        continue;
+      }
+      if (_statesAnAmount(tokens[i - 1], dropped.contains(i - 1))) {
+        dropped.add(i);
+        continue;
+      }
+      // `$2/mailbox`, `$2 per mailbox`.
+      final over = i - 1;
+      if (over > 0 &&
+          _isPerOperator(tokens[over]) &&
+          _statesAnAmount(tokens[over - 1], dropped.contains(over - 1))) {
+        dropped
+          ..add(over)
+          ..add(i);
+      }
     }
-    if (split == tokens.length) return null;
-    // Digits, operators and a currency symbol only — see above. This is also
-    // what keeps `Hotel: 7 nights` out: its amount carries a word.
-    if (tokens.take(split).any((token) => token.type == TokenType.identifier)) {
-      return null;
-    }
+    if (dropped.isEmpty) return null;
 
     final evaluated = _evaluateExpression(
-      source.substring(0, tokens[split - 1].end),
+      _withoutTokens(source, tokens, dropped),
       index,
       evaluator,
       scope,
@@ -284,10 +304,53 @@ class CalcEngine {
     return evaluated;
   }
 
+  /// Whether [token] is the end of something with an amount in it, and so
+  /// something a following word could be naming.
+  static bool _statesAnAmount(Token token, bool wasDropped) =>
+      wasDropped ||
+      token.type == TokenType.number ||
+      token.type == TokenType.percent ||
+      token.type == TokenType.currencySymbol;
+
+  static bool _isTimesLetter(Token token, Token? next) =>
+      token.type == TokenType.identifier &&
+      token.text.toLowerCase() == 'x' &&
+      next != null &&
+      (next.type == TokenType.number ||
+          next.type == TokenType.currencySymbol ||
+          next.type == TokenType.lparen);
+
+  static bool _isPerOperator(Token token) =>
+      (token.type == TokenType.operator &&
+          (token.text == '/' || token.text == '÷')) ||
+      (token.type == TokenType.identifier && token.text.toLowerCase() == 'per');
+
+  /// [source] with the given tokens cut out, spacing preserved so the offsets
+  /// of everything kept still read the same way.
+  static String _withoutTokens(
+    String source,
+    List<Token> tokens,
+    Set<int> dropped,
+  ) {
+    final buffer = StringBuffer();
+    var cursor = 0;
+    for (final i in dropped.toList()..sort()) {
+      buffer.write(source.substring(cursor, tokens[i].start));
+      cursor = tokens[i].end;
+    }
+    buffer.write(source.substring(cursor));
+    return buffer.toString();
+  }
+
   /// True for a word the calculator can make nothing of, and so can read as
   /// part of a label.
   bool _isLabelWord(Token token, CalcScope scope) {
     if (token.type != TokenType.identifier) return false;
+    // A word with a digit in it is a code, a model or a run-together sum —
+    // `2x3` lexes as `2` and `x3` — and none of those are what a number
+    // counts. Reading them as labels answered `2x3` with 2, which is a wrong
+    // answer where saying nothing was available.
+    if (token.text.contains(RegExp(r'[0-9]'))) return false;
     final name = token.text.toLowerCase();
     return !scope.variables.containsKey(token.text) &&
         !calcKeywords.contains(name) &&

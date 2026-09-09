@@ -14,6 +14,7 @@ class CompactIconButton extends StatelessWidget {
     required this.onPressed,
     this.selected = false,
     this.foregroundColor,
+    this.extent,
   });
 
   final Widget icon;
@@ -21,12 +22,13 @@ class CompactIconButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool selected;
   final Color? foregroundColor;
+  final double? extent;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final scheme = Theme.of(context).colorScheme;
-    final extent = AppControlMetrics.iconButtonExtent;
+    final extent = this.extent ?? AppControlMetrics.iconButtonExtent;
 
     return Tooltip(
       message: tooltip,

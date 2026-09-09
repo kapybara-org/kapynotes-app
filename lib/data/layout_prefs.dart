@@ -84,11 +84,11 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _gutterKey = 'gutter.v1';
   static const String _resultsVisibleKey = 'resultsVisible.v1';
   static const String _sidebarKey = 'sidebar.v1';
-  static const String _sidebarVisibleKey = 'sidebarVisible.v1';
   static const String _windowWidthKey = 'windowWidth.v1';
   static const String _windowHeightKey = 'windowHeight.v1';
   static const String _readyToTypeOnOpenKey = 'readyToTypeOnOpen.v1';
   static const String _dailySeparatorsKey = 'dailySeparators.v1';
+  static const String _spellCheckKey = 'spellCheck.v1';
   static const String _numberSystemKey = 'numberSystem.v1';
   static const String _writingFontKey = 'writingFont.v1';
   static const String _timeZoneKey = 'timeZone.v1';
@@ -109,6 +109,7 @@ class LayoutPrefs extends ChangeNotifier {
   Size _windowSize = defaultWindowSize;
   bool _readyToTypeOnOpen = true;
   bool _dailySeparatorsEnabled = true;
+  bool _spellCheckEnabled = true;
   NumberSystem _numberSystem = NumberSystem.auto;
   WritingFont _writingFont = WritingFont.handwritten;
   String? _timeZoneId;
@@ -126,6 +127,7 @@ class LayoutPrefs extends ChangeNotifier {
   Size get windowSize => _windowSize;
   bool get readyToTypeOnOpen => _readyToTypeOnOpen;
   bool get dailySeparatorsEnabled => _dailySeparatorsEnabled;
+  bool get spellCheckEnabled => _spellCheckEnabled;
   WritingFont get writingFont => _writingFont;
   String? get timeZoneId => _timeZoneId;
 
@@ -184,10 +186,9 @@ class LayoutPrefs extends ChangeNotifier {
     _sidebarWidth = _clampSidebar(
       _readDouble(_sidebarKey) ?? defaultSidebarWidth,
     );
-    // Closed on a new install: the first thing anyone should meet is a page
-    // to write on, not a list of the nothing they have written yet. It is one
-    // click or one swipe away, and the choice is remembered from then on.
-    _sidebarVisible = _store.read<bool>(_sidebarVisibleKey) ?? false;
+    // Every launch begins on the page itself. Sidebar visibility is a window
+    // state for this session, not a preference carried into the next one.
+    _sidebarVisible = false;
     _windowSize = _clampWindowSize(
       Size(
         _readDouble(_windowWidthKey) ?? defaultWindowSize.width,
@@ -196,6 +197,7 @@ class LayoutPrefs extends ChangeNotifier {
     );
     _readyToTypeOnOpen = _store.read<bool>(_readyToTypeOnOpenKey) ?? true;
     _dailySeparatorsEnabled = _store.read<bool>(_dailySeparatorsKey) ?? true;
+    _spellCheckEnabled = _store.read<bool>(_spellCheckKey) ?? true;
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
     _timeZoneId = AppTimeZones.normalize(_store.read<String>(_timeZoneKey));
@@ -249,6 +251,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _readyToTypeOnOpen) return;
     _readyToTypeOnOpen = value;
     _store.putNow(_readyToTypeOnOpenKey, value);
+    notifyListeners();
+  }
+
+  set spellCheckEnabled(bool value) {
+    if (value == _spellCheckEnabled) return;
+    _spellCheckEnabled = value;
+    _store.putNow(_spellCheckKey, value);
     notifyListeners();
   }
 
@@ -328,7 +337,6 @@ class LayoutPrefs extends ChangeNotifier {
 
   void toggleSidebar() {
     _sidebarVisible = !_sidebarVisible;
-    _store.putNow(_sidebarVisibleKey, _sidebarVisible);
     notifyListeners();
   }
 

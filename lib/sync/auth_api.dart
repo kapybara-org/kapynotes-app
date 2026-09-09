@@ -82,6 +82,35 @@ class AuthUnreachable extends AuthResult {
 /// syncing are genuinely different concerns: one proves who you are, the other
 /// moves sealed bytes. Collapsing them would invite the server to be trusted
 /// with both.
+/// What asking about a stored session found.
+///
+/// Three answers rather than two, because the difference between them is the
+/// difference between a sign-out and a bad moment. "The server says no" means
+/// the session is gone and the device should forget it. "I could not ask"
+/// means nothing at all about the session — and reading it as a no is how a
+/// launch with no network, or one made a second after an installer finished,
+/// used to throw the key away.
+sealed class SessionCheck {
+  const SessionCheck();
+}
+
+class SessionActive extends SessionCheck {
+  const SessionActive(this.user);
+  final AccountUser user;
+}
+
+/// The server was asked and answered no: expired, revoked, signed out
+/// elsewhere.
+class SessionRejected extends SessionCheck {
+  const SessionRejected();
+}
+
+/// Offline, timed out, or the server is having trouble. Says nothing about
+/// whether the session is still good.
+class SessionUnreachable extends SessionCheck {
+  const SessionUnreachable();
+}
+
 abstract class AuthApi {
   Future<AuthResult> signIn({required String email, required String password});
 
@@ -111,8 +140,8 @@ abstract class AuthApi {
   /// this device should drop.
   Future<void> signOut(String token);
 
-  /// The account behind a stored token, or null if it is no longer valid.
-  Future<AccountUser?> currentUser(String token);
+  /// Whether a stored token is still a session, and whose.
+  Future<SessionCheck> checkSession(String token);
 }
 
 class HttpAuthApi implements AuthApi {
@@ -195,21 +224,30 @@ class HttpAuthApi implements AuthApi {
   }
 
   @override
-  Future<AccountUser?> currentUser(String token) async {
+  Future<SessionCheck> checkSession(String token) async {
+    final http.Response response;
     try {
-      final response = await _client
+      response = await _client
           .get(
             _baseUrl.resolve('api/auth/get-session'),
             headers: {'authorization': 'Bearer $token'},
           )
           .timeout(timeout);
-      if (response.statusCode != 200) return null;
-      final body = jsonDecode(response.body);
-      if (body is! Map) return null;
-      return AccountUser.fromJson(body['user']);
     } catch (_) {
-      return null;
+      // No answer at all. The session is whatever it was.
+      return const SessionUnreachable();
     }
+    // Only the server saying so revokes anything. A 500 or a 502 is the
+    // server having a bad minute — which a release, of all times, is when it
+    // is most likely to be having one.
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      return const SessionRejected();
+    }
+    if (response.statusCode != 200) return const SessionUnreachable();
+    final body = jsonDecode(response.body);
+    if (body is! Map) return const SessionUnreachable();
+    final user = AccountUser.fromJson(body['user']);
+    return user == null ? const SessionUnreachable() : SessionActive(user);
   }
 
   /// Sign-in and sign-up differ only in the path: both answer with a session

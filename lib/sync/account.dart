@@ -137,17 +137,37 @@ class Account extends ChangeNotifier {
     final token = await _keys.readToken();
     if (token == null) return _moveTo(AccountState.signedOut);
 
-    final user = await _auth.currentUser(token);
-    if (user == null) {
-      // The session expired or was revoked. The notes stay; only the session
-      // is gone, and signing in again picks them up where they were.
-      await _keys.clear();
-      return _moveTo(AccountState.signedOut);
+    switch (await _auth.checkSession(token)) {
+      case SessionActive(:final user):
+        _token = token;
+        _user = user;
+        await _keys.writeUser(user);
+        await _resume();
+      case SessionRejected():
+        // Asked, and told no: expired, revoked, or signed out on another
+        // device. The notes stay; only the session is gone, and signing in
+        // again picks them up where they were.
+        await _keys.clear();
+        _moveTo(AccountState.signedOut);
+      case SessionUnreachable():
+        // Not asked. Nothing has been revoked, so nothing is thrown away —
+        // this device carries on as whoever it was, and the sync layer will
+        // find out soon enough if the session really has gone.
+        //
+        // This is the ordinary case far more often than it looks: the app
+        // opens at login, before the network is up, and an update relaunches
+        // it the instant the installer lets go.
+        final cached = await _keys.readUser();
+        if (cached == null) {
+          // A session from before this device cached who it belonged to.
+          // Nothing to resume as, but still nothing to revoke.
+          _moveTo(AccountState.signedOut);
+          return;
+        }
+        _token = token;
+        _user = cached;
+        await _resume();
     }
-
-    _token = token;
-    _user = user;
-    await _resume();
   }
 
   Future<void> signIn({required String email, required String password}) =>
@@ -199,6 +219,9 @@ class Account extends ChangeNotifier {
         _token = token;
         _user = user;
         await _keys.writeToken(token);
+        // So a later launch that cannot reach the server still knows whose
+        // device this is.
+        await _keys.writeUser(user);
         await _resume();
       case AuthNeedsVerification(:final email):
         _lastError = 'Confirm $email, then sign in.';

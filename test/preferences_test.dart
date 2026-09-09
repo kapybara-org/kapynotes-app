@@ -44,6 +44,7 @@ void main() {
     expect(prefs.resultsVisible, isTrue);
     expect(prefs.readyToTypeOnOpen, isTrue);
     expect(prefs.dailySeparatorsEnabled, isTrue);
+    expect(prefs.spellCheckEnabled, isTrue);
     expect(prefs.writingFont, WritingFont.handwritten);
     expect(prefs.timeZoneId, isNull);
   });
@@ -58,6 +59,7 @@ void main() {
     prefs.resultsVisible = false;
     prefs.readyToTypeOnOpen = false;
     prefs.dailySeparatorsEnabled = false;
+    prefs.spellCheckEnabled = false;
     prefs.writingFont = WritingFont.clean;
 
     final restored = LayoutPrefs(store)..load();
@@ -67,6 +69,7 @@ void main() {
     expect(restored.resultsVisible, isFalse);
     expect(restored.readyToTypeOnOpen, isFalse);
     expect(restored.dailySeparatorsEnabled, isFalse);
+    expect(restored.spellCheckEnabled, isFalse);
     expect(restored.writingFont, WritingFont.clean);
   });
 
@@ -99,29 +102,28 @@ void main() {
     final store = _FlushOnlyStore();
     final prefs = LayoutPrefs(store)..load();
 
-    prefs.toggleSidebar();
+    prefs.writingFont = WritingFont.clean;
 
     expect(
-      store.persisted['sidebarVisible.v1'],
-      isTrue,
-      reason: 'toggling then quitting must not lose the choice',
+      store.persisted['writingFont.v1'],
+      'clean',
+      reason: 'changing then quitting must not lose the choice',
     );
   });
 
-  test('sidebar visibility survives a restart', () {
+  test('sidebar visibility resets on every launch', () {
     final store = _MemoryStore();
+    // Older builds persisted this. The launch rule deliberately ignores it.
+    store.data['sidebarVisible.v1'] = true;
     final prefs = LayoutPrefs(store)..load();
-    expect(prefs.sidebarVisible, isFalse, reason: 'closed on a new install');
+    expect(prefs.sidebarVisible, isFalse);
 
     prefs.toggleSidebar();
     expect(prefs.sidebarVisible, isTrue);
 
-    // A second instance over the same storage is what the next launch sees.
+    // A second instance over the same storage is the next launch.
     final restarted = LayoutPrefs(store)..load();
-    expect(restarted.sidebarVisible, isTrue);
-
-    restarted.toggleSidebar();
-    expect((LayoutPrefs(store)..load()).sidebarVisible, isFalse);
+    expect(restarted.sidebarVisible, isFalse);
   });
 
   test('number system follows the region until the user overrides it', () {
@@ -579,11 +581,11 @@ void main() {
     expect(prefs.writingFont, WritingFont.handwritten);
   });
 
-  test('but a chosen sidebar state is remembered', () {
+  test('an opened sidebar is only open for the current session', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();
     prefs.toggleSidebar();
     expect(prefs.sidebarVisible, isTrue);
-    expect((LayoutPrefs(store)..load()).sidebarVisible, isTrue);
+    expect((LayoutPrefs(store)..load()).sidebarVisible, isFalse);
   });
 }

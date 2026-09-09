@@ -6,6 +6,7 @@ class MainFlutterWindow: NSWindow {
   /// stops answering as soon as `awakeFromNib` returns.
   private var loginItemChannel: FlutterMethodChannel?
   private var richClipboardChannel: FlutterMethodChannel?
+  private var spellCheckChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -42,6 +43,9 @@ class MainFlutterWindow: NSWindow {
       with: flutterViewController.engine.binaryMessenger
     )
     richClipboardChannel = RichClipboard.register(
+      with: flutterViewController.engine.binaryMessenger
+    )
+    spellCheckChannel = SpellCheck.register(
       with: flutterViewController.engine.binaryMessenger
     )
 

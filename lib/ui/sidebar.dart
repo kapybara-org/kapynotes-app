@@ -19,6 +19,7 @@ class Sidebar extends StatelessWidget {
   const Sidebar({
     super.key,
     required this.notes,
+    this.pinnedNoteIds = const {},
     required this.selectedId,
     required this.query,
     required this.displayTime,
@@ -27,6 +28,7 @@ class Sidebar extends StatelessWidget {
     required this.onCreate,
     this.onArchive,
     this.onRestore,
+    this.onTogglePin,
     this.onArchiveToggle,
     this.onShare,
     this.sharing,
@@ -39,6 +41,7 @@ class Sidebar extends StatelessWidget {
   });
 
   final List<Note> notes;
+  final Set<String> pinnedNoteIds;
   final String? selectedId;
   final String query;
   final DateTime Function(DateTime) displayTime;
@@ -47,6 +50,7 @@ class Sidebar extends StatelessWidget {
   final VoidCallback onCreate;
   final ValueChanged<String>? onArchive;
   final ValueChanged<String>? onRestore;
+  final ValueChanged<String>? onTogglePin;
   final VoidCallback? onArchiveToggle;
 
   /// Null where there is nothing to share to: a build without a server.
@@ -125,64 +129,104 @@ class Sidebar extends StatelessWidget {
 }
 
 extension on Sidebar {
-  /// Sections appear only once a shared note exists, so a list of private
-  /// notes looks exactly as it always has.
-  bool get _grouped => sharing != null && notes.any((note) => note.isShared);
+  bool get _hasPinned =>
+      !archiveMode && notes.any((note) => pinnedNoteIds.contains(note.id));
 
-  Widget _row(Note note, {required bool shared}) => NoteRow(
-    key: ValueKey(note.id),
-    note: note,
-    query: query,
-    displayTime: displayTime,
-    selected: note.id == selectedId,
-    shared: shared,
-    onTap: () => onSelect(note.id),
-    onShare: archiveMode || onShare == null ? null : () => onShare!(note.id),
-    onArchive:
-        archiveMode ||
-            onArchive == null ||
-            !(sharing?.canEdit(note) ?? !note.isShared)
-        ? null
-        : () => onArchive!(note.id),
-    onRestore:
-        !archiveMode ||
-            onRestore == null ||
-            !(sharing?.canEdit(note) ?? !note.isShared)
-        ? null
-        : () => onRestore!(note.id),
-  );
+  /// Sections appear once there is something meaningful to group. An
+  /// ordinary list with no pins or shared notes stays exactly as quiet as it
+  /// was before either feature existed.
+  bool get _grouped =>
+      _hasPinned || (sharing != null && notes.any((note) => note.isShared));
 
-  /// Your own notes first, then one section per shared space, in the order
-  /// the spaces were made. A note whose space this device has not heard of
-  /// yet sits under "Shared", rather than nowhere.
+  Widget _row(Note note, {required bool shared, bool pinned = false}) =>
+      NoteRow(
+        key: ValueKey(note.id),
+        note: note,
+        query: query,
+        displayTime: displayTime,
+        selected: note.id == selectedId,
+        shared: shared,
+        pinned: pinned,
+        onTap: () => onSelect(note.id),
+        onTogglePin: onTogglePin == null ? null : () => onTogglePin!(note.id),
+        onShare: archiveMode || onShare == null
+            ? null
+            : () => onShare!(note.id),
+        onArchive:
+            archiveMode ||
+                onArchive == null ||
+                !(sharing?.canEdit(note) ?? !note.isShared)
+            ? null
+            : () => onArchive!(note.id),
+        onRestore:
+            !archiveMode ||
+                onRestore == null ||
+                !(sharing?.canEdit(note) ?? !note.isShared)
+            ? null
+            : () => onRestore!(note.id),
+      );
+
+  /// Pinned notes always lead. Everything else keeps the existing personal
+  /// and shared-space order, so pinning is useful without duplicating a note
+  /// in two sections.
   Widget _buildGrouped(BuildContext context) {
-    final sharing = this.sharing!;
-    final mine = notes.where((note) => !note.isShared).toList();
+    final pinned = archiveMode
+        ? const <Note>[]
+        : notes.where((note) => pinnedNoteIds.contains(note.id)).toList();
+    final pinnedIds = pinned.map((note) => note.id).toSet();
+    final remaining = notes
+        .where((note) => !pinnedIds.contains(note.id))
+        .toList();
+    final hasSharedSections =
+        sharing != null && notes.any((note) => note.isShared);
+    final mine = hasSharedSections
+        ? remaining.where((note) => !note.isShared).toList()
+        : remaining;
     final bySpace = <String?, List<Note>>{};
-    for (final note in notes) {
-      if (note.isShared) bySpace.putIfAbsent(note.spaceId, () => []).add(note);
+    if (hasSharedSections) {
+      for (final note in remaining) {
+        if (note.isShared) {
+          bySpace.putIfAbsent(note.spaceId, () => []).add(note);
+        }
+      }
     }
     final order = <String?>[
-      for (final space in sharing.teams)
-        if (bySpace.containsKey(space.id)) space.id,
+      if (sharing != null)
+        for (final space in sharing!.teams)
+          if (bySpace.containsKey(space.id)) space.id,
       for (final id in bySpace.keys)
-        if (!sharing.teams.any((space) => space.id == id)) id,
+        if (sharing == null || !sharing!.teams.any((space) => space.id == id))
+          id,
     ];
     final extent = AppControlMetrics.sidebarNoteRowExtent;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
       children: [
+        if (pinned.isNotEmpty) ...[
+          const _SectionLabel(label: 'Pinned', icon: Icons.push_pin_outlined),
+          for (final note in pinned)
+            SizedBox(
+              height: extent,
+              child: _row(
+                note,
+                shared: hasSharedSections && note.isShared,
+                pinned: true,
+              ),
+            ),
+        ],
         if (mine.isNotEmpty) ...[
-          const _SectionLabel(label: 'My notes'),
+          _SectionLabel(label: hasSharedSections ? 'My notes' : 'Notes'),
           for (final note in mine)
             SizedBox(height: extent, child: _row(note, shared: false)),
         ],
         for (final id in order) ...[
           _SectionLabel(
-            label: sharing.spaceById(id)?.displayName ?? 'Shared',
+            label: sharing?.spaceById(id)?.displayName ?? 'Shared',
             shared: true,
-            attention: id != null && sharing.trust.warningsFor(id).isNotEmpty,
+            attention:
+                id != null &&
+                (sharing?.trust.warningsFor(id).isNotEmpty ?? false),
           ),
           for (final note in bySpace[id]!)
             SizedBox(height: extent, child: _row(note, shared: true)),
@@ -197,11 +241,13 @@ extension on Sidebar {
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel({
     required this.label,
+    this.icon,
     this.shared = false,
     this.attention = false,
   });
 
   final String label;
+  final IconData? icon;
   final bool shared;
 
   /// A member's key changed and nobody has looked yet.
@@ -215,11 +261,11 @@ class _SectionLabel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
       child: Row(
         children: [
-          if (shared) ...[
+          if (icon != null || shared) ...[
             Icon(
               attention
                   ? Icons.warning_amber_rounded
-                  : Icons.people_outline_rounded,
+                  : icon ?? Icons.people_outline_rounded,
               size: AppControlMetrics.iconInline,
               color: attention ? error : palette.textTertiary,
             ),
@@ -372,7 +418,7 @@ class _ArchiveEntry extends StatelessWidget {
             children: [
               Icon(
                 showingArchive ? Icons.notes_rounded : Icons.archive_outlined,
-                size: AppControlMetrics.iconControl,
+                size: AppControlMetrics.footerIconControl,
                 color: palette.textSecondary,
               ),
               const SizedBox(width: 10),
@@ -436,7 +482,7 @@ class _SettingsEntry extends StatelessWidget {
               children: [
                 Icon(
                   Icons.settings_outlined,
-                  size: AppControlMetrics.iconControl,
+                  size: AppControlMetrics.footerIconControl,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 10),
@@ -670,6 +716,8 @@ class NoteRow extends StatefulWidget {
     this.onShare,
     this.onArchive,
     this.onRestore,
+    this.onTogglePin,
+    this.pinned = false,
     this.shared = false,
   });
 
@@ -681,6 +729,8 @@ class NoteRow extends StatefulWidget {
   final VoidCallback? onShare;
   final VoidCallback? onArchive;
   final VoidCallback? onRestore;
+  final VoidCallback? onTogglePin;
+  final bool pinned;
 
   /// Whether the note is in a shared space, which the row marks so a person
   /// typing knows somebody else can see it.
@@ -707,6 +757,30 @@ class _NoteRowState extends State<NoteRow> {
         Offset.zero & overlay.size,
       ),
       items: [
+        if (widget.onTogglePin != null)
+          PopupMenuItem(
+            value: 'pin',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(
+                  widget.pinned
+                      ? Icons.push_pin_rounded
+                      : Icons.push_pin_outlined,
+                  size: AppControlMetrics.iconControl,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  widget.pinned ? 'Unpin Note' : 'Pin Note',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.control,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (widget.onShare != null)
           PopupMenuItem(
             value: 'share',
@@ -778,6 +852,7 @@ class _NoteRowState extends State<NoteRow> {
     if (choice == 'archive') widget.onArchive?.call();
     if (choice == 'restore') widget.onRestore?.call();
     if (choice == 'share') widget.onShare?.call();
+    if (choice == 'pin') widget.onTogglePin?.call();
   }
 
   @override
@@ -798,7 +873,9 @@ class _NoteRowState extends State<NoteRow> {
         (widget.onArchive != null || widget.onRestore != null) &&
         actionsVisible;
     final shareVisible = widget.onShare != null && actionsVisible;
+    final pinVisible = widget.pinned || actionsVisible;
     final hasMenu =
+        widget.onTogglePin != null ||
         widget.onArchive != null ||
         widget.onRestore != null ||
         widget.onShare != null;
@@ -830,72 +907,94 @@ class _NoteRowState extends State<NoteRow> {
                   : (_hovering ? palette.hover : Colors.transparent),
               borderRadius: BorderRadius.circular(7),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        widget.note.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: AppTypeScale.control,
-                          fontWeight: widget.selected
-                              ? FontWeight.w600
-                              : FontWeight.w500,
-                          color: foreground,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      if (snippet != null)
-                        Text(
-                          snippet,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: AppTypeScale.caption,
-                            color: secondary,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // At the minimum resizable desktop width, keep the new primary
+                // organization action and leave share/archive in the context
+                // menu instead of reducing every title to a few characters.
+                final showSecondaryActions = constraints.maxWidth >= 190;
+                return Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            widget.note.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: AppTypeScale.control,
+                              fontWeight: widget.selected
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: foreground,
+                            ),
                           ),
-                        )
-                      else
-                        _UpdatedAtMetadata(
-                          updatedAt: widget.note.updatedAt,
-                          displayTime: widget.displayTime,
-                          shared: widget.shared,
-                        ),
-                    ],
-                  ),
-                ),
-                if (widget.onShare != null) ...[
-                  const SizedBox(width: 4),
-                  _RowAction(
-                    key: ValueKey('share-note-${widget.note.id}'),
-                    icon: Icons.people_outline_rounded,
-                    tooltip: widget.shared ? 'Sharing' : 'Share',
-                    visible: shareVisible,
-                    onPressed: widget.onShare!,
-                  ),
-                ],
-                if (widget.onArchive != null || widget.onRestore != null) ...[
-                  const SizedBox(width: 4),
-                  _RowAction(
-                    key: ValueKey(
-                      '${widget.onRestore != null ? 'restore' : 'archive'}-note-${widget.note.id}',
+                          const SizedBox(height: 2),
+                          if (snippet != null)
+                            Text(
+                              snippet,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: AppTypeScale.caption,
+                                color: secondary,
+                              ),
+                            )
+                          else
+                            _UpdatedAtMetadata(
+                              updatedAt: widget.note.updatedAt,
+                              displayTime: widget.displayTime,
+                              shared: widget.shared,
+                            ),
+                        ],
+                      ),
                     ),
-                    icon: widget.onRestore != null
-                        ? Icons.unarchive_outlined
-                        : Icons.archive_outlined,
-                    tooltip: widget.onRestore != null
-                        ? 'Restore note'
-                        : 'Archive note',
-                    visible: lifecycleVisible,
-                    onPressed: widget.onRestore ?? widget.onArchive!,
-                  ),
-                ],
-              ],
+                    if (widget.onTogglePin != null) ...[
+                      const SizedBox(width: 4),
+                      _RowAction(
+                        key: ValueKey('pin-note-${widget.note.id}'),
+                        icon: widget.pinned
+                            ? Icons.push_pin_rounded
+                            : Icons.push_pin_outlined,
+                        tooltip: widget.pinned ? 'Unpin note' : 'Pin note',
+                        visible: pinVisible,
+                        onPressed: widget.onTogglePin!,
+                      ),
+                    ],
+                    if (showSecondaryActions && widget.onShare != null) ...[
+                      const SizedBox(width: 4),
+                      _RowAction(
+                        key: ValueKey('share-note-${widget.note.id}'),
+                        icon: Icons.people_outline_rounded,
+                        tooltip: widget.shared ? 'Sharing' : 'Share',
+                        visible: shareVisible,
+                        onPressed: widget.onShare!,
+                      ),
+                    ],
+                    if (showSecondaryActions &&
+                        (widget.onArchive != null ||
+                            widget.onRestore != null)) ...[
+                      const SizedBox(width: 4),
+                      _RowAction(
+                        key: ValueKey(
+                          '${widget.onRestore != null ? 'restore' : 'archive'}-note-${widget.note.id}',
+                        ),
+                        icon: widget.onRestore != null
+                            ? Icons.unarchive_outlined
+                            : Icons.archive_outlined,
+                        tooltip: widget.onRestore != null
+                            ? 'Restore note'
+                            : 'Archive note',
+                        visible: lifecycleVisible,
+                        onPressed: widget.onRestore ?? widget.onArchive!,
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
           ),
         ),

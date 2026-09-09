@@ -379,9 +379,10 @@ jobs:
                 <title>Version $VERSION</title>
                 <pubDate>$published</pubDate>
                 <sparkle:releaseNotesLink>$notes</sparkle:releaseNotesLink>
-                <!-- Inno runs per-user, so this raises no UAC prompt. It also
-                     skips the installer's [Run] entry, which is why the script
-                     sets RestartApplications=yes to bring the app back. -->
+                <!-- Inno runs per-user, so this raises no UAC prompt. Silent
+                     also skips the [Run] entry behind the Setup Completed
+                     checkbox, so the script carries a second one guarded by
+                     Check: WizardSilent to bring the app back. -->
                 <sparkle:installerArguments>/VERYSILENT /SUPPRESSMSGBOXES /NORESTART</sparkle:installerArguments>
                 <enclosure url="$downloads/KapyNotes-$VERSION-setup.exe"
                            sparkle:version="$VERSION"

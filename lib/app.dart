@@ -19,6 +19,7 @@ import 'data/onboarding.dart';
 import 'data/rates.dart';
 import 'data/shortcut_prefs.dart';
 import 'data/update_checker.dart';
+import 'images/image_picker.dart';
 import 'sync/account.dart';
 import 'ui/app_logo.dart';
 import 'ui/home_page.dart';
@@ -37,6 +38,8 @@ class KapyNotesApp extends StatefulWidget {
     this.desktopIntegration,
     this.account,
     this.recording,
+    this.imageAcquirer,
+    this.lostImageRetriever,
   });
 
   final LocalStore store;
@@ -56,6 +59,10 @@ class KapyNotesApp extends StatefulWidget {
   /// no microphone behind it — the real one starts a one-second ticker that
   /// `pumpAndSettle` would wait on forever.
   final VoiceRecordingController? recording;
+
+  /// Native image boundaries, injectable for launch and recovery tests.
+  final ImageFileAcquirer? imageAcquirer;
+  final LostImageRetriever? lostImageRetriever;
 
   @override
   State<KapyNotesApp> createState() => _KapyNotesAppState();
@@ -338,6 +345,8 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         player: _player,
         transcriptions: _transcriptions,
         voicePrefs: _voicePrefs,
+        imageAcquirer: widget.imageAcquirer,
+        lostImageRetriever: widget.lostImageRetriever,
       ),
     );
   }

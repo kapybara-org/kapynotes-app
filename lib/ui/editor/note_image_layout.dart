@@ -25,6 +25,23 @@ class NoteImageBox {
 /// Gap between tiles in a grid, and the vertical air around any image.
 const double noteImageGap = 8;
 
+/// How much narrower than the writing column an attachment is laid out.
+///
+/// It buys one thing, and it is not a margin: a line whose placeholder fills
+/// the available width to the pixel makes Flutter drop the empty line that
+/// follows it. Not shorten — drop. The line box is never created, the caret
+/// for that position collapses onto the placeholder's own line at its right
+/// edge, and since the attachment is painted over that spot there is nothing
+/// to click and nothing to see. A note ending in a picture or a recording had
+/// no line under it to write on.
+///
+/// Measured rather than guessed: the line survives from three pixels of slack
+/// and the threshold does not move with the font size, from 12pt to 40pt. Eight
+/// is that with room to spare, and is checked by a test — if a future Flutter
+/// lays the line out either way, that test says so rather than this quietly
+/// mattering or quietly not.
+const double noteAttachmentColumnSlack = 8;
+
 /// Tiles are 4:3, which is close enough to both a phone photo and a laptop
 /// screenshot that neither is badly served.
 const double noteImageTileAspect = 4 / 3;

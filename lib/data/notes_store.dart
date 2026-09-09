@@ -30,6 +30,7 @@ import 'tombstone.dart';
 class NotesStore extends ChangeNotifier {
   static const String _key = 'notes.v2';
   static const String _legacyKey = 'notes.v1';
+  static const String _pinnedKey = 'pinnedNoteIds.v1';
 
   final LocalStore _store;
   final DateTime Function() _now;
@@ -37,6 +38,7 @@ class NotesStore extends ChangeNotifier {
   List<Note> _activeNotes = const [];
   List<Note> _archivedNotes = const [];
   List<Tombstone> _tombstones = const [];
+  Set<String> _pinnedNoteIds = const {};
   bool _loaded = false;
   Future<void>? _loadFuture;
 
@@ -67,6 +69,7 @@ class NotesStore extends ChangeNotifier {
   /// Every recoverable note, for sync, export, and attachment retention.
   List<Note> get allNotes => _notes;
   List<Tombstone> get tombstones => _tombstones;
+  Set<String> get pinnedNoteIds => _pinnedNoteIds;
   bool get isLoaded => _loaded;
   bool get isEmpty => _activeNotes.isEmpty;
 
@@ -119,6 +122,7 @@ class NotesStore extends ChangeNotifier {
       }
     }
 
+    _loadPinnedNoteIds();
     _refreshViews();
     _loaded = true;
     notifyListeners();
@@ -165,6 +169,24 @@ class NotesStore extends ChangeNotifier {
 
   int activeIndexOf(String id) =>
       _activeNotes.indexWhere((note) => note.id == id);
+
+  bool isPinned(String id) => _pinnedNoteIds.contains(id);
+
+  /// Pins are local organization state rather than note content. Toggling one
+  /// therefore does not change the note timestamp, dirty state, or what a
+  /// collaborator sees in a shared note.
+  bool? togglePinned(String id) {
+    final note = byId(id);
+    if (note == null || note.isArchived) return null;
+
+    final updated = Set<String>.of(_pinnedNoteIds);
+    final pinned = updated.add(id);
+    if (!pinned) updated.remove(id);
+    _pinnedNoteIds = Set.unmodifiable(updated);
+    _store.putNow(_pinnedKey, _pinnedNoteIds.toList(growable: false));
+    notifyListeners();
+    return pinned;
+  }
 
   /// Creates a note at the top of the list and returns it.
   ///
@@ -306,10 +328,14 @@ class NotesStore extends ChangeNotifier {
 
   List<Note> search(String query) {
     final trimmed = query.trim();
-    if (trimmed.isEmpty) return _activeNotes;
-    return _activeNotes
-        .where((note) => note.matches(trimmed))
-        .toList(growable: false);
+    final matches = trimmed.isEmpty
+        ? _activeNotes
+        : _activeNotes.where((note) => note.matches(trimmed)).toList();
+    if (_pinnedNoteIds.isEmpty || matches.length < 2) return matches;
+    return List.unmodifiable([
+      ...matches.where((note) => isPinned(note.id)),
+      ...matches.where((note) => !isPinned(note.id)),
+    ]);
   }
 
   List<Note> searchArchived(String query) {
@@ -800,7 +826,29 @@ class NotesStore extends ChangeNotifier {
       'notes': _encodeNotes(),
       'tombstones': _tombstones.map((stone) => stone.toJson()).toList(),
     });
+    _prunePinnedNoteIds();
     notifyListeners();
+  }
+
+  void _loadPinnedNoteIds() {
+    final raw = _store.data[_pinnedKey];
+    if (raw is! List) {
+      _pinnedNoteIds = const {};
+      return;
+    }
+    final liveIds = _notes.map((note) => note.id).toSet();
+    _pinnedNoteIds = Set.unmodifiable(
+      raw.whereType<String>().where(liveIds.contains),
+    );
+  }
+
+  void _prunePinnedNoteIds() {
+    if (_pinnedNoteIds.isEmpty) return;
+    final liveIds = _notes.map((note) => note.id).toSet();
+    final remaining = _pinnedNoteIds.where(liveIds.contains).toSet();
+    if (remaining.length == _pinnedNoteIds.length) return;
+    _pinnedNoteIds = Set.unmodifiable(remaining);
+    _store.putNow(_pinnedKey, _pinnedNoteIds.toList(growable: false));
   }
 
   void _refreshViews() {

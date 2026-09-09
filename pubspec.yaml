@@ -1,7 +1,7 @@
 name: kapy_notes
 description: "Notes where every line is a live calculator."
 publish_to: 'none'
-version: 1.15.0+16
+version: 1.16.0+17
 
 environment:
   sdk: ^3.10.0
@@ -55,6 +55,15 @@ dependencies:
   # plugin; `getSaveLocation` is desktop-only, and the mobile path writes into
   # the app's own documents directory instead.
   file_selector: ^1.0.3
+
+  # A deliberately small camera surface for note capture on phones: live
+  # preview, rear/front switching, flash and still-image capture. Pinned to
+  # the newest release whose public package keeps this app's Dart 3.10 floor.
+  camera: 0.12.0+2
+  # The platform photo library behind the Photos button in that camera. Its
+  # lost-data API also lets Android finish a selection after recreating the
+  # activity under memory pressure.
+  image_picker: ^1.2.3
 
   # Decode-and-re-encode for image attachments. Pure Dart, so the same
   # compression runs on all five platforms and inside a test with no plugin

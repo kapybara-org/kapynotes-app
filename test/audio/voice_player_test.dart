@@ -64,6 +64,76 @@ void main() {
 
   tearDown(() => player.dispose());
 
+  test('a finished recording plays again from the start', () async {
+    // The bug this pins: nothing rewinds when a recording ends, so the play
+    // button asked the engine to resume from the very end and the recording
+    // sat there. Pressing play on a finished recording means play it again.
+    await player.play('a', fileA);
+    backend.completionController.add(null);
+    await pumpEventQueue();
+    expect(player.playing, isFalse);
+
+    backend.seekedTo = null;
+    await player.play('a', fileA);
+
+    expect(backend.seekedTo, Duration.zero, reason: 'the head has to go back');
+    expect(backend.loaded, ['/tmp/a.m4a'], reason: 'and not reload the file');
+    expect(backend.plays, 2);
+    expect(player.playing, isTrue);
+  });
+
+  test('pausing and resuming still keeps its place', () async {
+    // The other half of the same branch: a pause is not an ending, and
+    // resuming must not rewind.
+    await player.play('a', fileA);
+    await player.pause();
+    backend.seekedTo = null;
+
+    await player.play('a', fileA);
+
+    expect(backend.seekedTo, isNull);
+    expect(backend.plays, 2);
+  });
+
+  test('seeking after the end lets it play on from there', () async {
+    await player.play('a', fileA);
+    backend.completionController.add(null);
+    await pumpEventQueue();
+
+    await player.seek(const Duration(seconds: 4));
+    backend.seekedTo = null;
+    await player.play('a', fileA);
+
+    expect(backend.seekedTo, isNull, reason: 'the seek already placed it');
+    expect(player.position, const Duration(seconds: 4));
+  });
+
+  test('playing from a position starts there', () async {
+    await player.play('a', fileA, from: const Duration(seconds: 3));
+    expect(backend.seekedTo, const Duration(seconds: 3));
+    expect(player.position, const Duration(seconds: 3));
+    expect(backend.plays, 1);
+  });
+
+  test('the position is published without waking the whole tree', () async {
+    // The editor listens to the player and must not rebuild four times a
+    // second; anything that wants the moving head listens to this instead.
+    var notifications = 0;
+    player.addListener(() => notifications++);
+    await player.play('a', fileA);
+    final seen = <Duration>[];
+    player.positionListenable.addListener(
+      () => seen.add(player.positionListenable.value),
+    );
+
+    notifications = 0;
+    backend.positionController.add(const Duration(seconds: 2));
+    await pumpEventQueue();
+
+    expect(seen, [const Duration(seconds: 2)]);
+    expect(notifications, 0);
+  });
+
   test('playing loads the file and starts', () async {
     await player.play('a', fileA);
     expect(backend.loaded, ['/tmp/a.m4a']);

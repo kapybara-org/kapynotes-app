@@ -437,7 +437,7 @@ void main() {
     );
   });
 
-  testWidgets('uses compact icon surfaces and note rows on desktop', (
+  testWidgets('uses compact toolbar and roomier footer surfaces on desktop', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -460,9 +460,25 @@ void main() {
       tester.getSize(toolbarButton(Icons.menu_rounded)),
       const Size.square(24),
     );
+    final footerBold = find.descendant(
+      of: find.byKey(const ValueKey('format-bold')),
+      matching: find.byType(IconButton),
+    );
+    expect(tester.getSize(footerBold), const Size.square(32));
+
+    Finder footerButton(String key) => find.descendant(
+      of: find.byKey(ValueKey(key)),
+      matching: find.byType(IconButton),
+    );
+    final image = tester.getRect(footerButton('insert-image'));
+    final mic = tester.getRect(footerButton('record-voice'));
+    final style = tester.getRect(footerButton('format-style'));
+    expect(mic.left - image.right, 4);
+    expect(style.left - mic.right, 12);
     expect(
-      tester.getSize(find.byKey(const ValueKey('format-bold'))),
-      const Size.square(24),
+      image.center.dx,
+      closeTo(tester.getRect(find.byType(NoteFooter)).left + 28, 0.01),
+      reason: 'the first action should align with the editor text column',
     );
 
     final noteRow = find.byType(NoteRow).first;
@@ -588,6 +604,41 @@ void main() {
     expect(prefs.gutterWidth, LayoutPrefs.defaultGutterWidth);
     expect(prefs.resultsVisible, isTrue);
     expect(prefs.sidebarWidth, LayoutPrefs.defaultSidebarWidth);
+  });
+
+  testWidgets('spell check is native, subtle, and can be turned off', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.pumpAndSettle();
+
+    expect(prefs.spellCheckEnabled, isTrue);
+    expect(
+      tester.widget<NoteEditor>(find.byType(NoteEditor)).spellCheckEnabled,
+      isTrue,
+    );
+    expect(
+      openNoteField(tester).spellCheckConfiguration?.spellCheckEnabled,
+      isFalse,
+      reason: 'the rich editor merges native results into its own span tree',
+    );
+    expect(openNoteField(tester).autocorrect, isFalse);
+
+    await openSettings(tester);
+    final toggle = find.byKey(const ValueKey('spell-check-toggle'));
+    expect(
+      find.descendant(of: toggle, matching: find.text('Check spelling')),
+      findsOneWidget,
+    );
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+
+    expect(prefs.spellCheckEnabled, isFalse);
+    expect(
+      tester.widget<NoteEditor>(find.byType(NoteEditor)).spellCheckEnabled,
+      isFalse,
+    );
   });
 
   testWidgets('settings reserves semibold for primary emphasis', (
@@ -1291,6 +1342,37 @@ void main() {
     expect(rowTitles(), ['Older', 'Latest']);
     expect(notes.notes.map((note) => note.id), ['older', 'latest']);
     expect(find.text('3 Sep 2026 · 09:10'), findsOneWidget);
+  });
+
+  testWidgets('pins notes into a top section and allows unpinning', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    final reference = notes.create(body: 'Reference');
+    notes.create(body: 'Today');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(NoteRow, 'Reference'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('pin-note-${reference.id}')));
+    await tester.pumpAndSettle();
+
+    List<String> rowTitles() => tester
+        .widgetList<NoteRow>(find.byType(NoteRow))
+        .map((row) => row.note.title)
+        .toList();
+    expect(find.text('Pinned'), findsOneWidget);
+    expect(find.text('Notes'), findsOneWidget);
+    expect(rowTitles(), ['Reference', 'Today']);
+    expect(notes.isPinned(reference.id), isTrue);
+    expect(find.byTooltip('Unpin note'), findsOneWidget);
+
+    await tester.tap(find.byKey(ValueKey('pin-note-${reference.id}')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pinned'), findsNothing);
+    expect(rowTitles(), ['Today', 'Reference']);
+    expect(notes.isPinned(reference.id), isFalse);
   });
 
   testWidgets('archives a note, then restores it from the archive', (

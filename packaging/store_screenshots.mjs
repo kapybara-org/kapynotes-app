@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import {
+  existsSync,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -8,14 +9,33 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-import { chromium } from '../../website/node_modules/playwright/index.mjs';
-import sharp from '../../website/node_modules/sharp/dist/index.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = resolve(HERE, '..');
-const REPO_ROOT = resolve(APP_ROOT, '..');
+const REPO_ROOT = [
+  process.env.KAPYNOTES_REPO_ROOT,
+  resolve(APP_ROOT, '..'),
+  resolve(APP_ROOT, '..', 'KapyNotes'),
+].find(
+  (candidate) =>
+    candidate &&
+    existsSync(join(candidate, 'website', 'node_modules', 'playwright', 'index.mjs')) &&
+    existsSync(join(candidate, 'website', 'node_modules', 'sharp', 'dist', 'index.mjs')) &&
+    existsSync(join(candidate, 'design', 'mascot', 'final', 'png')),
+);
+if (!REPO_ROOT) {
+  throw new Error(
+    'Could not find the KapyNotes website dependencies and design assets. ' +
+      'Run npm install in the website, or set KAPYNOTES_REPO_ROOT.',
+  );
+}
+const { chromium } = await import(
+  pathToFileURL(join(REPO_ROOT, 'website', 'node_modules', 'playwright', 'index.mjs')).href
+);
+const { default: sharp } = await import(
+  pathToFileURL(join(REPO_ROOT, 'website', 'node_modules', 'sharp', 'dist', 'index.mjs')).href
+);
 const BUILD_ROOT = join(APP_ROOT, 'build');
 const RAW_ROOT = join(BUILD_ROOT, 'screenshots');
 const OUT_ROOT = join(BUILD_ROOT, 'store-listing');

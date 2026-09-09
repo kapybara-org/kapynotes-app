@@ -19,16 +19,35 @@
 // change is one edit and one rerun, the same arrangement store_screenshots.mjs
 // uses for the listing screenshots.
 
-import { mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-import { chromium } from '../../website/node_modules/playwright/index.mjs';
-import sharp from '../../website/node_modules/sharp/dist/index.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = resolve(HERE, '..');
-const REPO_ROOT = resolve(APP_ROOT, '..');
+const REPO_ROOT = [
+  process.env.KAPYNOTES_REPO_ROOT,
+  resolve(APP_ROOT, '..'),
+  resolve(APP_ROOT, '..', 'KapyNotes'),
+].find(
+  (candidate) =>
+    candidate &&
+    existsSync(join(candidate, 'website', 'node_modules', 'playwright', 'index.mjs')) &&
+    existsSync(join(candidate, 'website', 'node_modules', 'sharp', 'dist', 'index.mjs')) &&
+    existsSync(join(candidate, 'design', 'mascot', 'final', 'png')),
+);
+if (!REPO_ROOT) {
+  throw new Error(
+    'Could not find the KapyNotes website dependencies and design assets. ' +
+      'Run npm install in the website, or set KAPYNOTES_REPO_ROOT.',
+  );
+}
+const { chromium } = await import(
+  pathToFileURL(join(REPO_ROOT, 'website', 'node_modules', 'playwright', 'index.mjs')).href
+);
+const { default: sharp } = await import(
+  pathToFileURL(join(REPO_ROOT, 'website', 'node_modules', 'sharp', 'dist', 'index.mjs')).href
+);
 const OUT_DIR = join(APP_ROOT, 'build', 'store-listing', 'play-store');
 const MASCOT = join(REPO_ROOT, 'design', 'mascot', 'final', 'png', 'kapy-calculator.png');
 const ICON_SOURCE = join(APP_ROOT, 'assets', 'branding', 'kapynotes_app_icon.png');

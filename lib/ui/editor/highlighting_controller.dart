@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show SuggestionSpan;
 import 'package:material_ui/material_ui.dart';
 
 import '../../calc/highlight.dart';
@@ -39,6 +40,13 @@ class HighlightingController extends TextEditingController {
   WritingFont _writingFont;
   List<NoteFormatRange> _formats;
   Map<int, NoteImageSpan> _imageSpans = const {};
+
+  /// Native spelling results currently painted by this rich text controller.
+  ///
+  /// Deliberately a silent field: the editor rebuilds after accepting an
+  /// asynchronous result. Notifying controller listeners here would make a
+  /// visual underline look like a document edit and reset idle interactions.
+  List<SuggestionSpan> spellingSuggestions = const [];
 
   String? _cachedText;
   List<HighlightSpan> _cachedSpans = const [];
@@ -153,6 +161,10 @@ class HighlightingController extends TextEditingController {
       boundaries.add(range.start);
       boundaries.add(range.end);
     }
+    for (final suggestion in spellingSuggestions) {
+      boundaries.add(suggestion.range.start.clamp(0, source.length));
+      boundaries.add(suggestion.range.end.clamp(0, source.length));
+    }
     for (final offset in _imageSpans.keys) {
       if (offset < 0 || offset >= source.length) continue;
       boundaries.add(offset);
@@ -180,10 +192,7 @@ class HighlightingController extends TextEditingController {
       final image = end == start + 1 ? _imageSpans[start] : null;
       if (image != null) {
         children.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.top,
-            child: image.child,
-          ),
+          WidgetSpan(alignment: PlaceholderAlignment.top, child: image.child),
         );
         continue;
       }
@@ -206,6 +215,13 @@ class HighlightingController extends TextEditingController {
               links[linkIndex].end >= end
           ? links[linkIndex]
           : null;
+      final checked = checkedRanges.any(
+        (range) => range.start <= start && range.end >= end,
+      );
+      final misspelled = spellingSuggestions.any(
+        (suggestion) =>
+            suggestion.range.start <= start && suggestion.range.end >= end,
+      );
 
       var segmentStyle = active == null
           ? base
@@ -237,6 +253,21 @@ class HighlightingController extends TextEditingController {
           ),
         };
       }
+      // A spelling mark must not replace KapyNotes' syntax, rich formatting,
+      // link, or attachment spans. It is just one quiet decoration layered on
+      // top. Links keep their familiar solid underline, while completed tasks
+      // keep their strike-through rather than inheriting a wavy decoration.
+      if (misspelled && activeLink == null && !checked) {
+        segmentStyle = segmentStyle.copyWith(
+          decoration: TextDecoration.underline,
+          decorationColor: Theme.of(context).colorScheme.error,
+          decorationStyle:
+              defaultTargetPlatform == TargetPlatform.iOS ||
+                  defaultTargetPlatform == TargetPlatform.macOS
+              ? TextDecorationStyle.dotted
+              : TextDecorationStyle.wavy,
+        );
+      }
       if (activeLink != null) {
         segmentStyle = segmentStyle.copyWith(
           color: linkColor,
@@ -245,9 +276,6 @@ class HighlightingController extends TextEditingController {
           decorationThickness: 1,
         );
       }
-      final checked = checkedRanges.any(
-        (range) => range.start <= start && range.end >= end,
-      );
       if (checked) {
         segmentStyle = segmentStyle.copyWith(
           color: _palette.comment,

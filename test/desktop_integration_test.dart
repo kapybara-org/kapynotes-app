@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
+import 'package:kapy_notes/core/system_shutdown.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
@@ -197,6 +198,62 @@ void main() {
       sequence.indexOf('tray_manager.destroy'),
       lessThan(sequence.indexOf('window_manager.destroy')),
     );
+  });
+
+  /// What the Windows runner sends when Restart Manager — the installer —
+  /// or a logoff asks this process to end.
+  Future<void> sendShutdown() {
+    return TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          SystemShutdown.channel.name,
+          const StandardMethodCodec().encodeMethodCall(
+            const MethodCall('shutdown'),
+          ),
+          (_) {},
+        );
+  }
+
+  test(
+    'an installer asking the app to end is not answered with a hide',
+    () async {
+      // The configuration this went wrong in, which is also the default one:
+      // the close button hides to the tray, so the WM_CLOSE Restart Manager
+      // falls back to was swallowed and the process lived on holding the very
+      // files the installer had come to replace.
+      await integration.initialize(ShortcutPrefs(_MemoryStore())..load());
+      prefs.keepRunningInBackground = true;
+      await settle();
+      window.calls.clear();
+      tray.calls.clear();
+
+      var flushed = false;
+      integration.onBeforeQuit = () async => flushed = true;
+
+      await sendShutdown();
+
+      expect(flushed, isTrue, reason: 'notes must reach disk before the exit');
+      expect(window.calls, contains('destroy'));
+      expect(window.calls, isNot(contains('hide')));
+      expect(tray.calls, contains('destroy'));
+    },
+  );
+
+  test('being asked to leave twice still only leaves once', () async {
+    // An update arrives here from both ends at once: WinSparkle asks the app
+    // to quit at the same moment the installer it already launched asks
+    // Windows to make it. Destroying the window twice is a crash.
+    await integration.initialize(ShortcutPrefs(_MemoryStore())..load());
+    await settle();
+    window.calls.clear();
+
+    var saves = 0;
+    integration.onBeforeQuit = () async => saves++;
+
+    await Future.wait([sendShutdown(), integration.quit()]);
+    await integration.quit();
+
+    expect(saves, 1);
+    expect(window.calls.where((call) => call == 'destroy'), hasLength(1));
   });
 
   test('quitting still closes the window when the final save fails', () async {

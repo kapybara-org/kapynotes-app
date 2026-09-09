@@ -1,5 +1,6 @@
 import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -546,6 +547,110 @@ void main() {
     expect(chipWithText('4'), findsOneWidget);
   });
 
+  testWidgets(
+    'native spelling stays subtle without replacing calculator styling',
+    (tester) async {
+      const channel = MethodChannel('kapynotes/spell_check');
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() {
+        AppPlatform.debugTargetPlatformOverride = null;
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        );
+      });
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        expect(call.method, 'check');
+        return [
+          {
+            'startIndex': 0,
+            'endIndex': 5,
+            'suggestions': ['sample', 'simple'],
+          },
+        ];
+      });
+
+      await tester.pumpWidget(harness('smple + 2', autofocus: true));
+      await tester.pump(const Duration(milliseconds: 181));
+      await tester.pump();
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.spellCheckConfiguration?.spellCheckEnabled, isFalse);
+      final rendered =
+          tester
+                  .state<EditableTextState>(find.byType(EditableText))
+                  .renderEditable
+                  .text!
+              as TextSpan;
+      final textSpans = rendered.children!.whereType<TextSpan>();
+      final misspelling = textSpans.firstWhere((span) => span.text == 'smple');
+      final number = textSpans.firstWhere((span) => span.text == '2');
+      expect(
+        misspelling.style!.decoration!.contains(TextDecoration.underline),
+        isTrue,
+      );
+      expect(
+        misspelling.style!.decorationStyle,
+        defaultTargetPlatform == TargetPlatform.iOS ||
+                defaultTargetPlatform == TargetPlatform.macOS
+            ? TextDecorationStyle.dotted
+            : TextDecorationStyle.wavy,
+      );
+      expect(
+        misspelling.style!.decorationColor,
+        Theme.of(tester.element(find.byType(TextField))).colorScheme.error,
+      );
+      expect(number.style!.color, KapyTheme.darkPalette.number);
+    },
+  );
+
+  testWidgets('offers native corrections in the adaptive edit menu', (
+    tester,
+  ) async {
+    const channel = MethodChannel('kapynotes/spell_check');
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() {
+      AppPlatform.debugTargetPlatformOverride = null;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      (_) async => [
+        {
+          'startIndex': 0,
+          'endIndex': 5,
+          'suggestions': ['sample', 'simple'],
+        },
+      ],
+    );
+
+    await tester.pumpWidget(harness('smple note', autofocus: true));
+    await tester.pump(const Duration(milliseconds: 181));
+    await tester.pump();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.controller!.selection = const TextSelection.collapsed(offset: 2);
+    await tester.pump();
+
+    final editable = tester.state<EditableTextState>(find.byType(EditableText));
+    expect(editable.showToolbar(), isTrue);
+    await tester.pump();
+    expect(find.text('sample'), findsOneWidget);
+    expect(find.text('simple'), findsOneWidget);
+
+    await tester.tap(find.text('sample'));
+    await tester.pump();
+    expect(field.controller!.text, 'sample note');
+    expect(
+      field.controller!.selection,
+      const TextSelection.collapsed(offset: 6),
+    );
+  });
+
   testWidgets('starts the controls at the left and pins the total right', (
     tester,
   ) async {
@@ -562,14 +667,14 @@ void main() {
     final total = tester.getRect(find.byKey(const ValueKey('note-total')));
 
     // Left-anchored, in reading order, rather than floating in the middle.
-    expect(settings.left, closeTo(footer.left + 8, 1));
-    expect(formatting.left, closeTo(settings.right + 14, 1));
+    expect(settings.left, closeTo(footer.left + 12, 1));
+    expect(formatting.left, closeTo(settings.right + 16, 1));
     expect(
       formatting.center.dx,
       lessThan(footer.center.dx),
       reason: 'the controls belong at the edge the eye starts from',
     );
-    expect(total.right, closeTo(footer.right - 10, 1));
+    expect(total.right, closeTo(footer.right - 12, 1));
   });
 
   testWidgets('the controls do not move when the nesting buttons appear', (
@@ -599,13 +704,13 @@ void main() {
     );
   });
 
-  testWidgets('uses one compact surface for every footer icon control', (
+  testWidgets('spaces consistently sized footer controls on desktop', (
     tester,
   ) async {
     await tester.pumpWidget(harness('2 + 2'));
     await tester.pumpAndSettle();
 
-    final sizes = <Size>[
+    final controls = <Finder>[
       for (final key in const [
         ValueKey('note-settings'),
         ValueKey('format-style'),
@@ -614,13 +719,19 @@ void main() {
         ValueKey('format-bullets'),
         ValueKey('format-checklist'),
       ])
-        tester.getSize(find.byKey(key)),
+        find.descendant(of: find.byKey(key), matching: find.byType(IconButton)),
     ];
     expect(
-      sizes,
-      everyElement(const Size.square(24)),
-      reason: 'Every footer control should use the same compact hover surface',
+      controls.map(tester.getSize),
+      everyElement(const Size.square(32)),
+      reason: 'Every footer action should have the same readable hover target',
     );
+    for (var index = 2; index < controls.length; index++) {
+      final previous = tester.getRect(controls[index - 1]);
+      final current = tester.getRect(controls[index]);
+      expect(current.left - previous.right, closeTo(4, 0.01));
+    }
+    expect(tester.getSize(find.byType(NoteFooter)).height, 48);
   });
 
   testWidgets('keeps the footer controls separated on a narrow phone', (

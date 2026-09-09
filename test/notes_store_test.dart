@@ -78,6 +78,48 @@ void main() {
     ]);
   });
 
+  test(
+    'pins notes above recency without turning pinning into an edit',
+    () async {
+      var now = DateTime.utc(2026, 9, 1, 8);
+      final storage = _MemoryStore();
+      final notes = NotesStore(storage, now: () => now);
+      await notes.load();
+      final older = notes.create(body: 'Reference');
+      now = DateTime.utc(2026, 9, 1, 9);
+      final newer = notes.create(body: 'Today');
+      final olderUpdatedAt = older.updatedAt;
+
+      expect(notes.togglePinned(older.id), isTrue);
+      expect(notes.notes.map((note) => note.id), [newer.id, older.id]);
+      expect(notes.search('').map((note) => note.id), [older.id, newer.id]);
+      expect(notes.byId(older.id)!.updatedAt, olderUpdatedAt);
+      expect(notes.isPinned(older.id), isTrue);
+
+      final restored = NotesStore(storage);
+      await restored.load();
+      expect(restored.isPinned(older.id), isTrue);
+      expect(restored.search('').first.id, older.id);
+
+      expect(restored.togglePinned(older.id), isFalse);
+      expect(restored.pinnedNoteIds, isEmpty);
+      expect(restored.search('').map((note) => note.id), [newer.id, older.id]);
+    },
+  );
+
+  test('deleting a pinned note clears its organization state', () async {
+    final storage = _MemoryStore();
+    final notes = NotesStore(storage);
+    await notes.load();
+    final note = notes.create(body: 'Temporary');
+    notes.togglePinned(note.id);
+
+    notes.delete(note.id);
+
+    expect(notes.pinnedNoteIds, isEmpty);
+    expect(storage.data['pinnedNoteIds.v1'], isEmpty);
+  });
+
   test('archives a note without deleting it and restores it later', () async {
     var now = DateTime.utc(2026, 9, 4, 8);
     final store = _MemoryStore();

@@ -8,6 +8,15 @@
          launch: a user who never records is never asked. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
+    <!-- Requested only when the camera surface is opened. Choosing an
+         existing photo uses Android's system Photo Picker and needs no broad
+         storage permission. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+
+    <!-- Camera capture is useful but not required: tablets and emulators
+         without one can still add pictures from their library. -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false"/>
+
     <application
         android:label="Kapy Notes"
         android:name="${applicationName}"

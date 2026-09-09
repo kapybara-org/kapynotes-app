@@ -22,7 +22,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         RichClipboard.register(flutterEngine, this)
-        pendingLaunch = launchNameOf(intent)
+        pendingLaunch = takeLaunchName(intent)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -46,11 +46,22 @@ class MainActivity : FlutterActivity() {
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        pendingLaunch = launchNameOf(intent) ?: pendingLaunch
+        pendingLaunch = takeLaunchName(intent) ?: pendingLaunch
     }
 
-    private fun launchNameOf(intent: Intent?): String? =
-        QuickAction.ofIntentAction(intent?.action)?.launchName
+    /**
+     * Consumes the widget action from the Activity intent itself as well as
+     * from [pendingLaunch]. Android may recreate this Activity while its photo
+     * picker is open; leaving the action on the base intent would make that
+     * reconstruction look like a second Capture tap and reopen the camera over
+     * the photo being returned.
+     */
+    private fun takeLaunchName(intent: Intent?): String? {
+        val launchIntent = intent ?: return null
+        val name = QuickAction.ofIntentAction(launchIntent.action)?.launchName ?: return null
+        launchIntent.action = null
+        return name
+    }
 
     companion object {
         private const val CHANNEL = "kapynotes/quick_capture"

@@ -17,6 +17,13 @@ class VoiceRecordingSession {
   /// 0 to 1, for the bar's level meter.
   final double level;
 
+  /// Advances for every microphone sample, even when two levels are equal.
+  ///
+  /// The recording bar uses this to distinguish a sustained sound from an
+  /// unrelated rebuild without carrying an ever-growing waveform in session
+  /// state. The visual history stays bounded inside the bar itself.
+  final int sampleSequence;
+
   /// The user pressed pause.
   final bool paused;
 
@@ -32,6 +39,7 @@ class VoiceRecordingSession {
     required this.noteId,
     this.elapsed = Duration.zero,
     this.level = 0,
+    this.sampleSequence = 0,
     this.paused = false,
     this.interrupted = false,
     this.finishing = false,
@@ -40,6 +48,7 @@ class VoiceRecordingSession {
   VoiceRecordingSession copyWith({
     Duration? elapsed,
     double? level,
+    int? sampleSequence,
     bool? paused,
     bool? interrupted,
     bool? finishing,
@@ -47,6 +56,7 @@ class VoiceRecordingSession {
     noteId: noteId,
     elapsed: elapsed ?? this.elapsed,
     level: level ?? this.level,
+    sampleSequence: sampleSequence ?? this.sampleSequence,
     paused: paused ?? this.paused,
     interrupted: interrupted ?? this.interrupted,
     finishing: finishing ?? this.finishing,
@@ -180,7 +190,10 @@ class VoiceRecordingController extends ChangeNotifier {
     final session = _session;
     if (session == null || session.paused || session.interrupted) return;
     _samples.add(dbfs);
-    _session = session.copyWith(level: levelFromAmplitude(dbfs));
+    _session = session.copyWith(
+      level: levelFromAmplitude(dbfs),
+      sampleSequence: session.sampleSequence + 1,
+    );
     _notify();
   }
 

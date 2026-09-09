@@ -26,7 +26,7 @@ class Toast {
   static void show(
     BuildContext context,
     String message, {
-    IconData icon = Icons.check_rounded,
+    IconData? icon,
     bool isError = false,
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
@@ -35,7 +35,8 @@ class Toast {
     _showOn(
       overlay,
       message,
-      icon: icon,
+      icon:
+          icon ?? (isError ? Icons.error_outline_rounded : Icons.check_rounded),
       isError: isError,
       progress: false,
       duration: const Duration(milliseconds: 1800),
@@ -215,14 +216,23 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final scheme = Theme.of(context).colorScheme;
     final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final compact = AppPlatform.hasPointer;
+    final statusColor = widget.isError ? scheme.error : scheme.primary;
+    final surfaceColor = Color.alphaBlend(
+      palette.textPrimary.withValues(alpha: dark ? 0.055 : 0.035),
+      palette.surfaceBackground,
+    );
 
     final media = MediaQuery.of(context);
     return Positioned(
-      bottom: 28 + math.max(media.padding.bottom, media.viewInsets.bottom),
-      left: 0,
-      right: 0,
+      bottom:
+          (compact ? 24 : 16) +
+          math.max(media.padding.bottom, media.viewInsets.bottom),
+      left: 16,
+      right: 16,
       child: IgnorePointer(
         child: FadeTransition(
           opacity: curve,
@@ -237,63 +247,85 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                 label: widget.message,
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    maxWidth: math.max(0, math.min(420, media.size.width - 32)),
+                    minHeight: compact ? 40 : 44,
+                    maxWidth: math.max(0, math.min(400, media.size.width - 32)),
                   ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      color: palette.surfaceBackground,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: palette.controlBorder,
-                        width: 0.5,
+                  child: RepaintBoundary(
+                    key: const ValueKey('toast-repaint-boundary'),
+                    child: Container(
+                      key: const ValueKey('toast-surface'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(
-                            alpha: dark ? 0.20 : 0.08,
+                      decoration: BoxDecoration(
+                        color: surfaceColor,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: palette.controlBorder.withValues(
+                            alpha: dark ? 0.95 : 0.72,
                           ),
-                          blurRadius: 14,
-                          offset: const Offset(0, 5),
+                          width: 0.75,
                         ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (widget.progress)
-                          SizedBox.square(
-                            key: const ValueKey('toast-progress-indicator'),
-                            dimension: AppControlMetrics.iconAdornment,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: palette.chipCurrency,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(
+                              alpha: dark ? 0.28 : 0.12,
                             ),
-                          )
-                        else
-                          Icon(
-                            widget.icon,
-                            size: AppControlMetrics.iconAdornment,
-                            color: widget.isError
-                                ? Theme.of(context).colorScheme.error
-                                : palette.chipCurrency,
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
                           ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            widget.message,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: AppTypeScale.body,
-                              color: palette.textPrimary,
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: compact ? 22 : 24,
+                            height: compact ? 22 : 24,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: statusColor.withValues(
+                                alpha: dark ? 0.14 : 0.10,
+                              ),
+                            ),
+                            child: widget.progress
+                                ? SizedBox.square(
+                                    key: const ValueKey(
+                                      'toast-progress-indicator',
+                                    ),
+                                    dimension: compact ? 12 : 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.75,
+                                      color: statusColor,
+                                    ),
+                                  )
+                                : Icon(
+                                    widget.icon,
+                                    key: const ValueKey('toast-status-icon'),
+                                    size: compact ? 14 : 16,
+                                    color: statusColor,
+                                  ),
+                          ),
+                          const SizedBox(width: 9),
+                          Flexible(
+                            child: Text(
+                              widget.message,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    fontSize: AppTypeScale.body,
+                                    color: palette.textPrimary,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.2,
+                                  ),
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 3),
+                        ],
+                      ),
                     ),
                   ),
                 ),

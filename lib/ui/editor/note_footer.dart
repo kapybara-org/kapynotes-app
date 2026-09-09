@@ -114,13 +114,17 @@ class NoteFooter extends StatelessWidget {
   /// wider than its glyph, so its optical edge already sits inside its box; a
   /// text run has no such padding and needs the margin spelled out to look
   /// equally inset.
-  static const double _edgeInset = 8;
-  static const double _textEdgeInset = 10;
+  static double get _edgeInset => AppPlatform.hasPointer ? 12 : 8;
+  static double get _textEdgeInset => AppPlatform.hasPointer ? 12 : 10;
 
   /// Between the gear and the formatting cluster. They are different in kind —
   /// one leaves the note, the rest change the text — and butted together they
   /// would read as one group of six.
-  static const double _groupGap = 14;
+  static double get _groupGap => AppPlatform.hasPointer ? 16 : 14;
+
+  /// Extra distinction between insert actions and text formatting. Proximity
+  /// should reveal the two jobs before somebody has to inspect the tooltips.
+  static double get _formatGroupGap => AppPlatform.hasPointer ? 8 : 0;
 
   /// Trims an available width down to a whole number of buttons.
   ///
@@ -128,11 +132,24 @@ class NoteFooter extends StatelessWidget {
   /// behaviour, but a row cut mid-button reads as a rendering fault rather
   /// than as something to scroll. Cutting on a button boundary makes it
   /// obvious that there is more, and keeps every visible control tappable.
-  static double _snapToWholeButtons(double available, double rowWidth) {
+  static double _snapToWholeButtons(
+    double available,
+    double rowWidth, {
+    int leadingButtonCount = 0,
+    double internalGap = 0,
+  }) {
     if (available <= 0) return 0;
     if (available >= rowWidth) return available;
-    final extent = AppControlMetrics.iconButtonExtent;
+    final extent = AppControlMetrics.footerButtonSlotExtent;
     if (extent <= 0 || available <= extent) return available;
+    final leadingWidth = leadingButtonCount * extent;
+    if (internalGap > 0 && available > leadingWidth) {
+      if (available < leadingWidth + internalGap + extent) {
+        return leadingWidth;
+      }
+      return ((available - internalGap) / extent).floor() * extent +
+          internalGap;
+    }
     return (available / extent).floor() * extent;
   }
 
@@ -160,17 +177,23 @@ class NoteFooter extends StatelessWidget {
           // sideways by a full button — 44pt under a thumb. Tap Bullets and
           // Bold would leave from under the finger that just pressed it.
           final gearSlot = showSettingsButton
-              ? AppControlMetrics.iconButtonExtent + _groupGap
+              ? AppControlMetrics.footerButtonExtent + _groupGap
               : 0.0;
           // Style, bold, italic, bullets, checklist, and the image button
           // when there is anywhere to put an image; nesting adds two more.
+          final insertButtonCount = readOnly
+              ? 0
+              : (onInsertImagePressed == null ? 0 : 1) +
+                    (onRecordVoicePressed == null ? 0 : 1);
           final buttonCount = readOnly
               ? 0
-              : 5 +
-                    (onInsertImagePressed == null ? 0 : 1) +
-                    (onRecordVoicePressed == null ? 0 : 1) +
-                    (showIndentControls ? 2 : 0);
-          final rowWidth = buttonCount * AppControlMetrics.iconButtonExtent;
+              : 5 + insertButtonCount + (showIndentControls ? 2 : 0);
+          final insertFormatGap = insertButtonCount == 0
+              ? 0.0
+              : _formatGroupGap;
+          final rowWidth =
+              buttonCount * AppControlMetrics.footerButtonSlotExtent +
+              insertFormatGap;
           final fixed =
               _edgeInset + gearSlot + rowWidth + _groupGap + _textEdgeInset;
           // Whatever is genuinely left over, up to a readable maximum. The
@@ -186,10 +209,10 @@ class NoteFooter extends StatelessWidget {
             height: AppControlMetrics.scaleBar(context, height),
             child: Row(
               children: [
-                const SizedBox(width: _edgeInset),
+                SizedBox(width: _edgeInset),
                 if (showSettingsButton) ...[
                   FooterSettingsButton(onPressed: onSettingsPressed),
-                  const SizedBox(width: _groupGap),
+                  SizedBox(width: _groupGap),
                 ],
                 if (!readOnly)
                   ConstrainedBox(
@@ -205,6 +228,8 @@ class NoteFooter extends StatelessWidget {
                               _textEdgeInset,
                         ),
                         rowWidth,
+                        leadingButtonCount: insertButtonCount,
+                        internalGap: insertFormatGap,
                       ),
                     ),
                     // Scrolls only when it cannot fit, which a narrow phone with
@@ -225,9 +250,13 @@ class NoteFooter extends StatelessWidget {
                             if (onInsertImagePressed != null) ...[
                               _FormatButton(
                                 key: const ValueKey('insert-image'),
-                                icon: Icons.image_outlined,
+                                icon: AppPlatform.isMobile
+                                    ? Icons.camera_alt_outlined
+                                    : Icons.image_outlined,
                                 tooltip: imageBusy
-                                    ? 'Adding image…'
+                                    ? 'Adding photo…'
+                                    : AppPlatform.isMobile
+                                    ? 'Take or choose a photo'
                                     : 'Add an image',
                                 active: false,
                                 busy: imageBusy,
@@ -255,7 +284,11 @@ class NoteFooter extends StatelessWidget {
                                     ? null
                                     : onRecordVoicePressed,
                               ),
+                            if (onInsertImagePressed != null ||
+                                onRecordVoicePressed != null)
+                              SizedBox(width: _formatGroupGap),
                             _StyleCycleButton(
+                              key: const ValueKey('format-style'),
                               style: paragraphStyle,
                               shortcut: paragraphStyleShortcut,
                               onPressed: onParagraphStylePressed,
@@ -357,7 +390,7 @@ class NoteFooter extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: _textEdgeInset),
+                  SizedBox(width: _textEdgeInset),
                 ] else if (readOnly) ...[
                   SizedBox(
                     width: readoutSlot,
@@ -382,7 +415,7 @@ class NoteFooter extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: _textEdgeInset),
+                  SizedBox(width: _textEdgeInset),
                 ] else if (total case final total?) ...[
                   SizedBox(
                     width: readoutSlot,
@@ -410,7 +443,7 @@ class NoteFooter extends StatelessWidget {
                       textAlign: TextAlign.right,
                     ),
                   ),
-                  const SizedBox(width: _textEdgeInset),
+                  SizedBox(width: _textEdgeInset),
                 ],
               ],
             ),
@@ -423,6 +456,7 @@ class NoteFooter extends StatelessWidget {
 
 class _StyleCycleButton extends StatelessWidget {
   const _StyleCycleButton({
+    super.key,
     required this.style,
     required this.shortcut,
     required this.onPressed,
@@ -441,27 +475,29 @@ class _StyleCycleButton extends StatelessWidget {
       NoteParagraphStyle.subtitle => 'S',
       _ => 'Aa',
     };
-    return CompactIconButton(
-      key: const ValueKey('format-style'),
-      tooltip: _withShortcut(
-        'Text style: ${style?.label ?? 'Mixed'}',
-        shortcut,
-      ),
-      selected: active,
-      foregroundColor: active ? palette.textPrimary : palette.textTertiary,
-      onPressed: onPressed,
-      icon: Text(
-        label,
-        style: TextStyle(
-          fontSize: style == NoteParagraphStyle.heading
-              ? AppTypeScale.control
-              : AppTypeScale.caption,
-          fontWeight: style == NoteParagraphStyle.heading
-              ? FontWeight.w700
-              : FontWeight.w600,
-          fontStyle: style == NoteParagraphStyle.subtitle
-              ? FontStyle.italic
-              : FontStyle.normal,
+    return _FooterButtonSlot(
+      child: CompactIconButton(
+        extent: AppControlMetrics.footerButtonExtent,
+        tooltip: _withShortcut(
+          'Text style: ${style?.label ?? 'Mixed'}',
+          shortcut,
+        ),
+        selected: active,
+        foregroundColor: active ? palette.textPrimary : palette.textTertiary,
+        onPressed: onPressed,
+        icon: Text(
+          label,
+          style: TextStyle(
+            fontSize: AppPlatform.hasPointer
+                ? AppTypeScale.control
+                : AppTypeScale.caption,
+            fontWeight: style == NoteParagraphStyle.heading
+                ? FontWeight.w700
+                : FontWeight.w600,
+            fontStyle: style == NoteParagraphStyle.subtitle
+                ? FontStyle.italic
+                : FontStyle.normal,
+          ),
         ),
       ),
     );
@@ -497,23 +533,40 @@ class _FormatButton extends StatelessWidget {
       (true, _) => palette.textPrimary,
       _ => palette.textTertiary,
     };
-    return CompactIconButton(
-      tooltip: tooltip,
-      selected: active,
-      foregroundColor: foreground,
-      onPressed: onPressed,
-      icon: busy
-          ? SizedBox.square(
-              key: progressKey,
-              dimension: AppControlMetrics.iconAction,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: foreground,
-              ),
-            )
-          : Icon(icon, size: AppControlMetrics.iconAction),
+    return _FooterButtonSlot(
+      child: CompactIconButton(
+        extent: AppControlMetrics.footerButtonExtent,
+        tooltip: tooltip,
+        selected: active,
+        foregroundColor: foreground,
+        onPressed: onPressed,
+        icon: busy
+            ? SizedBox.square(
+                key: progressKey,
+                dimension: AppControlMetrics.footerIconAction,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: foreground,
+                ),
+              )
+            : Icon(icon, size: AppControlMetrics.footerIconAction),
+      ),
     );
   }
+}
+
+/// Gives every footer action the same trailing beat without enlarging its
+/// painted hover surface. The final beat also keeps the strip off the readout.
+class _FooterButtonSlot extends StatelessWidget {
+  const _FooterButtonSlot({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.only(right: AppControlMetrics.footerButtonGap),
+    child: child,
+  );
 }
 
 /// The shared settings affordance used by the note and sidebar footers.
@@ -533,8 +586,12 @@ class FooterSettingsButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CompactIconButton(
     key: const ValueKey('note-settings'),
+    extent: AppControlMetrics.footerButtonExtent,
     onPressed: onPressed,
-    icon: Icon(Icons.settings_outlined, size: AppControlMetrics.iconControl),
+    icon: Icon(
+      Icons.settings_outlined,
+      size: AppControlMetrics.footerIconControl,
+    ),
     tooltip: tooltip,
     foregroundColor: context.palette.textTertiary,
   );

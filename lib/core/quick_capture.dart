@@ -20,7 +20,7 @@ enum LaunchIntent {
   /// **Dictate**. The same note, with a recording started in it.
   dictate,
 
-  /// **Capture**. The same note, with the picker open over it.
+  /// **Capture**. The same note, with its camera open over it.
   capture;
 
   /// Whether this arrival belongs in the note last written in.
@@ -35,7 +35,7 @@ enum LaunchIntent {
 
 /// The widgets' half of the app: one tap, and the user is back in the note
 /// they were writing, below where they stopped, with the keyboard up — and,
-/// for two of the three actions, with the picker or the recorder already
+/// for two of the three actions, with the camera or the recorder already
 /// going.
 ///
 /// Which action was tapped is the only thing the platform has to say. It says

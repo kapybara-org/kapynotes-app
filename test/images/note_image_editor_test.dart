@@ -145,6 +145,7 @@ Widget harness(
   ImageClipboard? clipboard,
   ValueChanged<List<NoteAttachmentRef>>? onAttachmentsChanged,
   GlobalKey<NoteEditorState>? editorKey,
+  ImageFileAcquirer? imageAcquirer,
   ImageBatchIngestor? imageIngestor,
   bool startAtEnd = false,
   bool readOnly = false,
@@ -160,6 +161,7 @@ Widget harness(
       initialAttachments: attachments,
       images: images ?? store,
       clipboard: clipboard ?? FakeClipboard(),
+      imageAcquirer: imageAcquirer,
       imageIngestor: imageIngestor,
       startAtEnd: startAtEnd,
       readOnly: readOnly,
@@ -362,6 +364,34 @@ void main() {
     expect(find.byType(NoteImageView), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('the mobile footer opens capture and inserts its result', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    var opened = 0;
+    await tester.pumpWidget(
+      harness(
+        'a note',
+        attachments: const [],
+        imageAcquirer: (_) async {
+          opened++;
+          return [XFile.fromData(Uint8List(0), name: 'camera.jpg')];
+        },
+        imageIngestor: (_, _) async =>
+            ImageBatch(images: [at(0)], rejections: const []),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('insert-image')));
+    await tester.pumpAndSettle();
+
+    expect(opened, 1);
+    expect(find.byIcon(Icons.camera_alt_outlined), findsOneWidget);
+    expect(find.byType(NoteImageView), findsOneWidget);
   });
 
   group('copying', () {

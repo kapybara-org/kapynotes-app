@@ -1,8 +1,8 @@
-import 'dart:ui' show AppLifecycleState;
+import 'dart:ui' show AppLifecycleState, Size;
 
-import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:kapy_notes/audio/voice_recorder.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,23 +13,19 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 
 import 'app_test.dart' show MemoryStore;
 import 'quick_capture_test.dart' show stubLaunchIntent;
 import 'test_fonts.dart';
 
-/// The channel `file_selector` reaches the platform picker on. Nothing
-/// registers it in a test, so this is both how the picker is prevented from
-/// existing and how the app is caught asking for it.
-const MethodChannel _picker = MethodChannel('plugins.flutter.io/file_selector');
-
 late MemoryStore store;
 late NotesStore notes;
 late LayoutPrefs prefs;
 late RatesRepository rates;
 late ShortcutPrefs shortcuts;
-late List<MethodCall> pickerCalls;
+late List<String> imageRequests;
 
 /// Launches the app the way a widget tap does: the platform is holding an
 /// answer, and storage has not been read yet, so the app asks on the way up.
@@ -40,6 +36,7 @@ Future<void> pumpLaunch(
   WidgetTester tester, {
   String? action,
   VoiceRecordingController? recording,
+  LostImageRetriever? lostImageRetriever,
 }) async {
   stubLaunchIntent(action);
   tester.view.physicalSize = const Size(400, 800);
@@ -54,6 +51,11 @@ Future<void> pumpLaunch(
       prefs: prefs,
       shortcuts: shortcuts,
       recording: recording,
+      imageAcquirer: (_) async {
+        imageRequests.add('camera');
+        return const [];
+      },
+      lostImageRetriever: lostImageRetriever,
     ),
   );
   await tester.pumpAndSettle();
@@ -76,29 +78,20 @@ void main() {
     rates = RatesRepository(store);
     shortcuts = ShortcutPrefs(store);
 
-    pickerCalls = [];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(_picker, (call) async {
-          pickerCalls.add(call);
-          // The picker opened and the user chose nothing, which is the only
-          // outcome a test can honestly stand in for.
-          return null;
-        });
+    imageRequests = [];
   });
 
   tearDown(() {
     AppPlatform.debugTargetPlatformOverride = null;
     stubLaunchIntent(null, respond: false);
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(_picker, null);
   });
 
-  testWidgets('a Capture tap opens the picker over the note it landed in', (
+  testWidgets('a Capture tap opens the camera over the note it landed in', (
     tester,
   ) async {
     await pumpLaunch(tester, action: 'capture');
 
-    expect(pickerCalls.map((call) => call.method), ['openFile']);
+    expect(imageRequests, ['camera']);
     // Over the note that was already there. A note per tap would shred a
     // notebook into fragments, and Capture is no more a new note than Write.
     expect(notes.notes, hasLength(1));
@@ -111,14 +104,14 @@ void main() {
   ) async {
     await pumpLaunch(tester, action: 'continueWriting');
 
-    expect(pickerCalls, isEmpty);
+    expect(imageRequests, isEmpty);
     expect(notes.notes.single.id, 'last');
   });
 
   testWidgets('an ordinary launch opens no picker', (tester) async {
     await pumpLaunch(tester);
 
-    expect(pickerCalls, isEmpty);
+    expect(imageRequests, isEmpty);
   });
 
   testWidgets('a Dictate tap starts recording into the note it opened', (
@@ -138,7 +131,7 @@ void main() {
     // Still the note that was already there. Dictate is no more a new note
     // than Write is.
     expect(notes.notes.single.id, 'last');
-    expect(pickerCalls, isEmpty);
+    expect(imageRequests, isEmpty);
     expect(recording.isRecording, isTrue);
     expect(recording.session!.noteId, 'last');
     expect(recorder.startedAt, endsWith('.m4a'));
@@ -172,7 +165,7 @@ void main() {
     tester,
   ) async {
     await pumpLaunch(tester);
-    expect(pickerCalls, isEmpty);
+    expect(imageRequests, isEmpty);
 
     // The tap arrives at a backgrounded app: Android hands the activity a new
     // intent, iOS hands the scene a URL, and both are held until the app is
@@ -190,8 +183,24 @@ void main() {
     }
     await tester.pumpAndSettle();
 
-    expect(pickerCalls.map((call) => call.method), ['openFile']);
+    expect(imageRequests, ['camera']);
     expect(notes.notes, hasLength(1));
+  });
+
+  testWidgets('an interrupted library return does not reopen Capture', (
+    tester,
+  ) async {
+    store.data['pendingImageNote.v1'] = 'last';
+
+    await pumpLaunch(
+      tester,
+      action: 'capture',
+      lostImageRetriever: () async => const LostImageRecovery(),
+    );
+
+    expect(imageRequests, isEmpty);
+    expect(store.data['pendingImageNote.v1'], isNull);
+    expect(notes.notes.single.id, 'last');
   });
 }
 

@@ -8,6 +8,7 @@ import '../data/layout_prefs.dart';
 import '../data/shortcut_prefs.dart';
 import 'app_tray.dart';
 import 'login_item.dart';
+import 'system_shutdown.dart';
 
 /// Native desktop behavior that has no useful mobile equivalent: remembering
 /// the window size, summoning an already-running app from anywhere — either
@@ -57,6 +58,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   /// the worst thing this feature could do.
   Future<void> Function()? onBeforeClose;
 
+  Future<void>? _quitting;
   bool? _appliedKeepRunning;
   bool? _appliedAlwaysOnTop;
   bool _hidesOnClose = false;
@@ -73,6 +75,10 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
 
   Future<void> initialize(ShortcutPrefs shortcuts) async {
     windowManager.addListener(this);
+    // An installer, or a logoff, asking the app to end. It arrives as its own
+    // message rather than as a close because the two want opposite things:
+    // this one is not allowed to become a hide.
+    SystemShutdown.listen(quit);
     for (final action in _globalActions) {
       // The first refusal is the one worth reporting: it names a shortcut the
       // user can go and change, and the later ones may well be fine.
@@ -178,7 +184,15 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   ///
   /// The tray goes first: an icon that outlives the app it belongs to is one
   /// the user clicks and clicks at.
-  Future<void> quit() async {
+  ///
+  /// Callable more than once, and answered by the first attempt every time.
+  /// An update ends up here twice: WinSparkle asks the app to leave at the
+  /// same moment the installer it already launched asks Windows to make it,
+  /// and the two arrive in either order. Saving twice would be wasteful;
+  /// destroying a window twice is a crash.
+  Future<void> quit() => _quitting ??= _quit();
+
+  Future<void> _quit() async {
     try {
       await onBeforeQuit?.call();
     } catch (error) {
@@ -338,6 +352,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   void dispose() {
     _resizeDebounce?.cancel();
     windowManager.removeListener(this);
+    SystemShutdown.stopListening();
     layoutPrefs.removeListener(_onPrefsChanged);
     unawaited(_tray.dispose());
     onNewNoteRequested = null;

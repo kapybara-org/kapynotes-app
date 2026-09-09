@@ -344,7 +344,7 @@ class Parser {
         final op = const ['*', '×'].contains(_current.text) ? '*' : '/';
         _advance();
         left = BinaryNode(op, left, _parseUnary());
-      } else if (_isWord('times')) {
+      } else if (_isWord('times') || _isTimesLetter()) {
         _advance();
         left = BinaryNode('*', left, _parseUnary());
       } else if (_isWord('over') || _isWord('per')) {
@@ -358,6 +358,22 @@ class Parser {
       }
     }
     return left;
+  }
+
+  /// `3 x 4`, and `1920 x 1080`.
+  ///
+  /// Only where an amount already sits on the left and another begins on the
+  /// right, because `x` is also the first name anybody gives a variable and
+  /// `x = 5` has to go on meaning that. A document that has defined `x` keeps
+  /// it as a name here too, whatever surrounds it: the note said what it is.
+  bool _isTimesLetter() {
+    if (_current.type != TokenType.identifier) return false;
+    if (_current.text.toLowerCase() != 'x') return false;
+    if (_boundNames.contains(_current.text)) return false;
+    final next = _peek();
+    return next.type == TokenType.number ||
+        next.type == TokenType.currencySymbol ||
+        next.type == TokenType.lparen;
   }
 
   Node _parseUnary() {

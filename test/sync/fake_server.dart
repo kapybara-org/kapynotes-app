@@ -2118,9 +2118,16 @@ class FakeAuth implements AuthApi {
   @override
   Future<void> signOut(String token) async => signOutCalls++;
 
+  /// False stands in for offline, a timeout, or a server having a bad minute
+  /// — every failure that says nothing about whether the session is good.
+  bool reachable = true;
+
   @override
-  Future<AccountUser?> currentUser(String token) async =>
-      sessionValid ? _user : null;
+  Future<SessionCheck> checkSession(String token) async {
+    if (!reachable) return const SessionUnreachable();
+    if (!sessionValid) return const SessionRejected();
+    return SessionActive(_user);
+  }
 }
 
 /// Waits for something that nothing in the test asked for — a frame, a

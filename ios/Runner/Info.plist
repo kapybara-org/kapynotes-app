@@ -83,5 +83,9 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Kapy Notes uses the microphone to record voice notes.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Kapy Notes uses the camera when you take a photo for a note.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Kapy Notes opens your photo library when you choose pictures for a note.</string>
 </dict>
 </plist>

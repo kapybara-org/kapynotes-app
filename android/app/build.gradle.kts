@@ -42,10 +42,11 @@ android {
         applicationId = "com.kapybara.kapynotes"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        // Stated rather than inherited: `record` needs 23, and a Flutter
-        // upgrade that lowered the default would break recording at runtime
-        // on old devices rather than at build time here.
-        minSdk = maxOf(23, flutter.minSdkVersion)
+        // Stated rather than inherited: current Flutter camera and photo
+        // picker implementations support Android 7.0 and newer. A Flutter
+        // upgrade that lowered its default would otherwise compile an app
+        // whose capture surface fails at runtime on old devices.
+        minSdk = maxOf(24, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)

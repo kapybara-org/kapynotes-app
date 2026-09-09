@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:ui' show BoxHeightStyle, BoxWidthStyle;
+import 'dart:math' as math;
+import 'dart:ui' show BoxHeightStyle, BoxWidthStyle, Locale;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart'
@@ -15,6 +16,7 @@ import '../../calc/keyword_help.dart';
 import '../../core/editor_font.dart';
 import '../../core/note_link.dart';
 import '../../core/platform.dart';
+import '../../core/platform_spell_check.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../data/daily_separator.dart';
@@ -84,6 +86,7 @@ class NoteEditor extends StatefulWidget {
     this.onRecordVoice,
     this.voiceActionBusy = false,
     this.clipboard = const ImageClipboard(),
+    this.imageAcquirer,
     this.imageIngestor,
     this.onImagesRejected,
     this.typingNames = const [],
@@ -99,6 +102,7 @@ class NoteEditor extends StatefulWidget {
     required this.onSettingsPressed,
     required this.writingFont,
     required this.shortcuts,
+    this.spellCheckEnabled = true,
     this.showDivider = true,
     this.hideEmptyResults = false,
     this.showSettingsButton = true,
@@ -147,6 +151,11 @@ class NoteEditor extends StatefulWidget {
   /// system clipboard to put anything on.
   final ImageClipboard clipboard;
 
+  /// Opens the camera or picker. Supplied by the page in production so the
+  /// pending note can be remembered across Android activity recreation, and
+  /// replaced by tests that have no camera behind them.
+  final ImageFileAcquirer? imageAcquirer;
+
   /// Defaults to the production compression pipeline. Tests replace only this
   /// boundary and still exercise the real footer and toast lifecycle.
   final ImageBatchIngestor? imageIngestor;
@@ -172,6 +181,7 @@ class NoteEditor extends StatefulWidget {
   final VoidCallback onSettingsPressed;
   final WritingFont writingFont;
   final ShortcutPrefs shortcuts;
+  final bool spellCheckEnabled;
   final bool showDivider;
   final bool hideEmptyResults;
   final bool showSettingsButton;
@@ -203,6 +213,9 @@ class NoteEditorState extends State<NoteEditor> {
     Duration(milliseconds: 1500),
   ];
 
+  final PlatformSpellCheckService _spellCheckService =
+      PlatformSpellCheckService();
+  Locale? _spellCheckLocale;
   late HighlightingController _controller;
   final GlobalKey _textFieldKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
@@ -295,6 +308,7 @@ class NoteEditorState extends State<NoteEditor> {
     // drifts away from the link it points at.
     _scrollController.addListener(_handleEditorScroll);
     widget.shortcuts.addListener(_onShortcutsChanged);
+    widget.player?.addListener(_onPlaybackChanged);
     _isEmpty = initialText.isEmpty;
     _evaluate();
     if (!widget.readOnly && widget.autofocus && widget.startAtEnd) {
@@ -314,8 +328,20 @@ class NoteEditorState extends State<NoteEditor> {
       oldWidget.shortcuts.removeListener(_onShortcutsChanged);
       widget.shortcuts.addListener(_onShortcutsChanged);
     }
+    if (!identical(oldWidget.player, widget.player)) {
+      oldWidget.player?.removeListener(_onPlaybackChanged);
+      widget.player?.addListener(_onPlaybackChanged);
+    }
     if (oldWidget.writingFont != widget.writingFont) {
       _controller.writingFont = widget.writingFont;
+    }
+    if (oldWidget.spellCheckEnabled != widget.spellCheckEnabled ||
+        oldWidget.readOnly != widget.readOnly) {
+      if (widget.readOnly || !widget.spellCheckEnabled) {
+        _controller.spellingSuggestions = const [];
+      } else {
+        unawaited(_requestSpellCheck());
+      }
     }
     // A new engine arrives when exchange rates land; re-evaluate so currency
     // lines light up without the user touching anything.
@@ -356,6 +382,13 @@ class NoteEditorState extends State<NoteEditor> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _controller.palette = context.palette;
+    final locale =
+        Localizations.maybeLocaleOf(context) ??
+        WidgetsBinding.instance.platformDispatcher.locale;
+    if (_spellCheckLocale != locale) {
+      _spellCheckLocale = locale;
+      unawaited(_requestSpellCheck());
+    }
   }
 
   @override
@@ -366,6 +399,8 @@ class NoteEditorState extends State<NoteEditor> {
     _focusNode.removeListener(_handleFocusChanged);
     _scrollController.removeListener(_handleEditorScroll);
     widget.shortcuts.removeListener(_onShortcutsChanged);
+    widget.player?.removeListener(_onPlaybackChanged);
+    _spellCheckService.dispose();
     _keyboardRetryTimer?.cancel();
     _selectionToolbarTimer?.cancel();
     _keywordHoverTimer?.cancel();
@@ -520,6 +555,7 @@ class NoteEditorState extends State<NoteEditor> {
       _isEmpty = newText.isEmpty;
       _evaluate();
     });
+    unawaited(_requestSpellCheck(newText));
   }
 
   bool _applyingRemote = false;
@@ -630,11 +666,75 @@ class NoteEditorState extends State<NoteEditor> {
     _formats = updatedFormats;
     _attachments = updatedAttachments;
     _controller.formats = updatedFormats;
+    _controller.spellingSuggestions = const [];
     setState(() {
       _isEmpty = value.text.isEmpty;
       _evaluate();
     });
+    unawaited(_requestSpellCheck(value.text));
     widget.onDocumentChanged(value.text, updatedFormats, updatedAttachments);
+  }
+
+  Future<void> _requestSpellCheck([String? requestedText]) async {
+    final text = requestedText ?? _controller.text;
+    if (widget.readOnly || !widget.spellCheckEnabled || text.isEmpty) {
+      if (_controller.spellingSuggestions.isNotEmpty) {
+        _controller.spellingSuggestions = const [];
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+    final locale = _spellCheckLocale;
+    if (locale == null) return;
+
+    final suggestions = await _spellCheckService.fetchSpellCheckSuggestions(
+      locale,
+      text,
+    );
+    if (!mounted ||
+        widget.readOnly ||
+        !widget.spellCheckEnabled ||
+        _controller.text != text ||
+        suggestions == null) {
+      return;
+    }
+
+    final links = _controller.linksFor(text);
+    final filtered = suggestions
+        .where((suggestion) {
+          final range = suggestion.range;
+          final overlapsLink = links.any(
+            (link) => range.start < link.end && range.end > link.start,
+          );
+          final overlapsAttachment = _attachments.any(
+            (attachment) =>
+                range.start <= attachment.offset &&
+                range.end > attachment.offset,
+          );
+          return !overlapsLink && !overlapsAttachment;
+        })
+        .toList(growable: false);
+
+    if (_sameSpellingSuggestions(_controller.spellingSuggestions, filtered)) {
+      return;
+    }
+    _controller.spellingSuggestions = filtered;
+    setState(() {});
+  }
+
+  static bool _sameSpellingSuggestions(
+    List<SuggestionSpan> left,
+    List<SuggestionSpan> right,
+  ) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      final a = left[index];
+      final b = right[index];
+      if (a.range != b.range || !listEquals(a.suggestions, b.suggestions)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// The recording running in *this* note, if there is one.
@@ -666,6 +766,16 @@ class NoteEditorState extends State<NoteEditor> {
     );
   }
 
+  /// Play, pause, a recording ending, another one taking over.
+  ///
+  /// Only these; the play head deliberately does not come through here, so
+  /// this fires a handful of times per recording rather than four times a
+  /// second. Without it a chip went on showing a pause button after its
+  /// recording had finished, because nothing had asked it to look again.
+  void _onPlaybackChanged() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _playPause(NoteVoiceRef ref) async {
     final player = widget.player;
     final store = widget.images;
@@ -682,11 +792,25 @@ class NoteEditorState extends State<NoteEditor> {
     if (mounted) setState(() {});
   }
 
+  /// A tap on a chip's waveform.
+  ///
+  /// On the recording already loaded this is a scrub. On any other it is also
+  /// a request to hear it — from there, which is the whole reason to aim at a
+  /// point on a waveform rather than press play. It used to be neither: the
+  /// tap was dropped unless that recording happened to be the live one.
   Future<void> _seekVoice(NoteVoiceRef ref, double fraction) async {
     final player = widget.player;
-    if (player == null || player.activeHash != ref.hash) return;
-    final total = player.duration ?? ref.duration;
-    await player.seek(total * fraction);
+    if (player == null) return;
+    if (player.activeHash == ref.hash) {
+      final total = player.duration ?? ref.duration;
+      await player.seek(total * fraction);
+      return;
+    }
+    final store = widget.images;
+    if (store == null) return;
+    final file = await store.fileFor(ref.hash);
+    if (file == null) return;
+    await player.play(ref.hash, file, from: ref.duration * fraction);
   }
 
   /// Records refs this edit took out, against the text they were taken from.
@@ -1201,12 +1325,14 @@ class NoteEditorState extends State<NoteEditor> {
     _focusNode.requestFocus();
   }
 
-  /// Opens the system picker, compresses whatever comes back, and inserts it.
+  /// Opens the device's image entry point, compresses whatever comes back,
+  /// and inserts it. Phones open the camera-first capture surface; desktop
+  /// opens its system file dialog.
   Future<void> pickAndInsertImages() async {
     final store = widget.images;
     if (store == null || !_beginImageAction()) return;
     try {
-      final files = await pickImageFiles();
+      final files = await (widget.imageAcquirer ?? acquireNoteImages)(context);
       if (files.isEmpty || !mounted) return;
       await _ingestAndInsertFiles(files, store);
     } finally {
@@ -1758,6 +1884,63 @@ class NoteEditorState extends State<NoteEditor> {
     ];
   }
 
+  SuggestionSpan? _spellingSuggestionFor(TextSelection selection) {
+    if (!selection.isValid || !selection.isCollapsed) return null;
+    final offset = selection.extentOffset;
+    for (final suggestion in _controller.spellingSuggestions) {
+      if (offset >= suggestion.range.start && offset <= suggestion.range.end) {
+        return suggestion;
+      }
+    }
+    return null;
+  }
+
+  List<ContextMenuButtonItem> _spellingContextMenuItems(
+    TextSelection selection,
+  ) {
+    final misspelling = _spellingSuggestionFor(selection);
+    if (misspelling == null) return const [];
+
+    final unique = <String>{};
+    final replacements = [
+      for (final suggestion in misspelling.suggestions)
+        if (unique.add(suggestion)) suggestion,
+    ].take(3);
+    return [
+      for (final replacement in replacements)
+        ContextMenuButtonItem(
+          label: replacement.isEmpty ? 'Delete repeated word' : replacement,
+          onPressed: () => _replaceMisspelling(misspelling, replacement),
+        ),
+    ];
+  }
+
+  void _replaceMisspelling(SuggestionSpan misspelling, String replacement) {
+    ContextMenuController.removeAny();
+    if (widget.readOnly) return;
+    final editable = _editableTextState();
+    if (editable == null) return;
+    final value = editable.textEditingValue;
+    final range = misspelling.range;
+    if (range.start < 0 ||
+        range.end <= range.start ||
+        range.end > value.text.length) {
+      return;
+    }
+
+    editable.userUpdateTextEditingValue(
+      value.copyWith(
+        text: value.text.replaceRange(range.start, range.end, replacement),
+        selection: TextSelection.collapsed(
+          offset: range.start + replacement.length,
+        ),
+        composing: TextRange.empty,
+      ),
+      SelectionChangedCause.toolbar,
+    );
+    _focusNode.requestFocus();
+  }
+
   bool _selectionContainsImage(TextSelection selection) =>
       selection.isValid &&
       !selection.isCollapsed &&
@@ -2108,11 +2291,15 @@ class NoteEditorState extends State<NoteEditor> {
       // occupies a placeholder, and leaving it out of the span map would leave
       // the text engine rendering a bare U+FFFC — an invisible character the
       // caret can land inside — where a newer build shows an attachment.
+      // Both chips stretch to whatever they are handed, and what the text
+      // engine hands a placeholder is the rest of the line — so unlike an
+      // image, which carries its own measured box, they have to be told the
+      // width or they would fill the column and take the slack back.
       if (ref is NoteVoiceRef) {
         spans[ref.offset] = (
           width: columnWidth,
           height: noteVoiceChipHeight + noteImageGap,
-          child: _voiceChip(ref),
+          child: SizedBox(width: columnWidth, child: _voiceChip(ref)),
         );
         continue;
       }
@@ -2120,7 +2307,7 @@ class NoteEditorState extends State<NoteEditor> {
         spans[ref.offset] = (
           width: columnWidth,
           height: _UnknownChip.height + noteImageGap,
-          child: const _UnknownChip(),
+          child: SizedBox(width: columnWidth, child: const _UnknownChip()),
         );
         continue;
       }
@@ -2241,8 +2428,14 @@ class NoteEditorState extends State<NoteEditor> {
                 // Images are sized here and nowhere else: this is the first
                 // point at which the writing column's width is known, and an
                 // image that fills the column has to be told what that is.
+                // Attachments are laid out into a slightly narrower column
+                // than the text; see noteAttachmentColumnSlack for the line
+                // that goes missing without it.
                 _controller.setImageSpansDuringLayout(
-                  _buildAttachmentSpans(contentWidth, constraints.maxHeight),
+                  _buildAttachmentSpans(
+                    math.max(1, contentWidth - noteAttachmentColumnSlack),
+                    constraints.maxHeight,
+                  ),
                 );
 
                 final offsets = _measurer.measure(
@@ -2515,6 +2708,12 @@ class NoteEditorState extends State<NoteEditor> {
                 selectionWidthStyle: BoxWidthStyle.tight,
                 keyboardType: TextInputType.multiline,
                 textInputAction: TextInputAction.newline,
+                // Flutter's stock spelling renderer replaces a custom
+                // controller's TextSpan tree after it finds a misspelling.
+                // KapyNotes merges the native results into its own tree so
+                // calculator colours and attachment WidgetSpans stay intact.
+                spellCheckConfiguration:
+                    const SpellCheckConfiguration.disabled(),
                 inputFormatters: [
                   _dailySeparatorFormatter,
                   const _ListContinuationFormatter(),
@@ -2544,9 +2743,11 @@ class NoteEditorState extends State<NoteEditor> {
                     );
                   }
                   if (selection.isCollapsed) {
+                    final spellingItems = _spellingContextMenuItems(selection);
                     return AdaptiveTextSelectionToolbar.buttonItems(
                       anchors: editableTextState.contextMenuAnchors,
                       buttonItems: [
+                        ...spellingItems,
                         ...linkItems,
                         if (widget.images != null && !AppPlatform.hasPointer)
                           ContextMenuButtonItem(
@@ -2612,8 +2813,8 @@ class NoteEditorState extends State<NoteEditor> {
                   );
                 },
                 textAlignVertical: TextAlignVertical.top,
-                // This is a calculator surface, not prose: every helpful-guess input
-                // feature would fight the user.
+                // Spelling may point something out, but the calculator must
+                // never rewrite a value, operator, name or unit on its own.
                 autocorrect: false,
                 enableSuggestions: false,
                 textCapitalization: TextCapitalization.none,

@@ -186,6 +186,67 @@ void main() {
     restarted.dispose();
   });
 
+  test('a launch with no network stays signed in', () async {
+    // The one that made an update look like a sign-out. Restoring asked the
+    // server who the token belonged to, read every failure as "revoked", and
+    // deleted the master key — so an app relaunched by its own installer, or
+    // started at login before the network was up, came back signed out and
+    // asking for a passphrase.
+    final d = Device(server);
+    await d.boot();
+    await d.account.signIn(email: 'a@b.co', password: 'x');
+    await d.account.createPassphrase('a good passphrase');
+    d.notes.create(body: 'Mine');
+    d.dispose();
+
+    d.auth.reachable = false;
+    final restarted = Account(
+      auth: d.auth,
+      syncApi: (_) => FakeApi(server),
+      keys: d.keys,
+      notes: d.notes,
+      state: SyncState(d.store),
+      store: d.store,
+      docStorage: MemoryDocStorage(),
+    );
+    await restarted.restore();
+
+    expect(restarted.state, AccountState.ready);
+    expect(
+      restarted.user?.email,
+      d.auth.email,
+      reason: 'and knows whose device it is',
+    );
+    expect(await d.keys.readMasterKey(), isNotNull, reason: 'nothing revoked');
+    restarted.dispose();
+  });
+
+  test('a session the server refuses is still dropped', () async {
+    // The other half: being told no is not the same as not being able to ask,
+    // and this one does have to clear.
+    final d = Device(server);
+    await d.boot();
+    await d.account.signIn(email: 'a@b.co', password: 'x');
+    await d.account.createPassphrase('a good passphrase');
+    d.dispose();
+
+    d.auth.sessionValid = false;
+    final restarted = Account(
+      auth: d.auth,
+      syncApi: (_) => FakeApi(server),
+      keys: d.keys,
+      notes: d.notes,
+      state: SyncState(d.store),
+      store: d.store,
+      docStorage: MemoryDocStorage(),
+    );
+    await restarted.restore();
+
+    expect(restarted.state, AccountState.signedOut);
+    expect(await d.keys.readMasterKey(), isNull);
+    restarted.dispose();
+  });
+
   test('signing out drops the key but never the notes', () async {
     final d = Device(server);
     await d.boot();

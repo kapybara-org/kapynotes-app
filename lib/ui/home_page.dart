@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:file_selector/file_selector.dart' show XFile;
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
@@ -34,7 +35,9 @@ import '../data/rates.dart';
 import 'share_dialog.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
+import '../images/image_picker.dart';
 import 'editor/note_editor.dart';
+import 'editor/image_insertion.dart';
 import 'empty_state.dart';
 import 'kapy_header_mascot.dart';
 import 'mobile_page_swipe.dart';
@@ -66,6 +69,8 @@ class HomePage extends StatefulWidget {
     this.player,
     this.transcriptions,
     this.voicePrefs,
+    this.imageAcquirer,
+    this.lostImageRetriever,
   });
 
   /// Kapy settles into sleep after a full minute without local interaction.
@@ -88,7 +93,7 @@ class HomePage extends StatefulWidget {
   ///
   /// The note it opens onto has already been chosen by the time this page is
   /// built — see [QuickCapture.file]. What is left is the rest of the action:
-  /// Capture opens the picker, Dictate starts recording, Write is already
+  /// Capture opens the camera, Dictate starts recording, Write is already
   /// done by being here.
   final LaunchIntent launchIntent;
 
@@ -104,12 +109,19 @@ class HomePage extends StatefulWidget {
 
   final VoicePrefs? voicePrefs;
 
+  /// Injectable media boundaries keep launch tests independent of a physical
+  /// camera and let the real page remember which note owns an interrupted
+  /// Android photo-library result.
+  final ImageFileAcquirer? imageAcquirer;
+  final LostImageRetriever? lostImageRetriever;
+
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static const String _selectionKey = 'selectedNote.v1';
+  static const String _pendingImageNoteKey = 'pendingImageNote.v1';
   static final _totalCue = RegExp(r'\btotal\b', caseSensitive: false);
 
   final FocusNode _searchFocus = FocusNode(debugLabel: 'sidebar-search');
@@ -175,9 +187,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!mounted) return;
       _armKapyIdleTimer();
       _reactToSelectedTotal();
-      // After the frame, because the action is performed on the editor and
-      // the editor is what that frame just built.
-      unawaited(_runWidgetAction(widget.launchIntent));
+      // After the frame, because both paths act on the editor that frame just
+      // built. A recovered Android library result wins over replaying the
+      // widget's Capture intent, so process recreation cannot open a second
+      // camera over the picture the user just chose.
+      unawaited(_runInitialImageAndWidgetActions());
     });
   }
 
@@ -245,6 +259,149 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       case LaunchIntent.dictate:
         await _startVoiceRecording();
     }
+  }
+
+  Future<void> _runInitialImageAndWidgetActions() async {
+    final interruptedSelection = await _recoverInterruptedImageSelection();
+    if (!mounted || interruptedSelection) return;
+    await _runWidgetAction(widget.launchIntent);
+  }
+
+  Future<List<XFile>> _acquireImages(BuildContext context) {
+    final override = widget.imageAcquirer;
+    if (override != null) return override(context);
+    if (!AppPlatform.isAndroid) return acquireNoteImages(context);
+    return acquireNoteImages(
+      context,
+      chooseFromLibrary: _pickImagesFromAndroidLibrary,
+    );
+  }
+
+  /// Remembers the target note only for the moment Android leaves Flutter for
+  /// its system photo picker. Opening the in-app viewfinder stays immediate;
+  /// this durable marker is needed only where the operating system may reclaim
+  /// the Activity while another one is choosing photos.
+  Future<List<XFile>> _pickImagesFromAndroidLibrary() async {
+    final noteId = _selectedId;
+    if (noteId == null) return const [];
+
+    widget.store.put(_pendingImageNoteKey, noteId);
+    await widget.store.flush();
+    try {
+      return await pickExistingImageFiles();
+    } finally {
+      widget.store.put(_pendingImageNoteKey, null);
+      unawaited(widget.store.flush());
+    }
+  }
+
+  /// Returns true when a prior image flow was found, even if it ended without
+  /// a usable file. The caller uses that to avoid replaying an old Capture
+  /// launch intent after Android reconstructed the activity.
+  Future<bool> _recoverInterruptedImageSelection() async {
+    if (!AppPlatform.isAndroid) return false;
+    final targetId = widget.store.read<String>(_pendingImageNoteKey);
+    if (targetId == null) return false;
+
+    final recovery =
+        await (widget.lostImageRetriever ?? recoverLostImageFiles)();
+    widget.store.put(_pendingImageNoteKey, null);
+    unawaited(widget.store.flush());
+    if (!mounted) return true;
+
+    if (recovery.files.isEmpty) {
+      if (recovery.error != null) {
+        Toast.show(
+          context,
+          'Could not recover the selected photo',
+          icon: Icons.error_outline_rounded,
+        );
+      }
+      return true;
+    }
+
+    final note = widget.notes.byId(targetId);
+    if (!_canEditNote(note)) {
+      Toast.show(
+        context,
+        'The note for that photo is no longer available',
+        icon: Icons.error_outline_rounded,
+      );
+      return true;
+    }
+
+    final progress = Toast.showProgress(
+      context,
+      recovery.files.length == 1
+          ? 'Recovering photo…'
+          : 'Recovering ${recovery.files.length} photos…',
+    );
+    try {
+      final batch = await ingestFiles(
+        recovery.files,
+        store: widget.notes.blobs,
+      );
+      if (!mounted) {
+        progress.dismiss();
+        return true;
+      }
+      if (batch.images.isEmpty) {
+        final first = batch.rejections.firstOrNull;
+        progress.error(
+          first == null
+              ? 'Could not recover that photo'
+              : '${first.name} ${describeRejection(first.reason)}',
+        );
+        return true;
+      }
+
+      final current = widget.notes.byId(targetId);
+      if (!_canEditNote(current)) {
+        progress.error('The note for that photo is no longer available');
+        return true;
+      }
+      final insertion = insertImagesIntoBody(
+        body: current!.body,
+        existing: current.attachments,
+        caret: current.body.length,
+        incoming: batch.images,
+      );
+      if (_selectedId != targetId) {
+        setState(() => _setSelectedId(targetId));
+        widget.store.put(_selectionKey, targetId);
+      }
+      widget.notes.updateDocument(
+        targetId,
+        insertion.body,
+        current.formats,
+        insertion.attachments,
+      );
+      final added = batch.images.length;
+      final rejected = batch.rejections.length;
+      if (rejected > 0) {
+        progress.success(
+          'Recovered $added ${added == 1 ? 'photo' : 'photos'}; '
+          '$rejected could not be added',
+          icon: Icons.warning_amber_rounded,
+        );
+      } else {
+        progress.success(added == 1 ? 'Photo added' : '$added photos added');
+      }
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kapy Notes image recovery',
+        ),
+      );
+      if (mounted) {
+        progress.error('Could not recover the selected photo');
+      } else {
+        progress.dismiss();
+      }
+    }
+    return true;
   }
 
   /// Starts recording into the selected note, or stops one already running.
@@ -613,6 +770,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.store.put(_selectionKey, next);
   }
 
+  void _togglePinnedNote(String id) {
+    _recordKapyActivity();
+    final pinned = widget.notes.togglePinned(id);
+    if (pinned == null) return;
+    Toast.show(
+      context,
+      pinned ? 'Note pinned' : 'Note unpinned',
+      icon: pinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+    );
+  }
+
   void _toggleArchive() {
     _recordKapyActivity();
     setState(() {
@@ -851,6 +1019,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     onHide: widget.prefs.toggleSidebar,
                     sidebar: Sidebar(
                       notes: _visibleNotes,
+                      pinnedNoteIds: widget.notes.pinnedNoteIds,
                       selectedId: _selectedId,
                       query: _query,
                       displayTime: widget.prefs.displayTime,
@@ -860,6 +1029,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onCreate: _createNote,
                       onArchive: _archiveNote,
                       onRestore: _restoreNote,
+                      onTogglePin: _archiveMode ? null : _togglePinnedNote,
                       onArchiveToggle: _toggleArchive,
                       archiveMode: _archiveMode,
                       archivedCount: widget.notes.archivedNotes.length,
@@ -935,6 +1105,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     listenable: _toolbarSources,
                     builder: (context, _) => Sidebar(
                       notes: _visibleNotes,
+                      pinnedNoteIds: widget.notes.pinnedNoteIds,
                       selectedId: _selectedId,
                       query: _query,
                       displayTime: widget.prefs.displayTime,
@@ -950,6 +1121,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       },
                       onArchive: _archiveNote,
                       onRestore: _restoreNote,
+                      onTogglePin: _archiveMode ? null : _togglePinnedNote,
                       onArchiveToggle: _toggleArchive,
                       archiveMode: _archiveMode,
                       archivedCount: widget.notes.archivedNotes.length,
@@ -1039,6 +1211,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ? () => unawaited(_startVoiceRecording())
               : null,
           voiceActionBusy: _voiceActionBusy,
+          imageAcquirer: _acquireImages,
           noteId: note.id,
           initialBody: note.body,
           initialFormats: note.formats,
@@ -1061,6 +1234,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           shortcuts: widget.shortcuts,
+          spellCheckEnabled: widget.prefs.spellCheckEnabled,
           initialAttachments: note.attachments,
           images: widget.notes.blobs,
           imageFetch: widget.account?.imageFetch,
@@ -1105,6 +1279,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ? () => unawaited(_startVoiceRecording())
               : null,
           voiceActionBusy: _voiceActionBusy,
+          imageAcquirer: _acquireImages,
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
           gutterWidth: widget.prefs.gutterWidth,
@@ -1119,6 +1294,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           shortcuts: widget.shortcuts,
+          spellCheckEnabled: widget.prefs.spellCheckEnabled,
           initialAttachments: note.attachments,
           images: widget.notes.blobs,
           imageFetch: widget.account?.imageFetch,

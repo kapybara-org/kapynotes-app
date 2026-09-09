@@ -1,10 +1,17 @@
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart' as platform_picker;
+import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
 import '../data/note_attachment.dart';
+import 'camera_capture.dart';
 import 'image_codec.dart';
 import 'image_ingest.dart';
 import '../data/blob_store.dart';
+
+/// Swappable at the UI boundary so launch and editor tests do not need a real
+/// camera while still exercising the complete note-insertion path.
+typedef ImageFileAcquirer = Future<List<XFile>> Function(BuildContext context);
 
 /// What a batch of files turned into.
 class ImageBatch {
@@ -53,6 +60,62 @@ Future<List<XFile>> pickImageFiles() async {
   }
 }
 
+/// Opens the right image entry point for the device.
+///
+/// A phone starts with the camera and keeps Photos inside the same surface.
+/// Desktop keeps the familiar multi-file dialog because a built-in webcam is
+/// neither universal nor usually the source of a picture added to a note.
+Future<List<XFile>> acquireNoteImages(
+  BuildContext context, {
+  ImageLibraryPicker? chooseFromLibrary,
+}) {
+  if (!AppPlatform.isMobile) return pickImageFiles();
+  return showNoteCamera(
+    context,
+    chooseFromLibrary: chooseFromLibrary ?? pickExistingImageFiles,
+  );
+}
+
+/// Opens the native photo library and allows a small gallery in one pass.
+Future<List<XFile>> pickExistingImageFiles() async {
+  try {
+    return await platform_picker.ImagePicker().pickMultiImage(
+      limit: 20,
+      requestFullMetadata: false,
+    );
+  } catch (error) {
+    debugPrint('KapyNotes: photo library failed: $error');
+    return const [];
+  }
+}
+
+/// The result of Android handing a photo-library choice back after recreating
+/// the app process.
+class LostImageRecovery {
+  const LostImageRecovery({this.files = const [], this.error});
+
+  final List<XFile> files;
+  final Object? error;
+}
+
+typedef LostImageRetriever = Future<LostImageRecovery> Function();
+
+/// Collects a photo-library result whose original Future disappeared when
+/// Android reclaimed the activity. Other platforms never need this step.
+Future<LostImageRecovery> recoverLostImageFiles() async {
+  if (!AppPlatform.isAndroid) return const LostImageRecovery();
+  try {
+    final response = await platform_picker.ImagePicker().retrieveLostData();
+    return LostImageRecovery(
+      files: response.files ?? const [],
+      error: response.exception,
+    );
+  } catch (error) {
+    debugPrint('KapyNotes: could not recover photo-library result: $error');
+    return LostImageRecovery(error: error);
+  }
+}
+
 /// Compresses and stores every file, keeping the order the user gave them in.
 ///
 /// Order matters: several images added at once become a gallery, and the
@@ -73,8 +136,7 @@ Future<ImageBatch> ingestFiles(
     final extension = name.contains('.')
         ? name.split('.').last.toLowerCase()
         : '';
-    if (extension.isNotEmpty &&
-        !supportedImageExtensions.contains(extension)) {
+    if (extension.isNotEmpty && !supportedImageExtensions.contains(extension)) {
       rejections.add((name: name, reason: ImageRejection.unreadable));
       continue;
     }
