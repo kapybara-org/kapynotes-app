@@ -20,9 +20,11 @@ class EngineProvider extends ChangeNotifier {
   late Highlighter _highlighter;
   int _ratesRevision = -1;
   late DigitGrouping _grouping;
+  String? _timeZoneId;
 
   EngineProvider(this._rates, this._prefs) {
     _grouping = _prefs.digitGrouping;
+    _timeZoneId = _prefs.timeZoneId;
     _rebuild();
     _rates.addListener(_onRatesChanged);
     _prefs.addListener(_onPrefsChanged);
@@ -39,18 +41,24 @@ class EngineProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// [LayoutPrefs] also notifies for panel drags, so only a grouping change
-  /// is worth rebuilding for.
+  /// [LayoutPrefs] also notifies for panel drags, so only calculator-facing
+  /// preferences are worth rebuilding for.
   void _onPrefsChanged() {
     final grouping = _prefs.digitGrouping;
-    if (grouping == _grouping) return;
+    final timeZoneId = _prefs.timeZoneId;
+    if (grouping == _grouping && timeZoneId == _timeZoneId) return;
     _grouping = grouping;
+    _timeZoneId = timeZoneId;
     _rebuild();
     notifyListeners();
   }
 
   void _rebuild() {
-    _engine = CalcEngine(ratesPerUsd: _rates.rates, grouping: _grouping);
+    _engine = CalcEngine(
+      ratesPerUsd: _rates.rates,
+      grouping: _grouping,
+      timeZoneId: _timeZoneId,
+    );
     _highlighter = Highlighter(_engine.registry);
   }
 

@@ -37,4 +37,27 @@ void main() {
 
     expect(comments, ['// real comment']);
   });
+
+  test('keeps numbers in an explicit description plain', () {
+    const body = '7KvA Solar System : 12000rs';
+    final numberText =
+        Highlighter(CalcEngine(ratesPerUsd: const {'INR': 80}).registry)
+            .spans(body)
+            .where((span) => span.kind == HighlightKind.number)
+            .map((span) => body.substring(span.start, span.end))
+            .toList();
+
+    expect(numberText, ['12000']);
+  });
+
+  test('highlights bracketless functions and temporal names', () {
+    const body = 'sqrt 16\ntoday + 2 weeks';
+    final highlighted = Highlighter(CalcEngine().registry)
+        .spans(body)
+        .map((span) => (body.substring(span.start, span.end), span.kind))
+        .toList();
+
+    expect(highlighted, contains(('sqrt', HighlightKind.function)));
+    expect(highlighted, contains(('today', HighlightKind.constant)));
+  });
 }

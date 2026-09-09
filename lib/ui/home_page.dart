@@ -8,6 +8,9 @@ import '../audio/voice_availability.dart';
 import '../audio/voice_player.dart';
 import '../audio/voice_recording_controller.dart';
 import '../data/voice_prefs.dart';
+import '../speech/local_model_store.dart';
+import '../speech/summarizer.dart';
+import '../speech/transcriber.dart';
 import '../speech/transcription_queue.dart';
 import '../core/desktop_integration.dart';
 import '../core/platform.dart';
@@ -15,6 +18,7 @@ import '../core/quick_capture.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/engine_provider.dart';
+import '../data/daily_separator.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
 import '../data/note.dart';
@@ -31,6 +35,7 @@ import 'voice_consent_sheet.dart';
 import '../sync/aead.dart';
 import '../sync/sync_api.dart';
 import '../sync/account.dart';
+import '../sync/spaces.dart';
 import '../data/rates.dart';
 import 'share_dialog.dart';
 import '../data/shortcut_prefs.dart';
@@ -69,6 +74,11 @@ class HomePage extends StatefulWidget {
     this.player,
     this.transcriptions,
     this.voicePrefs,
+    this.localModels,
+    this.deviceSummarizer,
+    this.summarizer,
+    this.deviceTranscriber,
+    this.transcriber,
     this.imageAcquirer,
     this.lostImageRetriever,
   });
@@ -109,6 +119,29 @@ class HomePage extends StatefulWidget {
 
   final VoicePrefs? voicePrefs;
 
+  /// The speech models this device has downloaded, for the voice pane of
+  /// settings to show and add to.
+  final LocalModelStore? localModels;
+
+  /// The device half of summarising, for the voice pane to offer and to
+  /// explain when this machine cannot do it.
+  final Summarizer? deviceSummarizer;
+
+  /// Where a summary or a rewrite actually goes, cloud or device, following
+  /// the preference at the moment it is asked for. The settings pane wants
+  /// [deviceSummarizer] instead, because it asks a different question: what
+  /// this machine *could* do.
+  final Summarizer? summarizer;
+
+  /// The device half of transcribing, for the voice pane to offer and to
+  /// explain when this machine cannot do it.
+  final Transcriber? deviceTranscriber;
+
+  /// Where a recording actually goes to become words. The twin of
+  /// [summarizer], and it is the queue rather than this page that uses it —
+  /// held here only to hand on to settings.
+  final Transcriber? transcriber;
+
   /// Injectable media boundaries keep launch tests independent of a physical
   /// camera and let the real page remember which note owns an interrupted
   /// Android photo-library result.
@@ -120,7 +153,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
-  static const String _selectionKey = 'selectedNote.v1';
   static const String _pendingImageNoteKey = 'pendingImageNote.v1';
   static final _totalCue = RegExp(r'\btotal\b', caseSensitive: false);
 
@@ -171,7 +203,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _untouchedWelcomeId = widget.welcomeNoteId;
-    _selectedId = widget.notes.lastEditedNote?.id;
+    _selectedId =
+        widget.prefs.resolveOpeningNoteId(
+          widget.notes.notes.map((note) => note.id),
+        ) ??
+        widget.notes.lastEditedNote?.id;
     widget.notes.addListener(_onNotesChanged);
     // The system-wide new-note shortcut has already raised the window by the
     // time this runs; the note itself is this page's to make.
@@ -278,9 +314,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Remembers the target note only for the moment Android leaves Flutter for
-  /// its system photo picker. Opening the in-app viewfinder stays immediate;
-  /// this durable marker is needed only where the operating system may reclaim
-  /// the Activity while another one is choosing photos.
+  /// its system photo picker. This durable marker is needed where the operating
+  /// system may reclaim the Activity while another one is choosing photos.
   Future<List<XFile>> _pickImagesFromAndroidLibrary() async {
     final noteId = _selectedId;
     if (noteId == null) return const [];
@@ -360,15 +395,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         progress.error('The note for that photo is no longer available');
         return true;
       }
+      final body = _bodyForEndAttachment(current!);
       final insertion = insertImagesIntoBody(
-        body: current!.body,
+        body: body,
         existing: current.attachments,
-        caret: current.body.length,
+        caret: body.length,
         incoming: batch.images,
       );
       if (_selectedId != targetId) {
         setState(() => _setSelectedId(targetId));
-        widget.store.put(_selectionKey, targetId);
+        widget.prefs.lastOpenedNoteId = targetId;
       }
       widget.notes.updateDocument(
         targetId,
@@ -495,7 +531,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final note = widget.notes.byId(noteId);
       if (note == null) return;
       final placed = appendVoiceToBody(
-        body: note.body,
+        body: _bodyForEndAttachment(note),
         existing: note.attachments,
         incoming: ref,
       );
@@ -512,6 +548,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // works out which of those it is when it next drains.
     widget.transcriptions?.enqueue(noteId, hash);
     unawaited(_drainTranscriptions());
+  }
+
+  String _bodyForEndAttachment(Note note) {
+    final now = DateTime.now();
+    if (!widget.prefs.dailySeparatorsEnabled ||
+        DailySeparator.isSameDay(
+          note.updatedAt,
+          now,
+          displayTime: widget.prefs.displayTime,
+        )) {
+      return note.body;
+    }
+    return DailySeparator.append(
+      note.body,
+      note.updatedAt,
+      displayTime: widget.prefs.displayTime,
+    );
   }
 
   /// Drains the queue, offering the consent sheet the first time the server
@@ -554,13 +607,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       widget.transcriptions?.stateFor(ref) ?? VoiceChipState.idle;
 
   Future<void> _openVoiceNote(NoteVoiceRef ref) async {
+    final state = _voiceStateFor(ref);
+    // Two states are not about this recording at all: they are about the
+    // account and the consent behind every recording. A dialog explaining
+    // that, with a button that opens settings, is one screen too many.
+    if (state == VoiceChipState.needsAccount) {
+      _showSettings(section: SettingsSection.sync);
+      return;
+    }
+    if (state == VoiceChipState.needsConsent) {
+      _showSettings(section: SettingsSection.voice);
+      return;
+    }
     final noteId = _selectedId;
     final note = widget.notes.byId(noteId ?? '');
     final canEdit = _canEditNote(note);
     await openVoiceNoteDialog(
       context,
       ref: ref,
-      state: _voiceStateFor(ref),
+      state: state,
       blobs: widget.notes.blobs,
       player: widget.player,
       recordedAt: note?.createdAt,
@@ -589,6 +654,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 unawaited(_drainTranscriptions());
               },
         onTurnOnTranscription: () => unawaited(_drainTranscriptions()),
+        onRegenerateSummary: noteId == null || ref.transcript == null
+            ? null
+            : () {
+                widget.transcriptions?.summarizeAgain(noteId, ref.hash);
+                unawaited(_drainTranscriptions());
+              },
+        onChanged: noteId == null || !canEdit
+            ? null
+            : (next) => widget.notes.updateAttachment(
+                noteId,
+                ref.hash,
+                (_) => next,
+                // A speaker's name and a post written here are the note's
+                // now, and every other device should have them.
+                touch: true,
+              ),
+        onRewrite: widget.summarizer == null || ref.transcript == null
+            ? null
+            : (instruction) => widget.summarizer!.rewrite(
+                text: ref.transcript!.text,
+                lang: ref.transcript!.lang,
+                instruction: instruction,
+                jobId: ref.transcript!.jobId,
+              ),
+        summaryInstruction: widget.voicePrefs?.effectiveSummaryInstruction,
+        onSaveSummaryInstruction: widget.voicePrefs == null
+            ? null
+            : (instruction) =>
+                  widget.voicePrefs!.summaryInstruction = instruction,
         failureReason: _failureReasonFor(ref),
       ),
     );
@@ -627,13 +721,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final available = _archiveMode
         ? widget.notes.archivedNotes
         : widget.notes.notes;
+    final preferred = _archiveMode
+        ? null
+        : widget.prefs.resolveOpeningNoteId(
+            widget.notes.notes.map((note) => note.id),
+          );
     if (available.isEmpty) {
       _setSelectedId(null);
       if (_usesCompactLayout && !_archiveMode) _scheduleInitialNote();
       return;
     }
     if (available.any((note) => note.id == _selectedId)) return;
-    _setSelectedId(available.first.id);
+    _setSelectedId(preferred ?? available.first.id);
   }
 
   /// Read from the window because selection is also reconciled outside build.
@@ -685,7 +784,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void _selectNow(String id) {
     setState(() => _setSelectedId(id));
-    widget.store.put(_selectionKey, id);
+    widget.prefs.lastOpenedNoteId = id;
     _recordKapyActivity();
     _reactToSelectedTotal();
   }
@@ -731,7 +830,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _archiveMode = false;
       _setSelectedId(note.id);
     });
-    widget.store.put(_selectionKey, note.id);
+    widget.prefs.lastOpenedNoteId = note.id;
     _focusSelectedEditorAtEnd();
   }
 
@@ -748,7 +847,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     final next = widget.notes.successorTo(index);
     setState(() => _setSelectedId(next));
-    widget.store.put(_selectionKey, next);
+    widget.prefs.lastOpenedNoteId = next;
     if (_usesCompactLayout && next == null) _scheduleInitialNote();
     _focusSelectedEditorAtEnd();
   }
@@ -767,7 +866,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ? null
         : remaining[index.clamp(0, remaining.length - 1)].id;
     setState(() => _setSelectedId(next));
-    widget.store.put(_selectionKey, next);
+    widget.prefs.lastOpenedNoteId = next;
   }
 
   void _togglePinnedNote(String id) {
@@ -791,7 +890,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : widget.notes.notes;
       _setSelectedId(notes.firstOrNull?.id);
     });
-    widget.store.put(_selectionKey, _selectedId);
+    widget.prefs.lastOpenedNoteId = _selectedId;
   }
 
   /// Whether opening [note] should place the cursor at its end and raise the
@@ -824,7 +923,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _setSelectedId(note.id);
       _untouchedWelcomeId = note.id;
     });
-    widget.store.put(_selectionKey, note.id);
+    widget.prefs.lastOpenedNoteId = note.id;
     // On a phone the settings sheet was opened from inside the notes drawer,
     // which would otherwise stay over the note it just opened.
     _scaffoldKey.currentState?.closeDrawer();
@@ -885,6 +984,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Opens the share sheet for a note. Before the account is unlocked there
   /// is no key to share with, so settings opens instead, on the pane that
   /// explains what is missing.
+  /// Shares whatever note is open, for the title bar's own action. Null with
+  /// nothing selected, which greys that action rather than removing it and
+  /// shifting the ones beside it every time the selection changes.
+  VoidCallback? get _shareSelected {
+    final id = _selectedId;
+    return id == null ? null : () => _shareNote(id);
+  }
+
+  /// Everyone the open note is shared with, for the avatars in the title bar.
+  /// Empty on a personal note, and while the account is still locked: there is
+  /// no roster to read until the keyring is open.
+  List<SpaceMember> get _selectedMembers {
+    final note = widget.notes.byId(_selectedId);
+    final sharing = widget.account?.sharing;
+    if (note == null || !note.isShared || sharing == null) return const [];
+    return sharing.spaceById(note.spaceId)?.members ?? const [];
+  }
+
   void _shareNote(String id) {
     _recordKapyActivity();
     final note = widget.notes.byId(id);
@@ -897,10 +1014,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     unawaited(showShareDialog(context, note: note, sharing: sharing));
   }
 
-  void _showSettings() {
+  void _showSettings({SettingsSection? section}) {
     unawaited(
       showSettings(
         context,
+        section: section,
         account: widget.account,
         notes: widget.notes,
         layoutPrefs: widget.prefs,
@@ -910,6 +1028,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         desktopIntegration: widget.desktopIntegration,
         onOpenWelcomeNote: _openWelcomeNote,
         voicePrefs: widget.voicePrefs,
+        localModels: widget.localModels,
+        deviceSummarizer: widget.deviceSummarizer,
+        deviceTranscriber: widget.deviceTranscriber,
       ),
     );
   }
@@ -941,10 +1062,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       builder: (context, constraints) {
         final compact = constraints.maxWidth < kTwoPaneBreakpoint;
         final page = compact ? _buildCompact(context) : _buildWide(context);
+        final gesturePage = AppPlatform.isDesktop
+            ? SidebarSwipe(
+                sidebarVisible: compact
+                    ? _drawerOpen
+                    : widget.prefs.sidebarVisible,
+                onToggle: compact
+                    ? _toggleCompactSidebarFromTrackpad
+                    : widget.prefs.toggleSidebar,
+                child: page,
+              )
+            : page;
         final content = Listener(
           behavior: HitTestBehavior.translucent,
           onPointerDown: (_) => _recordKapyActivity(),
-          child: page,
+          child: gesturePage,
         );
 
         if (!AppPlatform.isDesktop) return content;
@@ -959,6 +1091,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             },
             onNextNote: () => _cycleNote(1),
             onPreviousNote: () => _cycleNote(-1),
+            onOpenSettings: _showSettings,
+            onInsertImage: () => unawaited(
+              _selectedEditor?.pickAndInsertImages() ?? Future<void>.value(),
+            ),
+            onRecordVoice: () => unawaited(_startVoiceRecording()),
             onToggleSidebar: widget.prefs.toggleSidebar,
             onToggleResults: widget.prefs.toggleResults,
             onToggleAlwaysOnTop: AppPlatform.isDesktop
@@ -977,6 +1114,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  void _toggleCompactSidebarFromTrackpad() {
+    final scaffold = _scaffoldKey.currentState;
+    if (scaffold == null) return;
+    if (scaffold.isDrawerOpen) {
+      scaffold.closeDrawer();
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    scaffold.openDrawer();
+  }
+
   Widget _buildWide(BuildContext context) {
     final selected = widget.notes.byId(_selectedId);
     // A tablet reaches this layout too, and it has no Scaffold to resize
@@ -985,8 +1133,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     // The desktop layout is its own chrome rather than a Scaffold, but text
     // fields, menus and ink still need a Material ancestor.
+    // Transparent in glass mode so the window's blurred desktop is what shows
+    // through the thinned surfaces; solid otherwise, since a window with no
+    // material behind it shows black through any gap.
     return Material(
-      color: AppPlatform.isMacOS && !AppPlatform.isFlutterTest
+      color: context.palette.isGlass
           ? Colors.transparent
           : context.palette.editorBackground,
       child: Padding(
@@ -1001,52 +1152,54 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 sidebarVisible: widget.prefs.sidebarVisible,
                 onToggleSidebar: widget.prefs.toggleSidebar,
                 onCreate: _createNote,
+                onShare: _shareSelected,
+                members: _selectedMembers,
+                currentUserId: widget.account?.sharing?.userId ?? '',
+                noteShared: selected?.isShared ?? false,
                 alwaysOnTop: widget.prefs.alwaysOnTop,
                 onToggleAlwaysOnTop: _pinToggle,
                 alwaysOnTopShortcut: _pinShortcut,
               ),
               Expanded(
-                child: SidebarSwipe(
+                child: SplitView(
                   sidebarVisible: widget.prefs.sidebarVisible,
-                  onToggle: widget.prefs.toggleSidebar,
-                  child: SplitView(
-                    sidebarVisible: widget.prefs.sidebarVisible,
-                    sidebarWidth: widget.prefs.sidebarWidth,
-                    minSidebarWidth: LayoutPrefs.minSidebarWidth,
-                    maxSidebarWidth: LayoutPrefs.maxSidebarWidth,
-                    onWidthChanged: (value) =>
-                        widget.prefs.sidebarWidth = value,
-                    onHide: widget.prefs.toggleSidebar,
-                    sidebar: Sidebar(
-                      notes: _visibleNotes,
-                      pinnedNoteIds: widget.notes.pinnedNoteIds,
-                      selectedId: _selectedId,
-                      query: _query,
-                      displayTime: widget.prefs.displayTime,
-                      searchFocusNode: _searchFocus,
-                      onQueryChanged: (value) => setState(() => _query = value),
-                      onSelect: _select,
-                      onCreate: _createNote,
-                      onArchive: _archiveNote,
-                      onRestore: _restoreNote,
-                      onTogglePin: _archiveMode ? null : _togglePinnedNote,
-                      onArchiveToggle: _toggleArchive,
-                      archiveMode: _archiveMode,
-                      archivedCount: widget.notes.archivedNotes.length,
-                      onShare: widget.account == null ? null : _shareNote,
-                      sharing: widget.account?.sharing,
-                      onSettingsPressed: _showSettings,
-                      updates: widget.updates,
-                      showHeader: false,
+                  sidebarWidth: widget.prefs.sidebarWidth,
+                  minSidebarWidth: LayoutPrefs.minSidebarWidth,
+                  maxSidebarWidth: LayoutPrefs.maxSidebarWidth,
+                  onWidthChanged: (value) => widget.prefs.sidebarWidth = value,
+                  onHide: widget.prefs.toggleSidebar,
+                  sidebar: Sidebar(
+                    notes: _visibleNotes,
+                    pinnedNoteIds: widget.notes.pinnedNoteIds,
+                    selectedId: _selectedId,
+                    query: _query,
+                    displayTime: widget.prefs.displayTime,
+                    searchFocusNode: _searchFocus,
+                    onQueryChanged: (value) => setState(() => _query = value),
+                    onSelect: _select,
+                    onCreate: _createNote,
+                    onArchive: _archiveNote,
+                    onRestore: _restoreNote,
+                    onTogglePin: _archiveMode ? null : _togglePinnedNote,
+                    onArchiveToggle: _toggleArchive,
+                    archiveMode: _archiveMode,
+                    archivedCount: widget.notes.archivedNotes.length,
+                    onShare: widget.account == null ? null : _shareNote,
+                    sharing: widget.account?.sharing,
+                    onSettingsPressed: _showSettings,
+                    settingsShortcut: widget.shortcuts.bindingFor(
+                      ShortcutAction.openSettings,
                     ),
-                    body: SafeArea(
-                      top: false,
-                      left: false,
-                      right: false,
-                      child: selected == null
-                          ? EmptyState(onCreate: _createNote)
-                          : _buildEditor(selected),
-                    ),
+                    updates: widget.updates,
+                    showHeader: false,
+                  ),
+                  body: SafeArea(
+                    top: false,
+                    left: false,
+                    right: false,
+                    child: selected == null
+                        ? EmptyState(onCreate: _createNote)
+                        : _buildEditor(selected),
                   ),
                 ),
               ),
@@ -1076,7 +1229,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       value: overlayStyle,
       child: Scaffold(
         key: _scaffoldKey,
-        backgroundColor: palette.editorBackground,
+        // The wide layout is its own chrome; here the Scaffold would cover the
+        // window material that the translucent surfaces are meant to sit on.
+        backgroundColor: palette.isGlass
+            ? Colors.transparent
+            : palette.editorBackground,
         drawerEnableOpenDragGesture: !AppPlatform.isMobile,
         drawerEdgeDragWidth: drawerEdgeDragWidth,
         onDrawerChanged: (isOpen) {
@@ -1128,11 +1285,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onShare: widget.account == null ? null : _shareNote,
                       sharing: widget.account?.sharing,
                       onSettingsPressed: _showSettings,
+                      settingsShortcut: widget.shortcuts.bindingFor(
+                        ShortcutAction.openSettings,
+                      ),
                       updates: widget.updates,
                     ),
                   ),
                 )
-              : ColoredBox(color: palette.sidebarBackground),
+              : ColoredBox(color: palette.sidebarColor),
         ),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1157,6 +1317,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   Scaffold.of(scaffoldContext).openDrawer();
                 },
                 onCreate: _createNote,
+                onShare: _shareSelected,
+                members: _selectedMembers,
+                currentUserId: widget.account?.sharing?.userId ?? '',
+                noteShared: selected?.isShared ?? false,
                 alwaysOnTop: widget.prefs.alwaysOnTop,
                 onToggleAlwaysOnTop: _pinToggle,
                 alwaysOnTopShortcut: _pinShortcut,
@@ -1309,7 +1473,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onGutterWidthReset: widget.prefs.resetGutterWidth,
           onSettingsPressed: _showSettings,
           hideEmptyResults: AppPlatform.isMobile,
-          showSettingsButton: !widget.prefs.sidebarVisible,
+          // This belongs with the two attachment actions on every layout.
+          // The sidebar may offer another route, but hiding this one would
+          // make the persistent footer change shape with an unrelated panel.
+          showSettingsButton: true,
         ),
       ),
     );
@@ -1324,6 +1491,9 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onFindNotes,
     required this.onNextNote,
     required this.onPreviousNote,
+    required this.onOpenSettings,
+    required this.onInsertImage,
+    required this.onRecordVoice,
     required this.onToggleSidebar,
     required this.onToggleResults,
     required this.onToggleAlwaysOnTop,
@@ -1337,6 +1507,9 @@ class _DesktopShortcuts extends StatelessWidget {
   final VoidCallback onFindNotes;
   final VoidCallback onNextNote;
   final VoidCallback onPreviousNote;
+  final VoidCallback onOpenSettings;
+  final VoidCallback onInsertImage;
+  final VoidCallback onRecordVoice;
   final VoidCallback onToggleSidebar;
   final VoidCallback onToggleResults;
   final VoidCallback? onToggleAlwaysOnTop;
@@ -1355,6 +1528,12 @@ class _DesktopShortcuts extends StatelessWidget {
         ?shortcuts.bindingFor(ShortcutAction.nextNote)?.activator: onNextNote,
         ?shortcuts.bindingFor(ShortcutAction.previousNote)?.activator:
             onPreviousNote,
+        ?shortcuts.bindingFor(ShortcutAction.openSettings)?.activator:
+            onOpenSettings,
+        ?shortcuts.bindingFor(ShortcutAction.insertImage)?.activator:
+            onInsertImage,
+        ?shortcuts.bindingFor(ShortcutAction.recordVoiceNote)?.activator:
+            onRecordVoice,
         ?shortcuts.bindingFor(ShortcutAction.toggleSidebar)?.activator:
             onToggleSidebar,
         ?shortcuts.bindingFor(ShortcutAction.toggleResults)?.activator:

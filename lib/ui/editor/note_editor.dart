@@ -4,7 +4,7 @@ import 'dart:ui' show BoxHeightStyle, BoxWidthStyle, Locale;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart'
-    show kLongPressTimeout, kPrimaryButton, kTouchSlop;
+    show kLongPressTimeout, kPrimaryButton, kSecondaryButton, kTouchSlop;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -216,6 +216,9 @@ class NoteEditorState extends State<NoteEditor> {
   final PlatformSpellCheckService _spellCheckService =
       PlatformSpellCheckService();
   Locale? _spellCheckLocale;
+  // Bumped when a word's corrections arrive, so a menu that opened without
+  // them can fill itself in rather than stay wrong.
+  final ValueNotifier<int> _correctionsArrived = ValueNotifier<int>(0);
   late HighlightingController _controller;
   final GlobalKey _textFieldKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
@@ -401,6 +404,7 @@ class NoteEditorState extends State<NoteEditor> {
     widget.shortcuts.removeListener(_onShortcutsChanged);
     widget.player?.removeListener(_onPlaybackChanged);
     _spellCheckService.dispose();
+    _correctionsArrived.dispose();
     _keyboardRetryTimer?.cancel();
     _selectionToolbarTimer?.cancel();
     _keywordHoverTimer?.cancel();
@@ -923,10 +927,13 @@ class NoteEditorState extends State<NoteEditor> {
   /// should have to know how a placeholder is anchored.
   void insertImages(List<NoteAttachmentRef> refs) {
     if (widget.readOnly || refs.isEmpty) return;
-    final selection = _controller.selection;
-    final caret = selection.isValid ? selection.end : _controller.text.length;
+    final base = _dailySeparatorFormatter.prepareProgrammaticAppend(
+      _controller.value,
+    );
+    final selection = base.selection;
+    final caret = selection.isValid ? selection.end : base.text.length;
     final result = insertImagesIntoBody(
-      body: _controller.text,
+      body: base.text,
       existing: _attachments,
       caret: caret,
       incoming: refs,
@@ -949,10 +956,13 @@ class NoteEditorState extends State<NoteEditor> {
   /// anchored.
   void insertVoice(NoteVoiceRef ref) {
     if (widget.readOnly) return;
-    final selection = _controller.selection;
-    final caret = selection.isValid ? selection.end : _controller.text.length;
+    final base = _dailySeparatorFormatter.prepareProgrammaticAppend(
+      _controller.value,
+    );
+    final selection = base.selection;
+    final caret = selection.isValid ? selection.end : base.text.length;
     final result = insertVoiceIntoBody(
-      body: _controller.text,
+      body: base.text,
       existing: _attachments,
       caret: caret,
       incoming: ref,
@@ -1030,51 +1040,52 @@ class NoteEditorState extends State<NoteEditor> {
   ///
   /// Copying a screenshot and pressing Paste should put the screenshot in the
   /// note; that is what every other editor does and what nobody thinks twice
-  /// about. Text is captured before those image checks because dictation apps
-  /// put their transcript on a promised clipboard only briefly, then restore
-  /// what was there before. Reading text again after the image awaits can paste
-  /// that previous value instead of what the person just said.
+  /// about.
+  ///
+  /// Everything cheap is read in one go. A dictation app owns the clipboard
+  /// only for as long as its synthetic Cmd+V takes to land, then puts back
+  /// whatever was there before, so reads issued an await apart are liable to be
+  /// describing two different clipboards — which is how a transcript used to
+  /// lose to a picture copied minutes earlier. The bitmap is the one read left
+  /// until it is wanted, being the only expensive one, so it is checked against
+  /// the clipboard it was promised from before it goes into the note.
   Future<void> handlePaste(SelectionChangedCause cause) async {
     if (widget.readOnly) return;
     // Keep the insertion point from the moment Cmd+V arrived. An
     // accessibility-driven refocus can briefly clear EditableText's selection
     // while the promised clipboard value is being resolved.
     final startingValue = _editableTextState()?.textEditingValue;
-    ClipboardData? capturedText;
-    try {
-      capturedText = await Clipboard.getData(Clipboard.kTextPlain);
-    } catch (error, stack) {
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stack,
-          library: 'Kapy Notes editor',
-          context: ErrorDescription('while capturing text for paste'),
-        ),
-      );
-    }
+    final store = widget.images;
+
+    // Kapy Notes rich HTML carries the positions of every selected image, so it
+    // outranks the clipboard's native bitmap: reading only that would reduce a
+    // mixed selection to its first picture and lose the text around it.
+    final (capturedText, fragment, paths) = await (
+      _clipboardText(),
+      store == null
+          ? Future<NoteClipboardFragment?>.value()
+          : widget.clipboard.readFragment(),
+      store == null
+          ? Future<List<String>>.value(const [])
+          : widget.clipboard.readImageFiles(),
+    ).wait;
     if (!mounted) return;
 
-    final store = widget.images;
-    if (store != null) {
-      // Kapy Notes rich HTML comes first because it carries the positions of
-      // every selected image. Reading only the clipboard's native bitmap here
-      // would reduce a mixed selection to its first picture and lose its text.
-      final fragment = await widget.clipboard.readFragment();
-      if (!mounted) return;
-      if (fragment != null) {
-        await _insertClipboardFragment(
-          fragment,
-          cause,
-          startingValue: startingValue,
-        );
-        return;
-      }
+    if (fragment != null) {
+      await _insertClipboardFragment(
+        fragment,
+        cause,
+        startingValue: startingValue,
+      );
+      return;
+    }
 
-      // Raw bitmap data first — a screenshot tool, a browser's "copy image".
+    // Raw bitmap data — a screenshot tool, a browser's "copy image".
+    if (store != null) {
       final pasted = await widget.clipboard.readImage();
       if (!mounted) return;
-      if (pasted != null) {
+      if (pasted != null && await _clipboardStillHolds(capturedText)) {
+        if (!mounted) return;
         if (!_beginImageAction()) return;
         final progress = Toast.showProgress(context, 'Adding image…');
         try {
@@ -1109,19 +1120,43 @@ class NoteEditorState extends State<NoteEditor> {
           _endImageAction();
         }
       }
-
-      // Then a file copied in Finder or Explorer, which arrives as a path.
-      final paths = await widget.clipboard.readImageFiles();
-      if (!mounted) return;
-      if (paths.isNotEmpty) {
-        await insertFiles([for (final path in paths) XFile(path)]);
-        return;
-      }
     }
-    final text = capturedText?.text;
-    if (!mounted || text == null) return;
-    _insertPastedText(text, cause, startingValue: startingValue);
+
+    // Then a file copied in Finder or Explorer, which arrives as a path.
+    if (paths.isNotEmpty) {
+      await insertFiles([for (final path in paths) XFile(path)]);
+      return;
+    }
+    if (!mounted || capturedText == null) return;
+    _insertPastedText(capturedText, cause, startingValue: startingValue);
   }
+
+  /// The clipboard's plain text, or null when it holds none.
+  Future<String?> _clipboardText() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      return data?.text;
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kapy Notes editor',
+          context: ErrorDescription('while capturing text for paste'),
+        ),
+      );
+      return null;
+    }
+  }
+
+  /// Whether the clipboard still holds the text this paste was promised.
+  ///
+  /// A dictation app restores the previous clipboard a moment after its Cmd+V,
+  /// so a bitmap read later can belong to that older clipboard rather than to
+  /// the paste that was asked for. The text tells the two apart: a picture
+  /// genuinely copied alongside text still matches, a restored one does not.
+  Future<bool> _clipboardStillHolds(String? capturedText) async =>
+      await _clipboardText() == capturedText;
 
   Future<void> _insertClipboardFragment(
     NoteClipboardFragment fragment,
@@ -1326,8 +1361,8 @@ class NoteEditorState extends State<NoteEditor> {
   }
 
   /// Opens the device's image entry point, compresses whatever comes back,
-  /// and inserts it. Phones open the camera-first capture surface; desktop
-  /// opens its system file dialog.
+  /// and inserts it. Phones ask between the native camera and photo library;
+  /// desktop opens its system file dialog.
   Future<void> pickAndInsertImages() async {
     final store = widget.images;
     if (store == null || !_beginImageAction()) return;
@@ -1516,11 +1551,93 @@ class NoteEditorState extends State<NoteEditor> {
   void _handlePointerDown(PointerDownEvent event) {
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
+    if (event.buttons & kSecondaryButton != 0) {
+      _caretForSecondaryTapOnMisspelling(event.position);
+    }
+    _prefetchCorrectionsAt(event.position);
     _pointerDownDetails[event.pointer] = _PointerDownDetails(
       position: event.position,
       timeStamp: event.timeStamp,
       wasPrimary: event.buttons & kPrimaryButton != 0,
     );
+  }
+
+  /// Moves the caret into the misspelling a right-click landed on.
+  ///
+  /// Windows and Linux leave the caret alone when the menu opens, so without
+  /// this the corrections offered are for whatever word the caret was resting
+  /// on, not the underlined one the pointer is over. macOS selects the word
+  /// itself, and the selection toolbar answers for it there.
+  ///
+  /// Only when nothing is selected: a right-click inside a selection is about
+  /// that selection, and taking it away would be the menu editing the note.
+  void _caretForSecondaryTapOnMisspelling(Offset position) {
+    if (widget.readOnly ||
+        AppPlatform.isMacOS ||
+        AppPlatform.isIOS ||
+        _controller.spellingSuggestions.isEmpty) {
+      return;
+    }
+    final selection = _controller.selection;
+    if (!selection.isValid || !selection.isCollapsed) return;
+    final root = _textFieldKey.currentContext?.findRenderObject();
+    final editable = root == null ? null : _findRenderEditable(root);
+    if (editable == null) return;
+
+    final offset = editable.getPositionForPoint(position).offset;
+    if (offset == selection.baseOffset) return;
+    final onMisspelling = _controller.spellingSuggestions.any(
+      (suggestion) =>
+          offset >= suggestion.range.start && offset <= suggestion.range.end,
+    );
+    if (!onMisspelling) return;
+    _focusNode.requestFocus();
+    _controller.selection = TextSelection.collapsed(offset: offset);
+  }
+
+  /// Asks for the corrections of the misspelling under a press.
+  ///
+  /// A right-click shows its menu on the way back up, and a press-and-hold
+  /// half a second later, so the answer is there before the menu is built.
+  /// Nothing is asked for while somebody is only typing.
+  void _prefetchCorrectionsAt(Offset position) {
+    if (_controller.spellingSuggestions.isEmpty) return;
+    final root = _textFieldKey.currentContext?.findRenderObject();
+    final editable = root == null ? null : _findRenderEditable(root);
+    if (editable == null) return;
+    final offset = editable.getPositionForPoint(position).offset;
+    for (final suggestion in _controller.spellingSuggestions) {
+      if (offset >= suggestion.range.start && offset <= suggestion.range.end) {
+        _correctionsFor(suggestion);
+        return;
+      }
+    }
+  }
+
+  /// The corrections to offer for a misspelling, as far as they are known.
+  ///
+  /// Android and iOS send them with the spans. On desktop the first ask starts
+  /// a lookup and comes back empty; [_correctionsArrived] rebuilds the menu
+  /// when it lands, which is only ever visible if the press did not prefetch.
+  List<String> _correctionsFor(SuggestionSpan misspelling) {
+    if (misspelling.suggestions.isNotEmpty) return misspelling.suggestions;
+    final range = misspelling.range;
+    final text = _controller.text;
+    if (range.end > text.length) return const [];
+    final locale = _spellCheckLocale;
+    if (locale == null) return const [];
+    final word = text.substring(range.start, range.end);
+    final known = _spellCheckService.cachedSuggestionsFor(locale, word);
+    if (known != null) return known;
+    unawaited(
+      _spellCheckService.suggestionsFor(locale, text, range).then((
+        suggestions,
+      ) {
+        if (!mounted || suggestions.isEmpty) return;
+        _correctionsArrived.value++;
+      }),
+    );
+    return const [];
   }
 
   void _handlePointerCancel(PointerCancelEvent event) {
@@ -1884,11 +2001,102 @@ class NoteEditorState extends State<NoteEditor> {
     ];
   }
 
+  /// The menu behind a right-click, a press-and-hold, or the keyboard.
+  Widget _contextMenu(
+    BuildContext context,
+    EditableTextState editableTextState,
+  ) {
+    final selection = editableTextState.textEditingValue.selection;
+    final link = _linkForSelection(selection);
+    final linkItems = _linkContextMenuItems(link);
+    if (widget.readOnly) {
+      return AdaptiveTextSelectionToolbar.buttonItems(
+        anchors: editableTextState.contextMenuAnchors,
+        buttonItems: [
+          ...linkItems,
+          ..._withRichCopy(editableTextState.contextMenuButtonItems, selection),
+          if (_controller.text.isNotEmpty)
+            ContextMenuButtonItem(
+              label: 'Copy Plain Text',
+              onPressed: () => unawaited(_copyPlainText(selection)),
+            ),
+        ],
+      );
+    }
+    if (selection.isCollapsed) {
+      final spellingItems = _spellingContextMenuItems(selection);
+      return AdaptiveTextSelectionToolbar.buttonItems(
+        anchors: editableTextState.contextMenuAnchors,
+        buttonItems: [
+          ...spellingItems,
+          ...linkItems,
+          if (widget.images != null && !AppPlatform.hasPointer)
+            ContextMenuButtonItem(
+              label: 'Add Image',
+              onPressed: () {
+                ContextMenuController.removeAny();
+                unawaited(pickAndInsertImages());
+              },
+            ),
+          // Touch only, beside Add Image: on a phone the footer
+          // row has no space left, so the press-and-hold menu is
+          // where every insert action already lives.
+          if (widget.onRecordVoice != null && !AppPlatform.hasPointer)
+            ContextMenuButtonItem(
+              label: 'Record Voice Note',
+              onPressed: () {
+                ContextMenuController.removeAny();
+                widget.onRecordVoice!();
+              },
+            ),
+          if (_controller.text.isNotEmpty)
+            ContextMenuButtonItem(
+              label: 'Copy Plain Text',
+              onPressed: () => unawaited(_copyPlainText(selection)),
+            ),
+          ..._withImagePaste(editableTextState.contextMenuButtonItems),
+        ],
+      );
+    }
+    return NoteSelectionFormattingToolbar(
+      editableTextState: editableTextState,
+      corrections: _spellingContextMenuItems(selection),
+      paragraphStyle: _activeParagraphStyle,
+      boldActive: _formatActive(NoteFormat.bold),
+      italicActive: _formatActive(NoteFormat.italic),
+      bulletsActive: selectionHasLineStyle(
+        _controller.value,
+        NoteLineStyle.bullet,
+      ),
+      checklistActive: selectionHasLineStyle(
+        _controller.value,
+        NoteLineStyle.checklist,
+      ),
+      onParagraphStylePressed: _cycleParagraphStyle,
+      onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
+      onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
+      onBulletsPressed: _toggleBullets,
+      onChecklistPressed: _toggleChecklist,
+      onOpenLink: link == null ? null : () => unawaited(_openLink(link)),
+      onCopyLink: link == null ? null : () => unawaited(_copyLink(link)),
+      onCopy: _selectionContainsImage(selection)
+          ? () => unawaited(_copyRichSelection(selection))
+          : null,
+      onCopyPlainText: () => unawaited(_copyPlainText(selection)),
+    );
+  }
+
+  /// The misspelling a selection is asking about: the caret inside a word, or
+  /// the word itself.
+  ///
+  /// Right-clicking a misspelling selects it on macOS, and holding one does
+  /// the same under a finger, so a collapsed caret is not the only way someone
+  /// arrives at the menu asking how the word is spelled.
   SuggestionSpan? _spellingSuggestionFor(TextSelection selection) {
-    if (!selection.isValid || !selection.isCollapsed) return null;
-    final offset = selection.extentOffset;
+    if (!selection.isValid) return null;
     for (final suggestion in _controller.spellingSuggestions) {
-      if (offset >= suggestion.range.start && offset <= suggestion.range.end) {
+      final range = suggestion.range;
+      if (selection.start >= range.start && selection.end <= range.end) {
         return suggestion;
       }
     }
@@ -1903,7 +2111,7 @@ class NoteEditorState extends State<NoteEditor> {
 
     final unique = <String>{};
     final replacements = [
-      for (final suggestion in misspelling.suggestions)
+      for (final suggestion in _correctionsFor(misspelling))
         if (unique.add(suggestion)) suggestion,
     ].take(3);
     return [
@@ -2387,7 +2595,7 @@ class NoteEditorState extends State<NoteEditor> {
     // picture over a note and having to aim at the caret would be worse than
     // useless. Where it goes is decided by the caret already in the note.
     final page = Container(
-      color: palette.editorBackground,
+      color: palette.paperColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2550,6 +2758,15 @@ class NoteEditorState extends State<NoteEditor> {
               checklistShortcut: widget.shortcuts.bindingFor(
                 ShortcutAction.formatChecklist,
               ),
+              settingsShortcut: widget.shortcuts.bindingFor(
+                ShortcutAction.openSettings,
+              ),
+              imageShortcut: widget.shortcuts.bindingFor(
+                ShortcutAction.insertImage,
+              ),
+              voiceShortcut: widget.shortcuts.bindingFor(
+                ShortcutAction.recordVoiceNote,
+              ),
               onSettingsPressed: widget.onSettingsPressed,
               onParagraphStylePressed: _cycleParagraphStyle,
               onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
@@ -2580,8 +2797,7 @@ class NoteEditorState extends State<NoteEditor> {
                 NoteLineStyle.checklist,
               ),
               paragraphStyle: _activeParagraphStyle,
-              showSettingsButton:
-                  widget.showSettingsButton && !AppPlatform.isMobile,
+              showSettingsButton: widget.showSettingsButton,
             ),
         ],
       ),
@@ -2679,6 +2895,15 @@ class NoteEditorState extends State<NoteEditor> {
                           .bindingFor(ShortcutAction.recordVoiceNote)
                           ?.activator:
                       widget.onRecordVoice!,
+                if (!widget.readOnly && widget.images != null)
+                  ?widget.shortcuts
+                      .bindingFor(ShortcutAction.insertImage)
+                      ?.activator: () =>
+                      unawaited(pickAndInsertImages()),
+                ?widget.shortcuts
+                        .bindingFor(ShortcutAction.openSettings)
+                        ?.activator:
+                    widget.onSettingsPressed,
               },
               child: TextField(
                 key: _textFieldKey,
@@ -2719,99 +2944,14 @@ class NoteEditorState extends State<NoteEditor> {
                   const _ListContinuationFormatter(),
                   const _ListShorthandFormatter(),
                 ],
-                contextMenuBuilder: (context, editableTextState) {
-                  final selection =
-                      editableTextState.textEditingValue.selection;
-                  final link = _linkForSelection(selection);
-                  final linkItems = _linkContextMenuItems(link);
-                  if (widget.readOnly) {
-                    return AdaptiveTextSelectionToolbar.buttonItems(
-                      anchors: editableTextState.contextMenuAnchors,
-                      buttonItems: [
-                        ...linkItems,
-                        ..._withRichCopy(
-                          editableTextState.contextMenuButtonItems,
-                          selection,
-                        ),
-                        if (_controller.text.isNotEmpty)
-                          ContextMenuButtonItem(
-                            label: 'Copy Plain Text',
-                            onPressed: () =>
-                                unawaited(_copyPlainText(selection)),
-                          ),
-                      ],
-                    );
-                  }
-                  if (selection.isCollapsed) {
-                    final spellingItems = _spellingContextMenuItems(selection);
-                    return AdaptiveTextSelectionToolbar.buttonItems(
-                      anchors: editableTextState.contextMenuAnchors,
-                      buttonItems: [
-                        ...spellingItems,
-                        ...linkItems,
-                        if (widget.images != null && !AppPlatform.hasPointer)
-                          ContextMenuButtonItem(
-                            label: 'Add Image',
-                            onPressed: () {
-                              ContextMenuController.removeAny();
-                              unawaited(pickAndInsertImages());
-                            },
-                          ),
-                        // Touch only, beside Add Image: on a phone the footer
-                        // row has no space left, so the press-and-hold menu is
-                        // where every insert action already lives.
-                        if (widget.onRecordVoice != null &&
-                            !AppPlatform.hasPointer)
-                          ContextMenuButtonItem(
-                            label: 'Record Voice Note',
-                            onPressed: () {
-                              ContextMenuController.removeAny();
-                              widget.onRecordVoice!();
-                            },
-                          ),
-                        if (_controller.text.isNotEmpty)
-                          ContextMenuButtonItem(
-                            label: 'Copy Plain Text',
-                            onPressed: () =>
-                                unawaited(_copyPlainText(selection)),
-                          ),
-                        ..._withImagePaste(
-                          editableTextState.contextMenuButtonItems,
-                        ),
-                      ],
-                    );
-                  }
-                  return NoteSelectionFormattingToolbar(
-                    editableTextState: editableTextState,
-                    paragraphStyle: _activeParagraphStyle,
-                    boldActive: _formatActive(NoteFormat.bold),
-                    italicActive: _formatActive(NoteFormat.italic),
-                    bulletsActive: selectionHasLineStyle(
-                      _controller.value,
-                      NoteLineStyle.bullet,
+                contextMenuBuilder: (context, editableTextState) =>
+                    ValueListenableBuilder<int>(
+                      // Rebuilds the menu if a word's corrections arrive after
+                      // it opened, rather than leaving it half-answered.
+                      valueListenable: _correctionsArrived,
+                      builder: (context, _, _) =>
+                          _contextMenu(context, editableTextState),
                     ),
-                    checklistActive: selectionHasLineStyle(
-                      _controller.value,
-                      NoteLineStyle.checklist,
-                    ),
-                    onParagraphStylePressed: _cycleParagraphStyle,
-                    onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
-                    onItalicPressed: () =>
-                        _toggleInlineFormat(NoteFormat.italic),
-                    onBulletsPressed: _toggleBullets,
-                    onChecklistPressed: _toggleChecklist,
-                    onOpenLink: link == null
-                        ? null
-                        : () => unawaited(_openLink(link)),
-                    onCopyLink: link == null
-                        ? null
-                        : () => unawaited(_copyLink(link)),
-                    onCopy: _selectionContainsImage(selection)
-                        ? () => unawaited(_copyRichSelection(selection))
-                        : null,
-                    onCopyPlainText: () => unawaited(_copyPlainText(selection)),
-                  );
-                },
                 textAlignVertical: TextAlignVertical.top,
                 // Spelling may point something out, but the calculator must
                 // never rewrite a value, operator, name or unit on its own.
@@ -3144,6 +3284,51 @@ class _DailySeparatorFormatter extends TextInputFormatter {
 
   void beginAppendSession(String? pendingSeparatorLine) {
     _pendingSeparatorLine = pendingSeparatorLine;
+  }
+
+  /// Applies the same delayed new-day boundary before an attachment insert.
+  ///
+  /// Image and voice buttons update the controller directly, so they never
+  /// pass through [formatEditUpdate]. Keeping this beside that formatter's
+  /// logic prevents widget dictation and footer actions from silently
+  /// bypassing daily sections.
+  TextEditingValue prepareProgrammaticAppend(TextEditingValue value) {
+    final editedAt = now();
+    final previousEdit = _lastUpdatedAt;
+    _lastUpdatedAt = editedAt;
+    if (!enabled) {
+      _pendingSeparatorLine = null;
+      return value;
+    }
+    final pendingSeparatorLine = _pendingSeparatorLine;
+    if (pendingSeparatorLine == null &&
+        DailySeparator.isSameDay(
+          previousEdit,
+          editedAt,
+          displayTime: displayTime,
+        )) {
+      return value;
+    }
+    if (!value.selection.isValid ||
+        !value.selection.isCollapsed ||
+        value.selection.end != value.text.length) {
+      return value;
+    }
+
+    final separated = pendingSeparatorLine == null
+        ? DailySeparator.append(
+            value.text,
+            previousEdit,
+            displayTime: displayTime,
+          )
+        : DailySeparator.appendLine(value.text, pendingSeparatorLine);
+    _pendingSeparatorLine = null;
+    if (separated == value.text) return value;
+    return value.copyWith(
+      text: separated,
+      selection: TextSelection.collapsed(offset: separated.length),
+      composing: TextRange.empty,
+    );
   }
 
   @override

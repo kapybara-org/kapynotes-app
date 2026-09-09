@@ -61,6 +61,12 @@ class CompactIconButton extends StatelessWidget {
               return Colors.transparent;
             }),
             overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+            side: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.focused)) {
+                return BorderSide(color: palette.selectedBorder, width: 1);
+              }
+              return BorderSide.none;
+            }),
             shape: WidgetStatePropertyAll(
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
             ),

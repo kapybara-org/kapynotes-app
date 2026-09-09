@@ -65,7 +65,16 @@ const Map<String, String> currencySymbolCodes = {
 };
 
 /// Multi-character operators, longest first so `<=` never lexes as `<`.
-const List<String> _multiCharOperators = ['**', '==', '!=', '<=', '>=', '->'];
+const List<String> _multiCharOperators = [
+  '**',
+  '==',
+  '!=',
+  '<=',
+  '>=',
+  '<<',
+  '>>',
+  '->',
+];
 
 const String _singleCharOperators = '+-*/^<>=!:&|×÷−–—';
 
@@ -119,14 +128,36 @@ class Lexer {
       _pos = source.length;
       return _make(TokenType.comment, start);
     }
-    if (ch == '#' && (start == 0 || _isSpace(source[start - 1]))) {
+    if (ch == '#' &&
+        (start == 0 || _isSpace(source[start - 1])) &&
+        !_isDigit(_peek(1) ?? '')) {
       _pos = source.length;
+      return _make(TokenType.comment, start);
+    }
+    // Numi-style quoted annotations are calculator comments wherever they
+    // occur. They remain ordinary note text, but numbers and operators inside
+    // them cannot affect the result. An unfinished quote simply comments the
+    // rest of the line, which is the least surprising state while typing.
+    if (ch == '"') {
+      _pos++;
+      while (_pos < source.length && source[_pos] != '"') {
+        _pos++;
+      }
+      if (_pos < source.length) _pos++;
       return _make(TokenType.comment, start);
     }
 
     if (currencySymbolCodes.containsKey(ch)) {
       _pos++;
       return _make(TokenType.currencySymbol, start);
+    }
+
+    final radix = ch == '0' ? _radixForPrefix(_peek(1)) : null;
+    if (radix != null) {
+      final firstDigit = _peek(2);
+      if (firstDigit != null && _isRadixDigit(firstDigit, radix)) {
+        return _radixNumber(start, radix);
+      }
     }
 
     if (_isDigit(ch) || (ch == '.' && _isDigit(_peek(1) ?? ''))) {
@@ -178,8 +209,8 @@ class Lexer {
   }
 
   /// Reads a number, absorbing `,`/`_` group separators, an optional exponent,
-  /// and an attached `k` or `m` magnitude suffix. A comma only counts as a
-  /// separator when the digits after it
+  /// and an attached `k`, `m`, or `M` magnitude suffix. Uppercase `K` remains
+  /// kelvin. A comma only counts as a separator when the digits after it
   /// complete a grouped integer — `1,250` and the Indian `12,34,567` are
   /// single numbers, while `max(1, 250)` stays two arguments.
   Token _number(int start) {
@@ -237,9 +268,9 @@ class Lexer {
     if (_pos < source.length) {
       final suffix = source[_pos];
       final after = _peek(1);
-      if ((suffix == 'k' || suffix == 'K' || suffix == 'm' || suffix == 'M') &&
+      if ((suffix == 'k' || suffix == 'm' || suffix == 'M') &&
           (after == null || !_isIdentPart(after))) {
-        multiplier = suffix == 'k' || suffix == 'K' ? 1000 : 1000000;
+        multiplier = suffix == 'k' ? 1000 : 1000000;
         _pos++;
       }
     }
@@ -252,6 +283,33 @@ class Lexer {
       start: start,
       end: _pos,
       number: value,
+    );
+  }
+
+  /// Reads `0b`, `0o` and `0x` integer literals. Keeping their numeric value
+  /// on the ordinary number token means the rest of the grammar, including
+  /// units and arithmetic, needs no radix-specific branch.
+  Token _radixNumber(int start, int radix) {
+    _pos += 2;
+    final digits = StringBuffer();
+    while (_pos < source.length) {
+      final ch = source[_pos];
+      if (_isRadixDigit(ch, radix)) {
+        digits.write(ch);
+        _pos++;
+      } else if (ch == '_' && _isRadixDigit(_peek(1) ?? '', radix)) {
+        _pos++;
+      } else {
+        break;
+      }
+    }
+    final parsed = BigInt.tryParse(digits.toString(), radix: radix);
+    return Token(
+      type: TokenType.number,
+      text: source.substring(start, _pos),
+      start: start,
+      end: _pos,
+      number: parsed?.toDouble(),
     );
   }
 
@@ -286,6 +344,24 @@ class Lexer {
 
   static bool _isDigit(String ch) =>
       ch.length == 1 && ch.codeUnitAt(0) >= 0x30 && ch.codeUnitAt(0) <= 0x39;
+
+  static int? _radixForPrefix(String? ch) => switch (ch?.toLowerCase()) {
+    'b' => 2,
+    'o' => 8,
+    'x' => 16,
+    _ => null,
+  };
+
+  static bool _isRadixDigit(String ch, int radix) {
+    if (ch.length != 1) return false;
+    final code = ch.toLowerCase().codeUnitAt(0);
+    final value = code >= 0x30 && code <= 0x39
+        ? code - 0x30
+        : code >= 0x61 && code <= 0x66
+        ? code - 0x61 + 10
+        : -1;
+    return value >= 0 && value < radix;
+  }
 
   static bool _isIdentStart(String ch) {
     final c = ch.codeUnitAt(0);

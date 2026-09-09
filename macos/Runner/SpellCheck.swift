@@ -6,18 +6,27 @@ import FlutterMacOS
 /// The response deliberately matches Flutter's suggestion-span shape, so the
 /// editor can merge subtle underlines into its rich text and put corrections
 /// in the same adaptive menu as the standard editing actions.
+///
+/// Finding the misspellings and correcting one of them are separate calls.
+/// Guessing what a word should have been costs far more than finding it — a
+/// long note pays it a hundred times over, for a hundred words, while only the
+/// one word somebody right-clicks is ever read out.
 enum SpellCheck {
   private static let channelName = "kapynotes/spell_check"
   private static let maximumResults = 100
+  private static let maximumSuggestions = 5
 
   static func register(with messenger: FlutterBinaryMessenger) -> FlutterMethodChannel {
     let channel = FlutterMethodChannel(name: channelName, binaryMessenger: messenger)
     channel.setMethodCallHandler { call, result in
-      guard call.method == "check" else {
+      switch call.method {
+      case "check":
+        result(check(call.arguments))
+      case "suggest":
+        result(suggest(call.arguments))
+      default:
         result(FlutterMethodNotImplemented)
-        return
       }
-      result(check(call.arguments))
     }
     return channel
   }
@@ -54,20 +63,38 @@ enum SpellCheck {
       guard range.location >= offset, end <= utf16Length else {
         break
       }
-      let suggestions = checker.guesses(
-        forWordRange: range,
-        in: text,
-        language: language,
-        inSpellDocumentWithTag: 0
-      ) ?? []
       response.append([
         "startIndex": range.location,
         "endIndex": end,
-        "suggestions": Array(suggestions.prefix(5)),
       ])
       offset = end
     }
     return response
+  }
+
+  /// What macOS would put at the top of its own menu for one flagged word.
+  private static func suggest(_ rawArguments: Any?) -> [String] {
+    guard
+      let arguments = rawArguments as? [String: Any],
+      let text = arguments["text"] as? String,
+      let requestedLanguage = arguments["language"] as? String,
+      let start = arguments["startIndex"] as? Int,
+      let end = arguments["endIndex"] as? Int,
+      start >= 0,
+      end > start,
+      end <= (text as NSString).length
+    else {
+      return []
+    }
+
+    let checker = NSSpellChecker.shared
+    let guesses = checker.guesses(
+      forWordRange: NSRange(location: start, length: end - start),
+      in: text,
+      language: bestLanguage(for: requestedLanguage, checker: checker),
+      inSpellDocumentWithTag: 0
+    ) ?? []
+    return Array(guesses.prefix(maximumSuggestions))
   }
 
   /// NSSpellChecker language identifiers vary between dictionaries. Match the

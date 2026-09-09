@@ -370,6 +370,10 @@ void main() {
     addTearDown(mouse.removePointer);
     await mouse.addPointer(location: Offset.zero);
     await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('formatting-toggle'))),
+    );
+    await tester.pumpAndSettle();
+    await mouse.moveTo(
       tester.getCenter(find.byKey(const ValueKey('format-style'))),
     );
     await tester.pumpAndSettle();

@@ -7,9 +7,9 @@ void main() {
   test('dark theme keeps a restrained Numi-style palette', () {
     const palette = KapyTheme.darkPalette;
 
-    expect(palette.editorBackground, const Color(0xFF212226));
+    expect(palette.editorBackground, const Color(0xFF202125));
     expect(palette.gutterBackground, palette.editorBackground);
-    expect(palette.textPrimary, const Color(0xFFE3E7E9));
+    expect(palette.textPrimary, const Color(0xFFE7E9EC));
     expect(palette.paperFiber, Colors.transparent);
 
     expect({
@@ -32,6 +32,85 @@ void main() {
       {const Color(0xFF8DD32D)},
     );
     expect(KapyTheme.dark().colorScheme.primary, const Color(0xFF6CC4EE));
+    expect(KapyTheme.dark().shadowColor, Colors.transparent);
+    expect(KapyTheme.dark().dialogTheme.elevation, 0);
+    expect(KapyTheme.dark().popupMenuTheme.elevation, 0);
+    expect(
+      (KapyTheme.dark().tooltipTheme.decoration! as BoxDecoration).boxShadow,
+      anyOf(isNull, isEmpty),
+    );
+  });
+
+  test('transparency thins the surfaces and never the type', () {
+    final palette = KapyTheme.translucentDarkPalette;
+
+    expect(palette.isGlass, isTrue);
+    expect(palette.translucency, lessThan(1));
+    expect(palette.paperTranslucency, lessThan(1));
+    expect(KapyTheme.darkPalette.isGlass, isFalse);
+    expect(KapyTheme.darkPalette.translucency, 1);
+    expect(KapyTheme.darkPalette.paperTranslucency, 1);
+
+    // The colours are untouched; the paint derived from them is what thins.
+    // Dialogs, menus and tooltips read the colours and so stay exactly as
+    // legible as they are with transparency off.
+    expect(palette.editorBackground, KapyTheme.darkPalette.editorBackground);
+    expect(palette.gutterBackground, KapyTheme.darkPalette.gutterBackground);
+    expect(palette.surfaceBackground, KapyTheme.darkPalette.surfaceBackground);
+    expect(palette.paperColor.a, lessThan(1));
+    expect(palette.gutterColor.a, palette.paperColor.a);
+    expect(palette.sidebarColor.a, lessThan(1));
+    expect(KapyTheme.darkPalette.paperColor.a, 1);
+    expect(palette.textPrimary.a, 1);
+    expect(palette.textSecondary.a, 1);
+    expect(palette.number.a, 1);
+
+    // The paper keeps more body than the chrome: a paragraph needs it.
+    expect(palette.paperTranslucency, greaterThan(palette.translucency));
+    expect(
+      KapyTheme.translucentLightPalette.paperTranslucency,
+      greaterThan(palette.paperTranslucency),
+      reason: 'dark text over a bright wallpaper loses contrast sooner',
+    );
+
+    // The rim only exists on glass, so opaque chrome grows no edge.
+    expect(palette.glassHighlight.a, greaterThan(0));
+    expect(KapyTheme.darkPalette.glassHighlight.a, 0);
+    expect(palette.opaque.isGlass, isFalse);
+    expect(palette.opaque.glassHighlight.a, 0);
+    expect(KapyTheme.darkPalette.opaque, same(KapyTheme.darkPalette));
+
+    // The slider: more amount, thinner paint, never none.
+    final subtle = KapyTheme.glassPalette(Brightness.dark, 0);
+    final clear = KapyTheme.glassPalette(Brightness.dark, 1);
+    expect(subtle.isGlass, isTrue);
+    expect(subtle.paperTranslucency, greaterThan(palette.paperTranslucency));
+    expect(clear.paperTranslucency, lessThan(palette.paperTranslucency));
+    // The far end is a film, not a fill — but never nothing, since the type
+    // needs something to stand on even over a blur.
+    expect(clear.paperTranslucency, lessThan(0.1));
+    expect(clear.paperTranslucency, greaterThan(0));
+    expect(clear.translucency, greaterThan(0));
+    expect(clear.translucency, lessThan(clear.paperTranslucency));
+    // The subtle end is where the old scale ended: properly see-through.
+    expect(subtle.paperTranslucency, lessThan(0.5));
+    expect(
+      KapyTheme.glassPalette(Brightness.dark, 5).paperTranslucency,
+      clear.paperTranslucency,
+      reason: 'out-of-range amounts clamp',
+    );
+    expect(
+      KapyTheme.dark(
+        transparency: true,
+      ).extension<CalcPalette>()!.paperTranslucency,
+      palette.paperTranslucency,
+    );
+    expect(KapyTheme.translucentLightPalette.isGlass, isTrue);
+    expect(
+      KapyTheme.translucentLightPalette.paperFiber.a,
+      0,
+      reason: 'fibres read as noise on glass',
+    );
   });
 
   test('handwritten editor face stays restrained', () {

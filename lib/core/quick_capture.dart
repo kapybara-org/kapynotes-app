@@ -97,8 +97,15 @@ class QuickCapture {
   /// continue, because this is a first launch or the last note was deleted on
   /// another device, the most recently edited note is simply the one that
   /// gets created.
-  static Note file(NotesStore notes, String draft, LaunchIntent intent) {
-    final last = notes.lastEditedNote;
+  static Note file(
+    NotesStore notes,
+    String draft,
+    LaunchIntent intent, {
+    Note? target,
+  }) {
+    final last = target != null && !target.isArchived
+        ? target
+        : notes.lastEditedNote;
     if (!intent.continuesLastNote || last == null) {
       return notes.create(body: draft);
     }

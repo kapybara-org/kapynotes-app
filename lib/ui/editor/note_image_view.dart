@@ -464,9 +464,6 @@ class _WidthHandle extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: active ? 0.95 : 0.7),
               borderRadius: BorderRadius.circular(3),
-              boxShadow: const [
-                BoxShadow(color: Color(0x55000000), blurRadius: 4),
-              ],
             ),
           ),
         ),

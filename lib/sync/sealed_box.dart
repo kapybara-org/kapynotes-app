@@ -176,11 +176,6 @@ class KdfParams {
     }
     if (decoded.isEmpty) return null;
 
-    return KdfParams(
-      salt: decoded,
-      memory: m,
-      iterations: t,
-      parallelism: p,
-    );
+    return KdfParams(salt: decoded, memory: m, iterations: t, parallelism: p);
   }
 }

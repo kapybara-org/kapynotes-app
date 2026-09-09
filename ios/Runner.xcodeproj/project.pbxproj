@@ -10,6 +10,9 @@
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		A1B2C0D000000000000000C2 /* QuickCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000C1 /* QuickCapture.swift */; };
 		C1A0B0010000000000000002 /* RichClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0010000000000000001 /* RichClipboard.swift */; };
+		C1A0B0050000000000000002 /* Summaries.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0050000000000000001 /* Summaries.swift */; };
+		C1A0B0070000000000000002 /* Transcription.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0070000000000000001 /* Transcription.swift */; };
+		C1A0B0090000000000000002 /* AudioDecode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0090000000000000001 /* AudioDecode.swift */; };
 		A1B2C0D000000000000000A4 /* WriteNoteWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000A2 /* WriteNoteWidget.swift */; };
 		A1B2C0D000000000000000D2 /* QuickAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000D1 /* QuickAction.swift */; };
 		A1B2C0D000000000000000D4 /* QuickActionsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000D3 /* QuickActionsWidget.swift */; };
@@ -87,6 +90,9 @@
 		B7C8D9E01F2A3B4C5D6E7F81 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A1B2C0D000000000000000C1 /* QuickCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCapture.swift; sourceTree = "<group>"; };
 		C1A0B0010000000000000001 /* RichClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboard.swift; sourceTree = "<group>"; };
+		C1A0B0050000000000000001 /* Summaries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Summaries.swift; sourceTree = "<group>"; };
+		C1A0B0070000000000000001 /* Transcription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcription.swift; sourceTree = "<group>"; };
+		C1A0B0090000000000000001 /* AudioDecode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDecode.swift; sourceTree = "<group>"; };
 		A1B2C0D000000000000000A1 /* WriteNoteWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WriteNoteWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C0D000000000000000A2 /* WriteNoteWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WriteNoteWidget.swift; sourceTree = "<group>"; };
 		A1B2C0D000000000000000D1 /* QuickAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickAction.swift; sourceTree = "<group>"; };
@@ -167,6 +173,9 @@
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				A1B2C0D000000000000000C1 /* QuickCapture.swift */,
 				C1A0B0010000000000000001 /* RichClipboard.swift */,
+				C1A0B0050000000000000001 /* Summaries.swift */,
+				C1A0B0070000000000000001 /* Transcription.swift */,
+				C1A0B0090000000000000001 /* AudioDecode.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				B7C8D9E01F2A3B4C5D6E7F81 /* PrivacyInfo.xcprivacy */,
 			);
@@ -373,6 +382,9 @@
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				A1B2C0D000000000000000C2 /* QuickCapture.swift in Sources */,
 				C1A0B0010000000000000002 /* RichClipboard.swift in Sources */,
+				C1A0B0050000000000000002 /* Summaries.swift in Sources */,
+				C1A0B0070000000000000002 /* Transcription.swift in Sources */,
+				C1A0B0090000000000000002 /* AudioDecode.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

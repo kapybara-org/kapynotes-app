@@ -13,6 +13,9 @@ import '../core/theme.dart';
 /// arena. The editor therefore keeps ordinary vertical scrolling, taps, and
 /// long-press text selection. An action happens only after a mostly-horizontal
 /// drag crosses a substantial threshold and the finger is released.
+///
+/// Anything wrapped in a [PageSwipeExclusion] is exempt: a drag that starts
+/// inside one never becomes a page swipe. See that widget for why.
 class MobilePageSwipe extends StatefulWidget {
   const MobilePageSwipe({
     super.key,
@@ -47,6 +50,7 @@ class MobilePageSwipe extends StatefulWidget {
 enum _PageSwipeAction { openNotes, createNote }
 
 class _MobilePageSwipeState extends State<MobilePageSwipe> {
+  final _PageSwipeExclusions _exclusions = _PageSwipeExclusions();
   final Set<int> _touchesDown = {};
   int? _pointer;
   Offset? _origin;
@@ -82,6 +86,12 @@ class _MobilePageSwipeState extends State<MobilePageSwipe> {
       _clearGesture();
       return;
     }
+
+    // A sideways drag that begins on a bar with its own horizontal gesture
+    // belongs to that bar. The footer's control strip scrolls, and a thumb
+    // landing on it means to reach the button off the end of the row, not to
+    // leave the note.
+    if (_exclusions.cover(event.position)) return;
 
     _pointer = event.pointer;
     _origin = event.position;
@@ -221,45 +231,128 @@ class _MobilePageSwipeState extends State<MobilePageSwipe> {
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: _handleDown,
-      onPointerMove: _handleMove,
-      onPointerUp: _handleUp,
-      onPointerCancel: _handleCancel,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          widget.child,
-          if (_showCreatedConfirmation)
-            const _PageSwipeCue(
-              label: 'New note created',
-              icon: Icons.note_add_rounded,
-              progress: 1,
-              trailing: true,
-              complete: true,
-            )
-          else if (_action != null && _progress > 0)
-            _PageSwipeCue(
-              key: const ValueKey('mobile-page-swipe-cue'),
-              label: switch ((_action!, _armed)) {
-                (_PageSwipeAction.openNotes, false) => 'Swipe right for notes',
-                (_PageSwipeAction.openNotes, true) => 'Release for notes',
-                (_PageSwipeAction.createNote, false) =>
-                  'Swipe left for new note',
-                (_PageSwipeAction.createNote, true) => 'Release for new note',
-              },
-              icon: _action == _PageSwipeAction.openNotes
-                  ? Icons.menu_open_rounded
-                  : Icons.note_add_outlined,
-              progress: _progress,
-              trailing: _action == _PageSwipeAction.createNote,
-              complete: _armed,
-            ),
-        ],
+    return _PageSwipeScope(
+      exclusions: _exclusions,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: _handleDown,
+        onPointerMove: _handleMove,
+        onPointerUp: _handleUp,
+        onPointerCancel: _handleCancel,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            widget.child,
+            if (_showCreatedConfirmation)
+              const _PageSwipeCue(
+                label: 'New note created',
+                icon: Icons.note_add_rounded,
+                progress: 1,
+                trailing: true,
+                complete: true,
+              )
+            else if (_action != null && _progress > 0)
+              _PageSwipeCue(
+                key: const ValueKey('mobile-page-swipe-cue'),
+                label: switch ((_action!, _armed)) {
+                  (_PageSwipeAction.openNotes, false) =>
+                    'Swipe right for notes',
+                  (_PageSwipeAction.openNotes, true) => 'Release for notes',
+                  (_PageSwipeAction.createNote, false) =>
+                    'Swipe left for new note',
+                  (_PageSwipeAction.createNote, true) => 'Release for new note',
+                },
+                icon: _action == _PageSwipeAction.openNotes
+                    ? Icons.menu_open_rounded
+                    : Icons.note_add_outlined,
+                progress: _progress,
+                trailing: _action == _PageSwipeAction.createNote,
+                complete: _armed,
+              ),
+          ],
+        ),
       ),
     );
   }
+}
+
+/// Exempts a subtree from [MobilePageSwipe].
+///
+/// A horizontal drag that starts inside one of these never becomes a page
+/// swipe. The note footer is the reason it exists: its formatting controls
+/// scroll sideways when they do not fit, so a thumb dragging along that strip
+/// means to reach the button past the end of it. Without this, that same drag
+/// left the note entirely — and on a phone the footer is exactly where a thumb
+/// rests.
+///
+/// Inert where there is no [MobilePageSwipe] above it, which is every desktop
+/// window, so a bar can declare this once and stay correct on both.
+class PageSwipeExclusion extends StatefulWidget {
+  const PageSwipeExclusion({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<PageSwipeExclusion> createState() => _PageSwipeExclusionState();
+}
+
+class _PageSwipeExclusionState extends State<PageSwipeExclusion> {
+  _PageSwipeExclusions? _exclusions;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final found = _PageSwipeScope.of(context);
+    if (identical(found, _exclusions)) return;
+    _exclusions?.remove(context);
+    _exclusions = found;
+    _exclusions?.add(context);
+  }
+
+  @override
+  void dispose() {
+    _exclusions?.remove(context);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+/// The regions a page swipe must not begin in.
+///
+/// Registered as elements rather than rectangles: a bar moves when the
+/// keyboard opens and resizes when the nesting controls appear, so its box is
+/// read at the moment a finger lands rather than cached and left to go stale.
+class _PageSwipeExclusions {
+  final Set<BuildContext> _contexts = {};
+
+  void add(BuildContext context) => _contexts.add(context);
+
+  void remove(BuildContext context) => _contexts.remove(context);
+
+  bool cover(Offset globalPosition) {
+    for (final context in _contexts) {
+      if (!context.mounted) continue;
+      final box = context.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      if (box.size.contains(box.globalToLocal(globalPosition))) return true;
+    }
+    return false;
+  }
+}
+
+class _PageSwipeScope extends InheritedWidget {
+  const _PageSwipeScope({required this.exclusions, required super.child});
+
+  final _PageSwipeExclusions exclusions;
+
+  static _PageSwipeExclusions? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_PageSwipeScope>()?.exclusions;
+
+  @override
+  bool updateShouldNotify(_PageSwipeScope oldWidget) =>
+      !identical(exclusions, oldWidget.exclusions);
 }
 
 class _PageSwipeCue extends StatelessWidget {
@@ -281,7 +374,7 @@ class _PageSwipeCue extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final accent = Theme.of(context).colorScheme.primary;
     return Positioned(
       top: MediaQuery.paddingOf(context).top + 58,
       left: trailing ? null : 12,
@@ -292,18 +385,12 @@ class _PageSwipeCue extends StatelessWidget {
           label: label,
           child: ExcludeSemantics(
             child: Container(
+              key: const ValueKey('mobile-page-swipe-cue-surface'),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: BoxDecoration(
                 color: palette.surfaceBackground,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(999),
                 border: Border.all(color: palette.controlBorder, width: 0.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: dark ? 0.20 : 0.08),
-                    blurRadius: 14,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -316,10 +403,10 @@ class _PageSwipeCue extends StatelessWidget {
                         CircularProgressIndicator(
                           value: progress,
                           strokeWidth: 2,
-                          color: palette.chipCurrency,
+                          color: accent,
                           backgroundColor: palette.controlBorder,
                         ),
-                        Icon(icon, size: 14, color: palette.chipCurrency),
+                        Icon(icon, size: 14, color: accent),
                       ],
                     ),
                   ),
@@ -331,7 +418,7 @@ class _PageSwipeCue extends StatelessWidget {
                           ? palette.textPrimary
                           : palette.textSecondary,
                       fontSize: AppTypeScale.body,
-                      fontWeight: complete ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
                 ],

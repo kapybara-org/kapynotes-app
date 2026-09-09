@@ -11,6 +11,13 @@ import 'platform.dart';
 /// engines do not, so the runners expose the same small result shape using
 /// NSSpellChecker and Windows Spell Checking. Nothing here owns a dictionary,
 /// uploads note text, or changes what the user typed.
+///
+/// Finding the misspellings and correcting one are separate calls on desktop.
+/// Guessing what a word should have been costs two orders of magnitude more
+/// than finding it — a long note pays that for every flagged word on every
+/// pause in typing, while only the word somebody asks about is ever read out.
+/// Android and iOS answer both questions in one call of their own, and those
+/// corrections arrive with the spans.
 class PlatformSpellCheckService implements SpellCheckService {
   PlatformSpellCheckService({
     MethodChannel channel = const MethodChannel(_channelName),
@@ -23,10 +30,16 @@ class PlatformSpellCheckService implements SpellCheckService {
   final MethodChannel _channel;
   final Duration _quietPeriod;
   final DefaultSpellCheckService _mobile = DefaultSpellCheckService();
+  final Map<String, List<String>> _suggestions = {};
+  final Map<String, Future<List<String>>> _suggestionRequests = {};
   Timer? _quietTimer;
   Completer<List<SuggestionSpan>?>? _pendingRequest;
   int _requestGeneration = 0;
   bool _disposed = false;
+
+  /// How many words' corrections are kept. Someone works through a note a
+  /// word at a time; the whole note's worth was never going to be read.
+  static const int _suggestionCacheLimit = 64;
 
   @override
   Future<List<SuggestionSpan>?> fetchSpellCheckSuggestions(
@@ -65,6 +78,69 @@ class PlatformSpellCheckService implements SpellCheckService {
     return completer.future;
   }
 
+  /// Corrections already in hand for [word], if it has been asked about.
+  List<String>? cachedSuggestionsFor(Locale locale, String word) =>
+      _suggestions['${locale.toLanguageTag()}\u0000$word'];
+
+  /// What the platform would offer for one misspelled word.
+  ///
+  /// Called when a menu is about to show them, and remembered so that opening
+  /// the same menu twice costs one lookup. Words repeat within a note, and the
+  /// answer does not depend on where in the text the word sits.
+  Future<List<String>> suggestionsFor(
+    Locale locale,
+    String text,
+    TextRange range,
+  ) {
+    if (_disposed ||
+        range.start < 0 ||
+        range.end <= range.start ||
+        range.end > text.length) {
+      return Future.value(const []);
+    }
+    final word = text.substring(range.start, range.end);
+    // Keyed by language too: the same letters are a different question of a
+    // different dictionary.
+    final key = '${locale.toLanguageTag()}\u0000$word';
+    final known = _suggestions[key];
+    if (known != null) return Future.value(known);
+    final pending = _suggestionRequests[key];
+    if (pending != null) return pending;
+
+    final request = _suggestNow(locale, text, range).then((suggestions) {
+      _suggestionRequests.remove(key);
+      if (_disposed) return suggestions;
+      if (_suggestions.length >= _suggestionCacheLimit) {
+        _suggestions.remove(_suggestions.keys.first);
+      }
+      _suggestions[key] = suggestions;
+      return suggestions;
+    });
+    _suggestionRequests[key] = request;
+    return request;
+  }
+
+  Future<List<String>> _suggestNow(
+    Locale locale,
+    String text,
+    TextRange range,
+  ) async {
+    if (!AppPlatform.isMacOS && !AppPlatform.isWindows) return const [];
+    try {
+      final raw = await _channel.invokeListMethod<Object?>('suggest', {
+        'language': locale.toLanguageTag(),
+        'text': text,
+        'startIndex': range.start,
+        'endIndex': range.end,
+      });
+      return raw?.whereType<String>().toList(growable: false) ?? const [];
+    } on MissingPluginException {
+      return const [];
+    } on PlatformException {
+      return const [];
+    }
+  }
+
   Future<List<SuggestionSpan>?> _fetchNow(Locale locale, String text) async {
     if (AppPlatform.isIOS || AppPlatform.isAndroid) {
       return _mobile.fetchSpellCheckSuggestions(locale, text);
@@ -96,6 +172,8 @@ class PlatformSpellCheckService implements SpellCheckService {
     final pending = _pendingRequest;
     if (pending != null && !pending.isCompleted) pending.complete(null);
     _pendingRequest = null;
+    _suggestions.clear();
+    _suggestionRequests.clear();
   }
 
   static List<SuggestionSpan> _decode(List<Object?>? raw, int textLength) {
@@ -106,18 +184,22 @@ class PlatformSpellCheckService implements SpellCheckService {
       final start = item['startIndex'];
       final end = item['endIndex'];
       final suggestions = item['suggestions'];
+      // Absent for a word whose corrections have not been asked for yet;
+      // anything else in its place is a runner that cannot be believed.
       if (start is! int ||
           end is! int ||
           start < 0 ||
           end <= start ||
           end > textLength ||
-          suggestions is! List<Object?>) {
+          (suggestions != null && suggestions is! List<Object?>)) {
         continue;
       }
       spans.add(
         SuggestionSpan(
           TextRange(start: start, end: end),
-          suggestions.whereType<String>().toList(growable: false),
+          suggestions is List<Object?>
+              ? suggestions.whereType<String>().toList(growable: false)
+              : const [],
         ),
       );
     }

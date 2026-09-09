@@ -120,11 +120,7 @@ int imagesOnLineAt(String body, int offset, List<NoteAttachmentRef> refs) {
 }
 
 /// The index of [offset] among the images on its own line, counting from zero.
-int imageIndexOnLineAt(
-  String body,
-  int offset,
-  List<NoteAttachmentRef> refs,
-) {
+int imageIndexOnLineAt(String body, int offset, List<NoteAttachmentRef> refs) {
   final line = _lineRangeAt(body, offset);
   var index = 0;
   for (final ref in refs) {

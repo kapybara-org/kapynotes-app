@@ -95,6 +95,34 @@ Future<NoteImageRef> storeImage({
 NoteImageRef at(int offset, {int which = 0}) =>
     refs[which].copyWith(offset: offset);
 
+Future<void> sendShortcut(WidgetTester tester, ShortcutBinding binding) async {
+  if (binding.meta) {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+  }
+  if (binding.control) {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  }
+  if (binding.alt) {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+  }
+  if (binding.shift) {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+  }
+  await tester.sendKeyEvent(binding.logicalKey);
+  if (binding.shift) {
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+  }
+  if (binding.alt) {
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+  }
+  if (binding.control) {
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+  }
+  if (binding.meta) {
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+  }
+}
+
 /// A clipboard that holds whatever a test puts on it.
 class FakeClipboard implements ImageClipboard {
   FakeClipboard({
@@ -392,6 +420,34 @@ void main() {
     expect(opened, 1);
     expect(find.byIcon(Icons.camera_alt_outlined), findsOneWidget);
     expect(find.byType(NoteImageView), findsOneWidget);
+  });
+
+  testWidgets('the image shortcut opens the same picker as the footer', (
+    tester,
+  ) async {
+    var opened = 0;
+    await tester.pumpWidget(
+      harness(
+        'a note',
+        attachments: const [],
+        startAtEnd: true,
+        imageAcquirer: (_) async {
+          opened++;
+          return const [];
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(EditableText));
+    await tester.pump();
+
+    await sendShortcut(
+      tester,
+      shortcutPrefs.bindingFor(ShortcutAction.insertImage)!,
+    );
+    await tester.pump();
+
+    expect(opened, 1);
   });
 
   group('copying', () {
@@ -1127,6 +1183,65 @@ void main() {
           .textEditingValue
           .text;
       expect(text, 'before dictated words');
+    });
+
+    testWidgets('a dictated transcript outranks the clipboard it replaced', (
+      tester,
+    ) async {
+      // What a dictation app does: hold the transcript only long enough for its
+      // Cmd+V to land, then put back the picture that was on the clipboard
+      // before. The bitmap read arrives after that swap, so it describes the
+      // older clipboard and must not outrank what the person just said.
+      var clipboardText = 'dictated words';
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.getData') {
+            return <String, Object?>{'text': clipboardText};
+          }
+          if (call.method == 'Clipboard.hasStrings') {
+            return <String, Object?>{'value': clipboardText.isNotEmpty};
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+
+      final editorKey = GlobalKey<NoteEditorState>();
+      List<NoteAttachmentRef>? reported;
+      final clipboard = FakeClipboard(
+        image: ClipboardImage(bytes: pngOf(120, 90, seed: 4), name: 'old.png'),
+        onReadImage: () => clipboardText = 'previous clipboard',
+      );
+      await tester.pumpWidget(
+        harness(
+          'before ',
+          attachments: const [],
+          clipboard: clipboard,
+          editorKey: editorKey,
+          onAttachmentsChanged: (refs) => reported = refs,
+        ),
+      );
+      await tester.pump();
+
+      await tester.runAsync(
+        () => editorKey.currentState!.handlePaste(SelectionChangedCause.tap),
+      );
+      await tester.pump();
+
+      final text = tester
+          .state<EditableTextState>(find.byType(EditableText))
+          .textEditingValue
+          .text;
+      expect(text, 'before dictated words');
+      expect(find.byType(NoteImageView), findsNothing);
+      expect(reported, anyOf(isNull, isEmpty));
+      await tester.pump(const Duration(seconds: 2));
     });
 
     testWidgets('auto-paste survives an accessibility focus round trip', (

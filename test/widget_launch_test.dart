@@ -1,8 +1,6 @@
-import 'dart:ui' show AppLifecycleState, Size;
-
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show TargetPlatform;
+
 import 'package:kapy_notes/audio/voice_recorder.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +13,7 @@ import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'app_test.dart' show MemoryStore;
 import 'quick_capture_test.dart' show stubLaunchIntent;
@@ -106,6 +105,31 @@ void main() {
 
     expect(imageRequests, isEmpty);
     expect(notes.notes.single.id, 'last');
+  });
+
+  testWidgets('a widget targets the fixed startup note when one is chosen', (
+    tester,
+  ) async {
+    store.data['notes.v1'] = [
+      {
+        'id': 'recent',
+        'body': 'Recently edited',
+        'createdAt': 3000,
+        'updatedAt': 4000,
+      },
+      {
+        'id': 'inbox',
+        'body': 'Widget inbox',
+        'createdAt': 1000,
+        'updatedAt': 2000,
+      },
+    ];
+    store.data['defaultNote.v1'] = 'inbox';
+
+    await pumpLaunch(tester, action: 'continueWriting');
+
+    final editor = tester.widget<TextField>(find.byType(TextField));
+    expect(editor.controller!.text, startsWith('Widget inbox'));
   });
 
   testWidgets('an ordinary launch opens no picker', (tester) async {

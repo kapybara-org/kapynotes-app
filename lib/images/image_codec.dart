@@ -98,10 +98,7 @@ ImageKind classifyImage(img.Image image) {
   // Sample on a grid rather than a block, so a photo with a blown-out sky in
   // one corner is not judged entirely on the sky.
   const targetSamples = 20000;
-  final step = math.max(
-    1,
-    math.sqrt((width * height) / targetSamples).floor(),
-  );
+  final step = math.max(1, math.sqrt((width * height) / targetSamples).floor());
 
   var pairs = 0;
   var flatPairs = 0;
@@ -111,10 +108,8 @@ ImageKind classifyImage(img.Image image) {
     for (var x = 0; x + step < width; x += step) {
       final a = image.getPixel(x, y);
       final b = image.getPixel(x + step, y);
-      final aKey =
-          (a.r.toInt() << 16) | (a.g.toInt() << 8) | a.b.toInt();
-      final bKey =
-          (b.r.toInt() << 16) | (b.g.toInt() << 8) | b.b.toInt();
+      final aKey = (a.r.toInt() << 16) | (a.g.toInt() << 8) | a.b.toInt();
+      final bKey = (b.r.toInt() << 16) | (b.g.toInt() << 8) | b.b.toInt();
       distinct.add(aKey);
       pairs++;
       if (aKey == bKey) flatPairs++;

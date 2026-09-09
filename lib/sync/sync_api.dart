@@ -470,7 +470,15 @@ class SyncAuthException extends SyncException {
 
 /// A network failure, a 5xx, or a rate limit. Worth retrying with backoff.
 class SyncTransientException extends SyncException {
-  const SyncTransientException(super.message);
+  const SyncTransientException(super.message, {this.answered = false});
+
+  /// Whether the server answered at all.
+  ///
+  /// A 503 is a reachable server saying no, and repeating it will keep saying
+  /// no; a socket error is nobody reached, which the next tunnel fixes. Only
+  /// the caller can tell those apart, and only from here — both arrive as this
+  /// one exception.
+  final bool answered;
 }
 
 /// The server rejected the request itself. Retrying sends the same bad request
@@ -1105,7 +1113,7 @@ class HttpSyncApi implements SyncApi {
     if (status == 404 && absentIsNull) return const {};
     // 429 and 5xx are the server asking for patience, not a bad request.
     if (status == 429 || status >= 500) {
-      throw SyncTransientException('server returned $status');
+      throw SyncTransientException('server returned $status', answered: true);
     }
     if (status >= 400) {
       final body = _decode(response.body);

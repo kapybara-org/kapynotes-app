@@ -14,7 +14,7 @@ class EmptyState extends StatelessWidget {
     final palette = context.palette;
 
     return Container(
-      color: palette.editorBackground,
+      color: palette.paperColor,
       alignment: Alignment.center,
       padding: const EdgeInsets.all(32),
       child: Column(
@@ -30,7 +30,7 @@ class EmptyState extends StatelessWidget {
             'No note selected',
             style: TextStyle(
               fontSize: AppTypeScale.title,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
               color: palette.textPrimary,
             ),
           ),
@@ -53,7 +53,7 @@ class EmptyState extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),

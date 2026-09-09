@@ -51,9 +51,17 @@ class Highlighter {
       final commentStart = _commentStart(line, offset, noteLinks);
       final content = commentStart < 0 ? line : line.substring(0, commentStart);
       final highlightableContent = _maskLinks(content, offset, noteLinks);
-      if (highlightableContent.trim().isNotEmpty &&
-          CalcEngine.looksLikeMath(highlightableContent, knownNames)) {
-        _spansForLine(highlightableContent, offset, knownNames, out);
+      final valueStart = _explicitDescriptionValueStart(
+        highlightableContent,
+        knownNames,
+      );
+      final calculatorContent = valueStart == null
+          ? highlightableContent
+          : highlightableContent.substring(valueStart);
+      final calculatorOffset = offset + (valueStart ?? 0);
+      if (calculatorContent.trim().isNotEmpty &&
+          CalcEngine.looksLikeMath(calculatorContent, knownNames)) {
+        _spansForLine(calculatorContent, calculatorOffset, knownNames, out);
       }
       if (commentStart >= 0) {
         // Inline comments are valid after prose as well as calculations. Keep
@@ -70,6 +78,55 @@ class Highlighter {
       offset += line.length + 1;
     }
     return out;
+  }
+
+  /// A descriptive label containing several words or its own number is prose
+  /// even though a value follows it. Paint only the right side, matching the
+  /// engine's rightmost-colon rule and making it visually clear that `7` in
+  /// `7KvA Solar System: 12000rs` did not enter the calculation.
+  static int? _explicitDescriptionValueStart(
+    String line,
+    Set<String> knownNames,
+  ) {
+    final tokens = Lexer(line)
+        .tokenize()
+        .where((token) => token.isSignificant && token.type != TokenType.eof)
+        .toList();
+    for (var i = tokens.length - 2; i > 0; i--) {
+      final colon = tokens[i];
+      if (colon.type != TokenType.operator || colon.text != ':') continue;
+      final before = tokens[i - 1];
+      final after = tokens[i + 1];
+      if (before.type == TokenType.number &&
+          after.type == TokenType.number &&
+          before.end == colon.start &&
+          colon.end == after.start) {
+        continue;
+      }
+
+      final prefix = tokens.take(i).toList();
+      final identifiers = prefix
+          .where((token) => token.type == TokenType.identifier)
+          .length;
+      final isDescription =
+          identifiers > 1 ||
+          prefix.any(
+            (token) =>
+                token.type == TokenType.number ||
+                token.type == TokenType.unknown,
+          );
+      if (!isDescription) continue;
+
+      var start = colon.end;
+      while (start < line.length && line[start].trim().isEmpty) {
+        start++;
+      }
+      if (start < line.length &&
+          CalcEngine.looksLikeMath(line.substring(start), knownNames)) {
+        return start;
+      }
+    }
+    return null;
   }
 
   /// Finds the first real comment delimiter, skipping slashes that belong to
@@ -184,6 +241,8 @@ class Highlighter {
     if (mathConstants.contains(word) || booleanLiterals.contains(word)) {
       return HighlightKind.constant;
     }
+    if (temporalNames.contains(word)) return HighlightKind.constant;
+    if (functionNames.contains(word)) return HighlightKind.function;
     if (calcKeywords.contains(word)) return HighlightKind.keyword;
 
     final unit = registry.lookup(word);
@@ -214,7 +273,8 @@ class Highlighter {
       if (first.type == TokenType.identifier &&
           second.type == TokenType.operator &&
           (second.text == '=' || second.text == ':') &&
-          !calcKeywords.contains(first.text.toLowerCase())) {
+          !calcKeywords.contains(first.text.toLowerCase()) &&
+          !unitConfigurationNames.contains(first.text.toLowerCase())) {
         names.add(first.text);
       }
     }

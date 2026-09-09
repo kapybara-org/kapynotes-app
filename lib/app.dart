@@ -7,10 +7,21 @@ import 'core/platform.dart';
 import 'core/desktop_integration.dart';
 import 'audio/voice_player.dart';
 import 'data/voice_prefs.dart';
+import 'speech/apple_summarizer.dart';
+import 'speech/apple_transcriber.dart';
+import 'speech/cloud_summarizer.dart';
+import 'speech/cloud_transcriber.dart';
+import 'speech/gemma_summarizer.dart';
+import 'speech/sherpa_transcriber.dart';
+import 'speech/transcriber.dart';
+import 'speech/local_model_store.dart';
+import 'speech/local_models.dart';
+import 'speech/summarizer.dart';
 import 'speech/transcription_queue.dart';
 import 'audio/voice_recording_controller.dart';
 import 'core/quick_capture.dart';
 import 'core/theme.dart';
+import 'core/window_material.dart';
 import 'data/engine_provider.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
@@ -96,6 +107,33 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// single `File.exists` for it at startup and nothing else.
   TranscriptionQueue? _transcriptions;
   VoicePrefs? _voicePrefs;
+
+  /// The speech models on this device. Held here rather than in the settings
+  /// dialog so that closing settings does not abandon a download of two
+  /// thirds of a gigabyte. Costs an allocation at launch and no disk at all
+  /// until the voice pane asks it to look.
+  LocalModelStore? _localModels;
+
+  /// Where summaries are written, cloud or device. Built once and read
+  /// through, so changing the setting takes effect on the next recording
+  /// rather than on the next launch.
+  Summarizer? _summarizer;
+
+  /// Just the device half, which settings shows on its own so it can say why
+  /// it is or is not available on this machine.
+  DeviceSummarizer? _deviceSummarizer;
+
+  /// Where recordings become words, cloud or device. The twin of
+  /// [_summarizer], built and read the same way.
+  Transcriber? _transcriber;
+
+  /// Just the device half, for the same reason [_deviceSummarizer] is kept:
+  /// settings has to say whether this machine can do it, and why not.
+  DeviceTranscriber? _deviceTranscriber;
+
+  /// Held separately from [_deviceSummarizer] because it is the one that owns
+  /// memory: it has to be told when the app goes away.
+  GemmaSummarizer? _gemma;
   EngineProvider? _engines;
   Future<void>? _hydration;
   Timer? _rateRefreshTimer;
@@ -111,10 +149,19 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// something to do in the note once the note is on screen.
   LaunchIntent _launchIntent = LaunchIntent.open;
 
+  /// Whether the window has a blurred desktop behind the Flutter view. The
+  /// transparency setting asks for one; this is whether it got it. Until it
+  /// has, and wherever it cannot, the surfaces keep their opaque paint, since
+  /// tints over an unblurred window show black through every gap.
+  bool _glassBehindWindow = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.prefs.transparencyListenable.addListener(_applyWindowMaterial);
+    widget.prefs.transparencyAmountListenable.addListener(_applyWindowMaterial);
+    _applyWindowMaterial();
     // Quitting from the tray never passes through the platform's exit
     // request, so the flush that request would have triggered has to be
     // handed over explicitly. This state owns the store; nothing below it
@@ -128,12 +175,45 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         _recording.finishRecordingAndFlush;
     _recording.onFlush = _flushAfterHydration;
     _voicePrefs = VoicePrefs(widget.store);
+    // The summary model is offered always; the recogniser only in a build
+    // that could use one. Two different questions about the same shelf: one
+    // model has something that reads it and the other does not yet.
+    _localModels = LocalModelStore(
+      catalogue: [...localSpeechModels, ...localSummaryModels],
+    );
+    // Apple's model first because it is free and already on the machine;
+    // the downloaded one answers for every device Apple does not cover.
+    _gemma = GemmaSummarizer(models: _localModels!);
+    _deviceSummarizer = DeviceSummarizer([AppleSummarizer(), _gemma!]);
+    _summarizer = RoutingSummarizer(
+      engineOf: () => _voicePrefs?.summaryEngine ?? SummaryEngine.cloud,
+      cloud: CloudSummarizer(() => widget.account?.speech),
+      device: _deviceSummarizer!,
+    );
+    // Apple's recogniser first, for the same reason and not the same one: it
+    // is already on the machine, and unlike the summariser it does not need
+    // Apple Intelligence, so it answers for far more devices than that one
+    // does. Parakeet covers Windows, Android, and everything too old for it.
+    _deviceTranscriber = DeviceTranscriber([
+      AppleTranscriber(language: () => _voicePrefs?.language),
+      SherpaTranscriber(
+        models: _localModels!,
+        language: () => _voicePrefs?.language,
+      ),
+    ]);
+    _transcriber = RoutingTranscriber(
+      engineOf: () => _voicePrefs?.transcriptEngine ?? TranscriptEngine.cloud,
+      cloud: CloudTranscriber(() => widget.account?.speech),
+      device: _deviceTranscriber!,
+    );
     _transcriptions = TranscriptionQueue(
       store: LocalStore(fileName: 'attachments-queue.json'),
       notes: widget.notes,
       blobs: widget.notes.blobs,
       prefs: _voicePrefs!,
       api: () => widget.account?.speech,
+      summarizer: () => _summarizer,
+      transcriber: () => _transcriber,
     );
     if (widget.notes.isLoaded) {
       _activateLoadedApp();
@@ -178,6 +258,10 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     // in the list rather than in its way.
     _welcomeNoteId = Onboarding(widget.store).seedWelcomeNote(widget.notes)?.id;
     _launchIntent = intent;
+    final openingId = widget.prefs.resolveOpeningNoteId(
+      widget.notes.notes.map((note) => note.id),
+    );
+    final openingNote = widget.notes.byId(openingId);
     if (capturedText.isNotEmpty || intent.continuesLastNote) {
       // The text snapshot and tree switch are synchronous. No platform text
       // event can land between capturing the draft and mounting its note.
@@ -185,7 +269,12 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       // Which note that is depends on how the app was opened: every widget
       // action carries on the last one, and everything else starts a new one
       // exactly as it always has.
-      QuickCapture.file(widget.notes, capturedText, intent);
+      QuickCapture.file(
+        widget.notes,
+        capturedText,
+        intent,
+        target: openingNote,
+      );
     } else if (_welcomeNoteId == null &&
         AppPlatform.isMobile &&
         widget.notes.isEmpty) {
@@ -224,7 +313,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _transcriptionTimer = Timer(_transcriptionDrainDelay, () async {
       final queue = _transcriptions;
       if (queue == null) return;
-      queue.load();
+      await queue.open();
       unawaited(queue.drain());
     });
 
@@ -256,15 +345,36 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     await widget.store.flush();
   }
 
+  /// Tells the window which material to put behind the Flutter view, and
+  /// records whether it did. The request and its answer straddle a platform
+  /// call, so a toggle that flips twice in flight settles on the last answer
+  /// that still matches the setting.
+  Future<void> _applyWindowMaterial() async {
+    final wanted = widget.prefs.transparencyEnabled;
+    final amount = widget.prefs.transparencyAmount;
+    // Asked either way: taking the glass away is as much a request as putting
+    // it there, and a window left blurred under opaque paint wastes the
+    // compositor's time for nothing anyone can see.
+    final on = await WindowMaterial.setGlass(wanted, amount: amount) && wanted;
+    if (!mounted || wanted != widget.prefs.transparencyEnabled) return;
+    if (on != _glassBehindWindow) setState(() => _glassBehindWindow = on);
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.prefs.transparencyListenable.removeListener(_applyWindowMaterial);
+    widget.prefs.transparencyAmountListenable.removeListener(
+      _applyWindowMaterial,
+    );
     widget.updates?.onBeforeQuitForUpdate = null;
     _rateRefreshTimer?.cancel();
     _updateCheckTimer?.cancel();
     _transcriptionTimer?.cancel();
     _transcriptions?.dispose();
     _voicePrefs?.dispose();
+    _localModels?.dispose();
+    unawaited(_gemma?.unload() ?? Future<void>.value());
     _launchController.dispose();
     // Not the injected one: whoever passed it in owns it.
     if (widget.recording == null) _recording.dispose();
@@ -296,6 +406,10 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       if (state == AppLifecycleState.paused ||
           state == AppLifecycleState.detached) {
         sync?.pause();
+        // A backgrounded app holding a billion parameters resident is the
+        // first thing a phone kills. Give them back; the next summary reloads
+        // in a couple of seconds.
+        unawaited(_gemma?.unload() ?? Future<void>.value());
         // A phone that backgrounds the app has already stopped giving it the
         // microphone, so the recording is delivered rather than left running.
         // Deliberately not on `inactive`: that is the first moment of a phone
@@ -321,32 +435,70 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       return InstantCaptureApp(controller: _launchController);
     }
 
-    return MaterialApp(
-      title: AppWordmark.name,
-      debugShowCheckedModeBanner: false,
-      theme: KapyTheme.light(),
-      darkTheme: KapyTheme.dark(),
-      themeMode: ThemeMode.system,
-      // Prose autocorrection has no place in a calculator, and the app is
-      // plain-text only, so the default Material scroll behaviour is enough.
-      home: HomePage(
-        notes: widget.notes,
-        engines: _engines!,
-        rates: widget.rates,
-        prefs: widget.prefs,
-        shortcuts: widget.shortcuts,
-        updates: widget.updates,
-        desktopIntegration: widget.desktopIntegration,
-        account: widget.account,
-        store: widget.store,
-        welcomeNoteId: _welcomeNoteId,
-        launchIntent: _launchIntent,
-        recording: _recording,
-        player: _player,
-        transcriptions: _transcriptions,
-        voicePrefs: _voicePrefs,
-        imageAcquirer: widget.imageAcquirer,
-        lostImageRetriever: widget.lostImageRetriever,
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        widget.prefs.transparencyListenable,
+        widget.prefs.transparencyAmountListenable,
+      ]),
+      builder: (context, _) => MaterialApp(
+        title: AppWordmark.name,
+        debugShowCheckedModeBanner: false,
+        theme: KapyTheme.light(
+          transparency: widget.prefs.transparencyEnabled,
+          amount: widget.prefs.transparencyAmount,
+        ),
+        darkTheme: KapyTheme.dark(
+          transparency: widget.prefs.transparencyEnabled,
+          amount: widget.prefs.transparencyAmount,
+        ),
+        themeMode: ThemeMode.system,
+        // The glass palette only applies once the window has a blurred
+        // desktop behind it, and not while an accessibility mode asks for
+        // solid surfaces. High Contrast is an explicit request for stronger
+        // separation: keep the saved choice, but put the opaque paint back
+        // for as long as the mode is on. macOS' own Reduce Transparency
+        // already flattens the material behind the window; this covers the
+        // Flutter side of it. Either way it costs a single palette copy
+        // rather than a rebuilt ColorScheme on every frame.
+        builder: (context, child) {
+          final solid =
+              !_glassBehindWindow || MediaQuery.highContrastOf(context);
+          if (!widget.prefs.transparencyEnabled || !solid) {
+            return child ?? const SizedBox.shrink();
+          }
+          final theme = Theme.of(context);
+          final palette = theme.extension<CalcPalette>()!;
+          return Theme(
+            data: theme.copyWith(extensions: [palette.opaque]),
+            child: child!,
+          );
+        },
+        // Prose autocorrection has no place in a calculator, and the app is
+        // plain-text only, so the default Material scroll behaviour is enough.
+        home: HomePage(
+          notes: widget.notes,
+          engines: _engines!,
+          rates: widget.rates,
+          prefs: widget.prefs,
+          shortcuts: widget.shortcuts,
+          updates: widget.updates,
+          desktopIntegration: widget.desktopIntegration,
+          account: widget.account,
+          store: widget.store,
+          welcomeNoteId: _welcomeNoteId,
+          launchIntent: _launchIntent,
+          recording: _recording,
+          player: _player,
+          transcriptions: _transcriptions,
+          voicePrefs: _voicePrefs,
+          localModels: _localModels,
+          deviceSummarizer: _deviceSummarizer,
+          deviceTranscriber: _deviceTranscriber,
+          summarizer: _summarizer,
+          transcriber: _transcriber,
+          imageAcquirer: widget.imageAcquirer,
+          lostImageRetriever: widget.lostImageRetriever,
+        ),
       ),
     );
   }

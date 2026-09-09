@@ -91,7 +91,13 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     // A pin survives a restart, so it has to be re-asserted on the new
     // window rather than waiting for the preference to change again.
     await _applyAlwaysOnTop();
-    await refreshLoginItem();
+    // Only whether the mechanism exists, not whether it is switched on. The
+    // on/off answer comes from `SMAppService.status`, and the first call to
+    // that copies the LaunchServices database into the process — sixteen
+    // megabytes that stay resident for the life of the app. Nothing at launch
+    // reads the answer; the settings pane asks for it when it opens, and the
+    // first-run default below reads it back after registering.
+    _loginItemSupported = await LoginItem.isSupported();
     await _applyLoginItemDefault();
     notifyListeners();
   }

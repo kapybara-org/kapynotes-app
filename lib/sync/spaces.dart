@@ -33,6 +33,8 @@ SpaceRole _spaceRole(Object? raw) => switch (raw) {
 class SpaceMember {
   final String userId;
   final String email;
+  final String name;
+  final String? image;
   final SpaceRole role;
   final DateTime joinedAt;
 
@@ -48,6 +50,8 @@ class SpaceMember {
   const SpaceMember({
     required this.userId,
     required this.email,
+    this.name = '',
+    this.image,
     required this.role,
     required this.joinedAt,
     required this.hasKey,
@@ -58,6 +62,15 @@ class SpaceMember {
   bool get isOwner => role == SpaceRole.owner;
   bool get isViewer => role == SpaceRole.viewer;
   bool get canEdit => role.canEdit;
+
+  String get displayName {
+    final clean = name.trim();
+    if (clean.isNotEmpty && clean.toLowerCase() != email.toLowerCase()) {
+      return clean;
+    }
+    final local = email.split('@').first.trim();
+    return local.isEmpty ? email : local;
+  }
 
   /// True when this member can be granted the key: they have a public key
   /// and do not hold the space key yet.
@@ -76,6 +89,10 @@ class SpaceMember {
     return SpaceMember(
       userId: userId,
       email: email,
+      name: raw['name'] is String ? raw['name'] as String : '',
+      image: raw['image'] is String && (raw['image'] as String).isNotEmpty
+          ? raw['image'] as String
+          : null,
       role: _spaceRole(raw['role']),
       joinedAt: joined.toLocal(),
       hasKey: raw['hasKey'] == true,
@@ -243,6 +260,8 @@ class Space {
         {
           'userId': m.userId,
           'email': m.email,
+          'name': m.name,
+          'image': m.image,
           'role': m.role.name,
           'joinedAt': m.joinedAt.toUtc().toIso8601String(),
           'hasKey': m.hasKey,

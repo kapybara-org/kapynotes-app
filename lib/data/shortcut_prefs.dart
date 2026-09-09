@@ -15,6 +15,8 @@ enum ShortcutAction {
   toggleResults,
   toggleAlwaysOnTop,
   deleteNote,
+  openSettings,
+  insertImage,
   cycleTextStyle,
   formatBold,
   formatItalic,
@@ -35,6 +37,8 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.toggleResults => 'Toggle results column',
     ShortcutAction.toggleAlwaysOnTop => 'Keep window on top',
     ShortcutAction.deleteNote => 'Archive current note',
+    ShortcutAction.openSettings => 'Open settings',
+    ShortcutAction.insertImage => 'Add an image',
     ShortcutAction.cycleTextStyle => 'Cycle text style',
     ShortcutAction.formatBold => 'Bold',
     ShortcutAction.formatItalic => 'Italic',
@@ -57,6 +61,8 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.toggleAlwaysOnTop =>
       'Float the window over other apps, or let it fall behind again',
     ShortcutAction.deleteNote => 'Move the note you are editing to Archive',
+    ShortcutAction.openSettings => 'Open Settings',
+    ShortcutAction.insertImage => 'Choose a picture or take a photo',
     ShortcutAction.cycleTextStyle =>
       'Switch between Text, Heading, and Subtitle',
     ShortcutAction.formatBold => 'Toggle bold on the selection or new text',
@@ -81,8 +87,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.formatBold ||
     ShortcutAction.formatItalic ||
     ShortcutAction.formatBullets ||
-    ShortcutAction.formatChecklist ||
-    ShortcutAction.recordVoiceNote => true,
+    ShortcutAction.formatChecklist => true,
     _ => false,
   };
 }
@@ -418,6 +423,20 @@ class ShortcutPrefs extends ChangeNotifier {
         physicalKey: useMeta
             ? PhysicalKeyboardKey.backspace
             : PhysicalKeyboardKey.delete,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      ShortcutAction.openSettings => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.comma,
+        physicalKey: PhysicalKeyboardKey.comma,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      // Shift keeps this distinct from Italic while retaining the mnemonic.
+      ShortcutAction.insertImage => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyI,
+        physicalKey: PhysicalKeyboardKey.keyI,
         meta: useMeta,
         control: !useMeta,
         shift: true,

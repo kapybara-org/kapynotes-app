@@ -63,7 +63,7 @@ class ResultsGutter extends StatelessWidget {
     }
 
     return Container(
-      color: palette.gutterBackground,
+      color: palette.gutterColor,
       padding: EdgeInsets.only(
         top: padding.top,
         bottom: padding.bottom,

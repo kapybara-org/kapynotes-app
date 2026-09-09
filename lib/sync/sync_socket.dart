@@ -10,7 +10,9 @@ import 'package:flutter/foundation.dart';
 enum SocketEventKind { connected, disconnected, message }
 
 class SocketEvent {
-  const SocketEvent.connected() : kind = SocketEventKind.connected, message = null;
+  const SocketEvent.connected()
+    : kind = SocketEventKind.connected,
+      message = null;
   const SocketEvent.disconnected()
     : kind = SocketEventKind.disconnected,
       message = null;
@@ -152,7 +154,8 @@ class WebSocketSyncSocket implements SyncSocket {
     } on FormatException {
       return;
     }
-    if (decoded is Map<String, Object?>) _events.add(SocketEvent.message(decoded));
+    if (decoded is Map<String, Object?>)
+      _events.add(SocketEvent.message(decoded));
   }
 
   void _onClosed() {

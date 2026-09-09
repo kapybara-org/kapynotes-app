@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../audio/voice_recording_controller.dart';
 import '../../core/theme.dart';
 import '../compact_icon_button.dart';
+import '../mobile_page_swipe.dart';
 import 'voice_chip.dart';
 
 /// The strip that replaces the formatting row while a recording is running.
@@ -100,77 +101,83 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
       AppControlMetrics.footerHeight,
     );
 
-    return Semantics(
-      container: true,
-      explicitChildNodes: true,
-      label: '$_status, $elapsed',
-      liveRegion: session.interrupted || session.finishing,
-      child: Container(
-        height: barHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: palette.surfaceBackground.withValues(alpha: 0.98),
-          border: Border(top: BorderSide(color: palette.separator, width: 0.5)),
-        ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 440;
-            return Row(
-              children: [
-                _RecordingDot(level: session.level, active: active),
-                const SizedBox(width: 8),
-                if (!compact) ...[
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 150),
-                    child: Text(
-                      _status,
-                      key: const ValueKey('recording-status'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: AppTypeScale.control,
-                        fontWeight: FontWeight.w600,
-                        color: active
-                            ? palette.textPrimary
-                            : palette.textSecondary,
+    // Shares the strip with the note footer, and reads as the same bar to the
+    // thumb resting on it: a drag along either is aimed at the bar.
+    return PageSwipeExclusion(
+      child: Semantics(
+        container: true,
+        explicitChildNodes: true,
+        label: '$_status, $elapsed',
+        liveRegion: session.interrupted || session.finishing,
+        child: Container(
+          height: barHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: palette.surfaceBackground.withMultipliedAlpha(0.98),
+            border: Border(
+              top: BorderSide(color: palette.separator, width: 0.5),
+            ),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 440;
+              return Row(
+                children: [
+                  _RecordingDot(level: session.level, active: active),
+                  const SizedBox(width: 8),
+                  if (!compact) ...[
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 150),
+                      child: Text(
+                        _status,
+                        key: const ValueKey('recording-status'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: AppTypeScale.control,
+                          fontWeight: FontWeight.w500,
+                          color: active
+                              ? palette.textPrimary
+                              : palette.textSecondary,
+                        ),
                       ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  Expanded(
+                    child: _LiveWaveform(
+                      levels: List.unmodifiable(_levels),
+                      active: active,
+                      finishing: session.finishing,
+                      status: _status,
+                      showStatus: compact,
                     ),
                   ),
                   const SizedBox(width: 12),
+                  Text(
+                    elapsed,
+                    key: const ValueKey('recording-elapsed'),
+                    style: TextStyle(
+                      fontSize: AppTypeScale.control,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      fontWeight: FontWeight.w500,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                  if (!session.finishing) ...[
+                    const SizedBox(width: 8),
+                    _RecordingActions(
+                      paused: session.paused || session.interrupted,
+                      onPause: widget.onPause,
+                      onResume: widget.onResume,
+                      onCancel: widget.onCancel,
+                      onStop: widget.onStop,
+                    ),
+                  ],
                 ],
-                Expanded(
-                  child: _LiveWaveform(
-                    levels: List.unmodifiable(_levels),
-                    active: active,
-                    finishing: session.finishing,
-                    status: _status,
-                    showStatus: compact,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  elapsed,
-                  key: const ValueKey('recording-elapsed'),
-                  style: TextStyle(
-                    fontSize: AppTypeScale.control,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                    fontWeight: FontWeight.w600,
-                    color: palette.textPrimary,
-                  ),
-                ),
-                if (!session.finishing) ...[
-                  const SizedBox(width: 8),
-                  _RecordingActions(
-                    paused: session.paused || session.interrupted,
-                    onPause: widget.onPause,
-                    onResume: widget.onResume,
-                    onCancel: widget.onCancel,
-                    onStop: widget.onStop,
-                  ),
-                ],
-              ],
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -201,16 +208,6 @@ class _RecordingDot extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: active ? recording : palette.textTertiary,
-            boxShadow: active
-                ? [
-                    BoxShadow(
-                      color: recording.withValues(
-                        alpha: 0.16 + response * 0.22,
-                      ),
-                      blurRadius: 4 + response * 4,
-                    ),
-                  ]
-                : null,
           ),
         ),
       ),
@@ -296,7 +293,7 @@ class _LiveWaveform extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: AppTypeScale.caption,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w500,
                             color: palette.textSecondary,
                           ),
                         ),

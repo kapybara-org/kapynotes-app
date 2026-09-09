@@ -1,7 +1,7 @@
 name: kapy_notes
 description: "Notes where every line is a live calculator."
 publish_to: 'none'
-version: 1.16.0+17
+version: 1.18.0+19
 
 environment:
   sdk: ^3.10.0
@@ -94,6 +94,27 @@ dependencies:
   # just_audio has no Windows implementation of its own; this is the WinRT
   # MediaPlayer one, and is a no-op everywhere else.
   just_audio_windows: ^0.2.3
+
+  # Running a small language model on the device, so a voice note can be
+  # summarised with no account, no minutes and nothing leaving the machine.
+  # Core plus one engine: the `.litertlm` reader, which is the only format
+  # that covers all five platforms — LiteRT-LM through `dart:ffi` on desktop
+  # and the same bundle on the phones. The MediaPipe engine is deliberately
+  # not added; it would only duplicate this for `.task` files we do not ship.
+  flutter_gemma: ^1.7.3
+  flutter_gemma_litertlm: ^1.6.3
+
+  # Running a speech recogniser on the device, so a recording can become words
+  # with no account, no minutes and nothing leaving the machine. Prebuilt
+  # native libraries for every platform this app ships on — no CMake, no NDK
+  # and no Rust on the build machines — which is why this and not
+  # whisper_ggml, and it reads files rather than only the live microphone,
+  # which is why not speech_to_text.
+  #
+  # Apple platforms on macOS or iOS 26 never load it: `Transcription.swift`
+  # answers there, and it is better and free. This is for Windows, Android and
+  # the Apple devices below that line.
+  sherpa_onnx: ^1.13.7
 
   # Reading an image off the system clipboard, which Flutter's own
   # `Clipboard` cannot do — it handles text and nothing else. Chosen over

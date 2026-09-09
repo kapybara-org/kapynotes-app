@@ -105,7 +105,7 @@ class _DropHint extends StatelessWidget {
                   'Drop to add to this note',
                   style: TextStyle(
                     fontSize: AppTypeScale.control,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                     color: palette.textPrimary,
                   ),
                 ),

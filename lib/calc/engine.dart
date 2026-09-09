@@ -3,6 +3,7 @@ import 'evaluator.dart';
 import 'format.dart';
 import 'lexer.dart';
 import 'parser.dart';
+import 'temporal.dart';
 import 'unit_registry.dart';
 import 'value.dart';
 
@@ -76,6 +77,12 @@ class _EvaluatedLine {
 /// free of half-updated currency state.
 class CalcEngine {
   final UnitRegistry registry;
+  final DateTime Function() _now;
+  final String? timeZoneId;
+  late final TemporalExpressions _temporal = TemporalExpressions(
+    now: _now,
+    defaultTimeZoneId: timeZoneId,
+  );
 
   /// Where separators fall in the results this engine renders. Changing it
   /// means building a new engine, exactly as a rate change does.
@@ -84,7 +91,10 @@ class CalcEngine {
   CalcEngine({
     Map<String, double> ratesPerUsd = const {},
     this.grouping = DigitGrouping.international,
-  }) : registry = UnitRegistry(ratesPerUsd: ratesPerUsd);
+    DateTime Function()? now,
+    this.timeZoneId,
+  }) : registry = UnitRegistry(ratesPerUsd: ratesPerUsd),
+       _now = now ?? DateTime.now;
 
   bool get hasCurrencyRates => registry.hasCurrencies;
 
@@ -97,7 +107,12 @@ class CalcEngine {
   /// `sum` and `total` aggregate names.
   DocumentEvaluation evaluateDocumentWithSummary(String body) {
     final scope = CalcScope();
-    final evaluator = Evaluator(registry: registry, scope: scope);
+    final evaluator = Evaluator(
+      registry: registry,
+      scope: scope,
+      now: _now,
+      timeZoneId: timeZoneId,
+    );
     final results = <int, LineResult>{};
     final lines = body.split('\n');
 
@@ -137,8 +152,79 @@ class CalcEngine {
     if (source == null) return null;
 
     return _evaluateExpression(source, index, evaluator, scope) ??
-        _labelledAmount(source, index, evaluator, scope) ??
-        _labelledArithmetic(source, index, evaluator, scope);
+        _explicitLabel(source, index, evaluator, scope) ??
+        _labelledArithmetic(source, index, evaluator, scope) ??
+        _labelledAmount(source, index, evaluator, scope);
+  }
+
+  /// Reads the value to the right of an explicit label boundary.
+  ///
+  /// A colon is a promise from the writer that the left side is a name and
+  /// the right side is the amount: `Solar system: 12000rs`. That is stronger
+  /// evidence than the word-order heuristics used for unpunctuated lines, so
+  /// model numbers and other digits in the label must never leak into the
+  /// answer. Single-name labels such as `budget: 120` are parsed first as
+  /// assignments and keep defining a reusable variable.
+  ///
+  /// Work from the rightmost colon so nested descriptions such as
+  /// `Quote 7: panels: 12000rs` still select the final value. A colon joining
+  /// two adjacent numbers is time/ratio punctuation (`12:30`, `1:2`), not a
+  /// label boundary.
+  _EvaluatedLine? _explicitLabel(
+    String source,
+    int index,
+    Evaluator evaluator,
+    CalcScope scope,
+  ) {
+    final tokens = Lexer(source)
+        .tokenize()
+        .where((t) => t.isSignificant && t.type != TokenType.eof)
+        .toList();
+    for (var i = tokens.length - 2; i > 0; i--) {
+      final colon = tokens[i];
+      if (colon.type != TokenType.operator || colon.text != ':') continue;
+
+      final before = tokens[i - 1];
+      final after = tokens[i + 1];
+      final joinsNumbers =
+          before.type == TokenType.number &&
+          after.type == TokenType.number &&
+          before.end == colon.start &&
+          colon.end == after.start;
+      if (joinsNumbers) continue;
+
+      final hasLabel = tokens
+          .take(i)
+          .any((token) => _isExplicitLabelToken(token, scope));
+      if (!hasLabel) continue;
+
+      final right = source.substring(colon.end).trim();
+      if (right.isEmpty) continue;
+      final evaluated =
+          _evaluateExpression(right, index, evaluator, scope) ??
+          _labelledArithmetic(right, index, evaluator, scope) ??
+          _labelledAmount(right, index, evaluator, scope);
+      if (evaluated != null) return evaluated;
+    }
+    return null;
+  }
+
+  /// Explicit labels may contain ordinary prose, product codes and model
+  /// numbers. A recognised calculator name is deliberately not enough on its
+  /// own: `2:3` and `subtotal:2` either have another meaning or were already
+  /// handled by the complete-expression parser.
+  bool _isExplicitLabelToken(Token token, CalcScope scope) {
+    if (token.type == TokenType.unknown) return true;
+    if (token.type != TokenType.identifier) return false;
+    final name = token.text.toLowerCase();
+    return !scope.variables.containsKey(token.text) &&
+        !calcKeywords.contains(name) &&
+        !aggregateNames.contains(name) &&
+        !mathConstants.contains(name) &&
+        !temporalNames.contains(name) &&
+        !booleanLiterals.contains(name) &&
+        !functionNames.contains(name) &&
+        !registry.isUnit(name);
   }
 
   _EvaluatedLine? _evaluateExpression(
@@ -148,10 +234,27 @@ class CalcEngine {
     CalcScope scope,
   ) {
     try {
+      final temporal = _temporal.evaluate(source);
+      if (temporal != null) {
+        return _EvaluatedLine(
+          result: LineResult(
+            line: index,
+            value: temporal,
+            text: ResultFormatter.display(temporal, grouping: grouping),
+            copyText: ResultFormatter.copy(temporal),
+            grouping: grouping,
+          ),
+          isAggregateReadout: false,
+        );
+      }
       final node = Parser(
         source,
         registry: registry,
-        boundNames: scope.variables.keys.toSet(),
+        boundNames: scope.variables.keys
+            .where(
+              (name) => !unitConfigurationNames.contains(name.toLowerCase()),
+            )
+            .toSet(),
       ).parseLine();
       final value = evaluator.evaluate(node);
       return _EvaluatedLine(
@@ -172,8 +275,8 @@ class CalcEngine {
     }
   }
 
-  /// Reads `Coffee $4.50` or `Run 5 km`: a label in plain words, then an
-  /// amount that says what it is.
+  /// Reads `Coffee $4.50`, `Run 5 km`, or `Model 7 inverter 850 usd`: a
+  /// human label followed by an amount that says what it is.
   ///
   /// Only tried once the line has failed to parse whole, and only a suffix
   /// carrying a currency or a unit is accepted. A bare trailing number is
@@ -181,37 +284,32 @@ class CalcEngine {
   /// `Lunch 12`, and nothing in the text distinguishes them. The unit or
   /// currency is the user saying which one they meant.
   ///
-  /// The other order — `12 mangoes`, where the number leads — needs no such
-  /// marker and is read by [_quantityWithLabel].
+  /// Digits and punctuation are allowed inside the label because product
+  /// names and capacities routinely contain them. Operators are not: that
+  /// keeps an invalid `2 + + 3 usd` from being rescued as `3 usd`. The other
+  /// order, `12 mangoes`, is handled by [_labelledArithmetic].
   _EvaluatedLine? _labelledAmount(
     String source,
     int index,
     Evaluator evaluator,
     CalcScope scope,
   ) {
-    final known = scope.variables.keys.toSet();
     final tokens = Lexer(source)
         .tokenize()
         .where((t) => t.isSignificant && t.type != TokenType.eof)
         .toList();
     if (tokens.length < 2) return null;
 
-    for (var i = 0; i < tokens.length - 1; i++) {
-      // Everything stepped over has to be an ordinary word. Stopping at the
-      // first token that is not keeps a half-typed `2 + + 3 usd` from being
-      // read as `3 usd`, and leaves any name the document has defined to go
-      // on meaning what it says.
-      final token = tokens[i];
-      if (token.type != TokenType.identifier) return null;
-      final name = token.text.toLowerCase();
-      if (known.contains(token.text) ||
-          aggregateNames.contains(name) ||
-          mathConstants.contains(name)) {
-        return null;
+    for (var i = tokens.length - 1; i > 0; i--) {
+      if (!_couldStartAmount(
+        tokens[i],
+        i + 1 < tokens.length ? tokens[i + 1] : null,
+      )) {
+        continue;
       }
-
+      if (!_safeLabelPrefix(tokens.take(i), scope)) continue;
       final evaluated = _evaluateExpression(
-        source.substring(tokens[i + 1].start),
+        source.substring(tokens[i].start),
         index,
         evaluator,
         scope,
@@ -223,6 +321,62 @@ class CalcEngine {
       }
     }
     return null;
+  }
+
+  static bool _couldStartAmount(Token token, Token? next) {
+    if (token.type == TokenType.number || token.type == TokenType.lparen) {
+      return true;
+    }
+    if (token.type == TokenType.currencySymbol) {
+      return next != null &&
+          (next.type == TokenType.number ||
+              next.type == TokenType.lparen ||
+              (next.type == TokenType.operator && next.text == '-'));
+    }
+    return token.type == TokenType.operator &&
+        const ['-', '−', '–', '—'].contains(token.text) &&
+        next != null &&
+        (next.type == TokenType.number ||
+            next.type == TokenType.currencySymbol ||
+            next.type == TokenType.lparen);
+  }
+
+  bool _safeLabelPrefix(Iterable<Token> prefix, CalcScope scope) {
+    var hasWord = false;
+    for (final token in prefix) {
+      switch (token.type) {
+        case TokenType.identifier:
+          final name = token.text.toLowerCase();
+          if (scope.variables.containsKey(token.text) ||
+              aggregateNames.contains(name) ||
+              mathConstants.contains(name) ||
+              temporalNames.contains(name) ||
+              booleanLiterals.contains(name) ||
+              functionNames.contains(name) ||
+              calcKeywords.contains(name)) {
+            return false;
+          }
+          hasWord = true;
+        case TokenType.operator:
+          // Hyphens belong naturally in model names (`Model-7`). Every other
+          // operator is evidence that the discarded prefix was arithmetic.
+          if (!const ['-', '−', '–', '—'].contains(token.text)) return false;
+        case TokenType.currencySymbol:
+        case TokenType.percent:
+          return false;
+        case TokenType.number:
+        case TokenType.lparen:
+        case TokenType.rparen:
+        case TokenType.comma:
+        case TokenType.unknown:
+          break;
+        case TokenType.comment:
+        case TokenType.whitespace:
+        case TokenType.eof:
+          break;
+      }
+    }
+    return hasWord;
   }
 
   /// Reads a line whose numbers carry words naming what they count:
@@ -414,7 +568,8 @@ class CalcEngine {
     var hasOperator = false;
     var hasKnownName = false;
 
-    for (final token in tokens) {
+    for (var i = 0; i < tokens.length; i++) {
+      final token = tokens[i];
       switch (token.type) {
         case TokenType.number:
           hasNumber = true;
@@ -426,7 +581,11 @@ class CalcEngine {
           final name = token.text;
           if (knownNames.contains(name) ||
               aggregateNames.contains(name.toLowerCase()) ||
-              mathConstants.contains(name.toLowerCase())) {
+              mathConstants.contains(name.toLowerCase()) ||
+              temporalNames.contains(name.toLowerCase()) ||
+              (functionNames.contains(name.toLowerCase()) &&
+                  i + 1 < tokens.length &&
+                  tokens[i + 1].type == TokenType.lparen)) {
             hasKnownName = true;
           }
         default:

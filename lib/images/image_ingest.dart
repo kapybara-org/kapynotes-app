@@ -1,4 +1,5 @@
 import 'dart:isolate';
+import 'dart:convert';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -8,6 +9,35 @@ import '../data/note_attachment.dart';
 import '../sync/aead.dart';
 import 'image_codec.dart';
 import '../data/blob_store.dart';
+
+/// Crops a chosen profile picture to a compact square safe to carry in the
+/// account and space-member payloads.
+Future<String?> prepareProfileImageDataUrl(Uint8List source) async {
+  if (source.isEmpty || source.length > maxSourceBytes) return null;
+  final raw = await _decodeWithPlatform(source);
+  if (raw == null) return null;
+  try {
+    return await Isolate.run(() {
+      final decoded = img.Image.fromBytes(
+        width: raw.width,
+        height: raw.height,
+        bytes: raw.rgba.buffer,
+        numChannels: 4,
+        order: img.ChannelOrder.rgba,
+      );
+      final square = img.copyResizeCropSquare(
+        decoded,
+        size: 256,
+        interpolation: img.Interpolation.cubic,
+      );
+      final encoded = img.encodeJpg(square, quality: 85);
+      return 'data:image/jpeg;base64,${base64.encode(encoded)}';
+    });
+  } catch (error) {
+    debugPrint('KapyNotes: profile image preparation failed: $error');
+    return null;
+  }
+}
 
 /// Largest file accepted from disk, before compression.
 ///
@@ -36,9 +66,8 @@ class IngestedImage {
 
   /// What the compression actually bought, as a fraction. Zero when the
   /// original was kept.
-  double get saved => originalBytes <= 0
-      ? 0
-      : (originalBytes - ref.bytes) / originalBytes;
+  double get saved =>
+      originalBytes <= 0 ? 0 : (originalBytes - ref.bytes) / originalBytes;
 }
 
 class ImageIngestResult {
@@ -196,11 +225,7 @@ _Prepared? _prepareFromEncoded(Uint8List source, String sourceMime) {
   return _prepare(source, sourceMime, decoded, frameCount);
 }
 
-_Prepared _prepareFromRaw(
-  Uint8List source,
-  String sourceMime,
-  _RawPixels raw,
-) {
+_Prepared _prepareFromRaw(Uint8List source, String sourceMime, _RawPixels raw) {
   final decoded = img.Image.fromBytes(
     width: raw.width,
     height: raw.height,

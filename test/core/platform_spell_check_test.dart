@@ -81,6 +81,67 @@ void main() {
     },
   );
 
+  test('asks the system for one word\'s corrections, once', () async {
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return call.method == 'check'
+          ? [
+              {'startIndex': 2, 'endIndex': 7},
+            ]
+          : ['simple', 'sample'];
+    });
+    final service = PlatformSpellCheckService(quietPeriod: Duration.zero);
+    addTearDown(service.dispose);
+
+    const text = 'A smple note';
+    const range = TextRange(start: 2, end: 7);
+    const locale = Locale('en', 'US');
+
+    expect(service.cachedSuggestionsFor(locale, 'smple'), isNull);
+
+    // Two asks in flight at once share the one lookup, the way a press that
+    // gets ahead of the menu it opens does.
+    final first = service.suggestionsFor(locale, text, range);
+    final second = service.suggestionsFor(locale, text, range);
+    expect(await first, ['simple', 'sample']);
+    expect(await second, ['simple', 'sample']);
+    expect(await service.suggestionsFor(locale, text, range), [
+      'simple',
+      'sample',
+    ]);
+
+    expect(calls.map((call) => call.method), ['suggest']);
+    expect(calls.single.arguments, {
+      'language': 'en-US',
+      'text': text,
+      'startIndex': 2,
+      'endIndex': 7,
+    });
+    // Cached, so the menu can be built without waiting on the platform.
+    expect(service.cachedSuggestionsFor(locale, 'smple'), ['simple', 'sample']);
+  });
+
+  test('a range outside the text asks the system nothing', () async {
+    var asked = false;
+    messenger.setMockMethodCallHandler(channel, (_) async {
+      asked = true;
+      return const [];
+    });
+    final service = PlatformSpellCheckService(quietPeriod: Duration.zero);
+    addTearDown(service.dispose);
+
+    expect(
+      await service.suggestionsFor(
+        const Locale('en', 'US'),
+        'short',
+        const TextRange(start: 2, end: 99),
+      ),
+      isEmpty,
+    );
+    expect(asked, isFalse);
+  });
+
   test('only checks the latest edit after the quiet period', () async {
     final checked = <String>[];
     messenger.setMockMethodCallHandler(channel, (call) async {

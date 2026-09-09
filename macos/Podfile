@@ -39,4 +39,73 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
   end
+
+  # flutter_gemma_litertlm: stage the three Apple companion dylibs Google
+  # ships with LiteRT-LM into the built .app and repoint LiteRtLm's
+  # LC_LOAD_DYLIB at them. The plugin's own build hook deliberately skips
+  # them — they were linked without `-Wl,-headerpad_max_install_names`, so
+  # Dart's Native Assets path cannot rewrite their install_name — which
+  # leaves this phase to do it. Without it `dlopen` of LiteRtLm fails at the
+  # moment somebody asks for their first on-device summary, and only then.
+  #
+  # The phase locates and runs the plugin's own script rather than carrying a
+  # copy of the logic: this block is frozen into the Xcode project, and a copy
+  # frozen here could not be fixed by upgrading the package.
+  installer.aggregate_targets.each do |aggregate_target|
+    aggregate_target.user_targets.each do |user_target|
+      phase_name = '[flutter_gemma] Setup LiteRT-LM macOS'
+
+      # Only the app target has a Contents/Frameworks to patch. Leaving the
+      # phase on RunnerTests creates a cross-target dependency Xcode reports
+      # as a build cycle.
+      unless user_target.name == 'Runner'
+        user_target.build_phases
+          .select { |p| p.respond_to?(:name) && p.name == phase_name }
+          .each { |p| user_target.build_phases.delete(p) }
+        next
+      end
+
+      existing = user_target.shell_script_build_phases.find { |p| p.name == phase_name }
+      phase = existing || user_target.new_shell_script_build_phase(phase_name)
+      # The embedded binary is an input so the phase re-runs after Flutter's
+      # always-out-of-date embed phase copies the raw one back over ours.
+      phase.input_paths = [
+        '$(BUILT_PRODUCTS_DIR)/$(PRODUCT_NAME).app/Contents/Frameworks/LiteRtLm.framework/Versions/A/LiteRtLm',
+      ]
+      # A declared output lets Xcode place the phase in its dependency graph
+      # rather than treating it as always-dirty.
+      phase.output_paths = ['$(DERIVED_FILE_DIR)/flutter_gemma_litertlm_macos.stamp']
+      phase.shell_script = <<~SHELL
+        set -e
+        STAGER="${HOME}/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh"
+        if [ ! -f "${STAGER}" ]; then
+          echo "[flutter_gemma] ERROR: ${STAGER} not found." >&2
+          echo "  flutter_gemma_litertlm installs it from its build hook." >&2
+          echo "  Try: flutter clean && flutter pub get" >&2
+          exit 1
+        fi
+        FRAMEWORKS="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Frameworks"
+        sh "${STAGER}" "${FRAMEWORKS}"
+
+        # The stager signs what it stages ad-hoc, which a Developer ID build
+        # cannot load: library validation refuses a dylib signed by anyone but
+        # the team that signed the app. The documented fix is to add
+        # `com.apple.security.cs.disable-library-validation`, which turns that
+        # check off for every library the app will ever load. Re-signing these
+        # four with the app's own identity keeps the check on instead.
+        if [ -n "${EXPANDED_CODE_SIGN_IDENTITY}" ] && [ "${EXPANDED_CODE_SIGN_IDENTITY}" != "-" ]; then
+          for FW in GemmaModelConstraintProvider LiteRtMetalAccelerator LiteRtTopKMetalSampler LiteRtLm; do
+            BIN="${FRAMEWORKS}/${FW}.framework/Versions/A/${FW}"
+            if [ -f "${BIN}" ]; then
+              codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" \
+                ${OTHER_CODE_SIGN_FLAGS} --timestamp=none "${BIN}"
+            fi
+          done
+        fi
+
+        mkdir -p "$(dirname "${SCRIPT_OUTPUT_FILE_0}")"
+        touch "${SCRIPT_OUTPUT_FILE_0}"
+      SHELL
+    end
+  end
 end

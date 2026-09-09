@@ -1,10 +1,11 @@
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart' as platform_picker;
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../data/note_attachment.dart';
-import 'camera_capture.dart';
+import 'camera_capture.dart' show ImageLibraryPicker;
 import 'image_codec.dart';
 import 'image_ingest.dart';
 import '../data/blob_store.dart';
@@ -62,18 +63,89 @@ Future<List<XFile>> pickImageFiles() async {
 
 /// Opens the right image entry point for the device.
 ///
-/// A phone starts with the camera and keeps Photos inside the same surface.
-/// Desktop keeps the familiar multi-file dialog because a built-in webcam is
-/// neither universal nor usually the source of a picture added to a note.
+/// A phone first asks whether to use its camera or photo library, then hands
+/// that choice to the corresponding platform picker. Desktop keeps the
+/// familiar multi-file dialog because a built-in webcam is neither universal
+/// nor usually the source of a picture added to a note.
 Future<List<XFile>> acquireNoteImages(
   BuildContext context, {
   ImageLibraryPicker? chooseFromLibrary,
-}) {
+}) async {
   if (!AppPlatform.isMobile) return pickImageFiles();
-  return showNoteCamera(
-    context,
-    chooseFromLibrary: chooseFromLibrary ?? pickExistingImageFiles,
+  final source = await _chooseMobileImageSource(context);
+  if (!context.mounted || source == null) return const [];
+  return switch (source) {
+    _MobileImageSource.camera => takeNotePhoto(),
+    _MobileImageSource.library =>
+      (chooseFromLibrary ?? pickExistingImageFiles)(),
+  };
+}
+
+enum _MobileImageSource { camera, library }
+
+/// Lets the operating system's familiar camera and photo-library entry points
+/// remain separate choices. This avoids surprising somebody with a live
+/// camera merely because they tapped the image button.
+Future<_MobileImageSource?> _chooseMobileImageSource(BuildContext context) {
+  if (AppPlatform.isIOS) {
+    return showCupertinoModalPopup<_MobileImageSource>(
+      context: context,
+      builder: (context) => CupertinoActionSheet(
+        title: const Text('Add an image'),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(context, _MobileImageSource.camera),
+            child: const Text('Take Photo'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(context, _MobileImageSource.library),
+            child: const Text('Choose from Photo Library'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
+  }
+
+  return showModalBottomSheet<_MobileImageSource>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined),
+            title: const Text('Camera'),
+            onTap: () => Navigator.pop(context, _MobileImageSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('Photo library'),
+            onTap: () => Navigator.pop(context, _MobileImageSource.library),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
   );
+}
+
+/// Opens the platform camera and returns the one photo captured there.
+Future<List<XFile>> takeNotePhoto() async {
+  try {
+    final photo = await platform_picker.ImagePicker().pickImage(
+      source: platform_picker.ImageSource.camera,
+      requestFullMetadata: false,
+    );
+    return photo == null ? const [] : [photo];
+  } catch (error) {
+    debugPrint('KapyNotes: camera failed: $error');
+    return const [];
+  }
 }
 
 /// Opens the native photo library and allows a small gallery in one pass.

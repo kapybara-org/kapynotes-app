@@ -34,6 +34,26 @@ const std::string* StringArgument(const EncodableMap& arguments,
   return value == nullptr ? nullptr : std::get_if<std::string>(value);
 }
 
+// The standard codec narrows a Dart int to whichever of the two integer
+// variants it fits, so a text offset can arrive as either.
+bool IntArgument(const EncodableMap& arguments,
+                 const std::string& name,
+                 int64_t* out) {
+  const auto* value = Find(arguments, name);
+  if (value == nullptr) {
+    return false;
+  }
+  if (const auto* narrow = std::get_if<int32_t>(value)) {
+    *out = *narrow;
+    return true;
+  }
+  if (const auto* wide = std::get_if<int64_t>(value)) {
+    *out = *wide;
+    return true;
+  }
+  return false;
+}
+
 std::wstring Utf16FromUtf8(const std::string& source) {
   if (source.empty() ||
       source.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
@@ -94,15 +114,34 @@ std::wstring BestLanguage(ISpellCheckerFactory* factory,
   return std::wstring();
 }
 
-EncodableList SuggestionsFor(ISpellChecker* checker,
-                             ISpellingError* error,
-                             const std::wstring& word) {
+bool CreateChecker(const std::wstring& language,
+                   ComPtr<ISpellChecker>& checker) {
+  if (language.empty()) {
+    return false;
+  }
+  ComPtr<ISpellCheckerFactory> factory;
+  if (FAILED(::CoCreateInstance(__uuidof(SpellCheckerFactory), nullptr,
+                                CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&factory)))) {
+    return false;
+  }
+  const std::wstring selected_language = BestLanguage(factory.Get(), language);
+  if (selected_language.empty()) {
+    return false;
+  }
+  return SUCCEEDED(
+      factory->CreateSpellChecker(selected_language.c_str(), &checker));
+}
+
+// The corrections Windows hands over with the error itself: a single
+// replacement, or the marker for a word typed twice. Everything else needs a
+// lookup of its own, which waits for a menu that will actually show it.
+EncodableList InlineSuggestionsFor(ISpellingError* error) {
   EncodableList result;
   CORRECTIVE_ACTION action = CORRECTIVE_ACTION_NONE;
   if (FAILED(error->get_CorrectiveAction(&action))) {
     return result;
   }
-
   if (action == CORRECTIVE_ACTION_REPLACE) {
     wchar_t* replacement = nullptr;
     if (SUCCEEDED(error->get_Replacement(&replacement)) &&
@@ -110,16 +149,22 @@ EncodableList SuggestionsFor(ISpellChecker* checker,
       result.emplace_back(Utf8FromUtf16(replacement));
       ::CoTaskMemFree(replacement);
     }
-    return result;
-  }
-  if (action == CORRECTIVE_ACTION_DELETE) {
+  } else if (action == CORRECTIVE_ACTION_DELETE) {
     result.emplace_back(std::string());
-    return result;
   }
-  if (action != CORRECTIVE_ACTION_GET_SUGGESTIONS) {
-    return result;
-  }
+  return result;
+}
 
+// What Windows would put at the top of its own menu for one flagged word.
+EncodableList Suggest(const std::wstring& language, const std::wstring& word) {
+  EncodableList result;
+  if (word.empty()) {
+    return result;
+  }
+  ComPtr<ISpellChecker> checker;
+  if (!CreateChecker(language, checker)) {
+    return result;
+  }
   ComPtr<IEnumString> suggestions;
   if (FAILED(checker->Suggest(word.c_str(), &suggestions))) {
     return result;
@@ -147,20 +192,8 @@ EncodableList Check(const std::wstring& language,
     return response;
   }
 
-  ComPtr<ISpellCheckerFactory> factory;
-  if (FAILED(::CoCreateInstance(__uuidof(SpellCheckerFactory), nullptr,
-                                CLSCTX_INPROC_SERVER,
-                                IID_PPV_ARGS(&factory)))) {
-    return response;
-  }
-  const std::wstring selected_language = BestLanguage(factory.Get(), language);
-  if (selected_language.empty()) {
-    return response;
-  }
-
   ComPtr<ISpellChecker> checker;
-  if (FAILED(factory->CreateSpellChecker(selected_language.c_str(),
-                                         &checker))) {
+  if (!CreateChecker(language, checker)) {
     return response;
   }
   ComPtr<IEnumSpellingError> errors;
@@ -180,14 +213,13 @@ EncodableList Check(const std::wstring& language,
         start > text.size() || length > text.size() - start) {
       continue;
     }
-    const std::wstring word = text.substr(start, length);
     response.emplace_back(EncodableMap{
         {EncodableValue("startIndex"),
          EncodableValue(static_cast<int32_t>(start))},
         {EncodableValue("endIndex"),
          EncodableValue(static_cast<int32_t>(start + length))},
         {EncodableValue("suggestions"),
-         EncodableValue(SuggestionsFor(checker.Get(), error.Get(), word))},
+         EncodableValue(InlineSuggestionsFor(error.Get()))},
     });
   }
   return response;
@@ -213,6 +245,37 @@ void HandleCheck(
       Check(Utf16FromUtf8(*language), Utf16FromUtf8(*text))));
 }
 
+void HandleSuggest(
+    const EncodableValue* raw_arguments,
+    std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
+  const auto* arguments = raw_arguments == nullptr
+                              ? nullptr
+                              : std::get_if<EncodableMap>(raw_arguments);
+  if (arguments == nullptr) {
+    result->Error("spell-check-arguments", "Missing spell-check data");
+    return;
+  }
+  const auto* language = StringArgument(*arguments, "language");
+  const auto* text = StringArgument(*arguments, "text");
+  int64_t start = 0;
+  int64_t end = 0;
+  if (language == nullptr || text == nullptr ||
+      !IntArgument(*arguments, "startIndex", &start) ||
+      !IntArgument(*arguments, "endIndex", &end) || start < 0 || end <= start) {
+    result->Error("spell-check-arguments", "Missing language, text or range");
+    return;
+  }
+  const std::wstring wide_text = Utf16FromUtf8(*text);
+  const auto offset = static_cast<size_t>(start);
+  const auto length = static_cast<size_t>(end - start);
+  if (offset > wide_text.size() || length > wide_text.size() - offset) {
+    result->Success(EncodableValue(EncodableList()));
+    return;
+  }
+  result->Success(EncodableValue(Suggest(Utf16FromUtf8(*language),
+                                         wide_text.substr(offset, length))));
+}
+
 }  // namespace
 
 std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
@@ -226,6 +289,8 @@ RegisterSpellCheckChannel(flutter::BinaryMessenger* messenger) {
          std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
         if (call.method_name() == "check") {
           HandleCheck(call.arguments(), std::move(result));
+        } else if (call.method_name() == "suggest") {
+          HandleSuggest(call.arguments(), std::move(result));
         } else {
           result->NotImplemented();
         }

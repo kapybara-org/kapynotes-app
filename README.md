@@ -261,10 +261,12 @@ refusal to guess.
 
 | File | Role |
 |---|---|
-| `lexer.dart` | Text → tokens. Absorbs `1,250` thousands separators, `$`/`€` symbols and `//` comments. |
+| `lexer.dart` | Text → tokens. Absorbs grouped and radix numbers, currency symbols, quoted annotations and line comments. |
 | `parser.dart` | Tokens → AST. Recursive descent; `of`/`off`/`on`/`to`/`in`/`per` are operators. |
 | `evaluator.dart` | AST → value, against a scope that carries down the note. |
 | `unit.dart`, `unit_registry.dart` | Dimensional algebra over ~110 units plus live currencies. |
+| `temporal.dart` | Strict wall-clock and named-time-zone expressions that stay out of ordinary prose. |
+| `notation.dart` | Binary, octal, hexadecimal and scientific result formats. |
 | `engine.dart` | Runs a whole note top to bottom. |
 | `format.dart` | Compact display text and full-precision copy text. |
 | `highlight.dart` | Re-runs the lexer to colour the note. |
@@ -285,7 +287,14 @@ someone with a syntax error, and "I have 3 apples" must not render a result.
 Lines are only attempted when they carry an arithmetic signal, and anything
 that fails to parse is left as plain text.
 
-**A label followed by a marked amount is a value.** `Coffee $4.50`,
+**A colon is an explicit label boundary.** The description on its left is
+never evaluated, even when it contains model numbers or other amounts. Thus
+`7KvA Solar System : 12000rs` is exactly `12,000.00 INR`, and nested labels use
+the rightmost colon. Compact clock times and ratios such as `12:30` and `1:2`
+remain punctuation rather than labels. Highlighting follows the same rule, so
+numbers inside the description stay visually quiet.
+
+**A label followed by a marked amount is a value, even without a colon.** `Coffee $4.50`,
 `Lunch 12 usd` and `Run 5 km` each read as the amount and join the running
 total, so a budget needs no `=` on every line. The marker carries the whole
 rule: a bare trailing number is refused, because `Lunch 12` and `Room 12` are
@@ -316,6 +325,15 @@ because `x` is also the first name anyone gives a variable.
 **Running scope.** A variable assigned on one line is available below it, and
 `prev`, `sum`, `total` and `avg` accumulate as the note is read downward. A
 line that is *only* `total` reports the total without adding itself to it.
+
+The compact language also includes natural operators (`plus`, `without`,
+`times`, `divided by`), implicit parenthesis multiplication, bitwise
+operations, base literals, written number scales, bracketless functions,
+factorials, mixed measurements, square and cubic units, case-sensitive SI and
+data prefixes, CSS `px`/`pt`/`em` with configurable `ppi`, reverse percentage
+questions such as `5% on what is 105`, calendar arithmetic, Unix timestamps,
+and DST-aware time-zone conversion. Quoted text is an inline annotation, so
+`$275 "Model 227"` calculates the price without treating 227 as another value.
 
 ### The editor (`lib/ui/editor/`)
 

@@ -1,3 +1,5 @@
+import '../data/time_zones.dart';
+import 'notation.dart';
 import 'value.dart';
 
 /// Where the separators fall inside a grouped integer.
@@ -75,12 +77,30 @@ class ResultFormatter {
     'nine',
   ];
 
+  static const List<String> _monthNames = [
+    '',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
   /// Grouped, at most 6 decimal places — what the user sees.
   static String display(
     CalcValue value, {
     DigitGrouping grouping = DigitGrouping.international,
   }) {
     if (value is BooleanValue) return value.value ? 'true' : 'false';
+    if (value is DateTimeValue) return _temporal(value);
+    if (value is FormattedNumberValue) return _notation(value);
     if (value is PercentValue) {
       return _number(value.fraction, 6, group: true, grouping: grouping);
     }
@@ -111,6 +131,8 @@ class ResultFormatter {
   /// Ungrouped and full precision — what lands on the clipboard.
   static String copy(CalcValue value) {
     if (value is BooleanValue) return value.value ? 'true' : 'false';
+    if (value is DateTimeValue) return _temporal(value);
+    if (value is FormattedNumberValue) return _notation(value);
     if (value is PercentValue) return _number(value.fraction, 12);
     if (value is NumberValue) return _number(value.value, 12);
     if (value is QuantityValue) {
@@ -183,10 +205,56 @@ class ResultFormatter {
 
   static double? _rawNumber(CalcValue value) => switch (value) {
     NumberValue() => value.value,
+    FormattedNumberValue() => value.value,
     PercentValue() => value.fraction,
     QuantityValue() => value.value,
     BooleanValue() => null,
+    DateTimeValue() => null,
   };
+
+  static String _temporal(DateTimeValue value) {
+    final shown = AppTimeZones.convert(value.instant, value.timeZoneId);
+    final date = '${shown.day} ${_monthNames[shown.month]} ${shown.year}';
+    final hour = shown.hour % 12 == 0 ? 12 : shown.hour % 12;
+    final minute = shown.minute.toString().padLeft(2, '0');
+    final second = shown.second == 0
+        ? ''
+        : ':${shown.second.toString().padLeft(2, '0')}';
+    final meridiem = shown.hour < 12 ? 'AM' : 'PM';
+    final zone = shown.timeZoneName.trim();
+    final time =
+        '$hour:$minute$second $meridiem${zone.isEmpty ? '' : ' $zone'}';
+    return switch (value.display) {
+      TemporalDisplay.date => date,
+      TemporalDisplay.time => time,
+      TemporalDisplay.dateTime => '$date, $time',
+    };
+  }
+
+  static String _notation(FormattedNumberValue value) {
+    if (value.notation == NumericNotation.scientific) {
+      return _trimExponential(value.value);
+    }
+    if (value.notation == NumericNotation.decimal) {
+      return _number(value.value, 12);
+    }
+
+    final number = value.value.toInt();
+    final negative = number < 0;
+    final digits = number.abs().toRadixString(switch (value.notation) {
+      NumericNotation.binary => 2,
+      NumericNotation.octal => 8,
+      NumericNotation.hexadecimal => 16,
+      NumericNotation.decimal || NumericNotation.scientific => 10,
+    });
+    final prefix = switch (value.notation) {
+      NumericNotation.binary => '0b',
+      NumericNotation.octal => '0o',
+      NumericNotation.hexadecimal => '0x',
+      NumericNotation.decimal || NumericNotation.scientific => '',
+    };
+    return '${negative ? '-' : ''}$prefix$digits';
+  }
 
   static int _displayDecimals(CalcValue value) =>
       value is QuantityValue && value.unit.isCurrency ? 2 : 6;

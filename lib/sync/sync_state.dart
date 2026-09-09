@@ -148,8 +148,9 @@ class SyncState {
   /// colliding is not a thing that happens, short enough to sit in a header.
   static String _mintDeviceId() {
     final random = Random.secure();
-    return List<int>.generate(16, (_) => random.nextInt(256))
-        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-        .join();
+    return List<int>.generate(
+      16,
+      (_) => random.nextInt(256),
+    ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
   }
 }

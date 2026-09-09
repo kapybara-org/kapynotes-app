@@ -4,6 +4,9 @@ import UIKit
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var richClipboardChannel: FlutterMethodChannel?
+  private var summariesChannel: FlutterMethodChannel?
+  private var transcriptionChannel: FlutterMethodChannel?
+  private var audioDecodeChannel: FlutterMethodChannel?
 
   override func application(
     _ application: UIApplication,
@@ -16,6 +19,15 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     QuickCapture.shared.register(with: engineBridge.applicationRegistrar.messenger())
     richClipboardChannel = RichClipboard.register(
+      with: engineBridge.applicationRegistrar.messenger()
+    )
+    summariesChannel = Summaries.register(
+      with: engineBridge.applicationRegistrar.messenger()
+    )
+    transcriptionChannel = Transcription.register(
+      with: engineBridge.applicationRegistrar.messenger()
+    )
+    audioDecodeChannel = AudioDecode.register(
       with: engineBridge.applicationRegistrar.messenger()
     )
   }

@@ -6,10 +6,13 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
+import '../../images/image_ingest.dart';
+import '../../images/image_picker.dart';
 import '../../sync/account.dart';
 import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
 import 'recovery_key_dialog.dart';
+import '../profile_avatar.dart';
 
 /// Everything about the account, in one settings pane.
 ///
@@ -29,6 +32,7 @@ class SyncPane extends StatelessWidget {
       builder: (context, _) => switch (account.state) {
         AccountState.restoring => const _Busy(),
         AccountState.signedOut => _SignInForm(account: account),
+        AccountState.needsProfile => _ProfileSetup(account: account),
         AccountState.needsPassphrase => _PassphraseForm(account: account),
         AccountState.locked => _UnlockForm(account: account),
         AccountState.needsAccountDecision => _AccountSwitch(account: account),
@@ -76,7 +80,7 @@ class _Panel extends StatelessWidget {
           title,
           style: TextStyle(
             fontSize: AppTypeScale.title,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
             color: palette.textPrimary,
           ),
         ),
@@ -492,6 +496,188 @@ class _SignInFormState extends State<_SignInForm> {
 
 // ---------------------------------------------------------------------------
 
+class _ProfileSetup extends StatelessWidget {
+  const _ProfileSetup({required this.account});
+
+  final Account account;
+
+  @override
+  Widget build(BuildContext context) => _Panel(
+    title: 'What should people call you?',
+    blurb:
+        'This name identifies you in shared notes. You can change it and your '
+        'profile picture later in Settings.',
+    children: [_ProfileEditor(account: account, firstRun: true)],
+  );
+}
+
+class _ProfileEditor extends StatefulWidget {
+  const _ProfileEditor({required this.account, this.firstRun = false});
+
+  final Account account;
+  final bool firstRun;
+
+  @override
+  State<_ProfileEditor> createState() => _ProfileEditorState();
+}
+
+class _ProfileEditorState extends State<_ProfileEditor> {
+  late final TextEditingController _name;
+  bool _busy = false;
+  bool _imageChanged = false;
+  String? _image;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = widget.account.user;
+    _name = TextEditingController(
+      text: user?.needsName == true ? '' : (user?.name ?? ''),
+    );
+    _name.addListener(_changed);
+    _image = user?.image;
+  }
+
+  @override
+  void dispose() {
+    _name.removeListener(_changed);
+    _name.dispose();
+    super.dispose();
+  }
+
+  void _changed() => setState(() {});
+
+  bool get _valid {
+    final clean = _name.text.trim();
+    return clean.isNotEmpty && clean.runes.length <= 50;
+  }
+
+  Future<void> _pickImage() async {
+    final files = AppPlatform.isMobile
+        ? await pickExistingImageFiles()
+        : await pickImageFiles();
+    if (!mounted || files.isEmpty) return;
+    final progress = Toast.showProgress(context, 'Preparing profile photo…');
+    final prepared = await prepareProfileImageDataUrl(
+      await files.first.readAsBytes(),
+    );
+    if (!mounted) {
+      progress.dismiss();
+      return;
+    }
+    if (prepared == null || prepared.length > 140000) {
+      progress.error('Could not use that photo');
+      return;
+    }
+    setState(() {
+      _image = prepared;
+      _imageChanged = true;
+    });
+    progress.success('Profile photo ready');
+  }
+
+  Future<void> _save() async {
+    if (_busy || !_valid) return;
+    setState(() => _busy = true);
+    final progress = Toast.showProgress(context, 'Saving profile…');
+    final ok = await widget.account.updateProfile(
+      name: _name.text,
+      image: _image,
+      replaceImage: _imageChanged,
+    );
+    if (!mounted) {
+      progress.dismiss();
+      return;
+    }
+    setState(() {
+      _busy = false;
+      if (ok) _imageChanged = false;
+    });
+    if (ok) {
+      progress.success(widget.firstRun ? 'Profile created' : 'Profile saved');
+    } else {
+      progress.error(widget.account.lastError ?? 'Could not save profile');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = widget.account.user;
+    if (user == null) return const SizedBox.shrink();
+    final palette = context.palette;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            ProfileAvatar(
+              key: const ValueKey('profile-avatar'),
+              seed: user.id,
+              name: _name.text.trim().isEmpty ? user.displayName : _name.text,
+              image: _image,
+              extent: 64,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  OutlinedButton.icon(
+                    key: const ValueKey('choose-profile-photo'),
+                    onPressed: _busy ? null : _pickImage,
+                    icon: const Icon(Icons.add_a_photo_outlined, size: 17),
+                    label: Text(_image == null ? 'Add photo' : 'Change photo'),
+                  ),
+                  if (_image != null)
+                    TextButton(
+                      key: const ValueKey('remove-profile-photo'),
+                      onPressed: _busy
+                          ? null
+                          : () => setState(() {
+                              _image = null;
+                              _imageChanged = true;
+                            }),
+                      child: const Text('Use default avatar'),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          key: const ValueKey('profile-name'),
+          controller: _name,
+          autofocus: widget.firstRun,
+          maxLength: 50,
+          textCapitalization: TextCapitalization.words,
+          inputFormatters: [
+            LengthLimitingTextInputFormatter(50),
+            FilteringTextInputFormatter.deny(RegExp(r'[\u0000-\u001f\u007f]')),
+          ],
+          decoration: InputDecoration(
+            labelText: 'Name',
+            helperText: 'Shown to people you share notes with',
+            filled: true,
+            fillColor: palette.controlBackground,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          onSubmitted: (_) => _save(),
+        ),
+        const SizedBox(height: 4),
+        FilledButton(
+          key: const ValueKey('save-profile'),
+          onPressed: _busy || !_valid ? null : _save,
+          child: Text(widget.firstRun ? 'Continue' : 'Save profile'),
+        ),
+        if (widget.account.lastError case final error?) _Message(error),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 class _PassphraseForm extends StatefulWidget {
   const _PassphraseForm({required this.account});
   final Account account;
@@ -891,9 +1077,13 @@ class _Ready extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _Panel(
-    title: account.user?.email ?? 'Signed in',
+    title: account.user?.displayName ?? 'Signed in',
     blurb: _status,
     children: [
+      _ProfileEditor(account: account),
+      const SizedBox(height: 18),
+      Divider(height: 1, color: context.palette.separator),
+      const SizedBox(height: 18),
       Row(
         children: [
           FilledButton(

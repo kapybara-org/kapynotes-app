@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -20,6 +19,13 @@ enum VoiceChipState {
   /// Queued, but the device is offline.
   waiting,
 
+  /// The server could not do it last time and the queue will ask again.
+  ///
+  /// Its own state because "Transcribing…" over a request that already
+  /// failed is the app telling somebody to wait for work that is not
+  /// happening, and "Couldn't transcribe" is not yet true either.
+  retrying,
+
   /// In progress.
   transcribing,
 
@@ -37,7 +43,24 @@ enum VoiceChipState {
 
   /// The user has not agreed to transcription yet.
   needsConsent,
+
+  /// Nobody is signed in, so there is no account to transcribe against.
+  needsAccount,
 }
+
+/// A hover hint, when there is something to hint at.
+///
+/// Only the pointer opens it: a press-and-hold belongs to the chip's own menu,
+/// so the tooltip must not put a recogniser of its own in the way. Nested,
+/// only the innermost one answers, so each part of the row can name its own
+/// action.
+Widget _hoverHint(String? message, Widget child) => message == null
+    ? child
+    : Tooltip(
+        message: message,
+        triggerMode: TooltipTriggerMode.manual,
+        child: child,
+      );
 
 /// A recording, sitting in the body of a note.
 ///
@@ -78,10 +101,29 @@ class NoteVoiceChip extends StatelessWidget {
       VoiceChipState.transcribing => 'Transcribing…',
       VoiceChipState.summarising => 'Summarising…',
       VoiceChipState.waiting => 'Waiting for connection',
+      VoiceChipState.retrying => 'Trying again soon',
       VoiceChipState.failed => "Couldn't transcribe",
       VoiceChipState.outOfMinutes => 'Out of minutes',
-      VoiceChipState.needsConsent => 'Voice note',
+      // Both say what to do rather than what is wrong, because both are one
+      // tap from being fixed and the chip is where the person is looking.
+      VoiceChipState.needsConsent => 'Turn on transcription',
+      VoiceChipState.needsAccount => 'Sign in to transcribe',
       VoiceChipState.idle => summary?.title ?? 'Voice note',
+    };
+  }
+
+  /// What clicking the row does, which the label does not say.
+  ///
+  /// Named after what is on the other side of the click rather than after the
+  /// recording's state: someone hovering is asking where this goes.
+  String? get _openHint {
+    if (onOpen == null) return null;
+    if (ref.transcript != null) return 'Read the transcript';
+    return switch (state) {
+      VoiceChipState.needsConsent => 'Turn transcription on in Settings',
+      VoiceChipState.needsAccount => 'Sign in to transcribe recordings',
+      VoiceChipState.failed => 'Try transcribing again',
+      _ => 'Open this recording',
     };
   }
 
@@ -91,7 +133,18 @@ class NoteVoiceChip extends StatelessWidget {
   bool get _isTransient =>
       state == VoiceChipState.transcribing ||
       state == VoiceChipState.summarising ||
-      state == VoiceChipState.waiting;
+      state == VoiceChipState.waiting ||
+      state == VoiceChipState.retrying;
+
+  String? get _summaryPreview {
+    final summary = ref.summary;
+    if (summary == null) return null;
+    final points = summary.points
+        .map((point) => point.trim())
+        .where((point) => point.isNotEmpty)
+        .join(' ');
+    return points.isEmpty ? summary.title.trim() : points;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -101,69 +154,132 @@ class NoteVoiceChip extends StatelessWidget {
       button: true,
       child: Padding(
         padding: const EdgeInsets.only(bottom: noteImageGap),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onOpen,
-          onSecondaryTapDown: onRemove == null
-              ? null
-              : (details) => _showMenu(context, details.globalPosition),
-          onLongPressStart: onRemove == null
-              ? null
-              : (details) => _showMenu(context, details.globalPosition),
-          child: Container(
-            height: noteVoiceChipHeight,
-            decoration: BoxDecoration(
-              color: palette.controlBackground,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: palette.controlBorder),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              children: [
-                _PlayButton(playing: playing, onPressed: onPlayPause),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _isTransient
-                              ? palette.textSecondary
-                              : palette.textPrimary,
+        child: MouseRegion(
+          // A recording is not text, and every part of the row does something.
+          cursor:
+              onOpen == null && onPlayPause == null && onSeekFraction == null
+              ? MouseCursor.defer
+              : SystemMouseCursors.click,
+          child: _hoverHint(
+            _openHint,
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onOpen,
+              onSecondaryTapDown: onRemove == null
+                  ? null
+                  : (details) => _showMenu(context, details.globalPosition),
+              onLongPressStart: onRemove == null
+                  ? null
+                  : (details) => _showMenu(context, details.globalPosition),
+              child: Stack(
+                children: [
+                  Container(
+                    height: noteVoiceChipHeight,
+                    decoration: BoxDecoration(
+                      color: palette.controlBackground,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: palette.controlBorder),
+                    ),
+                    padding: EdgeInsets.only(
+                      left: 8,
+                      right: onRemove == null ? 8 : 34,
+                    ),
+                    child: Row(
+                      children: [
+                        _PlayButton(playing: playing, onPressed: onPlayPause),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: _isTransient
+                                      ? palette.textSecondary
+                                      : palette.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              if (_summaryPreview case final preview?)
+                                Text(
+                                  preview,
+                                  key: const ValueKey('voice-summary-preview'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: palette.textSecondary,
+                                  ),
+                                )
+                              else
+                                SizedBox(
+                                  height: 20,
+                                  child: RepaintBoundary(
+                                    child: _Waveform(
+                                      peaks: ref.peaks,
+                                      progress: progress,
+                                      played: palette.textPrimary,
+                                      unplayed: palette.textTertiary,
+                                      onSeekFraction: onSeekFraction,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                        height: 20,
-                        child: RepaintBoundary(
-                          child: _Waveform(
-                            peaks: ref.peaks,
-                            progress: progress,
-                            played: palette.textPrimary,
-                            unplayed: palette.textTertiary,
-                            onSeekFraction: onSeekFraction,
+                        const SizedBox(width: 8),
+                        Text(
+                          formatVoiceDuration(ref.duration),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                            color: palette.textSecondary,
+                          ),
+                        ),
+                        if (_summaryPreview != null) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            '...',
+                            key: const ValueKey('voice-summary-more'),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: palette.textTertiary,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (onRemove != null)
+                    Positioned(
+                      top: 2,
+                      right: 2,
+                      child: Tooltip(
+                        message: 'Remove voice note',
+                        child: IconButton(
+                          key: const ValueKey('remove-voice-note'),
+                          onPressed: onRemove,
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 28,
+                            height: 28,
+                          ),
+                          icon: Icon(
+                            Icons.close_rounded,
+                            size: 16,
+                            color: palette.textSecondary,
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  formatVoiceDuration(ref.duration),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                    color: palette.textSecondary,
-                  ),
-                ),
-              ],
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -172,7 +288,8 @@ class NoteVoiceChip extends StatelessWidget {
   }
 
   Future<void> _showMenu(BuildContext context, Offset position) async {
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (overlay == null) return;
     final choice = await showMenu<String>(
       context: context,
@@ -202,19 +319,22 @@ class _PlayButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: playing ? 'Pause' : 'Play',
-      child: SizedBox(
-        width: 36,
-        height: 36,
-        child: Material(
-          color: palette.selectedBackground,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onPressed,
-            child: Icon(
-              playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-              size: 20,
-              color: palette.textPrimary,
+      child: _hoverHint(
+        onPressed == null ? null : (playing ? 'Pause' : 'Play'),
+        SizedBox(
+          width: 36,
+          height: 36,
+          child: Material(
+            color: palette.selectedBackground,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: onPressed,
+              child: Icon(
+                playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                size: 20,
+                color: palette.textPrimary,
+              ),
             ),
           ),
         ),
@@ -241,22 +361,28 @@ class _Waveform extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
-      builder: (context, constraints) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: onSeekFraction == null
-            ? null
-            : (details) => onSeekFraction!(
-                (details.localPosition.dx / constraints.maxWidth).clamp(0.0, 1.0),
+      builder: (context, constraints) => _hoverHint(
+        onSeekFraction == null ? null : 'Skip to a point',
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: onSeekFraction == null
+              ? null
+              : (details) => onSeekFraction!(
+                  (details.localPosition.dx / constraints.maxWidth).clamp(
+                    0.0,
+                    1.0,
+                  ),
+                ),
+          child: ValueListenableBuilder<double?>(
+            valueListenable: progress,
+            builder: (context, value, _) => CustomPaint(
+              size: Size(constraints.maxWidth, constraints.maxHeight),
+              painter: VoiceWaveformPainter(
+                peaks: peaks,
+                progress: value,
+                played: played,
+                unplayed: unplayed,
               ),
-        child: ValueListenableBuilder<double?>(
-          valueListenable: progress,
-          builder: (context, value, _) => CustomPaint(
-            size: Size(constraints.maxWidth, constraints.maxHeight),
-            painter: VoiceWaveformPainter(
-              peaks: peaks,
-              progress: value,
-              played: played,
-              unplayed: unplayed,
             ),
           ),
         ),

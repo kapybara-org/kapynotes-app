@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'notation.dart';
 import 'unit.dart';
 
 /// Raised for anything the engine cannot compute. Lines that throw simply
@@ -15,6 +16,8 @@ class CalcError implements Exception {
 /// What a line evaluated to. Drives both formatting and gutter colour.
 enum ResultKind { number, currency, unit, boolean, other }
 
+enum TemporalDisplay { date, time, dateTime }
+
 sealed class CalcValue {
   const CalcValue();
 
@@ -27,6 +30,42 @@ class NumberValue extends CalcValue {
 
   @override
   ResultKind get kind => ResultKind.number;
+}
+
+/// A plain number carrying an explicit representation requested by the user.
+/// Arithmetic can still consume [value]; the notation only controls this
+/// line's result text and a bare `prev` readout.
+class FormattedNumberValue extends CalcValue {
+  final double value;
+  final NumericNotation notation;
+  const FormattedNumberValue(this.value, this.notation);
+
+  @override
+  ResultKind get kind => ResultKind.number;
+}
+
+/// An instant together with the wall-clock view the expression asked for.
+/// Keeping the instant in UTC makes zone conversions and arithmetic exact;
+/// [timeZoneId] only controls presentation.
+class DateTimeValue extends CalcValue {
+  final DateTime instant;
+  final String? timeZoneId;
+  final TemporalDisplay display;
+
+  const DateTimeValue(
+    this.instant, {
+    required this.timeZoneId,
+    required this.display,
+  });
+
+  @override
+  ResultKind get kind => ResultKind.other;
+
+  DateTimeValue move(Duration delta) => DateTimeValue(
+    instant.add(delta),
+    timeZoneId: timeZoneId,
+    display: display,
+  );
 }
 
 /// A number carrying a unit — including currency, which is just a unit whose
@@ -76,6 +115,7 @@ class Arith {
   /// Collapses a value to a bare number where one is required.
   static double scalar(CalcValue v) {
     if (v is NumberValue) return v.value;
+    if (v is FormattedNumberValue) return v.value;
     if (v is PercentValue) return v.fraction;
     if (v is BooleanValue) return v.value ? 1 : 0;
     if (v is QuantityValue) return v.value;
@@ -87,6 +127,29 @@ class Arith {
   static CalcValue subtract(CalcValue a, CalcValue b) => _addSub(a, b, -1);
 
   static CalcValue _addSub(CalcValue a, CalcValue b, int sign) {
+    if (a is DateTimeValue) {
+      if (b is DateTimeValue) {
+        if (sign > 0) throw const CalcError('cannot add two dates');
+        final hours = a.instant.difference(b.instant).inMicroseconds / 3.6e9;
+        return QuantityValue(hours, Unit.single(_hour));
+      }
+      if (b is QuantityValue &&
+          b.unit.dimension == Dimension.base(Dimension.time)) {
+        final micros = (b.linearBase * 1000000 * sign).round();
+        return a.move(Duration(microseconds: micros));
+      }
+      throw const CalcError('dates can only move by a duration');
+    }
+    if (b is DateTimeValue) {
+      if (sign < 0 ||
+          a is! QuantityValue ||
+          a.unit.dimension != Dimension.base(Dimension.time)) {
+        throw const CalcError('invalid date arithmetic');
+      }
+      final micros = (a.linearBase * 1000000).round();
+      return b.move(Duration(microseconds: micros));
+    }
+
     // `1250 + 8%` — a trailing percentage scales the left operand.
     if (b is PercentValue && a is! PercentValue) {
       return scale(a, 1 + sign * b.fraction);
@@ -197,7 +260,10 @@ class Arith {
   static CalcValue compare(String op, CalcValue a, CalcValue b) {
     final double left;
     final double right;
-    if (a is QuantityValue && b is QuantityValue) {
+    if (a is DateTimeValue && b is DateTimeValue) {
+      left = a.instant.microsecondsSinceEpoch.toDouble();
+      right = b.instant.microsecondsSinceEpoch.toDouble();
+    } else if (a is QuantityValue && b is QuantityValue) {
       if (a.unit.dimension != b.unit.dimension) {
         throw const CalcError('incomparable units');
       }
@@ -244,4 +310,12 @@ class Arith {
   static double _mathPow(double base, double exponent) {
     return math.pow(base, exponent).toDouble();
   }
+
+  static final UnitDef _hour = UnitDef(
+    symbol: 'h',
+    dimension: Dimension.base(Dimension.time),
+    factor: 3600,
+    aliases: const ['h', 'hour'],
+    category: 'time',
+  );
 }

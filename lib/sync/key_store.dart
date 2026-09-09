@@ -27,15 +27,30 @@ class PlatformSecureStore implements SecureStore {
 
   final FlutterSecureStorage _storage;
 
+  /// macOS only, and load-bearing.
+  ///
+  /// The plugin defaults to the data-protection keychain, which a sandboxed
+  /// app may only touch if it is in a keychain access group — and claiming one
+  /// needs a `keychain-access-groups` entitlement, which in turn needs the
+  /// target to sign with a team. Without all of that every call comes back
+  /// `-34018 errSecMissingEntitlement`, and because [ForgivingSecureStore]
+  /// swallows it the failure is silent: the session lives in memory for the
+  /// run, sync works, and every launch after the first is signed out.
+  ///
+  /// The file-based keychain has no such requirement and is what a Developer
+  /// ID app without a provisioning profile can actually use.
+  static const _macOs = MacOsOptions(usesDataProtectionKeychain: false);
+
   @override
-  Future<String?> read(String key) => _storage.read(key: key);
+  Future<String?> read(String key) => _storage.read(key: key, mOptions: _macOs);
 
   @override
   Future<void> write(String key, String value) =>
-      _storage.write(key: key, value: value);
+      _storage.write(key: key, value: value, mOptions: _macOs);
 
   @override
-  Future<void> delete(String key) => _storage.delete(key: key);
+  Future<void> delete(String key) =>
+      _storage.delete(key: key, mOptions: _macOs);
 }
 
 /// Turns a broken keystore into an empty one.
@@ -188,6 +203,8 @@ class KeyStore {
         'id': user.id,
         'email': user.email,
         'emailVerified': user.emailVerified,
+        'name': user.name,
+        'image': user.image,
       }),
     );
   }

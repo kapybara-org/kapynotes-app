@@ -172,7 +172,8 @@ class Vault {
         : Isolate.run(() => _sealBatch(encoded, resolved));
   }
 
-  Future<NotePayload?> open(SealedBox box) async => (await openAll([box])).single;
+  Future<NotePayload?> open(SealedBox box) async =>
+      (await openAll([box])).single;
 
   /// Seals arbitrary bytes under [key], or under the master key when it is
   /// null — the personal-note rule, applied to an op or a snapshot instead

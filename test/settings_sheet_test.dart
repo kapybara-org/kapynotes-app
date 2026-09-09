@@ -6,6 +6,7 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/voice_prefs.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -29,6 +30,7 @@ late ShortcutPrefs shortcuts;
 Future<void> _pumpPhone(
   WidgetTester tester, {
   Size size = const Size(390, 844),
+  VoicePrefs? voicePrefs,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -46,6 +48,7 @@ Future<void> _pumpPhone(
               shortcuts: shortcuts,
               rates: RatesRepository(store),
               notes: notes,
+              voicePrefs: voicePrefs,
             ),
             child: const Text('open'),
           ),
@@ -122,6 +125,7 @@ void main() {
     // The title says where you are, and only that category is here.
     expect(find.text('Appearance'), findsOneWidget);
     expect(find.text('WRITING FONT'), findsOneWidget);
+    expect(find.byKey(const ValueKey('transparency-toggle')), findsNothing);
     expect(
       find.byKey(const ValueKey('settings-section-numbers')),
       findsNothing,
@@ -250,4 +254,60 @@ void main() {
     expect(find.text('Daily separators'), findsOneWidget);
     expect(find.byKey(const ValueKey('settings-sheet-done')), findsNothing);
   });
+
+  testWidgets('voice notes separates the cloud from this device', (
+    tester,
+  ) async {
+    await _pumpPhone(tester, voicePrefs: VoicePrefs(store)..load());
+    await _openSettings(tester);
+    await _openCategory(tester, 'voice');
+
+    // Two halves, because where the recording goes is the difference that
+    // matters, not which button transcribes it.
+    expect(find.text('IN THE CLOUD'), findsOneWidget);
+    expect(find.text('ON THIS DEVICE'), findsOneWidget);
+
+    // The local half is named and not yet offered — no switch to flip.
+    expect(
+      find.byKey(const ValueKey('voice-local-engine-row')),
+      findsOneWidget,
+    );
+    expect(find.text('Transcribe on this device'), findsOneWidget);
+    expect(find.text('Soon'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('voice-local-engine-row')),
+        matching: find.byType(Switch),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('opens straight on a pane when sent to one', (tester) async {
+    // What a chip that cannot transcribe does: hand the user the pane the
+    // problem lives in, rather than the front of settings.
+    await _pumpPhone(tester, voicePrefs: VoicePrefs(store)..load());
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await _openCategory(tester, 'voice');
+    expect(find.text('IN THE CLOUD'), findsOneWidget);
+  });
+
+  testWidgets(
+    'signed out, transcription is a way in rather than a dead switch',
+    (tester) async {
+      await _pumpPhone(tester, voicePrefs: VoicePrefs(store)..load());
+      await _openSettings(tester);
+      await _openCategory(tester, 'voice');
+
+      // No account is wired up here, which is what signed out looks like.
+      expect(find.byKey(const ValueKey('voice-sign-in-row')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('voice-transcription-toggle')),
+        findsNothing,
+        reason: 'a switch that cannot move reads as a setting that is off',
+      );
+      expect(find.text('Sign in to turn recordings into text'), findsOneWidget);
+    },
+  );
 }

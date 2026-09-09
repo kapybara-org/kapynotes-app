@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
+import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
 import '../sync/sharing.dart';
 import 'app_logo.dart';
@@ -33,6 +34,7 @@ class Sidebar extends StatelessWidget {
     this.onShare,
     this.sharing,
     this.onSettingsPressed,
+    this.settingsShortcut,
     this.updates,
     this.searchFocusNode,
     this.showHeader = true,
@@ -62,6 +64,7 @@ class Sidebar extends StatelessWidget {
   /// unlocked; the list then reads exactly as it did before sharing existed.
   final Sharing? sharing;
   final VoidCallback? onSettingsPressed;
+  final ShortcutBinding? settingsShortcut;
 
   /// Drives the Update badge beside the installed version. Null where the app
   /// store owns updates; the version still comes from the installed package.
@@ -76,8 +79,7 @@ class Sidebar extends StatelessWidget {
     final palette = context.palette;
 
     return GlassSurface(
-      color: palette.sidebarBackground.withValues(alpha: 0.96),
-      blur: 10,
+      color: palette.sidebarBackground.withMultipliedAlpha(0.96),
       // Colour runs to the window edges; content stays clear of the status
       // bar, home indicator and any display cutout.
       child: SafeArea(
@@ -119,6 +121,7 @@ class Sidebar extends StatelessWidget {
                 onArchivePressed: onArchiveToggle,
                 showingArchive: archiveMode,
                 archivedCount: archivedCount,
+                settingsShortcut: settingsShortcut,
                 updates: updates,
               ),
           ],
@@ -278,7 +281,7 @@ class _SectionLabel extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: AppTypeScale.caption,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
                 letterSpacing: 0.3,
                 color: palette.textTertiary,
               ),
@@ -296,6 +299,7 @@ class _SidebarFooter extends StatefulWidget {
     this.onArchivePressed,
     required this.showingArchive,
     required this.archivedCount,
+    this.settingsShortcut,
     this.updates,
   });
 
@@ -303,6 +307,7 @@ class _SidebarFooter extends StatefulWidget {
   final VoidCallback? onArchivePressed;
   final bool showingArchive;
   final int archivedCount;
+  final ShortcutBinding? settingsShortcut;
   final UpdateChecker? updates;
 
   @override
@@ -383,6 +388,7 @@ class _SidebarFooterState extends State<_SidebarFooter> {
                 onPressed: widget.onSettingsPressed!,
                 version: version,
                 hasUpdate: updates?.hasUpdate ?? false,
+                shortcut: widget.settingsShortcut,
               ),
             ),
         ],
@@ -460,81 +466,89 @@ class _SettingsEntry extends StatelessWidget {
     required this.onPressed,
     this.version = '',
     this.hasUpdate = false,
+    this.shortcut,
   });
 
   final VoidCallback onPressed;
   final String version;
   final bool hasUpdate;
+  final ShortcutBinding? shortcut;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Semantics(
-      button: true,
-      // The dot is the one part of this a screen reader cannot see.
-      label: hasUpdate ? 'Settings, update available' : 'Settings',
-      child: ExcludeSemantics(
-        child: InkWell(
-          onTap: onPressed,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.settings_outlined,
-                  size: AppControlMetrics.footerIconControl,
-                  color: palette.textSecondary,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Settings',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: AppTypeScale.control,
-                      color: palette.textSecondary,
-                    ),
+    final tooltip = shortcut == null
+        ? 'Settings'
+        : 'Settings · ${shortcut!.displayLabel}';
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        // The dot is the one part of this a screen reader cannot see.
+        label: hasUpdate ? 'Settings, update available' : 'Settings',
+        child: ExcludeSemantics(
+          child: InkWell(
+            onTap: onPressed,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.settings_outlined,
+                    size: AppControlMetrics.footerIconControl,
+                    color: palette.textSecondary,
                   ),
-                ),
-                if (version.isNotEmpty)
-                  Text(
-                    key: const ValueKey('sidebar-app-version'),
-                    'v$version',
-                    maxLines: 1,
-                    style: TextStyle(
-                      fontSize: AppTypeScale.small,
-                      fontWeight: FontWeight.w500,
-                      color: palette.textTertiary,
-                    ),
-                  ),
-                if (hasUpdate) ...[
-                  const SizedBox(width: 6),
-                  Container(
-                    key: const ValueKey('sidebar-update-badge'),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: palette.selectedBackground,
-                      borderRadius: BorderRadius.circular(99),
-                      border: Border.all(
-                        color: palette.chipCurrency.withValues(alpha: 0.35),
-                        width: 0.5,
-                      ),
-                    ),
+                  const SizedBox(width: 10),
+                  Expanded(
                     child: Text(
-                      'Update',
+                      'Settings',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: palette.chipCurrency,
+                        fontSize: AppTypeScale.control,
+                        color: palette.textSecondary,
                       ),
                     ),
                   ),
+                  if (version.isNotEmpty)
+                    Text(
+                      key: const ValueKey('sidebar-app-version'),
+                      'v$version',
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: AppTypeScale.small,
+                        fontWeight: FontWeight.w500,
+                        color: palette.textTertiary,
+                      ),
+                    ),
+                  if (hasUpdate) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      key: const ValueKey('sidebar-update-badge'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: palette.selectedBackground,
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(
+                          color: palette.chipCurrency.withValues(alpha: 0.35),
+                          width: 0.5,
+                        ),
+                      ),
+                      child: Text(
+                        'Update',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          color: palette.chipCurrency,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -642,20 +656,17 @@ class _SearchFieldState extends State<_SearchField> {
                 ),
                 suffixIcon: widget.query.isEmpty
                     ? null
-                    // Inside a text field, so without a cursor of its own it would
-                    // inherit the field's I-beam and read as more text.
-                    : MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: GestureDetector(
-                          onTap: () {
-                            _controller.clear();
-                            widget.onChanged('');
-                          },
-                          child: Icon(
-                            Icons.cancel_rounded,
-                            size: AppControlMetrics.iconAdornment,
-                            color: palette.textTertiary,
-                          ),
+                    : CompactIconButton(
+                        tooltip: 'Clear search',
+                        extent: AppControlMetrics.fieldAdornmentSlot,
+                        foregroundColor: palette.textTertiary,
+                        onPressed: () {
+                          _controller.clear();
+                          widget.onChanged('');
+                        },
+                        icon: Icon(
+                          Icons.cancel_rounded,
+                          size: AppControlMetrics.iconAdornment,
                         ),
                       ),
                 suffixIconConstraints: BoxConstraints(
@@ -872,7 +883,6 @@ class _NoteRowState extends State<NoteRow> {
     final lifecycleVisible =
         (widget.onArchive != null || widget.onRestore != null) &&
         actionsVisible;
-    final shareVisible = widget.onShare != null && actionsVisible;
     final pinVisible = widget.pinned || actionsVisible;
     final hasMenu =
         widget.onTogglePin != null ||
@@ -888,113 +898,108 @@ class _NoteRowState extends State<NoteRow> {
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _hovering = true),
         onExit: (_) => setState(() => _hovering = false),
-        child: GestureDetector(
-          onTap: widget.onTap,
-          onSecondaryTapDown: !hasMenu
-              ? null
-              : (details) => _showContextMenu(context, details.globalPosition),
-          onLongPressStart: !hasMenu
-              ? null
-              : (details) => _showContextMenu(context, details.globalPosition),
-          behavior: HitTestBehavior.opaque,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-            decoration: BoxDecoration(
-              color: widget.selected
-                  ? palette.selectedBackground
-                  : (_hovering ? palette.hover : Colors.transparent),
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // At the minimum resizable desktop width, keep the new primary
-                // organization action and leave share/archive in the context
-                // menu instead of reducing every title to a few characters.
-                final showSecondaryActions = constraints.maxWidth >= 190;
-                return Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            widget.note.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: AppTypeScale.control,
-                              fontWeight: widget.selected
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
-                              color: foreground,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          if (snippet != null)
+        child: Semantics(
+          container: true,
+          button: true,
+          selected: widget.selected,
+          child: GestureDetector(
+            onTap: widget.onTap,
+            onSecondaryTapDown: !hasMenu
+                ? null
+                : (details) =>
+                      _showContextMenu(context, details.globalPosition),
+            onLongPressStart: !hasMenu
+                ? null
+                : (details) =>
+                      _showContextMenu(context, details.globalPosition),
+            behavior: HitTestBehavior.opaque,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOutCubic,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                color: widget.selected
+                    ? palette.selectedBackground
+                    : (_hovering ? palette.hover : Colors.transparent),
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // At the minimum resizable desktop width, keep the new primary
+                  // organization action and leave share/archive in the context
+                  // menu instead of reducing every title to a few characters.
+                  final showSecondaryActions = constraints.maxWidth >= 190;
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
                             Text(
-                              snippet,
+                              widget.note.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: AppTypeScale.caption,
-                                color: secondary,
+                                fontSize: AppTypeScale.control,
+                                fontWeight: FontWeight.w500,
+                                color: foreground,
                               ),
-                            )
-                          else
-                            _UpdatedAtMetadata(
-                              updatedAt: widget.note.updatedAt,
-                              displayTime: widget.displayTime,
-                              shared: widget.shared,
                             ),
-                        ],
-                      ),
-                    ),
-                    if (widget.onTogglePin != null) ...[
-                      const SizedBox(width: 4),
-                      _RowAction(
-                        key: ValueKey('pin-note-${widget.note.id}'),
-                        icon: widget.pinned
-                            ? Icons.push_pin_rounded
-                            : Icons.push_pin_outlined,
-                        tooltip: widget.pinned ? 'Unpin note' : 'Pin note',
-                        visible: pinVisible,
-                        onPressed: widget.onTogglePin!,
-                      ),
-                    ],
-                    if (showSecondaryActions && widget.onShare != null) ...[
-                      const SizedBox(width: 4),
-                      _RowAction(
-                        key: ValueKey('share-note-${widget.note.id}'),
-                        icon: Icons.people_outline_rounded,
-                        tooltip: widget.shared ? 'Sharing' : 'Share',
-                        visible: shareVisible,
-                        onPressed: widget.onShare!,
-                      ),
-                    ],
-                    if (showSecondaryActions &&
-                        (widget.onArchive != null ||
-                            widget.onRestore != null)) ...[
-                      const SizedBox(width: 4),
-                      _RowAction(
-                        key: ValueKey(
-                          '${widget.onRestore != null ? 'restore' : 'archive'}-note-${widget.note.id}',
+                            const SizedBox(height: 2),
+                            if (snippet != null)
+                              Text(
+                                snippet,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: AppTypeScale.caption,
+                                  color: secondary,
+                                ),
+                              )
+                            else
+                              _UpdatedAtMetadata(
+                                updatedAt: widget.note.updatedAt,
+                                displayTime: widget.displayTime,
+                                shared: widget.shared,
+                              ),
+                          ],
                         ),
-                        icon: widget.onRestore != null
-                            ? Icons.unarchive_outlined
-                            : Icons.archive_outlined,
-                        tooltip: widget.onRestore != null
-                            ? 'Restore note'
-                            : 'Archive note',
-                        visible: lifecycleVisible,
-                        onPressed: widget.onRestore ?? widget.onArchive!,
                       ),
+                      if (widget.onTogglePin != null) ...[
+                        const SizedBox(width: 4),
+                        _RowAction(
+                          key: ValueKey('pin-note-${widget.note.id}'),
+                          icon: widget.pinned
+                              ? Icons.push_pin_rounded
+                              : Icons.push_pin_outlined,
+                          tooltip: widget.pinned ? 'Unpin note' : 'Pin note',
+                          visible: pinVisible,
+                          onPressed: widget.onTogglePin!,
+                        ),
+                      ],
+                      if (showSecondaryActions &&
+                          (widget.onArchive != null ||
+                              widget.onRestore != null)) ...[
+                        const SizedBox(width: 4),
+                        _RowAction(
+                          key: ValueKey(
+                            '${widget.onRestore != null ? 'restore' : 'archive'}-note-${widget.note.id}',
+                          ),
+                          icon: widget.onRestore != null
+                              ? Icons.unarchive_outlined
+                              : Icons.archive_outlined,
+                          tooltip: widget.onRestore != null
+                              ? 'Restore note'
+                              : 'Archive note',
+                          visible: lifecycleVisible,
+                          onPressed: widget.onRestore ?? widget.onArchive!,
+                        ),
+                      ],
                     ],
-                  ],
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         ),

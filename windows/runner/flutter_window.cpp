@@ -48,6 +48,10 @@ bool FlutterWindow::OnCreate() {
       flutter_controller_->engine()->messenger(), GetHandle());
   spell_check_channel_ =
       RegisterSpellCheckChannel(flutter_controller_->engine()->messenger());
+  window_material_channel_ = RegisterWindowMaterialChannel(
+      flutter_controller_->engine()->messenger(), GetHandle());
+  audio_decode_channel_ =
+      RegisterAudioDecodeChannel(flutter_controller_->engine()->messenger());
   shutdown_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(), kShutdownChannel,
@@ -71,6 +75,7 @@ void FlutterWindow::OnDestroy() {
   login_item_channel_ = nullptr;
   rich_clipboard_channel_ = nullptr;
   spell_check_channel_ = nullptr;
+  window_material_channel_ = nullptr;
   shutdown_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;

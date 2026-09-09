@@ -4,8 +4,10 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   auto_updater_windows
+  connectivity_plus
   desktop_drop
   file_selector_windows
+  flutter_gemma
   flutter_secure_storage_windows
   hotkey_manager_windows
   just_audio_windows
@@ -19,6 +21,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   jni
+  sherpa_onnx_windows
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

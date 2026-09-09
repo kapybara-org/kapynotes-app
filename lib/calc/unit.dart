@@ -76,7 +76,8 @@ class UnitDef {
   final double offset;
   final String category;
 
-  /// Every spelling that resolves to this unit, lowercased.
+  /// Every spelling that resolves to this unit. Written names are matched
+  /// without case; compact symbols preserve case where it carries meaning.
   final List<String> aliases;
 
   const UnitDef({
@@ -178,8 +179,12 @@ class Unit {
     final numerator = terms.where((t) => t.exponent > 0).toList();
     final denominator = terms.where((t) => t.exponent < 0).toList();
 
-    String render(UnitTerm t, int exp) =>
-        exp == 1 ? t.def.symbol : '${t.def.symbol}^$exp';
+    String render(UnitTerm t, int exp) => switch (exp) {
+      1 => t.def.symbol,
+      2 => '${t.def.symbol}²',
+      3 => '${t.def.symbol}³',
+      _ => '${t.def.symbol}^$exp',
+    };
 
     final top = numerator.isEmpty
         ? '1'

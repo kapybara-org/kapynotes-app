@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -9,8 +11,9 @@ import 'package:material_ui/material_ui.dart';
 /// field is how you select text, and taking it would cost more than the
 /// gesture is worth. A two-finger swipe conflicts with nothing.
 ///
-/// The compact layout uses [Scaffold]'s own drawer drag instead, which knows
-/// to start only near the edge and so leaves selection alone on a touchscreen.
+/// Desktop keeps this observer above both responsive layouts, so the same
+/// two-finger gesture works in wide and narrow windows. Touchscreen compact
+/// layouts use their separate full-page swipe handling.
 class SidebarSwipe extends StatefulWidget {
   const SidebarSwipe({
     super.key,
@@ -34,11 +37,20 @@ class SidebarSwipe extends StatefulWidget {
 }
 
 class _SidebarSwipeState extends State<SidebarSwipe> {
+  static const _scrollGestureIdle = Duration(milliseconds: 160);
+
   double _travel = 0;
 
   /// Swallows the rest of a gesture once it has been acted on, so one long
   /// swipe toggles once instead of flapping the sidebar open and shut.
   bool _spent = false;
+  Timer? _scrollRestTimer;
+
+  @override
+  void dispose() {
+    _scrollRestTimer?.cancel();
+    super.dispose();
+  }
 
   void _accumulate(double dx, double dy) {
     // A scroll that is mostly vertical is a scroll, whatever its drift.
@@ -63,16 +75,27 @@ class _SidebarSwipeState extends State<SidebarSwipe> {
     _spent = false;
   }
 
+  void _scheduleScrollRest() {
+    _scrollRestTimer?.cancel();
+    _scrollRestTimer = Timer(_scrollGestureIdle, _rest);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Listener(
       onPointerSignal: (event) {
         if (event is! PointerScrollEvent) return;
         _accumulate(event.scrollDelta.dx, event.scrollDelta.dy);
+        // Scroll signals do not carry an end event. Treat a short idle period
+        // as the boundary so a later two-finger gesture can act again.
+        _scheduleScrollRest();
       },
       // A trackpad gesture arrives as a pan rather than as scroll signals on
       // some platforms, and reports its own beginning and end.
-      onPointerPanZoomStart: (_) => _rest(),
+      onPointerPanZoomStart: (_) {
+        _scrollRestTimer?.cancel();
+        _rest();
+      },
       onPointerPanZoomUpdate: (event) =>
           _accumulate(event.panDelta.dx, event.panDelta.dy),
       onPointerPanZoomEnd: (_) => _rest(),

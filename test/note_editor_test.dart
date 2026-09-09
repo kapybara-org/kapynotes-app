@@ -1,6 +1,7 @@
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -75,6 +76,8 @@ Widget harness(
   ValueChanged<double>? onGutterWidthChanged,
   ValueChanged<bool>? onResultsVisibilityChanged,
   VoidCallback? onGutterWidthReset,
+  VoidCallback? onSettingsPressed,
+  VoidCallback? onRecordVoice,
   WritingFont writingFont = WritingFont.handwritten,
   ShortcutPrefs? shortcuts,
 }) {
@@ -107,7 +110,8 @@ Widget harness(
         onGutterWidthChanged: onGutterWidthChanged ?? (_) {},
         onResultsVisibilityChanged: onResultsVisibilityChanged ?? (_) {},
         onGutterWidthReset: onGutterWidthReset ?? () {},
-        onSettingsPressed: () {},
+        onSettingsPressed: onSettingsPressed ?? () {},
+        onRecordVoice: onRecordVoice,
         writingFont: writingFont,
         shortcuts: shortcuts ?? shortcutPrefs,
       ),
@@ -178,6 +182,20 @@ Future<void> sendShortcut(WidgetTester tester, ShortcutBinding binding) async {
   if (binding.meta) {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
   }
+}
+
+/// Reveals the formatting cluster the same way the current platform does.
+Future<void> revealFormatting(WidgetTester tester) async {
+  final toggle = find.byKey(const ValueKey('formatting-toggle'));
+  if (AppPlatform.hasPointer) {
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(toggle));
+  } else {
+    await tester.tap(toggle);
+  }
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -620,13 +638,11 @@ void main() {
     });
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       channel,
-      (_) async => [
-        {
-          'startIndex': 0,
-          'endIndex': 5,
-          'suggestions': ['sample', 'simple'],
-        },
-      ],
+      (call) async => call.method == 'check'
+          ? [
+              {'startIndex': 0, 'endIndex': 5},
+            ]
+          : ['sample', 'simple'],
     );
 
     await tester.pumpWidget(harness('smple note', autofocus: true));
@@ -636,9 +652,13 @@ void main() {
     field.controller!.selection = const TextSelection.collapsed(offset: 2);
     await tester.pump();
 
+    // No pointer went near the word, so nothing asked the system for its
+    // corrections ahead of time: the menu opens and then fills itself in.
     final editable = tester.state<EditableTextState>(find.byType(EditableText));
     expect(editable.showToolbar(), isTrue);
     await tester.pump();
+    expect(find.text('sample'), findsNothing);
+    await tester.pumpAndSettle();
     expect(find.text('sample'), findsOneWidget);
     expect(find.text('simple'), findsOneWidget);
 
@@ -649,6 +669,122 @@ void main() {
       field.controller!.selection,
       const TextSelection.collapsed(offset: 6),
     );
+  });
+
+  testWidgets('right-clicking a misspelling offers corrections', (
+    tester,
+  ) async {
+    const channel = MethodChannel('kapynotes/spell_check');
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() {
+      AppPlatform.debugTargetPlatformOverride = null;
+      debugDefaultTargetPlatformOverride = null;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+    // What the macOS runner answers: finding the word is one call, guessing
+    // what it should have been is another, and only the second is expensive.
+    final asked = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      asked.add(call.method);
+      return call.method == 'check'
+          ? [
+              {'startIndex': 0, 'endIndex': 5},
+            ]
+          : ['sample', 'simple'];
+    });
+
+    await tester.pumpWidget(harness('smple note', autofocus: true));
+    await tester.pump(const Duration(milliseconds: 181));
+    await tester.pump();
+    expect(asked, [
+      'check',
+    ], reason: 'typing must not pay for corrections nobody has asked to see');
+
+    // macOS selects the word a right-click lands on, so the corrections have
+    // to come with the selection toolbar and not only with the caret menu.
+    await tester.tapAt(
+      _centerOf(tester, 'smple note', 'smple'),
+      buttons: kSecondaryButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(
+      field.controller!.selection,
+      const TextSelection(baseOffset: 0, extentOffset: 5),
+    );
+    expect(
+      find.byKey(const ValueKey('selection-formatting-toolbar')),
+      findsOneWidget,
+    );
+    expect(find.text('sample'), findsOneWidget);
+    expect(find.text('simple'), findsOneWidget);
+    // Formatting stays where it was: the word is still selected text.
+    expect(find.byKey(const ValueKey('selection-bold')), findsOneWidget);
+
+    await tester.tap(find.text('simple'));
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, 'simple note');
+    expect(asked, contains('suggest'));
+    // Before the harness checks it, rather than in the tear-down that runs
+    // after: a leaked platform override fails the test on its way out.
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('a right-click answers for the word under the pointer', (
+    tester,
+  ) async {
+    const channel = MethodChannel('kapynotes/spell_check');
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() {
+      AppPlatform.debugTargetPlatformOverride = null;
+      debugDefaultTargetPlatformOverride = null;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      );
+    });
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      (_) async => [
+        {
+          'startIndex': 0,
+          'endIndex': 5,
+          'suggestions': ['sample'],
+        },
+      ],
+    );
+
+    await tester.pumpWidget(harness('smple note', autofocus: true));
+    await tester.pump(const Duration(milliseconds: 181));
+    await tester.pump();
+    // Windows leaves the caret where it was when the menu opens; here that is
+    // the end of the note, a word away from the underline.
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.controller!.selection = const TextSelection.collapsed(offset: 10);
+    await tester.pump();
+
+    await tester.tapAt(
+      _centerOf(tester, 'smple note', 'smple'),
+      buttons: kSecondaryButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('sample'), findsOneWidget);
+
+    await tester.tap(find.text('sample'));
+    await tester.pumpAndSettle();
+    expect(field.controller!.text, 'sample note');
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('starts the controls at the left and pins the total right', (
@@ -682,6 +818,7 @@ void main() {
   ) async {
     await tester.pumpWidget(harness('2 + 2'));
     await tester.pumpAndSettle();
+    await revealFormatting(tester);
 
     double boldLeft() =>
         tester.getRect(find.byKey(const ValueKey('format-bold'))).left;
@@ -709,6 +846,7 @@ void main() {
   ) async {
     await tester.pumpWidget(harness('2 + 2'));
     await tester.pumpAndSettle();
+    await revealFormatting(tester);
 
     final controls = <Finder>[
       for (final key in const [
@@ -775,6 +913,7 @@ void main() {
       extentOffset: 6,
     );
     await tester.pump();
+    await revealFormatting(tester);
 
     await tester.tap(find.byKey(const ValueKey('format-bold')));
     await tester.pumpAndSettle();
@@ -829,9 +968,10 @@ void main() {
           Theme.of(tester.element(find.byType(TextField))).colorScheme.primary,
         );
         expect(
-          span.style!.decoration!.contains(TextDecoration.underline),
-          isTrue,
+          span.style?.decoration?.contains(TextDecoration.underline) ?? false,
+          isFalse,
         );
+        expect(span.style?.fontWeight ?? FontWeight.w400, FontWeight.w400);
       }
       if (offset == linkEnd && text == '.') {
         sawTrailingPeriod = true;
@@ -869,6 +1009,7 @@ void main() {
       extentOffset: 7,
     );
     await tester.pump();
+    await revealFormatting(tester);
 
     await tester.tap(find.byKey(const ValueKey('format-style')));
     await tester.pumpAndSettle();
@@ -966,6 +1107,7 @@ void main() {
       harness('', startAtEnd: true, onFormatsChanged: changes.add),
     );
     await tester.pumpAndSettle();
+    await revealFormatting(tester);
 
     await tester.tap(find.byKey(const ValueKey('format-style')));
     await tester.pumpAndSettle();
@@ -1131,6 +1273,17 @@ void main() {
     expect(find.byKey(const ValueKey('link-popover')), findsOneWidget);
     expect(find.text(linkText), findsOneWidget);
     expect(launched, isEmpty);
+    final panel = tester.widget<Container>(
+      find.byKey(const ValueKey('link-popover')),
+    );
+    expect(
+      (panel.decoration! as BoxDecoration).boxShadow,
+      anyOf(isNull, isEmpty),
+    );
+    expect(
+      tester.widget<Text>(find.text('Open link')).style!.fontWeight,
+      FontWeight.w400,
+    );
 
     await tester.tap(find.byKey(const ValueKey('link-popover-open')));
     await tester.pumpAndSettle();
@@ -1500,6 +1653,7 @@ void main() {
       extentOffset: 13,
     );
     await tester.pump();
+    await revealFormatting(tester);
 
     await tester.tap(find.byKey(const ValueKey('format-style')));
     await tester.pumpAndSettle();
@@ -1560,6 +1714,7 @@ void main() {
     final field = tester.widget<TextField>(find.byType(TextField));
     field.controller!.selection = const TextSelection.collapsed(offset: 1);
     await tester.pump();
+    await revealFormatting(tester);
 
     await tester.tap(find.byKey(const ValueKey('format-bold')));
     await tester.pump();
@@ -1603,6 +1758,35 @@ void main() {
       NoteFormatRange(start: 0, end: 8, format: NoteFormat.bold),
       NoteFormatRange(start: 0, end: 8, format: NoteFormat.italic),
     ]);
+  });
+
+  testWidgets('settings and voice actions answer their footer shortcuts', (
+    tester,
+  ) async {
+    var settingsOpens = 0;
+    var voiceToggles = 0;
+    await tester.pumpWidget(
+      harness(
+        'Shortcut',
+        autofocus: true,
+        onSettingsPressed: () => settingsOpens++,
+        onRecordVoice: () => voiceToggles++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await sendShortcut(
+      tester,
+      shortcutPrefs.bindingFor(ShortcutAction.openSettings)!,
+    );
+    await sendShortcut(
+      tester,
+      shortcutPrefs.bindingFor(ShortcutAction.recordVoiceNote)!,
+    );
+    await tester.pump();
+
+    expect(settingsOpens, 1);
+    expect(voiceToggles, 1);
   });
 
   testWidgets('cycles styles and toggles list formats from the keyboard', (
@@ -1724,6 +1908,7 @@ void main() {
     final field = tester.widget<TextField>(find.byType(TextField));
     field.controller!.selection = const TextSelection.collapsed(offset: 4);
     await tester.pump();
+    await revealFormatting(tester);
 
     await tester.tap(find.byKey(const ValueKey('format-checklist')));
     await tester.pumpAndSettle();

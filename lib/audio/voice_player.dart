@@ -52,8 +52,9 @@ class JustAudioBackend implements VoicePlayerBackend {
   Stream<Duration> get positions => _live.positionStream;
 
   @override
-  Stream<void> get completions => _live.processingStateStream
-      .where((state) => state == ProcessingState.completed);
+  Stream<void> get completions => _live.processingStateStream.where(
+    (state) => state == ProcessingState.completed,
+  );
 
   @override
   Future<void> dispose() async {
@@ -73,8 +74,10 @@ class JustAudioBackend implements VoicePlayerBackend {
 /// [ValueListenable] per hash, so the waveform's painter repaints inside its
 /// own [RepaintBoundary] while the editor above it does nothing at all.
 class VoicePlayer extends ChangeNotifier {
-  VoicePlayer({VoicePlayerBackend? backend, this.idleTimeout = const Duration(minutes: 5)})
-    : _backend = backend ?? JustAudioBackend();
+  VoicePlayer({
+    VoicePlayerBackend? backend,
+    this.idleTimeout = const Duration(minutes: 5),
+  }) : _backend = backend ?? JustAudioBackend();
 
   final VoicePlayerBackend _backend;
 

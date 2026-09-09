@@ -8,11 +8,15 @@ class AccountUser {
   final String id;
   final String email;
   final bool emailVerified;
+  final String name;
+  final String? image;
 
   const AccountUser({
     required this.id,
     required this.email,
     required this.emailVerified,
+    this.name = '',
+    this.image,
   });
 
   static AccountUser? fromJson(Object? raw) {
@@ -24,8 +28,24 @@ class AccountUser {
       id: id,
       email: email,
       emailVerified: raw['emailVerified'] == true,
+      name: raw['name'] is String ? (raw['name'] as String).trim() : '',
+      image: raw['image'] is String && (raw['image'] as String).isNotEmpty
+          ? raw['image'] as String
+          : null,
     );
   }
+
+  String get displayName {
+    final clean = name.trim();
+    if (clean.isNotEmpty && clean.toLowerCase() != email.toLowerCase()) {
+      return clean;
+    }
+    final local = email.split('@').first.trim();
+    return local.isEmpty ? email : local;
+  }
+
+  bool get needsName =>
+      name.trim().isEmpty || name.trim().toLowerCase() == email.toLowerCase();
 }
 
 /// The outcome of trying to sign in or sign up.
@@ -63,6 +83,11 @@ class AuthCodeSent extends AuthResult {
 /// signs somebody in on a device they only borrowed to type a code.
 class AuthPasswordChanged extends AuthResult {
   const AuthPasswordChanged();
+}
+
+class AuthProfileUpdated extends AuthResult {
+  const AuthProfileUpdated(this.user);
+  final AccountUser user;
 }
 
 /// The server said no, and the reason is worth showing.
@@ -136,6 +161,13 @@ abstract class AuthApi {
     required String code,
   });
 
+  Future<AuthResult> updateProfile({
+    required String token,
+    required String name,
+    String? image,
+    bool replaceImage = false,
+  });
+
   /// Best-effort: a token the server has already forgotten is still a token
   /// this device should drop.
   Future<void> signOut(String token);
@@ -194,9 +226,7 @@ class HttpAuthApi implements AuthApi {
       'otp': code,
       'password': password,
     });
-    return response is _Failure
-        ? response.result
-        : const AuthPasswordChanged();
+    return response is _Failure ? response.result : const AuthPasswordChanged();
   }
 
   @override
@@ -207,6 +237,60 @@ class HttpAuthApi implements AuthApi {
     'email': email,
     'otp': code,
   }, email);
+
+  @override
+  Future<AuthResult> updateProfile({
+    required String token,
+    required String name,
+    String? image,
+    bool replaceImage = false,
+  }) async {
+    final payload = <String, Object?>{'name': name};
+    if (replaceImage) payload['image'] = image;
+
+    final http.Response response;
+    try {
+      response = await _client
+          .patch(
+            _baseUrl.resolve('account'),
+            headers: {
+              'authorization': 'Bearer $token',
+              'content-type': 'application/json',
+              'accept': 'application/json',
+            },
+            body: jsonEncode(payload),
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      return const AuthUnreachable('That took too long.');
+    } catch (_) {
+      return const AuthUnreachable(
+        'Could not reach KapyNotes. Check your connection.',
+      );
+    }
+
+    Map<String, Object?> body = const {};
+    if (response.body.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, Object?>) body = decoded;
+      } on FormatException {
+        // Read from the status below.
+      }
+    }
+    if (response.statusCode >= 500) {
+      return const AuthUnreachable(
+        'KapyNotes is having a problem. Try again shortly.',
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return _rejection(response.statusCode, body);
+    }
+    final user = AccountUser.fromJson(body['user']);
+    return user == null
+        ? const AuthRejected('The server sent no account.')
+        : AuthProfileUpdated(user);
+  }
 
   @override
   Future<void> signOut(String token) async {

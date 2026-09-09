@@ -122,9 +122,12 @@ void main() {
     expect(tester.getSize(surface).height, 40);
     final decoration = tester.widget<Container>(surface).decoration;
     expect(decoration, isA<BoxDecoration>());
+    final boxDecoration = decoration! as BoxDecoration;
+    expect(boxDecoration.borderRadius, BorderRadius.circular(999));
+    expect(boxDecoration.boxShadow, anyOf(isNull, isEmpty));
     expect(
-      (decoration! as BoxDecoration).borderRadius,
-      BorderRadius.circular(999),
+      tester.widget<Text>(find.text('Copied 1,234')).style!.fontWeight,
+      FontWeight.w400,
     );
     final icon = tester.widget<Icon>(
       find.byKey(const ValueKey('toast-status-icon')),

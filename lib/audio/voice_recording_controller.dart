@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
-
 import 'package:flutter/foundation.dart';
 
 import 'mp4_duration.dart';
@@ -85,7 +84,8 @@ class VoiceRecordingController extends ChangeNotifier {
   VoiceRecordingController({
     VoiceRecorderBackend? recorder,
     Directory? tempDirectory,
-    Future<void> Function(VoiceRecordingResult result, String noteId)? onFinished,
+    Future<void> Function(VoiceRecordingResult result, String noteId)?
+    onFinished,
   }) : _recorder = recorder ?? VoiceRecorder(),
        _tempDirectory = tempDirectory,
        _onFinished = onFinished;
@@ -95,7 +95,8 @@ class VoiceRecordingController extends ChangeNotifier {
 
   /// Called with a finished recording, to turn it into a ref in its note.
   /// Set by `HomePage`, which is the only thing that knows about editors.
-  Future<void> Function(VoiceRecordingResult result, String noteId)? _onFinished;
+  Future<void> Function(VoiceRecordingResult result, String noteId)?
+  _onFinished;
   set onFinished(
     Future<void> Function(VoiceRecordingResult result, String noteId)? value,
   ) => _onFinished = value;
@@ -161,7 +162,8 @@ class VoiceRecordingController extends ChangeNotifier {
     }
 
     final directory = _tempDirectory ?? Directory.systemTemp;
-    final name = 'voice-${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}.m4a';
+    final name =
+        'voice-${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}.m4a';
     final path = '${directory.path}/$name';
 
     _samples.clear();

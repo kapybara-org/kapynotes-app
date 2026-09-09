@@ -225,6 +225,7 @@ class FakeServer {
     () => FakeUser(
       id: id,
       email: id == 'user-1' ? 'someone@example.com' : '$id@example.com',
+      name: id == 'user-1' ? 'Someone' : 'User ${id.split('-').last}',
     ),
   );
 
@@ -772,6 +773,8 @@ class FakeServer {
         SpaceMember(
           userId: entry.key,
           email: user(entry.key).email,
+          name: user(entry.key).name,
+          image: user(entry.key).image,
           role: entry.value,
           joinedAt: DateTime.utc(2026, 9, 1),
           hasKey: space.keys.containsKey(entry.key),
@@ -1153,9 +1156,11 @@ class FakeAttachment {
 }
 
 class FakeUser {
-  FakeUser({required this.id, required this.email});
+  FakeUser({required this.id, required this.email, required this.name});
   final String id;
   String email;
+  String name;
+  String? image;
   KeyBundle? bundle;
   bool deleted = false;
 
@@ -2060,15 +2065,27 @@ String deviceIdFor(String name) => name.padRight(16, '_');
 
 /// A signed-in account, without a server to sign in to.
 class FakeAuth implements AuthApi {
-  FakeAuth({this.id = 'user-1', this.email = 'someone@example.com'});
+  FakeAuth({
+    this.id = 'user-1',
+    this.email = 'someone@example.com',
+    this.name = 'Someone',
+    this.image,
+  });
   String id;
   String email;
+  String name;
+  String? image;
   AuthResult? nextResult;
   bool sessionValid = true;
   int signOutCalls = 0;
 
-  AccountUser get _user =>
-      AccountUser(id: id, email: email, emailVerified: true);
+  AccountUser get _user => AccountUser(
+    id: id,
+    email: email,
+    emailVerified: true,
+    name: name,
+    image: image,
+  );
 
   @override
   Future<AuthResult> signIn({
@@ -2093,6 +2110,18 @@ class FakeAuth implements AuthApi {
   }) async => code == this.code
       ? (nextResult ?? AuthSignedIn('token-$id', _user))
       : const AuthRejected('That code is not right.');
+
+  @override
+  Future<AuthResult> updateProfile({
+    required String token,
+    required String name,
+    String? image,
+    bool replaceImage = false,
+  }) async {
+    this.name = name.trim();
+    if (replaceImage) this.image = image;
+    return AuthProfileUpdated(_user);
+  }
 
   /// The password the fake currently believes in, so a reset can be seen to
   /// have changed something.

@@ -317,7 +317,7 @@ class _ShareDialogState extends State<_ShareDialog> {
                   busy: _busy,
                   onCopyLink: _copyLink,
                   onRemove: (member) => _confirm(
-                    title: 'Remove ${member.email}?',
+                    title: 'Remove ${member.displayName}?',
                     body:
                         'They stop receiving changes right away. What they '
                         'already downloaded stays on their devices.',
@@ -326,7 +326,7 @@ class _ShareDialogState extends State<_ShareDialog> {
                     run: () => sharing.removeMember(space.id, member.userId),
                   ),
                   onBlock: (member) => _confirm(
-                    title: 'Block ${member.email}?',
+                    title: 'Block ${member.displayName}?',
                     body:
                         'They stop being able to invite you anywhere, and you '
                         'leave this space. What they already downloaded stays '
@@ -563,8 +563,8 @@ class _Members extends StatelessWidget {
                     children: [
                       Text(
                         member.userId == sharing.userId
-                            ? '${member.email} (you)'
-                            : member.email,
+                            ? '${member.displayName} (you)'
+                            : member.displayName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -726,7 +726,7 @@ class _SpaceRow extends StatelessWidget {
         ? (space.invites.isEmpty
               ? 'Nobody else yet'
               : 'Waiting on ${space.invites.map((i) => i.email).join(', ')}')
-        : others.map((m) => m.email).join(', ');
+        : others.map((m) => m.displayName).join(', ');
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -966,7 +966,7 @@ class _Label extends StatelessWidget {
       text,
       style: TextStyle(
         fontSize: AppTypeScale.caption,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w500,
         letterSpacing: 0.4,
         color: context.palette.textTertiary,
       ),

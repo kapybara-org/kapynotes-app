@@ -1,12 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/speech/speech_api.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 
 import 'fake_server.dart';
+
+/// Only its identity matters: the test asks whether one exists at all.
+class _StubSpeech implements SpeechApi {
+  _StubSpeech(this.token);
+  final String token;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
+}
 
 class MemoryStore extends LocalStore {
   MemoryStore() : super(fileName: 'account-test.json');
@@ -71,21 +80,64 @@ void main() {
     d.dispose();
   });
 
-  test('choosing a passphrase publishes the bundle and starts syncing', () async {
+  test(
+    'a new account chooses its public name before encryption setup',
+    () async {
+      final d = Device(server, auth: FakeAuth(name: ''));
+      await d.boot();
+
+      await d.account.signIn(email: 'a@b.co', password: 'x');
+      expect(d.account.state, AccountState.needsProfile);
+
+      expect(await d.account.updateProfile(name: '  Sanjay  '), isTrue);
+      expect(d.account.user!.name, 'Sanjay');
+      expect(d.account.state, AccountState.needsPassphrase);
+      d.dispose();
+    },
+  );
+
+  test(
+    'choosing a passphrase publishes the bundle and starts syncing',
+    () async {
+      final d = Device(server);
+      await d.boot();
+      await d.account.signIn(email: 'a@b.co', password: 'x');
+      d.notes.create(body: 'First note');
+
+      final recovery = await d.account.createPassphrase('a good passphrase');
+
+      expect(recovery, isNotNull);
+      expect(recovery!.formatted, isNotEmpty);
+      expect(d.account.state, AccountState.ready);
+      // The socket comes up, catches up, and the outbox drains over it.
+      await until(
+        () => server.rows.isNotEmpty,
+        reason: 'the note never went up',
+      );
+      expect(server.rows, hasLength(1));
+      expect(
+        server.ciphertextIn(server.personal('user-1').id),
+        isNot(contains('First note')),
+      );
+      d.dispose();
+    },
+  );
+
+  test('a signed-in account has a speech client', () async {
+    // `_start` tears the previous session down after building the new one;
+    // the speech client used to be built on the wrong side of that line and
+    // was cleared the moment it existed, so the chip said "Sign in to
+    // transcribe" to everyone who had.
     final d = Device(server);
+    d.account.speechApiFor = (token) => _StubSpeech(token);
     await d.boot();
+    expect(d.account.speech, isNull, reason: 'signed out');
+
     await d.account.signIn(email: 'a@b.co', password: 'x');
-    d.notes.create(body: 'First note');
+    await d.account.createPassphrase('a good passphrase');
 
-    final recovery = await d.account.createPassphrase('a good passphrase');
-
-    expect(recovery, isNotNull);
-    expect(recovery!.formatted, isNotEmpty);
     expect(d.account.state, AccountState.ready);
-    // The socket comes up, catches up, and the outbox drains over it.
-    await until(() => server.rows.isNotEmpty, reason: 'the note never went up');
-    expect(server.rows, hasLength(1));
-    expect(server.ciphertextIn(server.personal('user-1').id), isNot(contains('First note')));
+    expect(d.account.speech, isA<_StubSpeech>());
     d.dispose();
   });
 
@@ -109,7 +161,10 @@ void main() {
 
     expect(await second.account.unlock('a good passphrase'), isTrue);
     expect(second.account.state, AccountState.ready);
-    await until(() => second.notes.notes.isNotEmpty, reason: 'the note never came down');
+    await until(
+      () => second.notes.notes.isNotEmpty,
+      reason: 'the note never came down',
+    );
     expect(second.notes.notes.single.body, 'Written on the first device');
     second.dispose();
   });
@@ -133,7 +188,10 @@ void main() {
       await second.account.unlockWithRecoveryKey(recovery!.formatted),
       isTrue,
     );
-    await until(() => second.notes.notes.isNotEmpty, reason: 'the note never came down');
+    await until(
+      () => second.notes.notes.isNotEmpty,
+      reason: 'the note never came down',
+    );
     expect(second.notes.notes.single.body, 'Still reachable');
     second.dispose();
   });

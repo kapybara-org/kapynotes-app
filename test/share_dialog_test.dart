@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -200,8 +201,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('${alice.email} (you)'), findsOneWidget);
-    expect(find.text(bob.email), findsOneWidget);
+    expect(
+      find.text('${server.user(alice.userId).name} (you)'),
+      findsOneWidget,
+    );
+    expect(find.text(server.user(bob.userId).name), findsOneWidget);
     expect(find.text('Owner'), findsOneWidget);
     expect(find.text('Waiting for access'), findsNothing);
     // The per-member actions live behind one button, and the owner's menu
@@ -365,6 +369,51 @@ void main() {
     expect(find.text('With user-2'), findsOneWidget);
     expect(find.text('Private'), findsOneWidget);
     expect(find.text('Shared'), findsOneWidget);
+  });
+
+  testWidgets('a note row leaves sharing to the title bar, but keeps the menu', (
+    tester,
+  ) async {
+    late Note shared;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      shared = alice.notes.create(body: 'Shared');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(shared.id, email: bob.email);
+    });
+
+    await tester.pumpWidget(
+      harness(
+        SizedBox(
+          width: 260,
+          child: Sidebar(
+            notes: alice.notes.notes,
+            selectedId: shared.id,
+            query: '',
+            displayTime: (t) => t,
+            onQueryChanged: (_) {},
+            onSelect: (_) {},
+            onCreate: () {},
+            onShare: (_) {},
+            onArchive: (_) {},
+            sharing: alice.sharing,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The hover strip is down to pin and archive: the people icon that used to
+    // sit beside them now lives in the title bar, where it acts on the note
+    // that is open rather than the one under the pointer.
+    expect(find.byKey(ValueKey('share-note-${shared.id}')), findsNothing);
+    expect(find.byKey(ValueKey('archive-note-${shared.id}')), findsOneWidget);
+
+    // Right-click still reaches it without opening the note first.
+    await tester.tap(find.text('Shared'), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Sharing…'), findsOneWidget);
   });
 
   testWidgets('without a shared note the sidebar shows no sections', (

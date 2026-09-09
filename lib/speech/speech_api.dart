@@ -24,8 +24,12 @@ class SpeechConsentStatus {
   static SpeechConsentStatus fromJson(Map<String, Object?> raw) {
     final at = raw['acceptedAt'];
     return SpeechConsentStatus(
-      acceptedVersion: raw['acceptedVersion'] is int ? raw['acceptedVersion']! as int : 0,
-      currentVersion: raw['currentVersion'] is int ? raw['currentVersion']! as int : 1,
+      acceptedVersion: raw['acceptedVersion'] is int
+          ? raw['acceptedVersion']! as int
+          : 0,
+      currentVersion: raw['currentVersion'] is int
+          ? raw['currentVersion']! as int
+          : 1,
       acceptedAt: at is String ? DateTime.tryParse(at) : null,
     );
   }
@@ -108,7 +112,26 @@ abstract class SpeechApi {
     required String jobId,
     required String lang,
     required String text,
+    String? instruction,
   });
+
+  /// Writes something else from the transcript: a post, or whatever
+  /// [instruction] asks for. Spends from the same per-recording budget as a
+  /// summary, which is what keeps it from being a free language model.
+  Future<RewriteResult> rewrite({
+    required String jobId,
+    required String lang,
+    required String text,
+    required String instruction,
+  });
+}
+
+/// A piece of writing made from a transcript on request.
+class RewriteResult {
+  final String engine;
+  final String text;
+
+  const RewriteResult({required this.engine, required this.text});
 }
 
 /// Error codes the server names, mirrored so the app can act on them rather
@@ -125,6 +148,25 @@ class SpeechCodes {
   static const summaryLimit = 'speech-summary-limit';
   static const summaryFailed = 'speech-summary-failed';
   static const retryLimit = 'speech-retry-limit';
+
+  /// Below the protocol, and never sent by a server.
+  ///
+  /// A rejected session and an unreachable server are failures too, and they
+  /// used to be the only two the queue kept no record of — which left a chip
+  /// saying "Transcribing…" over a request that had already failed. Giving
+  /// them codes lets the queue, the chip and the sentence under it read every
+  /// failure the same way.
+  static const sessionRejected = 'session-rejected';
+  static const offline = 'server-unreachable';
+
+  /// This device's own recogniser or summariser cannot do the work, and
+  /// waiting will not change that: no model downloaded, or an OS without one.
+  ///
+  /// Terminal, like a refusal, and deliberately so. Retrying five times over
+  /// two minutes because somebody has not downloaded a 670 MB model spends
+  /// their battery to reach the same answer, and leaves the chip claiming to
+  /// be working the whole time. Pressing Retry after downloading clears it.
+  static const engineUnavailable = 'engine-unavailable';
 }
 
 /// The current consent version this build knows about. Kept in step with
@@ -200,11 +242,21 @@ class HttpSpeechApi implements SpeechApi {
     required String jobId,
     required String lang,
     required String text,
+    String? instruction,
   }) async {
     final body = await _json(
       'POST',
       'speech/summarize',
-      payload: {'jobId': jobId, 'lang': lang, 'text': text},
+      payload: {
+        'jobId': jobId,
+        'lang': lang,
+        'text': text,
+        // Left off entirely rather than sent as null, so the server falls
+        // back to its own default wording — which is the same text the app
+        // shows in the editor, and the one place it is defined.
+        if (instruction != null && instruction.trim().isNotEmpty)
+          'instruction': instruction.trim(),
+      },
     );
     return SummaryResult(
       engine: '${body['engine']}',
@@ -213,6 +265,26 @@ class HttpSpeechApi implements SpeechApi {
         for (final point in (body['points'] as List? ?? const [])) '$point',
       ],
     );
+  }
+
+  @override
+  Future<RewriteResult> rewrite({
+    required String jobId,
+    required String lang,
+    required String text,
+    required String instruction,
+  }) async {
+    final body = await _json(
+      'POST',
+      'speech/rewrite',
+      payload: {
+        'jobId': jobId,
+        'lang': lang,
+        'text': text,
+        'instruction': instruction.trim(),
+      },
+    );
+    return RewriteResult(engine: '${body['engine']}', text: '${body['text']}');
   }
 
   Future<Map<String, Object?>> _json(
@@ -254,13 +326,17 @@ class HttpSpeechApi implements SpeechApi {
     // worth retrying but must reach the queue as a named refusal so the chip
     // can say something true.
     if (status == 429 || (status >= 500 && status != 503)) {
-      throw SyncTransientException('server returned $status');
+      throw SyncTransientException('server returned $status', answered: true);
     }
 
     final decoded = _decodeBody(response.body);
     if (status >= 400) {
       final code = decoded['error'];
-      throw SyncRefusedException(status, code is String ? code : 'error', decoded);
+      throw SyncRefusedException(
+        status,
+        code is String ? code : 'error',
+        decoded,
+      );
     }
     return decoded;
   }

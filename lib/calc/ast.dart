@@ -1,4 +1,5 @@
 import 'unit.dart';
+import 'notation.dart';
 
 sealed class Node {
   const Node();
@@ -59,10 +60,27 @@ class ConvertNode extends Node {
   const ConvertNode(this.value, this.target);
 }
 
+/// A numeric display conversion. Unlike a unit conversion it changes only
+/// how the value is written, while retaining the number for `prev` and sums.
+class FormatNode extends Node {
+  final Node value;
+  final NumericNotation notation;
+  const FormatNode(this.value, this.notation);
+}
+
 /// `25 as a % of 200` — expressed as its own node because it reads as one
 /// phrase rather than a composition of operators.
 class AsPercentOfNode extends Node {
   final Node part;
   final Node whole;
-  const AsPercentOfNode(this.part, this.whole);
+  final String relationship;
+  const AsPercentOfNode(this.part, this.whole, this.relationship);
+}
+
+/// Solves the base value in phrases such as `5% on what is $105`.
+class SolvePercentNode extends Node {
+  final String operation;
+  final Node rate;
+  final Node result;
+  const SolvePercentNode(this.operation, this.rate, this.result);
 }

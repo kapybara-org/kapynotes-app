@@ -263,7 +263,7 @@ void main() {
       await tester.tap(
         find.descendant(
           of: find.byType(NoteEditor),
-          matching: find.byTooltip('Settings'),
+          matching: find.byKey(const ValueKey('footer-settings')),
         ),
       );
       await tester.pumpAndSettle();

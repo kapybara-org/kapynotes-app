@@ -45,15 +45,18 @@ class _SpeechConsentSheet extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _Point(
-              text: 'Recordings you made before turning this on stay as voice '
+              text:
+                  'Recordings you made before turning this on stay as voice '
                   'memos until you ask for them.',
             ),
             _Point(
-              text: 'Everything else in your notes stays end-to-end encrypted. '
+              text:
+                  'Everything else in your notes stays end-to-end encrypted. '
                   'This is the one thing that leaves readable.',
             ),
             _Point(
-              text: 'You can turn it off again in Settings › Voice notes at '
+              text:
+                  'You can turn it off again in Settings › Voice notes at '
                   'any time.',
             ),
             const SizedBox(height: 12),

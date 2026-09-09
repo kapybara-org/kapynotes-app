@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
+import '../data/time_zones.dart';
 import 'ast.dart';
+import 'notation.dart';
 import 'parser.dart';
 import 'unit.dart';
 import 'unit_registry.dart';
@@ -25,7 +27,7 @@ class CalcScope {
   /// but are left out of `sum`/`avg` rather than poisoning them.
   void record(CalcValue value) {
     prev = value;
-    if (value is BooleanValue) return;
+    if (value is BooleanValue || value is DateTimeValue) return;
     final sum = runningSum;
     if (sum == null) {
       runningSum = value;
@@ -50,10 +52,19 @@ class CalcScope {
 
 /// Walks the AST produced by [Parser] and produces a [CalcValue].
 class Evaluator {
+  static final math.Random _random = math.Random();
+
   final UnitRegistry registry;
   final CalcScope scope;
+  final DateTime Function() now;
+  final String? timeZoneId;
 
-  const Evaluator({required this.registry, required this.scope});
+  const Evaluator({
+    required this.registry,
+    required this.scope,
+    required this.now,
+    this.timeZoneId,
+  });
 
   CalcValue evaluate(Node node) {
     switch (node) {
@@ -65,11 +76,12 @@ class Evaluator {
 
       case QuantityNode():
         final magnitude = evaluate(node.magnitude);
+        final unit = _contextualUnit(node.unit);
         if (magnitude is QuantityValue) {
           // e.g. `$5 km` — nonsensical, but combine rather than crash.
-          return QuantityValue(magnitude.value, magnitude.unit * node.unit);
+          return QuantityValue(magnitude.value, magnitude.unit * unit);
         }
-        return QuantityValue(Arith.scalar(magnitude), node.unit);
+        return QuantityValue(Arith.scalar(magnitude), unit);
 
       case PercentNode():
         return PercentValue(Arith.scalar(evaluate(node.operand)) / 100);
@@ -92,13 +104,54 @@ class Evaluator {
         return value;
 
       case ConvertNode():
-        return Arith.convert(evaluate(node.value), node.target);
+        return Arith.convert(
+          evaluate(node.value),
+          _contextualUnit(node.target),
+        );
+
+      case FormatNode():
+        final value = evaluate(node.value);
+        if (value is QuantityValue || value is BooleanValue) {
+          throw const CalcError('numeric notation needs a plain number');
+        }
+        final number = Arith.scalar(value);
+        if (node.notation != NumericNotation.scientific &&
+            (!number.isFinite || number != number.truncateToDouble())) {
+          throw const CalcError('base notation needs an integer');
+        }
+        return FormattedNumberValue(number, node.notation);
 
       case AsPercentOfNode():
         final part = evaluate(node.part);
         final whole = evaluate(node.whole);
-        final ratio = Arith.divide(part, whole);
+        final numerator = switch (node.relationship) {
+          'of' => part,
+          'on' => Arith.subtract(part, whole),
+          'off' => Arith.subtract(whole, part),
+          _ => throw CalcError(
+            'unknown percentage relationship ${node.relationship}',
+          ),
+        };
+        final ratio = Arith.divide(numerator, whole);
         return NumberValue(Arith.scalar(ratio) * 100);
+
+      case SolvePercentNode():
+        final rate = evaluate(node.rate);
+        if (rate is! PercentValue) {
+          throw const CalcError('a percentage is required before "what"');
+        }
+        final divisor = switch (node.operation) {
+          'of' => rate.fraction,
+          'on' => 1 + rate.fraction,
+          'off' => 1 - rate.fraction,
+          _ => throw CalcError(
+            'unknown percentage operation ${node.operation}',
+          ),
+        };
+        if (divisor == 0) {
+          throw const CalcError('percentage does not have a finite base');
+        }
+        return Arith.scale(evaluate(node.result), 1 / divisor);
     }
   }
 
@@ -138,11 +191,25 @@ class Evaluator {
       case 'mod':
         return Arith.modulo(left, right);
       case 'and':
-        return BooleanValue(Arith.truth(left) && Arith.truth(right));
+        if (left is BooleanValue && right is BooleanValue) {
+          return BooleanValue(left.value && right.value);
+        }
+        return Arith.add(left, right);
       case 'or':
         return BooleanValue(Arith.truth(left) || Arith.truth(right));
       case 'xor':
-        return BooleanValue(Arith.truth(left) ^ Arith.truth(right));
+        if (left is BooleanValue && right is BooleanValue) {
+          return BooleanValue(left.value ^ right.value);
+        }
+        return NumberValue((_integer(left) ^ _integer(right)).toDouble());
+      case '&':
+        return NumberValue((_integer(left) & _integer(right)).toDouble());
+      case '|':
+        return NumberValue((_integer(left) | _integer(right)).toDouble());
+      case '<<':
+        return NumberValue((_integer(left) << _shift(right)).toDouble());
+      case '>>':
+        return NumberValue((_integer(left) >> _shift(right)).toDouble());
       case '==':
       case '!=':
       case '<':
@@ -152,6 +219,66 @@ class Evaluator {
         return Arith.compare(op, left, right);
     }
     throw CalcError('unknown operator $op');
+  }
+
+  static int _integer(CalcValue value) {
+    final number = Arith.scalar(value);
+    if (!number.isFinite || number != number.truncateToDouble()) {
+      throw const CalcError('bitwise operations need integers');
+    }
+    return number.toInt();
+  }
+
+  static int _shift(CalcValue value) {
+    final amount = _integer(value);
+    if (amount < 0 || amount > 63) {
+      throw const CalcError('shift must be between 0 and 63');
+    }
+    return amount;
+  }
+
+  Unit _contextualUnit(Unit unit) {
+    final ppi = _positiveScalar(scope.variables['ppi']);
+    final em = scope.variables['em'];
+    final emFactor =
+        em is QuantityValue &&
+            em.unit.dimension == Dimension.base(Dimension.length)
+        ? em.linearBase
+        : null;
+    if (ppi == null && emFactor == null) return unit;
+
+    return Unit(
+      unit.terms.map((term) {
+        final def = term.def;
+        final factor = switch (def.symbol) {
+          'px' when ppi != null => 0.0254 / ppi,
+          'em' when emFactor != null => emFactor,
+          _ => def.factor,
+        };
+        if (factor == def.factor) return term;
+        return UnitTerm(
+          UnitDef(
+            symbol: def.symbol,
+            dimension: def.dimension,
+            factor: factor,
+            aliases: def.aliases,
+            category: def.category,
+            offset: def.offset,
+          ),
+          term.exponent,
+        );
+      }).toList(),
+    );
+  }
+
+  static double? _positiveScalar(CalcValue? value) {
+    if (value == null) return null;
+    try {
+      final number = Arith.scalar(value);
+      return number.isFinite && number > 0 ? number : null;
+    } on CalcError {
+      return null;
+    }
   }
 
   CalcValue _identifier(String name) {
@@ -171,6 +298,7 @@ class Evaluator {
         if (value == null) throw const CalcError('nothing to total');
         return value;
       case 'avg':
+      case 'average':
         final value = scope.average;
         if (value == null) throw const CalcError('nothing to average');
         return value;
@@ -191,11 +319,42 @@ class Evaluator {
         return const BooleanValue(true);
       case 'false':
         return const BooleanValue(false);
+      case 'now':
+        return DateTimeValue(
+          now().toUtc(),
+          timeZoneId: timeZoneId,
+          display: TemporalDisplay.dateTime,
+        );
+      case 'time':
+        return DateTimeValue(
+          now().toUtc(),
+          timeZoneId: timeZoneId,
+          display: TemporalDisplay.time,
+        );
+      case 'today':
+      case 'tomorrow':
+      case 'yesterday':
+        final shown = AppTimeZones.convert(now(), timeZoneId);
+        final offset = lower == 'tomorrow'
+            ? 1
+            : lower == 'yesterday'
+            ? -1
+            : 0;
+        return DateTimeValue(
+          AppTimeZones.fromWallClock(
+            year: shown.year,
+            month: shown.month,
+            day: shown.day + offset,
+            locationId: timeZoneId,
+          ),
+          timeZoneId: timeZoneId,
+          display: TemporalDisplay.date,
+        );
     }
 
     // Fall back to treating the bare word as one of that unit, which makes
     // `100 / 2 h` and `60 km / h` work without special-casing.
-    final unit = registry.lookup(lower);
+    final unit = registry.lookup(name);
     if (unit != null) return QuantityValue(1, Unit.single(unit));
 
     throw CalcError('unknown name "$name"');
@@ -223,6 +382,16 @@ class Evaluator {
     switch (node.name) {
       case 'sqrt':
         return NumberValue(math.sqrt(arg(0)));
+      case 'root':
+        final degree = arg(0);
+        final value = arg(1);
+        if (degree == 0) throw const CalcError('root degree cannot be zero');
+        if (value < 0 &&
+            degree == degree.roundToDouble() &&
+            degree.toInt().isOdd) {
+          return NumberValue(-math.pow(-value, 1 / degree).toDouble());
+        }
+        return NumberValue(math.pow(value, 1 / degree).toDouble());
       case 'cbrt':
         final v = arg(0);
         return NumberValue(
@@ -245,21 +414,21 @@ class Evaluator {
       case 'sign':
         return NumberValue(arg(0).sign);
       case 'min':
-        return _reduce(args, (a, b) => a <= b ? a : b);
+        return _reduce(args, chooseLower: true);
       case 'max':
-        return _reduce(args, (a, b) => a >= b ? a : b);
+        return _reduce(args, chooseLower: false);
       case 'sum':
         return args.reduce(Arith.add);
       case 'avg':
       case 'mean':
         return Arith.scale(args.reduce(Arith.add), 1 / args.length);
       case 'median':
-        final nums = args.map(Arith.scalar).toList()..sort();
-        if (nums.isEmpty) throw const CalcError('median needs values');
-        final mid = nums.length ~/ 2;
-        return NumberValue(
-          nums.length.isOdd ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2,
-        );
+        if (args.isEmpty) throw const CalcError('median needs values');
+        final sorted = [...args]..sort(_compareValues);
+        final mid = sorted.length ~/ 2;
+        return sorted.length.isOdd
+            ? sorted[mid]
+            : Arith.scale(Arith.add(sorted[mid - 1], sorted[mid]), 0.5);
       case 'log':
         return NumberValue(
           args.length > 1
@@ -285,10 +454,13 @@ class Evaluator {
       case 'tan':
         return NumberValue(math.tan(_angle(args, 0)));
       case 'asin':
+      case 'arcsin':
         return NumberValue(math.asin(arg(0)));
       case 'acos':
+      case 'arccos':
         return NumberValue(math.acos(arg(0)));
       case 'atan':
+      case 'arctan':
         return NumberValue(math.atan(arg(0)));
       case 'atan2':
         return NumberValue(math.atan2(arg(0), arg(1)));
@@ -317,6 +489,25 @@ class Evaluator {
           result *= i;
         }
         return NumberValue(result);
+      case 'random':
+        if (args.length > 2) {
+          throw const CalcError('random accepts zero, one, or two values');
+        }
+        final lower = args.length == 2 ? arg(0) : 0.0;
+        final upper = args.isEmpty ? 1.0 : arg(args.length - 1);
+        if (!lower.isFinite || !upper.isFinite || upper < lower) {
+          throw const CalcError('random needs a valid ascending range');
+        }
+        return NumberValue(lower + _random.nextDouble() * (upper - lower));
+      case 'fromunix':
+        return DateTimeValue(
+          DateTime.fromMillisecondsSinceEpoch(
+            (arg(0) * 1000).round(),
+            isUtc: true,
+          ),
+          timeZoneId: timeZoneId,
+          display: TemporalDisplay.dateTime,
+        );
     }
     throw CalcError('unknown function ${node.name}');
   }
@@ -333,17 +524,23 @@ class Evaluator {
     return Arith.scalar(value);
   }
 
-  CalcValue _reduce(
-    List<CalcValue> args,
-    double Function(double, double) pick,
-  ) {
+  CalcValue _reduce(List<CalcValue> args, {required bool chooseLower}) {
     if (args.isEmpty) throw const CalcError('needs at least one value');
     var best = args.first;
     for (final candidate in args.skip(1)) {
-      final chosen = pick(Arith.scalar(best), Arith.scalar(candidate));
-      best = chosen == Arith.scalar(best) ? best : candidate;
+      final order = _compareValues(best, candidate);
+      if ((chooseLower && order > 0) || (!chooseLower && order < 0)) {
+        best = candidate;
+      }
     }
     return best;
+  }
+
+  static int _compareValues(CalcValue left, CalcValue right) {
+    final isLess = Arith.compare('<', left, right) as BooleanValue;
+    if (isLess.value) return -1;
+    final isGreater = Arith.compare('>', left, right) as BooleanValue;
+    return isGreater.value ? 1 : 0;
   }
 
   static int _gcd(int a, int b) {

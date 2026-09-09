@@ -32,7 +32,12 @@ class MemoryStore extends LocalStore {
   final notes = NotesStore(store);
   return (
     account: Account(
-      auth: FakeAuth(id: userId, email: server.user(userId).email),
+      auth: FakeAuth(
+        id: userId,
+        email: server.user(userId).email,
+        name: server.user(userId).name,
+        image: server.user(userId).image,
+      ),
       syncApi: (_) => FakeApi(server, device: 'device-$userId', userId: userId),
       keys: KeyStore(InMemorySecureStore()),
       notes: notes,
@@ -129,7 +134,7 @@ void main() {
       expect(find.text('With user-2 · shared with you'), findsOneWidget);
       expect(find.text('View only'), findsOneWidget);
       expect(find.text('Waiting for someone to let you in'), findsNothing);
-      expect(find.text(server.user('user-1').email), findsOneWidget);
+      expect(find.text(server.user('user-1').name), findsOneWidget);
       expect(bob.notes.notes.single.body, 'For Bob');
 
       // A pasted link that is not for this account says so, plainly.

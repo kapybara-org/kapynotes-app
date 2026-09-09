@@ -255,8 +255,8 @@ class HighlightingController extends TextEditingController {
       }
       // A spelling mark must not replace KapyNotes' syntax, rich formatting,
       // link, or attachment spans. It is just one quiet decoration layered on
-      // top. Links keep their familiar solid underline, while completed tasks
-      // keep their strike-through rather than inheriting a wavy decoration.
+      // top. Links are distinguished by colour and pointer behaviour, while
+      // completed tasks keep their strike-through.
       if (misspelled && activeLink == null && !checked) {
         segmentStyle = segmentStyle.copyWith(
           decoration: TextDecoration.underline,
@@ -271,20 +271,13 @@ class HighlightingController extends TextEditingController {
       if (activeLink != null) {
         segmentStyle = segmentStyle.copyWith(
           color: linkColor,
-          decoration: TextDecoration.underline,
-          decorationColor: linkColor.withValues(alpha: 0.82),
-          decorationThickness: 1,
+          decoration: TextDecoration.none,
         );
       }
       if (checked) {
         segmentStyle = segmentStyle.copyWith(
           color: _palette.comment,
-          decoration: activeLink == null
-              ? TextDecoration.lineThrough
-              : TextDecoration.combine(const [
-                  TextDecoration.underline,
-                  TextDecoration.lineThrough,
-                ]),
+          decoration: TextDecoration.lineThrough,
           decorationColor: _palette.comment,
         );
       }

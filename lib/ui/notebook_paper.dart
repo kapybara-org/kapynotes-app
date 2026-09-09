@@ -9,6 +9,11 @@ import '../core/theme.dart';
 /// The fibers are deterministic, so the paper never shimmers between frames.
 /// There is deliberately no ruling or margin line: the texture should feel
 /// like plain notepad stock without competing with the writing.
+///
+/// Only the fibres are painted here. The colour under them belongs to the
+/// editor's page, which also runs under the gutter and its divider; painting
+/// it twice was harmless while it was opaque and would double up the moment
+/// transparency thinned it.
 class NotebookPaper extends StatelessWidget {
   const NotebookPaper({super.key, required this.child});
 
@@ -19,10 +24,7 @@ class NotebookPaper extends StatelessWidget {
     final palette = context.palette;
     return RepaintBoundary(
       child: CustomPaint(
-        painter: _PaperTexturePainter(
-          background: palette.editorBackground,
-          fiber: palette.paperFiber,
-        ),
+        painter: _PaperTexturePainter(fiber: palette.paperFiber),
         child: child,
       ),
     );
@@ -30,15 +32,13 @@ class NotebookPaper extends StatelessWidget {
 }
 
 class _PaperTexturePainter extends CustomPainter {
-  const _PaperTexturePainter({required this.background, required this.fiber});
+  const _PaperTexturePainter({required this.fiber});
 
-  final Color background;
   final Color fiber;
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = background);
-    if (size.isEmpty) return;
+    if (size.isEmpty || fiber.a == 0) return;
 
     final random = math.Random(0x4B415059);
     final count = (size.width * size.height / 7600).round().clamp(20, 150);
@@ -62,5 +62,5 @@ class _PaperTexturePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PaperTexturePainter oldDelegate) =>
-      background != oldDelegate.background || fiber != oldDelegate.fiber;
+      fiber != oldDelegate.fiber;
 }

@@ -96,7 +96,6 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
 
     return Stack(
@@ -131,15 +130,6 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                       color: palette.controlBorder,
                       width: 0.5,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(
-                          alpha: dark ? 0.22 : 0.09,
-                        ),
-                        blurRadius: 14,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -175,7 +165,7 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                           'Open link',
                           style: TextStyle(
                             fontSize: AppTypeScale.caption,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w400,
                           ),
                         ),
                       ),

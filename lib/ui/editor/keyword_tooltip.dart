@@ -71,7 +71,6 @@ class _KeywordTooltipBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       key: const ValueKey('calc-keyword-tooltip'),
       constraints: const BoxConstraints(maxWidth: 300),
@@ -80,13 +79,6 @@ class _KeywordTooltipBody extends StatelessWidget {
         color: palette.surfaceBackground,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: palette.controlBorder, width: 0.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? 0.22 : 0.09),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -96,7 +88,7 @@ class _KeywordTooltipBody extends StatelessWidget {
             keyword,
             style: TextStyle(
               fontSize: AppTypeScale.caption,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w500,
               color: palette.keyword,
             ),
           ),

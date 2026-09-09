@@ -267,15 +267,6 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                           ),
                           width: 0.75,
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(
-                              alpha: dark ? 0.28 : 0.12,
-                            ),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -318,7 +309,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                                   ?.copyWith(
                                     fontSize: AppTypeScale.body,
                                     color: palette.textPrimary,
-                                    fontWeight: FontWeight.w500,
+                                    fontWeight: FontWeight.w400,
                                     height: 1.2,
                                   ),
                             ),

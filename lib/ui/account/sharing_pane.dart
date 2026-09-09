@@ -34,6 +34,8 @@ class SharingPane extends StatelessWidget {
           blurb: switch (account.state) {
             AccountState.signedOut =>
               'Sign in, and unlock your notes, to share them with people.',
+            AccountState.needsProfile =>
+              'Finish your profile before sharing notes.',
             AccountState.needsPassphrase =>
               'Choose an encryption passphrase to start sharing notes.',
             AccountState.locked => 'Unlock your notes to share them.',
@@ -463,7 +465,7 @@ class _TeamRow extends StatelessWidget {
         ? (space.invites.isEmpty
               ? 'Only you'
               : 'Invited: ${space.invites.map((i) => i.email).join(', ')}')
-        : others.map((m) => m.email).join(', ');
+        : others.map((m) => m.displayName).join(', ');
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -504,7 +506,7 @@ class _TeamRow extends StatelessWidget {
                           space.role.accessLabel,
                           style: TextStyle(
                             fontSize: AppTypeScale.caption,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w500,
                             color: palette.textTertiary,
                           ),
                         ),
@@ -556,7 +558,7 @@ class _Panel extends StatelessWidget {
           title,
           style: TextStyle(
             fontSize: AppTypeScale.title,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
             color: palette.textPrimary,
           ),
         ),
@@ -629,7 +631,7 @@ class _Label extends StatelessWidget {
       text,
       style: TextStyle(
         fontSize: AppTypeScale.caption,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w500,
         letterSpacing: 0.4,
         color: context.palette.textTertiary,
       ),

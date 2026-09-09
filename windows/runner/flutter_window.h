@@ -6,10 +6,12 @@
 
 #include <memory>
 
+#include "audio_decode.h"
 #include "login_item.h"
 #include "rich_clipboard.h"
 #include "spell_check.h"
 #include "win32_window.h"
+#include "window_material.h"
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -40,6 +42,10 @@ class FlutterWindow : public Win32Window {
       rich_clipboard_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       spell_check_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      window_material_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      audio_decode_channel_;
 
   // Carries the one message the runner sends without being asked: Windows —
   // or, far more often, the installer's Restart Manager — wants this process

@@ -738,7 +738,6 @@ String plainTextFrom(String text) {
       .join('\n');
 }
 
-
 /// Moves a selection across a replacement of the text it was made in.
 ///
 /// The replacement is found as the editor finds every edit — a common prefix
@@ -774,7 +773,8 @@ TextSelection mapSelectionAcrossEdit(
 
   int map(int offset) {
     if (offset <= prefix) return offset.clamp(0, newText.length);
-    if (offset >= oldEnd) return (offset + (newEnd - oldEnd)).clamp(0, newText.length);
+    if (offset >= oldEnd)
+      return (offset + (newEnd - oldEnd)).clamp(0, newText.length);
     final into = offset - prefix;
     return (prefix + into).clamp(prefix, newEnd);
   }

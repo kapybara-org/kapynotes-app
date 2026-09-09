@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../data/local_store.dart';
@@ -22,6 +24,10 @@ enum AccountState {
   /// Reading the keystore. Brief, and only at launch.
   restoring,
   signedOut,
+
+  /// A newly created account has proved its email but has not yet chosen the
+  /// name collaborators will see.
+  needsProfile,
 
   /// Signed in, but this account has never chosen a passphrase. Nothing can
   /// sync until it does — there is no key to seal anything with.
@@ -142,7 +148,11 @@ class Account extends ChangeNotifier {
         _token = token;
         _user = user;
         await _keys.writeUser(user);
-        await _resume();
+        if (user.needsName) {
+          _moveTo(AccountState.needsProfile);
+        } else {
+          await _resume();
+        }
       case SessionRejected():
         // Asked, and told no: expired, revoked, or signed out on another
         // device. The notes stay; only the session is gone, and signing in
@@ -166,7 +176,11 @@ class Account extends ChangeNotifier {
         }
         _token = token;
         _user = cached;
-        await _resume();
+        if (cached.needsName) {
+          _moveTo(AccountState.needsProfile);
+        } else {
+          await _resume();
+        }
     }
   }
 
@@ -222,7 +236,11 @@ class Account extends ChangeNotifier {
         // So a later launch that cannot reach the server still knows whose
         // device this is.
         await _keys.writeUser(user);
-        await _resume();
+        if (user.needsName) {
+          _moveTo(AccountState.needsProfile);
+        } else {
+          await _resume();
+        }
       case AuthNeedsVerification(:final email):
         _lastError = 'Confirm $email, then sign in.';
         _moveTo(AccountState.signedOut);
@@ -238,6 +256,57 @@ class Account extends ChangeNotifier {
         // expects a session. Named rather than defaulted so that adding a
         // result here has to be thought about.
         _moveTo(AccountState.signedOut);
+      case AuthProfileUpdated():
+        _moveTo(AccountState.signedOut);
+    }
+  }
+
+  /// Saves the public profile. The optional image is a compact data URL so it
+  /// can travel with a space roster without exposing note or storage keys.
+  Future<bool> updateProfile({
+    required String name,
+    String? image,
+    bool replaceImage = false,
+  }) async {
+    final token = _token;
+    if (token == null) return false;
+    final clean = name.trim();
+    if (clean.isEmpty ||
+        clean.runes.length > 50 ||
+        RegExp(r'[\u0000-\u001f\u007f]').hasMatch(clean)) {
+      _lastError = 'Enter a name between 1 and 50 characters.';
+      notifyListeners();
+      return false;
+    }
+
+    _lastError = null;
+    final result = await _auth.updateProfile(
+      token: token,
+      name: clean,
+      image: image,
+      replaceImage: replaceImage,
+    );
+    switch (result) {
+      case AuthProfileUpdated(:final user):
+        _user = user;
+        await _keys.writeUser(user);
+        if (_accountState == AccountState.needsProfile) {
+          await _resume();
+        } else {
+          notifyListeners();
+          final sharing = _sharing;
+          if (sharing != null) unawaited(sharing.refresh());
+        }
+        return true;
+      case AuthRejected(:final message):
+      case AuthUnreachable(:final message):
+        _lastError = message;
+        notifyListeners();
+        return false;
+      default:
+        _lastError = 'Could not update your profile.';
+        notifyListeners();
+        return false;
     }
   }
 
@@ -346,7 +415,6 @@ class Account extends ChangeNotifier {
       trust: trust,
     );
     final images = ImageSync(api: api, store: _notes.blobs, notes: _notes);
-    _speech = speechApiFor?.call(_token!);
     // The replica id every character this device writes is stamped with.
     // Twelve hex digits of the install id: stable for the life of the
     // install, and short enough to ride in every op without weighing on it.
@@ -366,6 +434,10 @@ class Account extends ChangeNotifier {
           vault: vault,
         );
     _teardownSync();
+    // After the teardown, which clears it. Building it before was the bug that
+    // left every signed-in session with no speech client, so a recording went
+    // straight to "Sign in to transcribe" no matter who was signed in.
+    _speech = speechApiFor?.call(_token!);
     _images = images;
     _keyring = keyring;
     _sync = service..addListener(notifyListeners);

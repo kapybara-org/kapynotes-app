@@ -21,8 +21,12 @@ String describeSpeechError(Object error) => switch (error) {
       'Transcription is unavailable right now. It will try again.',
     SpeechCodes.jobUnknown => 'Transcribe this recording again first.',
     SpeechCodes.summaryLimit => 'That is enough summaries for this recording.',
-    SpeechCodes.summaryFailed => 'Could not write a summary. The transcript is here.',
+    SpeechCodes.summaryFailed =>
+      'Could not write a summary. The transcript is here.',
     SpeechCodes.retryLimit => 'Too many tries. Transcribe again to start over.',
+    SpeechCodes.sessionRejected => 'Sign in again to transcribe voice notes.',
+    SpeechCodes.offline =>
+      'Could not reach the server. This will finish when you are back online.',
     _ => 'The server did not allow that.',
   },
   SyncTransientException() =>
@@ -41,8 +45,18 @@ String _outOfMinutes(Map<String, Object?> body) {
 
 String _shortDate(DateTime at) {
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${at.day} ${months[at.month - 1]}';
 }

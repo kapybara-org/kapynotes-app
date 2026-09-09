@@ -2,10 +2,13 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../core/window_chrome.dart';
+import '../sync/spaces.dart';
 import 'app_logo.dart';
 import 'compact_icon_button.dart';
 import 'glass_surface.dart';
 import 'kapy_header_mascot.dart';
+import 'member_avatars.dart';
 import 'window_drag_area.dart';
 
 /// The app's unified title bar: centered identity and global note actions.
@@ -17,16 +20,26 @@ class NoteToolbar extends StatelessWidget {
     super.key,
     required this.onToggleSidebar,
     required this.onCreate,
+    this.onShare,
     this.sidebarVisible = true,
     this.showActions = true,
     this.alwaysOnTop = false,
     this.onToggleAlwaysOnTop,
     this.alwaysOnTopShortcut,
     this.mascotController,
+    this.members = const [],
+    this.currentUserId = '',
+    this.noteShared = false,
   });
 
   final VoidCallback onToggleSidebar;
   final VoidCallback onCreate;
+
+  /// Shares the note that is open. Null while nothing is selected, which
+  /// leaves the action in place but greyed rather than moving the ones beside
+  /// it every time the selection changes.
+  final VoidCallback? onShare;
+
   final bool sidebarVisible;
   final bool showActions;
 
@@ -44,10 +57,29 @@ class NoteToolbar extends StatelessWidget {
   /// Drives the optional animated mark without changing toolbar geometry.
   final KapyHeaderController? mascotController;
 
+  /// Everyone the open note is shared with. Empty on a personal note, which
+  /// is what keeps that note's title bar as quiet as it has always been.
+  final List<SpaceMember> members;
+
+  /// Whose account this is, so one avatar can read "You".
+  final String currentUserId;
+
+  /// Whether the open note lives in a shared space, which is what the share
+  /// action's wording turns on.
+  final bool noteShared;
+
   static double get height => AppControlMetrics.toolbarHeight;
 
   /// Between the lockup and the pin, and mirrored on the other side.
   static const double _pinGap = 5;
+
+  /// Between an edge action and the window's edge.
+  static const double _edgeGap = 9;
+
+  /// macOS draws its traffic lights over the top-left corner, so the menu
+  /// button joins the others on the right there and only there. Everywhere
+  /// else the corner is ours and the drawer's button belongs in it.
+  static bool get _menuLeads => !WindowChrome.overlaysContent;
 
   @override
   Widget build(BuildContext context) {
@@ -61,104 +93,166 @@ class NoteToolbar extends StatelessWidget {
     final pinned = onToggleAlwaysOnTop;
 
     return GlassSurface(
-      color: palette.surfaceBackground.withValues(alpha: 0.94),
-      blur: 10,
+      color: palette.surfaceBackground.withMultipliedAlpha(0.94),
       border: Border(bottom: BorderSide(color: palette.separator, width: 0.5)),
       child: SizedBox(
         height: barHeight + topInset,
-        child: Stack(
-          children: [
-            // The bare drag surface. Everything above it either drags on its
-            // own account or is a button, and anything that is neither falls
-            // through to here — which is what keeps the empty stretches of the
-            // toolbar draggable.
-            Positioned.fill(
-              top: topInset,
-              child: const WindowDragArea(child: SizedBox.expand()),
-            ),
-            Positioned.fill(
-              top: topInset,
-              child: Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Balances the pin on the other side, so the lockup keeps
-                    // the exact centre of the toolbar rather than being
-                    // shouldered off it — two tests hold that to half a pixel,
-                    // and it is the reason the title bar reads as centred at
-                    // any window width.
-                    // Not gated on showActions: that hides the note actions
-                    // while the drawer covers them, and the pin is about the
-                    // window rather than the note.
-                    if (pinned != null)
-                      SizedBox(
-                        width: AppControlMetrics.iconButtonExtent + _pinGap,
-                      ),
-                    // The lockup carries its own drag region rather than
-                    // sitting inside one with the pin: DragToMoveArea waits
-                    // out the double-tap timeout before it yields, so a button
-                    // beneath it answers late on every single click.
-                    WindowDragArea(
-                      child: AppWordmark(
-                        key: const ValueKey('toolbar-app-wordmark'),
-                        markSize: AppControlMetrics.wordmarkMark,
-                        fontSize: AppTypeScale.wordmark,
-                        spacing: 6.5,
-                        mark: mascotController == null
-                            ? null
-                            : KapyHeaderMascot(
-                                controller: mascotController!,
-                                markSize: AppControlMetrics.wordmarkMark,
-                              ),
-                      ),
-                    ),
-                    if (pinned != null) ...[
-                      const SizedBox(width: _pinGap),
-                      _ToolbarButton(
-                        icon: alwaysOnTop
-                            ? Icons.push_pin_rounded
-                            : Icons.push_pin_outlined,
-                        tooltip: [
-                          alwaysOnTop ? 'Stop keeping on top' : 'Keep on top',
-                          ?alwaysOnTopShortcut,
-                        ].join('  '),
-                        selected: alwaysOnTop,
-                        onPressed: pinned,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            if (showActions)
-              Positioned(
+        child: LayoutBuilder(
+          builder: (context, constraints) => Stack(
+            children: [
+              // The bare drag surface. Everything above it either drags on its
+              // own account or is a button, and anything that is neither falls
+              // through to here — which is what keeps the empty stretches of
+              // the toolbar draggable.
+              Positioned.fill(
                 top: topInset,
-                right: 9,
-                height: barHeight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _ToolbarButton(
-                      icon: Icons.add_rounded,
-                      tooltip: AppPlatform.isMacOS
-                          ? 'New note  ⌘N'
-                          : 'New note  Ctrl+N',
-                      onPressed: onCreate,
-                    ),
-                    const SizedBox(width: 2),
-                    _ToolbarButton(
-                      icon: Icons.menu_rounded,
-                      tooltip: sidebarVisible ? 'Hide notes' : 'Show notes',
-                      onPressed: onToggleSidebar,
-                    ),
-                  ],
+                child: const WindowDragArea(child: SizedBox.expand()),
+              ),
+              Positioned.fill(
+                top: topInset,
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Balances the pin on the other side, so the lockup keeps
+                      // the exact centre of the toolbar rather than being
+                      // shouldered off it — two tests hold that to half a
+                      // pixel, and it is the reason the title bar reads as
+                      // centred at any window width.
+                      // Not gated on showActions: that hides the note actions
+                      // while the drawer covers them, and the pin is about the
+                      // window rather than the note.
+                      if (pinned != null)
+                        SizedBox(
+                          width: AppControlMetrics.iconButtonExtent + _pinGap,
+                        ),
+                      // The lockup carries its own drag region rather than
+                      // sitting inside one with the pin: DragToMoveArea waits
+                      // out the double-tap timeout before it yields, so a
+                      // button beneath it answers late on every single click.
+                      WindowDragArea(
+                        child: AppWordmark(
+                          key: const ValueKey('toolbar-app-wordmark'),
+                          markSize: AppControlMetrics.wordmarkMark,
+                          fontSize: AppTypeScale.wordmark,
+                          spacing: 6.5,
+                          mark: mascotController == null
+                              ? null
+                              : KapyHeaderMascot(
+                                  controller: mascotController!,
+                                  markSize: AppControlMetrics.wordmarkMark,
+                                ),
+                        ),
+                      ),
+                      if (pinned != null) ...[
+                        const SizedBox(width: _pinGap),
+                        _ToolbarButton(
+                          icon: alwaysOnTop
+                              ? Icons.push_pin_rounded
+                              : Icons.push_pin_outlined,
+                          tooltip: [
+                            alwaysOnTop ? 'Stop keeping on top' : 'Keep on top',
+                            ?alwaysOnTopShortcut,
+                          ].join('  '),
+                          selected: alwaysOnTop,
+                          onPressed: pinned,
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
-          ],
+              // Both clusters sit over the lockup rather than under it: on a
+              // bar too narrow for all three, a button the reader can press
+              // beats a wordmark they have already read.
+              if (showActions) ...[
+                Positioned(
+                  top: topInset,
+                  left: _leadingInset,
+                  // Stops short of the lockup instead of running under it. The
+                  // avatars inside give up circles, then names, to fit.
+                  right: constraints.maxWidth / 2 + _centreReserve,
+                  height: barHeight,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _leading(),
+                  ),
+                ),
+                Positioned(
+                  top: topInset,
+                  right: _edgeGap,
+                  height: barHeight,
+                  child: _trailing(),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
+
+  /// Where the leading cluster starts: clear of the traffic lights on macOS,
+  /// and a matching beat from the window edge everywhere else.
+  static double get _leadingInset =>
+      WindowChrome.overlaysContent ? WindowChrome.trafficLightsWidth : _edgeGap;
+
+  /// Half the lockup, plus air.
+  ///
+  /// Estimated from the type size rather than measured: its only job is to
+  /// keep a long roster from reaching the wordmark, so erring wide costs a
+  /// name or an avatar and erring narrow would cost a collision.
+  static double get _centreReserve =>
+      (AppControlMetrics.wordmarkMark + 6.5 + AppTypeScale.wordmark * 6.4) / 2 +
+      12;
+
+  /// The drawer's button where the corner is ours, and whoever the open note
+  /// is shared with.
+  Widget _leading() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_menuLeads) _menuButton(),
+        if (members.isNotEmpty)
+          Flexible(
+            child: Padding(
+              padding: EdgeInsets.only(left: _menuLeads ? 6 : 0),
+              child: MemberAvatars(
+                members: members,
+                currentUserId: currentUserId,
+                onPressed: onShare,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _trailing() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ToolbarButton(
+          icon: Icons.add_rounded,
+          tooltip: AppPlatform.isMacOS ? 'New note  ⌘N' : 'New note  Ctrl+N',
+          onPressed: onCreate,
+        ),
+        const SizedBox(width: 2),
+        _ToolbarButton(
+          icon: Icons.people_outline_rounded,
+          tooltip: noteShared ? 'Sharing' : 'Share note',
+          onPressed: onShare,
+        ),
+        if (!_menuLeads) ...[const SizedBox(width: 2), _menuButton()],
+      ],
+    );
+  }
+
+  Widget _menuButton() => _ToolbarButton(
+    icon: Icons.menu_rounded,
+    tooltip: sidebarVisible ? 'Hide notes' : 'Show notes',
+    onPressed: onToggleSidebar,
+  );
 }
 
 class _ToolbarButton extends StatelessWidget {
@@ -171,18 +265,23 @@ class _ToolbarButton extends StatelessWidget {
 
   final IconData icon;
   final String tooltip;
-  final VoidCallback onPressed;
+
+  /// Null greys the action out rather than removing it.
+  final VoidCallback? onPressed;
   final bool selected;
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     return CompactIconButton(
       tooltip: tooltip,
       onPressed: onPressed,
       selected: selected,
-      foregroundColor: selected
-          ? context.palette.textPrimary
-          : context.palette.textSecondary,
+      foregroundColor: onPressed == null
+          ? palette.textTertiary
+          : selected
+          ? palette.textPrimary
+          : palette.textSecondary,
       icon: Icon(icon, size: AppControlMetrics.iconAction),
     );
   }

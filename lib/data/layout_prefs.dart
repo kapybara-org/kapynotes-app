@@ -91,10 +91,14 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _spellCheckKey = 'spellCheck.v1';
   static const String _numberSystemKey = 'numberSystem.v1';
   static const String _writingFontKey = 'writingFont.v1';
+  static const String _transparencyKey = 'transparencyEnabled.v1';
+  static const String _transparencyAmountKey = 'transparencyAmount.v1';
   static const String _timeZoneKey = 'timeZone.v1';
   static const String _keepRunningKey = 'keepRunningInBackground.v1';
   static const String _alwaysOnTopKey = 'alwaysOnTop.v1';
   static const String _loginItemDefaultKey = 'loginItemDefaulted.v1';
+  static const String _lastOpenedNoteKey = 'selectedNote.v1';
+  static const String _defaultNoteKey = 'defaultNote.v1';
 
   final LocalStore _store;
 
@@ -112,10 +116,16 @@ class LayoutPrefs extends ChangeNotifier {
   bool _spellCheckEnabled = true;
   NumberSystem _numberSystem = NumberSystem.auto;
   WritingFont _writingFont = WritingFont.handwritten;
+  final ValueNotifier<bool> _transparencyEnabled = ValueNotifier(false);
+  final ValueNotifier<double> _transparencyAmount = ValueNotifier(
+    defaultTransparencyAmount,
+  );
   String? _timeZoneId;
   bool _keepRunningInBackground = false;
   bool _loginItemDefaultApplied = false;
   bool _alwaysOnTop = false;
+  String? _lastOpenedNoteId;
+  String? _defaultNoteId;
 
   LayoutPrefs(this._store, {Locale Function()? locale})
     : _locale = locale ?? (() => PlatformDispatcher.instance.locale);
@@ -129,6 +139,27 @@ class LayoutPrefs extends ChangeNotifier {
   bool get dailySeparatorsEnabled => _dailySeparatorsEnabled;
   bool get spellCheckEnabled => _spellCheckEnabled;
   WritingFont get writingFont => _writingFont;
+  bool get transparencyEnabled => _transparencyEnabled.value;
+
+  /// A property-specific signal for the app theme.
+  ///
+  /// Panel widths notify [LayoutPrefs] for every dragged pixel. Listening to
+  /// this narrower value keeps a resize from rebuilding the whole app root
+  /// merely because transparency also lives in this object.
+  ValueListenable<bool> get transparencyListenable => _transparencyEnabled;
+
+  /// How much of the desktop shows through in transparency mode, from 0 (the
+  /// note still clearly a note) to 1 (barely a film over the window's blur).
+  /// Kept while the mode is off, so turning it back on finds the amount it
+  /// was left at.
+  double get transparencyAmount => _transparencyAmount.value;
+  ValueListenable<double> get transparencyAmountListenable =>
+      _transparencyAmount;
+
+  /// Where a new install starts: near the substantial end, since somebody
+  /// who has just switched the mode on has not yet said how far they want it
+  /// taken. The slider is what says that.
+  static const double defaultTransparencyAmount = 0.2;
   String? get timeZoneId => _timeZoneId;
 
   /// Whether closing the window tucks the app into the tray instead of
@@ -165,6 +196,10 @@ class LayoutPrefs extends ChangeNotifier {
   /// be the more surprising behaviour.
   bool get alwaysOnTop => _alwaysOnTop;
 
+  /// Null means follow whichever note was most recently opened.
+  String? get defaultNoteId => _defaultNoteId;
+  String? get lastOpenedNoteId => _lastOpenedNoteId;
+
   /// Converts a stored instant to the zone selected for note timestamps.
   DateTime displayTime(DateTime instant) =>
       AppTimeZones.convert(instant, _timeZoneId);
@@ -200,11 +235,18 @@ class LayoutPrefs extends ChangeNotifier {
     _spellCheckEnabled = _store.read<bool>(_spellCheckKey) ?? true;
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
+    _transparencyEnabled.value =
+        supportsTransparency && (_store.read<bool>(_transparencyKey) ?? false);
+    _transparencyAmount.value =
+        (_readDouble(_transparencyAmountKey) ?? defaultTransparencyAmount)
+            .clamp(0.0, 1.0);
     _timeZoneId = AppTimeZones.normalize(_store.read<String>(_timeZoneKey));
     _keepRunningInBackground =
         _store.read<bool>(_keepRunningKey) ?? AppPlatform.isDesktop;
     _loginItemDefaultApplied = _store.read<bool>(_loginItemDefaultKey) ?? false;
     _alwaysOnTop = _store.read<bool>(_alwaysOnTopKey) ?? false;
+    _lastOpenedNoteId = _readNoteId(_lastOpenedNoteKey);
+    _defaultNoteId = _readNoteId(_defaultNoteKey);
     notifyListeners();
   }
 
@@ -275,6 +317,30 @@ class LayoutPrefs extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Where the window can put a blurred desktop behind the Flutter view:
+  /// macOS through its visual effect material, Windows through acrylic. Linux
+  /// has no compositor API the runner could ask, and a phone has no window
+  /// to see through at all. Ignoring a stale or hand-edited value on those
+  /// also keeps the first editable frame on its opaque fast path.
+  static bool get supportsTransparency =>
+      AppPlatform.isMacOS || AppPlatform.isWindows;
+
+  set transparencyEnabled(bool value) {
+    final supportedValue = supportsTransparency && value;
+    if (supportedValue == _transparencyEnabled.value) return;
+    _transparencyEnabled.value = supportedValue;
+    _store.putNow(_transparencyKey, supportedValue);
+    notifyListeners();
+  }
+
+  set transparencyAmount(double value) {
+    final clamped = value.clamp(0.0, 1.0);
+    if (clamped == _transparencyAmount.value) return;
+    _transparencyAmount.value = clamped;
+    _store.putNow(_transparencyAmountKey, clamped);
+    notifyListeners();
+  }
+
   set timeZoneId(String? value) {
     final normalized = AppTimeZones.normalize(value);
     if (normalized == _timeZoneId) return;
@@ -297,6 +363,37 @@ class LayoutPrefs extends ChangeNotifier {
     _alwaysOnTop = value;
     _store.putNow(_alwaysOnTopKey, value);
     notifyListeners();
+  }
+
+  set lastOpenedNoteId(String? value) {
+    final normalized = _normalizeNoteId(value);
+    if (normalized == _lastOpenedNoteId) return;
+    _lastOpenedNoteId = normalized;
+    _store.putNow(_lastOpenedNoteKey, normalized ?? '');
+    notifyListeners();
+  }
+
+  set defaultNoteId(String? value) {
+    final normalized = _normalizeNoteId(value);
+    if (normalized == _defaultNoteId) return;
+    _defaultNoteId = normalized;
+    _store.putNow(_defaultNoteKey, normalized ?? '');
+    notifyListeners();
+  }
+
+  /// Resolves the startup choice against notes that still exist and are not
+  /// archived. A deleted fixed note also clears that preference immediately,
+  /// so future launches naturally return to Last opened note.
+  String? resolveOpeningNoteId(Iterable<String> activeNoteIds) {
+    final ids = activeNoteIds.toSet();
+    final fixed = _defaultNoteId;
+    if (fixed != null) {
+      if (ids.contains(fixed)) return fixed;
+      defaultNoteId = null;
+    }
+    final recent = _lastOpenedNoteId;
+    if (recent != null && ids.contains(recent)) return recent;
+    return null;
   }
 
   void resetGutterWidth() => gutterWidth = defaultGutterWidth;
@@ -365,6 +462,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (value is num) return value.toDouble();
     if (value is String) return double.tryParse(value);
     return null;
+  }
+
+  String? _readNoteId(String key) => _normalizeNoteId(_store.read<String>(key));
+
+  static String? _normalizeNoteId(String? value) {
+    final clean = value?.trim() ?? '';
+    return clean.isEmpty ? null : clean;
   }
 
   static double _clampGutter(double value) => value.isFinite

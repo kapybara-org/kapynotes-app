@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/editor_font.dart';
+import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -22,6 +24,7 @@ import 'package:kapy_notes/ui/empty_state.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
+import 'package:kapy_notes/ui/sidebar_swipe.dart';
 import 'package:kapy_notes/ui/toolbar.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
@@ -56,6 +59,21 @@ late NotesStore notes;
 late LayoutPrefs prefs;
 late RatesRepository rates;
 late ShortcutPrefs shortcuts;
+
+/// What the window answers when asked to put a blurred desktop behind the
+/// Flutter view. True is a runner that can; false is Windows 10 without the
+/// composition attribute, or no runner at all.
+bool windowGlassAvailable = true;
+
+/// The material the window was last asked for, or null if it was never asked.
+bool? windowGlassRequested;
+
+/// The amount that went with it. The window needs this as well as the flag:
+/// the blur material has a body of its own, and thinning only the tints
+/// Flutter paints leaves it in place.
+double? windowGlassAmount;
+
+const _windowMaterialChannel = MethodChannel('kapynotes/window_material');
 
 Future<void> pumpApp(
   WidgetTester tester, {
@@ -138,6 +156,23 @@ void main() {
     prefs = LayoutPrefs(store);
     rates = RatesRepository(store);
     shortcuts = ShortcutPrefs(store);
+    windowGlassAvailable = true;
+    windowGlassRequested = null;
+    windowGlassAmount = null;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_windowMaterialChannel, (call) async {
+          if (call.method != 'setGlass') return null;
+          final arguments = call.arguments as Map;
+          final enabled = arguments['enabled'] as bool;
+          windowGlassRequested = enabled;
+          windowGlassAmount = arguments['amount'] as double?;
+          return enabled && windowGlassAvailable;
+        });
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_windowMaterialChannel, null);
   });
 
   testWidgets(
@@ -470,16 +505,27 @@ void main() {
       of: find.byKey(ValueKey(key)),
       matching: find.byType(IconButton),
     );
+    final settings = tester.getRect(footerButton('note-settings'));
     final image = tester.getRect(footerButton('insert-image'));
     final mic = tester.getRect(footerButton('record-voice'));
+    final formatting = tester.getRect(footerButton('formatting-toggle'));
+    final pointer = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+      pointer: 91,
+    );
+    await pointer.addPointer(location: Offset.zero);
+    addTearDown(pointer.removePointer);
+    await pointer.moveTo(formatting.center);
+    await tester.pumpAndSettle();
     final style = tester.getRect(footerButton('format-style'));
     expect(mic.left - image.right, 4);
-    expect(style.left - mic.right, 12);
+    expect(formatting.left - mic.right, 12);
+    expect(style.left - formatting.right, 4);
     expect(
-      image.center.dx,
+      settings.center.dx,
       closeTo(tester.getRect(find.byType(NoteFooter)).left + 28, 0.01),
-      reason: 'the first action should align with the editor text column',
     );
+    expect(image.left - settings.right, 16);
 
     final noteRow = find.byType(NoteRow).first;
     expect(tester.getSize(noteRow).height, 54);
@@ -641,9 +687,7 @@ void main() {
     );
   });
 
-  testWidgets('settings reserves semibold for primary emphasis', (
-    tester,
-  ) async {
+  testWidgets('settings keeps system labels medium or lighter', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
     await tester.pumpAndSettle();
@@ -660,7 +704,7 @@ void main() {
       final weight = text.style?.fontWeight ?? inherited.fontWeight;
       expect(
         (weight ?? FontWeight.w400).value,
-        lessThanOrEqualTo(FontWeight.w600.value),
+        lessThanOrEqualTo(FontWeight.w500.value),
         reason: '${text.data ?? text.textSpan?.toPlainText()} is too bold',
       );
     }
@@ -674,8 +718,8 @@ void main() {
           FontWeight.w400;
     }
 
-    expect(weightOf('Settings'), FontWeight.w600);
-    expect(weightOf('General'), FontWeight.w600);
+    expect(weightOf('Settings'), FontWeight.w500);
+    expect(weightOf('General'), FontWeight.w500);
     expect(weightOf('Appearance'), FontWeight.w400);
     expect(weightOf('NOTES'), FontWeight.w500);
     expect(weightOf('Daily separators'), FontWeight.w500);
@@ -710,6 +754,41 @@ void main() {
     expect(find.text('Asia/Kolkata'), findsOneWidget);
     expect(find.text('New separators · UTC+05:30'), findsOneWidget);
     expect((LayoutPrefs(store)..load()).timeZoneId, 'Asia/Kolkata');
+  });
+
+  testWidgets('chooses a fixed startup note and can return to last opened', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(TextField),
+      ),
+      'Daily log',
+    );
+    await tester.pumpAndSettle();
+    final id = notes.notes.single.id;
+
+    await openSettings(tester);
+    final setting = find.byKey(const ValueKey('default-note-setting'));
+    await tester.tap(setting);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('default-note-option-$id')));
+    await tester.pumpAndSettle();
+
+    expect(prefs.defaultNoteId, id);
+    expect(find.text('Daily log'), findsWidgets);
+
+    await tester.tap(setting);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('default-note-option-last-opened')),
+    );
+    await tester.pumpAndSettle();
+    expect(prefs.defaultNoteId, isNull);
   });
 
   testWidgets('credits and links the provider of the active rate snapshot', (
@@ -859,6 +938,186 @@ void main() {
 
     final restored = LayoutPrefs(store)..load();
     expect(restored.writingFont, WritingFont.monospace);
+  });
+
+  testWidgets('transparency thins the whole window, and persists', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.pumpAndSettle();
+
+    CalcPalette palette() => Theme.of(
+      tester.element(find.byType(NoteEditor)),
+    ).extension<CalcPalette>()!;
+
+    // The fill GlassSurface actually paints behind the note list, rather than
+    // the palette it was asked to derive it from.
+    double sidebarAlpha() {
+      final fill = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byType(Sidebar),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      return (fill.decoration as BoxDecoration).color!.a;
+    }
+
+    // And the fill the page paints under the writing.
+    double paperAlpha() {
+      final page = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byType(NoteEditor),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      return page.color!.a;
+    }
+
+    final opaque = palette();
+    final opaqueSidebarAlpha = sidebarAlpha();
+    expect(prefs.transparencyEnabled, isFalse);
+    expect(opaque.isGlass, isFalse);
+    expect(paperAlpha(), 1);
+    expect(
+      windowGlassRequested,
+      isFalse,
+      reason: 'the window is told at launch which material to show',
+    );
+
+    await openSettings(tester, section: SettingsSection.appearance);
+    final toggle = find.byKey(const ValueKey('transparency-toggle'));
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+
+    expect(prefs.transparencyEnabled, isTrue);
+    expect(windowGlassRequested, isTrue);
+    expect(
+      windowGlassAmount,
+      LayoutPrefs.defaultTransparencyAmount,
+      reason: 'the window fades its own material to match the slider',
+    );
+    expect(palette().isGlass, isTrue);
+    expect(sidebarAlpha(), lessThan(opaqueSidebarAlpha));
+    expect(paperAlpha(), lessThan(1));
+    expect(
+      paperAlpha(),
+      greaterThan(0.25),
+      reason:
+          'the slider starts near the substantial end: somebody who has just '
+          'switched the mode on has not yet said how far they want it taken',
+    );
+    expect((LayoutPrefs(store)..load()).transparencyEnabled, isTrue);
+
+    // The amount slider appears with the mode and thins the paint further.
+    final slider = find.byKey(const ValueKey('transparency-amount'));
+    expect(slider, findsOneWidget);
+    final defaultPaperAlpha = paperAlpha();
+    final sliderWidget = find.descendant(
+      of: slider,
+      matching: find.byType(Slider),
+    );
+    await tester.ensureVisible(sliderWidget);
+    await tester.drag(sliderWidget, const Offset(200, 0));
+    await tester.pumpAndSettle();
+    expect(
+      prefs.transparencyAmount,
+      greaterThan(LayoutPrefs.defaultTransparencyAmount),
+    );
+    expect(paperAlpha(), lessThan(defaultPaperAlpha));
+    expect(
+      (LayoutPrefs(store)..load()).transparencyAmount,
+      prefs.transparencyAmount,
+    );
+    expect(
+      windowGlassAmount,
+      prefs.transparencyAmount,
+      reason: 'dragging the slider re-asks the window, not just the theme',
+    );
+
+    // The palette's colours are the same values; only the paint derived from
+    // them thins. The type never does.
+    expect(palette().editorBackground, opaque.editorBackground);
+    expect(palette().surfaceBackground, opaque.surfaceBackground);
+    expect(palette().textPrimary, opaque.textPrimary);
+    expect(palette().textSecondary, opaque.textSecondary);
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(highContrast: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpAndSettle();
+
+    expect(
+      prefs.transparencyEnabled,
+      isTrue,
+      reason: 'the choice is preserved',
+    );
+    expect(
+      palette().isGlass,
+      isFalse,
+      reason: 'High Contrast asks for separation, so the window goes solid',
+    );
+    expect(sidebarAlpha(), opaqueSidebarAlpha);
+    expect(paperAlpha(), 1);
+  });
+
+  testWidgets('the amount slider is not offered while transparency is off', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await openSettings(tester, section: SettingsSection.appearance);
+    expect(find.byKey(const ValueKey('transparency-toggle')), findsOneWidget);
+    expect(find.byKey(const ValueKey('transparency-amount')), findsNothing);
+  });
+
+  testWidgets('a window that cannot blur keeps its opaque paint', (
+    tester,
+  ) async {
+    // Windows 10 without the composition attribute answers no. Tints painted
+    // over an unblurred window show black through every gap, so the setting
+    // is kept but the surfaces are not thinned.
+    windowGlassAvailable = false;
+    store.data['transparencyEnabled.v1'] = true;
+    await pumpApp(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.pumpAndSettle();
+
+    final palette = Theme.of(
+      tester.element(find.byType(NoteEditor)),
+    ).extension<CalcPalette>()!;
+    expect(prefs.transparencyEnabled, isTrue);
+    expect(windowGlassRequested, isTrue);
+    expect(palette.isGlass, isFalse);
+  });
+
+  testWidgets('a desktop editor is a text field to assistive tools', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.pumpAndSettle();
+
+    // Dictation apps and text expanders do not type: they write into whatever
+    // the system reports as the focused accessibility element, and only if it
+    // is a text field. Switching that tree on is the runner's job (on macOS,
+    // AccessibilityTree.swift; a handle taken here cannot do it, and this
+    // binding holds one anyway). What the widgets owe the tree is a focused,
+    // writable text-field node for the editor, so the words have a place to
+    // land the moment the note is open.
+    expect(
+      tester.getSemantics(
+        find.descendant(
+          of: find.byType(NoteEditor),
+          matching: find.byType(EditableText),
+        ),
+      ),
+      isSemantics(isTextField: true, isFocused: true, isReadOnly: false),
+    );
   });
 
   testWidgets('desktop can keep the app running and open it at login', (
@@ -1060,6 +1319,27 @@ void main() {
 
     final before = shortcuts.bindingFor(ShortcutAction.formatBold)!;
     expect(find.byTooltip('Bold · ${before.displayLabel}'), findsOneWidget);
+    expect(
+      find.byTooltip(
+        'Add an image · ${shortcuts.bindingFor(ShortcutAction.insertImage)!.displayLabel}',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip(
+        'Record a voice note · ${shortcuts.bindingFor(ShortcutAction.recordVoiceNote)!.displayLabel}',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(NoteFooter),
+        matching: find.byTooltip(
+          'Settings · ${shortcuts.bindingFor(ShortcutAction.openSettings)!.displayLabel}',
+        ),
+      ),
+      findsOneWidget,
+    );
 
     // What the settings pane does when somebody records a new chord. The
     // pane promises the footer hints keep up with it.
@@ -1567,7 +1847,7 @@ void main() {
 
       expect(find.byKey(const ValueKey('insert-image')), findsOneWidget);
       expect(find.byKey(const ValueKey('record-voice')), findsOneWidget);
-      expect(find.byKey(const ValueKey('note-settings')), findsNothing);
+      expect(find.byKey(const ValueKey('note-settings')), findsOneWidget);
       expect(find.byKey(const ValueKey('note-total')), findsNothing);
 
       final scroller = find.descendant(
@@ -1582,7 +1862,7 @@ void main() {
     });
 
     testWidgets(
-      'opens the last edited note with the caret and focus at its end',
+      'opens the last opened note with the caret and focus at its end',
       (tester) async {
         store.data['notes.v1'] = [
           {
@@ -1598,7 +1878,7 @@ void main() {
             'updatedAt': 5000,
           },
         ];
-        // Compact startup follows edit recency, not the previously selected id.
+        // Last opened is the default startup behavior.
         store.data['selectedNote.v1'] = 'created-last';
 
         await pumpApp(tester, size: const Size(420, 800));
@@ -1612,14 +1892,8 @@ void main() {
         expect(find.byType(NoteRow), findsNothing);
 
         final field = tester.widget<TextField>(find.byType(TextField));
-        expect(
-          field.controller!.text,
-          'Edited last\nfirst line\nfinal line\n\n',
-        );
-        expect(
-          notes.byId('edited-last')!.body,
-          'Edited last\nfirst line\nfinal line',
-        );
+        expect(field.controller!.text, 'Created last\n2 + 2\n\n');
+        expect(notes.byId('created-last')!.body, 'Created last\n2 + 2');
         expect(
           field.controller!.selection.baseOffset,
           field.controller!.text.length,
@@ -1722,6 +1996,74 @@ void main() {
         expect(find.widgetWithText(NoteRow, 'Swipe from here'), findsOneWidget);
       },
     );
+
+    testWidgets('leaves a swipe along the note footer to the footer', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'footer-swipe',
+          'body': 'Swipe from here',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(420, 800));
+      expect(find.byType(NoteRow), findsNothing);
+
+      // The footer's controls scroll sideways when they do not fit, and a
+      // thumb rests exactly there. Reaching for the button past the end of the
+      // row must not walk out of the note.
+      final footer = tester.getRect(find.byType(NoteFooter));
+      await tester.dragFrom(footer.center, const Offset(-160, 0));
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteRow), findsNothing);
+      expect(find.text('New note created'), findsNothing);
+
+      await tester.dragFrom(footer.center, const Offset(160, 0));
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteRow), findsNothing);
+
+      // Above it the page still swipes.
+      await tester.dragFrom(const Offset(330, 400), const Offset(80, 0));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Swipe from here'), findsOneWidget);
+    });
+
+    testWidgets('two-finger trackpad swipes work in a narrow macOS window', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'compact-mac-swipe',
+          'body': 'Trackpad note',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(640, 800));
+      expect(find.byType(NoteRow), findsNothing);
+
+      final pointer = TestPointer(1, PointerDeviceKind.trackpad);
+      const center = Offset(320, 400);
+      await tester.sendEventToBinding(pointer.panZoomStart(center));
+      await tester.sendEventToBinding(
+        pointer.panZoomUpdate(
+          center,
+          pan: const Offset(-SidebarSwipe.threshold - 20, 0),
+        ),
+      );
+      await tester.sendEventToBinding(pointer.panZoomEnd());
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(NoteRow, 'Trackpad note'), findsOneWidget);
+    });
 
     testWidgets('previews and confirms a new note from a left swipe', (
       tester,

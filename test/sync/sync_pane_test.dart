@@ -21,13 +21,15 @@ class MemoryStore extends LocalStore {
   void put(String key, Object? value) => data[key] = value;
 }
 
-({Account account, NotesStore notes, FakeServer server}) build() {
+({Account account, NotesStore notes, FakeServer server}) build({
+  FakeAuth? auth,
+}) {
   final server = FakeServer();
   final store = MemoryStore();
   final notes = NotesStore(store);
   return (
     account: Account(
-      auth: FakeAuth(),
+      auth: auth ?? FakeAuth(),
       syncApi: (_) => FakeApi(server),
       keys: KeyStore(InMemorySecureStore()),
       notes: notes,
@@ -139,6 +141,38 @@ void main() {
     app.account.dispose();
   });
 
+  testWidgets('a new account must choose its name and can add a photo later', (
+    tester,
+  ) async {
+    final app = build(auth: FakeAuth(name: ''));
+    await app.notes.load();
+    await app.account.restore();
+    await app.account.signIn(email: 'a@b.co', password: 'x');
+    await tester.pumpWidget(harness(app.account));
+    await tester.pumpAndSettle();
+
+    expect(find.text('What should people call you?'), findsOneWidget);
+    expect(find.byKey(const ValueKey('profile-avatar')), findsOneWidget);
+    expect(find.byKey(const ValueKey('choose-profile-photo')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('profile-name')),
+      List.filled(70, 'A').join(),
+    );
+    final field = tester.widget<TextField>(
+      find.byKey(const ValueKey('profile-name')),
+    );
+    expect(field.controller!.text, hasLength(50));
+
+    await tester.enterText(find.byKey(const ValueKey('profile-name')), 'Maya');
+    await tester.tap(find.byKey(const ValueKey('save-profile')));
+    await tester.pumpAndSettle();
+
+    expect(app.account.user!.name, 'Maya');
+    expect(find.text('Choose an encryption passphrase'), findsOneWidget);
+    app.account.dispose();
+  });
+
   testWidgets('a generated passphrase cannot be set until it is saved', (
     tester,
   ) async {
@@ -189,14 +223,20 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('generate-passphrase')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('generated-passphrase-saved')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('generated-passphrase-saved')),
+      findsOneWidget,
+    );
 
     await tester.enterText(find.byType(TextField).first, 'one I thought of');
     await tester.pumpAndSettle();
 
     // Their passphrase, their confirmation, and no saved-it gate.
     expect(find.byType(TextField), findsNWidgets(2));
-    expect(find.byKey(const ValueKey('generated-passphrase-saved')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('generated-passphrase-saved')),
+      findsNothing,
+    );
     expect(
       tester
           .widget<FilledButton>(
@@ -303,7 +343,7 @@ void main() {
     });
     await tester.pumpAndSettle();
 
-    expect(find.text('someone@example.com'), findsOneWidget);
+    expect(find.text('Someone'), findsWidgets);
     expect(find.text('Sign out'), findsOneWidget);
     second.dispose();
   }, timeout: const Timeout(Duration(minutes: 2)));

@@ -43,7 +43,11 @@ void main() {
     test('an ordinary launch turns the draft into a note of its own', () {
       notes.create(body: 'Groceries');
 
-      final filed = QuickCapture.file(notes, 'Call the dentist', LaunchIntent.open);
+      final filed = QuickCapture.file(
+        notes,
+        'Call the dentist',
+        LaunchIntent.open,
+      );
 
       expect(notes.notes, hasLength(2));
       expect(filed.body, 'Call the dentist');
@@ -90,6 +94,21 @@ void main() {
       expect(filed.updatedAt, existing.updatedAt);
     });
 
+    test('a widget carries on the fixed startup note when one is selected', () {
+      final fixed = notes.create(body: 'Inbox');
+      notes.create(body: 'Edited more recently');
+
+      final filed = QuickCapture.file(
+        notes,
+        'From the widget',
+        LaunchIntent.continueWriting,
+        target: fixed,
+      );
+
+      expect(filed.id, fixed.id);
+      expect(filed.body, 'Inbox\n\nFrom the widget');
+    });
+
     test('with nothing to carry on, it starts the first note', () {
       final filed = QuickCapture.file(
         notes,
@@ -107,7 +126,11 @@ void main() {
         NoteFormatRange(start: 0, end: 9, format: NoteFormat.heading),
       ]);
 
-      final filed = QuickCapture.file(notes, 'Milk', LaunchIntent.continueWriting);
+      final filed = QuickCapture.file(
+        notes,
+        'Milk',
+        LaunchIntent.continueWriting,
+      );
 
       expect(filed.body, 'Groceries\n\nMilk');
       expect(filed.formats, const [

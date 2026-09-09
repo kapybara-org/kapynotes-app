@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../audio/voice_player.dart';
@@ -7,6 +8,8 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/blob_store.dart';
 import '../data/note_attachment.dart';
+import '../speech/summarizer.dart';
+import '../speech/summary_instructions.dart';
 import 'editor/voice_chip.dart';
 
 /// What the dialog can offer beyond playback, decided by the caller.
@@ -25,6 +28,10 @@ class VoiceNoteActions {
     this.onSignIn,
     this.onDownload,
     this.onRetry,
+    this.onChanged,
+    this.onRewrite,
+    this.onSaveSummaryInstruction,
+    this.summaryInstruction,
     this.failureReason,
   });
 
@@ -36,6 +43,29 @@ class VoiceNoteActions {
   final VoidCallback? onSignIn;
   final VoidCallback? onDownload;
   final VoidCallback? onRetry;
+
+  /// Writes the recording back to the note.
+  ///
+  /// One callback rather than one per edit, because everything the dialog
+  /// changes — a speaker's name, a post it just wrote, a post being thrown
+  /// away — is the same operation: this ref replaces the one on the note.
+  final void Function(NoteVoiceRef next)? onChanged;
+
+  /// Turns the transcript into whatever [instruction] asks for.
+  ///
+  /// Throws on failure, and the message is shown as written: the summariser
+  /// layer already says whether the fix is signing in, downloading a model,
+  /// or turning on a system setting.
+  final Future<String> Function(String instruction)? onRewrite;
+
+  /// Saves how summaries should be written from now on. Null clears it back
+  /// to the app's own wording.
+  final void Function(String? instruction)? onSaveSummaryInstruction;
+
+  /// What the instruction editor opens on: the user's words if they have
+  /// written any, otherwise the wording actually in use.
+  final String? summaryInstruction;
+
   final String? failureReason;
 }
 
@@ -125,15 +155,36 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
 
   late bool _onSummary;
 
+  /// The recording as this dialog has it, which is ahead of the note for as
+  /// long as the dialog is open.
+  ///
+  /// The dialog is a route: it is built once with a ref and is not rebuilt
+  /// when the note changes underneath. Naming a speaker or writing a post
+  /// has to show up immediately, so the edit is made here and handed to
+  /// [VoiceNoteActions.onChanged] to persist.
+  late NoteVoiceRef _live;
+
+  /// The rewrite being written, if one is. Only ever one at a time: they
+  /// cost a model call and two at once would race to be saved.
+  VoiceTakeKind? _rewriting;
+  String? _rewriteError;
+
   @override
   void initState() {
     super.initState();
+    _live = widget.ref;
     // Opens on whichever tab has something to read. Not remembered between
     // openings: a rule you can predict beats one that is merely sticky.
     _onSummary = widget.ref.summary != null;
   }
 
-  NoteVoiceRef get _ref => widget.ref;
+  NoteVoiceRef get _ref => _live;
+
+  /// Applies an edit here and on the note, in that order.
+  void _apply(NoteVoiceRef next) {
+    setState(() => _live = next);
+    widget.actions.onChanged?.call(next);
+  }
 
   /// The text **Insert into note** puts in, one line per point or paragraph.
   String? get _insertableText {
@@ -162,7 +213,11 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
           subtitle: _subtitle(),
           onClose: () => Navigator.of(context).maybePop(),
         ),
-        VoiceNotePlayerRow(ref: _ref, player: widget.player, blobs: widget.blobs),
+        VoiceNotePlayerRow(
+          ref: _ref,
+          player: widget.player,
+          blobs: widget.blobs,
+        ),
         _Tabs(
           onSummary: _onSummary,
           hasSummary: _ref.summary != null,
@@ -221,6 +276,11 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
         actionLabel: 'Turn on',
         onAction: actions.onTurnOnTranscription,
       ),
+      VoiceChipState.needsAccount => _Empty(
+        message: 'Sign in to get text and a summary.',
+        actionLabel: actions.onSignIn != null ? 'Sign in' : null,
+        onAction: actions.onSignIn,
+      ),
       VoiceChipState.outOfMinutes => const _Empty(
         message: "You've used this month's minutes.",
       ),
@@ -234,6 +294,9 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
       ),
       VoiceChipState.waiting => const _Empty(
         message: 'Waiting for connection.',
+      ),
+      VoiceChipState.retrying => const _Empty(
+        message: "Transcription didn't go through. Trying again soon.",
       ),
       VoiceChipState.failed => _Empty(
         message: "Couldn't transcribe this recording.",
@@ -257,6 +320,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
 
   Widget _summary(CalcPalette palette) {
     final summary = _ref.summary!;
+    final takes = _ref.takes.reversed.toList(growable: false);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       children: [
@@ -276,23 +340,244 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
               ],
             ),
           ),
-        const SizedBox(height: 12),
-        Text(
-          'Made from the transcript',
-          style: TextStyle(fontSize: 11, color: palette.textTertiary),
+        const SizedBox(height: 10),
+        // Says where the summary came from, and — in the same breath — that
+        // how it is written is something the reader chose and can change.
+        // The setting is here rather than only in Settings because this is
+        // where somebody decides they wanted a different kind of summary.
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Written from the transcript',
+                style: TextStyle(fontSize: 11, color: palette.textTertiary),
+              ),
+            ),
+            if (widget.actions.onSaveSummaryInstruction != null)
+              _QuietButton(
+                label: 'Change how',
+                onPressed: () => unawaited(_editSummaryInstruction()),
+              ),
+          ],
         ),
+        if (_ref.transcript != null && widget.actions.onRewrite != null) ...[
+          const SizedBox(height: 18),
+          Divider(height: 1, color: palette.separator),
+          const SizedBox(height: 16),
+          Text(
+            'MAKE SOMETHING FROM THIS',
+            style: TextStyle(
+              fontSize: 10.5,
+              letterSpacing: 0.8,
+              fontWeight: FontWeight.w600,
+              color: palette.textTertiary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final kind in VoiceTakeKind.values)
+                _RewriteChip(
+                  label: switch (kind) {
+                    VoiceTakeKind.x => 'Post for X',
+                    VoiceTakeKind.linkedin => 'Post for LinkedIn',
+                    VoiceTakeKind.custom => 'Your own words…',
+                  },
+                  busy: _rewriting == kind,
+                  // One at a time: each costs a model call, and two racing
+                  // would both try to be the newest take.
+                  onPressed: _rewriting != null
+                      ? null
+                      : () => unawaited(_rewrite(kind)),
+                ),
+            ],
+          ),
+          if (_rewriteError case final String reason) ...[
+            const SizedBox(height: 10),
+            Text(
+              reason,
+              style: TextStyle(fontSize: 12, color: palette.textSecondary),
+            ),
+          ],
+          for (final take in takes) ...[
+            const SizedBox(height: 12),
+            _TakeCard(
+              take: take,
+              onCopy: () => unawaited(_copy(take.text)),
+              onRemove: () => _apply(_ref.withoutTake(take)),
+              onAgain: _rewriting != null
+                  ? null
+                  : () => unawaited(
+                      _rewrite(take.kind, custom: take.instruction),
+                    ),
+            ),
+          ],
+        ],
       ],
     );
   }
 
+  Future<void> _copy(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(const SnackBar(content: Text('Copied')));
+  }
+
+  /// Writes one take, and keeps it.
+  ///
+  /// A custom instruction is asked for first, pre-filled with whatever was
+  /// asked last time so that trying a wording again is an edit rather than a
+  /// retype.
+  Future<void> _rewrite(VoiceTakeKind kind, {String? custom}) async {
+    final rewrite = widget.actions.onRewrite;
+    final transcript = _ref.transcript;
+    if (rewrite == null || transcript == null) return;
+
+    var instruction = instructionFor(kind, custom: custom);
+    if (kind == VoiceTakeKind.custom) {
+      final asked = await _askForInstruction(
+        initial: custom ?? _lastCustomInstruction ?? '',
+      );
+      if (asked == null || asked.trim().isEmpty) return;
+      instruction = asked.trim();
+      _lastCustomInstruction = instruction;
+    }
+
+    setState(() {
+      _rewriting = kind;
+      _rewriteError = null;
+    });
+    try {
+      final text = await rewrite(instruction);
+      if (!mounted) return;
+      _apply(
+        _ref.withTake(
+          VoiceTake(
+            kind: kind,
+            text: text,
+            engine: _ref.summary?.engine ?? transcript.engine,
+            at: DateTime.now().millisecondsSinceEpoch,
+            instruction: kind == VoiceTakeKind.custom ? instruction : null,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _rewriteError = _describe(error));
+    } finally {
+      if (mounted) setState(() => _rewriting = null);
+    }
+  }
+
+  /// Kept for the session rather than saved: a one-off instruction is one
+  /// somebody is still trying out, and the saved one is the summary's.
+  String? _lastCustomInstruction;
+
+  static String _describe(Object error) => switch (error) {
+    SummarizerUnavailable(:final message) => message,
+    _ => 'That did not work. Try again in a moment.',
+  };
+
+  Future<String?> _askForInstruction({required String initial}) =>
+      showInstructionSheet(
+        context,
+        title: 'What should it write?',
+        help:
+            'Ask for anything the transcript can answer: a message, a to-do '
+            'list, a shorter version. It only uses what you said.',
+        hint: 'Write a short message to my team about this.',
+        initial: initial,
+        confirmLabel: 'Write it',
+      );
+
+  /// Changes how every summary from now on is written.
+  Future<void> _editSummaryInstruction() async {
+    final save = widget.actions.onSaveSummaryInstruction;
+    if (save == null) return;
+    final asked = await showInstructionSheet(
+      context,
+      title: 'How summaries are written',
+      help:
+          'This is what the model is told. It applies to every recording you '
+          'summarise. Whatever you write, it will only use what you actually '
+          'said.',
+      hint: defaultSummaryInstruction,
+      initial: widget.actions.summaryInstruction ?? defaultSummaryInstruction,
+      confirmLabel: 'Save',
+      resetLabel: 'Use the standard one',
+      resetTo: defaultSummaryInstruction,
+    );
+    if (asked == null || !mounted) return;
+    save(asked.trim().isEmpty ? null : asked);
+    // Redoing it is the only way to see what changed, and the dialog cannot
+    // watch the note it is written to — so this closes and lets the chip say
+    // "Summarising…" as it goes.
+    final regenerate = widget.actions.onRegenerateSummary;
+    if (regenerate == null) return;
+    final redo = await _confirmRedo();
+    if (!mounted || !redo) return;
+    regenerate();
+    Navigator.of(context).maybePop();
+  }
+
+  Future<bool> _confirmRedo() async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Write this one again?'),
+          content: const Text(
+            'The new instructions are saved either way. This rewrites the '
+            'summary of this recording with them.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Not now'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Write it again'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
   Widget _transcript(CalcPalette palette) {
     final transcript = _ref.transcript!;
     final paragraphs = groupTranscriptParagraphs(transcript.segments);
-    return ListView.builder(
+    final speakers = transcript.speakerIds;
+    // One speaker is a memo somebody recorded alone. Labelling every
+    // paragraph "Speaker 1" would be the app telling them something they
+    // already know, in the place they came to read their own words — so a
+    // transcript with nobody to tell apart looks exactly as it always has.
+    final named = speakers.length > 1;
+
+    // Precomputed rather than worked out per row: a long recording runs to
+    // hundreds of paragraphs and the builder must stay cheap.
+    var previous = -1;
+    final rows = <_TranscriptRow>[];
+    for (final paragraph in paragraphs) {
+      final speaker = paragraph.first.speaker;
+      rows.add(
+        _TranscriptRow(
+          paragraph: paragraph,
+          speaker: named ? speaker : null,
+          startsTurn: named && speaker != null && speaker != previous,
+        ),
+      );
+      previous = speaker ?? -1;
+    }
+
+    final list = ListView.builder(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-      itemCount: paragraphs.length + 1,
+      itemCount: rows.length + 1,
       itemBuilder: (context, index) {
-        if (index == paragraphs.length) {
+        if (index == rows.length) {
           return Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Text(
@@ -301,40 +586,89 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
             ),
           );
         }
-        final paragraph = paragraphs[index];
+        final row = rows[index];
         return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Row(
+          padding: EdgeInsets.only(bottom: 12, top: row.startsTurn ? 4 : 0),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 48,
-                child: Text(
-                  formatVoiceDuration(
-                    Duration(milliseconds: paragraph.first.s),
+              if (row.startsTurn)
+                Padding(
+                  padding: const EdgeInsets.only(left: 48, bottom: 4),
+                  child: _SpeakerLabel(
+                    name: transcript.nameFor(row.speaker!),
+                    color: speakerColor(palette, row.speaker!),
+                    onPressed: widget.actions.onChanged == null
+                        ? null
+                        : () => unawaited(_renameSpeaker(row.speaker!)),
                   ),
-                  style: TextStyle(fontSize: 11, color: palette.textTertiary),
                 ),
-              ),
-              Expanded(
-                // SelectableText's own onTap, not a GestureDetector around
-                // it: the selection recognisers inside are deeper in the
-                // arena and win every tap, so the wrapper this used to have
-                // was never called once. Selecting a quote out of the
-                // transcript still works; this is only the tap.
-                child: SelectableText(
-                  paragraph.map((segment) => segment.t).join(' ').trim(),
-                  onTap: () => unawaited(
-                    _seekTo(Duration(milliseconds: paragraph.first.s)),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 48,
+                    child: Text(
+                      formatVoiceDuration(
+                        Duration(milliseconds: row.paragraph.first.s),
+                      ),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: palette.textTertiary,
+                      ),
+                    ),
                   ),
-                  style: TextStyle(color: palette.textPrimary, height: 1.5),
-                ),
+                  Expanded(
+                    // SelectableText's own onTap, not a GestureDetector
+                    // around it: the selection recognisers inside are deeper
+                    // in the arena and win every tap, so the wrapper this
+                    // used to have was never called once. Selecting a quote
+                    // out of the transcript still works; this is only the
+                    // tap.
+                    child: SelectableText(
+                      row.paragraph
+                          .map((segment) => segment.t)
+                          .join(' ')
+                          .trim(),
+                      onTap: () => unawaited(
+                        _seekTo(Duration(milliseconds: row.paragraph.first.s)),
+                      ),
+                      style: TextStyle(color: palette.textPrimary, height: 1.5),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         );
       },
     );
+
+    if (!named) return list;
+    return Column(
+      children: [
+        _SpeakerBar(
+          transcript: transcript,
+          speakers: speakers,
+          onRename: widget.actions.onChanged == null
+              ? null
+              : (speaker) => unawaited(_renameSpeaker(speaker)),
+        ),
+        Expanded(child: list),
+      ],
+    );
+  }
+
+  Future<void> _renameSpeaker(int speaker) async {
+    final transcript = _ref.transcript;
+    if (transcript == null) return;
+    final name = await showSpeakerNameDialog(
+      context,
+      current: transcript.speakers[speaker] ?? '',
+      fallback: 'Speaker ${speaker + 1}',
+    );
+    if (name == null || !mounted) return;
+    _apply(_ref.copyWith(transcript: transcript.renaming(speaker, name)));
   }
 
   Future<void> _showOverflow() async {
@@ -429,8 +763,18 @@ List<List<TranscriptSegment>> groupTranscriptParagraphs(
 
 String _formatDate(DateTime at) {
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${at.day} ${months[at.month - 1]} ${at.year}';
 }
@@ -459,7 +803,7 @@ class _Header extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                     color: palette.textPrimary,
                   ),
                 ),
@@ -748,4 +1092,438 @@ class _Footer extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One paragraph of the transcript, and whether it opens somebody's turn.
+///
+/// Worked out once for the whole transcript rather than in the builder: a
+/// long recording runs to hundreds of these and a list that recomputes who
+/// spoke last on every scroll frame is a list that stutters.
+class _TranscriptRow {
+  const _TranscriptRow({
+    required this.paragraph,
+    required this.speaker,
+    required this.startsTurn,
+  });
+
+  final List<TranscriptSegment> paragraph;
+  final int? speaker;
+  final bool startsTurn;
+}
+
+/// A colour per speaker, from the palette the app already has.
+///
+/// Reuses the chip colours rather than inventing new ones, so a transcript
+/// looks like the rest of the app in both themes and nobody has to pick five
+/// more colours that work on paper and in the dark.
+Color speakerColor(CalcPalette palette, int speaker) {
+  final wheel = [
+    palette.chipNumber,
+    palette.chipCurrency,
+    palette.chipUnit,
+    palette.chipBoolean,
+    palette.chipOther,
+  ];
+  return wheel[speaker % wheel.length];
+}
+
+/// Says how many people are in the recording, and offers their names.
+///
+/// Only ever shown when there is more than one, because that is the only
+/// case where any of it is news.
+class _SpeakerBar extends StatelessWidget {
+  const _SpeakerBar({
+    required this.transcript,
+    required this.speakers,
+    this.onRename,
+  });
+
+  final VoiceTranscript transcript;
+  final List<int> speakers;
+  final void Function(int speaker)? onRename;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: palette.separator)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${speakers.length} speakers',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: palette.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final speaker in speakers)
+                _SpeakerLabel(
+                  name: transcript.nameFor(speaker),
+                  color: speakerColor(palette, speaker),
+                  onPressed: onRename == null ? null : () => onRename!(speaker),
+                ),
+            ],
+          ),
+          if (onRename != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Tap a name to change it.',
+              style: TextStyle(fontSize: 11, color: palette.textTertiary),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A speaker's name, with the dot that ties it to their paragraphs.
+class _SpeakerLabel extends StatelessWidget {
+  const _SpeakerLabel({
+    required this.name,
+    required this.color,
+    this.onPressed,
+  });
+
+  final String name;
+  final Color color;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final label = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          name,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+            color: palette.textSecondary,
+          ),
+        ),
+      ],
+    );
+    if (onPressed == null) return label;
+    return Semantics(
+      button: true,
+      label: 'Rename $name',
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: label,
+        ),
+      ),
+    );
+  }
+}
+
+/// A quiet text action, for things beside a caption rather than under it.
+class _QuietButton extends StatelessWidget {
+  const _QuietButton({required this.label, this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: palette.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One thing the transcript can be turned into.
+class _RewriteChip extends StatelessWidget {
+  const _RewriteChip({required this.label, required this.busy, this.onPressed});
+
+  final String label;
+  final bool busy;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final enabled = onPressed != null;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: palette.controlBackground,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: palette.controlBorder),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (busy) ...[
+                SizedBox(
+                  width: 11,
+                  height: 11,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.6,
+                    color: palette.textTertiary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: enabled ? palette.textPrimary : palette.textTertiary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A post the model wrote, ready to be copied out.
+class _TakeCard extends StatelessWidget {
+  const _TakeCard({
+    required this.take,
+    required this.onCopy,
+    required this.onRemove,
+    this.onAgain,
+  });
+
+  final VoiceTake take;
+  final VoidCallback onCopy;
+  final VoidCallback onRemove;
+  final VoidCallback? onAgain;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 12),
+      decoration: BoxDecoration(
+        color: palette.controlBackground,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: palette.controlBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  take.kind.label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: palette.textSecondary,
+                  ),
+                ),
+              ),
+              if (onAgain != null)
+                IconButton(
+                  onPressed: onAgain,
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Write it again',
+                  icon: Icon(
+                    Icons.refresh,
+                    size: 16,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              IconButton(
+                onPressed: onCopy,
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Copy',
+                icon: Icon(
+                  Icons.copy_all_outlined,
+                  size: 16,
+                  color: palette.textTertiary,
+                ),
+              ),
+              IconButton(
+                onPressed: onRemove,
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Remove',
+                icon: Icon(Icons.close, size: 16, color: palette.textTertiary),
+              ),
+            ],
+          ),
+          // The instruction, so a card somebody comes back to still says what
+          // was asked for. Only the custom ones carry it; a preset would only
+          // be repeating its own label.
+          if (take.instruction case final String asked) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                asked,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                  color: palette.textTertiary,
+                ),
+              ),
+            ),
+          ],
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: SelectableText(
+              take.text,
+              style: TextStyle(color: palette.textPrimary, height: 1.45),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Asks for a name for one speaker.
+///
+/// An empty answer clears the name rather than storing an empty one, so
+/// somebody who changes their mind gets the number back.
+Future<String?> showSpeakerNameDialog(
+  BuildContext context, {
+  required String current,
+  required String fallback,
+}) {
+  final controller = TextEditingController(text: current);
+  return showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Who is this?'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLength: 40,
+        decoration: InputDecoration(hintText: fallback, counterText: ''),
+        onSubmitted: (value) => Navigator.of(context).pop(value),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(''),
+          child: const Text('Clear'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(controller.text),
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Asks for an instruction, in the user's own words.
+///
+/// Shared by the two places that need one — how summaries are written, and a
+/// one-off rewrite — because they differ only in their words. The field is
+/// pre-filled with what is actually in use rather than a description of it,
+/// so editing one line does what it looks like it does.
+Future<String?> showInstructionSheet(
+  BuildContext context, {
+  required String title,
+  required String help,
+  required String hint,
+  required String initial,
+  required String confirmLabel,
+  String? resetLabel,
+  String? resetTo,
+}) {
+  final controller = TextEditingController(text: initial);
+  return showDialog<String>(
+    context: context,
+    builder: (context) {
+      final palette = context.palette;
+      return AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                help,
+                style: TextStyle(fontSize: 12, color: palette.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                minLines: 4,
+                maxLines: 8,
+                maxLength: instructionMaxChars,
+                decoration: InputDecoration(
+                  hintText: hint,
+                  border: const OutlineInputBorder(),
+                  counterText: '',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          if (resetLabel != null && resetTo != null)
+            TextButton(
+              onPressed: () => controller.text = resetTo,
+              child: Text(resetLabel),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: Text(confirmLabel),
+          ),
+        ],
+      );
+    },
+  );
 }

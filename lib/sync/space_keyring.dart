@@ -181,8 +181,6 @@ class SpaceKeyring extends ChangeNotifier {
     if (spaces is! List) return;
     // Names and membership only. Wrapped keys in the cache are useless
     // without the identity keys, which arrive with the next refresh.
-    _spaces = List.unmodifiable(
-      spaces.map(Space.fromJson).whereType<Space>(),
-    );
+    _spaces = List.unmodifiable(spaces.map(Space.fromJson).whereType<Space>());
   }
 }

@@ -56,6 +56,35 @@ class AppTimeZones {
     return tz.TZDateTime.from(instant, location);
   }
 
+  /// Interprets calendar fields as a wall-clock reading in [locationId] and
+  /// returns the represented instant. Calculator time literals need this
+  /// inverse of [convert]; a plain local [DateTime] would apply the device
+  /// zone even when the expression explicitly says `HKT`.
+  static DateTime fromWallClock({
+    required int year,
+    required int month,
+    required int day,
+    int hour = 0,
+    int minute = 0,
+    int second = 0,
+    String? locationId,
+  }) {
+    final id = normalize(locationId);
+    if (id == null) {
+      return DateTime(year, month, day, hour, minute, second).toUtc();
+    }
+    final location = id == 'UTC' ? tz.UTC : tz.getLocation(id);
+    return tz.TZDateTime(
+      location,
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second,
+    ).toUtc();
+  }
+
   static String displayName(String? locationId) {
     final id = normalize(locationId);
     if (id == null) return 'System time zone';

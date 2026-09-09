@@ -46,6 +46,7 @@ void main() {
     expect(prefs.dailySeparatorsEnabled, isTrue);
     expect(prefs.spellCheckEnabled, isTrue);
     expect(prefs.writingFont, WritingFont.handwritten);
+    expect(prefs.transparencyEnabled, isFalse);
     expect(prefs.timeZoneId, isNull);
   });
 
@@ -61,6 +62,7 @@ void main() {
     prefs.dailySeparatorsEnabled = false;
     prefs.spellCheckEnabled = false;
     prefs.writingFont = WritingFont.clean;
+    prefs.transparencyEnabled = true;
 
     final restored = LayoutPrefs(store)..load();
     expect(restored.windowSize, const Size(684, 712));
@@ -71,6 +73,7 @@ void main() {
     expect(restored.dailySeparatorsEnabled, isFalse);
     expect(restored.spellCheckEnabled, isFalse);
     expect(restored.writingFont, WritingFont.clean);
+    expect(restored.transparencyEnabled, isTrue);
   });
 
   test('resetting panel widths also brings a hidden results pane back', () {
@@ -124,6 +127,29 @@ void main() {
     // A second instance over the same storage is the next launch.
     final restarted = LayoutPrefs(store)..load();
     expect(restarted.sidebarVisible, isFalse);
+  });
+
+  test('startup note follows the last opened note by default', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+
+    expect(prefs.defaultNoteId, isNull);
+    prefs.lastOpenedNoteId = 'note-2';
+
+    final restored = LayoutPrefs(store)..load();
+    expect(restored.resolveOpeningNoteId(['note-1', 'note-2']), 'note-2');
+  });
+
+  test('a fixed startup note falls back when it is deleted', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    prefs.lastOpenedNoteId = 'note-2';
+    prefs.defaultNoteId = 'note-1';
+
+    expect(prefs.resolveOpeningNoteId(['note-1', 'note-2']), 'note-1');
+    expect(prefs.resolveOpeningNoteId(['note-2']), 'note-2');
+    expect(prefs.defaultNoteId, isNull);
+    expect(store.data['defaultNote.v1'], '');
   });
 
   test('number system follows the region until the user overrides it', () {
@@ -216,6 +242,53 @@ void main() {
       (LayoutPrefs(_MemoryStore())..load()).keepRunningInBackground,
       isFalse,
     );
+  });
+
+  test('a phone ignores a stored desktop transparency choice', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    final store = _MemoryStore()..data['transparencyEnabled.v1'] = true;
+    final prefs = LayoutPrefs(store)..load();
+
+    expect(prefs.transparencyEnabled, isFalse);
+    prefs.transparencyEnabled = true;
+    expect(prefs.transparencyEnabled, isFalse);
+  });
+
+  test('the transparency amount persists, clamps and outlives the mode', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.transparencyAmount, LayoutPrefs.defaultTransparencyAmount);
+
+    prefs.transparencyAmount = 0.8;
+    expect((LayoutPrefs(store)..load()).transparencyAmount, 0.8);
+
+    prefs.transparencyAmount = 3;
+    expect(prefs.transparencyAmount, 1);
+    prefs.transparencyAmount = -1;
+    expect(prefs.transparencyAmount, 0);
+
+    // Off and on again finds the amount where it was left.
+    prefs.transparencyAmount = 0.3;
+    prefs.transparencyEnabled = false;
+    expect((LayoutPrefs(store)..load()).transparencyAmount, 0.3);
+
+    store.data['transparencyAmount.v1'] = 9;
+    expect((LayoutPrefs(store)..load()).transparencyAmount, 1);
+  });
+
+  test('Windows keeps a transparency choice, Linux does not', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final store = _MemoryStore()..data['transparencyEnabled.v1'] = true;
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    expect((LayoutPrefs(store)..load()).transparencyEnabled, isTrue);
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    final linux = LayoutPrefs(store)..load();
+    expect(linux.transparencyEnabled, isFalse);
+    linux.transparencyEnabled = true;
+    expect(linux.transparencyEnabled, isFalse);
   });
 
   test('the login-item default is spent once, and stays spent', () {

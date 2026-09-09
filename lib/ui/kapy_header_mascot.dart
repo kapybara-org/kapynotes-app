@@ -101,6 +101,16 @@ class KapyHeaderMascot extends StatefulWidget {
   static const hideDuration = Duration(milliseconds: 1000);
   static const sleepLoopDuration = Duration(milliseconds: 3200);
 
+  /// How long the sleeping loop keeps playing with nothing else going on.
+  ///
+  /// The loop is a ticker at thirty frames a second, and a ticker never lets
+  /// the window go idle: every one of those frames is a full composite of the
+  /// editor, which keeps the engine's drawables and caches warm for as long
+  /// as it runs. A few minutes is enough for anyone still watching; after
+  /// that Kapy holds the pose instead, and the next keystroke wakes it as it
+  /// always did.
+  static const breathingLimit = Duration(minutes: 3);
+
   final KapyHeaderController controller;
   final double markSize;
 
@@ -109,7 +119,7 @@ class KapyHeaderMascot extends StatefulWidget {
 }
 
 class KapyHeaderMascotState extends State<KapyHeaderMascot>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _motion = AnimationController(
     vsync: this,
     duration: KapyHeaderMascot.emergeDuration,
@@ -126,8 +136,12 @@ class KapyHeaderMascotState extends State<KapyHeaderMascot>
   int _handledSerial = 0;
   bool _animationsDisabled = false;
   final Set<String> _warmedAssets = {};
+  Timer? _breathingLimit;
 
   KapyHeaderAnimation? get activeAnimation => _segment;
+
+  /// Whether the sleeping loop is currently ticking.
+  bool get isBreathing => _breathing.isAnimating;
   KapyHeaderRestingPose get restingPose => _restingPose;
   int? get currentFrameIndex => _currentPlayback?.frameIndex;
   String? get currentAtlasAssetPath => _currentPlayback?.spec.assetPath;
@@ -143,8 +157,41 @@ class KapyHeaderMascotState extends State<KapyHeaderMascot>
   void initState() {
     super.initState();
     widget.controller.addListener(_handleCommand);
+    WidgetsBinding.instance.addObserver(this);
     if (_restingPose == KapyHeaderRestingPose.sleeping) {
-      _breathing.repeat();
+      _startBreathing();
+    }
+  }
+
+  /// Plays the sleeping loop, for a while, and only while somebody could be
+  /// looking: a window that is not in front is a window nobody is watching,
+  /// and a looping ticker there is pure cost. The pose is held on the frame
+  /// the loop stopped at, so nothing jumps when it resumes.
+  void _startBreathing() {
+    _breathingLimit?.cancel();
+    _breathingLimit = null;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
+    _breathing.repeat();
+    _breathingLimit = Timer(KapyHeaderMascot.breathingLimit, _stopBreathing);
+  }
+
+  void _stopBreathing() {
+    _breathingLimit?.cancel();
+    _breathingLimit = null;
+    _breathing.stop();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_restingPose == KapyHeaderRestingPose.sleeping &&
+          _segment == null &&
+          !_animationsDisabled) {
+        _startBreathing();
+      }
+    } else {
+      _stopBreathing();
     }
   }
 
@@ -157,7 +204,7 @@ class KapyHeaderMascotState extends State<KapyHeaderMascot>
     if (disabled) {
       _generation++;
       _motion.stop();
-      _breathing.stop();
+      _stopBreathing();
       _segment = null;
       _sequence = null;
       _restingPose = KapyHeaderRestingPose.logo;
@@ -176,7 +223,9 @@ class KapyHeaderMascotState extends State<KapyHeaderMascot>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_handleCommand);
+    _breathingLimit?.cancel();
     _motion.dispose();
     _breathing.dispose();
     super.dispose();
@@ -192,7 +241,7 @@ class KapyHeaderMascotState extends State<KapyHeaderMascot>
     final interruptedFrame = _currentFrame;
     final generation = ++_generation;
     _motion.stop();
-    _breathing.stop();
+    _stopBreathing();
     unawaited(_run(command, generation, interruptedFrame));
   }
 
@@ -287,7 +336,7 @@ class KapyHeaderMascotState extends State<KapyHeaderMascot>
           return;
         }
         _settle(KapyHeaderRestingPose.sleeping);
-        if (mounted && generation == _generation) _breathing.repeat();
+        if (mounted && generation == _generation) _startBreathing();
         break;
       case KapyHeaderAnimation.wake:
         if (interrupted.sleep > 0) {

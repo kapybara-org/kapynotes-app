@@ -1,12 +1,17 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/audio/voice_player.dart';
 import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/calc/highlight.dart';
 import 'package:kapy_notes/core/editor_font.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -95,6 +100,12 @@ Widget harness(
   List<NoteAttachmentRef> attachments, {
   VoicePlayer? player,
   BlobStore? images,
+  ValueChanged<NoteVoiceRef>? onOpenVoiceNote,
+  DateTime? lastUpdatedAt,
+  bool dailySeparatorsEnabled = false,
+  DateTime Function()? now,
+  bool startAtEnd = false,
+  void Function(String, List<NoteAttachmentRef>)? onChanged,
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   home: Scaffold(
@@ -105,13 +116,18 @@ Widget harness(
       initialAttachments: attachments,
       images: images ?? store,
       player: player,
+      onOpenVoiceNote: onOpenVoiceNote,
       engine: engine,
       highlighter: Highlighter(engine.registry),
       gutterWidth: 160,
       resultsVisible: true,
+      lastUpdatedAt: lastUpdatedAt,
+      dailySeparatorsEnabled: dailySeparatorsEnabled,
+      now: now,
+      startAtEnd: startAtEnd,
       writingFont: WritingFont.handwritten,
       shortcuts: shortcutPrefs,
-      onDocumentChanged: (body, formats, refs) {},
+      onDocumentChanged: (body, formats, refs) => onChanged?.call(body, refs),
       onGutterWidthChanged: (_) {},
       onResultsVisibilityChanged: (_) {},
       onGutterWidthReset: () {},
@@ -228,6 +244,88 @@ void main() {
     });
   });
 
+  group('the pointer over a recording', () {
+    /// One mouse for the whole test: the tracker allows a device to be added
+    /// once, so asking about two places means moving the same pointer.
+    Future<TestGesture> mouse(WidgetTester tester) async {
+      final gesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+        pointer: 1,
+      );
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await tester.pump();
+      return gesture;
+    }
+
+    Future<MouseCursor> cursorAt(
+      WidgetTester tester,
+      TestGesture gesture,
+      Offset position,
+    ) async {
+      await gesture.moveTo(position);
+      await tester.pump();
+      return RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1)!;
+    }
+
+    testWidgets('is a hand over the chip and an I-beam over the words', (
+      tester,
+    ) async {
+      // The chip sits inside the text field, which asks for an I-beam
+      // everywhere. Only the innermost region under the pointer decides, so
+      // this is the test that the chip is the one being asked.
+      await tester.pumpWidget(
+        harness(
+          '$anchor\nnotes',
+          [voice(0)],
+          images: immediateStore,
+          onOpenVoiceNote: (_) {},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final gesture = await mouse(tester);
+      expect(
+        await cursorAt(
+          tester,
+          gesture,
+          tester.getCenter(find.byType(NoteVoiceChip)),
+        ),
+        SystemMouseCursors.click,
+      );
+
+      final editable = field(tester).renderEditable;
+      expect(
+        await cursorAt(
+          tester,
+          gesture,
+          editable.localToGlobal(caretFor(tester, 4).center),
+        ),
+        SystemMouseCursors.text,
+        reason: 'the line under the chip is still ordinary text',
+      );
+    });
+
+    testWidgets('says what a click on the recording opens', (tester) async {
+      await tester.pumpWidget(
+        harness(
+          '$anchor\n',
+          [voice(0)],
+          images: immediateStore,
+          onOpenVoiceNote: (_) {},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final gesture = await mouse(tester);
+      await gesture.moveTo(tester.getCenter(find.text('Voice note')));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+
+      expect(find.text('Open this recording'), findsOneWidget);
+    });
+  });
+
   group('the chip and the player', () {
     testWidgets('stops offering to pause once the recording ends', (
       tester,
@@ -300,6 +398,79 @@ void main() {
       );
 
       player.dispose();
+    });
+  });
+
+  group('recording insertion and removal', () {
+    testWidgets('a programmatic next-day recording starts a dated section', (
+      tester,
+    ) async {
+      String? changedBody;
+      await tester.pumpWidget(
+        harness(
+          'Yesterday',
+          const [],
+          lastUpdatedAt: DateTime(2026, 9, 1, 21, 42),
+          dailySeparatorsEnabled: true,
+          now: () => DateTime(2026, 9, 2, 8),
+          startAtEnd: true,
+          onChanged: (body, _) => changedBody = body,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      tester
+          .state<NoteEditorState>(find.byType(NoteEditor))
+          .insertVoice(voice(0));
+      await tester.pump();
+
+      expect(changedBody, 'Yesterday\n\n// ─ 1 Sep · 21:42 ─\n$anchor\n');
+    });
+
+    testWidgets('the close button removes a recording and undo restores it', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() {
+        AppPlatform.debugTargetPlatformOverride = null;
+        debugDefaultTargetPlatformOverride = null;
+      });
+      List<NoteAttachmentRef> changed = [voice(0)];
+      await tester.pumpWidget(
+        harness(
+          '$anchor\n',
+          [voice(0)],
+          startAtEnd: true,
+          onChanged: (_, refs) => changed = refs,
+        ),
+      );
+      await tester.pump();
+      // Let EditableText commit the initial value as the undo baseline.
+      await tester.pump(const Duration(milliseconds: 600));
+
+      await tester.tap(find.byKey(const ValueKey('remove-voice-note')));
+      await tester.pump();
+      expect(changed, isEmpty);
+      expect(find.byType(NoteVoiceChip), findsNothing);
+
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ, platform: 'windows');
+      await tester.pump();
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.pump();
+      debugDefaultTargetPlatformOverride = null;
+
+      expect(changed, hasLength(1));
+      expect(changed.single.hash, recordingHash);
+      expect(find.byType(NoteVoiceChip), findsOneWidget);
     });
   });
 }

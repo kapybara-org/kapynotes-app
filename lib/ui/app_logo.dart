@@ -68,7 +68,7 @@ class AppWordmark extends StatelessWidget {
             color: textColor ?? context.palette.textPrimary,
             fontFamily: 'OdinRounded',
             fontSize: fontSize,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
             height: 1,
             letterSpacing: -0.15,
           ),

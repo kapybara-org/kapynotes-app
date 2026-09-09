@@ -41,6 +41,57 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color hover;
   final Color paperFiber;
 
+  /// How much of the desktop the window's chrome lets through: a multiplier on
+  /// the alpha of every [GlassSurface]. 1 is fully opaque.
+  ///
+  /// The toolbar, the sidebar and the note footer read this. The writing
+  /// surfaces have their own knob, [paperTranslucency], because a paragraph
+  /// needs more body under it than a row of buttons does.
+  final double translucency;
+
+  /// How much of the desktop the writing surfaces let through: a multiplier
+  /// on the alpha of the paper, the results gutter and the empty pane. 1 is
+  /// fully opaque.
+  ///
+  /// Dialogs, menus, popovers and tooltips never read either knob. They float
+  /// over the note, and a menu you can read the note through is a menu you
+  /// cannot read.
+  final double paperTranslucency;
+
+  /// Whether the desktop shows through the window at all: the transparency
+  /// setting, on a platform that can blur what is behind the window, with no
+  /// accessibility mode asking for solid surfaces.
+  bool get isGlass => translucency < 1 || paperTranslucency < 1;
+
+  /// The writing surface as painted in this mode.
+  Color get paperColor =>
+      editorBackground.withMultipliedAlpha(paperTranslucency);
+
+  /// The results gutter as painted in this mode.
+  Color get gutterColor =>
+      gutterBackground.withMultipliedAlpha(paperTranslucency);
+
+  /// The sidebar's own fill as painted in this mode.
+  Color get sidebarColor => sidebarBackground.withMultipliedAlpha(translucency);
+
+  /// The glass rim: a hairline of light along the top edge of a translucent
+  /// surface, the way a real pane catches the light. Nothing in an opaque
+  /// palette, so the chrome does not grow an edge with transparency off.
+  Color get glassHighlight => !isGlass
+      ? const Color(0x00000000)
+      : brightness == Brightness.dark
+      ? const Color(0x1FFFFFFF)
+      : const Color(0x8CFFFFFF);
+
+  /// Which appearance the palette is drawn for, judged from its paper.
+  Brightness get brightness =>
+      ThemeData.estimateBrightnessForColor(editorBackground);
+
+  /// The same palette with every surface solid: what High Contrast, Reduce
+  /// Transparency and a desktop with no blur behind the window all ask for.
+  CalcPalette get opaque =>
+      isGlass ? copyWith(translucency: 1, paperTranslucency: 1) : this;
+
   const CalcPalette({
     required this.number,
     required this.keyword,
@@ -70,6 +121,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.selection,
     required this.hover,
     required this.paperFiber,
+    this.translucency = 1,
+    this.paperTranslucency = 1,
   });
 
   @override
@@ -102,6 +155,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? selection,
     Color? hover,
     Color? paperFiber,
+    double? translucency,
+    double? paperTranslucency,
   }) => CalcPalette(
     number: number ?? this.number,
     keyword: keyword ?? this.keyword,
@@ -131,6 +186,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     selection: selection ?? this.selection,
     hover: hover ?? this.hover,
     paperFiber: paperFiber ?? this.paperFiber,
+    translucency: translucency ?? this.translucency,
+    paperTranslucency: paperTranslucency ?? this.paperTranslucency,
   );
 
   @override
@@ -166,6 +223,9 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       selection: mix(selection, other.selection),
       hover: mix(hover, other.hover),
       paperFiber: mix(paperFiber, other.paperFiber),
+      translucency: translucency + (other.translucency - translucency) * t,
+      paperTranslucency:
+          paperTranslucency + (other.paperTranslucency - paperTranslucency) * t,
     );
   }
 }
@@ -397,6 +457,12 @@ class AppControlMetrics {
   /// The same mark at empty-state size.
   static double get wordmarkMarkLarge => _touch ? 56 : 48;
 
+  /// A member's default avatar in the title bar.
+  ///
+  /// Small enough that three of them and a name still fit beside the lockup
+  /// on a phone, large enough that a single initial reads at arm's length.
+  static double get avatarExtent => _touch ? 26 : 22;
+
   // ── Text scaling ────────────────────────────────────────────────────────
 
   /// A fixed-height bar sized for the default text scale clips its own label
@@ -476,8 +542,20 @@ class KapyTheme {
   static const _darkAccent = Color(0xFF6CC4EE);
   static const _lightAccent = Color(0xFFA94A35);
 
-  static ThemeData light() => _build(Brightness.light, lightPalette);
-  static ThemeData dark() => _build(Brightness.dark, darkPalette);
+  static ThemeData light({
+    bool transparency = false,
+    double amount = defaultGlassAmount,
+  }) => _build(
+    Brightness.light,
+    transparency ? glassPalette(Brightness.light, amount) : lightPalette,
+  );
+  static ThemeData dark({
+    bool transparency = false,
+    double amount = defaultGlassAmount,
+  }) => _build(
+    Brightness.dark,
+    transparency ? glassPalette(Brightness.dark, amount) : darkPalette,
+  );
 
   /// The dark palette follows Numi's quiet hierarchy: charcoal surfaces,
   /// neutral writing, one cyan calculation accent, and one green result accent.
@@ -490,27 +568,27 @@ class KapyTheme {
     currency: Color(0xFFE3E7E9),
     function: Color(0xFF6CC4EE),
     variable: Color(0xFF6CC4EE),
-    operator: Color(0xFFA2A6AC),
-    comment: Color(0xFF71757C),
+    operator: Color(0xFFB1B5BC),
+    comment: Color(0xFF8B8F96),
     chipNumber: Color(0xFF8DD32D),
     chipCurrency: Color(0xFF8DD32D),
     chipUnit: Color(0xFF8DD32D),
     chipBoolean: Color(0xFF8DD32D),
     chipOther: Color(0xFF8DD32D),
-    textPrimary: Color(0xFFE3E7E9),
-    textSecondary: Color(0xFFA2A6AC),
-    textTertiary: Color(0xFF71757C),
+    textPrimary: Color(0xFFE7E9EC),
+    textSecondary: Color(0xFFB1B4BA),
+    textTertiary: Color(0xFF8B8F96),
     separator: Color(0x6636383D),
-    sidebarBackground: Color(0xFF1F2024),
-    editorBackground: Color(0xFF212226),
-    gutterBackground: Color(0xFF212226),
-    surfaceBackground: Color(0xFF202125),
-    controlBackground: Color(0xFF292A2F),
-    controlBorder: Color(0xFF36383D),
-    selectedBackground: Color(0xFF303137),
+    sidebarBackground: Color(0xFF1B1C1F),
+    editorBackground: Color(0xFF202125),
+    gutterBackground: Color(0xFF202125),
+    surfaceBackground: Color(0xFF191A1D),
+    controlBackground: Color(0xFF25262A),
+    controlBorder: Color(0xFF393B40),
+    selectedBackground: Color(0xFF2D2F34),
     selectedBorder: Color(0xFF6CC4EE),
     selection: Color(0x456CC4EE),
-    hover: Color(0xFF292A2F),
+    hover: Color(0xFF27282D),
     paperFiber: Color(0x00000000),
   );
 
@@ -523,28 +601,83 @@ class KapyTheme {
     currency: Color(0xFF477052),
     function: Color(0xFF986332),
     variable: Color(0xFF356C72),
-    operator: Color(0xFF897A69),
-    comment: Color(0xFF998874),
+    operator: Color(0xFF776B5E),
+    comment: Color(0xFF7D7164),
     chipNumber: Color(0xFF9B641F),
     chipCurrency: Color(0xFF416D4B),
     chipUnit: Color(0xFF4B688E),
     chipBoolean: Color(0xFF9A5739),
     chipOther: Color(0xFF70675B),
-    textPrimary: Color(0xFF26364A),
-    textSecondary: Color(0xFF675F53),
-    textTertiary: Color(0xFF958776),
+    textPrimary: Color(0xFF243245),
+    textSecondary: Color(0xFF625B52),
+    textTertiary: Color(0xFF786F64),
     separator: Color(0x24745F48),
-    sidebarBackground: Color(0xF2EEE3CC),
-    editorBackground: Color(0xFFF7F0DE),
-    gutterBackground: Color(0xF2F0E5CE),
-    surfaceBackground: Color(0xFAFBF5E8),
-    controlBackground: Color(0xB3FFF9EA),
-    controlBorder: Color(0x26765F45),
+    sidebarBackground: Color(0xF5F0E8D9),
+    editorBackground: Color(0xFFF8F2E5),
+    gutterBackground: Color(0xF5F2E9D8),
+    surfaceBackground: Color(0xFCFCF8EF),
+    controlBackground: Color(0xCFFFFCF5),
+    controlBorder: Color(0x32765F45),
     selectedBackground: Color(0x177A6046),
     selectedBorder: Color(0x6CA94A35),
     selection: Color(0x3DD25C38),
     hover: Color(0x0F614A32),
     paperFiber: Color(0x187D674E),
+  );
+
+  /// Transparency mode.
+  ///
+  /// The whole window becomes a pane of glass: the desktop shows through the
+  /// paper as well as the chrome. What keeps a paragraph readable over a
+  /// wallpaper is not the tint Flutter paints but the blur the window puts
+  /// behind it — macOS' visual effect material, Windows' acrylic — which
+  /// turns whatever is there into soft colour with no edges for the type to
+  /// fight. The tints here only need enough body to hold the text's contrast
+  /// steady from one wallpaper to the next. Dialogs, menus and tooltips keep
+  /// their usual opacity: they sit over the note, and have to hide it.
+  ///
+  /// [amount] is the setting's slider, 0 to 1. Even 0 is properly see-through
+  /// — the desktop reads clearly through the note — and 1 leaves barely a
+  /// film, the type standing on the window's blur with almost nothing behind
+  /// it. Light carries more body than dark at every point, because dark text
+  /// over a bright, busy wallpaper loses contrast sooner than light text over
+  /// a dark one. The paper fibres go in light: a texture that reads as stock
+  /// on solid paper reads as noise on glass.
+  ///
+  /// The blur is what makes the far end usable at all. A wallpaper is turned
+  /// into soft colour with no edges for the letters to fight, so a film this
+  /// thin still separates them from it. Somebody who wants the note to sit
+  /// solid on the desktop turns the mode off; this scale is for people who
+  /// want it to disappear into one.
+  static CalcPalette glassPalette(Brightness brightness, double amount) {
+    final t = amount.clamp(0.0, 1.0);
+    final dark = brightness == Brightness.dark;
+    final paper = dark ? _lerp(0.34, 0.05, t) : _lerp(0.44, 0.1, t);
+    // The chrome is a step thinner than the paper: a row of buttons needs
+    // less body under it than a paragraph does, and the difference is what
+    // reads as layers rather than one flat tint. Proportional rather than a
+    // fixed step, so the thin end of the scale cannot drive it through zero.
+    final chrome = paper * 0.84;
+    return (dark ? darkPalette : lightPalette).copyWith(
+      translucency: chrome,
+      paperTranslucency: paper,
+      paperFiber: dark ? null : const Color(0x00000000),
+    );
+  }
+
+  /// Where the slider starts: see [LayoutPrefs.defaultTransparencyAmount].
+  static const double defaultGlassAmount = 0.2;
+
+  static double _lerp(double a, double b, double t) => a + (b - a) * t;
+
+  static final CalcPalette translucentDarkPalette = glassPalette(
+    Brightness.dark,
+    defaultGlassAmount,
+  );
+
+  static final CalcPalette translucentLightPalette = glassPalette(
+    Brightness.light,
+    defaultGlassAmount,
   );
 
   static ThemeData _build(Brightness brightness, CalcPalette palette) {
@@ -591,7 +724,7 @@ class KapyTheme {
       hoverColor: palette.hover,
       highlightColor: Colors.transparent,
       splashColor: accent.withValues(alpha: 0.08),
-      shadowColor: Colors.black.withValues(alpha: dark ? 0.22 : 0.10),
+      shadowColor: Colors.transparent,
       textSelectionTheme: TextSelectionThemeData(
         cursorColor: accent,
         selectionColor: palette.selection,
@@ -614,7 +747,7 @@ class KapyTheme {
         titleTextStyle: base.textTheme.titleMedium?.copyWith(
           color: palette.textPrimary,
           fontSize: AppTypeScale.title,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
           letterSpacing: -0.1,
         ),
       ),
@@ -627,12 +760,12 @@ class KapyTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: palette.surfaceBackground,
         surfaceTintColor: Colors.transparent,
-        elevation: 2,
-        shadowColor: Colors.black.withValues(alpha: dark ? 0.24 : 0.10),
+        elevation: 0,
+        shadowColor: Colors.transparent,
         titleTextStyle: base.textTheme.titleMedium?.copyWith(
           color: palette.textPrimary,
           fontSize: AppTypeScale.heading,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
@@ -642,8 +775,8 @@ class KapyTheme {
       popupMenuTheme: PopupMenuThemeData(
         color: palette.surfaceBackground,
         surfaceTintColor: Colors.transparent,
-        shadowColor: Colors.black.withValues(alpha: dark ? 0.24 : 0.10),
-        elevation: 2,
+        shadowColor: Colors.transparent,
+        elevation: 0,
         menuPadding: EdgeInsets.all(compactControls ? 6 : 8),
         position: PopupMenuPosition.under,
         textStyle: base.textTheme.bodyMedium?.copyWith(
@@ -674,6 +807,12 @@ class KapyTheme {
             return Colors.transparent;
           }),
           overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+          side: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.focused)) {
+              return BorderSide(color: palette.selectedBorder, width: 1);
+            }
+            return BorderSide.none;
+          }),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           ),
@@ -693,7 +832,7 @@ class KapyTheme {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: base.textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),
@@ -721,7 +860,7 @@ class KapyTheme {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
           textStyle: base.textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),
@@ -754,7 +893,7 @@ class KapyTheme {
         trackColor: const WidgetStatePropertyAll(Colors.transparent),
       ),
       tooltipTheme: TooltipThemeData(
-        waitDuration: const Duration(milliseconds: 600),
+        waitDuration: const Duration(milliseconds: 450),
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
         textStyle: base.textTheme.bodySmall?.copyWith(
           fontSize: AppTypeScale.caption,
@@ -764,13 +903,6 @@ class KapyTheme {
           color: palette.surfaceBackground,
           borderRadius: BorderRadius.circular(7),
           border: Border.all(color: palette.controlBorder, width: 0.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: dark ? 0.18 : 0.07),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
         ),
       ),
     );
@@ -780,4 +912,12 @@ class KapyTheme {
 /// Convenience accessor: `context.palette`.
 extension CalcPaletteAccess on BuildContext {
   CalcPalette get palette => Theme.of(this).extension<CalcPalette>()!;
+}
+
+/// Applies a local opacity without erasing a transparency choice already
+/// carried by the palette. Useful for chrome that is slightly quieter than its
+/// base material in both regular and translucent modes.
+extension MultipliedColorAlpha on Color {
+  Color withMultipliedAlpha(double factor) =>
+      withValues(alpha: (a * factor).clamp(0.0, 1.0));
 }

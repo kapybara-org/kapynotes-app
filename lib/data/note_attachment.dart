@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 
 /// Something anchored to one U+FFFC placeholder in a note's body.
 ///
@@ -310,30 +311,56 @@ class TranscriptSegment {
   final int e;
   final String t;
 
-  const TranscriptSegment({required this.s, required this.e, required this.t});
+  /// Who said it, numbered from zero in the order they first spoke.
+  ///
+  /// Null when the provider did not separate speakers. Null and zero are
+  /// different facts — "nobody looked" against "one person, throughout" —
+  /// and the transcript view draws them differently: a single speaker gets
+  /// no labels at all, because a memo somebody recorded alone should not
+  /// grow a column saying so.
+  final int? speaker;
+
+  const TranscriptSegment({
+    required this.s,
+    required this.e,
+    required this.t,
+    this.speaker,
+  });
 
   static TranscriptSegment? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final s = raw['s'];
     final e = raw['e'];
     final t = raw['t'];
+    final speaker = raw['sp'];
     if (s is! int || s < 0) return null;
     if (e is! int || e < 0) return null;
     if (t is! String) return null;
-    return TranscriptSegment(s: s, e: e, t: t);
+    return TranscriptSegment(
+      s: s,
+      e: e,
+      t: t,
+      speaker: speaker is int && speaker >= 0 ? speaker : null,
+    );
   }
 
-  Map<String, Object?> toJson() => {'s': s, 'e': e, 't': t};
+  Map<String, Object?> toJson() => {
+    's': s,
+    'e': e,
+    't': t,
+    if (speaker != null) 'sp': speaker,
+  };
 
   @override
   bool operator ==(Object other) =>
       other is TranscriptSegment &&
       other.s == s &&
       other.e == e &&
-      other.t == t;
+      other.t == t &&
+      other.speaker == speaker;
 
   @override
-  int get hashCode => Object.hash(s, e, t);
+  int get hashCode => Object.hash(s, e, t, speaker);
 }
 
 /// What an engine heard, and when.
@@ -354,12 +381,71 @@ class VoiceTranscript {
 
   final List<TranscriptSegment> segments;
 
+  /// The server's handle on the transcription this came from.
+  ///
+  /// Kept here rather than only in the transcription queue, which forgets it
+  /// the moment both stages finish. Without it, asking for a second summary
+  /// — or a post written from this transcript — a week later has nothing to
+  /// bill against, and the server rightly refuses. Null for a transcript no
+  /// server made, which is every local one.
+  final String? jobId;
+
+  /// What the user has called each speaker, by speaker number.
+  ///
+  /// Empty until somebody names one: a number is a perfectly good name for a
+  /// voice you have not identified, and inventing "Speaker 1" as stored data
+  /// would mean syncing a name nobody chose.
+  final Map<int, String> speakers;
+
   VoiceTranscript({
     required this.lang,
     required this.engine,
     required this.at,
     required List<TranscriptSegment> segments,
-  }) : segments = List.unmodifiable(segments);
+    this.jobId,
+    Map<int, String> speakers = const {},
+  }) : segments = List.unmodifiable(segments),
+       speakers = Map.unmodifiable(speakers);
+
+  /// Every distinct speaker, in the order they first spoke.
+  ///
+  /// Empty when the provider named nobody, which is the signal the transcript
+  /// view uses to draw itself exactly as it always has.
+  List<int> get speakerIds {
+    final seen = <int>[];
+    for (final segment in segments) {
+      final speaker = segment.speaker;
+      if (speaker != null && !seen.contains(speaker)) seen.add(speaker);
+    }
+    return seen;
+  }
+
+  /// What to call [speaker] on screen: their name, or their number.
+  String nameFor(int speaker) {
+    final given = speakers[speaker];
+    if (given != null && given.trim().isNotEmpty) return given.trim();
+    return 'Speaker ${speaker + 1}';
+  }
+
+  /// The same transcript with one speaker renamed. A blank name is a removal
+  /// rather than an empty label.
+  VoiceTranscript renaming(int speaker, String? name) {
+    final next = {...speakers};
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      next.remove(speaker);
+    } else {
+      next[speaker] = trimmed.length > 40 ? trimmed.substring(0, 40) : trimmed;
+    }
+    return VoiceTranscript(
+      lang: lang,
+      engine: engine,
+      at: at,
+      segments: segments,
+      jobId: jobId,
+      speakers: next,
+    );
+  }
 
   /// Everything the transcript says, joined. What search matches on.
   String get text => segments.map((segment) => segment.t).join(' ');
@@ -372,6 +458,8 @@ class VoiceTranscript {
     final segments = raw['segments'];
     if (lang is! String || engine is! String || at is! int) return null;
     if (segments is! List) return null;
+    final jobId = raw['jobId'];
+    final speakers = raw['speakers'];
     return VoiceTranscript(
       lang: lang,
       engine: engine,
@@ -380,6 +468,14 @@ class VoiceTranscript {
           .map(TranscriptSegment.fromJson)
           .whereType<TranscriptSegment>()
           .toList(growable: false),
+      jobId: jobId is String && jobId.isNotEmpty ? jobId : null,
+      speakers: speakers is Map
+          ? {
+              for (final entry in speakers.entries)
+                if (int.tryParse('${entry.key}') case final int id)
+                  if (entry.value is String) id: entry.value as String,
+            }
+          : const {},
     );
   }
 
@@ -388,19 +484,33 @@ class VoiceTranscript {
     'engine': engine,
     'at': at,
     'segments': segments.map((segment) => segment.toJson()).toList(),
+    if (jobId != null) 'jobId': jobId,
+    if (speakers.isNotEmpty)
+      'speakers': {
+        for (final entry in speakers.entries) '${entry.key}': entry.value,
+      },
   };
 
-  /// Identity, not content. See [NoteVoiceRef.==].
+  /// Identity, not content — with one exception. See [NoteVoiceRef.==].
+  ///
+  /// The speaker names are compared properly, because they are the one part
+  /// of a transcript the user edits: renaming somebody leaves the engine,
+  /// the timestamp and the segment count identical, and a cheap comparison
+  /// would decide the note had not changed and never sync the new name.
+  /// There are at most a handful of them, so this stays cheap.
   @override
   bool operator ==(Object other) =>
       other is VoiceTranscript &&
       other.engine == engine &&
       other.at == at &&
       other.lang == lang &&
-      other.segments.length == segments.length;
+      other.jobId == jobId &&
+      other.segments.length == segments.length &&
+      mapEquals(other.speakers, speakers);
 
   @override
-  int get hashCode => Object.hash(engine, at, lang, segments.length);
+  int get hashCode =>
+      Object.hash(engine, at, lang, jobId, segments.length, speakers.length);
 }
 
 /// What the recording was about, in a title and a few points.
@@ -450,6 +560,97 @@ class VoiceSummary {
   int get hashCode => Object.hash(engine, at, title, points.length);
 }
 
+/// Which rewrite produced a take.
+///
+/// The two presets carry their wording in the app rather than on the note,
+/// so the instruction behind "Post for X" can be improved without migrating
+/// everything anybody ever generated.
+enum VoiceTakeKind {
+  x,
+  linkedin,
+  custom;
+
+  static VoiceTakeKind? parse(Object? raw) => switch (raw) {
+    'x' => VoiceTakeKind.x,
+    'linkedin' => VoiceTakeKind.linkedin,
+    'custom' => VoiceTakeKind.custom,
+    _ => null,
+  };
+
+  /// What the card calls it.
+  String get label => switch (this) {
+    VoiceTakeKind.x => 'Post for X',
+    VoiceTakeKind.linkedin => 'Post for LinkedIn',
+    VoiceTakeKind.custom => 'Your instruction',
+  };
+}
+
+/// One thing written from the transcript because the user asked for it.
+///
+/// Free text rather than a title and points: a post is a paragraph, and
+/// forcing it into the summary's shape would make it a worse post. Kept on
+/// the note because it cost a model call, it was asked for deliberately, and
+/// something written on the desktop is wanted on the phone.
+class VoiceTake {
+  final VoiceTakeKind kind;
+
+  /// What was asked for, in the user's words. Only ever set for
+  /// [VoiceTakeKind.custom] — the presets would only be repeating themselves.
+  final String? instruction;
+
+  final String text;
+  final String engine;
+
+  /// Epoch milliseconds. Also this take's identity: two of them cannot be
+  /// written in the same millisecond by the same person.
+  final int at;
+
+  const VoiceTake({
+    required this.kind,
+    required this.text,
+    required this.engine,
+    required this.at,
+    this.instruction,
+  });
+
+  static VoiceTake? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final kind = VoiceTakeKind.parse(raw['kind']);
+    final text = raw['text'];
+    final engine = raw['engine'];
+    final at = raw['at'];
+    if (kind == null || text is! String || engine is! String || at is! int) {
+      return null;
+    }
+    if (text.trim().isEmpty) return null;
+    final instruction = raw['instruction'];
+    return VoiceTake(
+      kind: kind,
+      text: text,
+      engine: engine,
+      at: at,
+      instruction: instruction is String && instruction.isNotEmpty
+          ? instruction
+          : null,
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+    'kind': kind.name,
+    'text': text,
+    'engine': engine,
+    'at': at,
+    if (instruction != null) 'instruction': instruction,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is VoiceTake && other.at == at && other.kind == kind;
+
+  @override
+  int get hashCode => Object.hash(at, kind);
+}
+
 /// A recording.
 ///
 /// [durationMs] and [peaks] are held for the same reason an image carries its
@@ -471,6 +672,13 @@ final class NoteVoiceRef extends NoteAttachmentRef {
   final VoiceTranscript? transcript;
   final VoiceSummary? summary;
 
+  /// Posts and rewrites the user asked for, oldest first.
+  ///
+  /// Capped at [maxTakes] because these ride inside the note's payload and
+  /// nobody needs a seventh version of the same post; the oldest goes when a
+  /// new one arrives, which is what somebody trying wordings expects.
+  final List<VoiceTake> takes;
+
   const NoteVoiceRef({
     required super.offset,
     required super.hash,
@@ -481,8 +689,11 @@ final class NoteVoiceRef extends NoteAttachmentRef {
     this.peaks,
     this.transcript,
     this.summary,
+    this.takes = const [],
     super.attachmentId,
   });
+
+  static const int maxTakes = 6;
 
   /// What `record` writes on every platform: AAC-LC in an MPEG-4 container.
   static const String voiceMime = 'audio/mp4';
@@ -520,8 +731,22 @@ final class NoteVoiceRef extends NoteAttachmentRef {
       peaks: _peaksFromJson(raw['peaks']),
       transcript: VoiceTranscript.fromJson(raw['transcript']),
       summary: VoiceSummary.fromJson(raw['summary']),
+      takes: _takesFromJson(raw['takes']),
       attachmentId: attachmentId,
     );
+  }
+
+  static List<VoiceTake> _takesFromJson(Object? raw) {
+    if (raw is! List) return const [];
+    final kept = raw
+        .map(VoiceTake.fromJson)
+        .whereType<VoiceTake>()
+        .toList(growable: false);
+    // A payload that somehow carries more than the cap is trimmed to the
+    // newest rather than refused: losing a post is better than losing the
+    // recording it was written from.
+    if (kept.length <= maxTakes) return kept;
+    return kept.sublist(kept.length - maxTakes);
   }
 
   static Uint8List? _peaksFromJson(Object? raw) {
@@ -544,6 +769,7 @@ final class NoteVoiceRef extends NoteAttachmentRef {
     String? attachmentId,
     Object? transcript = _keep,
     Object? summary = _keep,
+    List<VoiceTake>? takes,
   }) => NoteVoiceRef(
     offset: offset ?? this.offset,
     hash: hash,
@@ -558,8 +784,22 @@ final class NoteVoiceRef extends NoteAttachmentRef {
     summary: identical(summary, _keep)
         ? this.summary
         : summary as VoiceSummary?,
+    takes: takes ?? this.takes,
     attachmentId: attachmentId ?? this.attachmentId,
   );
+
+  /// The same recording with [take] added, dropping the oldest past the cap.
+  NoteVoiceRef withTake(VoiceTake take) {
+    final next = [...takes.where((held) => held != take), take];
+    return copyWith(
+      takes: next.length <= maxTakes
+          ? next
+          : next.sublist(next.length - maxTakes),
+    );
+  }
+
+  NoteVoiceRef withoutTake(VoiceTake take) =>
+      copyWith(takes: takes.where((held) => held != take).toList());
 
   /// Clears the server id, so the next sync uploads the bytes again.
   ///
@@ -575,6 +815,7 @@ final class NoteVoiceRef extends NoteAttachmentRef {
     peaks: peaks,
     transcript: transcript,
     summary: summary,
+    takes: takes,
   );
 
   @override
@@ -589,6 +830,7 @@ final class NoteVoiceRef extends NoteAttachmentRef {
     if (peaks != null) 'peaks': base64.encode(peaks!),
     if (transcript != null) 'transcript': transcript!.toJson(),
     if (summary != null) 'summary': summary!.toJson(),
+    if (takes.isNotEmpty) 'takes': takes.map((take) => take.toJson()).toList(),
     if (attachmentId != null) 'attachmentId': attachmentId,
   };
 
@@ -615,6 +857,9 @@ final class NoteVoiceRef extends NoteAttachmentRef {
       other.peaks?.length == peaks?.length &&
       other.transcript == transcript &&
       other.summary == summary &&
+      // By identity, and cheaply: a take is written once and never edited,
+      // so the timestamps being the same set means the takes are the same.
+      listEquals(other.takes, takes) &&
       other.attachmentId == attachmentId;
 
   @override

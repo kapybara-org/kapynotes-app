@@ -339,7 +339,7 @@ class _ModeChoice extends StatelessWidget {
                       label,
                       style: TextStyle(
                         fontSize: AppTypeScale.body,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
                         color: palette.textPrimary,
                       ),
                     ),
