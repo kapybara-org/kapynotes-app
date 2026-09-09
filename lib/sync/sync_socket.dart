@@ -154,8 +154,9 @@ class WebSocketSyncSocket implements SyncSocket {
     } on FormatException {
       return;
     }
-    if (decoded is Map<String, Object?>)
+    if (decoded is Map<String, Object?>) {
       _events.add(SocketEvent.message(decoded));
+    }
   }
 
   void _onClosed() {

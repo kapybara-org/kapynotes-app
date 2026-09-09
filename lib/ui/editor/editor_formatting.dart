@@ -773,8 +773,9 @@ TextSelection mapSelectionAcrossEdit(
 
   int map(int offset) {
     if (offset <= prefix) return offset.clamp(0, newText.length);
-    if (offset >= oldEnd)
+    if (offset >= oldEnd) {
       return (offset + (newEnd - oldEnd)).clamp(0, newText.length);
+    }
     final into = offset - prefix;
     return (prefix + into).clamp(prefix, newEnd);
   }
