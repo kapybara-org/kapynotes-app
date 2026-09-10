@@ -4,6 +4,7 @@ import 'dart:ui' show AppExitResponse;
 import 'package:material_ui/material_ui.dart';
 
 import 'core/platform.dart';
+import 'core/appearance.dart';
 import 'core/desktop_integration.dart';
 import 'audio/voice_player.dart';
 import 'data/voice_prefs.dart';
@@ -447,6 +448,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       listenable: Listenable.merge([
         widget.prefs.transparencyListenable,
         widget.prefs.transparencyAmountListenable,
+        widget.prefs.appearanceListenable,
       ]),
       builder: (context, _) => MaterialApp(
         title: AppWordmark.name,
@@ -459,7 +461,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           transparency: widget.prefs.transparencyEnabled,
           amount: widget.prefs.transparencyAmount,
         ),
-        themeMode: ThemeMode.system,
+        themeMode: widget.prefs.appearance.themeMode,
         // The glass palette only applies once the window has a blurred
         // desktop behind it, and not while an accessibility mode asks for
         // solid surfaces. High Contrast is an explicit request for stronger

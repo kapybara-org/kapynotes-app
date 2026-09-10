@@ -3,6 +3,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
 import 'core/desktop_integration.dart';
+import 'core/focus_hold.dart';
 import 'core/platform.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
@@ -20,6 +21,11 @@ import 'sync/sync_state.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // After the binding has claimed the view-focus callback, so it wraps the
+  // framework's handler rather than being replaced by it.
+  if (AppPlatform.isMacOS) {
+    holdFocusWhileInactive(WidgetsBinding.instance.platformDispatcher);
+  }
 
   // Flutter otherwise retains up to 100 MB of decoded images globally. Note
   // previews are durable on disk and cheap to decode again, so a smaller

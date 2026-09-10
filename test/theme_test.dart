@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/layout_prefs.dart';
 
 void main() {
   test('dark theme keeps a restrained Numi-style palette', () {
@@ -59,7 +60,16 @@ void main() {
     expect(palette.surfaceBackground, KapyTheme.darkPalette.surfaceBackground);
     expect(palette.paperColor.a, lessThan(1));
     expect(palette.gutterColor.a, palette.paperColor.a);
-    expect(palette.sidebarColor.a, lessThan(1));
+    // The notes list is not one of the thinned surfaces: it is a panel over
+    // the glass, and a column of titles has no body of its own to hold them
+    // off a wallpaper.
+    expect(palette.sidebarColor.a, 1);
+    expect(KapyTheme.darkPalette.sidebarColor.a, 1);
+    expect(
+      KapyTheme.glassPalette(Brightness.dark, 1).sidebarColor,
+      palette.sidebarColor,
+      reason: 'and the slider does not reach it at either end',
+    );
     expect(KapyTheme.darkPalette.paperColor.a, 1);
     expect(palette.textPrimary.a, 1);
     expect(palette.textSecondary.a, 1);
@@ -82,10 +92,15 @@ void main() {
 
     // The slider: more amount, thinner paint, never none.
     final subtle = KapyTheme.glassPalette(Brightness.dark, 0);
+    final middle = KapyTheme.glassPalette(Brightness.dark, 0.5);
     final clear = KapyTheme.glassPalette(Brightness.dark, 1);
     expect(subtle.isGlass, isTrue);
-    expect(subtle.paperTranslucency, greaterThan(palette.paperTranslucency));
-    expect(clear.paperTranslucency, lessThan(palette.paperTranslucency));
+    expect(subtle.paperTranslucency, greaterThan(middle.paperTranslucency));
+    expect(clear.paperTranslucency, lessThan(middle.paperTranslucency));
+    // And it starts at the subtle end: switching the mode on says nothing
+    // about how far it should be taken, so every drag takes more away.
+    expect(palette.paperTranslucency, subtle.paperTranslucency);
+    expect(LayoutPrefs.defaultTransparencyAmount, 0);
     // The far end is a film, not a fill — but never nothing, since the type
     // needs something to stand on even over a blur.
     expect(clear.paperTranslucency, lessThan(0.1));

@@ -41,12 +41,21 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color hover;
   final Color paperFiber;
 
+  /// The hairline under each row when the paper is ruled.
+  ///
+  /// Its own colour rather than [paperFiber]'s, which is a warm ink tone that
+  /// only exists on the light theme — ruling asked for in the dark has to be
+  /// visible there too. Fainter than [separator], because this repeats down
+  /// the whole page and a divider's weight would read as a form to fill in.
+  final Color paperRuling;
+
   /// How much of the desktop the window's chrome lets through: a multiplier on
   /// the alpha of every [GlassSurface]. 1 is fully opaque.
   ///
-  /// The toolbar, the sidebar and the note footer read this. The writing
-  /// surfaces have their own knob, [paperTranslucency], because a paragraph
-  /// needs more body under it than a row of buttons does.
+  /// The toolbar and the note footer read this. The writing surfaces have
+  /// their own knob, [paperTranslucency], because a paragraph needs more body
+  /// under it than a row of buttons does. The sidebar reads neither: see
+  /// [sidebarColor].
   final double translucency;
 
   /// How much of the desktop the writing surfaces let through: a multiplier
@@ -71,8 +80,23 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   Color get gutterColor =>
       gutterBackground.withMultipliedAlpha(paperTranslucency);
 
-  /// The sidebar's own fill as painted in this mode.
-  Color get sidebarColor => sidebarBackground.withMultipliedAlpha(translucency);
+  /// The sidebar's own fill — solid, in both modes.
+  ///
+  /// The notes list is a panel you summon over the writing surface, not part
+  /// of it, and it is the one place the desktop showing through costs more
+  /// than it gives: a column of note titles has no body of its own to hold
+  /// them off a wallpaper. Thinned with the rest of the chrome it also came
+  /// out further through than the paper beside it — [translucency] sits a
+  /// step below [paperTranslucency] — which read as the list being the more
+  /// transparent of the two rather than the steadier one.
+  ///
+  /// The 0.96 is not translucency. It is the shade the sidebar has always sat
+  /// at against the paper, resolved to a colour here rather than left as an
+  /// alpha for whatever happens to be behind the window.
+  Color get sidebarColor => Color.alphaBlend(
+    sidebarBackground.withMultipliedAlpha(0.96),
+    editorBackground,
+  );
 
   /// The glass rim: a hairline of light along the top edge of a translucent
   /// surface, the way a real pane catches the light. Nothing in an opaque
@@ -121,6 +145,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.selection,
     required this.hover,
     required this.paperFiber,
+    required this.paperRuling,
     this.translucency = 1,
     this.paperTranslucency = 1,
   });
@@ -155,6 +180,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? selection,
     Color? hover,
     Color? paperFiber,
+    Color? paperRuling,
     double? translucency,
     double? paperTranslucency,
   }) => CalcPalette(
@@ -186,6 +212,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     selection: selection ?? this.selection,
     hover: hover ?? this.hover,
     paperFiber: paperFiber ?? this.paperFiber,
+    paperRuling: paperRuling ?? this.paperRuling,
     translucency: translucency ?? this.translucency,
     paperTranslucency: paperTranslucency ?? this.paperTranslucency,
   );
@@ -223,6 +250,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       selection: mix(selection, other.selection),
       hover: mix(hover, other.hover),
       paperFiber: mix(paperFiber, other.paperFiber),
+      paperRuling: mix(paperRuling, other.paperRuling),
       translucency: translucency + (other.translucency - translucency) * t,
       paperTranslucency:
           paperTranslucency + (other.paperTranslucency - paperTranslucency) * t,
@@ -590,6 +618,7 @@ class KapyTheme {
     selection: Color(0x456CC4EE),
     hover: Color(0xFF27282D),
     paperFiber: Color(0x00000000),
+    paperRuling: Color(0x24FFFFFF),
   );
 
   /// The same restraint as [darkPalette], pitched for paper: hues are held
@@ -623,6 +652,7 @@ class KapyTheme {
     selection: Color(0x3DD25C38),
     hover: Color(0x0F614A32),
     paperFiber: Color(0x187D674E),
+    paperRuling: Color(0x2E7D674E),
   );
 
   /// Transparency mode.
@@ -666,7 +696,7 @@ class KapyTheme {
   }
 
   /// Where the slider starts: see [LayoutPrefs.defaultTransparencyAmount].
-  static const double defaultGlassAmount = 0.2;
+  static const double defaultGlassAmount = 0;
 
   static double _lerp(double a, double b, double t) => a + (b - a) * t;
 
@@ -892,16 +922,26 @@ class KapyTheme {
         ),
         trackColor: const WidgetStatePropertyAll(Colors.transparent),
       ),
+      // The same surface every floating panel uses — see [FloatingSurface],
+      // which the ones drawn by hand share. Flat, like the dialogs and menus
+      // above: this theme sets a transparent shadow colour, and a tooltip
+      // floating on a shadow would be the one thing pretending to have
+      // height.
       tooltipTheme: TooltipThemeData(
         waitDuration: const Duration(milliseconds: 450),
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         textStyle: base.textTheme.bodySmall?.copyWith(
           fontSize: AppTypeScale.caption,
           color: palette.textPrimary,
+          decoration: TextDecoration.none,
+          // Several of these run to three lines — a result chip names the
+          // number, then how it reads, then what a click does — and set solid
+          // they read as one word too long.
+          height: 1.35,
         ),
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(color: palette.controlBorder, width: 0.5),
         ),
       ),
