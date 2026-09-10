@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
+import '../floating_surface.dart';
 
 /// The small panel that a click on a link raises, offering to open it.
 ///
@@ -120,17 +121,9 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
               child: ScaleTransition(
                 scale: Tween(begin: 0.96, end: 1.0).animate(curve),
                 alignment: Alignment.bottomCenter,
-                child: Container(
+                child: FloatingSurface(
                   key: const ValueKey('link-popover'),
                   padding: const EdgeInsets.fromLTRB(11, 5, 5, 5),
-                  decoration: BoxDecoration(
-                    color: palette.surfaceBackground,
-                    borderRadius: BorderRadius.circular(9),
-                    border: Border.all(
-                      color: palette.controlBorder,
-                      width: 0.5,
-                    ),
-                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import 'platform.dart';
+import '../ui/floating_surface.dart';
 import 'theme.dart';
 
 /// A small, transient confirmation that floats above the app.
@@ -252,70 +253,77 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                   ),
                   child: RepaintBoundary(
                     key: const ValueKey('toast-repaint-boundary'),
-                    child: Container(
-                      key: const ValueKey('toast-surface'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: surfaceColor,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: palette.controlBorder.withValues(
-                            alpha: dark ? 0.95 : 0.72,
-                          ),
-                          width: 0.75,
+                    // The toast is an overlay entry too, with no route above
+                    // it to hand its text a style: see [FloatingSurface]. Its
+                    // own is complete enough today, and this is what keeps
+                    // the next line added here from arriving underlined.
+                    child: DefaultTextStyle(
+                      style: FloatingSurface.textStyle(context),
+                      child: Container(
+                        key: const ValueKey('toast-surface'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
                         ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: compact ? 22 : 24,
-                            height: compact ? 22 : 24,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: statusColor.withValues(
-                                alpha: dark ? 0.14 : 0.10,
-                              ),
+                        decoration: BoxDecoration(
+                          color: surfaceColor,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: palette.controlBorder.withValues(
+                              alpha: dark ? 0.95 : 0.72,
                             ),
-                            child: widget.progress
-                                ? SizedBox.square(
-                                    key: const ValueKey(
-                                      'toast-progress-indicator',
-                                    ),
-                                    dimension: compact ? 12 : 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 1.75,
+                            width: 0.75,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: compact ? 22 : 24,
+                              height: compact ? 22 : 24,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: statusColor.withValues(
+                                  alpha: dark ? 0.14 : 0.10,
+                                ),
+                              ),
+                              child: widget.progress
+                                  ? SizedBox.square(
+                                      key: const ValueKey(
+                                        'toast-progress-indicator',
+                                      ),
+                                      dimension: compact ? 12 : 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 1.75,
+                                        color: statusColor,
+                                      ),
+                                    )
+                                  : Icon(
+                                      widget.icon,
+                                      key: const ValueKey('toast-status-icon'),
+                                      size: compact ? 14 : 16,
                                       color: statusColor,
                                     ),
-                                  )
-                                : Icon(
-                                    widget.icon,
-                                    key: const ValueKey('toast-status-icon'),
-                                    size: compact ? 14 : 16,
-                                    color: statusColor,
-                                  ),
-                          ),
-                          const SizedBox(width: 9),
-                          Flexible(
-                            child: Text(
-                              widget.message,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(
-                                    fontSize: AppTypeScale.body,
-                                    color: palette.textPrimary,
-                                    fontWeight: FontWeight.w400,
-                                    height: 1.2,
-                                  ),
                             ),
-                          ),
-                          const SizedBox(width: 3),
-                        ],
+                            const SizedBox(width: 9),
+                            Flexible(
+                              child: Text(
+                                widget.message,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
+                                      fontSize: AppTypeScale.body,
+                                      color: palette.textPrimary,
+                                      fontWeight: FontWeight.w400,
+                                      height: 1.2,
+                                    ),
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                          ],
+                        ),
                       ),
                     ),
                   ),

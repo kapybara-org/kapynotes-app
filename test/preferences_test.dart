@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/format.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/appearance.dart';
+import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
@@ -253,6 +255,111 @@ void main() {
     expect(prefs.transparencyEnabled, isFalse);
     prefs.transparencyEnabled = true;
     expect(prefs.transparencyEnabled, isFalse);
+  });
+
+  group('appearance and paper', () {
+    test('the system decides until somebody says otherwise', () {
+      final store = _MemoryStore();
+      final prefs = LayoutPrefs(store)..load();
+
+      expect(prefs.appearance, AppearanceMode.system);
+      expect(prefs.appearance.themeMode, ThemeMode.system);
+      expect(prefs.paperStyle, PaperStyle.notepad);
+
+      prefs.appearance = AppearanceMode.dark;
+      prefs.paperStyle = PaperStyle.ruled;
+
+      final reloaded = LayoutPrefs(store)..load();
+      expect(reloaded.appearance, AppearanceMode.dark);
+      expect(reloaded.appearance.themeMode, ThemeMode.dark);
+      expect(reloaded.paperStyle, PaperStyle.ruled);
+    });
+
+    test(
+      'a value written by a later version falls back rather than throws',
+      () {
+        final store = _MemoryStore()
+          ..data['appearance.v1'] = 'sepia'
+          ..data['paper.v1'] = 'graph';
+        final prefs = LayoutPrefs(store)..load();
+
+        expect(prefs.appearance, AppearanceMode.system);
+        expect(prefs.paperStyle, PaperStyle.notepad);
+      },
+    );
+
+    test('the theme has a signal of its own, narrower than the object', () {
+      // The app root rebuilds its theme from this, and LayoutPrefs notifies
+      // for every dragged pixel of the sidebar.
+      final prefs = LayoutPrefs(_MemoryStore())..load();
+      var themeSignals = 0;
+      prefs.appearanceListenable.addListener(() => themeSignals++);
+
+      prefs.sidebarWidth = LayoutPrefs.defaultSidebarWidth + 40;
+      expect(themeSignals, 0);
+
+      prefs.appearance = AppearanceMode.light;
+      expect(themeSignals, 1);
+    });
+  });
+
+  group('where the caret was left', () {
+    test('is offered back the same day, and outlives the launch', () {
+      final store = _MemoryStore();
+      final prefs = LayoutPrefs(store)..load();
+      expect(prefs.caretIn('n1'), isNull);
+
+      prefs.rememberCaret('n1', 42);
+      expect(prefs.caretIn('n1'), 42);
+      expect((LayoutPrefs(store)..load()).caretIn('n1'), 42);
+      // Each note keeps its own place.
+      expect(prefs.caretIn('n2'), isNull);
+    });
+
+    test('is not offered back on another day, and is thrown away', () {
+      final yesterday = DateTime.now().subtract(const Duration(days: 1));
+      final store = _MemoryStore()
+        ..data['caret.v1'] = {
+          'n1': [42, yesterday.millisecondsSinceEpoch],
+        };
+      final prefs = LayoutPrefs(store)..load();
+
+      expect(prefs.caretIn('n1'), isNull);
+      // And not merely refused: a position nothing will ever offer back is
+      // what would otherwise grow this map for the life of the install.
+      expect(store.data['caret.v1'], isEmpty);
+    });
+
+    test('a record this version cannot read is dropped, not thrown on', () {
+      final store = _MemoryStore()
+        ..data['caret.v1'] = {
+          'good': [7, DateTime.now().millisecondsSinceEpoch],
+          'nonsense': 'not a pair',
+          'short': [7],
+          'negative': [-1, DateTime.now().millisecondsSinceEpoch],
+        };
+      final prefs = LayoutPrefs(store)..load();
+
+      expect(prefs.caretIn('good'), 7);
+      expect(prefs.caretIn('nonsense'), isNull);
+      expect(prefs.caretIn('short'), isNull);
+      expect(prefs.caretIn('negative'), isNull);
+    });
+
+    test('does not notify: the cursor moving is not a rebuild', () {
+      final prefs = LayoutPrefs(_MemoryStore())..load();
+      var notified = 0;
+      prefs.addListener(() => notified++);
+
+      prefs.rememberCaret('n1', 1);
+      prefs.rememberCaret('n1', 2);
+
+      expect(
+        notified,
+        0,
+        reason: 'this moves with every keystroke; the sidebar must not',
+      );
+    });
   });
 
   test('the transparency amount persists, clamps and outlives the mode', () {

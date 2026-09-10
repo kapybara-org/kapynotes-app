@@ -3,8 +3,10 @@ import 'dart:ui' show Locale, PlatformDispatcher, Size;
 import 'package:flutter/foundation.dart';
 
 import '../calc/format.dart';
+import '../core/appearance.dart';
 import '../core/editor_font.dart';
 import '../core/platform.dart';
+import 'daily_separator.dart';
 import 'local_store.dart';
 import 'time_zones.dart';
 
@@ -98,6 +100,9 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _alwaysOnTopKey = 'alwaysOnTop.v1';
   static const String _loginItemDefaultKey = 'loginItemDefaulted.v1';
   static const String _lastOpenedNoteKey = 'selectedNote.v1';
+  static const String _caretKey = 'caret.v1';
+  static const String _appearanceKey = 'appearance.v1';
+  static const String _paperKey = 'paper.v1';
   static const String _defaultNoteKey = 'defaultNote.v1';
 
   final LocalStore _store;
@@ -116,6 +121,10 @@ class LayoutPrefs extends ChangeNotifier {
   bool _spellCheckEnabled = true;
   NumberSystem _numberSystem = NumberSystem.auto;
   WritingFont _writingFont = WritingFont.handwritten;
+  final ValueNotifier<AppearanceMode> _appearance = ValueNotifier(
+    AppearanceMode.system,
+  );
+  PaperStyle _paperStyle = PaperStyle.notepad;
   final ValueNotifier<bool> _transparencyEnabled = ValueNotifier(false);
   final ValueNotifier<double> _transparencyAmount = ValueNotifier(
     defaultTransparencyAmount,
@@ -126,6 +135,7 @@ class LayoutPrefs extends ChangeNotifier {
   bool _alwaysOnTop = false;
   String? _lastOpenedNoteId;
   String? _defaultNoteId;
+  final Map<String, ({int offset, DateTime at})> _carets = {};
 
   LayoutPrefs(this._store, {Locale Function()? locale})
     : _locale = locale ?? (() => PlatformDispatcher.instance.locale);
@@ -139,6 +149,21 @@ class LayoutPrefs extends ChangeNotifier {
   bool get dailySeparatorsEnabled => _dailySeparatorsEnabled;
   bool get spellCheckEnabled => _spellCheckEnabled;
   WritingFont get writingFont => _writingFont;
+
+  /// Light, dark, or whatever the machine is set to.
+  ///
+  /// The machine was the only answer until now, which is right until it is
+  /// not: people read light on a dark desk and dark on a bright one, and an
+  /// app that follows the OS gives them no way to say so.
+  AppearanceMode get appearance => _appearance.value;
+
+  /// A property-specific signal, for the same reason as
+  /// [transparencyListenable]: the app root rebuilds its theme from this, and
+  /// [LayoutPrefs] notifies for every dragged pixel of the sidebar.
+  ValueListenable<AppearanceMode> get appearanceListenable => _appearance;
+
+  /// What the sheet behind the writing looks like.
+  PaperStyle get paperStyle => _paperStyle;
   bool get transparencyEnabled => _transparencyEnabled.value;
 
   /// A property-specific signal for the app theme.
@@ -156,10 +181,15 @@ class LayoutPrefs extends ChangeNotifier {
   ValueListenable<double> get transparencyAmountListenable =>
       _transparencyAmount;
 
-  /// Where a new install starts: near the substantial end, since somebody
-  /// who has just switched the mode on has not yet said how far they want it
-  /// taken. The slider is what says that.
-  static const double defaultTransparencyAmount = 0.2;
+  /// Where a new install starts: the subtle end of the slider, the most body
+  /// the mode has to offer.
+  ///
+  /// Switching transparency on is not a request for a particular amount of
+  /// it, and the far end of this scale leaves barely a film — somewhere to
+  /// arrive at by choice, not to be handed. Starting here, every drag of the
+  /// slider takes more away, which is the direction somebody who opened the
+  /// setting is looking to go.
+  static const double defaultTransparencyAmount = 0;
   String? get timeZoneId => _timeZoneId;
 
   /// Whether closing the window tucks the app into the tray instead of
@@ -235,6 +265,12 @@ class LayoutPrefs extends ChangeNotifier {
     _spellCheckEnabled = _store.read<bool>(_spellCheckKey) ?? true;
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
+    _appearance.value = _readEnum(
+      _appearanceKey,
+      AppearanceMode.values,
+      AppearanceMode.system,
+    );
+    _paperStyle = _readEnum(_paperKey, PaperStyle.values, PaperStyle.notepad);
     _transparencyEnabled.value =
         supportsTransparency && (_store.read<bool>(_transparencyKey) ?? false);
     _transparencyAmount.value =
@@ -247,6 +283,8 @@ class LayoutPrefs extends ChangeNotifier {
     _alwaysOnTop = _store.read<bool>(_alwaysOnTopKey) ?? false;
     _lastOpenedNoteId = _readNoteId(_lastOpenedNoteKey);
     _defaultNoteId = _readNoteId(_defaultNoteKey);
+    _readCarets();
+    _pruneCarets();
     notifyListeners();
   }
 
@@ -310,6 +348,20 @@ class LayoutPrefs extends ChangeNotifier {
     notifyListeners();
   }
 
+  set appearance(AppearanceMode value) {
+    if (value == _appearance.value) return;
+    _appearance.value = value;
+    _store.putNow(_appearanceKey, value.name);
+    notifyListeners();
+  }
+
+  set paperStyle(PaperStyle value) {
+    if (value == _paperStyle) return;
+    _paperStyle = value;
+    _store.putNow(_paperKey, value.name);
+    notifyListeners();
+  }
+
   set writingFont(WritingFont value) {
     if (value == _writingFont) return;
     _writingFont = value;
@@ -363,6 +415,82 @@ class LayoutPrefs extends ChangeNotifier {
     _alwaysOnTop = value;
     _store.putNow(_alwaysOnTopKey, value);
     notifyListeners();
+  }
+
+  /// Where the caret was left in [noteId], if that was today.
+  ///
+  /// Null on any other day, which is the whole of the rule. Coming back to a
+  /// note within the day, you are still in the middle of whatever you were
+  /// doing and the cursor belongs where you left it; coming back tomorrow,
+  /// you are starting something, and the bottom of the note is where that
+  /// goes — under a dated line, if those are on.
+  ///
+  /// "Today" is read in the zone note timestamps use, so somebody who has set
+  /// one gets the same midnight here as they see on their notes.
+  int? caretIn(String noteId) {
+    final caret = _carets[noteId];
+    if (caret == null) return null;
+    return DailySeparator.isSameDay(
+          caret.at,
+          DateTime.now(),
+          displayTime: displayTime,
+        )
+        ? caret.offset
+        : null;
+  }
+
+  /// Records where the caret is, to be offered back by [caretIn].
+  ///
+  /// Written through the coalescing [LocalStore.put] rather than [putNow]:
+  /// this moves with every keystroke and every arrow key, exactly like the
+  /// note body it belongs to, and the two should cost the same.
+  void rememberCaret(String noteId, int offset) {
+    final existing = _carets[noteId];
+    if (existing != null && existing.offset == offset) return;
+    _carets[noteId] = (offset: offset, at: DateTime.now());
+    _store.put(_caretKey, _caretsToJson());
+    // No notifyListeners: nothing on screen is drawn from this, and telling
+    // the whole app the cursor moved would rebuild the sidebar on every key.
+  }
+
+  /// Drops yesterday's positions, which [caretIn] would refuse anyway.
+  ///
+  /// Called from [load], and that is enough to bound the map: what survives
+  /// is the notes touched today, and a note deleted since is one entry that
+  /// expires at midnight rather than something to go hunting for.
+  void _pruneCarets() {
+    final now = DateTime.now();
+    final before = _carets.length;
+    _carets.removeWhere(
+      (id, caret) =>
+          !DailySeparator.isSameDay(caret.at, now, displayTime: displayTime),
+    );
+    if (_carets.length != before) _store.put(_caretKey, _caretsToJson());
+  }
+
+  Map<String, Object?> _caretsToJson() => {
+    for (final entry in _carets.entries)
+      entry.key: [entry.value.offset, entry.value.at.millisecondsSinceEpoch],
+  };
+
+  void _readCarets() {
+    _carets.clear();
+    final stored = _store.read<Map>(_caretKey);
+    if (stored == null) return;
+    for (final entry in stored.entries) {
+      final id = entry.key;
+      final value = entry.value;
+      // Anything that is not a pair of numbers is a record this version does
+      // not understand. A caret is not worth throwing on, so it is dropped.
+      if (id is! String || value is! List || value.length != 2) continue;
+      final offset = value[0];
+      final at = value[1];
+      if (offset is! int || at is! int || offset < 0) continue;
+      _carets[id] = (
+        offset: offset,
+        at: DateTime.fromMillisecondsSinceEpoch(at),
+      );
+    }
   }
 
   set lastOpenedNoteId(String? value) {
@@ -455,6 +583,16 @@ class LayoutPrefs extends ChangeNotifier {
       (font) => font.name == stored,
       orElse: () => WritingFont.handwritten,
     );
+  }
+
+  /// Reads an enum by name, and falls back rather than throwing: a value
+  /// written by a later version is one this one has no opinion about.
+  T _readEnum<T extends Enum>(String key, List<T> values, T fallback) {
+    final stored = _store.read<String>(key);
+    for (final value in values) {
+      if (value.name == stored) return value;
+    }
+    return fallback;
   }
 
   double? _readDouble(String key) {

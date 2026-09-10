@@ -132,6 +132,13 @@ class _NoteImageViewState extends State<NoteImageView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _showMenu(position);
     });
+    // And ask for that frame. A post-frame callback is only run at the end of
+    // a frame something else scheduled; selecting an image that is *already*
+    // selected changes nothing, so nothing scheduled one, and the menu sat
+    // waiting for whatever came next — the caret's blink, or the mouse
+    // moving. Which is why the delay only ever showed up on the second
+    // right-click.
+    WidgetsBinding.instance.scheduleFrame();
   }
 
   Future<void> _showMenu(Offset position) async {

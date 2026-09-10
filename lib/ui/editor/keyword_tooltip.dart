@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
+import '../floating_surface.dart';
 
 /// A small, non-interactive explanation anchored to a calculator keyword.
 ///
@@ -71,15 +72,9 @@ class _KeywordTooltipBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Container(
+    return FloatingSurface(
       key: const ValueKey('calc-keyword-tooltip'),
       constraints: const BoxConstraints(maxWidth: 300),
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-      decoration: BoxDecoration(
-        color: palette.surfaceBackground,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.controlBorder, width: 0.5),
-      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,

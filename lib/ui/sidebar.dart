@@ -12,7 +12,6 @@ import '../sync/sharing.dart';
 import 'app_logo.dart';
 import 'compact_icon_button.dart';
 import 'editor/note_footer.dart';
-import 'glass_surface.dart';
 import 'sidebar_timestamp.dart';
 
 /// The note list, with search.
@@ -78,8 +77,11 @@ class Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
 
-    return GlassSurface(
-      color: palette.sidebarBackground.withMultipliedAlpha(0.96),
+    // Solid, rather than the GlassSurface the toolbar and footer use: the
+    // notes list stays put whatever the window is doing behind it. See
+    // [CalcPalette.sidebarColor].
+    return ColoredBox(
+      color: palette.sidebarColor,
       // Colour runs to the window edges; content stays clear of the status
       // bar, home indicator and any display cutout.
       child: SafeArea(
@@ -169,9 +171,15 @@ extension on Sidebar {
             : () => onRestore!(note.id),
       );
 
-  /// Pinned notes always lead. Everything else keeps the existing personal
-  /// and shared-space order, so pinning is useful without duplicating a note
-  /// in two sections.
+  /// Pinned notes lead, then the shared spaces, then everything else.
+  ///
+  /// Shared notes come before your own because they are the ones that move
+  /// without you: a space you are in changes while you are not looking, and
+  /// the list is where you would find out. Your own notes are where you left
+  /// them, so they can wait at the bottom.
+  ///
+  /// A note appears once. Pinning lifts it out of whichever section it would
+  /// otherwise have been in rather than repeating it there.
   Widget _buildGrouped(BuildContext context) {
     final pinned = archiveMode
         ? const <Note>[]
@@ -218,11 +226,6 @@ extension on Sidebar {
               ),
             ),
         ],
-        if (mine.isNotEmpty) ...[
-          _SectionLabel(label: hasSharedSections ? 'My notes' : 'Notes'),
-          for (final note in mine)
-            SizedBox(height: extent, child: _row(note, shared: false)),
-        ],
         for (final id in order) ...[
           _SectionLabel(
             label: sharing?.spaceById(id)?.displayName ?? 'Shared',
@@ -233,6 +236,11 @@ extension on Sidebar {
           ),
           for (final note in bySpace[id]!)
             SizedBox(height: extent, child: _row(note, shared: true)),
+        ],
+        if (mine.isNotEmpty) ...[
+          _SectionLabel(label: hasSharedSections ? 'My notes' : 'Notes'),
+          for (final note in mine)
+            SizedBox(height: extent, child: _row(note, shared: false)),
         ],
       ],
     );

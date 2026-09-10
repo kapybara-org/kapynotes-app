@@ -336,9 +336,11 @@ void main() {
   testWidgets('the sidebar groups shared notes under their space', (
     tester,
   ) async {
+    late Note pinned;
     await tester.runAsync(() async {
       await alice.boot();
       await bob.boot();
+      pinned = alice.notes.create(body: 'Kept at hand');
       alice.notes.create(body: 'Private');
       final shared = alice.notes.create(body: 'Shared');
       await alice.sync.syncNow();
@@ -351,6 +353,7 @@ void main() {
           width: 260,
           child: Sidebar(
             notes: alice.notes.notes,
+            pinnedNoteIds: {pinned.id},
             selectedId: null,
             query: '',
             displayTime: (t) => t,
@@ -369,6 +372,18 @@ void main() {
     expect(find.text('With user-2'), findsOneWidget);
     expect(find.text('Private'), findsOneWidget);
     expect(find.text('Shared'), findsOneWidget);
+
+    // Pinned, then the spaces, then your own. Shared notes lead the two
+    // ordinary sections because they are the ones that change while you are
+    // not looking; your own are where you left them.
+    double top(String label) => tester.getTopLeft(find.text(label)).dy;
+    expect(top('Pinned'), lessThan(top('With user-2')));
+    expect(top('With user-2'), lessThan(top('My notes')));
+
+    // And a pinned note is lifted out of the section it came from rather
+    // than repeated in it.
+    expect(find.text('Kept at hand'), findsOneWidget);
+    expect(top('Kept at hand'), lessThan(top('With user-2')));
   });
 
   testWidgets('a note row leaves sharing to the title bar, but keeps the menu', (

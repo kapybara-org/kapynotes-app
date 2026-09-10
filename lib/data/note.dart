@@ -182,14 +182,20 @@ class Note {
 
   /// First non-empty line, without heading markers or a trailing colon.
   ///
-  /// A note that is nothing but a recording has no line to take one from, so
-  /// it borrows the recording's own summary — which is the closest thing to
-  /// what the person would have typed if they had typed anything.
+  /// A note that opens with a picture or a recording has no words on that
+  /// line to take one from, so it looks past it: the first thing typed
+  /// underneath names the note, whatever it was that came first.
+  ///
+  /// With nothing typed at all, a recording can still say what it was about
+  /// — its summary's title, or failing that the opening of what it was heard
+  /// to say. A picture cannot, and neither can a recording nobody has
+  /// transcribed yet, so those wait as [untitled] until there is something to
+  /// go on.
   String get title {
-    final line = _firstNonEmptyLine();
-    if (line == null) return _spokenTitle() ?? untitled;
+    final spoken = _firstNonEmptyLine() ?? _spokenTitle();
+    if (spoken == null) return untitled;
 
-    var text = line.trimLeft();
+    var text = spoken.trimLeft();
     text = text.replaceFirst(RegExp(r'^#{1,6}\s*'), '');
     text = text.trimRight();
     if (text.endsWith(':')) {
@@ -268,18 +274,28 @@ class Note {
     }
   }
 
-  /// The title of the first recording that has one.
+  /// What the recordings in this note were heard to say, best first.
+  ///
+  /// A summary anywhere in the note beats raw speech from anywhere in it: the
+  /// summary is a phrase somebody would have written, where a transcript
+  /// opens with whatever the recording opened with — "um, so" and all. Both
+  /// are clamped by [title], which is what keeps a transcript from arriving
+  /// as a paragraph.
+  ///
+  /// A recording with neither is not named here. It used to be listed as
+  /// "Voice note", which said what the note held but nothing about it, and
+  /// every untranscribed recording said it — a column of identical rows. A
+  /// note with nothing to say for itself reads better as a new one.
   String? _spokenTitle() {
     for (final ref in attachments) {
-      if (ref is NoteVoiceRef && ref.summary != null) {
-        final title = ref.summary!.title.trim();
-        if (title.isNotEmpty) return title;
-      }
+      if (ref is! NoteVoiceRef) continue;
+      final title = ref.summary?.title.trim();
+      if (title != null && title.isNotEmpty) return title;
     }
-    // A recording with no summary yet is still not "Untitled" — it is a note
-    // holding a voice note, and saying so beats saying nothing.
     for (final ref in attachments) {
-      if (ref is NoteVoiceRef) return 'Voice note';
+      if (ref is! NoteVoiceRef) continue;
+      final said = ref.transcript?.text.trim();
+      if (said != null && said.isNotEmpty) return said;
     }
     return null;
   }

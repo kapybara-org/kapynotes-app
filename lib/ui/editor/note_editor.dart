@@ -17,6 +17,7 @@ import '../../core/editor_font.dart';
 import '../../core/note_link.dart';
 import '../../core/platform.dart';
 import '../../core/platform_spell_check.dart';
+import '../../core/appearance.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../data/daily_separator.dart';
@@ -49,6 +50,7 @@ import 'voice_recording_bar.dart';
 import 'voice_insertion.dart';
 import 'note_image_view.dart';
 import 'results_gutter.dart';
+import 'scroll_passthrough.dart';
 import 'selection_formatting_toolbar.dart';
 
 typedef NoteDocumentChanged =
@@ -105,12 +107,14 @@ class NoteEditor extends StatefulWidget {
     this.spellCheckEnabled = true,
     this.showDivider = true,
     this.hideEmptyResults = false,
-    this.showSettingsButton = true,
     this.autofocus = false,
     this.startAtEnd = false,
+    this.initialCaret,
+    this.onCaretChanged,
     this.ensureKeyboardVisible = false,
     this.lastUpdatedAt,
     this.dailySeparatorsEnabled = false,
+    this.paperStyle = PaperStyle.notepad,
     this.now,
     this.displayTime,
   });
@@ -178,18 +182,39 @@ class NoteEditor extends StatefulWidget {
   final ValueChanged<double> onGutterWidthChanged;
   final ValueChanged<bool> onResultsVisibilityChanged;
   final VoidCallback onGutterWidthReset;
+
+  /// What the open-settings shortcut does. The footer has no gear of its own:
+  /// settings live in the notes list, and this is the key that gets there
+  /// from inside the note.
   final VoidCallback onSettingsPressed;
   final WritingFont writingFont;
   final ShortcutPrefs shortcuts;
   final bool spellCheckEnabled;
   final bool showDivider;
   final bool hideEmptyResults;
-  final bool showSettingsButton;
   final bool autofocus;
   final bool startAtEnd;
+
+  /// Where the caret was left in this note earlier today, if it was.
+  ///
+  /// Takes precedence over [startAtEnd]: somebody coming back to a note
+  /// within the day is in the middle of something, and the end of the note is
+  /// not where they were. Null starts an append session as before, which is
+  /// what a new day — or a note not opened yet today — should do.
+  final int? initialCaret;
+
+  /// Reports the caret so it can be offered back as [initialCaret] later.
+  ///
+  /// Fires on every move, like the body does on every keystroke, and is meant
+  /// to be written through a coalescing store rather than straight to disk.
+  final ValueChanged<int>? onCaretChanged;
   final bool ensureKeyboardVisible;
   final DateTime? lastUpdatedAt;
   final bool dailySeparatorsEnabled;
+
+  /// The sheet behind the writing. Only [PaperStyle.ruled] needs anything of
+  /// the editor, and only because its lines have to land under the rows.
+  final PaperStyle paperStyle;
   final DateTime Function()? now;
   final DateTime Function(DateTime)? displayTime;
 
@@ -273,7 +298,12 @@ class NoteEditorState extends State<NoteEditor> {
   @override
   void initState() {
     super.initState();
-    final appendSession = widget.startAtEnd && !widget.readOnly;
+    // A caret left here earlier today wins over the append session: the
+    // blank line at the bottom exists to start something, and somebody
+    // returning within the day is finishing something.
+    final resumeAt = widget.readOnly ? null : widget.initialCaret;
+    final appendSession =
+        widget.startAtEnd && !widget.readOnly && resumeAt == null;
     final initialText = appendSession
         ? DailySeparator.prepareForAppend(widget.initialBody)
         : widget.initialBody;
@@ -303,6 +333,12 @@ class NoteEditorState extends State<NoteEditor> {
       _controller.selection = TextSelection.collapsed(
         offset: initialText.length,
       );
+    } else if (resumeAt != null) {
+      // Clamped, because the note may have been shortened elsewhere — by
+      // another device, or by an undo — since the offset was recorded.
+      _controller.selection = TextSelection.collapsed(
+        offset: resumeAt.clamp(0, initialText.length),
+      );
     }
     _lastValue = _controller.value;
     _controller.addListener(_onControllerChanged);
@@ -315,7 +351,9 @@ class NoteEditorState extends State<NoteEditor> {
     _isEmpty = initialText.isEmpty;
     _evaluate();
     if (!widget.readOnly && widget.autofocus && widget.startAtEnd) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => focusAtEnd());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => resumeAt == null ? focusAtEnd() : focusHere(),
+      );
     }
   }
 
@@ -484,6 +522,32 @@ class NoteEditorState extends State<NoteEditor> {
     focusAtEnd();
   }
 
+  /// Hands the caret up so it can be offered back tomorrow — or rather, later
+  /// today.
+  ///
+  /// Only a collapsed selection: a range is a thing being done to the text,
+  /// not a place in it, and restoring somebody's old highlight would be a
+  /// stranger thing to come back to than a cursor.
+  void _reportCaret(TextSelection selection) {
+    final report = widget.onCaretChanged;
+    if (report == null || widget.readOnly || !selection.isValid) return;
+    if (!selection.isCollapsed) return;
+    report(selection.baseOffset);
+  }
+
+  /// Focuses without moving the caret, and without scrolling to the bottom.
+  ///
+  /// The counterpart to [focusAtEnd] for a note reopened the same day: the
+  /// whole point is that nothing moves. `EditableText` brings its own caret
+  /// on screen when it takes focus, so a caret restored halfway up a long
+  /// note is scrolled to rather than left off the top.
+  void focusHere() {
+    if (!mounted || widget.readOnly) return;
+    _focusNode.requestFocus();
+    _recordKapyPeekActivity();
+    _scheduleKeyboardRetry();
+  }
+
   /// Places the caret after the note's final character and brings it on screen.
   void focusAtEnd() {
     if (!mounted || widget.readOnly) return;
@@ -572,6 +636,7 @@ class NoteEditorState extends State<NoteEditor> {
   void _onControllerChanged() {
     _recordKapyPeekActivity();
     final value = _controller.value;
+    _reportCaret(value.selection);
     final previous = _lastValue;
     if (_applyingRemote) {
       _lastValue = value;
@@ -2571,15 +2636,12 @@ class NoteEditorState extends State<NoteEditor> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final base = AppPlatform.isMobile
+    // No home indicator inset here: the footer below runs under it and keeps
+    // its own controls clear of it, so an inset on the text would only open a
+    // second gap above a bar that already covers that strip.
+    final padding = AppPlatform.isMobile
         ? EditorMetrics.mobilePadding
         : EditorMetrics.padding;
-    // Keep the last line clear of the home indicator. Folding the inset into
-    // the shared padding keeps the text and its results in step; insetting
-    // only one of them would pull them apart.
-    final padding = base.copyWith(
-      bottom: base.bottom + MediaQuery.paddingOf(context).bottom,
-    );
     final textStyle = EditorMetrics.textStyle(
       palette.textPrimary,
       widget.writingFont,
@@ -2669,6 +2731,10 @@ class NoteEditorState extends State<NoteEditor> {
                           SizedBox(
                             width: textPaneWidth,
                             child: NotebookPaper(
+                              style: widget.paperStyle,
+                              lineHeight: offsets.lineHeight,
+                              topInset: padding.top,
+                              scroll: _scrollController,
                               child: Stack(
                                 children: [
                                   if (_isEmpty)
@@ -2699,17 +2765,22 @@ class NoteEditorState extends State<NoteEditor> {
                           if (resultsVisible)
                             SizedBox(
                               width: gutterWidth,
-                              child: ListenableBuilder(
-                                listenable: _scrollController,
-                                builder: (context, _) => ResultsGutter(
-                                  results: _results,
-                                  offsets: offsets,
-                                  scrollOffset: _scrollController.hasClients
-                                      ? _scrollController.offset
-                                      : 0,
-                                  viewportHeight: constraints.maxHeight,
-                                  padding: padding,
-                                  width: gutterWidth,
+                              // The gutter has no scrollable of its own, so a
+                              // drag over it is handed to the field's.
+                              child: ScrollPassthrough(
+                                controller: _scrollController,
+                                child: ListenableBuilder(
+                                  listenable: _scrollController,
+                                  builder: (context, _) => ResultsGutter(
+                                    results: _results,
+                                    offsets: offsets,
+                                    scrollOffset: _scrollController.hasClients
+                                        ? _scrollController.offset
+                                        : 0,
+                                    viewportHeight: constraints.maxHeight,
+                                    padding: padding,
+                                    width: gutterWidth,
+                                  ),
                                 ),
                               ),
                             ),
@@ -2758,16 +2829,12 @@ class NoteEditorState extends State<NoteEditor> {
               checklistShortcut: widget.shortcuts.bindingFor(
                 ShortcutAction.formatChecklist,
               ),
-              settingsShortcut: widget.shortcuts.bindingFor(
-                ShortcutAction.openSettings,
-              ),
               imageShortcut: widget.shortcuts.bindingFor(
                 ShortcutAction.insertImage,
               ),
               voiceShortcut: widget.shortcuts.bindingFor(
                 ShortcutAction.recordVoiceNote,
               ),
-              onSettingsPressed: widget.onSettingsPressed,
               onParagraphStylePressed: _cycleParagraphStyle,
               onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
               onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
@@ -2797,7 +2864,6 @@ class NoteEditorState extends State<NoteEditor> {
                 NoteLineStyle.checklist,
               ),
               paragraphStyle: _activeParagraphStyle,
-              showSettingsButton: widget.showSettingsButton,
             ),
         ],
       ),

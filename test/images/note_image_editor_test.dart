@@ -5,6 +5,7 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
@@ -537,6 +538,42 @@ void main() {
         () => clipboard.waitForWrite().timeout(const Duration(seconds: 1)),
       );
       expect(clipboard.writes.single.images, hasLength(1));
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('right-clicking a selected image opens its menu at once', (
+      tester,
+    ) async {
+      // The second right-click was the slow one. Selecting an image that is
+      // already selected changes nothing, so nothing scheduled a frame, and
+      // the post-frame callback that opens the menu waited for whatever came
+      // next — in practice the caret's next blink.
+      await tester.pumpWidget(
+        harness(anchor, attachments: [at(0)], images: immediateStore),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byType(NoteImageView), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Open Image'), findsOneWidget);
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+
+      // Settled: nothing is pending, so the next frame has to be asked for
+      // rather than inherited from something already in flight.
+      expect(SchedulerBinding.instance.hasScheduledFrame, isFalse);
+
+      await tester.tap(find.byType(NoteImageView), buttons: kSecondaryButton);
+      expect(
+        SchedulerBinding.instance.hasScheduledFrame,
+        isTrue,
+        reason: 'without this the menu waits for an unrelated frame',
+      );
+
+      await tester.pumpAndSettle();
+      expect(find.text('Open Image'), findsOneWidget);
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
       debugDefaultTargetPlatformOverride = null;
     });
 
