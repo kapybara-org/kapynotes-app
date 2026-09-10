@@ -170,6 +170,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _drawerOpen = false;
   bool _archiveMode = false;
   bool _voiceActionBusy = false;
+
+  /// Whether the archive is picking notes rather than opening them, and which
+  /// ones have been picked. Both are cleared on the way out of the archive:
+  /// a selection is about the list you made it in.
+  bool _selectingArchived = false;
+  final Set<String> _checkedArchived = {};
   Timer? _kapyIdleTimer;
 
   /// Lets the compact layout close its own drawer, which is otherwise only
@@ -816,7 +822,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _focusSelectedEditorAtEnd();
   }
 
-  void _createNote() {
+  /// Starts a new note, unless the one already open is a new note.
+  ///
+  /// Returns whether anything was actually created, which is what the swipe
+  /// cue needs in order not to announce a note that does not exist.
+  bool _createNote() {
     final recording = widget.recording;
     if (recording != null && recording.isRecording) {
       unawaited(
@@ -824,14 +834,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (mounted) _createNoteNow();
         }),
       );
-      return;
+      // The recording is about to land in the note that is open, so that note
+      // will not be blank by the time this runs and a new one will follow.
+      return true;
     }
-    _createNoteNow();
+    return _createNoteNow();
   }
 
-  void _createNoteNow() {
+  bool _createNoteNow() {
     _recordKapyActivity();
-    final note = widget.notes.create();
+    final blank = _blankNoteAlreadyOpen();
+    final note = blank ?? widget.notes.create();
     setState(() {
       _query = '';
       _archiveMode = false;
@@ -839,6 +852,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
     widget.prefs.lastOpenedNoteId = note.id;
     _focusSelectedEditorAtEnd();
+    return blank == null;
+  }
+
+  /// The note already on screen, when asking for a new one would only produce
+  /// a second one exactly like it.
+  ///
+  /// An empty note *is* the new note — making another leaves a blank behind on
+  /// every device, and the reader has to work out which of the two they are
+  /// in. So the caret goes back into this one instead, and the list stops
+  /// filling up with notes nobody wrote.
+  ///
+  /// Three notes are never reused however blank they are. An archived one is
+  /// not in the list a new note appears in. A shared one belongs to a space:
+  /// "new note" means one of your own, not another empty line in somebody
+  /// else's. And a note holding a picture or a recording is not empty, whatever
+  /// its text says — [Note.isEmpty] only reads the body.
+  Note? _blankNoteAlreadyOpen() {
+    if (_archiveMode) return null;
+    final id = _selectedId;
+    if (id == null) return null;
+    final note = widget.notes.byId(id);
+    if (note == null || note.isArchived || note.isShared) return null;
+    if (!note.isEmpty || note.attachments.isNotEmpty) return null;
+    return note;
   }
 
   void _archiveNote(String id) {
@@ -849,7 +886,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final index = widget.notes.activeIndexOf(id);
     final archivingSelected = id == _selectedId;
     widget.notes.archive(id);
-    Toast.show(context, 'Note moved to Archive', icon: Icons.archive_outlined);
+    Toast.show(context, 'Note moved to Archive', icon: archiveIcon);
     if (!archivingSelected) return;
 
     final next = widget.notes.successorTo(index);
@@ -865,7 +902,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final restoringSelected = id == _selectedId;
     final index = _visibleNotes.indexWhere((note) => note.id == id);
     widget.notes.restore(id);
-    Toast.show(context, 'Note restored', icon: Icons.unarchive_outlined);
+    Toast.show(context, 'Note restored', icon: restoreIcon);
     if (!restoringSelected) return;
 
     final remaining = _visibleNotes;
@@ -887,10 +924,182 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  /// Throws one archived note away for good.
+  ///
+  /// Guarded by a question, because nothing here can undo it: the note leaves
+  /// this device and, through the tombstone, every other one it syncs to.
+  Future<void> _deleteNote(String id) async {
+    final note = widget.notes.byId(id);
+    if (note == null || !_canEditNote(note)) return;
+    _recordKapyActivity();
+    final title = note.title.trim();
+    final confirmed = await _confirmDelete(
+      title: 'Delete note?',
+      body: title.isEmpty
+          ? 'This note will be gone from every device you sync with. It '
+                'cannot be undone.'
+          : '"$title" will be gone from every device you sync with. It '
+                'cannot be undone.',
+      action: 'Delete',
+    );
+    if (!confirmed || !mounted) return;
+    _forget([id]);
+    _announceDeleted(1);
+  }
+
+  /// Empties the archive.
+  Future<void> _deleteAllArchived() async {
+    final ids = widget.notes.archivedNotes
+        .where((note) => _canEditNote(note))
+        .map((note) => note.id)
+        .toList();
+    if (ids.isEmpty) return;
+    _recordKapyActivity();
+    final confirmed = await _confirmDelete(
+      title: 'Empty the Archive?',
+      body:
+          '${_noteCount(ids.length)} will be gone from every device you sync '
+          'with. It cannot be undone.',
+      action: 'Delete all',
+    );
+    if (!confirmed || !mounted) return;
+    _forget(ids);
+    _announceDeleted(ids.length);
+  }
+
+  Future<void> _deleteChecked() async {
+    final ids = _checkedArchived.toList();
+    if (ids.isEmpty) return;
+    _recordKapyActivity();
+    final confirmed = await _confirmDelete(
+      title: ids.length == 1 ? 'Delete note?' : 'Delete ${ids.length} notes?',
+      body:
+          '${_noteCount(ids.length)} will be gone from every device you sync '
+          'with. It cannot be undone.',
+      action: 'Delete',
+    );
+    if (!confirmed || !mounted) return;
+    _forget(ids);
+    _announceDeleted(ids.length);
+  }
+
+  void _restoreChecked() {
+    final ids = _checkedArchived.toList();
+    if (ids.isEmpty) return;
+    _recordKapyActivity();
+    for (final id in ids) {
+      if (_canEditNote(widget.notes.byId(id))) widget.notes.restore(id);
+    }
+    setState(() {
+      _checkedArchived.clear();
+      _selectingArchived = false;
+      _setSelectedId(_visibleNotes.firstOrNull?.id);
+    });
+    widget.prefs.lastOpenedNoteId = _selectedId;
+    Toast.show(
+      context,
+      ids.length == 1 ? 'Note restored' : '${ids.length} notes restored',
+      icon: restoreIcon,
+    );
+  }
+
+  /// The part every delete shares: take the notes out, drop whatever the
+  /// selection and the editor were holding onto, and reclaim the pictures and
+  /// recordings nothing refers to any more.
+  void _forget(List<String> ids) {
+    final removing = ids.toSet();
+    for (final id in removing) {
+      _totalAnimatedFor.remove(id);
+      if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
+    }
+    final losingSelected = removing.contains(_selectedId);
+    widget.notes.deleteAll(removing);
+    setState(() {
+      _checkedArchived.removeAll(removing);
+      if (_checkedArchived.isEmpty) _selectingArchived = false;
+      if (losingSelected) _setSelectedId(_visibleNotes.firstOrNull?.id);
+    });
+    if (losingSelected) widget.prefs.lastOpenedNoteId = _selectedId;
+    // The notes are gone, so their attachments have no owner. See
+    // [NotesStore.sweepBlobs] for why this is the only place that counts.
+    unawaited(widget.notes.sweepBlobs());
+  }
+
+  void _announceDeleted(int count) {
+    if (!mounted) return;
+    Toast.show(
+      context,
+      count == 1 ? 'Note deleted' : '$count notes deleted',
+      icon: deleteIcon,
+    );
+  }
+
+  static String _noteCount(int count) =>
+      count == 1 ? 'This note' : 'These $count notes';
+
+  /// One question, asked the same way every time, with the destructive answer
+  /// marked as one.
+  Future<bool> _confirmDelete({
+    required String title,
+    required String body,
+    required String action,
+  }) async {
+    final answer = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: Text(
+            body,
+            style: TextStyle(
+              fontSize: AppTypeScale.control,
+              color: context.palette.textPrimary,
+              height: 1.4,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('confirm-delete'),
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+    return answer ?? false;
+  }
+
+  void _toggleChecked(String id) {
+    setState(() {
+      if (!_checkedArchived.remove(id)) _checkedArchived.add(id);
+    });
+  }
+
+  void _checkAllArchived() =>
+      setState(() => _checkedArchived.addAll(_visibleNotes.map((n) => n.id)));
+
+  void _startSelecting() => setState(() => _selectingArchived = true);
+
+  void _cancelSelecting() => setState(() {
+    _selectingArchived = false;
+    _checkedArchived.clear();
+  });
+
   void _toggleArchive() {
     _recordKapyActivity();
     setState(() {
       _archiveMode = !_archiveMode;
+      _selectingArchived = false;
+      _checkedArchived.clear();
       _query = '';
       final notes = _archiveMode
           ? widget.notes.archivedNotes
@@ -1199,6 +1408,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     onTogglePin: _archiveMode ? null : _togglePinnedNote,
                     onArchiveToggle: _toggleArchive,
                     archiveMode: _archiveMode,
+                    onDelete: _deleteNote,
+                    onDeleteAll: () => unawaited(_deleteAllArchived()),
+                    selecting: _selectingArchived,
+                    checkedIds: _checkedArchived,
+                    onToggleChecked: _toggleChecked,
+                    onStartSelecting: _startSelecting,
+                    onCancelSelecting: _cancelSelecting,
+                    onCheckAll: _checkAllArchived,
+                    onDeleteChecked: () => unawaited(_deleteChecked()),
+                    onRestoreChecked: _restoreChecked,
                     archivedCount: widget.notes.archivedNotes.length,
                     onShare: widget.account == null ? null : _shareNote,
                     sharing: widget.account?.sharing,
@@ -1296,6 +1515,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onTogglePin: _archiveMode ? null : _togglePinnedNote,
                       onArchiveToggle: _toggleArchive,
                       archiveMode: _archiveMode,
+                      onDelete: _deleteNote,
+                      onDeleteAll: () => unawaited(_deleteAllArchived()),
+                      selecting: _selectingArchived,
+                      checkedIds: _checkedArchived,
+                      onToggleChecked: _toggleChecked,
+                      onStartSelecting: _startSelecting,
+                      onCancelSelecting: _cancelSelecting,
+                      onCheckAll: _checkAllArchived,
+                      onDeleteChecked: () => unawaited(_deleteChecked()),
+                      onRestoreChecked: _restoreChecked,
                       archivedCount: widget.notes.archivedNotes.length,
                       onShare: widget.account == null ? null : _shareNote,
                       sharing: widget.account?.sharing,

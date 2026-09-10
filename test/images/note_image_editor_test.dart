@@ -360,6 +360,87 @@ void main() {
     expect(text, 'a n\n$anchor$anchor\note');
   });
 
+  testWidgets('typing beside an image moves the words under it', (
+    tester,
+  ) async {
+    final ref = at(0);
+    List<NoteAttachmentRef>? reported;
+    await tester.pumpWidget(
+      harness(
+        anchor,
+        attachments: [ref],
+        onAttachmentsChanged: (refs) => reported = refs,
+      ),
+    );
+    await tester.pump();
+
+    // The caret is beside the picture and a letter arrives, the way the
+    // keyboard delivers one.
+    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    state.updateEditingValue(
+      TextEditingValue(
+        text: '${anchor}h',
+        selection: const TextSelection.collapsed(offset: 2),
+      ),
+    );
+    await tester.pump();
+
+    final value = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .textEditingValue;
+    expect(value.text, '$anchor\nh');
+    // The caret went with the letter, so typing simply continues.
+    expect(value.selection.baseOffset, 3);
+    // And the picture is still a picture, anchored where it always was.
+    expect(find.byType(NoteImageView), findsOneWidget);
+    expect(reported?.single.offset, 0);
+  });
+
+  testWidgets('typing before an image moves the words above it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness(anchor, attachments: [at(0)]));
+    await tester.pump();
+
+    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    state.updateEditingValue(
+      TextEditingValue(
+        text: 'h$anchor',
+        selection: const TextSelection.collapsed(offset: 1),
+      ),
+    );
+    await tester.pump();
+
+    final value = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .textEditingValue;
+    expect(value.text, 'h\n$anchor');
+    expect(value.selection.baseOffset, 1);
+    expect(find.byType(NoteImageView), findsOneWidget);
+  });
+
+  testWidgets('a line under an image cannot be merged onto it', (tester) async {
+    await tester.pumpWidget(harness('$anchor\nwords', attachments: [at(0)]));
+    await tester.pump();
+
+    // Backspace at the start of the line below, which would otherwise put the
+    // words on the picture's own row.
+    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    state.updateEditingValue(
+      TextEditingValue(
+        text: '${anchor}words',
+        selection: const TextSelection.collapsed(offset: 1),
+      ),
+    );
+    await tester.pump();
+
+    final value = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .textEditingValue;
+    expect(value.text, '$anchor\nwords');
+    expect(find.byType(NoteImageView), findsOneWidget);
+  });
+
   testWidgets('shows image progress and completion while a file is added', (
     tester,
   ) async {

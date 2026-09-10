@@ -7,7 +7,7 @@ import 'package:material_ui/material_ui.dart';
 
 Widget _harness({
   required VoidCallback onOpenNotes,
-  required VoidCallback onCreateNote,
+  required bool Function() onCreateNote,
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   home: MobilePageSwipe(
@@ -21,7 +21,7 @@ Widget _harness({
 /// the note footer does.
 Widget _withFooter({
   required VoidCallback onOpenNotes,
-  required VoidCallback onCreateNote,
+  required bool Function() onCreateNote,
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   home: MobilePageSwipe(
@@ -49,7 +49,9 @@ void main() {
     tester.view.physicalSize = const Size(420, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(_harness(onOpenNotes: () {}, onCreateNote: () {}));
+    await tester.pumpWidget(
+      _harness(onOpenNotes: () {}, onCreateNote: () => true),
+    );
 
     final swipe = await tester.startGesture(const Offset(330, 400));
     await swipe.moveBy(const Offset(40, 0));
@@ -75,7 +77,7 @@ void main() {
     addTearDown(tester.view.reset);
     var opened = 0;
     await tester.pumpWidget(
-      _harness(onOpenNotes: () => opened++, onCreateNote: () {}),
+      _harness(onOpenNotes: () => opened++, onCreateNote: () => true),
     );
 
     final swipe = await tester.startGesture(const Offset(330, 400));
@@ -110,7 +112,13 @@ void main() {
     addTearDown(tester.view.reset);
     var created = 0;
     await tester.pumpWidget(
-      _harness(onOpenNotes: () {}, onCreateNote: () => created++),
+      _harness(
+        onOpenNotes: () {},
+        onCreateNote: () {
+          created++;
+          return true;
+        },
+      ),
     );
 
     final swipe = await tester.startGesture(const Offset(320, 400));
@@ -129,6 +137,37 @@ void main() {
     expect(find.text('New note created'), findsOneWidget);
   });
 
+  testWidgets('a swipe that made nothing does not claim it did', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var asked = 0;
+    await tester.pumpWidget(
+      _harness(
+        onOpenNotes: () {},
+        // The note already open was blank, so nothing was created.
+        onCreateNote: () {
+          asked++;
+          return false;
+        },
+      ),
+    );
+
+    final swipe = await tester.startGesture(const Offset(320, 400));
+    await swipe.moveBy(const Offset(-160, 0));
+    await tester.pump();
+    await swipe.up();
+    await tester.pump();
+
+    expect(asked, 1);
+    // The swipe still answers for itself — landing back where you started
+    // with no cue at all reads as a swipe that missed.
+    expect(find.text('New note created'), findsNothing);
+    expect(find.text('Already a new note'), findsOneWidget);
+  });
+
   testWidgets('retreating below the threshold cancels before release', (
     tester,
   ) async {
@@ -137,7 +176,13 @@ void main() {
     addTearDown(tester.view.reset);
     var created = 0;
     await tester.pumpWidget(
-      _harness(onOpenNotes: () {}, onCreateNote: () => created++),
+      _harness(
+        onOpenNotes: () {},
+        onCreateNote: () {
+          created++;
+          return true;
+        },
+      ),
     );
 
     final swipe = await tester.startGesture(const Offset(320, 400));
@@ -163,7 +208,13 @@ void main() {
     addTearDown(tester.view.reset);
     var actions = 0;
     await tester.pumpWidget(
-      _harness(onOpenNotes: () => actions++, onCreateNote: () => actions++),
+      _harness(
+        onOpenNotes: () => actions++,
+        onCreateNote: () {
+          actions++;
+          return true;
+        },
+      ),
     );
 
     await tester.dragFrom(const Offset(210, 400), const Offset(-50, 0));
@@ -196,7 +247,7 @@ void main() {
       addTearDown(tester.view.reset);
       var opened = 0;
       await tester.pumpWidget(
-        _withFooter(onOpenNotes: () => opened++, onCreateNote: () {}),
+        _withFooter(onOpenNotes: () => opened++, onCreateNote: () => true),
       );
 
       // Well past the threshold an identical drag on the note would clear.
@@ -220,7 +271,13 @@ void main() {
       addTearDown(tester.view.reset);
       var created = 0;
       await tester.pumpWidget(
-        _withFooter(onOpenNotes: () {}, onCreateNote: () => created++),
+        _withFooter(
+          onOpenNotes: () {},
+          onCreateNote: () {
+            created++;
+            return true;
+          },
+        ),
       );
 
       await tester.dragFrom(const Offset(320, 772), const Offset(-200, 0));
@@ -238,7 +295,7 @@ void main() {
       addTearDown(tester.view.reset);
       var opened = 0;
       await tester.pumpWidget(
-        _withFooter(onOpenNotes: () => opened++, onCreateNote: () {}),
+        _withFooter(onOpenNotes: () => opened++, onCreateNote: () => true),
       );
 
       // One pixel above the bar is still the note.
@@ -255,7 +312,7 @@ void main() {
         addTearDown(tester.view.reset);
         var opened = 0;
         await tester.pumpWidget(
-          _withFooter(onOpenNotes: () => opened++, onCreateNote: () {}),
+          _withFooter(onOpenNotes: () => opened++, onCreateNote: () => true),
         );
 
         // Only where the finger lands decides. A diagonal drag that drifts down

@@ -28,7 +28,11 @@ class MobilePageSwipe extends StatefulWidget {
 
   final Widget child;
   final VoidCallback onOpenNotes;
-  final VoidCallback onCreateNote;
+
+  /// Starts a new note, and answers whether one was actually made. A swipe on
+  /// a note that is already blank keeps that note, and the cue below has to
+  /// say so rather than claim a note that does not exist.
+  final bool Function() onCreateNote;
   final bool enabled;
 
   /// A swipe always needs at least this much real travel, even when it begins
@@ -62,6 +66,10 @@ class _MobilePageSwipeState extends State<MobilePageSwipe> {
   bool _armed = false;
   bool _thresholdHapticSent = false;
   bool _showCreatedConfirmation = false;
+
+  /// Whether that confirmation is for a note that was made, or for one the
+  /// swipe found already blank and stayed in.
+  bool _createdSomething = true;
   Timer? _longPressGuardTimer;
   Timer? _confirmationTimer;
 
@@ -197,8 +205,7 @@ class _MobilePageSwipeState extends State<MobilePageSwipe> {
       case _PageSwipeAction.openNotes:
         widget.onOpenNotes();
       case _PageSwipeAction.createNote:
-        _showNewNoteConfirmation();
-        widget.onCreateNote();
+        _showNewNoteConfirmation(created: widget.onCreateNote());
     }
   }
 
@@ -222,9 +229,12 @@ class _MobilePageSwipeState extends State<MobilePageSwipe> {
     if (notify && hadVisualState && mounted) setState(() {});
   }
 
-  void _showNewNoteConfirmation() {
+  void _showNewNoteConfirmation({required bool created}) {
     _confirmationTimer?.cancel();
-    setState(() => _showCreatedConfirmation = true);
+    setState(() {
+      _createdSomething = created;
+      _showCreatedConfirmation = true;
+    });
     _confirmationTimer = Timer(const Duration(milliseconds: 1400), () {
       if (mounted) setState(() => _showCreatedConfirmation = false);
     });
@@ -245,9 +255,16 @@ class _MobilePageSwipeState extends State<MobilePageSwipe> {
           children: [
             widget.child,
             if (_showCreatedConfirmation)
-              const _PageSwipeCue(
-                label: 'New note created',
-                icon: Icons.note_add_rounded,
+              _PageSwipeCue(
+                // The swipe still has to answer for itself. Landing back in
+                // the blank note with no cue at all reads as a swipe that
+                // missed.
+                label: _createdSomething
+                    ? 'New note created'
+                    : 'Already a new note',
+                icon: _createdSomething
+                    ? Icons.note_add_rounded
+                    : Icons.edit_note_rounded,
                 progress: 1,
                 trailing: true,
                 complete: true,

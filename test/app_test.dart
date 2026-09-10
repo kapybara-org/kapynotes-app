@@ -12,6 +12,8 @@ import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note.dart';
+import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -508,7 +510,7 @@ void main() {
       tester.getCenter(wordmark).dx,
       closeTo(tester.getCenter(toolbar).dx, 0.5),
     );
-    expect(tester.getCenter(add).dx, lessThan(tester.getCenter(menu).dx));
+    expect(tester.getCenter(menu).dx, lessThan(tester.getCenter(add).dx));
     expect(
       find.descendant(
         of: toolbar,
@@ -1635,6 +1637,113 @@ void main() {
     expect(notes.notes, hasLength(before + 1));
   });
 
+  group('asking for a new note while already in one', () {
+    Finder plus() => find.byKey(const ValueKey('sidebar-new-note'));
+
+    testWidgets('a blank note is the new note, so no second one appears', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.create(body: 'Something written');
+      await tester.pumpAndSettle();
+
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      final made = notes.notes.length;
+      final blank = notes.notes.first;
+      expect(blank.isEmpty, isTrue);
+
+      // Ask twice more. The blank note is already the new note.
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+
+      expect(notes.notes, hasLength(made));
+      expect(notes.notes.first.id, blank.id);
+      // And the caret is back in it, which is the whole of what plus is for.
+      expect(prefs.lastOpenedNoteId, blank.id);
+    });
+
+    testWidgets('writing in it makes the next press a real new note', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      final started = notes.notes.first;
+      final made = notes.notes.length;
+
+      notes.updateBody(started.id, 'Now it says something');
+      await tester.pumpAndSettle();
+
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(made + 1));
+      expect(notes.notes.first.id, isNot(started.id));
+    });
+
+    testWidgets('the toolbar plus answers the same way', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(find.byTooltip('New note  ⌘N'));
+      await tester.pumpAndSettle();
+      final made = notes.notes.length;
+
+      await tester.tap(find.byTooltip('New note  ⌘N'));
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(made));
+    });
+
+    testWidgets('a blank note holding a picture is not blank', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      final started = notes.notes.first;
+      final made = notes.notes.length;
+
+      // The body is only the character the picture anchors to, so a reading
+      // that trusted the text alone would call this note empty.
+      notes
+          .updateDocument(started.id, NoteAttachmentRef.placeholder, const [], [
+            NoteImageRef(
+              offset: 0,
+              hash: 'abc123',
+              key: Uint8List(32),
+              mime: 'image/png',
+              width: 10,
+              height: 20,
+              bytes: 100,
+            ),
+          ]);
+      await tester.pumpAndSettle();
+
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(made + 1));
+    });
+
+    testWidgets('a blank note in the archive is not the one to come back to', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      final blank = notes.notes.first;
+      notes.archive(blank.id);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+      await tester.pumpAndSettle();
+      final made = notes.notes.length;
+
+      // Asking for a new note from inside the archive leaves the archive, so
+      // the blank note sitting in it is not the one being asked for.
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(made + 1));
+      expect(notes.archivedNotes.single.id, blank.id);
+    });
+  });
+
   testWidgets('shows updated times and keeps the latest note at the top', (
     tester,
   ) async {
@@ -1744,6 +1853,199 @@ void main() {
     await tester.pumpAndSettle();
     expect(notes.archivedNotes, isEmpty);
     expect(notes.notes.first.title, 'Third');
+  });
+
+  group('emptying the archive', () {
+    /// Three notes, all archived, with the archive open.
+    Future<List<Note>> openArchive(WidgetTester tester) async {
+      await pumpApp(tester);
+      for (final body in ['First', 'Second', 'Third']) {
+        notes.create();
+        notes.updateBody(notes.notes.first.id, body);
+      }
+      await tester.pumpAndSettle();
+      for (final note in [...notes.notes]) {
+        notes.archive(note.id);
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+      await tester.pumpAndSettle();
+      return notes.archivedNotes;
+    }
+
+    Future<void> confirm(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the way into the archive reads as a bin, not a filing box', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await tester.pumpAndSettle();
+
+      final entry = find.byKey(const ValueKey('sidebar-archive'));
+      expect(entry, findsOneWidget);
+      expect(
+        find.descendant(of: entry, matching: find.byIcon(archiveIcon)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a note in the archive can be thrown away for good', (
+      tester,
+    ) async {
+      final archived = await openArchive(tester);
+      final third = archived.firstWhere((note) => note.title == 'Third');
+      // Row actions only show on the row under the pointer or the open one,
+      // so open it first, exactly as a reader would.
+      await tester.tap(find.widgetWithText(NoteRow, 'Third'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(ValueKey('delete-note-${third.id}')));
+      await tester.pumpAndSettle();
+
+      // Nothing is gone until the question is answered.
+      expect(notes.archivedNotes, hasLength(3));
+      expect(find.text('Delete note?'), findsOneWidget);
+      await confirm(tester);
+
+      expect(
+        notes.archivedNotes.map((note) => note.title),
+        unorderedEquals(['First', 'Second']),
+      );
+      expect(notes.tombstones.single.id, third.id);
+      expect(find.text('Note deleted'), findsOneWidget);
+    });
+
+    testWidgets('backing out of the question keeps the note', (tester) async {
+      final archived = await openArchive(tester);
+      await tester.tap(
+        find.byKey(ValueKey('delete-note-${archived.first.id}')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(notes.archivedNotes, hasLength(3));
+      expect(notes.tombstones, isEmpty);
+    });
+
+    testWidgets('delete all empties it in one go', (tester) async {
+      await openArchive(tester);
+
+      await tester.tap(find.byKey(const ValueKey('archive-delete-all')));
+      await tester.pumpAndSettle();
+      expect(find.text('Empty the Archive?'), findsOneWidget);
+      await confirm(tester);
+
+      expect(notes.archivedNotes, isEmpty);
+      expect(notes.tombstones, hasLength(3));
+      expect(find.text('3 notes deleted'), findsOneWidget);
+      // The notes that were never archived are untouched.
+      expect(notes.notes, isEmpty);
+    });
+
+    testWidgets('several can be picked and restored together', (tester) async {
+      final archived = await openArchive(tester);
+
+      await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
+      await tester.pumpAndSettle();
+      // Picking replaces opening: the row's own actions are gone while it is
+      // a checkbox.
+      expect(
+        find.byKey(ValueKey('delete-note-${archived.first.id}')),
+        findsNothing,
+      );
+
+      await tester.tap(find.widgetWithText(NoteRow, 'First'));
+      await tester.tap(find.widgetWithText(NoteRow, 'Second'));
+      await tester.pumpAndSettle();
+      expect(find.text('2 selected'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('archive-restore-checked')));
+      await tester.pumpAndSettle();
+
+      expect(
+        notes.notes.map((note) => note.title),
+        unorderedEquals(['First', 'Second']),
+      );
+      expect(notes.archivedNotes.single.title, 'Third');
+      expect(find.text('2 notes restored'), findsOneWidget);
+    });
+
+    testWidgets('several can be picked and deleted together', (tester) async {
+      await openArchive(tester);
+
+      await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('archive-check-all')));
+      await tester.pumpAndSettle();
+      expect(find.text('3 selected'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('archive-delete-checked')));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete 3 notes?'), findsOneWidget);
+      await confirm(tester);
+
+      expect(notes.archivedNotes, isEmpty);
+      expect(notes.tombstones, hasLength(3));
+    });
+
+    testWidgets('leaving the archive puts the picking away', (tester) async {
+      await openArchive(tester);
+      await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'First'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 selected'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-all-notes')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+      await tester.pumpAndSettle();
+
+      // Back to opening notes, with nothing held over from last time.
+      expect(find.text('1 selected'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('archive-start-selecting')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the strip still fits a sidebar dragged to its narrowest', (
+      tester,
+    ) async {
+      await openArchive(tester);
+      prefs.sidebarWidth = LayoutPrefs.minSidebarWidth;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('archive-check-all')));
+      await tester.pumpAndSettle();
+
+      // Four actions and a count in 150pt, which is as narrow as the pane goes.
+      expect(tester.takeException(), isNull);
+      expect(find.text('3 selected'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('archive-delete-checked')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the ordinary list offers no delete at all', (tester) async {
+      await pumpApp(tester);
+      notes.create();
+      notes.updateBody(notes.notes.first.id, 'Keep me');
+      await tester.pumpAndSettle();
+
+      final note = notes.notes.single;
+      expect(find.byKey(ValueKey('delete-note-${note.id}')), findsNothing);
+      expect(find.byKey(const ValueKey('archive-delete-all')), findsNothing);
+      expect(find.byKey(ValueKey('archive-note-${note.id}')), findsOneWidget);
+    });
   });
 
   group('compact editor', () {
@@ -2270,10 +2572,11 @@ void main() {
         tester.getCenter(wordmark).dx,
         closeTo(tester.getCenter(toolbar).dx, 0.5),
       );
-      expect(tester.getTopLeft(add).dx, lessThan(tester.getTopLeft(menu).dx));
+      // The drawer's button leads, starting where the traffic lights end.
+      expect(tester.getTopLeft(menu).dx, lessThan(tester.getTopLeft(add).dx));
       expect(
-        tester.getTopLeft(add).dx,
-        greaterThan(WindowChrome.trafficLightsWidth),
+        tester.getTopLeft(menu).dx,
+        greaterThanOrEqualTo(WindowChrome.trafficLightsWidth),
       );
 
       prefs.toggleSidebar();

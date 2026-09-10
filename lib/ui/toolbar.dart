@@ -76,11 +76,6 @@ class NoteToolbar extends StatelessWidget {
   /// Between an edge action and the window's edge.
   static const double _edgeGap = 9;
 
-  /// macOS draws its traffic lights over the top-left corner, so the menu
-  /// button joins the others on the right there and only there. Everywhere
-  /// else the corner is ours and the drawer's button belongs in it.
-  static bool get _menuLeads => !WindowChrome.overlaysContent;
-
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -206,17 +201,21 @@ class NoteToolbar extends StatelessWidget {
       (AppControlMetrics.wordmarkMark + 6.5 + AppTypeScale.wordmark * 6.4) / 2 +
       12;
 
-  /// The drawer's button where the corner is ours, and whoever the open note
-  /// is shared with.
+  /// The drawer's button, and whoever the open note is shared with.
+  ///
+  /// The menu leads on every platform, so the drawer opens from the same
+  /// corner everywhere. macOS paints its traffic lights over that corner, so
+  /// the button starts after them rather than under them — see
+  /// [_leadingInset], which is the whole of the difference there.
   Widget _leading() {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_menuLeads) _menuButton(),
+        _menuButton(),
         if (members.isNotEmpty)
           Flexible(
             child: Padding(
-              padding: EdgeInsets.only(left: _menuLeads ? 6 : 0),
+              padding: const EdgeInsets.only(left: 6),
               child: MemberAvatars(
                 members: members,
                 currentUserId: currentUserId,
@@ -243,7 +242,6 @@ class NoteToolbar extends StatelessWidget {
           tooltip: noteShared ? 'Sharing' : 'Share note',
           onPressed: onShare,
         ),
-        if (!_menuLeads) ...[const SizedBox(width: 2), _menuButton()],
       ],
     );
   }

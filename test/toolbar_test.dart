@@ -56,7 +56,7 @@ void main() {
   tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
   group('placement', () {
-    testWidgets('macOS keeps all three actions clear of the traffic lights', (
+    testWidgets('macOS starts the menu after its traffic lights', (
       tester,
     ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
@@ -66,30 +66,20 @@ void main() {
         ),
       );
 
-      final add = tester.getCenter(find.byIcon(Icons.add_rounded)).dx;
-      final share = tester
-          .getCenter(find.byIcon(Icons.people_outline_rounded))
-          .dx;
-      final menu = tester.getCenter(find.byIcon(Icons.menu_rounded)).dx;
-
-      expect(add, lessThan(share));
-      expect(share, lessThan(menu));
-      // All of them to the right of the wordmark, which owns the middle.
-      expect(
-        add,
-        greaterThan(
-          tester
-              .getRect(find.byKey(const ValueKey('toolbar-app-wordmark')))
-              .right,
-        ),
-      );
+      // The drawer's button leads here as it does everywhere else; the only
+      // difference is that the corner it leads from belongs to the window
+      // controls, so it begins where they end rather than underneath them.
       expect(
         tester.getTopLeft(find.byIcon(Icons.menu_rounded)).dx,
-        greaterThan(WindowChrome.trafficLightsWidth),
+        greaterThanOrEqualTo(WindowChrome.trafficLightsWidth),
       );
     });
 
-    for (final platform in [TargetPlatform.windows, TargetPlatform.android]) {
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.android,
+    ]) {
       testWidgets('${platform.name} leads with the menu and trails the rest', (
         tester,
       ) async {

@@ -381,6 +381,128 @@ void main() {
     expect(selection.baseOffset, body.indexOf('\n') + 1);
   });
 
+  group('clicking the blank page below a note', () {
+    /// The middle of ruled row [row], counting the first line of the note as
+    /// row 0 — the point a reader aims at when they click an empty line.
+    Offset rowCenter(WidgetTester tester, int row) {
+      final editable = tester
+          .state<EditableTextState>(find.byType(EditableText))
+          .renderEditable;
+      final origin = editable.localToGlobal(Offset.zero);
+      return Offset(
+        origin.dx + 40,
+        origin.dy + (row + 0.5) * editable.preferredLineHeight,
+      );
+    }
+
+    /// Which ruled row the caret is drawn on.
+    int caretRow(WidgetTester tester) {
+      final state = tester.state<EditableTextState>(find.byType(EditableText));
+      final editable = state.renderEditable;
+      final rect = editable.getLocalRectForCaret(
+        TextPosition(offset: state.textEditingValue.selection.baseOffset),
+      );
+      return (rect.center.dy / editable.preferredLineHeight).floor();
+    }
+
+    Future<void> pumpEditor(
+      WidgetTester tester,
+      String body, {
+      bool readOnly = false,
+      ValueChanged<String>? onBodyChanged,
+    }) async {
+      tester.view.physicalSize = const Size(900, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        harness(body, readOnly: readOnly, onBodyChanged: onBodyChanged),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the caret lands on the line that was clicked', (tester) async {
+      const body = 'one\ntwo\nthree';
+      var saved = body;
+      await pumpEditor(tester, body, onBodyChanged: (text) => saved = text);
+
+      await tester.tapAt(rowCenter(tester, 8));
+      await tester.pumpAndSettle();
+
+      // Not the end of "three", which is where the field would have put it.
+      expect(caretRow(tester), 8);
+      expect(saved, 'one\ntwo\nthree\n\n\n\n\n\n');
+      expect(
+        tester
+            .state<EditableTextState>(find.byType(EditableText))
+            .widget
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+    });
+
+    testWidgets('an empty note can be started part way down the page', (
+      tester,
+    ) async {
+      var saved = '';
+      await pumpEditor(tester, '', onBodyChanged: (text) => saved = text);
+
+      await tester.tapAt(rowCenter(tester, 3));
+      await tester.pumpAndSettle();
+
+      expect(caretRow(tester), 3);
+      expect(saved, '\n\n\n');
+    });
+
+    testWidgets('clicking the same line again writes nothing more', (
+      tester,
+    ) async {
+      const body = 'one';
+      var saved = body;
+      await pumpEditor(tester, body, onBodyChanged: (text) => saved = text);
+
+      await tester.tapAt(rowCenter(tester, 5));
+      await tester.pumpAndSettle();
+      expect(saved, 'one\n\n\n\n\n');
+
+      await tester.tapAt(rowCenter(tester, 5));
+      await tester.pumpAndSettle();
+      expect(saved, 'one\n\n\n\n\n');
+      expect(caretRow(tester), 5);
+    });
+
+    testWidgets('a click on a line the note reaches leaves it alone', (
+      tester,
+    ) async {
+      const body = 'one\ntwo\nthree';
+      var saved = body;
+      await pumpEditor(tester, body, onBodyChanged: (text) => saved = text);
+
+      // Past the end of the second line, which is still that line.
+      await tester.tapAt(rowCenter(tester, 1));
+      await tester.pumpAndSettle();
+
+      expect(saved, body);
+      expect(caretRow(tester), 1);
+    });
+
+    testWidgets('a view-only note gains no lines', (tester) async {
+      const body = 'one\ntwo';
+      var saved = body;
+      await pumpEditor(
+        tester,
+        body,
+        readOnly: true,
+        onBodyChanged: (text) => saved = text,
+      );
+
+      await tester.tapAt(rowCenter(tester, 7));
+      await tester.pumpAndSettle();
+
+      expect(saved, body);
+    });
+  });
+
   testWidgets('a selection that spans blank lines and text is kept', (
     tester,
   ) async {
@@ -2927,6 +3049,107 @@ void main() {
       tester.testTextInput.log.map((call) => call.method),
       contains('TextInput.show'),
     );
+  });
+
+  group('a keyboard dismissed out from under the editor', () {
+    /// The editor as a phone mounts it: focused on open, and asking for a
+    /// keyboard.
+    Future<FocusNode> pumpFocused(WidgetTester tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        harness(
+          'one\ntwo',
+          startAtEnd: true,
+          autofocus: true,
+          ensureKeyboardVisible: true,
+        ),
+      );
+      // Frames, not pumpAndSettle: settling runs the startup retry to its end,
+      // and whether that run stops on its own is half of what is under test.
+      await tester.pump();
+      await tester.pump();
+      return tester
+          .state<EditableTextState>(find.byType(EditableText))
+          .widget
+          .focusNode;
+    }
+
+    Future<void> setKeyboard(WidgetTester tester, double height) async {
+      tester.view.viewInsets = height > 0
+          ? FakeViewPadding(bottom: height)
+          : FakeViewPadding.zero;
+      await tester.pump();
+    }
+
+    testWidgets('the editor lets go, so the keyboard stays down', (
+      tester,
+    ) async {
+      final node = await pumpFocused(tester);
+      await setKeyboard(tester, 300);
+      expect(node.hasFocus, isTrue);
+
+      // Android's Back is swallowed by the IME: the keyboard goes, and all the
+      // app is told is that the window grew.
+      tester.testTextInput.log.clear();
+      await setKeyboard(tester, 0);
+      await tester.pump(const Duration(seconds: 4));
+
+      expect(node.hasFocus, isFalse);
+      expect(
+        tester.testTextInput.log.map((call) => call.method),
+        isNot(contains('TextInput.show')),
+      );
+    });
+
+    // The guard used to read MediaQuery, which a Scaffold hands its body with
+    // the bottom inset already taken out — so it never saw the keyboard, and
+    // every note opened went on asking for one for five seconds. Pressing Back
+    // inside that window was answered by the next request.
+    testWidgets('the startup request stops once the keyboard is up', (
+      tester,
+    ) async {
+      await pumpFocused(tester);
+      await setKeyboard(tester, 300);
+
+      tester.testTextInput.log.clear();
+      await tester.pump(const Duration(seconds: 6));
+
+      expect(
+        tester.testTextInput.log.map((call) => call.method),
+        isNot(contains('TextInput.show')),
+      );
+    });
+
+    testWidgets('a window that is only resized keeps the caret', (
+      tester,
+    ) async {
+      // Every desktop metrics change looks like this: no keyboard before, no
+      // keyboard after. Dropping the focus on one would empty the editor of
+      // its caret every time the window was dragged wider.
+      final node = await pumpFocused(tester);
+      tester.view.physicalSize = const Size(500, 900);
+      await tester.pump();
+
+      expect(node.hasFocus, isTrue);
+    });
+
+    testWidgets('a keyboard that goes down with the app leaves focus alone', (
+      tester,
+    ) async {
+      final node = await pumpFocused(tester);
+      await setKeyboard(tester, 300);
+
+      // Backgrounding takes the keyboard with it. The note is still open and
+      // still the one being written in, so the caret belongs where it is.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await setKeyboard(tester, 0);
+
+      expect(node.hasFocus, isTrue);
+    });
   });
 
   testWidgets('copies full precision when a chip is tapped', (tester) async {

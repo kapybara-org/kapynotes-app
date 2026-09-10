@@ -226,7 +226,7 @@ class NoteEditor extends StatefulWidget {
   State<NoteEditor> createState() => NoteEditorState();
 }
 
-class NoteEditorState extends State<NoteEditor> {
+class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   static const List<Duration> _keyboardRetryDelays = [
     Duration(milliseconds: 100),
     Duration(milliseconds: 150),
@@ -237,6 +237,10 @@ class NoteEditorState extends State<NoteEditor> {
     Duration(milliseconds: 1200),
     Duration(milliseconds: 1500),
   ];
+
+  /// Whether the soft keyboard was up the last time the window was measured,
+  /// which is what turns a metrics change into "the keyboard just went".
+  bool _keyboardWasUp = false;
 
   final PlatformSpellCheckService _spellCheckService =
       PlatformSpellCheckService();
@@ -350,6 +354,7 @@ class NoteEditorState extends State<NoteEditor> {
     widget.player?.addListener(_onPlaybackChanged);
     _isEmpty = initialText.isEmpty;
     _evaluate();
+    WidgetsBinding.instance.addObserver(this);
     if (!widget.readOnly && widget.autofocus && widget.startAtEnd) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => resumeAt == null ? focusAtEnd() : focusHere(),
@@ -434,6 +439,7 @@ class NoteEditorState extends State<NoteEditor> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     LinkPopover.hide();
     KeywordTooltip.hide();
     _controller.removeListener(_onControllerChanged);
@@ -572,12 +578,21 @@ class NoteEditorState extends State<NoteEditor> {
     _scheduleKeyboardRetryAt(0);
   }
 
+  /// How far the soft keyboard reaches up the window, or zero when it is not
+  /// there.
+  ///
+  /// Read from the view rather than from [MediaQuery]. A [Scaffold] hands its
+  /// body a MediaQuery with the bottom inset taken out — that is how
+  /// `resizeToAvoidBottomInset` avoids counting the keyboard twice — and the
+  /// editor is a Scaffold body on a phone. Asking there always answers zero,
+  /// so the guard below could never tell that the keyboard it was asking for
+  /// had already arrived, and every note opened kept asking for five seconds.
+  double get _keyboardInset => mounted ? View.of(context).viewInsets.bottom : 0;
+
   void _scheduleKeyboardRetryAt(int index) {
     if (index >= _keyboardRetryDelays.length) return;
     _keyboardRetryTimer = Timer(_keyboardRetryDelays[index], () {
-      if (!mounted ||
-          !_focusNode.hasFocus ||
-          MediaQuery.viewInsetsOf(context).bottom > 0) {
+      if (!mounted || !_focusNode.hasFocus || _keyboardInset > 0) {
         return;
       }
       // A rejected Android request has no Dart acknowledgement. Backoff keeps
@@ -1627,6 +1642,52 @@ class NoteEditorState extends State<NoteEditor> {
     );
   }
 
+  /// Puts the caret on the ruled row a click landed on, below everything the
+  /// note has been written into.
+  ///
+  /// Left to itself the field answers such a click with the end of the text,
+  /// so the caret appears on the last written line rather than under the
+  /// pointer and the page reads as though it ignored the click. A caret can
+  /// only sit on a row that exists, so the rows in between are written — the
+  /// same lines a run of Returns would have made, and undone by one press of
+  /// undo.
+  ///
+  /// Returns whether the click was in that empty region, in which case there
+  /// is nothing below it to be a checkbox, a link or a calculator word.
+  bool _caretToBlankRow(RenderEditable editable, Offset globalPosition) {
+    if (widget.readOnly) return false;
+    final lineHeight = editable.preferredLineHeight;
+    if (lineHeight <= 0) return false;
+
+    // Where the writing actually ends. Measured rather than counted in rows:
+    // a note holding a picture has one row as tall as the picture, and only
+    // the empty page below the text is ruled at a fixed height.
+    final textBottom =
+        editable.localToGlobal(Offset.zero).dy + editable.size.height;
+    if (globalPosition.dy <= textBottom) return false;
+
+    // Below that the ruling is uniform — the field forces its strut and the
+    // paper is drawn from the same number — so which line the pointer is over
+    // is arithmetic rather than a hit test.
+    final missing = ((globalPosition.dy - textBottom) / lineHeight).floor() + 1;
+
+    final text = _controller.text + '\n' * missing;
+    final caret = TextSelection.collapsed(offset: text.length);
+    _controller.value = TextEditingValue(text: text, selection: caret);
+    _focusNode.requestFocus();
+    // The field's own tap handler runs after this one, and answers the click
+    // with the position it finds in the layout it already has — the layout
+    // from before these rows existed, which puts the caret straight back on
+    // the last written line. A microtask lands after that handler and before
+    // the frame it would be drawn in, so the caret is only ever painted where
+    // the click was aimed.
+    scheduleMicrotask(() {
+      if (!mounted || _controller.text != text) return;
+      _controller.selection = caret;
+    });
+    return true;
+  }
+
   /// Moves the caret into the misspelling a right-click landed on.
   ///
   /// Windows and Linux leave the caret alone when the menu opens, so without
@@ -1726,6 +1787,8 @@ class NoteEditorState extends State<NoteEditor> {
     final editable = root == null ? null : _findRenderEditable(root);
     if (editable == null) return;
 
+    if (_caretToBlankRow(editable, event.position)) return;
+
     final offset = editable.getPositionForPoint(event.position).offset;
     final checkboxStart = _checkboxAt(editable, event.position, offset);
     if (!widget.readOnly && checkboxStart >= 0) {
@@ -1794,10 +1857,43 @@ class NoteEditorState extends State<NoteEditor> {
       _recordKapyPeekActivity();
       return;
     }
+    // Nothing left to raise a keyboard for. A retry still in flight would
+    // otherwise put one up over a note nobody is writing in.
+    _keyboardRetryTimer?.cancel();
     _kapyPeekIdleTimer?.cancel();
     _clearKeywordTooltip();
     _kapyPeekIdleTimer = null;
     _dismissKapyPeek();
+  }
+
+  /// Lets the editor go when the soft keyboard is dismissed out from under it.
+  ///
+  /// Android's Back button is swallowed by the IME while the keyboard is up:
+  /// it closes, and the app is told nothing except that the window grew. The
+  /// field is still focused, still holds an input connection, and asks for the
+  /// keyboard back at the first excuse — so the keyboard the reader just
+  /// dismissed reappears, which is the whole of the complaint. iOS's own
+  /// hide-keyboard key leaves the same state behind.
+  ///
+  /// Giving the focus up is the only thing that makes the dismissal stick, and
+  /// it is what the reader asked for: they wanted out of the note, not a
+  /// caret blinking under a keyboard that keeps coming back.
+  ///
+  /// Desktop never reaches the body of this — no soft keyboard means the inset
+  /// is always zero, so [_keyboardWasUp] is never true.
+  @override
+  void didChangeMetrics() {
+    final wasUp = _keyboardWasUp;
+    final inset = _keyboardInset;
+    _keyboardWasUp = inset > 0;
+    if (inset > 0 || !wasUp) return;
+    if (widget.readOnly || !_focusNode.hasFocus) return;
+    // Backgrounding the app also takes the keyboard down, and focus should
+    // survive that: it is the same note, still open, when the app comes back.
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
+    _keyboardRetryTimer?.cancel();
+    _focusNode.unfocus();
   }
 
   void _recordKapyPeekActivity() {
@@ -3009,6 +3105,10 @@ class NoteEditorState extends State<NoteEditor> {
                   _dailySeparatorFormatter,
                   const _ListContinuationFormatter(),
                   const _ListShorthandFormatter(),
+                  // Last, so it sees whatever the others made of the edit: a
+                  // continuation or a shorthand landing on a picture's line
+                  // has to be moved off it too.
+                  const _ImageLineFormatter(),
                 ],
                 contextMenuBuilder: (context, editableTextState) =>
                     ValueListenableBuilder<int>(
@@ -3176,6 +3276,23 @@ class _Placeholder extends StatelessWidget {
 ///
 /// The bullet matches the depth the line is already at, so shorthand typed
 /// inside a nested list gets that level's glyph rather than the first's.
+/// Keeps a picture's line to itself; see [keepImageLinesToThemselves].
+///
+/// A formatter rather than a check in the change listener, because this has to
+/// happen *before* the value is applied: `EditableText` runs these on typing,
+/// on the IME's own updates, and on `userUpdateTextEditingValue`, which is how
+/// paste and the selection toolbar reach the note. Repairing afterwards would
+/// show the text beside the picture for a frame and cost a second undo step.
+class _ImageLineFormatter extends TextInputFormatter {
+  const _ImageLineFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) => keepImageLinesToThemselves(oldValue, newValue);
+}
+
 class _ListShorthandFormatter extends TextInputFormatter {
   const _ListShorthandFormatter();
 
