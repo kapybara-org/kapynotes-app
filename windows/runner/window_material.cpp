@@ -18,8 +18,9 @@ enum BackdropType : DWORD {
   kBackdropTabbed = 4,
 };
 
-// The pre-22H2 route, shared with the Start menu. Values from the Windows
-// internals that every acrylic library on Windows 10 relies on.
+// The route shared with the Start menu and taskbar. Values from the Windows
+// internals that every acrylic library on Windows relies on; undocumented,
+// but unchanged since 1803 and still in use on Windows 11.
 enum AccentState : DWORD {
   kAccentDisabled = 0,
   kAccentEnableAcrylicBlurBehind = 4,
@@ -75,8 +76,9 @@ bool ApplyAccentPolicy(HWND window, bool enabled, double amount) {
   }
   // A faint neutral tint so the blur has a body to it; Flutter paints the
   // colour that matters. Alpha is in the top byte, and thins with the
-  // settings slider: on this route the tint is the only knob there is, so a
-  // window asked to be nearly invisible has to give it up.
+  // settings slider: this tint is the material's only strength, so a window
+  // asked to be nearly invisible has to give it up. Never quite to zero — a
+  // policy with no colour at all is drawn by some builds as no blur either.
   const double t = amount < 0 ? 0 : (amount > 1 ? 1 : amount);
   const DWORD tint_alpha = static_cast<DWORD>(0x30 - (0x2c * t));
   AccentPolicy policy{
@@ -124,19 +126,31 @@ bool SetWindowGlass(HWND window, bool enabled, double amount) {
     return false;
   }
   if (!enabled) {
-    ApplySystemBackdrop(window, false);
     ApplyAccentPolicy(window, false, 0);
+    ApplySystemBackdrop(window, false);
     ExtendFrameIntoClient(window, false);
     return false;
   }
-  // The documented route first. It fails cleanly before 22H2, where the
-  // attribute is unknown to the DWM, and that is when the older one is tried.
+  // The composition attribute first, on every Windows that has it, and the
+  // documented Windows 11 backdrop only where it does not. Two things decide
+  // that order, both of them what the settings slider promises:
   //
-  // Note that the amount only reaches the older route. Windows 11's acrylic
-  // backdrop is a fixed recipe with no tint or strength to set, so there the
-  // slider moves the tints Flutter paints and nothing else.
-  bool on = ApplySystemBackdrop(window, true) ||
-            ApplyAccentPolicy(window, true, amount);
+  // The backdrop is a fixed recipe. It has no tint and no strength to set, so
+  // under it the slider moved the tints Flutter paints and nothing else, and
+  // the window never got past "translucent" however far it was dragged — the
+  // same wall the macOS material hit before its alpha was tied to the slider.
+  // The accent policy's gradient alpha is that knob here.
+  //
+  // The backdrop also goes solid the moment the window loses focus, by
+  // design and with no attribute to say otherwise. Glass that is only glass
+  // while you are looking straight at it reads as broken.
+  //
+  // The accent route is the one the Start menu and taskbar use, so it is not
+  // going anywhere, and it still blurs on Windows 11 (TranslucentTB rests on
+  // it). Its known cost is a lag while dragging or resizing on some Windows
+  // 10 builds; a window whose material follows the slider is worth it.
+  bool on = ApplyAccentPolicy(window, true, amount) ||
+            ApplySystemBackdrop(window, true);
   if (on) {
     ExtendFrameIntoClient(window, true);
   }

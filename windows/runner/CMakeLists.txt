@@ -12,6 +12,7 @@ add_executable(${BINARY_NAME} WIN32
   "login_item.cpp"
   "rich_clipboard.cpp"
   "spell_check.cpp"
+  "synthetic_keys.cpp"
   "main.cpp"
   "utils.cpp"
   "win32_window.cpp"
@@ -46,6 +47,8 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "windowscodecs.lib")
+# SetWindowSubclass, for repairing the key messages other programs send.
+target_link_libraries(${BINARY_NAME} PRIVATE "comctl32.lib")
 # Media Foundation, for decoding a recording into the samples a speech model
 # reads. mfreadwrite is the source reader; mfplat and mfuuid carry the media
 # type GUIDs it is configured with.

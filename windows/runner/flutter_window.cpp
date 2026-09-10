@@ -5,6 +5,7 @@
 #include <flutter/standard_method_codec.h>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "synthetic_keys.h"
 
 namespace {
 
@@ -57,6 +58,9 @@ bool FlutterWindow::OnCreate() {
           flutter_controller_->engine()->messenger(), kShutdownChannel,
           &flutter::StandardMethodCodec::GetInstance());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  // Before the first keystroke can arrive: the engine's window is where key
+  // messages land, and those that other programs send need mending first.
+  RepairSyntheticKeys(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
