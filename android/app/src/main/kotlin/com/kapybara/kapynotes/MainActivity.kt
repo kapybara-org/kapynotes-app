@@ -36,6 +36,8 @@ class MainActivity : FlutterActivity() {
         RichClipboard.register(flutterEngine, this)
         AudioDecode.register(flutterEngine.dartExecutor.binaryMessenger)
         SpeechRuntime.register(flutterEngine.dartExecutor.binaryMessenger, this) { this }
+        SystemRegion.register(flutterEngine.dartExecutor.binaryMessenger)
+        FileExport.register(flutterEngine.dartExecutor.binaryMessenger) { this }
         pendingLaunch = takeLaunchName(intent)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -47,6 +49,16 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /**
+     * The Storage Access Framework's picker answering, on its way past the
+     * plugins that also watch for one. [FileExport] owns exactly one request
+     * code and ignores everything else.
+     */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        FileExport.handleResult(requestCode, resultCode, data)
     }
 
     /**

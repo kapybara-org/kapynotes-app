@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show Locale, PlatformDispatcher, Size;
 
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,7 @@ import '../calc/format.dart';
 import '../core/appearance.dart';
 import '../core/editor_font.dart';
 import '../core/platform.dart';
+import '../core/system_region.dart';
 import 'daily_separator.dart';
 import 'local_store.dart';
 import 'time_zones.dart';
@@ -22,17 +24,18 @@ extension NumberSystemCopy on NumberSystem {
   };
 
   String get description => switch (this) {
-    NumberSystem.auto => 'Follow the number format your system uses',
+    NumberSystem.auto => 'Follow the country your device is set to',
     NumberSystem.international => 'Thousands, millions, billions',
     NumberSystem.indian => 'Thousands, lakh, crore',
   };
 
-  /// The grouping this choice means for [locale]. Only [NumberSystem.auto]
-  /// looks at the locale at all.
-  DigitGrouping resolve(Locale locale) => switch (this) {
+  /// The grouping this choice means for a device set to [region], falling
+  /// back to [locale] where the platform will not name one. Only
+  /// [NumberSystem.auto] looks at either.
+  DigitGrouping resolve(Locale locale, {String? region}) => switch (this) {
     NumberSystem.international => DigitGrouping.international,
     NumberSystem.indian => DigitGrouping.indian,
-    NumberSystem.auto => _localeGrouping(locale),
+    NumberSystem.auto => _autoGrouping(locale, region),
   };
 }
 
@@ -56,13 +59,18 @@ const Set<String> _indianLanguages = {
   'ur',
 };
 
-DigitGrouping _localeGrouping(Locale locale) {
-  final region = locale.countryCode;
-  if (region != null && region.isNotEmpty) {
-    return _indianRegions.contains(region.toUpperCase())
+DigitGrouping _autoGrouping(Locale locale, String? region) {
+  // The device's own region setting is the answer whenever there is one:
+  // where the two disagree — English (US) read in India — it is the region
+  // that says how the reader counts. See [SystemRegion].
+  final named = region ?? locale.countryCode;
+  if (named != null && named.isNotEmpty) {
+    return _indianRegions.contains(named.toUpperCase())
         ? DigitGrouping.indian
         : DigitGrouping.international;
   }
+  // Nothing named a country at all: a Linux desktop, a test, an older build.
+  // A South Asian language is the last thing left to go on.
   return _indianLanguages.contains(locale.languageCode.toLowerCase())
       ? DigitGrouping.indian
       : DigitGrouping.international;
@@ -107,9 +115,18 @@ class LayoutPrefs extends ChangeNotifier {
 
   final LocalStore _store;
 
-  /// Where [NumberSystem.auto] reads the device's region from. Injectable so
-  /// tests can resolve against a locale they choose.
+  /// The language the device is read in, which [NumberSystem.auto] falls back
+  /// to. Injectable so tests can resolve against a locale they choose.
   final Locale Function() _locale;
+
+  /// The country the device is set to, asked of the platform once per launch.
+  /// Injectable for the same reason as [_locale].
+  final Future<String?> Function() _readRegion;
+
+  /// That answer, once it has arrived. Null until then, and on any platform
+  /// that will not name one — both of which read as "fall back to the
+  /// locale", which is what this did before it could ask.
+  String? _region;
 
   double _gutterWidth = defaultGutterWidth;
   bool _resultsVisible = true;
@@ -137,8 +154,12 @@ class LayoutPrefs extends ChangeNotifier {
   String? _defaultNoteId;
   final Map<String, ({int offset, DateTime at})> _carets = {};
 
-  LayoutPrefs(this._store, {Locale Function()? locale})
-    : _locale = locale ?? (() => PlatformDispatcher.instance.locale);
+  LayoutPrefs(
+    this._store, {
+    Locale Function()? locale,
+    Future<String?> Function()? region,
+  }) : _locale = locale ?? (() => PlatformDispatcher.instance.locale),
+       _readRegion = region ?? SystemRegion.read;
 
   double get gutterWidth => _gutterWidth;
   bool get resultsVisible => _resultsVisible;
@@ -238,12 +259,13 @@ class LayoutPrefs extends ChangeNotifier {
   NumberSystem get numberSystem => _numberSystem;
 
   /// That choice resolved against the device — what results are formatted in.
-  DigitGrouping get digitGrouping => _numberSystem.resolve(_locale());
+  DigitGrouping get digitGrouping =>
+      _numberSystem.resolve(_locale(), region: _region);
 
   /// The sample the settings dialog shows beside [system], resolved against
-  /// the same locale results are formatted with.
+  /// the same device results are formatted for.
   String exampleFor(NumberSystem system) =>
-      ResultFormatter.sample(system.resolve(_locale()));
+      ResultFormatter.sample(system.resolve(_locale(), region: _region));
 
   void load() {
     _gutterWidth = _clampGutter(_readDouble(_gutterKey) ?? defaultGutterWidth);
@@ -265,6 +287,7 @@ class LayoutPrefs extends ChangeNotifier {
     _spellCheckEnabled = _store.read<bool>(_spellCheckKey) ?? true;
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
+    unawaited(_loadRegion());
     _appearance.value = _readEnum(
       _appearanceKey,
       AppearanceMode.values,
@@ -563,6 +586,20 @@ class LayoutPrefs extends ChangeNotifier {
   void toggleSidebar() {
     _sidebarVisible = !_sidebarVisible;
     notifyListeners();
+  }
+
+  /// Asks the platform what country it is set to, once, on the way up.
+  ///
+  /// Not awaited by [load]: a note list must not wait on a channel, and until
+  /// the answer lands the locale stands in — which is only ever a frame or
+  /// two, and is the same reading this had before. Listeners are told when it
+  /// changes anything, so a result already on screen re-groups itself.
+  Future<void> _loadRegion() async {
+    final region = await _readRegion();
+    if (region == null || region == _region) return;
+    final before = digitGrouping;
+    _region = region;
+    if (digitGrouping != before) notifyListeners();
   }
 
   /// An unrecognised stored name means a downgrade or a hand-edited file;

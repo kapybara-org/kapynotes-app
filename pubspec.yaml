@@ -139,6 +139,11 @@ dev_dependencies:
 
   flutter_test:
     sdk: flutter
+  # Lets a test stand in for the directories path_provider would otherwise ask
+  # a platform for. Both come in with path_provider itself; named here because
+  # the export tests use them directly.
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
   # Drives the real app on a real device or simulator, with the real plugins
   # behind it. `flutter test` runs against fakes by design; this is the only
   # way to find out whether the microphone actually works on a platform.

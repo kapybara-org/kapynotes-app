@@ -6,6 +6,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "synthetic_keys.h"
+#include "system_region.h"
 
 namespace {
 
@@ -53,6 +54,8 @@ bool FlutterWindow::OnCreate() {
       flutter_controller_->engine()->messenger(), GetHandle());
   audio_decode_channel_ =
       RegisterAudioDecodeChannel(flutter_controller_->engine()->messenger());
+  system_region_channel_ =
+      RegisterSystemRegionChannel(flutter_controller_->engine()->messenger());
   shutdown_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(), kShutdownChannel,

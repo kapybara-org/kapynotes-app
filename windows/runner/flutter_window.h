@@ -46,6 +46,8 @@ class FlutterWindow : public Win32Window {
       window_material_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       audio_decode_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      system_region_channel_;
 
   // Carries the one message the runner sends without being asked: Windows —
   // or, far more often, the installer's Restart Manager — wants this process

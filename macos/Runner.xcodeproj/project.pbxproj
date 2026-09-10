@@ -32,6 +32,7 @@
 		A11C10F12044A3C60003C045 /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11C10F02044A3C60003C045 /* LoginItem.swift */; };
 		A11C10F12044A3C60003C046 /* WindowMaterial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11C10F02044A3C60003C046 /* WindowMaterial.swift */; };
 		C1A0B0090000000000000002 /* WindowPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0090000000000000001 /* WindowPin.swift */; };
+		C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00C0000000000000001 /* SystemRegion.swift */; };
 		AF27F60885C626B56BB7826B /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 95D26CE3424D889EB606C16A /* Pods_RunnerTests.framework */; };
 		C1A0B0020000000000000002 /* RichClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0020000000000000001 /* RichClipboard.swift */; };
 		C1A0B0030000000000000002 /* SpellCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0030000000000000001 /* SpellCheck.swift */; };
@@ -102,6 +103,7 @@
 		A11C10F02044A3C60003C045 /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
 		A11C10F02044A3C60003C046 /* WindowMaterial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMaterial.swift; sourceTree = "<group>"; };
 		C1A0B0090000000000000001 /* WindowPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPin.swift; sourceTree = "<group>"; };
+		C1A0B00C0000000000000001 /* SystemRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemRegion.swift; sourceTree = "<group>"; };
 		B5117A83E87A522312E4D0DB /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		C1A0B0020000000000000001 /* RichClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboard.swift; sourceTree = "<group>"; };
 		C1A0B0030000000000000001 /* SpellCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpellCheck.swift; sourceTree = "<group>"; };
@@ -203,6 +205,7 @@
 				A11C10F02044A3C60003C045 /* LoginItem.swift */,
 				A11C10F02044A3C60003C046 /* WindowMaterial.swift */,
 				C1A0B0090000000000000001 /* WindowPin.swift */,
+				C1A0B00C0000000000000001 /* SystemRegion.swift */,
 				C1A0B0020000000000000001 /* RichClipboard.swift */,
 				C1A0B0030000000000000001 /* SpellCheck.swift */,
 				C1A0B0040000000000000001 /* Summaries.swift */,
@@ -503,6 +506,7 @@
 				A11C10F12044A3C60003C045 /* LoginItem.swift in Sources */,
 				A11C10F12044A3C60003C046 /* WindowMaterial.swift in Sources */,
 				C1A0B0090000000000000002 /* WindowPin.swift in Sources */,
+				C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */,
 				C1A0B0020000000000000002 /* RichClipboard.swift in Sources */,
 				C1A0B0030000000000000002 /* SpellCheck.swift in Sources */,
 				C1A0B0040000000000000002 /* Summaries.swift in Sources */,

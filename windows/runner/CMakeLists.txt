@@ -13,6 +13,7 @@ add_executable(${BINARY_NAME} WIN32
   "rich_clipboard.cpp"
   "spell_check.cpp"
   "synthetic_keys.cpp"
+  "system_region.cpp"
   "main.cpp"
   "utils.cpp"
   "win32_window.cpp"

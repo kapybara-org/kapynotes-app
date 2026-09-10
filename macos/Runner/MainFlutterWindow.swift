@@ -12,6 +12,7 @@ class MainFlutterWindow: NSWindow {
   private var audioDecodeChannel: FlutterMethodChannel?
   private var windowMaterialChannel: FlutterMethodChannel?
   private var windowPinChannel: FlutterMethodChannel?
+  private var systemRegionChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
     let flutterViewController = KapyFlutterViewController()
@@ -67,6 +68,9 @@ class MainFlutterWindow: NSWindow {
       view: visualEffectView
     )
     windowPinChannel = WindowPin.register(
+      with: flutterViewController.engine.binaryMessenger
+    )
+    systemRegionChannel = SystemRegion.register(
       with: flutterViewController.engine.binaryMessenger
     )
 

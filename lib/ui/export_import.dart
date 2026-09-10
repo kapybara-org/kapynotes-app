@@ -1,6 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/notes_store.dart';
@@ -42,10 +41,11 @@ Future<void> runExport(
     case ExportStatus.written:
       final count = result.noteCount;
       progress.success(
-        AppPlatform.isDesktop
+        result.chosenByUser
             ? 'Exported $count ${count == 1 ? 'note' : 'notes'}'
-            // On a phone nobody chose the folder, so the message has to say
-            // where it went or the file may as well not exist.
+            // Only where the system's save UI could not be reached and the app
+            // picked the folder itself. Nobody else knows where it went, so
+            // the message has to say, or the file may as well not exist.
             : 'Exported to ${result.path?.split('/').last}',
       );
   }

@@ -179,6 +179,53 @@ void main() {
     expect(restored.exampleFor(NumberSystem.indian), '1,23,45,678');
   });
 
+  test('the device region outranks the language it is read in', () async {
+    final store = _MemoryStore();
+    // The configuration this went wrong in, and the one this Mac is in: the
+    // language is English (US), the Region is India. Flutter only ever reports
+    // the first, so "Match my region" wrote millions to somebody who counts in
+    // crore.
+    final prefs = LayoutPrefs(
+      store,
+      locale: () => const Locale('en', 'US'),
+      region: () async => 'IN',
+    )..load();
+
+    // Until the platform answers, the locale still stands in.
+    expect(prefs.digitGrouping, DigitGrouping.international);
+    await pumpEventQueue();
+    expect(prefs.digitGrouping, DigitGrouping.indian);
+    expect(prefs.exampleFor(NumberSystem.auto), '1,23,45,678');
+  });
+
+  test(
+    'a region the platform will not name leaves the language in charge',
+    () async {
+      final store = _MemoryStore();
+      final prefs = LayoutPrefs(
+        store,
+        locale: () => const Locale('hi'),
+        region: () async => null,
+      )..load();
+      await pumpEventQueue();
+
+      expect(prefs.digitGrouping, DigitGrouping.indian);
+    },
+  );
+
+  test('the region is only consulted for the automatic choice', () async {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(
+      store,
+      locale: () => const Locale('en', 'US'),
+      region: () async => 'IN',
+    )..load();
+    prefs.numberSystem = NumberSystem.international;
+    await pumpEventQueue();
+
+    expect(prefs.digitGrouping, DigitGrouping.international);
+  });
+
   test('an unreadable stored number system falls back to the region', () {
     final store = _MemoryStore()..put('numberSystem.v1', 'martian');
     final prefs = LayoutPrefs(store, locale: () => const Locale('en', 'GB'))
