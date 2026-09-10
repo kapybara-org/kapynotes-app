@@ -132,29 +132,27 @@ void main() {
   });
 
   group('the voice pane', () {
-    testWidgets('a build with no device engine does not offer one', (
+    testWidgets('a build with nothing local says so rather than nothing', (
       tester,
     ) async {
       await _openVoicePane(tester, prefs: VoicePrefs(store)..load());
 
-      expect(find.text('Where recordings are transcribed'), findsNothing);
-    });
-
-    testWidgets('the row says where the words are made', (tester) async {
-      await _openVoicePane(
-        tester,
-        prefs: VoicePrefs(store)..load(),
-        deviceTranscriber: _Fake(TranscriberReadiness.ready),
-      );
-
-      expect(find.text('Where recordings are transcribed'), findsOneWidget);
+      // The row is always there — the section is where you look to find out
+      // whether this machine can do it — but there is no switch to move.
+      expect(find.byKey(const ValueKey('local-transcription-row')), findsOne);
       expect(
-        find.text('Sent to our server, and billed to your minutes'),
+        find.descendant(
+          of: find.byKey(const ValueKey('local-transcription-row')),
+          matching: find.text('Not something this device can do yet'),
+        ),
         findsOneWidget,
       );
+      expect(_switchIn(tester, 'local-transcription-row'), isNull);
     });
 
-    testWidgets('choosing this device is kept, and explained', (tester) async {
+    testWidgets('an engine that is here is a switch, not a picker', (
+      tester,
+    ) async {
       final prefs = VoicePrefs(store)..load();
       await _openVoicePane(
         tester,
@@ -162,47 +160,63 @@ void main() {
         deviceTranscriber: _Fake(TranscriberReadiness.ready),
       );
 
-      await tester.tap(find.byKey(const ValueKey('voice-transcript-engine-row')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('transcript-engine-device')));
+      // The question the two pickers used to ask, in the one place the answer
+      // can be seen without opening anything.
+      expect(find.text('Where recordings are transcribed'), findsNothing);
+      expect(
+        find.text('Built into this device, and never uploaded'),
+        findsOneWidget,
+      );
+      expect(_switchIn(tester, 'local-transcription-row'), isFalse);
+    });
+
+    testWidgets('switching it on is the whole of the choice', (tester) async {
+      final prefs = VoicePrefs(store)..load();
+      await _openVoicePane(
+        tester,
+        prefs: prefs,
+        deviceTranscriber: _Fake(TranscriberReadiness.ready),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('local-transcription-row')));
       await tester.pumpAndSettle();
 
       expect(prefs.transcriptEngine, TranscriptEngine.device);
-      expect(find.text('Made here, and never uploaded'), findsOneWidget);
+      expect(_switchIn(tester, 'local-transcription-row'), isTrue);
+
+      // And off again sends it back to the cloud, which is the other half of
+      // what the picker used to do.
+      await tester.tap(find.byKey(const ValueKey('local-transcription-row')));
+      await tester.pumpAndSettle();
+      expect(prefs.transcriptEngine, TranscriptEngine.cloud);
     });
 
-    testWidgets('a device that needs the model says so, not just "no"', (
+    testWidgets('a device still fetching its language says which', (
       tester,
     ) async {
-      final prefs = VoicePrefs(store)..load();
-      prefs.transcriptEngine = TranscriptEngine.device;
-
       await _openVoicePane(
         tester,
-        prefs: prefs,
-        deviceTranscriber: _Fake(TranscriberReadiness.needsDownload),
+        prefs: VoicePrefs(store)..load(),
+        deviceTranscriber: _Fake(TranscriberReadiness.preparing),
+      );
+
+      expect(find.text('Still fetching the language it needs'), findsOneWidget);
+      expect(_switchIn(tester, 'local-transcription-row'), isNull);
+    });
+
+    testWidgets('a permission that was never given names itself', (
+      tester,
+    ) async {
+      await _openVoicePane(
+        tester,
+        prefs: VoicePrefs(store)..load(),
+        deviceTranscriber: _Fake(TranscriberReadiness.needsSystemFeature),
       );
 
       expect(
-        find.text('Download the speech model below first'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('a device that cannot at all says that instead', (
-      tester,
-    ) async {
-      final prefs = VoicePrefs(store)..load();
-      prefs.transcriptEngine = TranscriptEngine.device;
-
-      await _openVoicePane(
-        tester,
-        prefs: prefs,
-        deviceTranscriber: _Fake(TranscriberReadiness.unsupported),
-      );
-
-      expect(
-        find.text('Nothing on this device can transcribe yet'),
+        find.text(
+          'Allow speech recognition for Kapy Notes in Privacy settings',
+        ),
         findsOneWidget,
       );
     });
@@ -217,7 +231,7 @@ void main() {
       );
 
       expect(
-        find.text('Sign in, or transcribe on this device below'),
+        find.text('Sign in, or switch this device on below'),
         findsOneWidget,
       );
       expect(
@@ -227,4 +241,27 @@ void main() {
       );
     });
   });
+}
+
+/// The switch inside a local engine row, or null when the row has none —
+/// which is how "this machine cannot" is said.
+bool? _switchIn(WidgetTester tester, String rowKey) {
+  final indicator = find.descendant(
+    of: find.byKey(ValueKey(rowKey)),
+    matching: find.byKey(const ValueKey('compact-switch-indicator')),
+  );
+  if (indicator.evaluate().isEmpty) return null;
+  return tester
+      .widget<Semantics>(
+        find
+            .ancestor(
+              of: indicator,
+              matching: find.byWidgetPredicate(
+                (w) => w is Semantics && w.properties.toggled != null,
+              ),
+            )
+            .first,
+      )
+      .properties
+      .toggled;
 }

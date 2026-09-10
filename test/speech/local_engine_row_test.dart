@@ -20,7 +20,7 @@ import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
 class MemoryStore extends LocalStore {
-  MemoryStore() : super(fileName: 'local-model-card-test.json');
+  MemoryStore() : super(fileName: 'local-engine-row-test.json');
   @override
   Future<void> load() async {}
   @override
@@ -113,7 +113,11 @@ class _GatedServer {
 
   http.Client get client => MockClient.streaming((request, _) async {
     final body = bodies[request.url.pathSegments.last]!;
-    return http.StreamedResponse(_chunks(body), 200, contentLength: body.length);
+    return http.StreamedResponse(
+      _chunks(body),
+      200,
+      contentLength: body.length,
+    );
   });
 
   Stream<List<int>> _chunks(List<int> body) async* {
@@ -158,114 +162,77 @@ void main() {
     await notes.load();
     prefs = LayoutPrefs(store)..load();
     shortcuts = ShortcutPrefs(store)..load();
-    temp = Directory.systemTemp.createTempSync('kapy-model-card');
+    temp = Directory.systemTemp.createTempSync('kapy-engine-row');
     addTearDown(() {
       if (temp.existsSync()) temp.deleteSync(recursive: true);
     });
   });
 
-  testWidgets('a build with no models keeps the promise it made', (
-    tester,
-  ) async {
+  testWidgets('a build with no models still shows the shelf', (tester) async {
     await _openVoicePane(tester);
 
-    expect(find.text('ON THIS DEVICE'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('voice-local-engine-row')),
-      findsOneWidget,
-    );
+    expect(find.text('LOCAL'), findsOneWidget);
+    expect(find.byKey(const ValueKey('local-transcription-row')), findsOne);
+    expect(find.byKey(const ValueKey('local-summary-row')), findsOne);
     expect(find.text('Parakeet TDT 0.6B v3'), findsNothing);
-  });
-
-  testWidgets('on Apple the shelf says the recogniser is built in', (
-    tester,
-  ) async {
-    // No speech model on offer — which is what app.dart does on macOS and
-    // iOS — and a platform whose OS transcribes for itself.
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
-    final models = LocalModelStore(
-      catalogue: const [],
-      directory: temp,
-      client: MockClient((_) async => fail('a card must fetch nothing')),
-    );
-    addTearDown(models.dispose);
-
-    await _openVoicePane(tester, models: models);
-
-    expect(find.byKey(const ValueKey('voice-local-engine-built-in')), findsOneWidget);
-    expect(find.text('Transcribes on this device already'), findsOneWidget);
-    expect(find.text('Soon'), findsNothing);
     expect(find.text('Download'), findsNothing);
   });
 
-  testWidgets('the card answers what a 670 MB decision turns on', (
+  testWidgets('a model on offer names itself and what it costs', (
     tester,
   ) async {
     final models = LocalModelStore(
       catalogue: localSpeechModels,
       directory: temp,
-      client: MockClient((_) async => fail('a card must fetch nothing')),
+      client: MockClient((_) async => fail('a row must fetch nothing')),
     );
     addTearDown(models.dispose);
 
     await _openVoicePane(tester, models: models);
 
-    expect(find.text('Parakeet TDT 0.6B v3'), findsOneWidget);
-
-    // The four numbers, each with what it means beside it.
-    expect(find.text('670 MB'), findsOneWidget);
-    expect(find.text('to download'), findsOneWidget);
-    expect(find.text('25 languages'), findsOneWidget);
-    expect(find.text('multilingual'), findsOneWidget);
-    expect(find.text('6.3% errors'), findsOneWidget);
-    expect(find.text('transcribing English'), findsOneWidget);
-    expect(find.text('9× real time'), findsOneWidget);
-    expect(find.text('on a laptop CPU'), findsOneWidget);
-
-    // Which languages, not merely how many.
-    expect(
-      find.textContaining('Ukrainian', findRichText: true),
-      findsWidgets,
-    );
-
-    // Where the figures came from, and the attribution the licence requires.
-    expect(find.textContaining('as published by NVIDIA'), findsNothing);
-    expect(find.textContaining('Open ASR Leaderboard'), findsOneWidget);
-    expect(find.textContaining('a phone is slower'), findsOneWidget);
+    // The name and the size, which are the two anybody weighs, and the
+    // attribution the licence asks for.
+    expect(find.text('Parakeet TDT 0.6B v3 · 670 MB'), findsOneWidget);
     expect(find.text('CC-BY-4.0'), findsOneWidget);
     expect(find.textContaining('600M parameters'), findsOneWidget);
 
-    // Nothing has been downloaded, so there is one thing to do.
+    // Nothing downloaded yet, so there is one thing to do and no switch to
+    // move: an engine that is not here cannot be the one that runs.
     expect(find.text('Download'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('local-transcription-row')),
+        matching: find.byKey(const ValueKey('compact-switch-indicator')),
+      ),
+      findsNothing,
+    );
   });
 
-  testWidgets('the card fits the phone sheet as well as the dialog', (
+  testWidgets('the row fits the phone sheet as well as the dialog', (
     tester,
   ) async {
-    // The stats are two to a row, and a phone gives each column about half of
-    // 390 logical pixels. Rendering is the assertion: an overflow here is an
-    // exception the framework fails the test on.
+    // Rendering is the assertion: an overflow here is an exception the
+    // framework fails the test on.
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     final models = LocalModelStore(
       catalogue: localSpeechModels,
       directory: temp,
-      client: MockClient((_) async => fail('a card must fetch nothing')),
+      client: MockClient((_) async => fail('a row must fetch nothing')),
     );
     addTearDown(models.dispose);
 
     await _openVoicePane(tester, models: models, size: const Size(390, 844));
 
-    expect(find.text('Parakeet TDT 0.6B v3'), findsOneWidget);
-    expect(find.text('670 MB'), findsOneWidget);
-    expect(find.text('9× real time'), findsOneWidget);
     expect(find.text('Download'), findsOneWidget);
   });
 
-  testWidgets('downloading one shows progress and ends in Remove', (
+  testWidgets('downloading one shows progress and ends in a switch', (
     tester,
   ) async {
     final bodies = {
-      'encoder.onnx': Uint8List.fromList([for (var i = 0; i < 500; i++) i % 251]),
+      'encoder.onnx': Uint8List.fromList([
+        for (var i = 0; i < 500; i++) i % 251,
+      ]),
     };
     final model = _tinyModel(bodies);
     final server = _GatedServer(bodies);
@@ -279,10 +246,10 @@ void main() {
     await _openVoicePane(tester, models: models);
     expect(find.text('Download'), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('voice-local-model-action-tiny')));
+    await tester.tap(find.byKey(const ValueKey('local-download-tiny')));
     await _until(tester, () => server.firstChunk.isCompleted);
 
-    // Mid-download the card says how far it has got and offers the way out.
+    // Mid-download the row says how far it has got and offers the way out.
     expect(find.text('Cancel'), findsOneWidget);
     expect(find.textContaining(' of '), findsWidgets);
 
@@ -292,14 +259,25 @@ void main() {
       () => models.stateOf(model).status == LocalModelStatus.ready,
     );
 
-    expect(find.text('Remove'), findsOneWidget);
+    // Downloaded turns the button into the choice: use it, or don't.
     expect(find.text('Download'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('local-transcription-row')),
+        matching: find.byKey(const ValueKey('compact-switch-indicator')),
+      ),
+      findsOneWidget,
+    );
+    // And 670 MB deserves a way back that is not a menu.
+    expect(find.byKey(const ValueKey('local-remove-tiny')), findsOneWidget);
   });
 
   testWidgets('a download that fails says why and offers another go', (
     tester,
   ) async {
-    final bodies = {'encoder.onnx': Uint8List.fromList([1, 2, 3, 4])};
+    final bodies = {
+      'encoder.onnx': Uint8List.fromList([1, 2, 3, 4]),
+    };
     final model = _tinyModel(bodies);
     final models = LocalModelStore(
       catalogue: [model],
@@ -309,13 +287,16 @@ void main() {
     addTearDown(models.dispose);
 
     await _openVoicePane(tester, models: models);
-    await tester.tap(find.byKey(const ValueKey('voice-local-model-action-tiny')));
+    await tester.tap(find.byKey(const ValueKey('local-download-tiny')));
     await _until(
       tester,
       () => models.stateOf(model).status == LocalModelStatus.failed,
     );
 
-    expect(find.byKey(const ValueKey('voice-local-model-error')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('voice-local-model-error')),
+      findsOneWidget,
+    );
     expect(find.textContaining('503'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
   });

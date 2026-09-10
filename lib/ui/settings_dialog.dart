@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/appearance.dart';
 import '../core/desktop_integration.dart';
 import '../core/device_memory.dart';
 import '../core/editor_font.dart';
@@ -16,7 +17,6 @@ import '../data/note.dart';
 import '../data/voice_prefs.dart';
 import 'voice_consent_sheet.dart';
 import '../speech/local_model_store.dart';
-import '../speech/apple_transcriber.dart';
 import '../speech/summarizer.dart';
 import '../speech/transcriber.dart';
 import 'model_terms_sheet.dart';
@@ -38,16 +38,7 @@ import '../data/time_zones.dart';
 /// Adding a section is meant to be the whole job of adding a category of
 /// options: name it here, give it a pane in [_SettingsDialogState], and all
 /// three layouts pick it up.
-enum SettingsSection {
-  general,
-  sync,
-  sharing,
-  appearance,
-  numbers,
-  voice,
-  shortcuts,
-  updates,
-}
+enum SettingsSection { general, sync, appearance, voice, shortcuts, updates }
 
 const _sheetCorners = BorderRadius.vertical(top: Radius.circular(22));
 const _sheetIndexKey = ValueKey('settings-sheet-index');
@@ -89,10 +80,8 @@ extension SettingsSectionCopy on SettingsSection {
   String get label => switch (this) {
     SettingsSection.general => 'General',
     SettingsSection.sync => 'Profile & sync',
-    SettingsSection.sharing => 'Sharing',
     SettingsSection.voice => 'Voice notes',
     SettingsSection.appearance => 'Appearance',
-    SettingsSection.numbers => 'Numbers',
     SettingsSection.shortcuts => 'Shortcuts',
     SettingsSection.updates => 'Updates',
   };
@@ -100,10 +89,8 @@ extension SettingsSectionCopy on SettingsSection {
   IconData get icon => switch (this) {
     SettingsSection.general => Icons.tune_rounded,
     SettingsSection.sync => Icons.account_circle_outlined,
-    SettingsSection.sharing => Icons.people_outline_rounded,
     SettingsSection.voice => Icons.mic_none_rounded,
     SettingsSection.appearance => Icons.auto_stories_outlined,
-    SettingsSection.numbers => Icons.numbers_rounded,
     SettingsSection.shortcuts => Icons.keyboard_outlined,
     SettingsSection.updates => Icons.system_update_alt_rounded,
   };
@@ -113,11 +100,10 @@ extension SettingsSectionCopy on SettingsSection {
   /// selling them: this line is read while looking for something.
   String get summary => switch (this) {
     SettingsSection.general => 'Notes, spelling, export and import, time zone',
-    SettingsSection.sync => 'Your name, picture, account and synced notes',
-    SettingsSection.sharing => 'Notes you share with other people',
+    SettingsSection.sync =>
+      'Your name, picture, account, and the notes you sync and share',
     SettingsSection.voice => 'Transcription, language, minutes',
-    SettingsSection.appearance => 'Writing font and paper',
-    SettingsSection.numbers => 'Number format and exchange rates',
+    SettingsSection.appearance => 'Theme, writing font, paper, number format',
     SettingsSection.shortcuts => 'System-wide and in-app keys',
     SettingsSection.updates => 'This build, and whether a newer one exists',
   };
@@ -312,13 +298,14 @@ class _SettingsDialogState extends State<SettingsDialog> {
   bool _isAvailable(SettingsSection section) => switch (section) {
     SettingsSection.shortcuts => AppPlatform.isDesktop,
     SettingsSection.updates => widget.updates != null,
-    // Absent until the app is built with a server to talk to.
+    // Absent until the app is built with a server to talk to. Sharing lives
+    // inside it: an account is the thing both halves need, and reading about
+    // one straight after the other is how somebody actually meets them.
     SettingsSection.sync => widget.account != null,
     // Present even signed out, and even with no transcription configured:
     // recording works without an account, and the pane says so rather than
     // hiding and leaving the user to wonder where the setting went.
     SettingsSection.voice => widget.voicePrefs != null,
-    SettingsSection.sharing => widget.account != null,
     _ => true,
   };
 
@@ -470,11 +457,18 @@ class _SettingsDialogState extends State<SettingsDialog> {
     return '${at.day} ${months[at.month - 1]}';
   }
 
+  /// What happens to a recording, and where.
+  ///
+  /// Two headings, not four. The engines that run here used to have a shelf
+  /// each — one for the recogniser, one for the language model — and a
+  /// "where is this done" picker apiece somewhere further up the pane, which
+  /// asked the same question in three places and answered it in none of them
+  /// visibly. A switch beside the download says it once.
   List<Widget> _voicePane() {
     final prefs = widget.voicePrefs;
     final signedIn = widget.account?.speech != null;
     return [
-      const _SectionLabel('IN THE CLOUD'),
+      const _SectionLabel('RECORDINGS'),
       _SettingsGroup(
         children: [
           if (signedIn)
@@ -498,17 +492,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
               // can actually do it keeps the row honest on the ones that
               // cannot.
               subtitle: _deviceTranscriptState == TranscriberReadiness.ready
-                  ? 'Sign in, or transcribe on this device below'
+                  ? 'Sign in, or switch this device on below'
                   : 'Sign in to turn recordings into text',
               onTap: () => _goToSection(SettingsSection.sync),
-            ),
-          if (prefs != null && widget.deviceTranscriber != null)
-            _NavigationRow(
-              key: const ValueKey('voice-transcript-engine-row'),
-              icon: Icons.graphic_eq_rounded,
-              title: 'Where recordings are transcribed',
-              subtitle: _transcriptEngineLine(prefs),
-              onTap: () => unawaited(_pickTranscriptEngine(prefs)),
             ),
           if (prefs != null)
             _ToggleRow(
@@ -519,16 +505,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
               value: prefs.summarize,
               onChanged: (value) => setState(() => prefs.summarize = value),
             ),
-          if (prefs != null &&
-              prefs.summarize &&
-              widget.deviceSummarizer != null)
-            _NavigationRow(
-              key: const ValueKey('voice-summary-engine-row'),
-              icon: Icons.auto_awesome_outlined,
-              title: 'Where summaries are written',
-              subtitle: _summaryEngineLine(prefs),
-              onTap: () => unawaited(_pickSummaryEngine(prefs)),
-            ),
           if (prefs != null)
             _NavigationRow(
               key: const ValueKey('voice-language-row'),
@@ -537,6 +513,18 @@ class _SettingsDialogState extends State<SettingsDialog> {
               subtitle:
                   _speechLanguages[prefs.language] ?? 'Detect automatically',
               onTap: () => unawaited(_pickSpeechLanguage(prefs)),
+            ),
+          // Metering is the cloud's, so it sits under the switch that sends
+          // things there rather than under a heading of its own. Nothing to
+          // meter without an account, and the row said as much in a sentence
+          // that only ever pointed at the one above it.
+          if (signedIn)
+            _NavigationRow(
+              key: const ValueKey('voice-minutes-row'),
+              icon: Icons.schedule_rounded,
+              title: 'Minutes this month',
+              subtitle: _speechMinutesLine(),
+              onTap: _loadSpeechState,
             ),
         ],
       ),
@@ -551,20 +539,98 @@ class _SettingsDialogState extends State<SettingsDialog> {
             ),
           ),
         ),
-      const _SectionLabel('THIS MONTH'),
+      const SizedBox(height: 18),
+      const _SectionLabel('LOCAL'),
+      ..._localPane(prefs),
+    ];
+  }
+
+  /// The engines that can run on this machine, and the whole of the choice
+  /// about them.
+  ///
+  /// A switch that is on is the engine that runs; everything else goes to the
+  /// cloud. That is the same decision the two engine pickers used to ask
+  /// separately, in a place where the answer could not be seen — and it only
+  /// ever has two answers, which is a switch.
+  List<Widget> _localPane(VoicePrefs? prefs) {
+    final store = widget.localModels;
+    final speech = store?.catalogue.whereType<LocalSpeechModel>().firstOrNull;
+    final summary = store?.catalogue.whereType<LocalSummaryModel>().firstOrNull;
+    final credits = <DownloadableModel>[?speech, ?summary];
+
+    return [
       _SettingsGroup(
         children: [
-          _NavigationRow(
-            key: const ValueKey('voice-minutes-row'),
-            icon: Icons.schedule_rounded,
-            title: 'Minutes',
-            subtitle: _speechMinutesLine(),
-            onTap: _loadSpeechState,
+          _LocalEngineRow(
+            key: const ValueKey('local-transcription-row'),
+            icon: Icons.graphic_eq_rounded,
+            title: 'Transcription',
+            store: store,
+            model: speech,
+            // Ready without a download of ours: the platform's own
+            // recogniser, which is the ordinary case on Apple. A downloaded
+            // model is caught by the row itself, and says its own name.
+            builtIn: _deviceTranscriptState == TranscriberReadiness.ready,
+            builtInNote: 'Built into this device, and never uploaded',
+            unavailableNote: switch (_deviceTranscriptState) {
+              TranscriberReadiness.preparing =>
+                'Still fetching the language it needs',
+              TranscriberReadiness.needsSystemFeature =>
+                'Allow speech recognition for Kapy Notes in Privacy settings',
+              _ => 'Not something this device can do yet',
+            },
+            blockedReason: speech == null
+                ? null
+                : _downloadBlockedReason(speech),
+            on: prefs?.transcriptEngine == TranscriptEngine.device,
+            onChanged: prefs == null
+                ? null
+                : (value) => setState(() {
+                    prefs.transcriptEngine = value
+                        ? TranscriptEngine.device
+                        : TranscriptEngine.cloud;
+                  }),
+            onDownload: speech == null || store == null
+                ? null
+                : () => unawaited(_startDownload(store, speech)),
+          ),
+          _LocalEngineRow(
+            key: const ValueKey('local-summary-row'),
+            icon: Icons.auto_awesome_outlined,
+            title: 'Summaries',
+            store: store,
+            model: summary,
+            builtIn: _deviceSummaryState == SummarizerReadiness.ready,
+            builtInNote: 'Written here by Apple Intelligence, never uploaded',
+            unavailableNote: switch (_deviceSummaryState) {
+              SummarizerReadiness.needsSystemFeature =>
+                'Turn on Apple Intelligence in System Settings first',
+              SummarizerReadiness.preparing =>
+                'Apple Intelligence is still downloading its model',
+              _ => 'Not something this device can do yet',
+            },
+            blockedReason: summary == null
+                ? null
+                : _downloadBlockedReason(summary),
+            on: prefs?.summaryEngine == SummaryEngine.device,
+            onChanged: prefs == null
+                ? null
+                : (value) => setState(() {
+                    prefs.summaryEngine = value
+                        ? SummaryEngine.device
+                        : SummaryEngine.cloud;
+                  }),
+            onDownload: summary == null || store == null
+                ? null
+                : () => unawaited(_startDownload(store, summary)),
           ),
         ],
       ),
-      const _SectionLabel('ON THIS DEVICE'),
-      ..._onThisDevicePane(),
+      const _PaneNote(
+        'Anything switched on here runs on this device: no account, no '
+        'minutes, and the recording never leaves.',
+      ),
+      if (credits.isNotEmpty) _ModelCredits(models: credits),
     ];
   }
 
@@ -596,188 +662,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
       }),
     );
   }
-
-  /// The subtitle of the transcription row: where the words are made, and —
-  /// when that is here and cannot happen — what is in the way.
-  String _transcriptEngineLine(VoicePrefs prefs) {
-    if (prefs.transcriptEngine == TranscriptEngine.cloud) {
-      return 'Sent to our server, and billed to your minutes';
-    }
-    return switch (_deviceTranscriptState) {
-      TranscriberReadiness.ready => 'Made here, and never uploaded',
-      TranscriberReadiness.preparing =>
-        'Still fetching the language it needs',
-      TranscriberReadiness.needsDownload =>
-        'Download the speech model below first',
-      TranscriberReadiness.needsSystemFeature =>
-        'Allow speech recognition for Kapy Notes in Privacy settings',
-      null => 'Made here, and never uploaded',
-      _ => 'Nothing on this device can transcribe yet',
-    };
-  }
-
-  Future<void> _pickTranscriptEngine(VoicePrefs prefs) async {
-    final chosen = await showDialog<TranscriptEngine>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Where recordings are transcribed'),
-        children: [
-          for (final option in TranscriptEngine.values)
-            SimpleDialogOption(
-              key: ValueKey('transcript-engine-${option.name}'),
-              onPressed: () => Navigator.of(context).pop(option),
-              child: Text(switch (option) {
-                TranscriptEngine.cloud => 'In the cloud',
-                TranscriptEngine.device => 'On this device',
-              }),
-            ),
-        ],
-      ),
-    );
-    if (chosen == null || !mounted) return;
-    setState(() => prefs.transcriptEngine = chosen);
-    // The answer may have changed since this dialog opened, and the row is
-    // about to be asked to explain the choice just made.
-    _loadDeviceTranscriptState();
-  }
-
-  /// The subtitle of the summaries row: where they are written, and — when
-  /// that is here and cannot happen — what is in the way.
-  String _summaryEngineLine(VoicePrefs prefs) {
-    if (prefs.summaryEngine == SummaryEngine.cloud) {
-      return 'Written by our server, from the transcript';
-    }
-    return switch (_deviceSummaryState) {
-      SummarizerReadiness.ready => 'Written here, and never uploaded',
-      SummarizerReadiness.needsSystemFeature =>
-        'Turn on Apple Intelligence in System Settings first',
-      SummarizerReadiness.preparing =>
-        'Apple Intelligence is still downloading its model',
-      SummarizerReadiness.needsDownload =>
-        'Download the summary model below first',
-      null => 'Written here, and never uploaded',
-      _ => 'Nothing on this device can write one yet',
-    };
-  }
-
-  Future<void> _pickSummaryEngine(VoicePrefs prefs) async {
-    final chosen = await showDialog<SummaryEngine>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Where summaries are written'),
-        children: [
-          for (final option in SummaryEngine.values)
-            SimpleDialogOption(
-              key: ValueKey('summary-engine-${option.name}'),
-              onPressed: () => Navigator.of(context).pop(option),
-              child: Text(switch (option) {
-                SummaryEngine.cloud => 'In the cloud',
-                SummaryEngine.device => 'On this device',
-              }),
-            ),
-        ],
-      ),
-    );
-    if (chosen == null || !mounted) return;
-    setState(() => prefs.summaryEngine = chosen);
-    // The answer may have changed since this dialog opened, and the row is
-    // about to be asked to explain the choice just made.
-    _loadDeviceSummaryState();
-  }
-
-  /// The half of voice notes that needs no account and no network.
-  ///
-  /// Two shelves, because they are two different offers: a recogniser that
-  /// turns speech into words, and a language model that turns those words
-  /// into a summary. A build may have either, both, or neither.
-  List<Widget> _onThisDevicePane() {
-    final store = widget.localModels;
-    final speech =
-        store?.catalogue.whereType<LocalSpeechModel>().toList() ?? [];
-    final summary =
-        store?.catalogue.whereType<LocalSummaryModel>().toList() ?? [];
-
-    return [
-      if (speech.isEmpty && AppleTranscriber.isPossibleHere)
-        // Nothing to download because nothing is missing: Apple's own
-        // recogniser is in the OS, and it is the reason the 670 MB one is
-        // not offered on this platform.
-        const _SettingsGroup(
-          children: [
-            _BuiltInRow(
-              key: ValueKey('voice-local-engine-row'),
-              icon: Icons.memory_rounded,
-              title: 'Transcribes on this device already',
-              subtitle:
-                  'Apple\'s recogniser is part of the OS. Nothing to download.',
-            ),
-          ],
-        )
-      else if (speech.isEmpty)
-        const _SettingsGroup(
-          children: [
-            _ComingSoonRow(
-              key: ValueKey('voice-local-engine-row'),
-              icon: Icons.memory_rounded,
-              title: 'Transcribe on this device',
-              subtitle:
-                  'No account, no minutes, and the recording never leaves',
-            ),
-          ],
-        )
-      else ...[
-        for (final model in speech)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _modelCard(store!, model),
-          ),
-        _PaneNote(
-          _appleCoversTranscripts
-              ? 'This device already transcribes on its own, so this is only '
-                    'worth downloading for a language it does not cover.'
-              : 'Downloading this lets recordings be transcribed here instead '
-                    'of in the cloud. Choose it under "Where recordings are '
-                    'transcribed".',
-        ),
-      ],
-      if (summary.isNotEmpty) ...[
-        const SizedBox(height: 18),
-        const _SectionLabel('SUMMARIES ON THIS DEVICE'),
-        for (final model in summary)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _modelCard(store!, model),
-          ),
-        _PaneNote(
-          _appleCoversSummaries
-              ? 'This Mac already summarises with Apple Intelligence, so this '
-                    'is only worth downloading if you would rather not use it.'
-              : 'Downloading this lets summaries be written here instead of in '
-                    'the cloud. Choose it under "Where summaries are written".',
-        ),
-      ],
-    ];
-  }
-
-  /// True when the platform's own summariser is ready, which makes a 584 MB
-  /// download optional rather than the only way to summarise here.
-  bool get _appleCoversSummaries =>
-      _deviceSummaryState == SummarizerReadiness.ready;
-
-  /// The same question about the recogniser, and far more often yes: Apple's
-  /// needs only a recent OS, where its summariser needs Apple Intelligence
-  /// switched on. When it is, 670 MB buys only the languages Apple omits.
-  bool get _appleCoversTranscripts =>
-      _deviceTranscriptState == TranscriberReadiness.ready &&
-      AppleTranscriber.isPossibleHere;
-
-  Widget _modelCard(LocalModelStore store, DownloadableModel model) =>
-      _LocalModelCard(
-        store: store,
-        model: model,
-        blockedReason: _downloadBlockedReason(model),
-        onDownload: () => unawaited(_startDownload(store, model)),
-      );
 
   /// Why this model cannot be downloaded onto this device, or null.
   ///
@@ -1180,11 +1064,16 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   List<Widget> _paneFor(SettingsSection section) => switch (section) {
     SettingsSection.general => _generalPane(),
-    SettingsSection.sync => [SyncPane(account: widget.account!)],
-    SettingsSection.sharing => [SharingPane(account: widget.account!)],
+    SettingsSection.sync => [
+      SyncPane(account: widget.account!),
+      // The gap between two panes, borrowed from the stacked layout: the
+      // panel titles do the separating, and a rule between them would only
+      // put back the boundary this section exists to remove.
+      const SizedBox(height: 20),
+      SharingPane(account: widget.account!),
+    ],
     SettingsSection.voice => _voicePane(),
     SettingsSection.appearance => _appearancePane(),
-    SettingsSection.numbers => _numbersPane(),
     SettingsSection.shortcuts => _shortcutsPane(),
     SettingsSection.updates => _updatesPane(),
   };
@@ -1197,7 +1086,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
           key: const ValueKey('ready-to-type-on-open-toggle'),
           icon: Icons.keyboard_alt_outlined,
           title: 'Ready to type on open',
-          subtitle: 'Place the cursor on a new line when Kapy Notes opens',
+          subtitle:
+              'Put the cursor back where you left it, or on a new line on a '
+              'new day',
           value: widget.layoutPrefs.readyToTypeOnOpen,
           onChanged: (value) => widget.layoutPrefs.readyToTypeOnOpen = value,
         ),
@@ -1285,6 +1176,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
     ),
     if (AppPlatform.isDesktop) ...[
       const SizedBox(height: 18),
+      // One heading, because both switches answer the same question — how
+      // this behaves as an app rather than as a window — and a heading over
+      // a single row is a heading that earns nothing.
       const _SectionLabel('WINDOW'),
       _SettingsGroup(
         children: [
@@ -1301,21 +1195,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
             value: widget.layoutPrefs.keepRunningInBackground,
             onChanged: _setKeepRunning,
           ),
-        ],
-      ),
-      const SizedBox(height: 10),
-      _WideButton(
-        onPressed: widget.layoutPrefs.resetPanelWidths,
-        icon: Icons.restart_alt_rounded,
-        label: 'Reset panel widths',
-      ),
-      // Absent rather than disabled where the OS has no mechanism this app is
-      // allowed to use: macOS 12 predates the one the sandbox permits.
-      if (widget.desktopIntegration?.loginItemSupported ?? false) ...[
-        const SizedBox(height: 18),
-        const _SectionLabel('STARTUP'),
-        _SettingsGroup(
-          children: [
+          // Absent rather than disabled where the OS has no mechanism this
+          // app is allowed to use: macOS 12 predates the one the sandbox
+          // permits.
+          if (widget.desktopIntegration?.loginItemSupported ?? false)
             _ToggleRow(
               key: const ValueKey('login-item-toggle'),
               icon: Icons.login_rounded,
@@ -1324,24 +1207,50 @@ class _SettingsDialogState extends State<SettingsDialog> {
               value: widget.desktopIntegration!.loginItemEnabled,
               onChanged: (value) => unawaited(_setLoginItem(value)),
             ),
-          ],
-        ),
-        if (_loginItemError != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            _loginItemError!,
-            key: const ValueKey('login-item-error'),
-            style: TextStyle(
-              fontSize: 11.5,
-              color: Theme.of(context).colorScheme.error,
-            ),
-          ),
         ],
+      ),
+      if (_loginItemError != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          _loginItemError!,
+          key: const ValueKey('login-item-error'),
+          style: TextStyle(
+            fontSize: 11.5,
+            color: Theme.of(context).colorScheme.error,
+          ),
+        ),
       ],
+      const SizedBox(height: 10),
+      _WideButton(
+        onPressed: widget.layoutPrefs.resetPanelWidths,
+        icon: Icons.restart_alt_rounded,
+        label: 'Reset panel widths',
+      ),
     ],
   ];
 
+  /// Everything that decides how the app looks and how what is in it reads.
+  ///
+  /// Numbers used to be a rail item of its own, holding one choice and an
+  /// attribution line. How a thousand is punctuated is a display choice like
+  /// any other here, and a category somebody visits once is a category that
+  /// costs a click every time they are looking for something else.
   List<Widget> _appearancePane() => [
+    const _SectionLabel('THEME'),
+    _SettingsGroup(
+      children: [
+        for (final mode in AppearanceMode.values)
+          _ChoiceRow(
+            key: ValueKey('appearance-${mode.name}'),
+            title: mode.label,
+            subtitle: mode.description,
+            trailing: '',
+            selected: widget.layoutPrefs.appearance == mode,
+            onTap: () => widget.layoutPrefs.appearance = mode,
+          ),
+      ],
+    ),
+    const SizedBox(height: 18),
     const _SectionLabel('WRITING FONT'),
     Padding(
       padding: const EdgeInsets.only(left: 3, bottom: 8),
@@ -1419,10 +1328,20 @@ class _SettingsDialogState extends State<SettingsDialog> {
     ],
     const SizedBox(height: 18),
     const _SectionLabel('PAPER'),
-    _PaperDescription(),
-  ];
-
-  List<Widget> _numbersPane() => [
+    _SettingsGroup(
+      children: [
+        for (final paper in PaperStyle.values)
+          _ChoiceRow(
+            key: ValueKey('paper-style-${paper.name}'),
+            title: paper.label,
+            subtitle: paper.description,
+            trailing: '',
+            selected: widget.layoutPrefs.paperStyle == paper,
+            onTap: () => widget.layoutPrefs.paperStyle = paper,
+          ),
+      ],
+    ),
+    const SizedBox(height: 18),
     const _SectionLabel('NUMBER FORMAT'),
     _SettingsGroup(
       children: [
@@ -1531,7 +1450,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
           style: TextStyle(fontSize: 11.5, color: context.palette.textTertiary),
         ),
       ),
-      _SettingsGroup(children: [_UpdateRow(updates: updates)]),
+      _SettingsGroup(
+        children: [
+          _UpdateRow(updates: updates, desktop: widget.desktopIntegration),
+        ],
+      ),
     ];
   }
 }
@@ -1661,7 +1584,7 @@ class _CategoryList extends StatelessWidget {
     }
     return switch (account.state) {
       AccountState.restoring => 'Checking your account',
-      AccountState.signedOut => 'Sign in to sync between devices',
+      AccountState.signedOut => 'Sign in to sync and share notes',
       AccountState.needsProfile => 'Choose the name people will see',
       AccountState.needsPassphrase => 'Choose a passphrase to start syncing',
       AccountState.locked => 'Unlock to read these notes here',
@@ -2034,6 +1957,292 @@ class _ToggleRow extends StatelessWidget {
   }
 }
 
+/// One engine that could run on this machine: not here yet, on its way, or
+/// here and switched on.
+///
+/// The switch is the whole of the choice. There is no separate "where is this
+/// done" question any more — an engine that is here and switched on is the
+/// one that runs, and anything else goes to the cloud. Two settings became
+/// one, and the one is visible without opening anything: a switch you can see
+/// is off is a question already answered.
+class _LocalEngineRow extends StatelessWidget {
+  const _LocalEngineRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.store,
+    required this.model,
+    required this.builtIn,
+    required this.builtInNote,
+    required this.unavailableNote,
+    required this.blockedReason,
+    required this.on,
+    required this.onChanged,
+    required this.onDownload,
+  });
+
+  final IconData icon;
+  final String title;
+
+  /// Null in a build carrying nothing to download for this job — which on
+  /// Apple is the ordinary case for speech, where the OS has a recogniser of
+  /// its own and the 670 MB one is not offered.
+  final LocalModelStore? store;
+  final DownloadableModel? model;
+
+  /// Whether the platform's own engine is ready and needs no download.
+  final bool builtIn;
+  final String builtInNote;
+
+  /// What to say when neither is true, which is where the reason goes: a
+  /// locale still coming down, a permission not given, or nothing at all.
+  final String unavailableNote;
+
+  /// Why this machine cannot take the download, if it cannot. Replaces the
+  /// button, because a download that will be killed on load is not an offer.
+  final String? blockedReason;
+
+  /// The preference: whether this engine is the one that runs.
+  final bool on;
+
+  /// Null where there is nothing to remember the answer in.
+  final ValueChanged<bool>? onChanged;
+  final VoidCallback? onDownload;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = this.store;
+    final model = this.model;
+    // Without a model there is no download to watch, so nothing to listen to.
+    if (store == null || model == null) return _shell(context, null);
+    return ListenableBuilder(
+      listenable: store,
+      builder: (context, _) => _shell(context, store.stateOf(model)),
+    );
+  }
+
+  Widget _shell(BuildContext context, LocalModelState? state) {
+    final here = state?.status == LocalModelStatus.ready;
+    final usable = here || builtIn;
+    final onChanged = this.onChanged;
+    final shows = state != null && (state.isBusy || state.error != null);
+
+    final row = Padding(
+      padding: _RowMetrics.padding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: _RowMetrics.iconSlot,
+                child: Icon(
+                  icon,
+                  size: _RowMetrics.iconSize,
+                  color: context.palette.textSecondary,
+                ),
+              ),
+              SizedBox(width: _RowMetrics.gap),
+              Expanded(
+                child: _RowCopy(
+                  title: title,
+                  subtitle: _subtitle(here: here),
+                ),
+              ),
+              if (_trailing(here: here, usable: usable)
+                  case final trailing?) ...[
+                const SizedBox(width: 10),
+                trailing,
+              ],
+            ],
+          ),
+          // The bar carries the numbers, so the subtitle goes on saying what
+          // is being downloaded rather than repeating how far along it is.
+          if (shows) ...[
+            const SizedBox(height: 10),
+            _ModelProgress(state: state),
+          ],
+        ],
+      ),
+    );
+
+    if (!usable || onChanged == null) return row;
+    return Semantics(
+      toggled: on,
+      button: true,
+      child: InkWell(onTap: () => onChanged(!on), child: row),
+    );
+  }
+
+  String _subtitle({required bool here}) {
+    final model = this.model;
+    if (here) return '${model!.name} · never leaves this device';
+    if (builtIn) return builtInNote;
+    if (model == null) return unavailableNote;
+    if (blockedReason case final blocked?) return blocked;
+    // What it is and what it costs. The cards that used to stand here also
+    // carried four benchmark figures and a paragraph; a row that has to sit
+    // beside a switch has room for the name and the download size, which are
+    // the two anybody weighs.
+    return '${model.name} · ${fileSize(model.bytes)}';
+  }
+
+  Widget? _trailing({required bool here, required bool usable}) {
+    final model = this.model;
+    final store = this.store;
+    if (usable) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Six hundred megabytes deserves a way back that is not a menu.
+          if (here && store != null) ...[
+            _RowButton(
+              key: ValueKey('local-remove-${model!.id}'),
+              label: 'Remove',
+              onPressed: () => unawaited(store.remove(model)),
+            ),
+            const SizedBox(width: 8),
+          ],
+          ExcludeSemantics(child: _CompactSwitchIndicator(value: on)),
+        ],
+      );
+    }
+    if (model == null || store == null || blockedReason != null) return null;
+    final state = store.stateOf(model);
+    return switch (state.status) {
+      LocalModelStatus.fetchingRuntime ||
+      LocalModelStatus.downloading => _RowButton(
+        key: ValueKey('local-cancel-${model.id}'),
+        label: 'Cancel',
+        onPressed: () => store.cancel(model),
+      ),
+      // Nothing to press while the hashes are checked: it takes seconds, and
+      // stopping halfway would leave files nothing has vouched for.
+      LocalModelStatus.verifying => null,
+      LocalModelStatus.failed => _RowButton(
+        key: ValueKey('local-download-${model.id}'),
+        label: 'Try again',
+        prominent: true,
+        onPressed: onDownload,
+      ),
+      _ => _RowButton(
+        key: ValueKey('local-download-${model.id}'),
+        label: state.receivedBytes > 0 ? 'Resume' : 'Download',
+        prominent: true,
+        onPressed: onDownload,
+      ),
+    };
+  }
+}
+
+/// The small button at the end of a row.
+class _RowButton extends StatelessWidget {
+  const _RowButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.prominent = false,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool prominent;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final scheme = Theme.of(context).colorScheme;
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        minimumSize: const Size(0, 30),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        backgroundColor: prominent ? scheme.primary : palette.controlBackground,
+        foregroundColor: prominent ? scheme.onPrimary : palette.textSecondary,
+        disabledForegroundColor: palette.textTertiary,
+        side: prominent
+            ? null
+            : BorderSide(color: palette.controlBorder, width: 0.5),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 12, fontWeight: _settingsMediumWeight),
+      ),
+    );
+  }
+}
+
+/// Who made the models on offer, and under what licence.
+///
+/// Kept when the cards went, because it is the one part of them that was not
+/// only informative: CC-BY wants the creator named and the licence reachable,
+/// and a row with a switch on it is no place for either.
+class _ModelCredits extends StatelessWidget {
+  const _ModelCredits({required this.models});
+
+  final List<DownloadableModel> models;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final style = TextStyle(fontSize: 10.5, color: palette.textTertiary);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(3, 8, 3, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final model in models)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(model.credit, style: style),
+                  InkWell(
+                    key: ValueKey('voice-local-model-licence-${model.id}'),
+                    onTap: () => unawaited(_openLicence(context, model)),
+                    // Colour says it opens something, the way a link in a
+                    // note does. Nothing in this app is underlined.
+                    child: Text(
+                      model.license,
+                      style: style.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openLicence(
+    BuildContext context,
+    DownloadableModel model,
+  ) async {
+    final url = Uri.tryParse(model.licenseUrl);
+    if (url == null) return;
+    var opened = false;
+    try {
+      opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (opened || !context.mounted) return;
+    Toast.show(
+      context,
+      'Could not open ${url.host}',
+      icon: Icons.error_outline_rounded,
+      isError: true,
+    );
+  }
+}
+
 /// A row whose control is a slider under the copy rather than a switch
 /// beside it: the track needs the width, and a label at each end says which
 /// way is which without a number nobody would read as anything.
@@ -2217,377 +2426,6 @@ class _NavigationRow extends StatelessWidget {
   }
 }
 
-/// Something the app will do and cannot do yet.
-///
-/// Deliberately not a disabled toggle: a switch that cannot be moved reads as
-/// a thing that is off, and this is a thing that is not here. No ink, no
-/// chevron, and the word for when it arrives sits where the value would.
-/// A row for something the platform provides, with nothing to press: the
-/// same shape as [_ComingSoonRow], badged for what is here rather than what
-/// is not.
-class _BuiltInRow extends StatelessWidget {
-  const _BuiltInRow({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Padding(
-      padding: _RowMetrics.padding,
-      child: Row(
-        children: [
-          SizedBox(
-            width: _RowMetrics.iconSlot,
-            child: Icon(
-              icon,
-              size: _RowMetrics.iconSize,
-              color: palette.textTertiary,
-            ),
-          ),
-          SizedBox(width: _RowMetrics.gap),
-          Expanded(
-            child: _RowCopy(title: title, subtitle: subtitle),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: palette.controlBackground,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: palette.controlBorder),
-            ),
-            child: Text(
-              'Built in',
-              key: const ValueKey('voice-local-engine-built-in'),
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: _settingsMediumWeight,
-                letterSpacing: 0.4,
-                color: palette.textTertiary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ComingSoonRow extends StatelessWidget {
-  const _ComingSoonRow({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Padding(
-      padding: _RowMetrics.padding,
-      child: Row(
-        children: [
-          SizedBox(
-            width: _RowMetrics.iconSlot,
-            child: Icon(
-              icon,
-              size: _RowMetrics.iconSize,
-              color: palette.textTertiary,
-            ),
-          ),
-          SizedBox(width: _RowMetrics.gap),
-          Expanded(
-            child: _RowCopy(title: title, subtitle: subtitle),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: palette.controlBackground,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: palette.controlBorder),
-            ),
-            child: Text(
-              'Soon',
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: _settingsMediumWeight,
-                letterSpacing: 0.4,
-                color: palette.textTertiary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One option in a mutually exclusive group, with a live sample of what
-/// picking it does.
-/// One downloadable model, with everything a decision needs on its face.
-///
-/// A model is a bigger commitment than any other setting in this dialog —
-/// two thirds of a gigabyte, and a choice about where speech is processed —
-/// so it gets a card rather than a row, and the card leads with the four
-/// numbers people actually choose on: how big, how many languages, how
-/// accurate, how fast.
-///
-/// Every figure is the publisher's or a published benchmark's, and the
-/// footnote says so. None of it is ours, because there is nothing of ours to
-/// measure until the recogniser exists.
-class _LocalModelCard extends StatelessWidget {
-  const _LocalModelCard({
-    required this.store,
-    required this.model,
-    required this.onDownload,
-    this.blockedReason,
-  });
-
-  final LocalModelStore store;
-  final DownloadableModel model;
-
-  /// Pressed instead of starting the download directly, because some models
-  /// have terms to agree to first and the card should not know which.
-  final VoidCallback onDownload;
-
-  /// Why this device cannot have it, if it cannot. Replaces the button.
-  final String? blockedReason;
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: store,
-    builder: (context, _) => _card(context, store.stateOf(model)),
-  );
-
-  Widget _card(BuildContext context, LocalModelState state) {
-    final palette = context.palette;
-    return Semantics(
-      container: true,
-      label: '${model.name}, ${fileSize(model.bytes)}, ${_statusWord(state)}',
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: palette.controlBackground,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: palette.controlBorder, width: 0.5),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _header(context, state),
-              if (blockedReason != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  blockedReason!,
-                  key: const ValueKey('voice-local-model-blocked'),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                ),
-              ],
-              if (state.isBusy || state.error != null) ...[
-                const SizedBox(height: 10),
-                _ModelProgress(state: state),
-              ],
-              const SizedBox(height: 12),
-              _stats(context),
-              const SizedBox(height: 12),
-              Text(
-                model.summary,
-                style: TextStyle(fontSize: 11.5, color: palette.textSecondary),
-              ),
-              // Which languages, not merely how many — and only a recogniser
-              // has an answer to that.
-              if (_languagesOf(model) case final languages?) ...[
-                const SizedBox(height: 6),
-                Text(
-                  languages,
-                  style: TextStyle(fontSize: 11, color: palette.textTertiary),
-                ),
-              ],
-              const SizedBox(height: 6),
-              _footnote(context),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _header(BuildContext context, LocalModelState state) {
-    final palette = context.palette;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                model.name,
-                style: TextStyle(
-                  fontSize: _RowMetrics.titleSize,
-                  fontWeight: _settingsMediumWeight,
-                  color: palette.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                model.subtitle,
-                style: TextStyle(
-                  fontSize: _RowMetrics.subtitleSize,
-                  color: palette.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 10),
-        if (blockedReason == null)
-          _ModelAction(
-            store: store,
-            model: model,
-            state: state,
-            onDownload: onDownload,
-          ),
-      ],
-    );
-  }
-
-  /// The four figures, two to a row so that the longest of them fits on a
-  /// phone as well as it does beside the rail. Which four is the model's
-  /// business, not this widget's.
-  Widget _stats(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      const gap = 10.0;
-      final column = (constraints.maxWidth - gap) / 2;
-      return Wrap(
-        spacing: gap,
-        runSpacing: 10,
-        children: [
-          for (final stat in model.stats)
-            SizedBox(
-              width: column,
-              child: _ModelStat(value: stat.value, label: stat.label),
-            ),
-        ],
-      );
-    },
-  );
-
-  Widget _footnote(BuildContext context) {
-    final palette = context.palette;
-    final style = TextStyle(fontSize: 10.5, color: palette.textTertiary);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Who made it and under what licence, on one line: CC-BY wants both
-        // the creator named and the licence reachable, and a link on its own
-        // row reads like a stray word.
-        Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(model.credit, style: style),
-            InkWell(
-              key: ValueKey('voice-local-model-licence-${model.id}'),
-              onTap: () => unawaited(_openLicence(context)),
-              child: Text(
-                model.license,
-                style: style.copyWith(
-                  decoration: TextDecoration.underline,
-                  decorationColor: palette.textTertiary,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 3),
-        Text(model.detail, style: style),
-      ],
-    );
-  }
-
-  Future<void> _openLicence(BuildContext context) async {
-    final url = Uri.tryParse(model.licenseUrl);
-    if (url == null) return;
-    var opened = false;
-    try {
-      opened = await launchUrl(url, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      opened = false;
-    }
-    if (opened || !context.mounted) return;
-    Toast.show(
-      context,
-      'Could not open ${url.host}',
-      icon: Icons.error_outline_rounded,
-      isError: true,
-    );
-  }
-
-  static String? _languagesOf(DownloadableModel model) =>
-      model is LocalSpeechModel ? model.languages.join(', ') : null;
-
-  static String _statusWord(LocalModelState state) => switch (state.status) {
-    LocalModelStatus.absent => 'not downloaded',
-    LocalModelStatus.fetchingRuntime => 'adding the engine',
-    LocalModelStatus.downloading => 'downloading',
-    LocalModelStatus.verifying => 'checking',
-    LocalModelStatus.ready => 'downloaded',
-    LocalModelStatus.failed => 'download failed',
-  };
-}
-
-/// One figure and what it means.
-class _ModelStat extends StatelessWidget {
-  const _ModelStat({required this.value, required this.label});
-
-  final String value;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: _settingsMediumWeight,
-            color: palette.textPrimary,
-            // Figures in a column look broken when the digits are different
-            // widths, and this column is read down, not across.
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
-        ),
-        const SizedBox(height: 1),
-        Text(
-          label,
-          style: TextStyle(fontSize: 10.5, color: palette.textTertiary),
-        ),
-      ],
-    );
-  }
-}
-
 /// How far along a download is, or why it stopped.
 class _ModelProgress extends StatelessWidget {
   const _ModelProgress({required this.state});
@@ -2655,69 +2493,6 @@ class _ModelProgress extends StatelessWidget {
           style: TextStyle(fontSize: 10.5, color: palette.textTertiary),
         ),
       ],
-    );
-  }
-}
-
-/// The one button on the card, whatever it happens to say.
-class _ModelAction extends StatelessWidget {
-  const _ModelAction({
-    required this.store,
-    required this.model,
-    required this.state,
-    required this.onDownload,
-  });
-
-  final LocalModelStore store;
-  final DownloadableModel model;
-  final LocalModelState state;
-  final VoidCallback onDownload;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final scheme = Theme.of(context).colorScheme;
-    final (label, action, prominent) = switch (state.status) {
-      LocalModelStatus.absent => (
-        state.receivedBytes > 0 ? 'Resume' : 'Download',
-        onDownload,
-        true,
-      ),
-      LocalModelStatus.failed => ('Try again', onDownload, true),
-      LocalModelStatus.fetchingRuntime || LocalModelStatus.downloading => (
-        'Cancel',
-        () => store.cancel(model),
-        false,
-      ),
-      // Nothing to press while the hashes are being checked: it takes seconds
-      // and stopping halfway would leave files nothing has vouched for.
-      LocalModelStatus.verifying => ('Checking', null, false),
-      LocalModelStatus.ready => (
-        'Remove',
-        () => unawaited(store.remove(model)),
-        false,
-      ),
-    };
-
-    return TextButton(
-      key: ValueKey('voice-local-model-action-${model.id}'),
-      onPressed: action,
-      style: TextButton.styleFrom(
-        minimumSize: const Size(0, 30),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        backgroundColor: prominent ? scheme.primary : palette.controlBackground,
-        foregroundColor: prominent ? scheme.onPrimary : palette.textSecondary,
-        disabledForegroundColor: palette.textTertiary,
-        side: prominent
-            ? null
-            : BorderSide(color: palette.controlBorder, width: 0.5),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 12, fontWeight: _settingsMediumWeight),
-      ),
     );
   }
 }
@@ -2791,44 +2566,6 @@ class _ChoiceRow extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PaperDescription extends StatelessWidget {
-  const _PaperDescription();
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.controlBackground,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: palette.controlBorder, width: 0.5),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
-        child: Row(
-          children: [
-            SizedBox(
-              width: _RowMetrics.iconSlot,
-              child: Icon(
-                Icons.texture_rounded,
-                size: _RowMetrics.iconSize,
-                color: palette.textSecondary,
-              ),
-            ),
-            SizedBox(width: _RowMetrics.gap),
-            const Expanded(
-              child: _RowCopy(
-                title: 'Notepad paper',
-                subtitle: 'Warm paper grain with a quiet ink-like palette',
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -2964,9 +2701,13 @@ class _VersionRow extends StatelessWidget {
 /// check found, and the button is the click that hands over to Sparkle or
 /// WinSparkle. Until it is pressed, no release has been fetched.
 class _UpdateRow extends StatelessWidget {
-  const _UpdateRow({required this.updates});
+  const _UpdateRow({required this.updates, this.desktop});
 
   final UpdateChecker updates;
+
+  /// Null on the platforms with no window to speak of. Only the pin is wanted
+  /// from it: see [_runAction].
+  final DesktopIntegration? desktop;
 
   /// A check that has never reached the manifest may not claim anything, so
   /// the untouched state offers the check instead of asserting a verdict.
@@ -3023,6 +2764,14 @@ class _UpdateRow extends StatelessWidget {
 
   Future<void> _runAction(BuildContext context) async {
     final installing = updates.available != null;
+    // Sparkle and WinSparkle both put their panel up at the ordinary window
+    // level, so a window kept on top covers it: the button would report an
+    // updater the user never sees. Give the pin up first — and say so, since
+    // the toolbar button that would otherwise show it is behind this sheet.
+    // Only for the install; a check opens nothing and touches no window.
+    final unpinned =
+        installing && (await desktop?.releaseAlwaysOnTop() ?? false);
+    if (!context.mounted) return;
     final progress = Toast.showProgress(
       context,
       installing ? 'Opening the updater…' : 'Checking for updates…',
@@ -3044,7 +2793,9 @@ class _UpdateRow extends StatelessWidget {
     }
     progress.success(
       installing
-          ? 'Updater opened'
+          ? unpinned
+                ? 'Updater opened · window no longer on top'
+                : 'Updater opened'
           : updates.hasUpdate
           ? 'Update available'
           : 'Kapy Notes is up to date',

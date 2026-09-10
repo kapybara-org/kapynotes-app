@@ -136,8 +136,43 @@ void main() {
       expect(note.title, 'Standup thoughts');
     });
 
-    test('before the summary arrives it is a voice note, not Untitled', () {
-      expect(noteWith(anchor, [recording()]).title, 'Voice note');
+    test('the transcript names it until the summary arrives', () {
+      final note = noteWith(anchor, [
+        recording(transcript: spoken(['we should renew the lease in March'])),
+      ]);
+      expect(note.title, 'we should renew the lease in March');
+    });
+
+    test('a summary anywhere beats raw speech anywhere', () {
+      // The summary is the phrase somebody would have written; a transcript
+      // opens with whatever the recording opened with.
+      final note = noteWith('$anchor\n$anchor', [
+        recording(transcript: spoken(['um so the the lease thing'])),
+        recording(
+          offset: 2,
+          summary: VoiceSummary(
+            engine: 'cf/llama',
+            at: 1,
+            title: 'Flat admin',
+            points: ['The lease is up in March.'],
+          ),
+        ),
+      ]);
+      expect(note.title, 'Flat admin');
+    });
+
+    test('a long transcript is clamped like any other title', () {
+      final note = noteWith(anchor, [
+        recording(transcript: spoken(['word ' * 40])),
+      ]);
+      expect(note.title.length, lessThanOrEqualTo(61));
+      expect(note.title, endsWith('…'));
+    });
+
+    test('a recording with nothing to say is a new note', () {
+      // It used to say "Voice note", which named what the note held but
+      // nothing about it — and said it identically for every one of them.
+      expect(noteWith(anchor, [recording()]).title, Note.untitled);
     });
 
     test('typed text still wins over the summary', () {
@@ -156,18 +191,25 @@ void main() {
     });
 
     test('an image-only note is still Untitled, as it was', () {
-      final note = noteWith(anchor, [
-        NoteImageRef(
-          offset: 0,
-          hash: 'i',
-          key: Uint8List(32),
-          mime: 'image/png',
-          width: 2,
-          height: 2,
-          bytes: 4,
-        ),
-      ]);
+      final note = noteWith(anchor, [_picture()]);
       expect(note.title, Note.untitled);
+    });
+
+    test('a note that opens with a picture is named by what follows it', () {
+      // A picture has nothing to say for itself, so the title waits for the
+      // first line typed under it rather than settling for the anchor.
+      final note = noteWith('$anchor\nRoof measurements', [_picture()]);
+      expect(note.title, 'Roof measurements');
     });
   });
 }
+
+NoteImageRef _picture() => NoteImageRef(
+  offset: 0,
+  hash: 'i',
+  key: Uint8List(32),
+  mime: 'image/png',
+  width: 2,
+  height: 2,
+  bytes: 4,
+);

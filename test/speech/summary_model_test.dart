@@ -99,7 +99,7 @@ void main() {
     client: MockClient((_) async => fail('a card must fetch nothing')),
   );
 
-  group('the summary model on its own shelf', () {
+  group('the summary model on the local shelf', () {
     testWidgets('says what it is and what it costs', (tester) async {
       final models = summaryOnly();
       addTearDown(models.dispose);
@@ -110,17 +110,17 @@ void main() {
         prefs: VoicePrefs(store)..load(),
       );
 
-      expect(find.text('SUMMARIES ON THIS DEVICE'), findsOneWidget);
-      expect(find.text('Gemma 4 E2B'), findsOneWidget);
-      expect(find.text('2.6 GB'), findsOneWidget);
-      expect(find.text('2B effective parameters'), findsOneWidget);
-      expect(find.text('4,096 tokens'), findsOneWidget);
-      expect(find.text('of transcript at a time'), findsOneWidget);
+      // One shelf now, shared with the recogniser: a language model and a
+      // recogniser are different things but the same decision.
+      expect(find.text('LOCAL'), findsOneWidget);
+      expect(find.text('SUMMARIES ON THIS DEVICE'), findsNothing);
+      expect(find.text('Gemma 4 E2B · 2.6 GB'), findsOneWidget);
       // The licence has to be named and reachable, not merely implied.
       expect(find.text('Apache-2.0'), findsOneWidget);
+      expect(find.textContaining('2B effective parameters'), findsOneWidget);
     });
 
-    testWidgets('a recogniser-less build still promises transcription', (
+    testWidgets('a recogniser-less build still offers transcription', (
       tester,
     ) async {
       final models = summaryOnly();
@@ -132,11 +132,8 @@ void main() {
         prefs: VoicePrefs(store)..load(),
       );
 
-      // The summary shelf being present must not silently drop the other one.
-      expect(
-        find.byKey(const ValueKey('voice-local-engine-row')),
-        findsOneWidget,
-      );
+      // The summary row being present must not silently drop the other one.
+      expect(find.byKey(const ValueKey('local-transcription-row')), findsOne);
     });
   });
 
@@ -295,10 +292,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const ValueKey('voice-local-model-blocked')),
-        findsOneWidget,
-      );
+      // The reason takes the subtitle, where the model's name and size would
+      // otherwise be: what matters is why this will not happen here.
       expect(find.textContaining('this device has 2.0 GB'), findsOneWidget);
       // Nothing to press: the point is that the download never starts.
       expect(find.text('Download'), findsNothing);

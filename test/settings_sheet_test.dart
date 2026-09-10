@@ -95,12 +95,17 @@ void main() {
       find.byKey(const ValueKey('settings-section-appearance')),
       findsOneWidget,
     );
+    // Numbers stopped being a category of its own: one choice and a credit
+    // line is not worth a click on the way to everything else.
     expect(
       find.byKey(const ValueKey('settings-section-numbers')),
-      findsOneWidget,
+      findsNothing,
     );
     // Each category says what is behind it before it is opened.
-    expect(find.text('Writing font and paper'), findsOneWidget);
+    expect(
+      find.text('Theme, writing font, paper, number format'),
+      findsOneWidget,
+    );
 
     // Shortcuts belong to a keyboard, and phones are updated by their store.
     expect(
@@ -127,7 +132,7 @@ void main() {
     expect(find.text('WRITING FONT'), findsOneWidget);
     expect(find.byKey(const ValueKey('transparency-toggle')), findsNothing);
     expect(
-      find.byKey(const ValueKey('settings-section-numbers')),
+      find.byKey(const ValueKey('settings-section-general')),
       findsNothing,
     );
 
@@ -136,7 +141,7 @@ void main() {
 
     expect(find.text('WRITING FONT'), findsNothing);
     expect(
-      find.byKey(const ValueKey('settings-section-numbers')),
+      find.byKey(const ValueKey('settings-section-general')),
       findsOneWidget,
     );
   });
@@ -160,12 +165,12 @@ void main() {
   ) async {
     await _pumpPhone(tester);
     await _openSettings(tester);
-    await _openCategory(tester, 'numbers');
+    await _openCategory(tester, 'appearance');
 
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey('settings-section-numbers')),
+      find.byKey(const ValueKey('settings-section-general')),
       findsOneWidget,
       reason: 'the first back is out of the category, not out of settings',
     );
@@ -173,8 +178,9 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey('settings-section-numbers')),
+      find.byKey(const ValueKey('settings-section-general')),
       findsNothing,
+      reason: 'and the second back is out of settings',
     );
   });
 
@@ -262,22 +268,23 @@ void main() {
     await _openSettings(tester);
     await _openCategory(tester, 'voice');
 
-    // Two halves, because where the recording goes is the difference that
+    // Two headings, because where the recording goes is the difference that
     // matters, not which button transcribes it.
-    expect(find.text('IN THE CLOUD'), findsOneWidget);
-    expect(find.text('ON THIS DEVICE'), findsOneWidget);
+    expect(find.text('RECORDINGS'), findsOneWidget);
+    expect(find.text('LOCAL'), findsOneWidget);
 
-    // The local half is named and not yet offered — no switch to flip.
-    expect(
-      find.byKey(const ValueKey('voice-local-engine-row')),
-      findsOneWidget,
-    );
-    expect(find.text('Transcribe on this device'), findsOneWidget);
-    expect(find.text('Soon'), findsOneWidget);
+    // One row per engine, both of them, whether or not this build can offer
+    // either: the shelf is where you look to find out.
+    expect(find.byKey(const ValueKey('local-transcription-row')), findsOne);
+    expect(find.byKey(const ValueKey('local-summary-row')), findsOne);
+
+    // Nothing is downloadable here and nothing is built in, so there is no
+    // switch to flip — a switch that cannot move reads as a thing that is
+    // off rather than a thing that is not here.
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey('voice-local-engine-row')),
-        matching: find.byType(Switch),
+        of: find.byKey(const ValueKey('local-transcription-row')),
+        matching: find.byKey(const ValueKey('compact-switch-indicator')),
       ),
       findsNothing,
     );
@@ -290,7 +297,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await _openCategory(tester, 'voice');
-    expect(find.text('IN THE CLOUD'), findsOneWidget);
+    expect(find.text('RECORDINGS'), findsOneWidget);
   });
 
   testWidgets(
