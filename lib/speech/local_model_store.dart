@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../data/blob_store.dart';
 import 'local_models.dart';
+import 'runtime_pack.dart';
 
 /// Where a model is in its life on this device.
 enum LocalModelStatus {
@@ -15,6 +16,11 @@ enum LocalModelStatus {
   /// disk as a part file; that is a detail of resuming, not a state the user
   /// is shown.
   absent,
+
+  /// The engine's own code is being fetched, ahead of the model. Only ever
+  /// seen on a phone, where the runtimes are a Play module rather than part
+  /// of the app — see [RuntimePack].
+  fetchingRuntime,
 
   /// Bytes are moving.
   downloading,
@@ -50,6 +56,7 @@ class LocalModelState {
   final String? error;
 
   bool get isBusy =>
+      status == LocalModelStatus.fetchingRuntime ||
       status == LocalModelStatus.downloading ||
       status == LocalModelStatus.verifying;
 
@@ -80,11 +87,17 @@ class LocalModelStore extends ChangeNotifier {
     ],
     Directory? directory,
     http.Client? client,
+    RuntimePack runtime = const BundledRuntimePack(),
   }) : _directory = directory,
        _client = client ?? http.Client(),
-       _ownsClient = client == null;
+       _ownsClient = client == null,
+       _runtime = runtime;
 
   final List<DownloadableModel> catalogue;
+
+  /// The native code every model here needs, where the app does not carry
+  /// it. Fetched before the first model and released after the last.
+  final RuntimePack _runtime;
 
   final http.Client _client;
   final bool _ownsClient;
@@ -168,11 +181,16 @@ class LocalModelStore extends ChangeNotifier {
   }
 
   Future<void> _scan() async {
+    // A model whose files are all here but whose engine is not cannot run,
+    // and "ready" would be a lie the first transcript exposed. It reads as
+    // absent with every byte received, which the card offers as Resume — and
+    // resuming is exactly what fetches the engine.
+    final runtimeHere = await _runtime.isInstalled();
     for (final model in catalogue) {
       // A download in flight already knows more about itself than the disk
       // does; asking now would report its part files as a broken install.
       if (_running.containsKey(model.id)) continue;
-      final installed = await _isInstalled(model);
+      final installed = runtimeHere && await _isInstalled(model);
       final received = installed ? model.bytes : await _bytesOnDisk(model);
       // Reading the disk takes long enough for someone to have pressed
       // Download in the middle of it, and what they started outranks what
@@ -209,19 +227,38 @@ class LocalModelStore extends ChangeNotifier {
 
   Future<void> _download(DownloadableModel model) async {
     _cancelling.remove(model.id);
+    _lastProgressAt = DateTime.fromMillisecondsSinceEpoch(0);
 
     final total = model.bytes;
     var carried = 0;
-    _set(
-      model,
-      LocalModelState(
-        status: LocalModelStatus.downloading,
-        receivedBytes: await _bytesOnDisk(model),
-        totalBytes: total,
-      ),
-    );
 
     try {
+      // The engine first, where it is not in the app. Its stage owns the
+      // card until it is done, so the initial state is one or the other.
+      if (!await _runtime.isInstalled()) {
+        await _fetchRuntime(model, total);
+        if (_cancelling.contains(model.id)) {
+          _set(
+            model,
+            LocalModelState(
+              status: LocalModelStatus.absent,
+              receivedBytes: await _bytesOnDisk(model),
+              totalBytes: total,
+            ),
+          );
+          return;
+        }
+      } else {
+        _set(
+          model,
+          LocalModelState(
+            status: LocalModelStatus.downloading,
+            receivedBytes: await _bytesOnDisk(model),
+            totalBytes: total,
+          ),
+        );
+      }
+
       final dir = await directoryFor(model);
       await dir.create(recursive: true);
 
@@ -299,11 +336,64 @@ class LocalModelStore extends ChangeNotifier {
     }
   }
 
+  /// The engine before the model: Play's module, reported on the same card
+  /// as its own stage so a phone user sees why the bar has not reached the
+  /// model yet.
+  ///
+  /// A cancelled fetch is not a failure. The pack throws when Play stops,
+  /// and the caller reads [_cancelling] to tell the two apart.
+  Future<void> _fetchRuntime(DownloadableModel model, int total) async {
+    _set(
+      model,
+      LocalModelState(
+        status: LocalModelStatus.fetchingRuntime,
+        receivedBytes: 0,
+        totalBytes: 0,
+      ),
+    );
+    try {
+      await _runtime.install(
+        onProgress: (received, packTotal) {
+          if (_disposed || !_running.containsKey(model.id)) return;
+          final now = DateTime.now();
+          if (now.difference(_lastProgressAt) < _progressInterval &&
+              received < packTotal) {
+            return;
+          }
+          _lastProgressAt = now;
+          _set(
+            model,
+            LocalModelState(
+              status: LocalModelStatus.fetchingRuntime,
+              receivedBytes: received,
+              totalBytes: packTotal,
+            ),
+          );
+        },
+      );
+    } on RuntimePackException {
+      if (_cancelling.contains(model.id)) return;
+      rethrow;
+    }
+    if (_cancelling.contains(model.id)) return;
+    _set(
+      model,
+      LocalModelState(
+        status: LocalModelStatus.downloading,
+        receivedBytes: await _bytesOnDisk(model),
+        totalBytes: total,
+      ),
+    );
+  }
+
   /// Stops a download between chunks, keeping what has arrived so that
   /// starting again resumes rather than refetches.
   void cancel(DownloadableModel model) {
     if (!_running.containsKey(model.id)) return;
     _cancelling.add(model.id);
+    if (stateOf(model).status == LocalModelStatus.fetchingRuntime) {
+      unawaited(_runtime.cancel());
+    }
   }
 
   /// Throws the model away, part files and all.
@@ -329,6 +419,18 @@ class LocalModelStore extends ChangeNotifier {
         totalBytes: model.bytes,
       ),
     );
+    // The engine is only worth its space while something needs it. Play
+    // takes the module back on its own schedule; a model downloaded in the
+    // meantime simply finds it still there.
+    if (!await _anyInstalled()) await _runtime.remove();
+  }
+
+  Future<bool> _anyInstalled() async {
+    for (final other in catalogue) {
+      if (_running.containsKey(other.id)) return true;
+      if (await _isInstalled(other)) return true;
+    }
+    return false;
   }
 
   /// One file, resuming from whatever is already in its part file.
@@ -492,6 +594,7 @@ class LocalModelStore extends ChangeNotifier {
 
   static String _messageFor(Object error) {
     if (error is _ModelError) return error.message;
+    if (error is RuntimePackException) return error.message;
     if (error is TimeoutException) {
       return 'The download stopped responding. Try again.';
     }

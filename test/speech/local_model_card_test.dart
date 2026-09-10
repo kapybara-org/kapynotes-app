@@ -177,6 +177,27 @@ void main() {
     expect(find.text('Parakeet TDT 0.6B v3'), findsNothing);
   });
 
+  testWidgets('on Apple the shelf says the recogniser is built in', (
+    tester,
+  ) async {
+    // No speech model on offer — which is what app.dart does on macOS and
+    // iOS — and a platform whose OS transcribes for itself.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    final models = LocalModelStore(
+      catalogue: const [],
+      directory: temp,
+      client: MockClient((_) async => fail('a card must fetch nothing')),
+    );
+    addTearDown(models.dispose);
+
+    await _openVoicePane(tester, models: models);
+
+    expect(find.byKey(const ValueKey('voice-local-engine-built-in')), findsOneWidget);
+    expect(find.text('Transcribes on this device already'), findsOneWidget);
+    expect(find.text('Soon'), findsNothing);
+    expect(find.text('Download'), findsNothing);
+  });
+
   testWidgets('the card answers what a 670 MB decision turns on', (
     tester,
   ) async {

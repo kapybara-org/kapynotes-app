@@ -10,13 +10,13 @@ import 'local_model_store.dart';
 import 'local_models.dart';
 import 'transcriber.dart';
 
-/// Parakeet, running here, on everything Apple's own recogniser does not cover.
+/// Parakeet, running here, on the platforms with no recogniser of their own.
 ///
 /// This is the half of Phase 5 that took the longest to be worth building: a
 /// downloader with nothing that read what it downloaded shipped months before
 /// this did. What it buys is the same thing [AppleTranscriber] buys — no
-/// account, no minutes, nothing leaving the device — for Windows, for Android,
-/// and for the Macs and iPhones too old for `SpeechAnalyzer`.
+/// account, no minutes, nothing leaving the device — for Windows, for Android
+/// and for Linux, where the OS has nothing of the kind.
 ///
 /// What it costs is 670 MB the user chose to spend, which is why
 /// [readiness] answers [TranscriberReadiness.needsDownload] rather than
@@ -37,15 +37,19 @@ class SherpaTranscriber implements Transcriber {
   final LocalSpeechModel _model;
   final String? Function() _language;
 
-  /// Every platform the native library is vendored for. Not a guess: the
-  /// package ships prebuilt binaries for exactly these, and asking on any
-  /// other would be a crash rather than an answer.
+  /// The platforms with no recogniser of their own, which are the only ones
+  /// this build carries the runtime for.
+  ///
+  /// Apple's are deliberately absent. Every Mac and iPhone this app runs on
+  /// has an on-device recogniser already — `SpeechAnalyzer` from the 26s,
+  /// `SFSpeechRecognizer` before that — so the 26 MB the runtime would add
+  /// to every iPhone, and the 56 MB `dyld` would map at every Mac launch,
+  /// bought nothing that [AppleTranscriber] does not give for free. The
+  /// package's binaries for those two are stubbed out of the build (see
+  /// `packages/apple_stubs`), and asking here would be a crash, not an
+  /// answer.
   static bool get isPossibleHere =>
-      AppPlatform.isMacOS ||
-      AppPlatform.isIOS ||
-      AppPlatform.isWindows ||
-      AppPlatform.isAndroid ||
-      AppPlatform.isLinux;
+      AppPlatform.isWindows || AppPlatform.isAndroid || AppPlatform.isLinux;
 
   /// What the ref records. Names the exact export, because a different
   /// quantisation of the same model is a different transcript.

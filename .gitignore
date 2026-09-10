@@ -60,3 +60,7 @@ packaging/.asc-credentials
 packaging/.play-credentials.json
 *.jks
 *.keystore
+
+# Gradle writes problem reports for the root project here; every real
+# build output goes to /build via android/build.gradle.kts.
+/android/build/

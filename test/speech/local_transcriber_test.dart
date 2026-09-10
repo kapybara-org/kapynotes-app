@@ -76,16 +76,21 @@ void main() {
       );
     });
 
-    test('a platform with no native library never claims it can', () async {
-      // There is no vendored binary for the web, and asking would be a crash
-      // rather than an answer.
-      AppPlatform.debugTargetPlatformOverride = null;
-      final models = LocalModelStore(catalogue: const [], directory: temp);
-      addTearDown(models.dispose);
-
-      // Every platform this app ships on does have one, so the guard is
-      // asserted rather than the negation, which nothing here can produce.
-      expect(SherpaTranscriber.isPossibleHere, isTrue);
+    test('is only for the platforms with no recogniser of their own', () {
+      // Apple's platforms have one built in, and the runtime is stubbed out
+      // of those builds: asking there would be a crash rather than an answer.
+      for (final apple in [TargetPlatform.macOS, TargetPlatform.iOS]) {
+        AppPlatform.debugTargetPlatformOverride = apple;
+        expect(SherpaTranscriber.isPossibleHere, isFalse, reason: '$apple');
+      }
+      for (final bare in [
+        TargetPlatform.windows,
+        TargetPlatform.android,
+        TargetPlatform.linux,
+      ]) {
+        AppPlatform.debugTargetPlatformOverride = bare;
+        expect(SherpaTranscriber.isPossibleHere, isTrue, reason: '$bare');
+      }
     });
   });
 

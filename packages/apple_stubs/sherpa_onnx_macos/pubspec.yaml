@@ -1,0 +1,19 @@
+name: sherpa_onnx_macos
+description: Stand-in for sherpa_onnx_macos with no native library. See ../README.md.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.8.0
+  flutter: ">=3.32.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    implements: sherpa_onnx
+    platforms:
+      macos:
+        dartPluginClass: SherpaOnnxMacosStub

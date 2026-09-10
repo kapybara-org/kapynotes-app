@@ -18,6 +18,8 @@ val keystoreProperties = Properties().apply {
 }
 val hasReleaseKeystore = keystorePropertiesFile.exists()
 
+val runtimeLibraries: List<String> by rootProject.extra
+
 android {
     namespace = "com.kapybara.kapynotes"
     // Pinned above `flutter.compileSdkVersion`, which is still 36 in this
@@ -79,6 +81,28 @@ android {
             }
         }
     }
+
+    // See android/speech_runtime/build.gradle.kts.
+    dynamicFeatures += setOf(":speech_runtime")
+}
+
+// The speech engines' native code leaves the base here and is packaged by
+// `:speech_runtime` for Play to deliver on demand. Release only: a debug APK
+// has no Play behind it, and keeping the libraries in it is what lets
+// `flutter run` and the emulator integration tests exercise the engines at
+// all. Done through the variant API because a `packaging {}` block written
+// inside `buildTypes.release` resolves to the android-wide one and excludes
+// them from debug too — measured: the debug APK lost libsherpa-onnx-c-api.so.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.addAll(runtimeLibraries.map { "**/$it" })
+    }
+}
+
+dependencies {
+    // Asking Play for the speech runtime module, and making it loadable in
+    // the same process once it has arrived (SplitCompat).
+    implementation("com.google.android.play:feature-delivery-ktx:2.1.0")
 }
 
 kotlin {

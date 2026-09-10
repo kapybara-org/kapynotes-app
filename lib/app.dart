@@ -12,6 +12,7 @@ import 'speech/apple_transcriber.dart';
 import 'speech/cloud_summarizer.dart';
 import 'speech/cloud_transcriber.dart';
 import 'speech/gemma_summarizer.dart';
+import 'speech/runtime_pack.dart';
 import 'speech/sherpa_transcriber.dart';
 import 'speech/transcriber.dart';
 import 'speech/local_model_store.dart';
@@ -175,11 +176,18 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         _recording.finishRecordingAndFlush;
     _recording.onFlush = _flushAfterHydration;
     _voicePrefs = VoicePrefs(widget.store);
-    // The summary model is offered always; the recogniser only in a build
-    // that could use one. Two different questions about the same shelf: one
-    // model has something that reads it and the other does not yet.
+    // Each model is offered only where this build carries something that
+    // reads it: Parakeet where the platform has no recogniser of its own,
+    // Gemma everywhere but iOS. On Android neither runtime is in the app;
+    // Play delivers them on the first download, through the pack.
     _localModels = LocalModelStore(
-      catalogue: [...localSpeechModels, ...localSummaryModels],
+      catalogue: [
+        if (SherpaTranscriber.isPossibleHere) ...localSpeechModels,
+        if (GemmaSummarizer.isPossibleHere) ...localSummaryModels,
+      ],
+      runtime: PlayRuntimePack.isPossibleHere
+          ? PlayRuntimePack()
+          : const BundledRuntimePack(),
     );
     // Apple's model first because it is free and already on the machine;
     // the downloaded one answers for every device Apple does not cover.

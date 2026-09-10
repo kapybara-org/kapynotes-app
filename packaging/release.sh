@@ -293,6 +293,14 @@ build_mac_store() {
 build_android() {
   info "Android $VERSION ($BUILD_NUMBER) → Google Play"
   "$ROOT/packaging/preflight_android.sh" --archive
+  # A release build must not compile a registrant that `flutter test` left
+  # behind: that one lists dev-only plugins (integration_test) which the
+  # release Gradle graph deliberately excludes, and the build fails in
+  # javac. The tool skips regenerating a registrant it thinks is up to date,
+  # so remove it and let this build write the release one. Never run
+  # `flutter test` in this tree while this build is running, for the same
+  # reason.
+  rm -f "$ROOT/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java"
   "$FLUTTER" build appbundle --release
   cp "$ROOT/build/app/outputs/bundle/release/app-release.aab" "$OUT/kapy-android.aab"
   # Re-check the copied artifact, so what ships is what was verified.

@@ -609,6 +609,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
         'Still fetching the language it needs',
       TranscriberReadiness.needsDownload =>
         'Download the speech model below first',
+      TranscriberReadiness.needsSystemFeature =>
+        'Allow speech recognition for Kapy Notes in Privacy settings',
       null => 'Made here, and never uploaded',
       _ => 'Nothing on this device can transcribe yet',
     };
@@ -696,7 +698,22 @@ class _SettingsDialogState extends State<SettingsDialog> {
         store?.catalogue.whereType<LocalSummaryModel>().toList() ?? [];
 
     return [
-      if (speech.isEmpty)
+      if (speech.isEmpty && AppleTranscriber.isPossibleHere)
+        // Nothing to download because nothing is missing: Apple's own
+        // recogniser is in the OS, and it is the reason the 670 MB one is
+        // not offered on this platform.
+        const _SettingsGroup(
+          children: [
+            _BuiltInRow(
+              key: ValueKey('voice-local-engine-row'),
+              icon: Icons.memory_rounded,
+              title: 'Transcribes on this device already',
+              subtitle:
+                  'Apple\'s recogniser is part of the OS. Nothing to download.',
+            ),
+          ],
+        )
+      else if (speech.isEmpty)
         const _SettingsGroup(
           children: [
             _ComingSoonRow(
@@ -2205,6 +2222,65 @@ class _NavigationRow extends StatelessWidget {
 /// Deliberately not a disabled toggle: a switch that cannot be moved reads as
 /// a thing that is off, and this is a thing that is not here. No ink, no
 /// chevron, and the word for when it arrives sits where the value would.
+/// A row for something the platform provides, with nothing to press: the
+/// same shape as [_ComingSoonRow], badged for what is here rather than what
+/// is not.
+class _BuiltInRow extends StatelessWidget {
+  const _BuiltInRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: _RowMetrics.padding,
+      child: Row(
+        children: [
+          SizedBox(
+            width: _RowMetrics.iconSlot,
+            child: Icon(
+              icon,
+              size: _RowMetrics.iconSize,
+              color: palette.textTertiary,
+            ),
+          ),
+          SizedBox(width: _RowMetrics.gap),
+          Expanded(
+            child: _RowCopy(title: title, subtitle: subtitle),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: palette.controlBackground,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: palette.controlBorder),
+            ),
+            child: Text(
+              'Built in',
+              key: const ValueKey('voice-local-engine-built-in'),
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: _settingsMediumWeight,
+                letterSpacing: 0.4,
+                color: palette.textTertiary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ComingSoonRow extends StatelessWidget {
   const _ComingSoonRow({
     super.key,
@@ -2470,6 +2546,7 @@ class _LocalModelCard extends StatelessWidget {
 
   static String _statusWord(LocalModelState state) => switch (state.status) {
     LocalModelStatus.absent => 'not downloaded',
+    LocalModelStatus.fetchingRuntime => 'adding the engine',
     LocalModelStatus.downloading => 'downloading',
     LocalModelStatus.verifying => 'checking',
     LocalModelStatus.ready => 'downloaded',
@@ -2559,10 +2636,22 @@ class _ModelProgress extends StatelessWidget {
         ),
         const SizedBox(height: 5),
         Text(
-          state.status == LocalModelStatus.verifying
-              ? 'Checking the download'
-              : '${fileSize(state.receivedBytes)} of '
-                    '${fileSize(state.totalBytes)}',
+          switch (state.status) {
+            LocalModelStatus.verifying => 'Checking the download',
+            // The engine comes from Google Play, ahead of the model, and its
+            // size is Play's to announce; until it has, there is no number
+            // worth showing.
+            LocalModelStatus.fetchingRuntime when state.totalBytes <= 0 =>
+              'Adding the on-device engine from Google Play',
+            LocalModelStatus.fetchingRuntime =>
+              'Adding the on-device engine: '
+                  '${fileSize(state.receivedBytes)} of '
+                  '${fileSize(state.totalBytes)}',
+            _ =>
+              '${fileSize(state.receivedBytes)} of '
+                  '${fileSize(state.totalBytes)}',
+          },
+          key: const ValueKey('voice-local-model-progress-line'),
           style: TextStyle(fontSize: 10.5, color: palette.textTertiary),
         ),
       ],
@@ -2595,7 +2684,7 @@ class _ModelAction extends StatelessWidget {
         true,
       ),
       LocalModelStatus.failed => ('Try again', onDownload, true),
-      LocalModelStatus.downloading => (
+      LocalModelStatus.fetchingRuntime || LocalModelStatus.downloading => (
         'Cancel',
         () => store.cancel(model),
         false,

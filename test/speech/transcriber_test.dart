@@ -261,6 +261,76 @@ void main() {
       }
     });
 
+    test('the older engine\'s refused permission is the one fixable answer', () async {
+      answerWith((_) => 'denied');
+      expect(
+        await AppleTranscriber().readiness(),
+        TranscriberReadiness.needsSystemFeature,
+      );
+
+      answerWith((call) {
+        if (call.method == 'availability') return 'ready';
+        throw PlatformException(
+          code: 'denied',
+          message: 'Kapy Notes was not allowed to use speech recognition.',
+        );
+      });
+      await expectLater(
+        AppleTranscriber().transcribe(
+          audio: File('/tmp/note.m4a'),
+          requestId: 'r-denied',
+        ),
+        throwsA(
+          isA<TranscriberUnavailable>()
+              .having(
+                (e) => e.readiness,
+                'readiness',
+                TranscriberReadiness.needsSystemFeature,
+              )
+              .having((e) => e.isTemporary, 'temporary', isTrue),
+        ),
+      );
+    });
+
+    test('words from the older engine become the same segments Parakeet\'s do', () async {
+      answerWith(
+        (call) => call.method == 'availability'
+            ? 'ready'
+            : {
+                'lang': 'en',
+                'engine': 'apple/speech-recognizer',
+                'words': [
+                  {'t': 'Remember', 's': 0, 'e': 400},
+                  {'t': 'milk.', 's': 500, 'e': 900},
+                  {'t': 'The', 's': 1200, 'e': 1300},
+                  {'t': 'meeting', 's': 1300, 'e': 1700},
+                  {'t': 'moved.', 's': 1800, 'e': 2200},
+                  {'not': 'a word'},
+                ],
+              },
+      );
+
+      final draft = await AppleTranscriber().transcribe(
+        audio: File('/tmp/note.m4a'),
+        requestId: 'r2',
+      );
+
+      // The transcript says which engine wrote it, so a note can still tell
+      // after the phone has been upgraded to the newer one.
+      expect(draft.engine, 'apple/speech-recognizer');
+      expect(draft.segments.map((s) => s.t), ['Remember milk.', 'The meeting moved.']);
+      expect(draft.segments.first.s, 0);
+      expect(draft.segments.first.e, 900);
+      expect(draft.segments.last.s, 1200);
+      expect(draft.segments.last.e, 2200);
+    });
+
+    test('a shipping build never asks the runner for a particular engine', () async {
+      answerWith((_) => 'ready');
+      await AppleTranscriber().readiness();
+      expect(calls.single.arguments, isNot(contains('engine')));
+    });
+
     test('a runner with no such channel is a device that cannot', () async {
       // No mock handler at all, which is what an older runner looks like.
       expect(

@@ -14,4 +14,8 @@
 
     <!-- Asked when a square widget is placed, and whenever it is changed. -->
     <string name="widget_configure_title">What should this widget do?</string>
+
+    <!-- What Google Play calls the on-demand module that carries the local
+         speech engines, in its own dialogs. -->
+    <string name="speech_runtime_title">On-device speech engine</string>
 </resources>

@@ -5,6 +5,7 @@ import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
 
 import '../core/device_memory.dart';
+import '../core/platform.dart';
 import 'local_model_store.dart';
 import 'local_models.dart';
 import 'summarizer.dart';
@@ -73,8 +74,21 @@ class GemmaSummarizer implements Summarizer {
   /// summarised from its beginning only.
   int get maximumTranscriptChars => (_model.contextTokens * 4 * 2) ~/ 3;
 
+  /// Everywhere the LiteRT-LM runtime is in the build, which is everywhere
+  /// but iOS.
+  ///
+  /// iOS is the one platform where the runtime could neither be fetched
+  /// later — the App Store forbids loading code it did not deliver — nor be
+  /// justified up front: 34 MB on every iPhone for a summariser that needs a
+  /// 2.6 GB download before it does anything, on the phones Apple's own
+  /// summariser does not cover. Those phones summarise in the cloud, as they
+  /// did before this existed. The frameworks are dropped from the iOS build
+  /// by a script phase on the Runner target.
+  static bool get isPossibleHere => !AppPlatform.isIOS;
+
   @override
   Future<SummarizerReadiness> readiness() async {
+    if (!isPossibleHere) return SummarizerReadiness.unsupported;
     if (!await _isInstalled()) return SummarizerReadiness.needsDownload;
     return SummarizerReadiness.ready;
   }

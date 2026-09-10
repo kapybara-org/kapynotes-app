@@ -224,6 +224,7 @@
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				A1B2C0D000000000000000AB /* Embed Foundation Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
+				C1A0B00A0000000000000001 /* Drop on-device summariser runtime */,
 			);
 			buildRules = (
 			);
@@ -361,6 +362,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
+		};
+		C1A0B00A0000000000000001 /* Drop on-device summariser runtime */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Drop on-device summariser runtime";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Kapy Notes: the on-device summariser's runtime is not offered on iOS.\n# flutter_gemma_litertlm bundles LiteRT-LM and its companions through Dart's\n# native assets, which the Thin Binary phase above has just embedded. They are\n# 34 MB of a 51 MB app for a feature that iOS cannot fetch later (the App\n# Store forbids loading code it did not deliver) and that needs a 2.6 GB\n# download before it does anything. GemmaSummarizer.isPossibleHere is false\n# on iOS, so nothing ever asks for them; see docs/voice-notes.md.\nfor FW in LiteRtLm GemmaModelConstraintProvider LiteRtMetalAccelerator LiteRtTopKMetalSampler StreamProxy; do\n  rm -rf \"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/${FW}.framework\"\ndone\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

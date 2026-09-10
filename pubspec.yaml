@@ -122,6 +122,15 @@ dependencies:
   # build machine; that is a change to the release pipeline this does not
   # justify. Covers all five platforms with plain native code.
   pasteboard: ^0.5.0
+# The Apple halves of sherpa_onnx carry a 26 MB (iOS) or 56 MB (macOS) native
+# library the app never uses there: Apple's own on-device recogniser does the
+# job. These stand-ins have no native code. See packages/apple_stubs/README.md.
+dependency_overrides:
+  sherpa_onnx_ios:
+    path: packages/apple_stubs/sherpa_onnx_ios
+  sherpa_onnx_macos:
+    path: packages/apple_stubs/sherpa_onnx_macos
+
 dev_dependencies:
   # Virtual timers, so the thirty-minute recording cap can be tested in a
   # microsecond. Already present transitively through flutter_test; named here

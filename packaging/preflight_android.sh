@@ -83,6 +83,27 @@ if [[ "$MODE" == "--bundle" ]]; then
       pass "bundle is not debug-signed"
     fi
   fi
+  # The speech engines' native code must be in the on-demand module and not
+  # in the base. A base that carries it is a 157 MB install for everyone
+  # again (measured on 1.18.0, arm64), and a bundle without the module is one
+  # where pressing Download on a local model fails at Play.
+  runtime_pattern='lib(onnxruntime|sherpa-onnx-c-api|sherpa-onnx-cxx-api|LiteRt[A-Za-z_]*|StreamProxy|GemmaModelConstraintProvider|Qnn[A-Za-z0-9]*)\.so$'
+  listing="$(unzip -Z1 "$bundle" 2>/dev/null)"
+  base_runtime="$(grep -E "^base/lib/arm64-v8a/" <<<"$listing" | grep -Ec "$runtime_pattern")"
+  module_runtime="$(grep -E "^speech_runtime/lib/arm64-v8a/" <<<"$listing" | grep -Ec "$runtime_pattern")"
+  if (( base_runtime == 0 )); then
+    pass "base carries none of the speech engines' native code"
+  else
+    fail "base still packages $base_runtime speech engine librar(y/ies); check the release packaging excludes in app/build.gradle.kts"
+  fi
+  if (( module_runtime > 0 )); then
+    pass "speech_runtime module carries $module_runtime libraries for arm64"
+  else
+    fail "no speech_runtime module in the bundle, or it is empty"
+  fi
+  base_arm64_kb="$(unzip -l "$bundle" 'base/lib/arm64-v8a/*' 2>/dev/null | tail -1 | awk '{print int($1/1024)}')"
+  [[ -n "$base_arm64_kb" ]] && pass "base arm64 native code is ${base_arm64_kb} KB uncompressed"
+
   echo
   if (( failures )); then
     echo "Bundle preflight failed with $failures failure(s)." >&2

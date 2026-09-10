@@ -63,5 +63,7 @@
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Kapy Notes uses the microphone to record voice notes.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Kapy Notes turns your recordings into text on this device, without sending them anywhere.</string>
 </dict>
 </plist>

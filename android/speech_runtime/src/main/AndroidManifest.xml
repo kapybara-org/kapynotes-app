@@ -1,0 +1,17 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:dist="http://schemas.android.com/apk/distribution">
+    <!-- On demand and not fused: nothing about it goes into a phone's install
+         until somebody asks for a local model, and Play takes it back when
+         the last one is removed. -->
+    <dist:module
+        dist:instant="false"
+        dist:title="@string/speech_runtime_title">
+        <dist:delivery>
+            <dist:on-demand />
+        </dist:delivery>
+        <dist:fusing dist:include="false" />
+    </dist:module>
+    <!-- Native libraries only. Bundletool refuses a module with no dex
+         unless it is told there is no code to look for. -->
+    <application android:hasCode="false" />
+</manifest>

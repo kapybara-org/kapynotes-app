@@ -1,6 +1,8 @@
 package com.kapybara.kapynotes
 
+import android.content.Context
 import android.content.Intent
+import com.google.android.play.core.splitcompat.SplitCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -19,10 +21,21 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private var pendingLaunch: String? = null
 
+    /**
+     * Lets code Play delivered after install — the speech runtime module —
+     * be found by this activity's process without a restart. A no-op when
+     * there is no such module, which is every debug build.
+     */
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        SplitCompat.installActivity(this)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         RichClipboard.register(flutterEngine, this)
         AudioDecode.register(flutterEngine.dartExecutor.binaryMessenger)
+        SpeechRuntime.register(flutterEngine.dartExecutor.binaryMessenger, this) { this }
         pendingLaunch = takeLaunchName(intent)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
