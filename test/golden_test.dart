@@ -225,19 +225,10 @@ Future<void> _warmNoteImage(
 /// settings in the notes drawer so the editor footer can stay focused on input.
 Future<void> tapSettings(WidgetTester tester) async {
   final sidebar = find.byKey(const ValueKey('sidebar-settings'));
-  if (sidebar.evaluate().isNotEmpty) {
-    await tester.tap(sidebar.first);
-    return;
+  if (find.byTooltip('Show notes').evaluate().isNotEmpty) {
+    await tester.tap(find.byTooltip('Show notes'));
+    await tester.pumpAndSettle();
   }
-
-  final footer = find.byKey(const ValueKey('note-settings'));
-  if (footer.evaluate().isNotEmpty) {
-    await tester.tap(footer.first);
-    return;
-  }
-
-  await tester.tap(find.byTooltip('Show notes'));
-  await tester.pumpAndSettle();
   await tester.tap(sidebar.first);
 }
 
@@ -677,7 +668,9 @@ void main() {
     );
   });
 
-  testWidgets('desktop dark settings, numbers', (tester) async {
+  // The bottom of the merged Appearance pane, where number format and the
+  // rate credit ended up when Numbers stopped being a category of its own.
+  testWidgets('desktop dark settings, appearance scrolled', (tester) async {
     await pumpForGolden(
       tester,
       size: const Size(760, 520),
@@ -685,11 +678,13 @@ void main() {
     );
     await tapSettings(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('settings-section-numbers')));
+    await tester.tap(find.byKey(const ValueKey('settings-section-appearance')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('rate-attribution')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/desktop_dark_settings_numbers.png'),
+      matchesGoldenFile('goldens/desktop_dark_settings_appearance_end.png'),
     );
   });
 

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/theme.dart';
+import 'floating_surface.dart';
 
 /// Full-page touch swipes for the two actions beside a compact note.
 ///
@@ -384,44 +385,56 @@ class _PageSwipeCue extends StatelessWidget {
           liveRegion: complete,
           label: label,
           child: ExcludeSemantics(
-            child: Container(
-              key: const ValueKey('mobile-page-swipe-cue-surface'),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(
-                color: palette.surfaceBackground,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: palette.controlBorder, width: 0.5),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox.square(
-                    dimension: 22,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        CircularProgressIndicator(
-                          value: progress,
-                          strokeWidth: 2,
-                          color: accent,
-                          backgroundColor: palette.controlBorder,
-                        ),
-                        Icon(icon, size: 14, color: accent),
-                      ],
+            // The cue rides above the page rather than inside it, so no
+            // Material covers it and there is no text style to inherit —
+            // Flutter fills that in with red type underlined twice in yellow,
+            // and a Text naming only its colour and size merges with the
+            // fallback instead of replacing it. Starting from the same base
+            // the floating panels use is what keeps the stray line off it.
+            child: DefaultTextStyle(
+              style: FloatingSurface.textStyle(context),
+              child: Container(
+                key: const ValueKey('mobile-page-swipe-cue-surface'),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: palette.surfaceBackground,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: palette.controlBorder, width: 0.5),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox.square(
+                      dimension: 22,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            value: progress,
+                            strokeWidth: 2,
+                            color: accent,
+                            backgroundColor: palette.controlBorder,
+                          ),
+                          Icon(icon, size: 14, color: accent),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: complete
-                          ? palette.textPrimary
-                          : palette.textSecondary,
-                      fontSize: AppTypeScale.body,
-                      fontWeight: FontWeight.w400,
+                    const SizedBox(width: 8),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: complete
+                            ? palette.textPrimary
+                            : palette.textSecondary,
+                        fontSize: AppTypeScale.body,
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

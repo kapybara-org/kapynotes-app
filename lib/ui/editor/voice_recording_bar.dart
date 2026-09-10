@@ -100,6 +100,10 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
       context,
       AppControlMetrics.footerHeight,
     );
+    // It takes the footer's place, so it takes the footer's edge with it: the
+    // strip runs to the bottom of the screen and holds its controls above the
+    // home indicator.
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     // Shares the strip with the note footer, and reads as the same bar to the
     // thumb resting on it: a drag along either is aimed at the bar.
@@ -110,8 +114,8 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
         label: '$_status, $elapsed',
         liveRegion: session.interrupted || session.finishing,
         child: Container(
-          height: barHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          height: barHeight + bottomInset,
+          padding: EdgeInsets.fromLTRB(12, 0, 12, bottomInset),
           decoration: BoxDecoration(
             color: palette.surfaceBackground.withMultipliedAlpha(0.98),
             border: Border(

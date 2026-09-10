@@ -150,6 +150,26 @@ void main() {
     expect(find.byTooltip('Discard recording'), findsNothing);
   });
 
+  testWidgets('keeps its controls clear of the home indicator', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(bottom: 34);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(harness(session()));
+    await tester.pumpAndSettle();
+
+    final bar = tester.getRect(find.byType(VoiceRecordingBar));
+    // It stands in for the footer, so it holds the same edge: background to
+    // the bottom of the screen, buttons above the indicator.
+    expect(bar.bottom, closeTo(844, 0.01));
+    expect(bar.height, closeTo(AppControlMetrics.footerHeight + 34, 0.01));
+    expect(
+      tester.getRect(find.byKey(const ValueKey('recording-stop'))).bottom,
+      lessThanOrEqualTo(844 - 34),
+    );
+  });
+
   testWidgets('desktop active recording bar golden', (tester) async {
     tester.view.physicalSize = const Size(600, 100);
     tester.view.devicePixelRatio = 1;

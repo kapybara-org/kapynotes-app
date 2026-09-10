@@ -125,21 +125,26 @@ TextField openNoteField(WidgetTester tester) => tester.widget<TextField>(
 String openNoteBody(WidgetTester tester) =>
     openNoteField(tester).controller!.text.trimRight();
 
-/// Opens settings and selects [section].
+/// The one way into settings on every layout: the notes list's labelled row.
+Finder settingsAffordance() => find.byKey(const ValueKey('sidebar-settings'));
+
+/// Puts the notes list on screen, wherever this layout keeps it.
 ///
-/// Whichever affordance the layout is showing: the sidebar's labelled row when
-/// the notes list is open, the note footer's gear when it is not.
-Finder settingsAffordance() {
-  final sidebar = find.byKey(const ValueKey('sidebar-settings'));
-  return sidebar.evaluate().isEmpty
-      ? find.byKey(const ValueKey('note-settings'))
-      : sidebar;
+/// The toolbar button says which state it is in, and it is the same button on
+/// a window with the list closed and on a phone with the drawer shut.
+Future<void> showNotesList(WidgetTester tester) async {
+  final open = find.byTooltip('Show notes');
+  if (open.evaluate().isEmpty) return;
+  await tester.tap(open.first);
+  await tester.pumpAndSettle();
 }
 
+/// Opens settings and selects [section].
 Future<void> openSettings(
   WidgetTester tester, {
   SettingsSection section = SettingsSection.general,
 }) async {
+  await showNotesList(tester);
   await tester.tap(settingsAffordance().first);
   await tester.pumpAndSettle();
   if (section == SettingsSection.general) return;
@@ -310,7 +315,7 @@ void main() {
     expect(newNoteField.focusNode!.hasFocus, isTrue);
   });
 
-  testWidgets('bringing the desktop window back starts a new append session', (
+  testWidgets('coming back the same day leaves the caret where it was', (
     tester,
   ) async {
     store.data['dailySeparators.v1'] = false;
@@ -336,19 +341,60 @@ void main() {
       'Earlier thought\n\nMore',
     );
     await tester.pumpAndSettle();
+    // Somewhere in the middle, which is the position worth keeping: the end
+    // is where an append session would have put it anyway.
+    field.controller!.selection = const TextSelection.collapsed(offset: 5);
+    await tester.pump();
     field.focusNode!.unfocus();
     await tester.pump();
 
     integration.onOpenRequested!();
     await tester.pump();
 
-    expect(field.controller!.text, 'Earlier thought\n\nMore\n\n');
+    // No blank lines appended, and the caret is still where it was left.
+    expect(field.controller!.text, 'Earlier thought\n\nMore');
+    expect(field.controller!.selection.baseOffset, 5);
+    expect(field.focusNode!.hasFocus, isTrue);
+    expect(notes.notes.single.body, 'Earlier thought\n\nMore');
+  });
+
+  testWidgets('a caret left on another day starts a new append session', (
+    tester,
+  ) async {
+    store.data['dailySeparators.v1'] = false;
+    store.data['notes.v1'] = [
+      {
+        'id': 'desktop-return',
+        'body': 'Earlier thought',
+        'createdAt': 1000,
+        'updatedAt': 2000,
+      },
+    ];
+    // Yesterday's position, which load() throws away rather than offer back:
+    // coming back tomorrow is starting something, not finishing it.
+    store.data['caret.v1'] = {
+      'desktop-return': [
+        5,
+        DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch,
+      ],
+    };
+    final integration = DesktopIntegration(layoutPrefs: prefs);
+
+    await pumpApp(tester, desktopIntegration: integration);
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(TextField),
+      ),
+    );
+
+    expect(field.controller!.text, 'Earlier thought\n\n');
     expect(
       field.controller!.selection.baseOffset,
       field.controller!.text.length,
     );
-    expect(field.focusNode!.hasFocus, isTrue);
-    expect(notes.notes.single.body, 'Earlier thought\n\nMore');
+    // And the blank line is presentation only until something is typed.
+    expect(notes.notes.single.body, 'Earlier thought');
   });
 
   testWidgets('the pin sits beside the lockup, outside its drag region', (
@@ -505,7 +551,6 @@ void main() {
       of: find.byKey(ValueKey(key)),
       matching: find.byType(IconButton),
     );
-    final settings = tester.getRect(footerButton('note-settings'));
     final image = tester.getRect(footerButton('insert-image'));
     final mic = tester.getRect(footerButton('record-voice'));
     final formatting = tester.getRect(footerButton('formatting-toggle'));
@@ -521,11 +566,12 @@ void main() {
     expect(mic.left - image.right, 4);
     expect(formatting.left - mic.right, 12);
     expect(style.left - formatting.right, 4);
+    // The row starts at the bar's own edge inset: nothing precedes the two
+    // insert actions now that settings is only ever in the notes list.
     expect(
-      settings.center.dx,
-      closeTo(tester.getRect(find.byType(NoteFooter)).left + 28, 0.01),
+      image.left - tester.getRect(find.byType(NoteFooter)).left,
+      closeTo(12, 0.01),
     );
-    expect(image.left - settings.right, 16);
 
     final noteRow = find.byType(NoteRow).first;
     expect(tester.getSize(noteRow).height, 54);
@@ -836,7 +882,7 @@ void main() {
     await pumpApp(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
     await tester.pumpAndSettle();
-    await openSettings(tester, section: SettingsSection.numbers);
+    await openSettings(tester, section: SettingsSection.appearance);
 
     final credit = find.byKey(const ValueKey('rate-attribution'));
     expect(find.text('Rates by Frankfurter'), findsOneWidget);
@@ -861,9 +907,14 @@ void main() {
       findsOneWidget,
     );
 
-    await openSettings(tester, section: SettingsSection.numbers);
+    await openSettings(tester, section: SettingsSection.appearance);
     expect(find.text('1,23,45,678'), findsWidgets);
-    await tester.tap(find.byKey(const ValueKey('number-system-indian')));
+    // Number format shares the Appearance pane with the theme, the writing
+    // font and the paper now, so it is below the fold.
+    final indian = find.byKey(const ValueKey('number-system-indian'));
+    await tester.ensureVisible(indian);
+    await tester.pumpAndSettle();
+    await tester.tap(indian);
     await tester.pumpAndSettle();
     expect(prefs.numberSystem, NumberSystem.indian);
 
@@ -951,18 +1002,18 @@ void main() {
       tester.element(find.byType(NoteEditor)),
     ).extension<CalcPalette>()!;
 
-    // The fill GlassSurface actually paints behind the note list, rather than
-    // the palette it was asked to derive it from.
+    // The fill actually painted behind the note list, rather than the palette
+    // it was asked to derive it from.
     double sidebarAlpha() {
-      final fill = tester.widget<Container>(
+      final fill = tester.widget<ColoredBox>(
         find
             .descendant(
               of: find.byType(Sidebar),
-              matching: find.byType(Container),
+              matching: find.byType(ColoredBox),
             )
             .first,
       );
-      return (fill.decoration as BoxDecoration).color!.a;
+      return fill.color.a;
     }
 
     // And the fill the page paints under the writing.
@@ -1003,7 +1054,14 @@ void main() {
       reason: 'the window fades its own material to match the slider',
     );
     expect(palette().isGlass, isTrue);
-    expect(sidebarAlpha(), lessThan(opaqueSidebarAlpha));
+    expect(
+      sidebarAlpha(),
+      opaqueSidebarAlpha,
+      reason:
+          'the notes list is a panel over the glass rather than part of it, '
+          'and thinned with the chrome it came out further through than the '
+          'paper beside it',
+    );
     expect(paperAlpha(), lessThan(1));
     expect(
       paperAlpha(),
@@ -1333,7 +1391,7 @@ void main() {
     );
     expect(
       find.descendant(
-        of: find.byType(NoteFooter),
+        of: find.byType(Sidebar),
         matching: find.byTooltip(
           'Settings · ${shortcuts.bindingFor(ShortcutAction.openSettings)!.displayLabel}',
         ),
@@ -1847,7 +1905,8 @@ void main() {
 
       expect(find.byKey(const ValueKey('insert-image')), findsOneWidget);
       expect(find.byKey(const ValueKey('record-voice')), findsOneWidget);
-      expect(find.byKey(const ValueKey('note-settings')), findsOneWidget);
+      // Settings is in the notes drawer, not under the thumb that is writing.
+      expect(find.byKey(const ValueKey('note-settings')), findsNothing);
       expect(find.byKey(const ValueKey('note-total')), findsNothing);
 
       final scroller = find.descendant(
@@ -1858,6 +1917,42 @@ void main() {
       expect(
         tester.widget<SingleChildScrollView>(scroller).scrollDirection,
         Axis.horizontal,
+      );
+    });
+
+    testWidgets('sits the phone footer on the bottom edge of the screen', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'home-indicator',
+          'body': 'Phone note',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+      // The strip a phone keeps for its home indicator. Set before pumpApp,
+      // which pins the ratio these physical pixels are read at to one and
+      // resets the view afterwards.
+      tester.view.padding = const FakeViewPadding(bottom: 34);
+
+      await pumpApp(tester, size: const Size(390, 844));
+
+      final footer = tester.getRect(find.byType(NoteFooter));
+      expect(
+        footer.bottom,
+        closeTo(844, 0.01),
+        reason: 'the bar belongs on the edge, not floating above it',
+      );
+      // The background grew into the strip. The controls did not follow it in:
+      // a 44pt target under the home indicator is a target the system swipe
+      // takes first.
+      expect(footer.height, closeTo(56 + 34, 0.01));
+      expect(
+        tester.getRect(find.byKey(const ValueKey('insert-image'))).bottom,
+        lessThanOrEqualTo(844 - 34),
       );
     });
 
@@ -2254,6 +2349,10 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('note-total'))).bottom,
         lessThanOrEqualTo(size.height - safeBottom),
       );
+      // The bar it sits in reaches the edge all the same, the way the toolbar
+      // reaches the top one: the strip is background of the footer, not a band
+      // of empty page below it.
+      expect(tester.getRect(find.byType(NoteFooter)).bottom, size.height);
     });
 
     testWidgets('lifts the two-pane layout clear of a software keyboard', (

@@ -43,6 +43,30 @@ Widget _withFooter({
 );
 
 void main() {
+  testWidgets('the cue carries the app\'s own text style, not the fallback', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(420, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_harness(onOpenNotes: () {}, onCreateNote: () {}));
+
+    final swipe = await tester.startGesture(const Offset(330, 400));
+    await swipe.moveBy(const Offset(40, 0));
+    await tester.pump();
+
+    // The cue rides above the page, so no Material sits over it and there is
+    // no text style to inherit. Flutter's fallback fills that in — red type
+    // underlined twice in yellow — and a Text naming only its colour and size
+    // merges with the fallback rather than replacing it, so the underline
+    // arrives with it. It is the same trap [FloatingSurface] exists for.
+    final style = DefaultTextStyle.of(
+      tester.element(find.text('Swipe right for notes')),
+    ).style;
+    expect(style.decoration, TextDecoration.none);
+    await swipe.up();
+  });
+
   testWidgets('a deliberate right swipe opens notes from the right half', (
     tester,
   ) async {

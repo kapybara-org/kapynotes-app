@@ -257,15 +257,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // A new install keeps its notes list closed, so the sidebar's settings
-      // button is mounted behind it as well as the editor's. This is the one
-      // somebody with a note open would reach for.
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NoteEditor),
-          matching: find.byKey(const ValueKey('footer-settings')),
-        ),
-      );
+      // A new install keeps its notes list closed, and settings lives in that
+      // list — so getting there means opening it, which is the same trip
+      // somebody looking for the tour would make.
+      await tester.tap(find.byTooltip('Show notes'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sidebar-settings')).first);
       await tester.pumpAndSettle();
       final row = find.byKey(const ValueKey('open-welcome-note'));
       await tester.ensureVisible(row);

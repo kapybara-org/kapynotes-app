@@ -1,7 +1,9 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -60,10 +62,34 @@ void _seedUpToDate(LocalStore store) => store.put('updates.v1', {
   'checkedAt': DateTime.now().toIso8601String(),
 });
 
+/// Every native call the test cares about, in the order it was made.
+///
+/// The order is the assertion worth making here: the window has to stop
+/// floating before Sparkle is asked for anything, or its panel opens
+/// underneath the window that asked for it.
+class _ChannelLog {
+  final List<String> calls = [];
+  final Map<String, Object?> lastArguments = {};
+
+  void watch(String channel, {Map<String, Object?> answers = const {}}) {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(MethodChannel(channel), (call) async {
+          calls.add('$channel.${call.method}');
+          lastArguments['$channel.${call.method}'] = call.arguments;
+          return answers[call.method];
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(MethodChannel(channel), null),
+    );
+  }
+}
+
 Future<UpdateChecker> _pump(
   WidgetTester tester,
   LocalStore store, {
   UpdateChecker? checker,
+  DesktopIntegration Function(LayoutPrefs prefs)? desktop,
 }) async {
   const size = Size(1100, 760);
   tester.view.physicalSize = size;
@@ -82,6 +108,10 @@ Future<UpdateChecker> _pump(
   // closed. These tests are about the row, not about the default.
   if (!prefs.sidebarVisible) prefs.toggleSidebar();
   shortcuts.load();
+  // Built from the same preferences the app is handed, because the pin lives
+  // in both: the window level on one side, the toolbar button on the other.
+  // Disposed by the app root, so nothing here does it twice.
+  final integration = desktop?.call(prefs);
   await tester.pumpWidget(
     KapyNotesApp(
       store: store,
@@ -90,6 +120,7 @@ Future<UpdateChecker> _pump(
       prefs: prefs,
       shortcuts: shortcuts,
       updates: updates,
+      desktopIntegration: integration,
     ),
   );
   await tester.pumpAndSettle();
@@ -97,14 +128,14 @@ Future<UpdateChecker> _pump(
 }
 
 Future<void> _openSettings(WidgetTester tester) async {
-  // The sidebar's labelled row when the notes list is open, the note footer's
-  // gear when it is not. They stopped sharing a key when the sidebar's became
-  // a row with a word in it.
-  final sidebar = find.byKey(const ValueKey('sidebar-settings'));
-  final target = sidebar.evaluate().isEmpty
-      ? find.byKey(const ValueKey('note-settings'))
-      : sidebar;
-  await tester.tap(target.first);
+  // Settings is a row in the notes list, and nowhere else, so a layout with
+  // the list put away opens it first.
+  final open = find.byTooltip('Show notes');
+  if (open.evaluate().isNotEmpty) {
+    await tester.tap(open.first);
+    await tester.pumpAndSettle();
+  }
+  await tester.tap(find.byKey(const ValueKey('sidebar-settings')).first);
   await tester.pumpAndSettle();
 }
 
@@ -212,6 +243,119 @@ void main() {
     expect(checker.available, isNull);
     expect(find.text('Up to date'), findsOneWidget);
     expect(find.text('Checked today'), findsOneWidget);
+  });
+
+  testWidgets('a window kept on top gets out of the updater\'s way', (
+    tester,
+  ) async {
+    final store = _MemoryStore();
+    _seedPendingUpdate(store);
+
+    final log = _ChannelLog()
+      ..watch(
+        'window_manager',
+        answers: {'isVisible': true, 'isMinimized': false},
+      )
+      ..watch('tray_manager')
+      ..watch(
+        'kapynotes/login_item',
+        answers: {'isSupported': false, 'isEnabled': false},
+      )
+      ..watch('dev.leanflutter.plugins/auto_updater')
+      // The plugin subscribes the moment it is first touched.
+      ..watch('dev.leanflutter.plugins/auto_updater_event');
+
+    late final DesktopIntegration desktop;
+    await _pump(
+      tester,
+      store,
+      desktop: (prefs) {
+        // The configuration this went wrong in: the window floats above every
+        // other app, Sparkle's panel included, so the button reported an
+        // updater that was already on screen and completely hidden.
+        prefs.alwaysOnTop = true;
+        return desktop = DesktopIntegration(layoutPrefs: prefs);
+      },
+    );
+
+    await _openUpdates(tester);
+    await tester.tap(find.byKey(const ValueKey('update-action')));
+    await tester.pumpAndSettle();
+
+    expect(log.calls, contains('window_manager.setAlwaysOnTop'));
+    expect(log.lastArguments['window_manager.setAlwaysOnTop'], {
+      'isAlwaysOnTop': false,
+    });
+    expect(
+      log.calls,
+      contains('dev.leanflutter.plugins/auto_updater.checkForUpdates'),
+    );
+    expect(
+      log.calls.indexOf('window_manager.setAlwaysOnTop'),
+      lessThan(
+        log.calls.indexOf(
+          'dev.leanflutter.plugins/auto_updater.checkForUpdates',
+        ),
+      ),
+    );
+    // Given up rather than borrowed, and said out loud: the toolbar button
+    // that would otherwise show it is behind the settings sheet.
+    expect(desktop.layoutPrefs.alwaysOnTop, isFalse);
+    expect(
+      find.text('Updater opened · window no longer on top'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a check for updates leaves the pin alone', (tester) async {
+    final store = _MemoryStore();
+    // No update to install, so the button only reaches the manifest. Nothing
+    // opens, and a window that gave up its pin for that would be giving it up
+    // once a day for nothing.
+    final log = _ChannelLog()
+      ..watch(
+        'window_manager',
+        answers: {'isVisible': true, 'isMinimized': false},
+      )
+      ..watch('tray_manager')
+      ..watch(
+        'kapynotes/login_item',
+        answers: {'isSupported': false, 'isEnabled': false},
+      );
+
+    final checker = UpdateChecker(
+      store,
+      client: MockClient(
+        (_) async => http.Response(
+          '{"version": "1.0.0", "build": 1, "notesUrl": ""}',
+          200,
+        ),
+      ),
+      packageInfo: PackageInfo(
+        appName: 'Kapy Notes',
+        packageName: 'com.kapybara.kapynotes',
+        version: '1.0.0',
+        buildNumber: '1',
+      ),
+    );
+    late final DesktopIntegration desktop;
+    await _pump(
+      tester,
+      store,
+      checker: checker,
+      desktop: (prefs) {
+        prefs.alwaysOnTop = true;
+        return desktop = DesktopIntegration(layoutPrefs: prefs);
+      },
+    );
+
+    await _openUpdates(tester);
+    log.calls.clear();
+    await tester.tap(find.byKey(const ValueKey('update-action')));
+    await tester.pumpAndSettle();
+
+    expect(log.calls, isNot(contains('window_manager.setAlwaysOnTop')));
+    expect(desktop.layoutPrefs.alwaysOnTop, isTrue);
   });
 
   testWidgets('the sidebar gear announces a pending update', (tester) async {

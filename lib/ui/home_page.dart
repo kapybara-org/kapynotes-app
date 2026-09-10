@@ -274,6 +274,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _openSessionScheduled = false;
       if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
+      // Coming back to the app on the same day is coming back to the middle
+      // of something. Take the focus, and leave the caret where it is.
+      final id = _selectedId;
+      if (id != null && widget.prefs.caretIn(id) != null) {
+        _selectedEditor?.focusHere();
+        return;
+      }
       _selectedEditor?.beginAppendSession();
     });
   }
@@ -904,6 +911,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       widget.prefs.readyToTypeOnOpen &&
       note.id != _untouchedWelcomeId;
 
+  /// Where opening [note] should put the caret, or null to start a fresh
+  /// session at the end of it.
+  ///
+  /// Only when the note would have been focused at all: a caret restored into
+  /// an editor nobody is typing in is a caret nobody can see, and the "Ready
+  /// to type on open" switch is the one that decides that.
+  int? _resumeCaretIn(Note note) =>
+      _readyToTypeIn(note) ? widget.prefs.caretIn(note.id) : null;
+
   bool _canEditNote(Note? note) {
     if (note == null) return false;
     if (!note.isShared) return true;
@@ -1193,14 +1209,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     updates: widget.updates,
                     showHeader: false,
                   ),
-                  body: SafeArea(
-                    top: false,
-                    left: false,
-                    right: false,
-                    child: selected == null
-                        ? EmptyState(onCreate: _createNote)
-                        : _buildEditor(selected),
-                  ),
+                  // No bottom inset here: on a tablet the note's footer runs
+                  // to the bottom edge and holds its own controls above the
+                  // home indicator, and the empty state does the same with its
+                  // paper.
+                  body: selected == null
+                      ? EmptyState(onCreate: _createNote)
+                      : _buildEditor(selected),
                 ),
               ),
             ],
@@ -1329,6 +1344,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             Expanded(
               child: SafeArea(
                 top: false,
+                // The footer belongs on the bottom edge, the way the toolbar
+                // above belongs on the top one. It insets its own controls
+                // past the home indicator; a page inset would only strand the
+                // bar above a strip of background. Left and right stay, for
+                // the display cutout a landscape phone puts beside the text.
+                bottom: false,
                 child: selected == null
                     ? EmptyState(onCreate: _createNote)
                     : _buildCompactEditor(selected),
@@ -1390,11 +1411,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           showDivider: desktopResultsDivider,
           autofocus: _readyToTypeIn(note),
           startAtEnd: _readyToTypeIn(note),
+          initialCaret: _resumeCaretIn(note),
+          onCaretChanged: (offset) =>
+              widget.prefs.rememberCaret(note.id, offset),
           ensureKeyboardVisible:
               _readyToTypeIn(note) &&
               (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,
+          paperStyle: widget.prefs.paperStyle,
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           shortcuts: widget.shortcuts,
@@ -1450,11 +1475,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           resultsVisible: widget.prefs.resultsVisible,
           autofocus: _readyToTypeIn(note),
           startAtEnd: _readyToTypeIn(note),
+          initialCaret: _resumeCaretIn(note),
+          onCaretChanged: (offset) =>
+              widget.prefs.rememberCaret(note.id, offset),
           ensureKeyboardVisible:
               _readyToTypeIn(note) &&
               (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
           dailySeparatorsEnabled: widget.prefs.dailySeparatorsEnabled,
+          paperStyle: widget.prefs.paperStyle,
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           shortcuts: widget.shortcuts,
@@ -1473,10 +1502,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onGutterWidthReset: widget.prefs.resetGutterWidth,
           onSettingsPressed: _showSettings,
           hideEmptyResults: AppPlatform.isMobile,
-          // This belongs with the two attachment actions on every layout.
-          // The sidebar may offer another route, but hiding this one would
-          // make the persistent footer change shape with an unrelated panel.
-          showSettingsButton: true,
         ),
       ),
     );

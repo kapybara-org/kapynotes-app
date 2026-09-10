@@ -13,10 +13,17 @@ class EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
 
+    // The paper runs to the window's edges; the words in it stay clear of the
+    // home indicator, the same bargain the notes list makes.
     return Container(
       color: palette.paperColor,
       alignment: Alignment.center,
-      padding: const EdgeInsets.all(32),
+      padding: EdgeInsets.fromLTRB(
+        32,
+        32,
+        32,
+        32 + MediaQuery.paddingOf(context).bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

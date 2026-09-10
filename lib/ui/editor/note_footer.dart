@@ -44,10 +44,8 @@ class NoteFooter extends StatelessWidget {
     required this.italicShortcut,
     required this.bulletsShortcut,
     required this.checklistShortcut,
-    required this.settingsShortcut,
     required this.imageShortcut,
     required this.voiceShortcut,
-    required this.onSettingsPressed,
     required this.onParagraphStylePressed,
     required this.onBoldPressed,
     required this.onItalicPressed,
@@ -67,7 +65,6 @@ class NoteFooter extends StatelessWidget {
     required this.bulletsActive,
     required this.checklistActive,
     required this.paragraphStyle,
-    this.showSettingsButton = true,
   });
 
   final String? total;
@@ -78,10 +75,8 @@ class NoteFooter extends StatelessWidget {
   final ShortcutBinding? italicShortcut;
   final ShortcutBinding? bulletsShortcut;
   final ShortcutBinding? checklistShortcut;
-  final ShortcutBinding? settingsShortcut;
   final ShortcutBinding? imageShortcut;
   final ShortcutBinding? voiceShortcut;
-  final VoidCallback onSettingsPressed;
   final VoidCallback onParagraphStylePressed;
   final VoidCallback onBoldPressed;
   final VoidCallback onItalicPressed;
@@ -111,7 +106,6 @@ class NoteFooter extends StatelessWidget {
   final bool bulletsActive;
   final bool checklistActive;
   final NoteParagraphStyle? paragraphStyle;
-  final bool showSettingsButton;
 
   static double get height => AppControlMetrics.footerHeight;
 
@@ -124,9 +118,9 @@ class NoteFooter extends StatelessWidget {
   static double get _edgeInset => AppPlatform.hasPointer ? 12 : 8;
   static double get _textEdgeInset => AppPlatform.hasPointer ? 12 : 10;
 
-  /// Between the gear and the formatting cluster. They are different in kind —
-  /// one leaves the note, the rest change the text — and butted together they
-  /// would read as one group of six.
+  /// Between the controls and the readout at the other end. They are
+  /// different in kind — one changes the note, the other only reports on it —
+  /// and butted together they would read as one row of controls.
   static double get _groupGap => AppPlatform.hasPointer ? 16 : 14;
 
   /// Extra distinction between insert actions and text formatting. Proximity
@@ -164,278 +158,275 @@ class NoteFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final typingText = typingStatusText(typingNames);
+    // The bar holds the bottom edge the way the toolbar holds the top one: its
+    // background runs under the home indicator or the navigation bar while the
+    // controls stay above them. Insetting the page instead left the bar
+    // floating over a strip of empty background.
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     // The control strip below scrolls sideways when it does not fit, so a
     // horizontal drag that lands here is aimed at it — not at the page swipes
     // that open the notes list or start a new note.
     return SizedBox(
-      height: AppControlMetrics.scaleBar(context, height),
+      height: AppControlMetrics.scaleBar(context, height) + bottomInset,
       child: PageSwipeExclusion(
         child: GlassSurface(
           color: palette.surfaceBackground.withMultipliedAlpha(0.94),
           border: Border(top: BorderSide(color: palette.separator, width: 0.5)),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              // Wide phones still need the shorter label beside five formatting
-              // controls and a grouped currency value. Desktop keeps its existing
-              // label until the window reaches the genuinely narrow breakpoint.
-              final compactTotal =
-                  constraints.maxWidth < (AppPlatform.isMobile ? 520 : 420);
+          child: Padding(
+            padding: EdgeInsets.only(bottom: bottomInset),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Wide phones still need the shorter label beside five formatting
+                // controls and a grouped currency value. Desktop keeps its existing
+                // label until the window reaches the genuinely narrow breakpoint.
+                final compactTotal =
+                    constraints.maxWidth < (AppPlatform.isMobile ? 520 : 420);
 
-              // The controls start at the left edge and grow rightward, which is
-              // the whole point of not centring them: the nesting buttons appear
-              // the moment the caret lands on a list line, and a centred row that
-              // grows from five squares to seven slides everything already in it
-              // sideways by a full button — 44pt under a thumb. Tap Bullets and
-              // Bold would leave from under the finger that just pressed it.
-              final gearSlot = showSettingsButton
-                  ? AppControlMetrics.footerButtonExtent + _groupGap
-                  : 0.0;
-              // The formatting revealer plus its five tools, and the insert
-              // buttons when there is somewhere to put their attachments.
-              final insertButtonCount = readOnly
-                  ? 0
-                  : (onInsertImagePressed == null ? 0 : 1) +
-                        (onRecordVoicePressed == null ? 0 : 1);
-              final buttonCount = readOnly
-                  ? 0
-                  : 6 + insertButtonCount + (showIndentControls ? 2 : 0);
-              final insertFormatGap = insertButtonCount == 0
-                  ? 0.0
-                  : _formatGroupGap;
-              final rowWidth =
-                  buttonCount * AppControlMetrics.footerButtonSlotExtent +
-                  insertFormatGap;
-              final fixed =
-                  _edgeInset + gearSlot + rowWidth + _groupGap + _textEdgeInset;
-              // Whatever is genuinely left over, up to a readable maximum. The
-              // floor is what makes the controls scroll instead of the readout
-              // shrinking to nothing on a narrow phone with nesting showing.
-              final readoutSlot =
-                  typingText == null && !readOnly && total == null
-                  ? 0.0
-                  : typingText != null || readOnly
-                  ? (constraints.maxWidth - fixed).clamp(112.0, 220.0)
-                  : (constraints.maxWidth - fixed).clamp(40.0, 180.0);
+                // The controls start at the left edge and grow rightward, which is
+                // the whole point of not centring them: the nesting buttons appear
+                // the moment the caret lands on a list line, and a centred row that
+                // grows from five squares to seven slides everything already in it
+                // sideways by a full button — 44pt under a thumb. Tap Bullets and
+                // Bold would leave from under the finger that just pressed it.
+                // The formatting revealer plus its five tools, and the insert
+                // buttons when there is somewhere to put their attachments.
+                final insertButtonCount = readOnly
+                    ? 0
+                    : (onInsertImagePressed == null ? 0 : 1) +
+                          (onRecordVoicePressed == null ? 0 : 1);
+                final buttonCount = readOnly
+                    ? 0
+                    : 6 + insertButtonCount + (showIndentControls ? 2 : 0);
+                final insertFormatGap = insertButtonCount == 0
+                    ? 0.0
+                    : _formatGroupGap;
+                final rowWidth =
+                    buttonCount * AppControlMetrics.footerButtonSlotExtent +
+                    insertFormatGap;
+                final fixed =
+                    _edgeInset + rowWidth + _groupGap + _textEdgeInset;
+                // Whatever is genuinely left over, up to a readable maximum. The
+                // floor is what makes the controls scroll instead of the readout
+                // shrinking to nothing on a narrow phone with nesting showing.
+                final readoutSlot =
+                    typingText == null && !readOnly && total == null
+                    ? 0.0
+                    : typingText != null || readOnly
+                    ? (constraints.maxWidth - fixed).clamp(112.0, 220.0)
+                    : (constraints.maxWidth - fixed).clamp(40.0, 180.0);
 
-              return Row(
-                children: [
-                  SizedBox(width: _edgeInset),
-                  if (showSettingsButton) ...[
-                    FooterSettingsButton(
-                      key: const ValueKey('footer-settings'),
-                      onPressed: onSettingsPressed,
-                      tooltip: _withShortcut('Settings', settingsShortcut),
-                    ),
-                    SizedBox(width: _groupGap),
-                  ],
-                  if (!readOnly)
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: _snapToWholeButtons(
-                          math.max(
-                            0,
-                            constraints.maxWidth -
-                                _edgeInset -
-                                gearSlot -
-                                readoutSlot -
-                                _groupGap -
-                                _textEdgeInset,
+                return Row(
+                  children: [
+                    SizedBox(width: _edgeInset),
+                    if (!readOnly)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: _snapToWholeButtons(
+                            math.max(
+                              0,
+                              constraints.maxWidth -
+                                  _edgeInset -
+                                  readoutSlot -
+                                  _groupGap -
+                                  _textEdgeInset,
+                            ),
+                            rowWidth,
+                            leadingButtonCount: insertButtonCount,
+                            internalGap: insertFormatGap,
                           ),
-                          rowWidth,
-                          leadingButtonCount: insertButtonCount,
-                          internalGap: insertFormatGap,
                         ),
-                      ),
-                      // Scrolls only when it cannot fit, which a narrow phone with
-                      // the nesting controls showing still cannot. Left-anchored,
-                      // so what is on screen stays where it was.
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        physics: const ClampingScrollPhysics(),
-                        child: ExcludeFocus(
-                          child: Row(
-                            key: const ValueKey('note-formatting-controls'),
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Adding a picture is not a style, and it leads the
-                              // row rather than trailing it: on a narrow phone the
-                              // row scrolls, and the first slot is the only one
-                              // guaranteed to be on screen.
-                              if (onInsertImagePressed != null) ...[
-                                _FormatButton(
-                                  key: const ValueKey('insert-image'),
-                                  icon: AppPlatform.isMobile
-                                      ? Icons.camera_alt_outlined
-                                      : Icons.image_outlined,
-                                  tooltip: imageBusy
-                                      ? 'Adding photo…'
-                                      : _withShortcut(
-                                          AppPlatform.isMobile
-                                              ? 'Take or choose a photo'
-                                              : 'Add an image',
-                                          imageShortcut,
-                                        ),
-                                  active: false,
-                                  busy: imageBusy,
-                                  progressKey: const ValueKey(
-                                    'insert-image-progress',
+                        // Scrolls only when it cannot fit, which a narrow phone with
+                        // the nesting controls showing still cannot. Left-anchored,
+                        // so what is on screen stays where it was.
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          physics: const ClampingScrollPhysics(),
+                          child: ExcludeFocus(
+                            child: Row(
+                              key: const ValueKey('note-formatting-controls'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Adding a picture is not a style, and it leads the
+                                // row rather than trailing it: on a narrow phone the
+                                // row scrolls, and the first slot is the only one
+                                // guaranteed to be on screen.
+                                if (onInsertImagePressed != null) ...[
+                                  _FormatButton(
+                                    key: const ValueKey('insert-image'),
+                                    icon: AppPlatform.isMobile
+                                        ? Icons.camera_alt_outlined
+                                        : Icons.image_outlined,
+                                    tooltip: imageBusy
+                                        ? 'Adding photo…'
+                                        : _withShortcut(
+                                            AppPlatform.isMobile
+                                                ? 'Take or choose a photo'
+                                                : 'Add an image',
+                                            imageShortcut,
+                                          ),
+                                    active: false,
+                                    busy: imageBusy,
+                                    progressKey: const ValueKey(
+                                      'insert-image-progress',
+                                    ),
+                                    onPressed: imageBusy
+                                        ? null
+                                        : onInsertImagePressed,
                                   ),
-                                  onPressed: imageBusy
-                                      ? null
-                                      : onInsertImagePressed,
+                                ],
+                                if (onRecordVoicePressed != null)
+                                  _FormatButton(
+                                    key: const ValueKey('record-voice'),
+                                    icon: Icons.mic_none_rounded,
+                                    tooltip: voiceBusy
+                                        ? 'Starting recording…'
+                                        : _withShortcut(
+                                            'Record a voice note',
+                                            voiceShortcut,
+                                          ),
+                                    active: false,
+                                    busy: voiceBusy,
+                                    progressKey: const ValueKey(
+                                      'record-voice-progress',
+                                    ),
+                                    onPressed: voiceBusy
+                                        ? null
+                                        : onRecordVoicePressed,
+                                  ),
+                                if (onInsertImagePressed != null ||
+                                    onRecordVoicePressed != null)
+                                  SizedBox(width: _formatGroupGap),
+                                _ExpandableFormattingControls(
+                                  paragraphStyle: paragraphStyle,
+                                  paragraphStyleShortcut:
+                                      paragraphStyleShortcut,
+                                  boldShortcut: boldShortcut,
+                                  italicShortcut: italicShortcut,
+                                  bulletsShortcut: bulletsShortcut,
+                                  checklistShortcut: checklistShortcut,
+                                  onParagraphStylePressed:
+                                      onParagraphStylePressed,
+                                  onBoldPressed: onBoldPressed,
+                                  onItalicPressed: onItalicPressed,
+                                  onBulletsPressed: onBulletsPressed,
+                                  onChecklistPressed: onChecklistPressed,
+                                  onIndentPressed: onIndentPressed,
+                                  onOutdentPressed: onOutdentPressed,
+                                  showIndentControls: showIndentControls,
+                                  canIndent: canIndent,
+                                  canOutdent: canOutdent,
+                                  boldActive: boldActive,
+                                  italicActive: italicActive,
+                                  bulletsActive: bulletsActive,
+                                  checklistActive: checklistActive,
                                 ),
                               ],
-                              if (onRecordVoicePressed != null)
-                                _FormatButton(
-                                  key: const ValueKey('record-voice'),
-                                  icon: Icons.mic_none_rounded,
-                                  tooltip: voiceBusy
-                                      ? 'Starting recording…'
-                                      : _withShortcut(
-                                          'Record a voice note',
-                                          voiceShortcut,
-                                        ),
-                                  active: false,
-                                  busy: voiceBusy,
-                                  progressKey: const ValueKey(
-                                    'record-voice-progress',
-                                  ),
-                                  onPressed: voiceBusy
-                                      ? null
-                                      : onRecordVoicePressed,
+                            ),
+                          ),
+                        ),
+                      ),
+                    // Everything between the controls and the readout. The only
+                    // flexible thing in the row, so the total is pinned right
+                    // however wide the window is.
+                    const Spacer(),
+                    // Collaboration temporarily takes this quiet status slot;
+                    // the calculation total returns as soon as typing stops.
+                    if (typingText != null) ...[
+                      SizedBox(
+                        width: readoutSlot,
+                        child: Semantics(
+                          liveRegion: true,
+                          label: typingText,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: palette.function,
                                 ),
-                              if (onInsertImagePressed != null ||
-                                  onRecordVoicePressed != null)
-                                SizedBox(width: _formatGroupGap),
-                              _ExpandableFormattingControls(
-                                paragraphStyle: paragraphStyle,
-                                paragraphStyleShortcut: paragraphStyleShortcut,
-                                boldShortcut: boldShortcut,
-                                italicShortcut: italicShortcut,
-                                bulletsShortcut: bulletsShortcut,
-                                checklistShortcut: checklistShortcut,
-                                onParagraphStylePressed:
-                                    onParagraphStylePressed,
-                                onBoldPressed: onBoldPressed,
-                                onItalicPressed: onItalicPressed,
-                                onBulletsPressed: onBulletsPressed,
-                                onChecklistPressed: onChecklistPressed,
-                                onIndentPressed: onIndentPressed,
-                                onOutdentPressed: onOutdentPressed,
-                                showIndentControls: showIndentControls,
-                                canIndent: canIndent,
-                                canOutdent: canOutdent,
-                                boldActive: boldActive,
-                                italicActive: italicActive,
-                                bulletsActive: bulletsActive,
-                                checklistActive: checklistActive,
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  typingText,
+                                  key: const ValueKey('typing-presence'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(
+                                    fontSize: AppTypeScale.caption,
+                                    fontWeight: FontWeight.w500,
+                                    color: palette.textSecondary,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
                         ),
                       ),
-                    ),
-                  // Everything between the controls and the readout. The only
-                  // flexible thing in the row, so the total is pinned right
-                  // however wide the window is.
-                  const Spacer(),
-                  // Collaboration temporarily takes this quiet status slot;
-                  // the calculation total returns as soon as typing stops.
-                  if (typingText != null) ...[
-                    SizedBox(
-                      width: readoutSlot,
-                      child: Semantics(
-                        liveRegion: true,
-                        label: typingText,
+                      SizedBox(width: _textEdgeInset),
+                    ] else if (readOnly) ...[
+                      SizedBox(
+                        width: readoutSlot,
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: palette.function,
-                              ),
+                            Icon(
+                              Icons.visibility_outlined,
+                              size: AppControlMetrics.iconAction,
+                              color: palette.textTertiary,
                             ),
                             const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                typingText,
-                                key: const ValueKey('typing-presence'),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.right,
-                                style: TextStyle(
-                                  fontSize: AppTypeScale.caption,
-                                  fontWeight: FontWeight.w500,
-                                  color: palette.textSecondary,
-                                ),
+                            Text(
+                              'View only',
+                              key: const ValueKey('view-only-status'),
+                              style: TextStyle(
+                                fontSize: AppTypeScale.caption,
+                                fontWeight: FontWeight.w500,
+                                color: palette.textSecondary,
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    SizedBox(width: _textEdgeInset),
-                  ] else if (readOnly) ...[
-                    SizedBox(
-                      width: readoutSlot,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Icon(
-                            Icons.visibility_outlined,
-                            size: AppControlMetrics.iconAction,
-                            color: palette.textTertiary,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'View only',
-                            key: const ValueKey('view-only-status'),
+                      SizedBox(width: _textEdgeInset),
+                    ] else if (total case final total?) ...[
+                      SizedBox(
+                        width: readoutSlot,
+                        child: Text.rich(
+                          key: const ValueKey('note-total'),
+                          TextSpan(
+                            text: compactTotal ? '\u03a3 ' : 'Total: ',
                             style: TextStyle(
                               fontSize: AppTypeScale.caption,
                               fontWeight: FontWeight.w500,
-                              color: palette.textSecondary,
+                              color: palette.textTertiary,
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    SizedBox(width: _textEdgeInset),
-                  ] else if (total case final total?) ...[
-                    SizedBox(
-                      width: readoutSlot,
-                      child: Text.rich(
-                        key: const ValueKey('note-total'),
-                        TextSpan(
-                          text: compactTotal ? '\u03a3 ' : 'Total: ',
-                          style: TextStyle(
-                            fontSize: AppTypeScale.caption,
-                            fontWeight: FontWeight.w500,
-                            color: palette.textTertiary,
-                          ),
-                          children: [
-                            TextSpan(
-                              text: total,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w500,
-                                color: palette.textPrimary,
+                            children: [
+                              TextSpan(
+                                text: total,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  color: palette.textPrimary,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
                       ),
-                    ),
-                    SizedBox(width: _textEdgeInset),
+                      SizedBox(width: _textEdgeInset),
+                    ],
                   ],
-                ],
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -547,11 +538,35 @@ class _ExpandableFormattingControlsState
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Everything that changes a whole line comes first — the
+                    // style, then the two kinds of list — and the marks that
+                    // change a word follow. Nesting stays at the end, beside
+                    // the lists it belongs to.
                     _StyleCycleButton(
                       key: const ValueKey('format-style'),
                       style: widget.paragraphStyle,
                       shortcut: widget.paragraphStyleShortcut,
                       onPressed: widget.onParagraphStylePressed,
+                    ),
+                    _FormatButton(
+                      key: const ValueKey('format-checklist'),
+                      icon: Icons.checklist_rounded,
+                      tooltip: _withShortcut(
+                        'Checklist',
+                        widget.checklistShortcut,
+                      ),
+                      active: widget.checklistActive,
+                      onPressed: widget.onChecklistPressed,
+                    ),
+                    _FormatButton(
+                      key: const ValueKey('format-bullets'),
+                      icon: Icons.format_list_bulleted_rounded,
+                      tooltip: _withShortcut(
+                        'Bulleted list',
+                        widget.bulletsShortcut,
+                      ),
+                      active: widget.bulletsActive,
+                      onPressed: widget.onBulletsPressed,
                     ),
                     _FormatButton(
                       key: const ValueKey('format-bold'),
@@ -566,26 +581,6 @@ class _ExpandableFormattingControlsState
                       tooltip: _withShortcut('Italic', widget.italicShortcut),
                       active: widget.italicActive,
                       onPressed: widget.onItalicPressed,
-                    ),
-                    _FormatButton(
-                      key: const ValueKey('format-bullets'),
-                      icon: Icons.format_list_bulleted_rounded,
-                      tooltip: _withShortcut(
-                        'Bulleted list',
-                        widget.bulletsShortcut,
-                      ),
-                      active: widget.bulletsActive,
-                      onPressed: widget.onBulletsPressed,
-                    ),
-                    _FormatButton(
-                      key: const ValueKey('format-checklist'),
-                      icon: Icons.checklist_rounded,
-                      tooltip: _withShortcut(
-                        'Checklist',
-                        widget.checklistShortcut,
-                      ),
-                      active: widget.checklistActive,
-                      onPressed: widget.onChecklistPressed,
                     ),
                     if (widget.showIndentControls) ...[
                       _FormatButton(
@@ -728,33 +723,5 @@ class _FooterButtonSlot extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: EdgeInsets.only(right: AppControlMetrics.footerButtonGap),
     child: child,
-  );
-}
-
-/// The shared settings affordance used by the note and sidebar footers.
-class FooterSettingsButton extends StatelessWidget {
-  const FooterSettingsButton({
-    super.key,
-    required this.onPressed,
-    this.tooltip = 'Settings',
-  });
-
-  final VoidCallback onPressed;
-
-  /// Overridden to carry the update notice, since the dot beside the gear is
-  /// the one part of it a screen reader cannot see.
-  final String tooltip;
-
-  @override
-  Widget build(BuildContext context) => CompactIconButton(
-    key: const ValueKey('note-settings'),
-    extent: AppControlMetrics.footerButtonExtent,
-    onPressed: onPressed,
-    icon: Icon(
-      Icons.settings_outlined,
-      size: AppControlMetrics.footerIconControl,
-    ),
-    tooltip: tooltip,
-    foregroundColor: context.palette.textTertiary,
   );
 }

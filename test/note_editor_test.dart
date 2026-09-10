@@ -794,17 +794,13 @@ void main() {
     await tester.pumpAndSettle();
 
     final footer = tester.getRect(find.byType(NoteFooter));
-    final settings = tester.getRect(
-      find.byKey(const ValueKey('note-settings')),
-    );
     final formatting = tester.getRect(
       find.byKey(const ValueKey('note-formatting-controls')),
     );
     final total = tester.getRect(find.byKey(const ValueKey('note-total')));
 
     // Left-anchored, in reading order, rather than floating in the middle.
-    expect(settings.left, closeTo(footer.left + 12, 1));
-    expect(formatting.left, closeTo(settings.right + 16, 1));
+    expect(formatting.left, closeTo(footer.left + 12, 1));
     expect(
       formatting.center.dx,
       lessThan(footer.center.dx),
@@ -850,12 +846,11 @@ void main() {
 
     final controls = <Finder>[
       for (final key in const [
-        ValueKey('note-settings'),
         ValueKey('format-style'),
+        ValueKey('format-checklist'),
+        ValueKey('format-bullets'),
         ValueKey('format-bold'),
         ValueKey('format-italic'),
-        ValueKey('format-bullets'),
-        ValueKey('format-checklist'),
       ])
         find.descendant(of: find.byKey(key), matching: find.byType(IconButton)),
     ];
@@ -864,12 +859,40 @@ void main() {
       everyElement(const Size.square(32)),
       reason: 'Every footer action should have the same readable hover target',
     );
-    for (var index = 2; index < controls.length; index++) {
+    for (var index = 1; index < controls.length; index++) {
       final previous = tester.getRect(controls[index - 1]);
       final current = tester.getRect(controls[index]);
       expect(current.left - previous.right, closeTo(4, 0.01));
     }
     expect(tester.getSize(find.byType(NoteFooter)).height, 48);
+  });
+
+  testWidgets('puts the line tools before the ones that mark a word', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('2 + 2'));
+    await tester.pumpAndSettle();
+    await revealFormatting(tester);
+
+    double leftOf(String key) => tester.getRect(find.byKey(ValueKey(key))).left;
+
+    // Style, checklist, bulleted list, bold, italic: what changes the whole
+    // line first, what changes a word after it.
+    expect(leftOf('format-checklist'), greaterThan(leftOf('format-style')));
+    expect(leftOf('format-bullets'), greaterThan(leftOf('format-checklist')));
+    expect(leftOf('format-bold'), greaterThan(leftOf('format-bullets')));
+    expect(leftOf('format-italic'), greaterThan(leftOf('format-bold')));
+  });
+
+  testWidgets('leaves settings to the notes list', (tester) async {
+    await tester.pumpWidget(harness('2 + 2'));
+    await tester.pumpAndSettle();
+    await revealFormatting(tester);
+
+    // The bar belongs to the note: what it holds either writes in it or
+    // reports on it. Settings is a row in the notes list on every layout.
+    expect(find.byKey(const ValueKey('note-settings')), findsNothing);
+    expect(find.byTooltip('Settings'), findsNothing);
   });
 
   testWidgets('keeps the footer controls separated on a narrow phone', (
@@ -881,14 +904,12 @@ void main() {
     await tester.pumpWidget(harness('2 + 2'));
     await tester.pumpAndSettle();
 
-    final settings = tester.getRect(
-      find.byKey(const ValueKey('note-settings')),
-    );
+    final footer = tester.getRect(find.byType(NoteFooter));
     final formatting = tester.getRect(
       find.byKey(const ValueKey('note-formatting-controls')),
     );
     final total = tester.getRect(find.byKey(const ValueKey('note-total')));
-    expect(settings.right, lessThanOrEqualTo(formatting.left));
+    expect(footer.left, lessThanOrEqualTo(formatting.left));
     expect(formatting.right, lessThanOrEqualTo(total.left));
     expect(
       tester
@@ -1226,6 +1247,102 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   });
 
+  group('scrolling from the results gutter', () {
+    /// A note long enough that the field has somewhere to scroll to.
+    String longBody() =>
+        [for (var i = 1; i <= 80; i++) 'line $i = $i * 2'].join('\n');
+
+    ScrollController fieldScroll(WidgetTester tester) =>
+        tester.widget<TextField>(find.byType(TextField)).scrollController!;
+
+    testWidgets('a drag over the gutter scrolls the note', (tester) async {
+      // The gutter is a sibling of the field, not part of it, so a drag here
+      // used to land on nothing at all — a third of a phone's width where
+      // scrolling silently did nothing.
+      tester.view.physicalSize = const Size(390, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(harness(longBody(), gutterWidth: 140));
+      await tester.pumpAndSettle();
+
+      final scroll = fieldScroll(tester);
+      expect(scroll.offset, 0);
+
+      final gutter = tester.getCenter(find.byType(ResultsGutter));
+      await tester.dragFrom(gutter, const Offset(0, -160));
+      await tester.pumpAndSettle();
+
+      expect(
+        scroll.offset,
+        greaterThan(0),
+        reason: 'dragging up on the right moves the note up, as on the left',
+      );
+
+      // And back down again, to the top rather than past it.
+      await tester.dragFrom(gutter, const Offset(0, 400));
+      await tester.pumpAndSettle();
+      expect(scroll.offset, 0);
+    });
+
+    testWidgets('a fling keeps going after the finger leaves', (tester) async {
+      // Handing the drag to the scroll position rather than nudging offset is
+      // what buys this; it is also what makes overscroll behave.
+      tester.view.physicalSize = const Size(390, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(harness(longBody(), gutterWidth: 140));
+      await tester.pumpAndSettle();
+
+      final scroll = fieldScroll(tester);
+      await tester.fling(
+        find.byType(ResultsGutter),
+        const Offset(0, -200),
+        800,
+      );
+      await tester.pump();
+      final duringFling = scroll.offset;
+      await tester.pumpAndSettle();
+
+      expect(
+        scroll.offset,
+        greaterThan(duringFling),
+        reason: 'momentum carries it past where the finger let go',
+      );
+    });
+
+    testWidgets('tapping a chip still copies rather than scrolling', (
+      tester,
+    ) async {
+      // The passthrough claims vertical drags, not taps: children hit-test
+      // first, so a chip is still a chip.
+      await tester.pumpWidget(harness('rev = 4 * 3'));
+      await tester.pumpAndSettle();
+
+      final copied = <String>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      await tester.tap(find.byType(ResultChip).first);
+      await tester.pumpAndSettle();
+
+      expect(copied, ['12']);
+
+      // The chip shows a tick for 900ms and the toast has a life of its own;
+      // both are timers the test has to outlive.
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+    });
+  });
+
   testWidgets('a tapped link offers to open rather than opening itself', (
     tester,
   ) async {
@@ -1273,12 +1390,28 @@ void main() {
     expect(find.byKey(const ValueKey('link-popover')), findsOneWidget);
     expect(find.text(linkText), findsOneWidget);
     expect(launched, isEmpty);
+    // Flat, like every panel that floats here: the shared FloatingSurface
+    // separates with a hairline rather than a shadow.
     final panel = tester.widget<Container>(
-      find.byKey(const ValueKey('link-popover')),
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('link-popover')),
+            matching: find.byType(Container),
+          )
+          .first,
     );
     expect(
       (panel.decoration! as BoxDecoration).boxShadow,
       anyOf(isNull, isEmpty),
+    );
+    // And its text starts from a complete style rather than merging with the
+    // fallback an overlay entry would otherwise inherit — red, and underlined
+    // twice in yellow.
+    expect(
+      DefaultTextStyle.of(
+        tester.element(find.text('Open link')),
+      ).style.decoration,
+      TextDecoration.none,
     );
     expect(
       tester.widget<Text>(find.text('Open link')).style!.fontWeight,
@@ -2548,7 +2681,6 @@ void main() {
           .toPlainText(),
       'Total: 46',
     );
-    expect(find.byKey(const ValueKey('note-settings')), findsOneWidget);
   });
 
   testWidgets('hides the running total until the note has a calculation', (
