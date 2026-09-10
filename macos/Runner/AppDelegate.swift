@@ -24,4 +24,20 @@ class AppDelegate: FlutterAppDelegate {
   override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
     return true
   }
+
+  /// The App menu's About item, which the nib now points here rather than
+  /// straight at `NSApplication.orderFrontStandardAboutPanel(_:)`.
+  ///
+  /// The standard panel opens at the ordinary window level, so with "Keep on
+  /// top" switched on it would open behind the window it was asked for from,
+  /// and choosing About would look like it did nothing. The pin goes first,
+  /// and the panel follows once it has: see WindowPin.
+  ///
+  /// It lands here because the responder chain hands menu actions to
+  /// `NSApplication` before the delegate, and `NSApplication` implements
+  /// `orderFrontStandardAboutPanel:` itself — an override of that would never
+  /// be reached. A selector only this object answers to is.
+  @objc func showAboutPanel(_ sender: Any?) {
+    WindowPin.release { NSApp.orderFrontStandardAboutPanel(sender) }
+  }
 }

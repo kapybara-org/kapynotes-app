@@ -31,6 +31,7 @@
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		A11C10F12044A3C60003C045 /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11C10F02044A3C60003C045 /* LoginItem.swift */; };
 		A11C10F12044A3C60003C046 /* WindowMaterial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11C10F02044A3C60003C046 /* WindowMaterial.swift */; };
+		C1A0B0090000000000000002 /* WindowPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0090000000000000001 /* WindowPin.swift */; };
 		AF27F60885C626B56BB7826B /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 95D26CE3424D889EB606C16A /* Pods_RunnerTests.framework */; };
 		C1A0B0020000000000000002 /* RichClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0020000000000000001 /* RichClipboard.swift */; };
 		C1A0B0030000000000000002 /* SpellCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0030000000000000001 /* SpellCheck.swift */; };
@@ -38,6 +39,7 @@
 		C1A0B0060000000000000002 /* Transcription.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0060000000000000001 /* Transcription.swift */; };
 		C1A0B0080000000000000002 /* AudioDecode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0080000000000000001 /* AudioDecode.swift */; };
 		C1A0B0050000000000000002 /* AccessibilityTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0050000000000000001 /* AccessibilityTree.swift */; };
+		C1A0B00B0000000000000002 /* AccessibilityText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00B0000000000000001 /* AccessibilityText.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -99,6 +101,7 @@
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		A11C10F02044A3C60003C045 /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
 		A11C10F02044A3C60003C046 /* WindowMaterial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMaterial.swift; sourceTree = "<group>"; };
+		C1A0B0090000000000000001 /* WindowPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPin.swift; sourceTree = "<group>"; };
 		B5117A83E87A522312E4D0DB /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		C1A0B0020000000000000001 /* RichClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboard.swift; sourceTree = "<group>"; };
 		C1A0B0030000000000000001 /* SpellCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpellCheck.swift; sourceTree = "<group>"; };
@@ -106,6 +109,7 @@
 		C1A0B0060000000000000001 /* Transcription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcription.swift; sourceTree = "<group>"; };
 		C1A0B0080000000000000001 /* AudioDecode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDecode.swift; sourceTree = "<group>"; };
 		C1A0B0050000000000000001 /* AccessibilityTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTree.swift; sourceTree = "<group>"; };
+		C1A0B00B0000000000000001 /* AccessibilityText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityText.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -198,12 +202,14 @@
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				A11C10F02044A3C60003C045 /* LoginItem.swift */,
 				A11C10F02044A3C60003C046 /* WindowMaterial.swift */,
+				C1A0B0090000000000000001 /* WindowPin.swift */,
 				C1A0B0020000000000000001 /* RichClipboard.swift */,
 				C1A0B0030000000000000001 /* SpellCheck.swift */,
 				C1A0B0040000000000000001 /* Summaries.swift */,
 				C1A0B0060000000000000001 /* Transcription.swift */,
 				C1A0B0080000000000000001 /* AudioDecode.swift */,
 				C1A0B0050000000000000001 /* AccessibilityTree.swift */,
+				C1A0B00B0000000000000001 /* AccessibilityText.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
@@ -496,12 +502,14 @@
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				A11C10F12044A3C60003C045 /* LoginItem.swift in Sources */,
 				A11C10F12044A3C60003C046 /* WindowMaterial.swift in Sources */,
+				C1A0B0090000000000000002 /* WindowPin.swift in Sources */,
 				C1A0B0020000000000000002 /* RichClipboard.swift in Sources */,
 				C1A0B0030000000000000002 /* SpellCheck.swift in Sources */,
 				C1A0B0040000000000000002 /* Summaries.swift in Sources */,
 				C1A0B0060000000000000002 /* Transcription.swift in Sources */,
 				C1A0B0080000000000000002 /* AudioDecode.swift in Sources */,
 				C1A0B0050000000000000002 /* AccessibilityTree.swift in Sources */,
+				C1A0B00B0000000000000002 /* AccessibilityText.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -9,6 +9,7 @@ import '../data/shortcut_prefs.dart';
 import 'app_tray.dart';
 import 'login_item.dart';
 import 'system_shutdown.dart';
+import 'window_pin.dart';
 
 /// Native desktop behavior that has no useful mobile equivalent: remembering
 /// the window size, summoning an already-running app from anywhere — either
@@ -79,6 +80,10 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     // message rather than as a close because the two want opposite things:
     // this one is not allowed to become a hide.
     SystemShutdown.listen(quit);
+    // The runner's own windows — the About panel today — open at the ordinary
+    // level, so it asks for the pin before it puts one up rather than let it
+    // arrive underneath this one. See [releaseAlwaysOnTop].
+    WindowPin.listen(releaseAlwaysOnTop);
     for (final action in _globalActions) {
       // The first refusal is the one worth reporting: it names a shortcut the
       // user can go and change, and the later ones may well be fine.
@@ -160,6 +165,36 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     if (onTop == _appliedAlwaysOnTop) return;
     _appliedAlwaysOnTop = onTop;
     await windowManager.setAlwaysOnTop(onTop);
+  }
+
+  /// Stops the window floating, and turns the preference off with it.
+  ///
+  /// For the moments the app puts something on screen that it does not draw:
+  /// Sparkle's update panel, WinSparkle's, the standard About panel. Every
+  /// one of them opens at the ordinary window level, so a floating window
+  /// sits over the top and the click that asked for it looks like it did
+  /// nothing — the app says the updater is open, and the user never sees it.
+  ///
+  /// The pin is given up rather than borrowed, because nothing says when to
+  /// give it back. Sparkle emits no event when its panel is closed, so a
+  /// restore could only be guessed at: on a timer, or the next time this
+  /// window is focused. Both put the window back over a panel that is still
+  /// open, which is the same bug with more moving parts. Given up, it is
+  /// visibly given up — the toolbar's pin button goes out — and one press
+  /// puts it back.
+  ///
+  /// Returns whether there was anything to give up, so the caller can say so.
+  Future<bool> releaseAlwaysOnTop() async {
+    if (!layoutPrefs.alwaysOnTop) return false;
+    // Straight at the window, and awaited, before the preference is touched.
+    // The caller is about to put the other window on screen and cannot wait
+    // for a change to find its way back through [_onPrefsChanged], which is
+    // unawaited by design. Recording it as applied first keeps that listener
+    // from crossing the channel a second time when it does arrive.
+    _appliedAlwaysOnTop = false;
+    await windowManager.setAlwaysOnTop(false);
+    layoutPrefs.alwaysOnTop = false;
+    return true;
   }
 
   /// Brings the tray and the close button in line with the preference.
@@ -359,6 +394,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     _resizeDebounce?.cancel();
     windowManager.removeListener(this);
     SystemShutdown.stopListening();
+    WindowPin.stopListening();
     layoutPrefs.removeListener(_onPrefsChanged);
     unawaited(_tray.dispose());
     onNewNoteRequested = null;

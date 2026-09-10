@@ -11,6 +11,7 @@ class MainFlutterWindow: NSWindow {
   private var transcriptionChannel: FlutterMethodChannel?
   private var audioDecodeChannel: FlutterMethodChannel?
   private var windowMaterialChannel: FlutterMethodChannel?
+  private var windowPinChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
     let flutterViewController = KapyFlutterViewController()
@@ -65,6 +66,9 @@ class MainFlutterWindow: NSWindow {
       with: flutterViewController.engine.binaryMessenger,
       view: visualEffectView
     )
+    windowPinChannel = WindowPin.register(
+      with: flutterViewController.engine.binaryMessenger
+    )
 
     super.awakeFromNib()
   }
@@ -106,5 +110,6 @@ final class KapyFlutterViewController: FlutterViewController {
   override func viewWillAppear() {
     super.viewWillAppear()
     accessibilityTree.enable()
+    AccessibilityText.routeWritesToEngine()
   }
 }

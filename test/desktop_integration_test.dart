@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/system_shutdown.dart';
+import 'package:kapy_notes/core/window_pin.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
@@ -19,6 +20,11 @@ class _NativeRecorder {
   final List<String> calls = [];
   final Map<String, Object?> answers = {};
 
+  /// The arguments of the most recent call to each method. Keyed rather than
+  /// listed so it stays readable across the tests that clear [calls] partway
+  /// through.
+  final Map<String, Object?> lastArguments = {};
+
   /// Methods the host refuses, for the paths that have to survive a runner
   /// saying no.
   final Set<String> refuses = {};
@@ -31,6 +37,7 @@ class _NativeRecorder {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(MethodChannel(channel), (call) async {
           calls.add(call.method);
+          lastArguments[call.method] = call.arguments;
           sequence.add('$channel.${call.method}');
           if (refuses.contains(call.method)) {
             throw PlatformException(code: 'refused', message: call.method);
@@ -375,6 +382,61 @@ void main() {
       expect(window.calls, contains('setAlwaysOnTop'));
     },
   );
+
+  test('the pin is given up before a window we do not own goes up', () async {
+    prefs.alwaysOnTop = true;
+    await settle();
+    window.calls.clear();
+
+    expect(await integration.releaseAlwaysOnTop(), isTrue);
+
+    // Awaited, and before the preference is touched: the caller is about to
+    // put Sparkle's panel on screen and cannot wait for a listener to catch
+    // up. A panel opened over a window still at floating level is the bug.
+    expect(window.calls, ['setAlwaysOnTop']);
+    expect(window.lastArguments['setAlwaysOnTop'], {'isAlwaysOnTop': false});
+    // Given up rather than borrowed, so the toolbar button goes out with it
+    // and one press puts it back. Nothing says when Sparkle's panel closes.
+    expect(prefs.alwaysOnTop, isFalse);
+
+    // And the preference change that follows must not cross the channel a
+    // second time to say what has already been said.
+    await settle();
+    expect(window.calls, ['setAlwaysOnTop']);
+  });
+
+  test('a window that was never on top has nothing to give up', () async {
+    await settle();
+    window.calls.clear();
+
+    expect(await integration.releaseAlwaysOnTop(), isFalse);
+    expect(window.calls, isEmpty);
+  });
+
+  test('the runner can ask for the pin before it opens a panel', () async {
+    // The About panel is the caller: AppKit opens it at the ordinary window
+    // level, underneath a window kept on top, and choosing About looks like
+    // it did nothing.
+    await integration.initialize(ShortcutPrefs(_MemoryStore())..load());
+    prefs.alwaysOnTop = true;
+    await settle();
+    window.calls.clear();
+
+    // The runner puts its panel up when this reply arrives, so awaiting the
+    // ask is also the assertion that the reply comes after the window has
+    // been lowered rather than before it.
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          WindowPin.channel.name,
+          const StandardMethodCodec().encodeMethodCall(
+            const MethodCall('release'),
+          ),
+          (_) {},
+        );
+
+    expect(window.lastArguments['setAlwaysOnTop'], {'isAlwaysOnTop': false});
+    expect(prefs.alwaysOnTop, isFalse);
+  });
 
   test('a pin saved last time is re-asserted on the new window', () async {
     // A fresh window starts unpinned however the preference was left, so
