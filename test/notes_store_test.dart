@@ -120,6 +120,44 @@ void main() {
     expect(storage.data['pinnedNoteIds.v1'], isEmpty);
   });
 
+  test('deleting many notes is one change with a tombstone each', () async {
+    final storage = _MemoryStore();
+    final notes = NotesStore(storage);
+    await notes.load();
+    final first = notes.create(body: 'One');
+    final second = notes.create(body: 'Two');
+    final kept = notes.create(body: 'Three');
+    var rebuilds = 0;
+    notes.addListener(() => rebuilds++);
+
+    // An id that is not there is not an error: a list picked in the UI can
+    // have lost a note to a sync between the pick and the press.
+    final deleted = notes.deleteAll([first.id, second.id, 'never-existed']);
+
+    expect(deleted, 2);
+    expect(notes.notes.map((note) => note.id), [kept.id]);
+    expect(
+      notes.tombstones.map((stone) => stone.id),
+      unorderedEquals([first.id, second.id]),
+    );
+    // One save and one rebuild, not one per note.
+    expect(rebuilds, 1);
+  });
+
+  test('deleting nothing writes nothing', () async {
+    final storage = _MemoryStore();
+    final notes = NotesStore(storage);
+    await notes.load();
+    notes.create(body: 'One');
+    var rebuilds = 0;
+    notes.addListener(() => rebuilds++);
+
+    expect(notes.deleteAll(const []), 0);
+    expect(notes.deleteAll(['gone-already']), 0);
+    expect(rebuilds, 0);
+    expect(notes.tombstones, isEmpty);
+  });
+
   test('archives a note without deleting it and restores it later', () async {
     var now = DateTime.utc(2026, 9, 4, 8);
     final store = _MemoryStore();

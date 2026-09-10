@@ -295,6 +295,42 @@ class NotesStore extends ChangeNotifier {
     _persist();
   }
 
+  /// Deletes several notes as one change.
+  ///
+  /// The same thing [delete] does, once, rather than a write and a rebuild per
+  /// note: emptying an archive is the one moment this is asked for in bulk,
+  /// and a list of a hundred should cost one save, not a hundred.
+  ///
+  /// Returns how many were actually there to delete.
+  int deleteAll(Iterable<String> ids) {
+    final wanted = ids.toSet();
+    if (wanted.isEmpty) return 0;
+    final going = _notes.where((note) => wanted.contains(note.id)).toList();
+    if (going.isEmpty) return 0;
+
+    final goingIds = going.map((note) => note.id).toSet();
+    _notes = List.unmodifiable(
+      _notes.where((note) => !goingIds.contains(note.id)),
+    );
+    for (final id in goingIds) {
+      _encoded.remove(id);
+    }
+    final at = _now();
+    // A tombstone is scoped to the space the note was deleted from, so each
+    // one carries its own note's space rather than a shared guess.
+    _tombstones = List.unmodifiable([
+      ..._tombstones.where(
+        (stone) => !going.any(
+          (note) => note.id == stone.id && note.spaceId == stone.spaceId,
+        ),
+      ),
+      for (final note in going)
+        Tombstone(id: note.id, deletedAt: at, spaceId: note.spaceId),
+    ]);
+    _persist();
+    return going.length;
+  }
+
   /// Moves a note out of the main list without creating a tombstone.
   void archive(String id) {
     final index = indexOf(id);

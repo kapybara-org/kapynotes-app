@@ -54,6 +54,10 @@ final _goldenRatesFetchedAt = DateTime(2026, 9, 2, 12);
 /// them on macOS with `flutter test --update-goldens`.
 late LayoutPrefs goldenPrefs;
 
+/// The notes the image was built from, for the few images that have to change
+/// the list after it is on screen.
+late NotesStore goldenNotes;
+
 Future<void> pumpForGolden(
   WidgetTester tester, {
   required Size size,
@@ -122,6 +126,7 @@ Future<void> pumpForGolden(
   );
   final prefs = LayoutPrefs(store);
   goldenPrefs = prefs;
+  goldenNotes = notes;
   final rates = RatesRepository(store);
   final shortcuts = ShortcutPrefs(store)..load();
 
@@ -335,6 +340,55 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_pinned.png'),
+    );
+  });
+
+  /// The archive with something in it, which is the only place a note can be
+  /// thrown away for good. Two images: the resting state, and picking.
+  Future<void> fillAndOpenArchive(WidgetTester tester) async {
+    final notes = goldenNotes;
+    for (final body in [
+      'Old receipts\nCoffee: 12.40',
+      'Trip ideas\nLisbon in April',
+    ]) {
+      notes.create(body: body);
+    }
+    await tester.pumpAndSettle();
+    for (final note in [...notes.notes]) {
+      notes.archive(note.id);
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('desktop dark archive', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    await fillAndOpenArchive(tester);
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_archive.png'),
+    );
+  });
+
+  testWidgets('desktop dark archive, picking notes', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    await fillAndOpenArchive(tester);
+    await tester.tap(find.byKey(const ValueKey('archive-start-selecting')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('archive-check-all')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_archive_selecting.png'),
     );
   });
 

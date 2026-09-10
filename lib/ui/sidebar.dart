@@ -14,6 +14,28 @@ import 'compact_icon_button.dart';
 import 'editor/note_footer.dart';
 import 'sidebar_timestamp.dart';
 
+/// What throwing a note away looks like, everywhere it is offered.
+///
+/// A bin rather than a filing box. Nothing else in the app removes a note, so
+/// the Archive *is* where notes go when you are done with them, and a box that
+/// reads as "file this away" sent people looking for a delete that was not
+/// there. The archive is still not destruction — [deleteIcon] is — which is
+/// why the two are the ordinary bin and the crossed-out one, the pairing every
+/// mail client uses for the same two ideas.
+const IconData archiveIcon = Icons.delete_outline_rounded;
+
+/// Taking a note out of the archive and back into the list.
+///
+/// Not `restore_from_trash`, which would have been the tidier pair: at the
+/// 14pt the sidebar draws these at, a bin with an arrow in it and a bin with a
+/// cross in it are the same shape, and the two sit side by side on every
+/// archived row. An arrow turning back is legible at any size and cannot be
+/// mistaken for a deletion.
+const IconData restoreIcon = Icons.restore_rounded;
+
+/// Gone for good, from here and from every device that syncs.
+const IconData deleteIcon = Icons.delete_forever_outlined;
+
 /// The note list, with search.
 class Sidebar extends StatelessWidget {
   const Sidebar({
@@ -39,6 +61,16 @@ class Sidebar extends StatelessWidget {
     this.showHeader = true,
     this.archiveMode = false,
     this.archivedCount = 0,
+    this.onDelete,
+    this.onDeleteAll,
+    this.selecting = false,
+    this.checkedIds = const {},
+    this.onToggleChecked,
+    this.onStartSelecting,
+    this.onCancelSelecting,
+    this.onCheckAll,
+    this.onDeleteChecked,
+    this.onRestoreChecked,
   });
 
   final List<Note> notes;
@@ -73,6 +105,22 @@ class Sidebar extends StatelessWidget {
   final bool archiveMode;
   final int archivedCount;
 
+  /// Throws one note away for good. Only ever supplied in the archive.
+  final ValueChanged<String>? onDelete;
+
+  /// Empties the archive.
+  final VoidCallback? onDeleteAll;
+
+  /// Whether the list is picking notes rather than opening them.
+  final bool selecting;
+  final Set<String> checkedIds;
+  final ValueChanged<String>? onToggleChecked;
+  final VoidCallback? onStartSelecting;
+  final VoidCallback? onCancelSelecting;
+  final VoidCallback? onCheckAll;
+  final VoidCallback? onDeleteChecked;
+  final VoidCallback? onRestoreChecked;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -98,6 +146,18 @@ class Sidebar extends StatelessWidget {
               archiveMode: archiveMode,
               focusNode: searchFocusNode,
             ),
+            if (archiveMode && (notes.isNotEmpty || selecting))
+              _ArchiveActions(
+                selecting: selecting,
+                checkedCount: checkedIds.length,
+                total: notes.length,
+                onStartSelecting: onStartSelecting,
+                onCancelSelecting: onCancelSelecting,
+                onCheckAll: onCheckAll,
+                onDeleteAll: onDeleteAll,
+                onDeleteChecked: onDeleteChecked,
+                onRestoreChecked: onRestoreChecked,
+              ),
             Expanded(
               child: notes.isEmpty
                   ? _SidebarEmpty(
@@ -169,6 +229,17 @@ extension on Sidebar {
                 !(sharing?.canEdit(note) ?? !note.isShared)
             ? null
             : () => onRestore!(note.id),
+        onDelete:
+            !archiveMode ||
+                onDelete == null ||
+                !(sharing?.canEdit(note) ?? !note.isShared)
+            ? null
+            : () => onDelete!(note.id),
+        selecting: selecting,
+        checked: checkedIds.contains(note.id),
+        onToggleChecked: onToggleChecked == null
+            ? null
+            : () => onToggleChecked!(note.id),
       );
 
   /// Pinned notes lead, then the shared spaces, then everything else.
@@ -405,6 +476,109 @@ class _SidebarFooterState extends State<_SidebarFooter> {
   }
 }
 
+/// The strip above the archive: pick some notes, or empty the whole thing.
+///
+/// Only ever in the archive. The main list has no delete at all — a note
+/// leaves it by being archived — so there is nothing here to offer anywhere
+/// else, and a bar that appeared over the ordinary notes would be a bar of
+/// dangerous buttons over the ones people actually keep.
+///
+/// Icons rather than words on the right, because the sidebar can be dragged
+/// down to 150pt and the count on the left is the part that must stay
+/// readable when it is.
+class _ArchiveActions extends StatelessWidget {
+  const _ArchiveActions({
+    required this.selecting,
+    required this.checkedCount,
+    required this.total,
+    this.onStartSelecting,
+    this.onCancelSelecting,
+    this.onCheckAll,
+    this.onDeleteAll,
+    this.onDeleteChecked,
+    this.onRestoreChecked,
+  });
+
+  final bool selecting;
+  final int checkedCount;
+  final int total;
+  final VoidCallback? onStartSelecting;
+  final VoidCallback? onCancelSelecting;
+  final VoidCallback? onCheckAll;
+  final VoidCallback? onDeleteAll;
+  final VoidCallback? onDeleteChecked;
+  final VoidCallback? onRestoreChecked;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final label = selecting
+        ? checkedCount == 0
+              ? 'Select notes'
+              : '$checkedCount selected'
+        : 'Archive';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 8, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: AppTypeScale.small,
+                fontWeight: FontWeight.w500,
+                color: palette.textSecondary,
+              ),
+            ),
+          ),
+          if (selecting) ...[
+            if (checkedCount < total)
+              _IconButton(
+                key: const ValueKey('archive-check-all'),
+                icon: Icons.select_all_rounded,
+                tooltip: 'Select all',
+                onPressed: onCheckAll,
+              ),
+            _IconButton(
+              key: const ValueKey('archive-restore-checked'),
+              icon: restoreIcon,
+              tooltip: 'Restore selected',
+              onPressed: checkedCount == 0 ? null : onRestoreChecked,
+            ),
+            _IconButton(
+              key: const ValueKey('archive-delete-checked'),
+              icon: deleteIcon,
+              tooltip: 'Delete selected',
+              onPressed: checkedCount == 0 ? null : onDeleteChecked,
+            ),
+            _IconButton(
+              key: const ValueKey('archive-cancel-selecting'),
+              icon: Icons.close_rounded,
+              tooltip: 'Done selecting',
+              onPressed: onCancelSelecting,
+            ),
+          ] else ...[
+            _IconButton(
+              key: const ValueKey('archive-start-selecting'),
+              icon: Icons.checklist_rounded,
+              tooltip: 'Select notes',
+              onPressed: total == 0 ? null : onStartSelecting,
+            ),
+            _IconButton(
+              key: const ValueKey('archive-delete-all'),
+              icon: Icons.delete_sweep_outlined,
+              tooltip: 'Delete all',
+              onPressed: total == 0 ? null : onDeleteAll,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _ArchiveEntry extends StatelessWidget {
   const _ArchiveEntry({
     required this.showingArchive,
@@ -431,7 +605,7 @@ class _ArchiveEntry extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                showingArchive ? Icons.notes_rounded : Icons.archive_outlined,
+                showingArchive ? Icons.notes_rounded : archiveIcon,
                 size: AppControlMetrics.footerIconControl,
                 color: palette.textSecondary,
               ),
@@ -735,9 +909,13 @@ class NoteRow extends StatefulWidget {
     this.onShare,
     this.onArchive,
     this.onRestore,
+    this.onDelete,
     this.onTogglePin,
     this.pinned = false,
     this.shared = false,
+    this.selecting = false,
+    this.checked = false,
+    this.onToggleChecked,
   });
 
   final Note note;
@@ -748,8 +926,20 @@ class NoteRow extends StatefulWidget {
   final VoidCallback? onShare;
   final VoidCallback? onArchive;
   final VoidCallback? onRestore;
+
+  /// Throws the note away for good. Only ever offered inside the archive:
+  /// everywhere else the way out of the list is [onArchive], which keeps it.
+  final VoidCallback? onDelete;
   final VoidCallback? onTogglePin;
   final bool pinned;
+
+  /// Whether the list is picking notes rather than opening them. Every row
+  /// shows a box instead of its actions, and a tap ticks it.
+  final bool selecting;
+
+  /// Whether this row is one of the picked ones.
+  final bool checked;
+  final VoidCallback? onToggleChecked;
 
   /// Whether the note is in a shared space, which the row marks so a person
   /// typing knows somebody else can see it.
@@ -829,13 +1019,35 @@ class _NoteRowState extends State<NoteRow> {
             child: Row(
               children: [
                 Icon(
-                  Icons.archive_outlined,
+                  archiveIcon,
                   size: AppControlMetrics.iconControl,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 10),
                 Text(
                   'Archive Note',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.control,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (widget.onDelete != null)
+          PopupMenuItem(
+            value: 'delete',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(
+                  deleteIcon,
+                  size: AppControlMetrics.iconControl,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Delete Note',
                   style: TextStyle(
                     fontSize: AppTypeScale.control,
                     color: palette.textPrimary,
@@ -851,7 +1063,7 @@ class _NoteRowState extends State<NoteRow> {
             child: Row(
               children: [
                 Icon(
-                  Icons.unarchive_outlined,
+                  restoreIcon,
                   size: AppControlMetrics.iconControl,
                   color: palette.textSecondary,
                 ),
@@ -870,6 +1082,7 @@ class _NoteRowState extends State<NoteRow> {
     );
     if (choice == 'archive') widget.onArchive?.call();
     if (choice == 'restore') widget.onRestore?.call();
+    if (choice == 'delete') widget.onDelete?.call();
     if (choice == 'share') widget.onShare?.call();
     if (choice == 'pin') widget.onTogglePin?.call();
   }
@@ -889,14 +1102,18 @@ class _NoteRowState extends State<NoteRow> {
     final actionsVisible =
         _hovering || widget.selected || !AppPlatform.hasPointer;
     final lifecycleVisible =
-        (widget.onArchive != null || widget.onRestore != null) &&
+        (widget.onArchive != null ||
+            widget.onRestore != null ||
+            widget.onDelete != null) &&
         actionsVisible;
     final pinVisible = widget.pinned || actionsVisible;
     final hasMenu =
-        widget.onTogglePin != null ||
-        widget.onArchive != null ||
-        widget.onRestore != null ||
-        widget.onShare != null;
+        !widget.selecting &&
+        (widget.onTogglePin != null ||
+            widget.onArchive != null ||
+            widget.onRestore != null ||
+            widget.onDelete != null ||
+            widget.onShare != null);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
@@ -911,7 +1128,9 @@ class _NoteRowState extends State<NoteRow> {
           button: true,
           selected: widget.selected,
           child: GestureDetector(
-            onTap: widget.onTap,
+            onTap: widget.selecting
+                ? (widget.onToggleChecked ?? widget.onTap)
+                : widget.onTap,
             onSecondaryTapDown: !hasMenu
                 ? null
                 : (details) =>
@@ -926,7 +1145,7 @@ class _NoteRowState extends State<NoteRow> {
               curve: Curves.easeOutCubic,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
               decoration: BoxDecoration(
-                color: widget.selected
+                color: widget.selected || (widget.selecting && widget.checked)
                     ? palette.selectedBackground
                     : (_hovering ? palette.hover : Colors.transparent),
                 borderRadius: BorderRadius.circular(7),
@@ -939,6 +1158,18 @@ class _NoteRowState extends State<NoteRow> {
                   final showSecondaryActions = constraints.maxWidth >= 190;
                   return Row(
                     children: [
+                      if (widget.selecting) ...[
+                        Icon(
+                          widget.checked
+                              ? Icons.check_circle_rounded
+                              : Icons.circle_outlined,
+                          size: AppControlMetrics.iconControl,
+                          color: widget.checked
+                              ? Theme.of(context).colorScheme.primary
+                              : palette.textTertiary,
+                        ),
+                        const SizedBox(width: 10),
+                      ],
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -974,7 +1205,7 @@ class _NoteRowState extends State<NoteRow> {
                           ],
                         ),
                       ),
-                      if (widget.onTogglePin != null) ...[
+                      if (!widget.selecting && widget.onTogglePin != null) ...[
                         const SizedBox(width: 4),
                         _RowAction(
                           key: ValueKey('pin-note-${widget.note.id}'),
@@ -986,7 +1217,18 @@ class _NoteRowState extends State<NoteRow> {
                           onPressed: widget.onTogglePin!,
                         ),
                       ],
-                      if (showSecondaryActions &&
+                      if (!widget.selecting && widget.onDelete != null) ...[
+                        const SizedBox(width: 4),
+                        _RowAction(
+                          key: ValueKey('delete-note-${widget.note.id}'),
+                          icon: deleteIcon,
+                          tooltip: 'Delete note',
+                          visible: lifecycleVisible,
+                          onPressed: widget.onDelete!,
+                        ),
+                      ],
+                      if (!widget.selecting &&
+                          showSecondaryActions &&
                           (widget.onArchive != null ||
                               widget.onRestore != null)) ...[
                         const SizedBox(width: 4),
@@ -995,8 +1237,8 @@ class _NoteRowState extends State<NoteRow> {
                             '${widget.onRestore != null ? 'restore' : 'archive'}-note-${widget.note.id}',
                           ),
                           icon: widget.onRestore != null
-                              ? Icons.unarchive_outlined
-                              : Icons.archive_outlined,
+                              ? restoreIcon
+                              : archiveIcon,
                           tooltip: widget.onRestore != null
                               ? 'Restore note'
                               : 'Archive note',
@@ -1130,7 +1372,10 @@ class _IconButton extends StatelessWidget {
 
   final IconData icon;
   final String tooltip;
-  final VoidCallback onPressed;
+
+  /// Null greys the button out rather than removing it, so a bar of actions
+  /// keeps its shape while some of them have nothing to act on.
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -1138,7 +1383,9 @@ class _IconButton extends StatelessWidget {
       tooltip: tooltip,
       onPressed: onPressed,
       icon: Icon(icon, size: AppControlMetrics.iconAction),
-      foregroundColor: context.palette.textSecondary,
+      foregroundColor: onPressed == null
+          ? context.palette.textTertiary
+          : context.palette.textSecondary,
     );
   }
 }
