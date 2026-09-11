@@ -2,6 +2,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
+import 'billing/billing.dart';
+import 'billing/billing_api.dart';
+import 'billing/purchase_store.dart';
+import 'billing/revenuecat_store.dart';
 import 'core/desktop_integration.dart';
 import 'core/focus_hold.dart';
 import 'core/platform.dart';
@@ -68,6 +72,24 @@ Future<void> main() async {
   // transcription in it simply never sets this, and the queue never runs.
   account?.speechApiFor = (token) =>
       HttpSpeechApi(baseUrl: Uri.parse(kApiBaseUrl), token: () async => token);
+  if (account != null) {
+    // Only the App Store build can take money so far. The desktop builds ship
+    // outside any store, and Android waits for its Play products; both still
+    // get the server's answer about what the account has.
+    account.billing = Billing(
+      session: account,
+      userId: () => account.user?.id,
+      token: () => account.token,
+      api: (token) => HttpBillingApi(
+        baseUrl: Uri.parse(kApiBaseUrl),
+        token: () async => token,
+      ),
+      store: AppPlatform.isIOS && kRevenueCatAppleKey.isNotEmpty
+          ? RevenueCatStore(apiKey: kRevenueCatAppleKey)
+          : const UnsupportedPurchaseStore(),
+      cache: store,
+    );
+  }
 
   DesktopIntegration? desktopIntegration;
   if (AppPlatform.isDesktop) {

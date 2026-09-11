@@ -1,0 +1,293 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/billing/billing.dart';
+import 'package:kapy_notes/billing/billing_api.dart';
+import 'package:kapy_notes/billing/entitlements.dart';
+import 'package:kapy_notes/billing/purchase_store.dart';
+import 'package:kapy_notes/data/local_store.dart';
+
+import 'billing_fakes.dart';
+
+class _Session extends ChangeNotifier {
+  String? userId;
+  String? get token => userId == null ? null : 'token-$userId';
+
+  void signIn(String id) {
+    userId = id;
+    notifyListeners();
+  }
+
+  void signOut() {
+    userId = null;
+    notifyListeners();
+  }
+}
+
+class _MemoryStore extends LocalStore {
+  _MemoryStore() : super(fileName: 'billing-test.json');
+  @override
+  Future<void> load() async {}
+  @override
+  Future<void> flush() async {}
+  @override
+  void put(String key, Object? value) => data[key] = value;
+  @override
+  void putNow(String key, Object? value) => data[key] = value;
+}
+
+/// Lets the fire-and-forget work a session change starts run to the end.
+Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 5));
+
+void main() {
+  late _Session session;
+  late FakeBillingApi api;
+  late FakePurchaseStore store;
+  late _MemoryStore cache;
+  late Billing billing;
+
+  Billing build() => Billing(
+    session: session,
+    userId: () => session.userId,
+    token: () => session.token,
+    api: (token) {
+      api.tokens.add(token);
+      return api;
+    },
+    store: store,
+    cache: cache,
+    confirmEvery: const Duration(milliseconds: 5),
+    confirmFor: const Duration(milliseconds: 60),
+    restoreConfirmFor: const Duration(milliseconds: 30),
+  );
+
+  setUp(() {
+    session = _Session();
+    api = FakeBillingApi();
+    store = FakePurchaseStore();
+    cache = _MemoryStore();
+    billing = build();
+  });
+
+  tearDown(() => billing.dispose());
+
+  test('signing in ties the store to the account and asks the server', () async {
+    session.signIn('user-1');
+    await settle();
+
+    expect(store.log, contains('logIn user-1'));
+    expect(api.tokens, ['token-user-1']);
+    expect(billing.entitlements?.plan, 'free');
+    expect(billing.isSignedIn, isTrue);
+  });
+
+  test('a cached answer shows at once, but only for its own account', () async {
+    cache.data['billing.v1'] = {
+      'userId': 'user-1',
+      'entitlements': entitlementsFor(pro: true).toJson(),
+    };
+    api.answer = () => throw Exception('offline');
+
+    session.signIn('user-1');
+    expect(billing.entitlements?.isPro, isTrue);
+
+    session.signIn('user-2');
+    expect(billing.entitlements, isNull);
+  });
+
+  test('a launch leaves the cache alone until the keystore has been read', () {
+    cache.data['billing.v1'] = {
+      'userId': 'user-1',
+      'entitlements': entitlementsFor(pro: true).toJson(),
+    };
+    // No session yet — which is also what a launch looks like — must not
+    // throw away the answer the next session will want.
+    expect(billing.entitlements, isNull);
+    expect(cache.data['billing.v1'], isNotNull);
+    expect(store.log, isEmpty);
+  });
+
+  test('a purchase is not finished until the server has it', () async {
+    session.signIn('user-1');
+    await settle();
+
+    var calls = 0;
+    api.answer = () => entitlementsFor(pro: ++calls >= 3);
+
+    final outcome = await billing.buy(Sku.proLifetime);
+
+    expect(outcome, isA<PurchaseCompleted>());
+    expect(store.log, contains('buy pro_lifetime as user-1'));
+    expect(billing.entitlements?.isPro, isTrue);
+    expect(billing.notice, isNull);
+    expect(billing.activity, BillingActivity.idle);
+    expect(calls, greaterThanOrEqualTo(3));
+  });
+
+  test('a payment the server never hears of says so, and keeps asking no more', () async {
+    session.signIn('user-1');
+    await settle();
+
+    final outcome = await billing.buy(Sku.proLifetime);
+
+    expect(outcome, isA<PurchaseCompleted>());
+    expect(billing.entitlements?.isPro, isFalse);
+    expect(billing.notice, contains('taken the payment'));
+    expect(billing.activity, BillingActivity.idle);
+  });
+
+  test('a cancelled purchase is not an error and leaves nothing behind', () async {
+    session.signIn('user-1');
+    await settle();
+    store.next = const PurchaseCancelled();
+    final before = api.calls;
+
+    final outcome = await billing.buy(Sku.proLifetime);
+
+    expect(outcome, isA<PurchaseCancelled>());
+    expect(billing.notice, isNull);
+    // Nothing was bought, so there is nothing to wait for.
+    expect(api.calls, before);
+  });
+
+  test('a purchase waiting on Ask to Buy leaves a notice', () async {
+    session.signIn('user-1');
+    await settle();
+    store.next = const PurchasePending();
+
+    await billing.buy(Sku.proLifetime);
+
+    expect(billing.notice, contains('waiting for approval'));
+  });
+
+  test('buying signed out never reaches the store', () async {
+    final outcome = await billing.buy(Sku.proLifetime);
+
+    expect(outcome, isA<PurchaseFailed>());
+    expect(store.log.where((line) => line.startsWith('buy')), isEmpty);
+  });
+
+  test('a storage pack is confirmed by the storage growing', () async {
+    api.answer = () => entitlementsFor(pro: true);
+    session.signIn('user-1');
+    await settle();
+
+    var bought = false;
+    store.onBuy = () => bought = true;
+    api.answer = () => entitlementsFor(
+      pro: true,
+      storageBytes: proStorageBytes + (bought ? storagePackBytes : 0),
+    );
+
+    final outcome = await billing.buy(Sku.storage5gb);
+
+    expect(outcome, isA<PurchaseCompleted>());
+    expect(billing.notice, isNull);
+    expect(billing.entitlements?.storageBytes, proStorageBytes + storagePackBytes);
+  });
+
+  test('no more storage packs once the cap is reached', () async {
+    api.answer = () => entitlementsFor(
+      pro: true,
+      storageBytes: proStorageBytes + maxBonusStorageBytes,
+    );
+    session.signIn('user-1');
+    await settle();
+
+    expect(billing.canAddStorage, isFalse);
+
+    api.answer = () => entitlementsFor(pro: true);
+    await billing.refresh();
+    expect(billing.canAddStorage, isTrue);
+  });
+
+  test('packs are never offered to a free account', () async {
+    session.signIn('user-1');
+    await settle();
+    expect(billing.canAddStorage, isFalse);
+  });
+
+  test('restoring Pro this account already has says so', () async {
+    api.answer = () => entitlementsFor(pro: true);
+    session.signIn('user-1');
+    await settle();
+    store.owned = {Sku.proLifetime};
+
+    expect(await billing.restore(), RestoreResult.restored);
+  });
+
+  test('restoring with nothing bought finds nothing', () async {
+    session.signIn('user-1');
+    await settle();
+
+    expect(await billing.restore(), RestoreResult.nothingFound);
+  });
+
+  test('Pro bought for another account stays with that account', () async {
+    session.signIn('user-1');
+    await settle();
+    store.owned = {Sku.proLifetime};
+
+    expect(await billing.restore(), RestoreResult.belongsToAnotherAccount);
+    expect(billing.entitlements?.isPro, isFalse);
+  });
+
+  test('a restore that races a fresh purchase waits for it', () async {
+    session.signIn('user-1');
+    await settle();
+    store.owned = {Sku.proLifetime};
+    var calls = 0;
+    api.answer = () => entitlementsFor(pro: ++calls >= 3);
+
+    expect(await billing.restore(), RestoreResult.restored);
+  });
+
+  test('signing out logs the store out and forgets the answer', () async {
+    session.signIn('user-1');
+    await settle();
+    session.signOut();
+    await settle();
+
+    expect(billing.entitlements, isNull);
+    expect(billing.isSignedIn, isFalse);
+    expect(store.log.last, 'logOut');
+  });
+
+  test('offers need an account, because the store is never set up without one', () async {
+    await billing.loadOffers();
+    expect(billing.offers, isEmpty);
+    expect(store.log, isEmpty);
+
+    session.signIn('user-1');
+    await settle();
+    await billing.loadOffers();
+    expect(billing.offerFor(Sku.proLifetime)?.price, r'$24.00');
+  });
+
+  test('a store with nothing to sell reads as a failure to answer', () async {
+    store.offerList = const [];
+    session.signIn('user-1');
+    await settle();
+    await billing.loadOffers();
+    expect(billing.offersFailed, isTrue);
+  });
+
+  test('an answer for an account that has since signed out is dropped', () async {
+    session.signIn('user-1');
+    await settle();
+    api.answer = () {
+      session.signOut();
+      return entitlementsFor(pro: true);
+    };
+
+    expect(await billing.refresh(), isNull);
+    expect(billing.entitlements, isNull);
+  });
+
+  test('the http client refuses to run signed out', () async {
+    final http = HttpBillingApi(
+      baseUrl: Uri.parse('https://example.invalid/'),
+      token: () async => null,
+    );
+    await expectLater(http.entitlements(), throwsA(anything));
+  });
+}

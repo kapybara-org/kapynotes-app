@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../billing/billing.dart';
 import '../core/appearance.dart';
 import '../core/desktop_integration.dart';
 import '../core/device_memory.dart';
@@ -27,6 +28,7 @@ import '../data/notes_store.dart';
 import '../sync/account.dart';
 import 'account/sharing_pane.dart';
 import 'account/sync_pane.dart';
+import 'billing/pro_sheet.dart';
 import 'export_import.dart';
 import '../data/rates.dart';
 import '../data/shortcut_prefs.dart';
@@ -1065,6 +1067,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   List<Widget> _paneFor(SettingsSection section) => switch (section) {
     SettingsSection.general => _generalPane(),
     SettingsSection.sync => [
+      ..._proPane(),
       SyncPane(account: widget.account!),
       // The gap between two panes, borrowed from the stacked layout: the
       // panel titles do the separating, and a rule between them would only
@@ -1077,6 +1080,39 @@ class _SettingsDialogState extends State<SettingsDialog> {
     SettingsSection.shortcuts => _shortcutsPane(),
     SettingsSection.updates => _updatesPane(),
   };
+
+  /// The plan, first in the account's pane, which is where somebody wondering
+  /// what their account has would look. Only where this build can sell
+  /// something: a row opening onto nothing to buy would be a dead end.
+  List<Widget> _proPane() {
+    final billing = widget.account?.billing;
+    if (billing == null || !billing.canPurchase) return const [];
+    return [
+      const _SectionLabel('PLAN'),
+      ListenableBuilder(
+        listenable: billing,
+        builder: (context, _) => _SettingsGroup(
+          children: [
+            _NavigationRow(
+              key: const ValueKey('pro-row'),
+              icon: Icons.workspace_premium_outlined,
+              title: 'Kapy Notes Pro',
+              subtitle: _proSummary(billing),
+              onTap: () => showProSheet(context, billing: billing),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 20),
+    ];
+  }
+
+  static String _proSummary(Billing billing) {
+    if (!billing.isSignedIn) return 'What Pro adds, for one payment';
+    final now = billing.entitlements;
+    if (now == null) return 'Checking your plan…';
+    return now.isPro ? 'Pro Lifetime' : 'Free · see what Pro adds';
+  }
 
   List<Widget> _generalPane() => [
     const _SectionLabel('NOTES'),

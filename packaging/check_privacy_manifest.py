@@ -32,6 +32,9 @@ KEYS = {
     "OTHER_USER_CONTENT": "NSPrivacyCollectedDataTypeOtherUserContent",
     "PHOTOS_OR_VIDEOS": "NSPrivacyCollectedDataTypePhotosorVideos",
     "AUDIO": "NSPrivacyCollectedDataTypeAudioData",
+    # Token read from asc's own privacy tests: the web catalog it names above
+    # was unreachable the day this was added.
+    "PURCHASE_HISTORY": "NSPrivacyCollectedDataTypePurchaseHistory",
 }
 
 

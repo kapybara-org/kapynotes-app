@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../billing/billing.dart';
 import '../data/local_store.dart';
 import '../data/notes_store.dart';
 import 'auth_api.dart';
@@ -82,6 +83,12 @@ class Account extends ChangeNotifier {
   /// transcription in it — a test, or a server with none configured — in which
   /// case [speech] stays null and the queue never runs.
   SpeechApi Function(String token)? speechApiFor;
+
+  /// What this account has bought, and the way to buy more. Set once by
+  /// `main` and never torn down with sync: a purchase belongs to the session,
+  /// not to the unlocked vault, so it follows this object's user rather than
+  /// living inside [_start]. Null in a build with nothing wired up to sell.
+  Billing? billing;
   final KeyStore _keys;
   final NotesStore _notes;
   final SyncState _state;
@@ -566,6 +573,7 @@ class Account extends ChangeNotifier {
   @override
   void dispose() {
     _teardownSync();
+    billing?.dispose();
     super.dispose();
   }
 }

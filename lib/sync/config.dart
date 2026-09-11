@@ -25,3 +25,14 @@ const String kSiteBaseUrl = String.fromEnvironment(
   'KAPYNOTES_SITE',
   defaultValue: 'https://kapynotes.com/',
 );
+
+/// RevenueCat's public key for the App Store app.
+///
+/// Public by design — it can start a purchase, never grant or read one — so it
+/// sits in source beside the API's address rather than in a build secret that
+/// a release could be cut without. Empty means this build sells nothing, and
+/// the Pro row does not appear.
+const String kRevenueCatAppleKey = String.fromEnvironment(
+  'KAPYNOTES_RC_APPLE_KEY',
+  defaultValue: '',
+);
