@@ -22,6 +22,7 @@ import 'speech/summarizer.dart';
 import 'speech/transcription_queue.dart';
 import 'audio/voice_recording_controller.dart';
 import 'core/quick_capture.dart';
+import 'core/deep_links.dart';
 import 'core/theme.dart';
 import 'core/window_material.dart';
 import 'data/engine_provider.dart';
@@ -36,6 +37,8 @@ import 'images/image_picker.dart';
 import 'sync/account.dart';
 import 'ui/app_logo.dart';
 import 'ui/home_page.dart';
+import 'ui/join/join_link_listener.dart';
+import 'ui/join/joining_ui.dart';
 import 'ui/instant_capture.dart';
 
 /// Root widget. Owns the app-wide singletons and the macOS menu bar.
@@ -53,6 +56,7 @@ class KapyNotesApp extends StatefulWidget {
     this.recording,
     this.imageAcquirer,
     this.lostImageRetriever,
+    this.deepLinks,
   });
 
   final LocalStore store;
@@ -76,6 +80,11 @@ class KapyNotesApp extends StatefulWidget {
   /// Native image boundaries, injectable for launch and recovery tests.
   final ImageFileAcquirer? imageAcquirer;
   final LostImageRetriever? lostImageRetriever;
+
+  /// Links that opened the app. Built in `main()` rather than here: with no
+  /// native side, as in every widget test, cancelling a subscription to the
+  /// platform's stream never completes, so a test that built one would hang.
+  final DeepLinks? deepLinks;
 
   @override
   State<KapyNotesApp> createState() => _KapyNotesAppState();
@@ -474,40 +483,52 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           final solid =
               !_glassBehindWindow || MediaQuery.highContrastOf(context);
           if (!widget.prefs.transparencyEnabled || !solid) {
-            return child ?? const SizedBox.shrink();
+            return JoiningScope(
+              account: widget.account,
+              child: child ?? const SizedBox.shrink(),
+            );
           }
           final theme = Theme.of(context);
           final palette = theme.extension<CalcPalette>()!;
-          return Theme(
-            data: theme.copyWith(extensions: [palette.opaque]),
-            child: child!,
+          return JoiningScope(
+            account: widget.account,
+            child: Theme(
+              data: theme.copyWith(extensions: [palette.opaque]),
+              child: child!,
+            ),
           );
         },
         // Prose autocorrection has no place in a calculator, and the app is
         // plain-text only, so the default Material scroll behaviour is enough.
-        home: HomePage(
-          notes: widget.notes,
-          engines: _engines!,
-          rates: widget.rates,
-          prefs: widget.prefs,
-          shortcuts: widget.shortcuts,
-          updates: widget.updates,
-          desktopIntegration: widget.desktopIntegration,
+        // Under the Navigator, so that it can open a dialog; above the home
+        // screen, so that a link is acted on wherever the person is.
+        home: JoinLinkListener(
+          links: widget.deepLinks,
           account: widget.account,
-          store: widget.store,
-          welcomeNoteId: _welcomeNoteId,
-          launchIntent: _launchIntent,
-          recording: _recording,
-          player: _player,
-          transcriptions: _transcriptions,
-          voicePrefs: _voicePrefs,
-          localModels: _localModels,
-          deviceSummarizer: _deviceSummarizer,
-          deviceTranscriber: _deviceTranscriber,
-          summarizer: _summarizer,
-          transcriber: _transcriber,
-          imageAcquirer: widget.imageAcquirer,
-          lostImageRetriever: widget.lostImageRetriever,
+          child: HomePage(
+            notes: widget.notes,
+            engines: _engines!,
+            rates: widget.rates,
+            prefs: widget.prefs,
+            shortcuts: widget.shortcuts,
+            updates: widget.updates,
+            desktopIntegration: widget.desktopIntegration,
+            account: widget.account,
+            store: widget.store,
+            welcomeNoteId: _welcomeNoteId,
+            launchIntent: _launchIntent,
+            recording: _recording,
+            player: _player,
+            transcriptions: _transcriptions,
+            voicePrefs: _voicePrefs,
+            localModels: _localModels,
+            deviceSummarizer: _deviceSummarizer,
+            deviceTranscriber: _deviceTranscriber,
+            summarizer: _summarizer,
+            transcriber: _transcriber,
+            imageAcquirer: widget.imageAcquirer,
+            lostImageRetriever: widget.lostImageRetriever,
+          ),
         ),
       ),
     );

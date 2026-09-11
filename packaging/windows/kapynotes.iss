@@ -110,6 +110,16 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 ; would leave Windows starting a path that no longer exists.
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "{#AppName}"; Flags: uninsdeletevalue
 
+; kapynotes://join/<token> and kapynotes://space/<token>, which the "Open in
+; Kapy Notes" button on kapynotes.com opens. Per user, like everything else
+; this installer writes, and deleted on uninstall so Windows is not left
+; offering to open links with a program that is gone. A second copy started by
+; a link hands it to the one already running: see HandOverToRunningInstance.
+Root: HKCU; Subkey: "Software\Classes\kapynotes"; ValueType: string; ValueName: ""; ValueData: "URL:Kapy Notes"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\kapynotes"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\kapynotes\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"",0"
+Root: HKCU; Subkey: "Software\Classes\kapynotes\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
+
 [Run]
 ; The checkbox on the Setup Completed page, for someone who ran this by hand.
 ; runasoriginaluser so that an installer started elevated — which is a

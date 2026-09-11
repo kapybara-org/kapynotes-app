@@ -2,6 +2,7 @@
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
 
+#include "app_links/app_links_plugin_c_api.h"
 #include "flutter_window.h"
 #include "utils.h"
 #include "win32_window.h"
@@ -42,6 +43,12 @@ bool HandOverToRunningInstance() {
   }
 
   ::CloseHandle(lock);
+  // A copy started by a kapynotes:// link — an invitation, or a space's link
+  // opened from the browser — carries it on its command line, and is about
+  // to exit. app_links hands it to the running window, whose own copy of the
+  // plugin turns it into the same event a link at launch would be. Does
+  // nothing when there is no link, as for a second click on the icon.
+  SendAppLink(running);
   // It may be in the notification area rather than merely behind something,
   // which is the whole reason the user reached for the icon again.
   ::ShowWindow(running, ::IsIconic(running) ? SW_RESTORE : SW_SHOW);

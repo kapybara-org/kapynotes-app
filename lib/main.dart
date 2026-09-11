@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
+import 'core/deep_links.dart';
 import 'core/desktop_integration.dart';
 import 'core/focus_hold.dart';
 import 'core/platform.dart';
@@ -92,6 +93,8 @@ Future<void> main() async {
       updates: updates,
       desktopIntegration: desktopIntegration,
       account: account,
+      // Here, where no test runs: see KapyNotesApp.deepLinks.
+      deepLinks: DeepLinks.platform(),
     ),
   );
 }

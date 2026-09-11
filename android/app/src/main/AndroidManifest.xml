@@ -49,6 +49,29 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Links are app_links' to hand to the app. Left on, Flutter would
+                 push a link's path as a route, and there is no such route. -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
+            <!-- What the join pages' "Open in Kapy Notes" button opens. Only
+                 these two hosts, so no other kapynotes:// link lands here. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="kapynotes" android:host="join" />
+                <data android:scheme="kapynotes" android:host="space" />
+            </intent-filter>
+            <!-- An invitation or a space's link opening the app in one tap,
+                 once Android has checked kapynotes.com/.well-known/assetlinks.json.
+                 Until it has, these open the page, whose button uses the
+                 scheme above, so nothing is lost while verification waits. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="kapynotes.com" android:pathPrefix="/join/" />
+                <data android:scheme="https" android:host="kapynotes.com" android:pathPrefix="/space/" />
+            </intent-filter>
         </activity>
         <!-- The square widget, one action of the three. Not exported: the
              launcher and the keyguard bind widget providers through the

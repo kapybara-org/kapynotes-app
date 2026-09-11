@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/theme.dart';
 import '../core/toast.dart';
+import '../sync/joining.dart';
 import '../sync/safety.dart';
 import '../sync/sharing.dart';
 import '../sync/sync_api.dart';
@@ -352,6 +353,20 @@ void unawaitedLaunch(String url) =>
 /// It lives here rather than in the share sheet because the terms and report
 /// dialogs need it too, and the share sheet imports them.
 String describeSharingError(Object error) => switch (error) {
+  InviteLimitException(:final reason, :final room) => switch (reason) {
+    InviteLimitReason.pending =>
+      room == 0
+          ? 'Too many people are still to accept. Nothing was sent.'
+          : 'Only $room more can be invited until some accept. Nothing was sent.',
+    InviteLimitReason.full =>
+      room == 0
+          ? 'This space is full. Nothing was sent.'
+          : 'This space has room for $room more. Nothing was sent.',
+    InviteLimitReason.today =>
+      room == 0
+          ? 'That is enough invitations for today. Nothing was sent.'
+          : 'You can send $room more invitations today. Nothing was sent.',
+  },
   SyncAuthException() => 'Sign in again to share notes.',
   SyncOutdatedException() => 'Update Kapy Notes to keep sharing.',
   SyncRefusedException(:final code) => switch (code) {
@@ -369,6 +384,11 @@ String describeSharingError(Object error) => switch (error) {
       'That invitation is not for this account, or has expired.',
     'owned-spaces' => 'Hand over or stop sharing your spaces first.',
     'you cannot block yourself' => 'That is your own address.',
+    'no such link' => 'That link has expired, or been turned off.',
+    'too many requests' =>
+      'Too many people are waiting to join. Ask the owner to let some in.',
+    'confirm your email address first' => 'Confirm your email address first.',
+    'pro-required' => 'This needs Kapy Notes Pro.',
     _ => 'The server did not allow that.',
   },
   SyncTransientException() =>
