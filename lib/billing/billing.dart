@@ -43,15 +43,18 @@ class Billing extends ChangeNotifier {
     required BillingApi Function(String token) api,
     required PurchaseStore store,
     LocalStore? cache,
+    DateTime Function()? now,
     this.confirmEvery = const Duration(milliseconds: 1500),
     this.confirmFor = const Duration(seconds: 30),
     this.restoreConfirmFor = const Duration(seconds: 10),
+    this.trialEndGrace = const Duration(seconds: 2),
   }) : _session = session,
        _userIdOf = userId,
        _tokenOf = token,
        _apiFor = api,
        _store = store,
-       _cache = cache {
+       _cache = cache,
+       _now = now ?? DateTime.now {
     _session.addListener(_onSession);
     _onSession();
   }
@@ -64,6 +67,13 @@ class Billing extends ChangeNotifier {
   final BillingApi Function(String token) _apiFor;
   final PurchaseStore _store;
   final LocalStore? _cache;
+  final DateTime Function() _now;
+
+  /// Asks again the moment a trial ends, because every field of the answer
+  /// changes then and nothing on the server announces it to an app without
+  /// a socket. See [Entitlements.trialEndsAt].
+  Timer? _trialEnd;
+  DateTime? _askedAt;
 
   /// How often, and for how long, to ask the server whether a purchase has
   /// arrived. A webhook normally lands in seconds; past this the sheet stops
@@ -71,6 +81,10 @@ class Billing extends ChangeNotifier {
   final Duration confirmEvery;
   final Duration confirmFor;
   final Duration restoreConfirmFor;
+
+  /// How long past the end of a trial to ask again: a moment, so the server's
+  /// clock has certainly moved on too.
+  final Duration trialEndGrace;
 
   String? _userId;
   Entitlements? _entitlements;
@@ -88,6 +102,18 @@ class Billing extends ChangeNotifier {
   /// The server's last answer for this account. Null while signed out, and
   /// until the first answer arrives on a device that has never had one.
   Entitlements? get entitlements => _entitlements;
+
+  /// Whether this account is trying Pro rather than owning it, right now.
+  bool get trialRunning => _entitlements?.trialRunningAt(_now()) ?? false;
+
+  /// Whole days of the trial left, counting today, while one runs: 14 on the
+  /// day it starts, 1 on its last. Null otherwise.
+  int? get trialDaysLeft {
+    final ends = _entitlements?.trialEndsAt;
+    if (ends == null || !trialRunning) return null;
+    final left = ends.difference(_now());
+    return (left.inMinutes / Duration.minutesPerDay).ceil().clamp(1, 1 << 16);
+  }
 
   /// What the store will sell here, with its prices. Empty until asked.
   List<StoreOffer> get offers => _offers;
@@ -140,6 +166,8 @@ class Billing extends ChangeNotifier {
     // been read, so it leaves the cache alone: the cache is keyed by account,
     // and a different account simply never reads this one's answer.
     _entitlements = id == null ? null : _readCache(id);
+    _askedAt = null;
+    _armTrialEnd();
     if (id == null) {
       unawaited(_quietly(_store.logOut));
     } else {
@@ -147,6 +175,38 @@ class Billing extends ChangeNotifier {
       unawaited(refresh());
     }
     notifyListeners();
+  }
+
+  /// Asks again if the answer here is older than [maxAge], or describes a
+  /// trial that has since ended. For coming back to the foreground: a timer
+  /// does not run while a phone has the app suspended.
+  Future<void> refreshIfStale({
+    Duration maxAge = const Duration(minutes: 30),
+  }) async {
+    if (_userId == null) return;
+    final asked = _askedAt;
+    final ends = _entitlements?.trialEndsAt;
+    final trialOver =
+        ends != null &&
+        !(_entitlements?.isPro ?? false) &&
+        !ends.isAfter(_now()) &&
+        _entitlements?.noteLimit == null;
+    if (asked != null && _now().difference(asked) < maxAge && !trialOver) {
+      return;
+    }
+    await refresh();
+  }
+
+  void _armTrialEnd() {
+    _trialEnd?.cancel();
+    _trialEnd = null;
+    final ends = _entitlements?.trialEndsAt;
+    if (ends == null || !trialRunning) return;
+    final wait = ends.difference(_now()) + trialEndGrace;
+    _trialEnd = Timer(wait, () {
+      _trialEnd = null;
+      unawaited(refresh());
+    });
   }
 
   /// Asks the server again, and keeps what it says.
@@ -162,7 +222,9 @@ class Billing extends ChangeNotifier {
       // Signed out, or somebody else signed in, while this was in flight.
       if (_userId != id) return null;
       _entitlements = fresh;
+      _askedAt = _now();
       _cache?.put(_cacheKey, {'userId': id, 'entitlements': fresh.toJson()});
+      _armTrialEnd();
       notifyListeners();
       return fresh;
     } catch (error) {
@@ -321,6 +383,7 @@ class Billing extends ChangeNotifier {
 
   @override
   void dispose() {
+    _trialEnd?.cancel();
     _session.removeListener(_onSession);
     super.dispose();
   }

@@ -1111,7 +1111,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
     if (!billing.isSignedIn) return 'What Pro adds, for one payment';
     final now = billing.entitlements;
     if (now == null) return 'Checking your plan…';
-    return now.isPro ? 'Pro Lifetime' : 'Free · see what Pro adds';
+    if (now.isPro) return 'Pro Lifetime';
+    return switch (billing.trialDaysLeft) {
+      null => 'Free · see what Pro adds',
+      1 => 'Pro trial · last day',
+      final days => 'Pro trial · $days days left',
+    };
   }
 
   List<Widget> _generalPane() => [

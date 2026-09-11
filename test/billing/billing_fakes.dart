@@ -7,6 +7,8 @@ Entitlements entitlementsFor({
   int? storageBytes,
   int speechCreditSeconds = 0,
   bool sync = true,
+  int? noteLimit,
+  DateTime? trialEndsAt,
 }) => Entitlements(
   plan: pro ? 'pro' : 'free',
   storageBytes: storageBytes ?? (pro ? proStorageBytes : 100 * 1024 * 1024),
@@ -15,6 +17,19 @@ Entitlements entitlementsFor({
   speechCreditSeconds: speechCreditSeconds,
   sync: sync,
   sharing: sync,
+  noteLimit: noteLimit,
+  trialEndsAt: trialEndsAt,
+);
+
+/// A free account trying Pro, [left] from now.
+Entitlements trialFor(Duration left, {DateTime? from}) =>
+    entitlementsFor(trialEndsAt: (from ?? DateTime.now()).add(left));
+
+/// A free account whose trial ended: no sync, and the note limit.
+Entitlements afterTrial({DateTime? endedAt}) => entitlementsFor(
+  sync: false,
+  noteLimit: 5,
+  trialEndsAt: endedAt ?? DateTime.now().subtract(const Duration(days: 1)),
 );
 
 /// The server's answer, scripted. Free until told otherwise.

@@ -88,7 +88,27 @@ class Account extends ChangeNotifier {
   /// `main` and never torn down with sync: a purchase belongs to the session,
   /// not to the unlocked vault, so it follows this object's user rather than
   /// living inside [_start]. Null in a build with nothing wired up to sell.
-  Billing? billing;
+  Billing? get billing => _billing;
+  set billing(Billing? value) {
+    _billing?.removeListener(_onBilling);
+    _billing = value;
+    value?.addListener(_onBilling);
+  }
+
+  Billing? _billing;
+  Object? _coverage;
+
+  /// What the server syncs for this account follows what billing says it
+  /// has, so a change there — a purchase, a refund, a trial ending — is the
+  /// cue for sync to ask about the spaces it is holding back. Billing
+  /// notifies for much else besides, so only those three fields count.
+  void _onBilling() {
+    final now = _billing?.entitlements;
+    final coverage = now == null ? null : (now.plan, now.sync, now.trialEndsAt);
+    if (coverage == _coverage) return;
+    _coverage = coverage;
+    _sync?.recheckCoverage();
+  }
   final KeyStore _keys;
   final NotesStore _notes;
   final SyncState _state;

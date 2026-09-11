@@ -149,6 +149,7 @@ class _ProSheetState extends State<ProSheet> {
     final billing = _billing;
     final now = billing.entitlements;
     final isPro = now?.isPro ?? false;
+    final trialEnds = billing.trialRunning ? now?.trialEndsAt : null;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -163,6 +164,11 @@ class _ProSheetState extends State<ProSheet> {
               children: [
                 if (isPro)
                   const _Owned()
+                else if (trialEnds != null)
+                  _Trying(
+                    endsAt: trialEnds.toLocal(),
+                    daysLeft: billing.trialDaysLeft ?? 1,
+                  )
                 else
                   Text(
                     'Pay once and it is yours for good. No subscription, '
@@ -178,8 +184,8 @@ class _ProSheetState extends State<ProSheet> {
                   icon: Icons.cloud_outlined,
                   title: '1 GB of encrypted storage',
                   detail:
-                      'For the pictures and files in your notes. Free '
-                      'accounts have 100 MB.',
+                      'For the pictures and files in your notes, on every '
+                      'device you sign in on.',
                 ),
                 const _Benefit(
                   icon: Icons.graphic_eq_rounded,
@@ -226,12 +232,16 @@ class _ProSheetState extends State<ProSheet> {
       return 'On every device you sign in on, and with the people you invite.';
     }
     if (now.isPro) return 'Yours for good, on every device you sign in on.';
+    if (_billing.trialRunning) {
+      return 'Yours while you try Pro. Pro Lifetime is how you keep them '
+          'after it ends.';
+    }
     if (now.sync) {
       return 'Every account has these while Kapy Notes is in beta. Pro '
           'Lifetime is how you keep them after it.';
     }
-    return 'Sync and sharing come with Pro, and so does writing past five '
-        'notes.';
+    return 'Sync and sharing come with Pro, and so does editing more than '
+        'five notes.';
   }
 
   Widget _signInFirst(BuildContext context) {
@@ -471,6 +481,74 @@ class _Owned extends StatelessWidget {
             child: Text(
               'Pro Lifetime is on this account. Thank you for backing Kapy '
               'Notes.',
+              style: TextStyle(
+                fontSize: 13.5,
+                height: 1.4,
+                color: palette.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What a trial is, said while it runs: how long is left, and that it ends by
+/// itself with nothing charged and nothing lost — the three things somebody
+/// trying Pro needs to know, and the ones the trial's terms promise.
+class _Trying extends StatelessWidget {
+  const _Trying({required this.endsAt, required this.daysLeft});
+
+  final DateTime endsAt;
+  final int daysLeft;
+
+  static const _months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final left = daysLeft == 1
+        ? 'This is the last day of your Pro trial.'
+        : 'You are trying Pro, with $daysLeft days left.';
+    final on = '${endsAt.day} ${_months[endsAt.month - 1]}';
+    return Container(
+      key: const ValueKey('pro-trial'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: palette.selectedBackground,
+        border: Border.all(color: palette.selectedBorder),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(
+              Icons.hourglass_bottom_rounded,
+              size: 18,
+              color: palette.textPrimary,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$left On $on this account moves to Free by itself. Nothing '
+              'is charged, and nothing is deleted.',
               style: TextStyle(
                 fontSize: 13.5,
                 height: 1.4,

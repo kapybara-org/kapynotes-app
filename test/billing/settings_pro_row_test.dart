@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:kapy_notes/billing/billing.dart';
+import 'package:kapy_notes/billing/entitlements.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -33,6 +34,7 @@ class _Store extends LocalStore {
 Future<FakeBillingApi> pumpSettings(
   WidgetTester tester, {
   required FakePurchaseStore purchases,
+  Entitlements Function()? answer,
 }) async {
   tester.view.physicalSize = const Size(880, 700);
   tester.view.devicePixelRatio = 1;
@@ -42,6 +44,7 @@ Future<FakeBillingApi> pumpSettings(
   final store = _Store();
   final notes = NotesStore(store);
   final api = FakeBillingApi();
+  if (answer != null) api.answer = answer;
   final account = Account(
     auth: FakeAuth(
       id: 'user-1',
@@ -107,6 +110,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('pro-buy')), findsOneWidget);
+  });
+
+  testWidgets('a trial says how long is left, right in the row', (tester) async {
+    await pumpSettings(
+      tester,
+      purchases: FakePurchaseStore(),
+      answer: () => trialFor(const Duration(days: 8, hours: 3)),
+    );
+
+    expect(find.text('Pro trial · 9 days left'), findsOneWidget);
   });
 
   testWidgets('a build with nothing to sell shows no plan row', (tester) async {

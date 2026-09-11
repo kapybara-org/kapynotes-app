@@ -14,6 +14,8 @@ class Entitlements {
     required this.speechCreditSeconds,
     required this.sync,
     required this.sharing,
+    this.noteLimit,
+    this.trialEndsAt,
   });
 
   /// `free` or `pro`. Anything else a newer server invents reads as free,
@@ -33,7 +35,27 @@ class Entitlements {
   final bool sync;
   final bool sharing;
 
+  /// How many notes may be kept editable, or null for no limit. Past it the
+  /// rest turn read-only; see `NoteLimit` for which.
+  ///
+  /// Sent for the same reason [sync] is: it is null for everybody until plans
+  /// are enforced and for as long as Pro, or a trial of it, lasts. A server
+  /// that predates it sends nothing, which reads as no limit.
+  final int? noteLimit;
+
+  /// When this account's Pro trial ends, or ended. Null where there is no
+  /// trial to speak of: the account owns Pro, or plans are not enforced yet.
+  ///
+  /// While it is ahead, everything above already describes Pro. Once it has
+  /// passed, this answer is stale — every field changes at that moment — and
+  /// has to be asked for again rather than read.
+  final DateTime? trialEndsAt;
+
   bool get isPro => plan == 'pro';
+
+  /// Trying Pro rather than owning it.
+  bool trialRunningAt(DateTime now) =>
+      !isPro && (trialEndsAt?.isAfter(now) ?? false);
 
   static Entitlements fromJson(Map<String, Object?> raw) {
     int count(String key) => switch (raw[key]) {
@@ -41,6 +63,8 @@ class Entitlements {
       final double value when value >= 0 => value.round(),
       _ => 0,
     };
+    final limit = raw['noteLimit'];
+    final trial = raw['trialEndsAt'];
     return Entitlements(
       plan: raw['plan'] == 'pro' ? 'pro' : 'free',
       storageBytes: count('storageBytes'),
@@ -49,6 +73,8 @@ class Entitlements {
       speechCreditSeconds: count('speechCreditSeconds'),
       sync: raw['sync'] == true,
       sharing: raw['sharing'] == true,
+      noteLimit: limit is int && limit > 0 ? limit : null,
+      trialEndsAt: trial is String ? DateTime.tryParse(trial) : null,
     );
   }
 
@@ -60,6 +86,8 @@ class Entitlements {
     'speechCreditSeconds': speechCreditSeconds,
     'sync': sync,
     'sharing': sharing,
+    'noteLimit': noteLimit,
+    'trialEndsAt': trialEndsAt?.toUtc().toIso8601String(),
   };
 }
 

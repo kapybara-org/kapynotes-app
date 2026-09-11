@@ -13,6 +13,11 @@ class _Session extends ChangeNotifier {
     userId = id;
     notifyListeners();
   }
+
+  void signOut() {
+    userId = null;
+    notifyListeners();
+  }
 }
 
 void main() {
@@ -111,6 +116,42 @@ void main() {
 
     expect(
       find.textContaining('while Kapy Notes is in beta'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a trial says what is left of it, and that it ends by itself', (
+    tester,
+  ) async {
+    api.answer = () => trialFor(const Duration(days: 5, hours: 1));
+    session.signIn('user-1');
+    await pumpSheet(tester);
+
+    expect(find.byKey(const ValueKey('pro-trial')), findsOneWidget);
+    expect(find.textContaining('6 days left'), findsOneWidget);
+    expect(find.textContaining('Nothing is charged'), findsOneWidget);
+    // Not the beta's line: after launch, sync is on because of the trial.
+    expect(find.textContaining('in beta'), findsNothing);
+    expect(find.textContaining('while you try Pro'), findsOneWidget);
+    // Pro Lifetime is still the thing to buy, and no pack is: one bought
+    // during a trial would be stranded on Free when the trial ended.
+    expect(find.byKey(const ValueKey('pro-buy')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pro-pack-storage_5gb')), findsNothing);
+    expect(find.byKey(const ValueKey('pro-pack-voice_1000')), findsNothing);
+    // Which also stops the timer waiting for the trial to end.
+    session.signOut();
+  });
+
+  testWidgets('after the trial it says what Pro would give back', (
+    tester,
+  ) async {
+    api.answer = afterTrial;
+    session.signIn('user-1');
+    await pumpSheet(tester);
+
+    expect(find.byKey(const ValueKey('pro-trial')), findsNothing);
+    expect(
+      find.textContaining('editing more than five notes'),
       findsOneWidget,
     );
   });

@@ -283,6 +283,94 @@ void main() {
     expect(billing.entitlements, isNull);
   });
 
+  group('the trial', () {
+    test('is read from the answer, with the days counted from today', () async {
+      final clock = DateTime.utc(2026, 10, 1, 12);
+      billing.dispose();
+      billing = Billing(
+        session: session,
+        userId: () => session.userId,
+        token: () => session.token,
+        api: (_) => api,
+        store: store,
+        now: () => clock,
+      );
+      api.answer = () =>
+          trialFor(const Duration(days: 3, hours: 12), from: clock);
+      session.signIn('user-1');
+      await settle();
+
+      expect(billing.trialRunning, isTrue);
+      expect(billing.trialDaysLeft, 4);
+      // Trying Pro is not owning it, so nothing sold only to owners shows.
+      expect(billing.entitlements!.isPro, isFalse);
+      expect(billing.canAddStorage, isFalse);
+    });
+
+    test('is asked about again the moment it ends', () async {
+      billing.dispose();
+      billing = Billing(
+        session: session,
+        userId: () => session.userId,
+        token: () => session.token,
+        api: (_) => api,
+        store: store,
+        trialEndGrace: Duration.zero,
+      );
+      api.answer = () => trialFor(const Duration(milliseconds: 60));
+      session.signIn('user-1');
+      await settle();
+      expect(billing.trialRunning, isTrue);
+      final asked = api.calls;
+
+      api.answer = afterTrial;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      expect(api.calls, asked + 1);
+      expect(billing.trialRunning, isFalse);
+      expect(billing.trialDaysLeft, isNull);
+      expect(billing.entitlements!.noteLimit, 5);
+    });
+
+    test('coming back asks again only once the answer is old or the trial over', () async {
+      var clock = DateTime.utc(2026, 10, 1, 12);
+      billing.dispose();
+      billing = Billing(
+        session: session,
+        userId: () => session.userId,
+        token: () => session.token,
+        api: (_) => api,
+        store: store,
+        now: () => clock,
+      );
+      api.answer = () => trialFor(const Duration(days: 2), from: clock);
+      session.signIn('user-1');
+      await settle();
+      final asked = api.calls;
+
+      await billing.refreshIfStale();
+      expect(api.calls, asked, reason: 'fresh, and the trial still running');
+
+      // Suspended past the end of it: no timer fired, so resuming asks.
+      clock = clock.add(const Duration(days: 2, minutes: 1));
+      await billing.refreshIfStale(maxAge: const Duration(days: 30));
+      expect(api.calls, asked + 1);
+    });
+
+    test('survives in the cache the way the rest of the answer does', () {
+      final ends = DateTime.utc(2026, 10, 15, 9, 30);
+      final read = Entitlements.fromJson(
+        entitlementsFor(noteLimit: 5, trialEndsAt: ends).toJson(),
+      );
+      expect(read.noteLimit, 5);
+      expect(read.trialEndsAt, ends);
+      // A server from before trials sends neither, which is no limit at all.
+      final old = Entitlements.fromJson({'plan': 'free', 'sync': true});
+      expect(old.noteLimit, isNull);
+      expect(old.trialEndsAt, isNull);
+    });
+  });
+
   test('the http client refuses to run signed out', () async {
     final http = HttpBillingApi(
       baseUrl: Uri.parse('https://example.invalid/'),
