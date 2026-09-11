@@ -47,6 +47,9 @@ class Sharing extends ChangeNotifier {
   final NotesStore _notes;
   final SyncService _sync;
 
+  /// Whether sync is holding [spaceId] back until somebody in it has Pro.
+  bool needsPro(String spaceId) => _sync.spacesNeedingPro.contains(spaceId);
+
   String get userId => _keyring.userId;
   List<Space> get spaces => _keyring.spaces;
 

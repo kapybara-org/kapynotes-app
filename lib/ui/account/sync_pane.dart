@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../billing/billing.dart';
+import '../../billing/entitlements.dart';
+import '../../billing/plan_terms.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
@@ -11,6 +14,7 @@ import '../../images/image_picker.dart';
 import '../../sync/account.dart';
 import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
+import '../billing/pro_sheet.dart';
 import 'recovery_key_dialog.dart';
 import '../profile_avatar.dart';
 
@@ -169,9 +173,14 @@ class _Field extends StatelessWidget {
 /// reset, no support request, no way back without the recovery key. Somebody
 /// who skims past that discovers it at the worst possible moment.
 class _InfoNote extends StatelessWidget {
-  const _InfoNote(this.text);
+  const _InfoNote(
+    this.text, {
+    super.key,
+    this.icon = Icons.lock_outline_rounded,
+  });
 
   final String text;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -189,7 +198,7 @@ class _InfoNote extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 1),
             child: Icon(
-              Icons.lock_outline_rounded,
+              icon,
               size: AppControlMetrics.iconAdornment,
               color: palette.textSecondary,
             ),
@@ -254,6 +263,14 @@ class _SignInFormState extends State<_SignInForm> {
   _SignInStep _step = _SignInStep.email;
   bool _busy = false;
   String? _note;
+
+  @override
+  void initState() {
+    super.initState();
+    // Whether to say what a new account gets is the server's to decide, and
+    // this form is only ever shown with no account to ask instead.
+    unawaited(widget.account.planTerms?.refreshIfStale() ?? Future.value());
+  }
 
   @override
   void dispose() {
@@ -361,6 +378,17 @@ class _SignInFormState extends State<_SignInForm> {
         ..._actions(),
         if (_note != null) _Message(_note!),
         if (account.lastError != null) _Message(account.lastError!),
+        if (_step == _SignInStep.email || _step == _SignInStep.password)
+          if (account.planTerms case final terms?)
+            ListenableBuilder(
+              listenable: terms,
+              builder: (context, _) => terms.enforced
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: _TrialNotice(terms: terms),
+                    )
+                  : const SizedBox.shrink(),
+            ),
       ],
     );
   }
@@ -1039,7 +1067,12 @@ class _Ready extends StatelessWidget {
   const _Ready({required this.account});
   final Account account;
 
-  String get _status => switch (account.sync?.status) {
+  String get _status => account.sync?.personalNeedsPro ?? false
+      ? 'Sync is part of Pro. Your notes stay on this device, and nothing '
+            'already synced is deleted.'
+      : _syncStatus;
+
+  String get _syncStatus => switch (account.sync?.status) {
     SyncStatus.syncing => 'Syncing…',
     SyncStatus.offline => 'Offline — will retry',
     SyncStatus.signedOut => 'Session expired — sign in again',
@@ -1063,10 +1096,15 @@ class _Ready extends StatelessWidget {
     if (sync == null) return;
     final progress = Toast.showProgress(context, 'Syncing notes…');
     try {
+      // Pressed by a person, so it is worth asking about what is held back
+      // once more: Pro may have been bought somewhere this device never heard.
+      sync.recheckCoverage();
       await sync.syncNow();
       if (sync.status == SyncStatus.failed ||
           sync.status == SyncStatus.offline) {
         progress.error(sync.lastError ?? 'Could not sync notes');
+      } else if (sync.personalNeedsPro) {
+        progress.error('Sync is part of Pro');
       } else {
         progress.success('Notes synced');
       }
@@ -1076,43 +1114,110 @@ class _Ready extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => _Panel(
-    title: account.user?.displayName ?? 'Signed in',
-    blurb: _status,
-    children: [
-      _ProfileEditor(account: account),
-      const SizedBox(height: 18),
-      Divider(height: 1, color: context.palette.separator),
-      const SizedBox(height: 18),
-      Row(
-        children: [
-          FilledButton(
-            onPressed: account.isSyncing
-                ? null
-                : () => unawaited(_syncNow(context)),
-            child: const Text('Sync now'),
+  Widget build(BuildContext context) {
+    final billing = account.billing;
+    // The pane already rebuilds with the account; billing notifies apart.
+    if (billing == null) return _panel(context, null);
+    return ListenableBuilder(
+      listenable: billing,
+      builder: (context, _) => _panel(context, billing),
+    );
+  }
+
+  /// When the trial ends and what happens then. Said here, on every
+  /// platform, because only a build that can sell has a Pro row to say it in.
+  static String _trialLine(int daysLeft) {
+    final when = daysLeft == 1 ? 'today' : 'in $daysLeft days';
+    return 'Your Pro trial ends $when. Then this account moves to Free by '
+        'itself: sync and sharing stop, and notes past the first five become '
+        'read-only. Nothing is deleted.';
+  }
+
+  Widget _panel(BuildContext context, Billing? billing) {
+    final trialDays = billing?.trialDaysLeft;
+    final needsPro = account.sync?.personalNeedsPro ?? false;
+    return _Panel(
+      title: account.user?.displayName ?? 'Signed in',
+      blurb: _status,
+      children: [
+        _ProfileEditor(account: account),
+        const SizedBox(height: 18),
+        Divider(height: 1, color: context.palette.separator),
+        const SizedBox(height: 18),
+        if (trialDays != null) ...[
+          _InfoNote(
+            _trialLine(trialDays),
+            key: const ValueKey('sync-trial'),
+            icon: Icons.hourglass_bottom_rounded,
           ),
-          const SizedBox(width: 8),
-          TextButton(
-            onPressed: () => unawaited(
-              _runAccountAction(
-                context,
-                waiting: 'Signing out…',
-                done: 'Signed out',
-                action: account.signOut,
-              ),
-            ),
-            child: const Text('Sign out'),
-          ),
+          const SizedBox(height: 12),
         ],
-      ),
-      _Message(
-        'Signing out leaves your notes on this device. It only forgets the '
-        'key and the session.',
-      ),
-      _DeleteAccount(account: account),
-    ],
-  );
+        if (billing != null &&
+            billing.canPurchase &&
+            (needsPro || trialDays != null)) ...[
+          FilledButton(
+            key: const ValueKey('sync-get-pro'),
+            onPressed: () => unawaited(showProSheet(context, billing: billing)),
+            child: const Text('Get Pro Lifetime'),
+          ),
+          const SizedBox(height: 8),
+        ],
+        Row(
+          children: [
+            FilledButton(
+              onPressed: account.isSyncing
+                  ? null
+                  : () => unawaited(_syncNow(context)),
+              child: const Text('Sync now'),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: () => unawaited(
+                _runAccountAction(
+                  context,
+                  waiting: 'Signing out…',
+                  done: 'Signed out',
+                  action: account.signOut,
+                ),
+              ),
+              child: const Text('Sign out'),
+            ),
+          ],
+        ),
+        _Message(
+          'Signing out leaves your notes on this device. It only forgets the '
+          'key and the session.',
+        ),
+        _DeleteAccount(account: account),
+      ],
+    );
+  }
+}
+
+/// What a new account gets, said before it exists: how long the trial lasts,
+/// what stops when it ends, and what carrying on costs. The trial starts on
+/// an account's first request, so this form is the last place to say it
+/// first — and saying all three is what a free trial has to do.
+class _TrialNotice extends StatelessWidget {
+  const _TrialNotice({required this.terms});
+
+  final PlanTerms terms;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = terms.trialDays;
+    final limit = terms.freeNoteLimit == 5 ? 'five' : '${terms.freeNoteLimit}';
+    return _InfoNote(
+      'New accounts get $days days of Pro, free, with no card: sync, sharing, '
+      'unlimited notes, 1 GB of storage and two hours of transcription a '
+      'month. Afterwards the account moves to Free by itself: sync and '
+      'sharing stop, and notes past the first $limit become read-only, with '
+      'nothing deleted. Pro Lifetime keeps everything for one payment of '
+      '$proLifetimeUsPrice.',
+      key: const ValueKey('trial-notice'),
+      icon: Icons.workspace_premium_outlined,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

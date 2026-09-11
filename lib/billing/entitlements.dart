@@ -118,6 +118,12 @@ enum Sku {
   }
 }
 
+/// Pro Lifetime's price in the US, for the one place a price has to be named
+/// before any store can be asked: the trial's notice at sign-up, which has to
+/// say what carrying on costs before the trial starts. Everywhere else shows
+/// the store's own, localised price. Matches `PRO_PRICE` on the site.
+const String proLifetimeUsPrice = r'US$24';
+
 /// What Pro gives on its own, before any pack. From the contract's
 /// `PLAN_ENTITLEMENTS`; used only to tell bought storage from the plan's.
 const int proStorageBytes = 1024 * 1024 * 1024;
