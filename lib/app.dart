@@ -293,6 +293,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     }
     widget.rates.loadCache();
     widget.updates?.loadCache();
+    widget.account?.planTerms?.loadCache();
     // After the editor exists, never before it: restoring reads the platform
     // keystore and asks the server who we are, and neither belongs in front of
     // the first frame.

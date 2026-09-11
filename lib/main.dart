@@ -4,6 +4,8 @@ import 'package:window_manager/window_manager.dart';
 import 'app.dart';
 import 'billing/billing.dart';
 import 'billing/billing_api.dart';
+import 'billing/note_limit.dart';
+import 'billing/plan_terms.dart';
 import 'billing/purchase_store.dart';
 import 'billing/revenuecat_store.dart';
 import 'core/desktop_integration.dart';
@@ -89,6 +91,14 @@ Future<void> main() async {
           : const UnsupportedPurchaseStore(),
       cache: store,
     );
+    // On every platform, whatever it can sell: the limits are the server's,
+    // and a build that cannot take money still has to keep to them.
+    final terms = PlanTerms(
+      store: store,
+      api: HttpPlanTermsApi(baseUrl: Uri.parse(kApiBaseUrl)),
+    );
+    account.planTerms = terms;
+    account.noteLimit = NoteLimit(notes: notes, account: account, terms: terms);
   }
 
   DesktopIntegration? desktopIntegration;

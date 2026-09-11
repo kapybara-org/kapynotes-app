@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import '../audio/voice_availability.dart';
 import '../audio/voice_player.dart';
 import '../audio/voice_recording_controller.dart';
+import '../billing/note_limit.dart';
 import '../data/voice_prefs.dart';
 import '../speech/local_model_store.dart';
 import '../speech/summarizer.dart';
@@ -43,6 +44,8 @@ import '../data/update_checker.dart';
 import '../images/image_picker.dart';
 import 'editor/note_editor.dart';
 import 'editor/image_insertion.dart';
+import 'billing/note_limit_dialog.dart';
+import 'billing/pro_sheet.dart';
 import 'empty_state.dart';
 import 'kapy_header_mascot.dart';
 import 'mobile_page_swipe.dart';
@@ -215,6 +218,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ) ??
         widget.notes.lastEditedNote?.id;
     widget.notes.addListener(_onNotesChanged);
+    widget.account?.noteLimit?.addListener(_onNoteLimitChanged);
     // The system-wide new-note shortcut has already raised the window by the
     // time this runs; the note itself is this page's to make.
     widget.desktopIntegration?.onNewNoteRequested = _createNote;
@@ -242,6 +246,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.account?.sync?.stopTyping(_selectedId);
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
+    widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
     widget.desktopIntegration?.onNewNoteRequested = null;
     widget.desktopIntegration?.onOpenRequested = null;
     _kapyIdleTimer?.cancel();
@@ -369,7 +374,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
 
     final note = widget.notes.byId(targetId);
-    if (!_canEditNote(note)) {
+    if (!_canWriteNote(note)) {
       Toast.show(
         context,
         'The note for that photo is no longer available',
@@ -404,7 +409,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
 
       final current = widget.notes.byId(targetId);
-      if (!_canEditNote(current)) {
+      if (!_canWriteNote(current)) {
         progress.error('The note for that photo is no longer available');
         return true;
       }
@@ -467,7 +472,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (recording == null || id == null) return;
 
     final stopping = recording.isRecording;
-    if (!stopping && !_canEditNote(widget.notes.byId(id))) return;
+    if (!stopping && !_canWriteNote(widget.notes.byId(id))) return;
     setState(() => _voiceActionBusy = true);
     final progress = Toast.showProgress(
       context,
@@ -518,7 +523,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     VoiceRecordingResult result,
     String noteId,
   ) async {
-    if (!_canEditNote(widget.notes.byId(noteId))) return;
+    if (!_canWriteNote(widget.notes.byId(noteId))) return;
     final blobs = widget.notes.blobs;
     final hash = await blobs.adoptFile(
       result.file,
@@ -634,7 +639,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     final noteId = _selectedId;
     final note = widget.notes.byId(noteId ?? '');
-    final canEdit = _canEditNote(note);
+    final canEdit = _canWriteNote(note);
     await openVoiceNoteDialog(
       context,
       ref: ref,
@@ -844,6 +849,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _createNoteNow() {
     _recordKapyActivity();
     final blank = _blankNoteAlreadyOpen();
+    if (blank == null && !(_noteLimit?.canCreate ?? true)) {
+      unawaited(_explainNoteLimit(creating: true));
+      return false;
+    }
     final note = blank ?? widget.notes.create();
     setState(() {
       _query = '';
@@ -875,6 +884,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final note = widget.notes.byId(id);
     if (note == null || note.isArchived || note.isShared) return null;
     if (!note.isEmpty || note.attachments.isNotEmpty) return null;
+    // Nobody can type into it, so it is not the new note either.
+    if (_limitHolds(note)) return null;
     return note;
   }
 
@@ -1116,7 +1127,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// read: jumping to the bottom of it and covering the rest with a keyboard
   /// would show a first-time reader the one part that says nothing.
   bool _readyToTypeIn(Note note) =>
-      _canEditNote(note) &&
+      _canWriteNote(note) &&
       widget.prefs.readyToTypeOnOpen &&
       note.id != _untouchedWelcomeId;
 
@@ -1133,6 +1144,45 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (note == null) return false;
     if (!note.isShared) return true;
     return widget.account?.sharing?.canEdit(note) ?? false;
+  }
+
+  NoteLimit? get _noteLimit => widget.account?.noteLimit;
+
+  /// Whether [note]'s content may change: [_canEditNote], and not held
+  /// read-only by the note limit. Archiving, restoring and deleting ask only
+  /// [_canEditNote] — deleting is the way back under the limit, so a note the
+  /// limit holds must never lose it.
+  bool _canWriteNote(Note? note) =>
+      _canEditNote(note) && !_limitHolds(note!);
+
+  bool _limitHolds(Note note) => _noteLimit?.isLocked(note) ?? false;
+
+  /// Says why the note limit stopped something, and goes where the answer
+  /// points: the Pro sheet, or the account pane to sign in first.
+  Future<void> _explainNoteLimit({required bool creating}) async {
+    final limit = _noteLimit?.limit;
+    if (limit == null) return;
+    final billing = widget.account?.billing;
+    final choice = await showNoteLimitDialog(
+      context,
+      limit: limit,
+      creating: creating,
+      signedIn: billing?.isSignedIn ?? false,
+      canBuy: billing?.canPurchase ?? false,
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case NoteLimitChoice.getPro when billing != null:
+        unawaited(showProSheet(context, billing: billing));
+      case NoteLimitChoice.signIn:
+        _showSettings(section: SettingsSection.sync);
+      case NoteLimitChoice.getPro || null:
+        break;
+    }
+  }
+
+  void _onNoteLimitChanged() {
+    if (mounted) setState(() {});
   }
 
   /// Opens the welcome note again, from settings.
@@ -1160,7 +1210,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     List<NoteFormatRange> formats,
     List<NoteAttachmentRef> attachments,
   ) {
-    if (!_canEditNote(widget.notes.byId(id))) return;
+    if (!_canWriteNote(widget.notes.byId(id))) return;
     _recordKapyActivity();
     widget.account?.sync?.reportTyping(id);
     // Typed in, so it is theirs now. Assigned rather than set: the editor
@@ -1396,6 +1446,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   sidebar: Sidebar(
                     notes: _visibleNotes,
                     pinnedNoteIds: widget.notes.pinnedNoteIds,
+                    lockedNoteIds: _noteLimit?.lockedIds ?? const {},
                     selectedId: _selectedId,
                     query: _query,
                     displayTime: widget.prefs.displayTime,
@@ -1497,6 +1548,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     builder: (context, _) => Sidebar(
                       notes: _visibleNotes,
                       pinnedNoteIds: widget.notes.pinnedNoteIds,
+                      lockedNoteIds: _noteLimit?.lockedIds ?? const {},
                       selectedId: _selectedId,
                       query: _query,
                       displayTime: widget.prefs.displayTime,
@@ -1621,7 +1673,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceStateFor: _voiceStateFor,
           onOpenVoiceNote: _openVoiceNote,
           recording: widget.recording,
-          onRecordVoice: voiceNotesEnabled && _canEditNote(note)
+          onRecordVoice: voiceNotesEnabled && _canWriteNote(note)
               ? () => unawaited(_startVoiceRecording())
               : null,
           voiceActionBusy: _voiceActionBusy,
@@ -1658,7 +1710,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           imageFetch: widget.account?.imageFetch,
           typingNames:
               widget.account?.sync?.typingNamesFor(note.id) ?? const [],
-          readOnly: !_canEditNote(note),
+          readOnly: !_canWriteNote(note),
+          readOnlyLabel: _limitHolds(note) ? 'Read-only on Free' : 'View only',
+          readOnlyIcon: _limitHolds(note)
+              ? Icons.lock_outline_rounded
+              : Icons.visibility_outlined,
+          onReadOnlyPressed: _limitHolds(note)
+              ? () => unawaited(_explainNoteLimit(creating: false))
+              : null,
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
           onGutterWidthChanged: desktopResultsDivider
@@ -1693,7 +1752,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceStateFor: _voiceStateFor,
           onOpenVoiceNote: _openVoiceNote,
           recording: widget.recording,
-          onRecordVoice: voiceNotesEnabled && _canEditNote(note)
+          onRecordVoice: voiceNotesEnabled && _canWriteNote(note)
               ? () => unawaited(_startVoiceRecording())
               : null,
           voiceActionBusy: _voiceActionBusy,
@@ -1722,7 +1781,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           imageFetch: widget.account?.imageFetch,
           typingNames:
               widget.account?.sync?.typingNamesFor(note.id) ?? const [],
-          readOnly: !_canEditNote(note),
+          readOnly: !_canWriteNote(note),
+          readOnlyLabel: _limitHolds(note) ? 'Read-only on Free' : 'View only',
+          readOnlyIcon: _limitHolds(note)
+              ? Icons.lock_outline_rounded
+              : Icons.visibility_outlined,
+          onReadOnlyPressed: _limitHolds(note)
+              ? () => unawaited(_explainNoteLimit(creating: false))
+              : null,
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
           onGutterWidthChanged: (value) => widget.prefs.gutterWidth = value,

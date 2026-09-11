@@ -93,6 +93,9 @@ class NoteEditor extends StatefulWidget {
     this.onImagesRejected,
     this.typingNames = const [],
     this.readOnly = false,
+    this.readOnlyLabel = 'View only',
+    this.readOnlyIcon = Icons.visibility_outlined,
+    this.onReadOnlyPressed,
     required this.engine,
     required this.highlighter,
     required this.gutterWidth,
@@ -173,6 +176,12 @@ class NoteEditor extends StatefulWidget {
   /// Keeps the note selectable and its links usable, while removing every
   /// local mutation path for a View only collaborator.
   final bool readOnly;
+
+  /// What the footer calls [readOnly]: View only for the sharing role, or the
+  /// note limit's own words, which [onReadOnlyPressed] then explains.
+  final String readOnlyLabel;
+  final IconData readOnlyIcon;
+  final VoidCallback? onReadOnlyPressed;
 
   final CalcEngine engine;
   final Highlighter highlighter;
@@ -2910,6 +2919,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               total: AppPlatform.isMobile ? null : _totalText,
               typingNames: widget.typingNames,
               readOnly: widget.readOnly,
+              readOnlyLabel: widget.readOnlyLabel,
+              readOnlyIcon: widget.readOnlyIcon,
+              onReadOnlyPressed: widget.onReadOnlyPressed,
               paragraphStyleShortcut: widget.shortcuts.bindingFor(
                 ShortcutAction.cycleTextStyle,
               ),

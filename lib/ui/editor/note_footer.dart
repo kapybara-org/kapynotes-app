@@ -39,6 +39,9 @@ class NoteFooter extends StatelessWidget {
     required this.total,
     this.typingNames = const [],
     this.readOnly = false,
+    this.readOnlyLabel = 'View only',
+    this.readOnlyIcon = Icons.visibility_outlined,
+    this.onReadOnlyPressed,
     required this.paragraphStyleShortcut,
     required this.boldShortcut,
     required this.italicShortcut,
@@ -70,6 +73,12 @@ class NoteFooter extends StatelessWidget {
   final String? total;
   final List<String> typingNames;
   final bool readOnly;
+
+  /// What [readOnly] is called here: View only for the sharing role, or the
+  /// note limit's own words. [onReadOnlyPressed], when set, explains it.
+  final String readOnlyLabel;
+  final IconData readOnlyIcon;
+  final VoidCallback? onReadOnlyPressed;
   final ShortcutBinding? paragraphStyleShortcut;
   final ShortcutBinding? boldShortcut;
   final ShortcutBinding? italicShortcut;
@@ -372,25 +381,10 @@ class NoteFooter extends StatelessWidget {
                     ] else if (readOnly) ...[
                       SizedBox(
                         width: readoutSlot,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Icon(
-                              Icons.visibility_outlined,
-                              size: AppControlMetrics.iconAction,
-                              color: palette.textTertiary,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'View only',
-                              key: const ValueKey('view-only-status'),
-                              style: TextStyle(
-                                fontSize: AppTypeScale.caption,
-                                fontWeight: FontWeight.w500,
-                                color: palette.textSecondary,
-                              ),
-                            ),
-                          ],
+                        child: _ReadOnlyStatus(
+                          label: readOnlyLabel,
+                          icon: readOnlyIcon,
+                          onPressed: onReadOnlyPressed,
                         ),
                       ),
                       SizedBox(width: _textEdgeInset),
@@ -724,4 +718,60 @@ class _FooterButtonSlot extends StatelessWidget {
     padding: EdgeInsets.only(right: AppControlMetrics.footerButtonGap),
     child: child,
   );
+}
+
+/// The quiet word in the footer's readout slot while a note cannot be
+/// changed, and the way to find out why when there is something to explain.
+class _ReadOnlyStatus extends StatelessWidget {
+  const _ReadOnlyStatus({
+    required this.label,
+    required this.icon,
+    this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final status = Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Icon(
+          icon,
+          size: AppControlMetrics.iconAction,
+          color: palette.textTertiary,
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            key: const ValueKey('view-only-status'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: AppTypeScale.caption,
+              fontWeight: FontWeight.w500,
+              color: palette.textSecondary,
+            ),
+          ),
+        ),
+      ],
+    );
+    final pressed = onPressed;
+    if (pressed == null) return status;
+    return Semantics(
+      button: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: pressed,
+          child: status,
+        ),
+      ),
+    );
+  }
 }

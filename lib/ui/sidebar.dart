@@ -42,6 +42,7 @@ class Sidebar extends StatelessWidget {
     super.key,
     required this.notes,
     this.pinnedNoteIds = const {},
+    this.lockedNoteIds = const {},
     required this.selectedId,
     required this.query,
     required this.displayTime,
@@ -75,6 +76,10 @@ class Sidebar extends StatelessWidget {
 
   final List<Note> notes;
   final Set<String> pinnedNoteIds;
+
+  /// Notes the note limit holds read-only, marked so the reason is visible
+  /// before one is opened.
+  final Set<String> lockedNoteIds;
   final String? selectedId;
   final String query;
   final DateTime Function(DateTime) displayTime;
@@ -212,6 +217,7 @@ extension on Sidebar {
         selected: note.id == selectedId,
         shared: shared,
         pinned: pinned,
+        locked: lockedNoteIds.contains(note.id),
         onTap: () => onSelect(note.id),
         onTogglePin: onTogglePin == null ? null : () => onTogglePin!(note.id),
         onShare: archiveMode || onShare == null
@@ -913,6 +919,7 @@ class NoteRow extends StatefulWidget {
     this.onTogglePin,
     this.pinned = false,
     this.shared = false,
+    this.locked = false,
     this.selecting = false,
     this.checked = false,
     this.onToggleChecked,
@@ -944,6 +951,9 @@ class NoteRow extends StatefulWidget {
   /// Whether the note is in a shared space, which the row marks so a person
   /// typing knows somebody else can see it.
   final bool shared;
+
+  /// Whether the note limit holds the note read-only.
+  final bool locked;
 
   @override
   State<NoteRow> createState() => _NoteRowState();
@@ -1201,6 +1211,7 @@ class _NoteRowState extends State<NoteRow> {
                                 updatedAt: widget.note.updatedAt,
                                 displayTime: widget.displayTime,
                                 shared: widget.shared,
+                                locked: widget.locked,
                               ),
                           ],
                         ),
@@ -1299,11 +1310,13 @@ class _UpdatedAtMetadata extends StatelessWidget {
     required this.updatedAt,
     required this.displayTime,
     this.shared = false,
+    this.locked = false,
   });
 
   final DateTime updatedAt;
   final DateTime Function(DateTime) displayTime;
   final bool shared;
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -1312,13 +1325,20 @@ class _UpdatedAtMetadata extends StatelessWidget {
       updatedAt,
       displayTime: displayTime,
     );
+    final what = [if (locked) 'Read-only', if (shared) 'Shared'];
     return Semantics(
-      label: shared ? 'Shared, updated $timestamp' : 'Updated $timestamp',
+      label: what.isEmpty
+          ? 'Updated $timestamp'
+          : '${what.join(', ')}, updated $timestamp',
       child: ExcludeSemantics(
         child: Row(
           children: [
             Icon(
-              shared ? Icons.people_outline_rounded : Icons.schedule_rounded,
+              locked
+                  ? Icons.lock_outline_rounded
+                  : shared
+                  ? Icons.people_outline_rounded
+                  : Icons.schedule_rounded,
               size: AppControlMetrics.iconInline,
               color: palette.textTertiary,
             ),

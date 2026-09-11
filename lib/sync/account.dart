@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../billing/billing.dart';
+import '../billing/note_limit.dart';
+import '../billing/plan_terms.dart';
 import '../data/local_store.dart';
 import '../data/notes_store.dart';
 import 'auth_api.dart';
@@ -98,6 +100,14 @@ class Account extends ChangeNotifier {
   Billing? _billing;
   Object? _coverage;
 
+  /// Whether plans are enforced, for when there is no account to ask. Set
+  /// once by `main`, like [billing]; null in a build that never limits.
+  PlanTerms? planTerms;
+
+  /// Which notes the plan leaves editable. Set once by `main` beside
+  /// [planTerms]; null in a build that never limits.
+  NoteLimit? noteLimit;
+
   /// What the server syncs for this account follows what billing says it
   /// has, so a change there — a purchase, a refund, a trial ending — is the
   /// cue for sync to ask about the spaces it is holding back. Billing
@@ -109,6 +119,7 @@ class Account extends ChangeNotifier {
     _coverage = coverage;
     _sync?.recheckCoverage();
   }
+
   final KeyStore _keys;
   final NotesStore _notes;
   final SyncState _state;
@@ -593,6 +604,8 @@ class Account extends ChangeNotifier {
   @override
   void dispose() {
     _teardownSync();
+    noteLimit?.dispose();
+    planTerms?.dispose();
     billing?.dispose();
     super.dispose();
   }
