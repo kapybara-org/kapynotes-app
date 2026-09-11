@@ -703,6 +703,132 @@ void main() {
     });
   });
 
+  group('a space that needs Pro', () {
+    // The builds before this one answered the refusal by resubscribing at
+    // once, and the server answered that with the refusal again.
+    int refusals() => server.refusals.where((r) => r == 'pro-required').length;
+
+    test('is asked about once over the socket, not in a loop', () async {
+      final device = Device(server, name: 'a');
+      await device.boot();
+      await device.goLive();
+      final note = device.notes.create(body: 'Before');
+      await settle(server);
+
+      server.needsPro.add(device.personalId);
+      server.announceUsers([device.api.userId]);
+      await settle(server);
+
+      expect(device.sync.personalNeedsPro, isTrue);
+      expect(device.sync.spacesNeedingPro, {device.personalId});
+      // Held, not failed: nothing is wrong with the notes.
+      expect(device.sync.status, SyncStatus.idle);
+      expect(device.isConnected, isTrue);
+
+      final refused = refusals();
+      final subscribed = server.calls.where((c) => c == 'ws:sub').length;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      await settle(server);
+      expect(refusals(), refused);
+      expect(server.calls.where((c) => c == 'ws:sub'), hasLength(subscribed));
+
+      // Writing is still writing; it waits, unsent and undiffed.
+      device.notes.updateBody(note.id, 'Written while held');
+      final pushes = server.calls.where((c) => c == 'ws:push').length;
+      await settle(server);
+      expect(server.calls.where((c) => c == 'ws:push'), hasLength(pushes));
+      expect(device.notes.byId(note.id)!.isDirty, isTrue);
+      expect(device.sync.pendingCount, 0);
+      device.dispose();
+    });
+
+    test('what was written while held goes up once Pro arrives', () async {
+      final device = Device(server, name: 'a');
+      await device.boot();
+      await device.goLive();
+      final note = device.notes.create(body: 'Before');
+      await settle(server);
+      server.needsPro.add(device.personalId);
+      server.announceUsers([device.api.userId]);
+      await settle(server);
+      device.notes.updateBody(note.id, 'Written while held');
+      await settle(server);
+
+      // Bought here: the app hears it from billing, not from the socket.
+      server.needsPro.clear();
+      device.sync.recheckCoverage();
+      await settle(server);
+
+      expect(device.sync.personalNeedsPro, isFalse);
+      expect(device.notes.byId(note.id)!.isDirty, isFalse);
+
+      final other = Device(server, name: 'b');
+      await other.boot();
+      await other.goLive();
+      expect(other.bodyOf(note.id), 'Written while held');
+      device.dispose();
+      other.dispose();
+    });
+
+    test('the server saying the spaces changed is enough to ask again', () async {
+      final device = Device(server, name: 'a');
+      await device.boot();
+      await device.goLive();
+      device.notes.create(body: 'Held');
+      await settle(server);
+      server.needsPro.add(device.personalId);
+      server.announceUsers([device.api.userId]);
+      await settle(server);
+      expect(device.sync.personalNeedsPro, isTrue);
+
+      // Bought on another device: the server announces it.
+      server.needsPro.clear();
+      server.announceUsers([device.api.userId]);
+      await settle(server);
+
+      expect(device.sync.personalNeedsPro, isFalse);
+      expect(device.notes.notes.single.isDirty, isFalse);
+      device.dispose();
+    });
+
+    test('over HTTP it is refused once per pass it is asked in', () async {
+      final device = Device(server, name: 'a');
+      await device.boot();
+      device.notes.create(body: 'Kept here');
+      await device.sync.syncNow();
+      server.needsPro.add(device.personalId);
+
+      // The first pass meets the refusal; the ones after do not ask.
+      await device.sync.syncNow();
+      expect(device.sync.personalNeedsPro, isTrue);
+      expect(device.sync.status, SyncStatus.idle);
+      final pulls = server.calls.where((c) => c.startsWith('pullOps')).length;
+      await device.sync.syncNow();
+      await device.sync.syncNow();
+      expect(server.calls.where((c) => c.startsWith('pullOps')), hasLength(pulls));
+
+      server.needsPro.clear();
+      device.sync.recheckCoverage();
+      await settle(server);
+      expect(device.sync.personalNeedsPro, isFalse);
+      device.dispose();
+    });
+
+    test('signing out forgets it', () async {
+      final device = Device(server, name: 'a');
+      await device.boot();
+      device.notes.create(body: 'Kept here');
+      await device.sync.syncNow();
+      server.needsPro.add(device.personalId);
+      await device.sync.syncNow();
+      expect(device.sync.personalNeedsPro, isTrue);
+
+      device.sync.lock();
+      expect(device.sync.spacesNeedingPro, isEmpty);
+      device.dispose();
+    });
+  });
+
   group('status', () {
     test('an auth failure signs out and keeps the outbox', () async {
       final device = Device(server, name: 'a');

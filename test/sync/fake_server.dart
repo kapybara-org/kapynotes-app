@@ -93,6 +93,18 @@ class FakeServer {
   /// The minimum protocol the server serves. Raise it to see a build refuse.
   int minProtocol = 1;
 
+  /// Spaces refused for want of Pro, as `coveredSpaces` refuses them once a
+  /// trial is over and nobody in the space pays. Per space, like the real one:
+  /// asked after membership, so a stranger still hears 404. Change it, then
+  /// [announceUsers], the way a purchase or a refund announces itself.
+  final Set<String> needsPro = {};
+
+  void _covered(String spaceId) {
+    if (needsPro.contains(spaceId)) {
+      _refuse(402, 'pro-required', {'spaceId': spaceId});
+    }
+  }
+
   /// Rows returned per page of the log, over HTTP and on the socket's
   /// catch-up alike, mirroring the real limit being smaller than the corpus.
   int pageSize = 200;
@@ -385,6 +397,7 @@ class FakeServer {
       if (space.members[userId] == SpaceRole.viewer) {
         _refuse(403, 'view-only', {'spaceId': id});
       }
+      _covered(id);
     }
     final space = spaces[push.spaceId]!;
     final source = push.from == null ? null : spaces[push.from!]!;
@@ -645,6 +658,7 @@ class FakeServer {
   /// interleaved. Mirrors `pullOps`.
   OpsBatch pullOps(String userId, String spaceId, int after, int limit) {
     final space = _member(userId, spaceId);
+    _covered(spaceId);
     final ops = space.ops.where((op) => op.seq > after).toList()
       ..sort((a, b) => a.seq.compareTo(b.seq));
     final snaps = space.snapshots.values.where((s) => s.seq > after).toList()
@@ -934,6 +948,7 @@ class FakeServer {
   ) {
     calls.add('grant:$target');
     final space = _editor(userId, spaceId);
+    _covered(spaceId);
     if (!space.keys.containsKey(userId)) {
       _refuse(403, 'you do not hold this space key');
     }
@@ -1436,6 +1451,11 @@ class FakeSocket implements SyncSocket {
         _send({'t': 'error', 'spaceId': spaceId, 'error': 'not a member'});
         continue;
       }
+      if (server.needsPro.contains(spaceId)) {
+        server.refusals.add('pro-required');
+        _send({'t': 'error', 'spaceId': spaceId, 'error': 'pro-required'});
+        continue;
+      }
       // Registered before the first page, so nothing that lands during the
       // catch-up is missed: it is held until the pages are out.
       final sub = _Subscription(cursor is int ? cursor : 0);
@@ -1616,9 +1636,13 @@ class FakeSocket implements SyncSocket {
   void _revalidate() {
     for (final spaceId in _subs.keys.toList()) {
       final space = server.spaces[spaceId];
-      if (space != null && space.members.containsKey(userId)) continue;
-      _unsubscribe(spaceId);
-      _send({'t': 'error', 'spaceId': spaceId, 'error': 'not a member'});
+      if (space == null || !space.members.containsKey(userId)) {
+        _unsubscribe(spaceId);
+        _send({'t': 'error', 'spaceId': spaceId, 'error': 'not a member'});
+      } else if (server.needsPro.contains(spaceId)) {
+        _unsubscribe(spaceId);
+        _send({'t': 'error', 'spaceId': spaceId, 'error': 'pro-required'});
+      }
     }
   }
 

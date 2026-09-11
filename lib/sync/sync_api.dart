@@ -650,9 +650,20 @@ const int opsPullDefaultLimit = 500;
 const String deviceHeader = 'x-kapynotes-device';
 
 /// Which sync protocol this build speaks. Matches `PROTOCOL_HEADER` and
-/// `PROTOCOL_VERSION`: version 3 is the encrypted op log over the socket.
+/// `PROTOCOL_VERSION`: version 3 is the encrypted op log over the socket, and
+/// version 4 is the same log from a build that understands [proRequiredCode].
+/// A server tells anything older 426 in its place, because a build before this
+/// one answered that refusal by asking again, forever.
 const String protocolHeader = 'x-kapynotes-protocol';
-const int protocolVersion = 3;
+const int protocolVersion = 4;
+
+/// The server's refusal of a space nobody in it has Pro for. Matches
+/// `ProRequired`, on HTTP status 402 and as a socket error naming the space.
+///
+/// Per space: a free account in a space somebody Pro owns syncs that one and
+/// not its own. It will be refused again until something is bought, so it is
+/// never retried on a timer — see `SyncService.spacesNeedingPro`.
+const String proRequiredCode = 'pro-required';
 
 class HttpSyncApi implements SyncApi {
   HttpSyncApi({
