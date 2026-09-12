@@ -217,7 +217,7 @@ class _ProSheetState extends State<ProSheet> {
       return 'Yours while you try Pro. Pro Lifetime keeps them after it ends.';
     }
     if (now.sync) {
-      return 'Included for everyone during beta. Pro keeps them after launch.';
+      return 'Included for everyone for now. Pro keeps them for good.';
     }
     return 'Write past five notes, keep them in sync, and invite others in.';
   }

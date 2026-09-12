@@ -147,13 +147,13 @@ void main() {
     expect(find.byKey(const ValueKey('pro-offers-retry')), findsOneWidget);
   });
 
-  testWidgets('during the beta it says sync and sharing are everyone’s', (
+  testWidgets('while the limits are off it says sync and sharing are everyone’s', (
     tester,
   ) async {
     session.signIn('user-1');
     await pumpSheet(tester);
 
-    expect(find.textContaining('during beta'), findsOneWidget);
+    expect(find.textContaining('everyone for now'), findsOneWidget);
   });
 
   testWidgets('a trial says what is left of it, and that it ends by itself', (
@@ -166,8 +166,8 @@ void main() {
     expect(find.byKey(const ValueKey('pro-trial')), findsOneWidget);
     expect(find.textContaining('6 days left'), findsOneWidget);
     expect(find.textContaining('Nothing is charged'), findsOneWidget);
-    // Not the beta's line: after launch, sync is on because of the trial.
-    expect(find.textContaining('during beta'), findsNothing);
+    // Not the everyone line: during a trial, sync is on because of the trial.
+    expect(find.textContaining('everyone for now'), findsNothing);
     expect(find.textContaining('while you try Pro'), findsOneWidget);
     // Pro Lifetime is still the thing to buy, and no pack is: one bought
     // during a trial would be stranded on Free when the trial ended.
