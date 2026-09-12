@@ -34,7 +34,7 @@ const String kSiteBaseUrl = String.fromEnvironment(
 /// the Pro row does not appear.
 const String kRevenueCatAppleKey = String.fromEnvironment(
   'KAPYNOTES_RC_APPLE_KEY',
-  defaultValue: '',
+  defaultValue: 'appl_rfjTUTTpCTPXctKuWahOkemLwpU',
 );
 
 /// The same, for the Play app. Empty until the Play products exist, which is
