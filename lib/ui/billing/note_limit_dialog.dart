@@ -2,23 +2,20 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
 
-/// Where somebody over the note limit chose to go next.
-enum NoteLimitChoice { getPro, signIn }
-
 /// Says why a note will not change, or why a new one will not start, and
-/// what can be done about it.
+/// what can be done about it. True if the answer was to go and get Pro.
 ///
 /// The limit is never a dead end, and the words say so first: nothing is
 /// deleted, pinning chooses which notes stay editable, and deleting one makes
-/// room. Buying is offered only where this build can sell something — signed
-/// out, that means signing in, because Pro belongs to an account.
-Future<NoteLimitChoice?> showNoteLimitDialog(
+/// room. Buying is offered wherever this build can sell something, signed in
+/// or not — lifting this limit is the one thing Pro does that needs no
+/// account.
+Future<bool> showNoteLimitDialog(
   BuildContext context, {
   required int limit,
   required bool creating,
-  required bool signedIn,
   required bool canBuy,
-}) {
+}) async {
   final number = _spelled(limit);
   final title = creating
       ? 'Free keeps up to $number notes'
@@ -33,7 +30,7 @@ Future<NoteLimitChoice?> showNoteLimitDialog(
             'keep it editable instead of another, or get Pro Lifetime to edit '
             'every note.';
 
-  return showDialog<NoteLimitChoice>(
+  final answer = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       key: const ValueKey('note-limit-dialog'),
@@ -57,14 +54,13 @@ Future<NoteLimitChoice?> showNoteLimitDialog(
         if (canBuy)
           FilledButton(
             key: const ValueKey('note-limit-get-pro'),
-            onPressed: () => Navigator.of(context).pop(
-              signedIn ? NoteLimitChoice.getPro : NoteLimitChoice.signIn,
-            ),
-            child: Text(signedIn ? 'Get Pro' : 'Sign in to get Pro'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Get Pro'),
           ),
       ],
     ),
   );
+  return answer ?? false;
 }
 
 String _spelled(int n) => switch (n) {

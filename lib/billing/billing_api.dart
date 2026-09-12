@@ -6,13 +6,50 @@ import 'package:http/http.dart' as http;
 import '../sync/sync_api.dart';
 import 'entitlements.dart';
 
+/// What the server says an account owns, once it has claimed it.
+class AdoptedPurchases {
+  const AdoptedPurchases({
+    required this.claimed,
+    required this.heldByAnother,
+    required this.entitlements,
+  });
+
+  /// The skus this account has just taken ownership of. Empty is the ordinary
+  /// answer: almost every purchase arrives by webhook, already owned.
+  final List<String> claimed;
+
+  /// Something bought on this store account belongs to a different Kapy Notes
+  /// account, and stays there.
+  final bool heldByAnother;
+
+  final Entitlements entitlements;
+
+  static AdoptedPurchases fromJson(Map<String, Object?> raw) => AdoptedPurchases(
+    claimed: [
+      for (final sku in raw['claimed'] is List ? raw['claimed'] as List : const [])
+        if (sku is String) sku,
+    ],
+    heldByAnother: raw['heldByAnother'] == true,
+    entitlements: Entitlements.fromJson(
+      raw['entitlements'] is Map
+          ? (raw['entitlements'] as Map).cast<String, Object?>()
+          : const {},
+    ),
+  );
+}
+
 /// The server's half of billing: what this account may do.
 ///
-/// Purchases themselves never pass through here. They go from the store to
-/// RevenueCat to the server's webhook, and this is how the app finds out they
-/// arrived.
+/// A purchase normally reaches it without passing through here at all — store
+/// to RevenueCat to the webhook — and [entitlements] is how the app finds out
+/// it arrived. [adopt] is for the one purchase that cannot: the one made
+/// before there was an account to grant it to.
 abstract class BillingApi {
   Future<Entitlements> entitlements();
+
+  /// Asks the server to claim whatever the store already holds for this
+  /// account. Called once, on signing in.
+  Future<AdoptedPurchases> adopt();
 }
 
 class HttpBillingApi implements BillingApi {
@@ -33,6 +70,10 @@ class HttpBillingApi implements BillingApi {
   @override
   Future<Entitlements> entitlements() async =>
       Entitlements.fromJson(await _json('GET', 'billing/entitlements'));
+
+  @override
+  Future<AdoptedPurchases> adopt() async =>
+      AdoptedPurchases.fromJson(await _json('POST', 'billing/adopt'));
 
   /// The same request shape and error ladder as the speech client, so a
   /// billing failure reads like every other server failure in the app.

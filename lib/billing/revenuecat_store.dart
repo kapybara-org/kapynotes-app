@@ -11,19 +11,21 @@ import 'purchase_store.dart';
 ///
 /// The only file that talks to the SDK. RevenueCat sees the store transaction
 /// and forwards it to the server's webhook; the server, not this, decides what
-/// it grants. So nothing here reads entitlements back out of the SDK — it only
-/// ever asks the store to sell something, or what it has already sold.
+/// it grants.
 ///
-/// Never configured anonymously. The SDK is set up the first time an account
-/// needs it, with that account's id, because the webhook grants a purchase to
-/// exactly the id RevenueCat reports and an anonymous one reaches nobody.
+/// Signed out there is no account for it to grant to, so the SDK is configured
+/// anonymously and the purchase waits under an id of RevenueCat's own.
+/// [logIn] hands it to the account, and the server claims it from RevenueCat
+/// (`/billing/adopt`) rather than taking this side's word for it. The one
+/// thing this side is believed about is [ownsProHere], for the one part of Pro
+/// that works with no account at all.
 class RevenueCatStore implements PurchaseStore {
   RevenueCatStore({required String apiKey}) : _apiKey = apiKey;
 
   final String _apiKey;
 
-  /// The account the SDK is identified as. Null before it has been set up,
-  /// and again after a sign-out.
+  /// The account the SDK is identified as, or null for the anonymous id it
+  /// keeps for somebody who has not signed in.
   String? _identified;
 
   /// Calls run one at a time. A sign-in arriving while a purchase sheet is up
@@ -40,8 +42,12 @@ class RevenueCatStore implements PurchaseStore {
     return previous.then((_) => body()).whenComplete(done.complete);
   }
 
-  Future<void> _identify(String userId) async {
-    if (_identified == userId) return;
+  /// Sets the SDK up if it is not already, as [userId] or as nobody.
+  ///
+  /// Identifying an already-anonymous SDK is what hands an anonymous purchase
+  /// to the account: RevenueCat aliases the two, and the account owns what was
+  /// bought before it existed.
+  Future<void> _identify(String? userId) async {
     if (!await rc.Purchases.isConfigured) {
       await rc.Purchases.setLogLevel(
         kDebugMode ? rc.LogLevel.debug : rc.LogLevel.warn,
@@ -49,9 +55,13 @@ class RevenueCatStore implements PurchaseStore {
       await rc.Purchases.configure(
         rc.PurchasesConfiguration(_apiKey)..appUserID = userId,
       );
-    } else {
-      await rc.Purchases.logIn(userId);
+      _identified = userId;
+      return;
     }
+    // Nothing identifies as nobody: going back to anonymous is a sign-out,
+    // which is its own call.
+    if (userId == null || userId == _identified) return;
+    await rc.Purchases.logIn(userId);
     _identified = userId;
   }
 
@@ -71,7 +81,7 @@ class RevenueCatStore implements PurchaseStore {
   });
 
   @override
-  Future<List<StoreOffer>> offers({required String userId}) =>
+  Future<List<StoreOffer>> offers({String? userId}) =>
       _serial(() async {
         await _identify(userId);
         final products = await rc.Purchases.getProducts([
@@ -85,7 +95,7 @@ class RevenueCatStore implements PurchaseStore {
       });
 
   @override
-  Future<PurchaseOutcome> buy(Sku sku, {required String userId}) =>
+  Future<PurchaseOutcome> buy(Sku sku, {String? userId}) =>
       _serial(() async {
         try {
           await _identify(userId);
@@ -107,7 +117,7 @@ class RevenueCatStore implements PurchaseStore {
       });
 
   @override
-  Future<Set<Sku>> restore({required String userId}) => _serial(() async {
+  Future<Set<Sku>> restore({String? userId}) => _serial(() async {
     await _identify(userId);
     final info = await rc.Purchases.restorePurchases();
     return {
@@ -116,6 +126,23 @@ class RevenueCatStore implements PurchaseStore {
             when sku == Sku.proLifetime)
           sku,
     };
+  });
+
+  @override
+  Future<bool> ownsProHere() => _serial(() async {
+    try {
+      // Sets the SDK up anonymously if nothing has yet. Billing only asks
+      // when this device already believes it bought something, so a device
+      // that never did is never introduced to RevenueCat.
+      await _identify(null);
+      final info = await rc.Purchases.getCustomerInfo();
+      return info.allPurchasedProductIdentifiers.contains(
+        Sku.proLifetime.storeProductId,
+      );
+    } on PlatformException catch (error) {
+      debugPrint('KapyNotes: could not read the store: $error');
+      return false;
+    }
   });
 
   PurchaseOutcome _outcomeFor(PlatformException error) =>

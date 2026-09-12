@@ -59,17 +59,40 @@ void main() {
   FilledButton buyButton(WidgetTester tester) =>
       tester.widget<FilledButton>(find.byKey(const ValueKey('pro-buy')));
 
-  testWidgets('signed out, it asks for an account before anything else', (
+  testWidgets('signed out, it sells Pro and says what needs an account', (
     tester,
   ) async {
     await pumpSheet(tester);
 
+    // Buying is allowed with no account, because unlimited notes works
+    // without one — and what does not is said before the money.
+    expect(find.text(r'Get Pro Lifetime · $24.00'), findsOneWidget);
+    expect(
+      find.textContaining('Unlimited notes unlock on this device'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('belong to an account'), findsOneWidget);
+    // Restoring is offered too: a wiped device unlocks its notes again.
+    expect(find.byKey(const ValueKey('pro-restore')), findsOneWidget);
     expect(find.byKey(const ValueKey('pro-sign-in')), findsOneWidget);
+  });
+
+  testWidgets('bought with no account, it says where the purchase is', (
+    tester,
+  ) async {
+    await pumpSheet(tester);
+    await tester.tap(find.byKey(const ValueKey('pro-buy')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(store.log, contains('buy pro_lifetime as nobody'));
+    expect(find.byKey(const ValueKey('pro-owned-here')), findsOneWidget);
+    expect(find.textContaining('on this device'), findsWidgets);
+    expect(
+      find.textContaining('Sign in to use it on your other devices'),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('pro-buy')), findsNothing);
-    // Restoring needs an account to restore onto.
-    expect(find.byKey(const ValueKey('pro-restore')), findsNothing);
-    // Nothing was asked of the store: it is never set up without an account.
-    expect(store.log, isEmpty);
   });
 
   testWidgets('a free account sees the store price and can buy', (

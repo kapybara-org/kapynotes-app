@@ -35,6 +35,13 @@ enum RestoreResult {
 /// RevenueCat, RevenueCat tells the server, and only the server's answer is
 /// shown — so after every purchase this asks the server until the thing bought
 /// is there, rather than trusting the store's word on the device.
+///
+/// Signed out there is no account for the server to grant to, and one thing
+/// still has to work: the note limit, which is the only part of Pro that needs
+/// no account. So buying signed out is allowed, [proOnThisDevice] comes from
+/// the store itself, and signing in hands the purchase over — the SDK aliases
+/// it, the server claims it (`adopt`), and from then on the server's answer is
+/// the only one that counts again.
 class Billing extends ChangeNotifier {
   Billing({
     required Listenable session,
@@ -55,11 +62,20 @@ class Billing extends ChangeNotifier {
        _store = store,
        _cache = cache,
        _now = now ?? DateTime.now {
+    _proOnThisDevice =
+        _cache?.read<Map<String, Object?>>(_deviceKey)?['pro'] == true;
     _session.addListener(_onSession);
     _onSession();
+    // A launch signed out notifies nothing — the id has not changed — so the
+    // check that a refund has not taken this back belongs here.
+    if (_proOnThisDevice) unawaited(_readStore());
   }
 
   static const _cacheKey = 'billing.v1';
+
+  /// Kept beside the account's answer but not keyed by an account, because
+  /// what it records happened before there was one.
+  static const _deviceKey = 'billing.device.v1';
 
   final Listenable _session;
   final String? Function() _userIdOf;
@@ -95,9 +111,25 @@ class Billing extends ChangeNotifier {
   Sku? _activeSku;
   String? _notice;
 
+  /// What the store said was bought here, for the stretch where there is no
+  /// account to ask instead. Never consulted while signed in.
+  ///
+  /// Remembered on disk so a launch knows it without asking, and re-checked
+  /// against the store whenever it is true — a refund has to take it back.
+  /// A device that has never bought anything never asks, and so never tells
+  /// RevenueCat that it exists.
+  bool _proOnThisDevice = false;
+
   /// Whether this build can buy anything at all.
   bool get canPurchase => _store.isSupported;
   bool get isSignedIn => _userId != null;
+
+  /// Whether Pro was bought on this device but has no account yet.
+  ///
+  /// Only the note limit follows it; sync, sharing, storage and minutes all
+  /// belong to an account and wait for one. False the moment somebody signs
+  /// in, because the server answers for them from then on.
+  bool get proOnThisDevice => _userId == null && _proOnThisDevice;
 
   /// The server's last answer for this account. Null while signed out, and
   /// until the first answer arrives on a device that has never had one.
@@ -170,11 +202,68 @@ class Billing extends ChangeNotifier {
     _armTrialEnd();
     if (id == null) {
       unawaited(_quietly(_store.logOut));
+      // Signed out, the store is the only record again — and it may still
+      // hold a purchase made on this Apple ID, whoever was signed in.
+      unawaited(_readStore(force: true));
     } else {
-      unawaited(_quietly(() => _store.logIn(id)));
-      unawaited(refresh());
+      unawaited(_joinAccount(id));
     }
     notifyListeners();
+  }
+
+  /// Signing in: the store hands whatever was bought here to this account,
+  /// and the server claims it. Only then is its answer worth asking for.
+  Future<void> _joinAccount(String id) async {
+    await _quietly(() => _store.logIn(id));
+    if (_userId != id) return;
+    await _adopt(id);
+    if (_userId == id) await refresh();
+  }
+
+  /// Claims a purchase made before there was an account. Quiet unless the
+  /// answer is one somebody has to hear: a purchase that stays where it is.
+  Future<void> _adopt(String id) async {
+    final token = _tokenOf();
+    if (token == null) return;
+    try {
+      final adopted = await _apiFor(token).adopt();
+      if (_userId != id) return;
+      _entitlements = adopted.entitlements;
+      _askedAt = _now();
+      _cache?.put(_cacheKey, {
+        'userId': id,
+        'entitlements': adopted.entitlements.toJson(),
+      });
+      _armTrialEnd();
+      if (adopted.heldByAnother) {
+        _notice =
+            'A purchase on this Apple ID belongs to a different Kapy Notes '
+            'account. Sign in to that account to use it.';
+      }
+      notifyListeners();
+    } catch (error) {
+      // A server too old to know the route, no key configured, or offline.
+      // The webhook is the ordinary way in; this was the repair.
+      debugPrint('KapyNotes: could not claim earlier purchases: $error');
+    }
+  }
+
+  /// Asks the store what it has sold here. Signed out only; see
+  /// [proOnThisDevice].
+  ///
+  /// Without [force] it asks only when this device already believes it bought
+  /// something, so a fresh install never reaches RevenueCat at all.
+  Future<void> _readStore({bool force = false}) async {
+    if (!canPurchase || (!force && !_proOnThisDevice)) return;
+    try {
+      final owned = await _store.ownsProHere();
+      if (_userId != null || owned == _proOnThisDevice) return;
+      _proOnThisDevice = owned;
+      _cache?.put(_deviceKey, {'pro': owned});
+      notifyListeners();
+    } catch (error) {
+      debugPrint('KapyNotes: could not read the store: $error');
+    }
   }
 
   /// Asks again if the answer here is older than [maxAge], or describes a
@@ -233,17 +322,20 @@ class Billing extends ChangeNotifier {
     }
   }
 
-  /// Fetches prices, which only the store can give. Needs an account, because
-  /// the store is never set up without one.
+  /// Fetches prices, which only the store can give. Works signed out: the
+  /// store keeps an id of its own until an account claims what it sold.
   Future<void> loadOffers() async {
     final id = _userId;
-    if (!canPurchase || id == null || _offersLoading) return;
+    if (!canPurchase || _offersLoading) return;
     _offersLoading = true;
     _offersFailed = false;
     notifyListeners();
     try {
       final offers = await _store.offers(userId: id);
       if (_userId != id) return;
+      // Asking for prices is the first thing a signed-out sheet does, and it
+      // sets the store up; what it already sold is worth reading while there.
+      if (id == null) unawaited(_readStore(force: true));
       _offers = offers;
       _offersFailed = offers.isEmpty;
     } catch (error) {
@@ -257,9 +349,12 @@ class Billing extends ChangeNotifier {
 
   Future<PurchaseOutcome> buy(Sku sku) async {
     final id = _userId;
-    if (id == null) {
+    // Signed out, only the one product that unlocks something without an
+    // account: a pack bought with no account to add it to would be money for
+    // nothing until somebody signed in.
+    if (id == null && sku != Sku.proLifetime) {
       return const PurchaseFailed(
-        'Sign in first. Pro belongs to your Kapy Notes account.',
+        'Sign in first. Packs are added to your Kapy Notes account.',
       );
     }
     if (_activity != BillingActivity.idle) {
@@ -274,12 +369,16 @@ class Billing extends ChangeNotifier {
       // The baseline a pack is measured against. Packs are only offered to an
       // account whose answer is already here, but asking costs one request
       // and guessing would confirm a pack that never arrived.
-      final before = _entitlements ?? await refresh();
+      final before = _entitlements ?? (id == null ? null : await refresh());
       final outcome = await _store.buy(sku, userId: id);
-      if (outcome is PurchaseCompleted) {
+      if (outcome is PurchaseCompleted && id == null) {
+        // Nothing to confirm against: the store is the only record until an
+        // account claims it.
+        await _readStore(force: true);
+      } else if (outcome is PurchaseCompleted) {
         _activity = BillingActivity.confirming;
         notifyListeners();
-        final arrived = await _waitFor(sku, before, id, confirmFor);
+        final arrived = await _waitFor(sku, before, id!, confirmFor);
         if (!arrived && _userId == id) {
           _notice =
               'The App Store has taken the payment. It can take a minute to '
@@ -305,7 +404,6 @@ class Billing extends ChangeNotifier {
 
   Future<RestoreResult> restore() async {
     final id = _userId;
-    if (id == null) return RestoreResult.signedOut;
     if (_activity != BillingActivity.idle) return RestoreResult.failed;
 
     _activity = BillingActivity.restoring;
@@ -313,6 +411,14 @@ class Billing extends ChangeNotifier {
     notifyListeners();
     try {
       final owned = await _store.restore(userId: id);
+      if (id == null) {
+        // Restoring with no account puts Pro back on this device, which is
+        // all it can put back; the rest waits for somebody to sign in.
+        await _readStore(force: true);
+        return owned.contains(Sku.proLifetime)
+            ? RestoreResult.restored
+            : RestoreResult.nothingFound;
+      }
       final now = await refresh();
       if (now?.isPro ?? false) return RestoreResult.restored;
       if (!owned.contains(Sku.proLifetime)) return RestoreResult.nothingFound;

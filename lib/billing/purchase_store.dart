@@ -50,24 +50,33 @@ abstract class PurchaseStore {
   /// Whether anything can be bought here at all.
   bool get isSupported;
 
-  /// Ties every purchase from now on to this account.
-  ///
-  /// Called before a purchase can be offered, and only ever with the account's
-  /// own id: the server grants a purchase to exactly the account RevenueCat
-  /// reports, and an anonymous one reaches nobody.
+  /// Ties every purchase from now on to this account, and hands over anything
+  /// bought before there was one.
   Future<void> logIn(String userId);
 
   Future<void> logOut();
 
   /// What is for sale, with prices. Empty when the store will not say.
-  Future<List<StoreOffer>> offers({required String userId});
+  ///
+  /// [userId] is null when nobody is signed in, which is allowed: the store
+  /// keeps the purchase under an id of its own until an account claims it.
+  Future<List<StoreOffer>> offers({String? userId});
 
-  Future<PurchaseOutcome> buy(Sku sku, {required String userId});
+  Future<PurchaseOutcome> buy(Sku sku, {String? userId});
 
   /// Asks the store what this store account has already bought, and returns
   /// the skus it owns for good. Consumables are not restorable, so this is Pro
   /// or nothing.
-  Future<Set<Sku>> restore({required String userId});
+  Future<Set<Sku>> restore({String? userId});
+
+  /// Whether the store itself says Pro Lifetime was bought here.
+  ///
+  /// The one thing the SDK is believed about, and only while signed out: the
+  /// note limit is the only part of Pro that works without an account, so it
+  /// is the only part that can be unlocked without one. Everything else is the
+  /// server's to grant, and once somebody signs in the server's answer decides
+  /// this too.
+  Future<bool> ownsProHere();
 }
 
 /// Everywhere there is no store to buy through.
@@ -84,12 +93,15 @@ class UnsupportedPurchaseStore implements PurchaseStore {
   Future<void> logOut() async {}
 
   @override
-  Future<List<StoreOffer>> offers({required String userId}) async => const [];
+  Future<List<StoreOffer>> offers({String? userId}) async => const [];
 
   @override
-  Future<PurchaseOutcome> buy(Sku sku, {required String userId}) async =>
+  Future<PurchaseOutcome> buy(Sku sku, {String? userId}) async =>
       const PurchaseFailed('Purchases are not available on this device.');
 
   @override
-  Future<Set<Sku>> restore({required String userId}) async => const {};
+  Future<Set<Sku>> restore({String? userId}) async => const {};
+
+  @override
+  Future<bool> ownsProHere() async => false;
 }

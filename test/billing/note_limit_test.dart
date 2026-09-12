@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/billing/note_limit.dart';
+import 'package:kapy_notes/billing/entitlements.dart';
 import 'package:kapy_notes/billing/plan_terms.dart';
+import 'package:kapy_notes/billing/purchase_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -40,6 +42,7 @@ void main() {
   late _TermsApi termsApi;
   late PlanTerms terms;
   late NoteLimit limit;
+  late FakePurchaseStore purchases;
   late DateTime clock;
 
   setUp(() async {
@@ -62,12 +65,14 @@ void main() {
       docStorage: MemoryDocStorage(),
     );
     billingApi = FakeBillingApi();
+    purchases = FakePurchaseStore();
     account.billing = Billing(
       session: account,
       userId: () => account.user?.id,
       token: () => account.token,
       api: (_) => billingApi,
-      store: FakePurchaseStore(),
+      store: purchases,
+      cache: store,
     );
     termsApi = _TermsApi();
     terms = PlanTerms(store: store, api: termsApi, now: () => clock);
@@ -191,6 +196,39 @@ void main() {
     notes.updateBody(written[5].id, 'Still writing'); // anything that asks
     expect(limit.limit, 5);
     expect(limit.lockedIds, {written[0].id});
+  });
+
+  test('Pro bought before signing in lifts it, on this device', () async {
+    final written = write(6);
+    termsApi.enforced = true;
+    await account.restore();
+    await Future<void>.delayed(Duration.zero);
+    clock = clock.add(const Duration(days: 15));
+    notes.updateBody(written[5].id, 'Past the fortnight');
+    expect(limit.limit, 5, reason: 'the device trial is over');
+
+    // Bought with nobody signed in: unlimited notes is the one part of Pro
+    // that works without an account, so it is the part this unlocks.
+    expect(await account.billing!.buy(Sku.proLifetime), isA<PurchaseCompleted>());
+    expect(account.billing!.proOnThisDevice, isTrue);
+
+    expect(limit.limit, isNull);
+    expect(limit.lockedIds, isEmpty);
+    expect(limit.canCreate, isTrue);
+  });
+
+  test('and the account decides again the moment somebody signs in', () async {
+    write(6);
+    termsApi.enforced = true;
+    await account.restore();
+    await Future<void>.delayed(Duration.zero);
+    await account.billing!.buy(Sku.proLifetime);
+    clock = clock.add(const Duration(days: 15));
+
+    // Signed in on an account the purchase never reached: the server's
+    // answer is the one that counts, whatever this store account holds.
+    await signInOnFree();
+    expect(limit.limit, 5);
   });
 
   test('an account that showed plans are enforced leaves the clock running', () async {

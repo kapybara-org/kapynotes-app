@@ -1163,22 +1163,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final limit = _noteLimit?.limit;
     if (limit == null) return;
     final billing = widget.account?.billing;
-    final choice = await showNoteLimitDialog(
+    final wantsPro = await showNoteLimitDialog(
       context,
       limit: limit,
       creating: creating,
-      signedIn: billing?.isSignedIn ?? false,
       canBuy: billing?.canPurchase ?? false,
     );
-    if (!mounted) return;
-    switch (choice) {
-      case NoteLimitChoice.getPro when billing != null:
-        unawaited(showProSheet(context, billing: billing));
-      case NoteLimitChoice.signIn:
-        _showSettings(section: SettingsSection.sync);
-      case NoteLimitChoice.getPro || null:
-        break;
-    }
+    if (!mounted || !wantsPro || billing == null) return;
+    unawaited(showProSheet(context, billing: billing));
   }
 
   void _onNoteLimitChanged() {

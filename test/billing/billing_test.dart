@@ -75,7 +75,9 @@ void main() {
     await settle();
 
     expect(store.log, contains('logIn user-1'));
-    expect(api.tokens, ['token-user-1']);
+    // Claiming whatever was bought before, then asking what the account has.
+    expect(api.tokens, ['token-user-1', 'token-user-1']);
+    expect(api.adoptCalls, 1);
     expect(billing.entitlements?.plan, 'free');
     expect(billing.isSignedIn, isTrue);
   });
@@ -159,11 +161,86 @@ void main() {
     expect(billing.notice, contains('waiting for approval'));
   });
 
-  test('buying signed out never reaches the store', () async {
-    final outcome = await billing.buy(Sku.proLifetime);
+  group('bought before signing in', () {
+    test('Pro unlocks this device, and waits for an account for the rest', () async {
+      final outcome = await billing.buy(Sku.proLifetime);
 
-    expect(outcome, isA<PurchaseFailed>());
-    expect(store.log.where((line) => line.startsWith('buy')), isEmpty);
+      expect(outcome, isA<PurchaseCompleted>());
+      expect(store.log, contains('buy pro_lifetime as nobody'));
+      expect(billing.proOnThisDevice, isTrue);
+      // Nothing was asked of the server: there is no account to ask about.
+      expect(api.calls, 0);
+      expect(billing.entitlements, isNull);
+    });
+
+    test('a pack is not, because it has nowhere to go', () async {
+      final outcome = await billing.buy(Sku.storage5gb);
+
+      expect(outcome, isA<PurchaseFailed>());
+      expect(store.log.where((line) => line.startsWith('buy')), isEmpty);
+    });
+
+    test('a device that never bought anything never asks the store', () async {
+      expect(store.ownsProCalls, 0);
+      expect(billing.proOnThisDevice, isFalse);
+    });
+
+    test('and a later launch knows it without asking anybody', () async {
+      await billing.buy(Sku.proLifetime);
+      expect(cache.data['billing.device.v1'], {'pro': true});
+
+      final relaunched = build();
+      addTearDown(relaunched.dispose);
+      expect(relaunched.proOnThisDevice, isTrue);
+    });
+
+    test('a refund takes it back on the next look', () async {
+      await billing.buy(Sku.proLifetime);
+      expect(billing.proOnThisDevice, isTrue);
+
+      store.ownsPro = false;
+      final relaunched = build();
+      addTearDown(relaunched.dispose);
+      await settle();
+      expect(relaunched.proOnThisDevice, isFalse);
+    });
+
+    test('signing in hands it to the account', () async {
+      await billing.buy(Sku.proLifetime);
+      api.claimed = ['pro_lifetime'];
+      api.answer = () => entitlementsFor(pro: true);
+
+      session.signIn('user-1');
+      await settle();
+
+      expect(store.log, contains('logIn user-1'));
+      expect(api.adoptCalls, 1);
+      expect(billing.entitlements?.isPro, isTrue);
+      // Signed in, the server answers for the device as well.
+      expect(billing.proOnThisDevice, isFalse);
+    });
+
+    test('one that belongs to another account says so rather than nothing', () async {
+      await billing.buy(Sku.proLifetime);
+      api.heldByAnother = true;
+
+      session.signIn('user-2');
+      await settle();
+
+      expect(billing.notice, contains('different Kapy Notes account'));
+      expect(billing.entitlements?.isPro, isFalse);
+    });
+
+    test('a server that cannot claim it leaves the account as it was', () async {
+      await billing.buy(Sku.proLifetime);
+      api.adoptFailure = Exception('no route');
+
+      session.signIn('user-1');
+      await settle();
+
+      expect(api.calls, greaterThan(0), reason: 'it still asks what it has');
+      expect(billing.notice, isNull);
+    });
   });
 
   test('a storage pack is confirmed by the storage growing', () async {
@@ -249,18 +326,22 @@ void main() {
 
     expect(billing.entitlements, isNull);
     expect(billing.isSignedIn, isFalse);
-    expect(store.log.last, 'logOut');
+    expect(store.log, contains('logOut'));
+    // And then asked what it still holds: this Apple ID may have bought Pro
+    // here, whoever was signed in at the time.
+    expect(store.log.last, 'ownsProHere');
   });
 
-  test('offers need an account, because the store is never set up without one', () async {
+  test('prices are shown before signing in, because buying does not need it', () async {
     await billing.loadOffers();
-    expect(billing.offers, isEmpty);
-    expect(store.log, isEmpty);
+    expect(billing.offerFor(Sku.proLifetime)?.price, r'$24.00');
+    expect(store.log, contains('offers as nobody'));
 
     session.signIn('user-1');
     await settle();
     await billing.loadOffers();
     expect(billing.offerFor(Sku.proLifetime)?.price, r'$24.00');
+    expect(store.log, contains('offers as user-1'));
   });
 
   test('a store with nothing to sell reads as a failure to answer', () async {

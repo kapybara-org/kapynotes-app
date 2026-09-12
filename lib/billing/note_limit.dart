@@ -26,7 +26,9 @@ import 'plan_terms.dart';
 /// The limit itself is never worked out here. Signed in it is the server's
 /// `noteLimit` — null until plans are enforced, and for as long as Pro or a
 /// trial of it lasts. Signed out it is [PlanTerms]'s, once this device's own
-/// fourteen days are over. While the account is still being read at launch
+/// fourteen days are over, unless Pro was bought here before anybody signed
+/// in: unlimited notes is the one part of Pro that needs no account behind
+/// it, so it is the one part a purchase can unlock without one. While the account is still being read at launch
 /// there is none, so no note locks for the moment before a Pro account is
 /// known to be one.
 class NoteLimit extends ChangeNotifier {
@@ -106,8 +108,12 @@ class NoteLimit extends ChangeNotifier {
 
   int? _limitNow() => switch (_account.state) {
     AccountState.restoring => null,
+    // Pro bought before signing in unlocks exactly this, because it is the
+    // only part of Pro that works with no account behind it.
     AccountState.signedOut =>
-      _terms.limitApplies ? _terms.freeNoteLimit : null,
+      _terms.limitApplies && !(_billing?.proOnThisDevice ?? false)
+          ? _terms.freeNoteLimit
+          : null,
     _ => _billing?.entitlements?.noteLimit,
   };
 

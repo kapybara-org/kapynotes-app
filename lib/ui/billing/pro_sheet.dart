@@ -208,7 +208,7 @@ class _ProSheetState extends State<ProSheet> {
                 ),
                 const SizedBox(height: 18),
                 if (!billing.isSignedIn)
-                  _signInFirst(context)
+                  _signedOut(context)
                 else if (isPro)
                   _packs(context)
                 else
@@ -244,24 +244,41 @@ class _ProSheetState extends State<ProSheet> {
         'five notes.';
   }
 
-  Widget _signInFirst(BuildContext context) {
+  /// Buying with no account, which is allowed because one part of Pro works
+  /// without one: writing past five notes.
+  ///
+  /// What the rest of it needs is said before the money, not discovered after
+  /// it, and signing in later is offered rather than demanded.
+  Widget _signedOut(BuildContext context) {
     final palette = context.palette;
+    final owned = _billing.proOnThisDevice;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        FilledButton(
+        if (owned) const _OwnedHere() else _buyPro(context),
+        const SizedBox(height: 10),
+        Text(
+          owned
+              ? 'Sign in to use it on your other devices, and to turn on sync, '
+                    'sharing, storage and transcription.'
+              : 'Unlimited notes unlock on this device straight away. Sync, '
+                    'sharing, storage and transcription belong to an account, '
+                    'so sign in whenever you like and this purchase comes '
+                    'with you.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.4,
+            color: palette.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        TextButton(
           key: const ValueKey('pro-sign-in'),
           // Settings is right behind this sheet, on the pane with the
           // sign-in form in it.
           onPressed: () => Navigator.of(context).maybePop(),
-          child: const Text('Sign in to get Pro'),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Pro belongs to your Kapy Notes account, so it works on every '
-          'device you sign in on.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 12, color: palette.textSecondary),
+          child: Text(owned ? 'Sign in' : 'Sign in first'),
         ),
       ],
     );
@@ -291,9 +308,7 @@ class _ProSheetState extends State<ProSheet> {
       children: [
         FilledButton(
           key: const ValueKey('pro-buy'),
-          onPressed: offer == null || busy
-              ? null
-              : () => _buy(Sku.proLifetime),
+          onPressed: offer == null || busy ? null : () => _buy(Sku.proLifetime),
           child: Text(label),
         ),
         if (offer == null && billing.offersLoading) ...[
@@ -350,16 +365,14 @@ class _ProSheetState extends State<ProSheet> {
               : 'Your account holds the most extra storage it can.',
           offer: billing.offerFor(Sku.storage5gb),
           enabled:
-              billing.canAddStorage &&
-              billing.activity == BillingActivity.idle,
+              billing.canAddStorage && billing.activity == BillingActivity.idle,
           busy: billing.activeSku == Sku.storage5gb,
           onBuy: () => _buy(Sku.storage5gb),
         ),
         _Pack(
           sku: Sku.voice1000,
           title: '1,000 transcription minutes',
-          detail:
-              'Used once the month’s two hours run out. They never expire.',
+          detail: 'Used once the month’s two hours run out. They never expire.',
           offer: billing.offerFor(Sku.voice1000),
           enabled: billing.activity == BillingActivity.idle,
           busy: billing.activeSku == Sku.voice1000,
@@ -385,7 +398,9 @@ class _ProSheetState extends State<ProSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (billing.isSignedIn)
+        // Offered signed out too: restoring is how a wiped device, or a second
+        // phone on the same Apple ID, unlocks its notes again.
+        if (billing.canPurchase)
           Align(
             child: TextButton(
               key: const ValueKey('pro-restore'),
@@ -475,7 +490,11 @@ class _Owned extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.check_circle_rounded, size: 18, color: palette.textPrimary),
+          Icon(
+            Icons.check_circle_rounded,
+            size: 18,
+            color: palette.textPrimary,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -549,6 +568,45 @@ class _Trying extends StatelessWidget {
             child: Text(
               '$left On $on this account moves to Free by itself. Nothing '
               'is charged, and nothing is deleted.',
+              style: TextStyle(
+                fontSize: 13.5,
+                height: 1.4,
+                color: palette.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bought here, with no account to put it on yet.
+class _OwnedHere extends StatelessWidget {
+  const _OwnedHere();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      key: const ValueKey('pro-owned-here'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: palette.selectedBackground,
+        border: Border.all(color: palette.selectedBorder),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.check_circle_rounded,
+            size: 18,
+            color: palette.textPrimary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Pro Lifetime is on this device. Your notes have no limit here.',
               style: TextStyle(
                 fontSize: 13.5,
                 height: 1.4,
@@ -702,7 +760,11 @@ class _Notice extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(fontSize: 12.5, height: 1.4, color: palette.textPrimary),
+        style: TextStyle(
+          fontSize: 12.5,
+          height: 1.4,
+          color: palette.textPrimary,
+        ),
       ),
     );
   }

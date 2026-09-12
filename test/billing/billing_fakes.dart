@@ -38,10 +38,31 @@ class FakeBillingApi implements BillingApi {
   final List<String> tokens = [];
   int calls = 0;
 
+  /// What claiming an earlier purchase answers. Nothing to claim by default,
+  /// which is what a purchase made after signing in looks like.
+  List<String> claimed = const [];
+  bool heldByAnother = false;
+  int adoptCalls = 0;
+
+  /// Set to fail adopting, as an old server or a missing key would.
+  Object? adoptFailure;
+
   @override
   Future<Entitlements> entitlements() async {
     calls++;
     return answer();
+  }
+
+  @override
+  Future<AdoptedPurchases> adopt() async {
+    adoptCalls++;
+    final failure = adoptFailure;
+    if (failure != null) throw failure;
+    return AdoptedPurchases(
+      claimed: claimed,
+      heldByAnother: heldByAnother,
+      entitlements: answer(),
+    );
   }
 }
 
@@ -50,6 +71,11 @@ class FakePurchaseStore implements PurchaseStore {
   FakePurchaseStore({this.supported = true});
 
   bool supported;
+
+  /// What the store itself says was bought on this device, for the stretch
+  /// with no account to ask about instead.
+  bool ownsPro = false;
+  int ownsProCalls = 0;
   final List<String> log = [];
   PurchaseOutcome next = const PurchaseCompleted();
   Set<Sku> owned = {};
@@ -70,21 +96,30 @@ class FakePurchaseStore implements PurchaseStore {
   Future<void> logOut() async => log.add('logOut');
 
   @override
-  Future<List<StoreOffer>> offers({required String userId}) async {
-    log.add('offers as $userId');
+  Future<List<StoreOffer>> offers({String? userId}) async {
+    log.add('offers as ${userId ?? 'nobody'}');
     return offerList;
   }
 
   @override
-  Future<PurchaseOutcome> buy(Sku sku, {required String userId}) async {
-    log.add('buy ${sku.id} as $userId');
+  Future<PurchaseOutcome> buy(Sku sku, {String? userId}) async {
+    log.add('buy ${sku.id} as ${userId ?? 'nobody'}');
     onBuy?.call();
+    if (next is PurchaseCompleted && sku == Sku.proLifetime) ownsPro = true;
     return next;
   }
 
   @override
-  Future<Set<Sku>> restore({required String userId}) async {
-    log.add('restore as $userId');
+  Future<Set<Sku>> restore({String? userId}) async {
+    log.add('restore as ${userId ?? 'nobody'}');
+    if (owned.contains(Sku.proLifetime)) ownsPro = true;
     return owned;
+  }
+
+  @override
+  Future<bool> ownsProHere() async {
+    ownsProCalls++;
+    log.add('ownsProHere');
+    return ownsPro;
   }
 }
