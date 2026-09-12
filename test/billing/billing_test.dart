@@ -133,7 +133,7 @@ void main() {
 
     expect(outcome, isA<PurchaseCompleted>());
     expect(billing.entitlements?.isPro, isFalse);
-    expect(billing.notice, contains('taken the payment'));
+    expect(billing.notice, contains('payment has gone through'));
     expect(billing.activity, BillingActivity.idle);
   });
 

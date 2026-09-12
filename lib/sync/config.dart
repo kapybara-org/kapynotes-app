@@ -36,3 +36,10 @@ const String kRevenueCatAppleKey = String.fromEnvironment(
   'KAPYNOTES_RC_APPLE_KEY',
   defaultValue: '',
 );
+
+/// The same, for the Play app. Empty until the Play products exist, which is
+/// what keeps the Android build from offering something it cannot sell.
+const String kRevenueCatGoogleKey = String.fromEnvironment(
+  'KAPYNOTES_RC_GOOGLE_KEY',
+  defaultValue: '',
+);

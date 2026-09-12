@@ -92,20 +92,20 @@ class _ProSheetState extends State<ProSheet> {
       case RestoreResult.nothingFound:
         Toast.show(
           context,
-          'This Apple ID has no Pro Lifetime to restore.',
+          'This $storeAccountName has no Pro Lifetime to restore.',
           icon: Icons.info_outline_rounded,
         );
       case RestoreResult.belongsToAnotherAccount:
         Toast.show(
           context,
-          'This Apple ID bought Pro Lifetime for a different Kapy Notes '
-          'account. Sign in to that account to use it.',
+          'This $storeAccountName bought Pro Lifetime for a different Kapy '
+          'Notes account. Sign in to that account to use it.',
           icon: Icons.info_outline_rounded,
         );
       case RestoreResult.failed:
         Toast.show(
           context,
-          'Could not reach the App Store. Try again in a moment.',
+          'Could not reach $storeName. Try again in a moment.',
           isError: true,
         );
     }
@@ -290,7 +290,7 @@ class _ProSheetState extends State<ProSheet> {
 
     final String label;
     if (billing.activity == BillingActivity.buying) {
-      label = 'Waiting for the App Store…';
+      label = 'Waiting for $storeName…';
     } else if (billing.activity == BillingActivity.confirming) {
       label = 'Adding Pro to your account…';
     } else if (billing.activity == BillingActivity.restoring) {
@@ -312,7 +312,7 @@ class _ProSheetState extends State<ProSheet> {
         if (offer == null && billing.offersLoading) ...[
           const SizedBox(height: 8),
           Text(
-            'Asking the App Store for the price…',
+            'Asking $storeName for the price…',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: palette.textSecondary),
           ),
@@ -323,7 +323,7 @@ class _ProSheetState extends State<ProSheet> {
             children: [
               Flexible(
                 child: Text(
-                  'The App Store did not answer.',
+                  'No answer from $storeName.',
                   style: TextStyle(fontSize: 12, color: palette.textSecondary),
                 ),
               ),
@@ -397,7 +397,7 @@ class _ProSheetState extends State<ProSheet> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Offered signed out too: restoring is how a wiped device, or a second
-        // phone on the same Apple ID, unlocks its notes again.
+        // phone on the same store account, unlocks its notes again.
         if (billing.canPurchase)
           Align(
             child: TextButton(
@@ -409,8 +409,8 @@ class _ProSheetState extends State<ProSheet> {
             ),
           ),
         Text(
-          'Paid once through your Apple ID. It is not a subscription, and it '
-          'belongs to the Kapy Notes account you are signed in to.',
+          'Paid once through your $storeAccountName. It is not a '
+          'subscription, and it belongs to your Kapy Notes account.',
           textAlign: TextAlign.center,
           style: style.copyWith(height: 1.4),
         ),

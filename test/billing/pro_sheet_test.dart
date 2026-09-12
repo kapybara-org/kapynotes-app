@@ -127,7 +127,7 @@ void main() {
     await pumpSheet(tester);
 
     expect(buyButton(tester).onPressed, isNull);
-    expect(find.text('The App Store did not answer.'), findsOneWidget);
+    expect(find.text('No answer from the App Store.'), findsOneWidget);
     expect(find.byKey(const ValueKey('pro-offers-retry')), findsOneWidget);
   });
 
@@ -215,7 +215,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 20));
     }
 
-    expect(find.textContaining('taken the payment'), findsOneWidget);
+    expect(find.textContaining('payment has gone through'), findsOneWidget);
     expect(find.text('Pro Lifetime is yours. Thank you.'), findsNothing);
   });
 }

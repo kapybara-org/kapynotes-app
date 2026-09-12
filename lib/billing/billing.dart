@@ -202,7 +202,7 @@ class Billing extends ChangeNotifier {
     if (id == null) {
       unawaited(_quietly(_store.logOut));
       // Signed out, the store is the only record again — and it may still
-      // hold a purchase made on this Apple ID, whoever was signed in.
+      // hold a purchase made on this store account, whoever was signed in.
       unawaited(_readStore(force: true));
     } else {
       unawaited(_joinAccount(id));
@@ -236,8 +236,8 @@ class Billing extends ChangeNotifier {
       _armTrialEnd();
       if (adopted.heldByAnother) {
         _notice =
-            'A purchase on this Apple ID belongs to a different Kapy Notes '
-            'account. Sign in to that account to use it.';
+            'A purchase on this $storeAccountName belongs to a different '
+            'Kapy Notes account. Sign in to that account to use it.';
       }
       notifyListeners();
     } catch (error) {
@@ -380,19 +380,19 @@ class Billing extends ChangeNotifier {
         final arrived = await _waitFor(sku, before, id!, confirmFor);
         if (!arrived && _userId == id) {
           _notice =
-              'The App Store has taken the payment. It can take a minute to '
-              'reach your account, and it will show here when it does.';
+              'The payment has gone through. It can take a minute to reach '
+              'your account, and it will show here when it does.';
         }
       } else if (outcome is PurchasePending) {
         _notice =
             'The purchase is waiting for approval. It will show here once '
-            'the App Store finishes it.';
+            '$storeName finishes it.';
       }
       return outcome;
     } catch (error) {
       debugPrint('KapyNotes: purchase failed: $error');
-      return const PurchaseFailed(
-        'The App Store could not finish that. Try again in a moment.',
+      return PurchaseFailed(
+        'Something went wrong at $storeName. Try again in a moment.',
       );
     } finally {
       _activity = BillingActivity.idle;
@@ -421,7 +421,7 @@ class Billing extends ChangeNotifier {
       final now = await refresh();
       if (now?.isPro ?? false) return RestoreResult.restored;
       if (!owned.contains(Sku.proLifetime)) return RestoreResult.nothingFound;
-      // The store says this Apple ID bought Pro and the server has not
+      // The store says this store account bought Pro and the server has not
       // granted it here. A purchase made seconds ago can still be in flight,
       // so give it a moment before concluding it was bought for someone else.
       final arrived = await _waitFor(

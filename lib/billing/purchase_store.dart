@@ -1,4 +1,14 @@
+import '../core/platform.dart';
 import 'entitlements.dart';
+
+/// What to call the store in front of somebody, and the account it bills.
+///
+/// Android buys through Play and everywhere else that can buy at all is
+/// Apple's; the desktop builds buy nowhere and never see either. Written to
+/// sit inside a sentence, never to start one.
+String get storeName => AppPlatform.isAndroid ? 'Google Play' : 'the App Store';
+String get storeAccountName =>
+    AppPlatform.isAndroid ? 'Google account' : 'Apple ID';
 
 /// One thing the store will sell, with the price it will charge here.
 ///

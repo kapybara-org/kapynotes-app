@@ -75,9 +75,14 @@ Future<void> main() async {
   account?.speechApiFor = (token) =>
       HttpSpeechApi(baseUrl: Uri.parse(kApiBaseUrl), token: () async => token);
   if (account != null) {
-    // Only the App Store build can take money so far. The desktop builds ship
-    // outside any store, and Android waits for its Play products; both still
-    // get the server's answer about what the account has.
+    // Whichever store this build can take money through. The desktop builds
+    // ship outside any store and take none, but still get the server's answer
+    // about what the account has.
+    final storeKey = AppPlatform.isIOS
+        ? kRevenueCatAppleKey
+        : AppPlatform.isAndroid
+        ? kRevenueCatGoogleKey
+        : '';
     account.billing = Billing(
       session: account,
       userId: () => account.user?.id,
@@ -86,9 +91,12 @@ Future<void> main() async {
         baseUrl: Uri.parse(kApiBaseUrl),
         token: () async => token,
       ),
-      store: AppPlatform.isIOS && kRevenueCatAppleKey.isNotEmpty
-          ? RevenueCatStore(apiKey: kRevenueCatAppleKey)
-          : const UnsupportedPurchaseStore(),
+      store: switch (storeKey) {
+        final key when key.isNotEmpty => RevenueCatStore(apiKey: key),
+        // The desktop builds ship outside any store, and a phone build with
+        // no key yet must not offer what it cannot sell.
+        _ => const UnsupportedPurchaseStore(),
+      },
       cache: store,
     );
     // On every platform, whatever it can sell: the limits are the server's,

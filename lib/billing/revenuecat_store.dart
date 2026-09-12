@@ -7,7 +7,7 @@ import 'package:purchases_flutter/purchases_flutter.dart' as rc;
 import 'entitlements.dart';
 import 'purchase_store.dart';
 
-/// Buying through the App Store, by way of RevenueCat.
+/// Buying through the phone's own store, by way of RevenueCat.
 ///
 /// The only file that talks to the SDK. RevenueCat sees the store transaction
 /// and forwards it to the server's webhook; the server, not this, decides what
@@ -81,40 +81,36 @@ class RevenueCatStore implements PurchaseStore {
   });
 
   @override
-  Future<List<StoreOffer>> offers({String? userId}) =>
-      _serial(() async {
-        await _identify(userId);
-        final products = await rc.Purchases.getProducts([
-          for (final sku in Sku.values) sku.storeProductId,
-        ], productCategory: rc.ProductCategory.nonSubscription);
-        return [
-          for (final product in products)
-            if (Sku.forStoreProduct(product.identifier) case final sku?)
-              StoreOffer(sku: sku, price: product.priceString),
-        ];
-      });
+  Future<List<StoreOffer>> offers({String? userId}) => _serial(() async {
+    await _identify(userId);
+    final products = await rc.Purchases.getProducts([
+      for (final sku in Sku.values) sku.storeProductId,
+    ], productCategory: rc.ProductCategory.nonSubscription);
+    return [
+      for (final product in products)
+        if (Sku.forStoreProduct(product.identifier) case final sku?)
+          StoreOffer(sku: sku, price: product.priceString),
+    ];
+  });
 
   @override
-  Future<PurchaseOutcome> buy(Sku sku, {String? userId}) =>
-      _serial(() async {
-        try {
-          await _identify(userId);
-          final products = await rc.Purchases.getProducts([
-            sku.storeProductId,
-          ], productCategory: rc.ProductCategory.nonSubscription);
-          if (products.isEmpty) {
-            return const PurchaseFailed(
-              'The App Store does not have this for sale right now.',
-            );
-          }
-          await rc.Purchases.purchase(
-            rc.PurchaseParams.storeProduct(products.first),
-          );
-          return const PurchaseCompleted();
-        } on PlatformException catch (error) {
-          return _outcomeFor(error);
-        }
-      });
+  Future<PurchaseOutcome> buy(Sku sku, {String? userId}) => _serial(() async {
+    try {
+      await _identify(userId);
+      final products = await rc.Purchases.getProducts([
+        sku.storeProductId,
+      ], productCategory: rc.ProductCategory.nonSubscription);
+      if (products.isEmpty) {
+        return PurchaseFailed('This is not for sale on $storeName right now.');
+      }
+      await rc.Purchases.purchase(
+        rc.PurchaseParams.storeProduct(products.first),
+      );
+      return const PurchaseCompleted();
+    } on PlatformException catch (error) {
+      return _outcomeFor(error);
+    }
+  });
 
   @override
   Future<Set<Sku>> restore({String? userId}) => _serial(() async {
@@ -122,8 +118,7 @@ class RevenueCatStore implements PurchaseStore {
     final info = await rc.Purchases.restorePurchases();
     return {
       for (final id in info.allPurchasedProductIdentifiers)
-        if (Sku.forStoreProduct(id) case final sku?
-            when sku == Sku.proLifetime)
+        if (Sku.forStoreProduct(id) case final sku? when sku == Sku.proLifetime)
           sku,
     };
   });
@@ -145,36 +140,33 @@ class RevenueCatStore implements PurchaseStore {
     }
   });
 
-  PurchaseOutcome _outcomeFor(PlatformException error) =>
-      switch (rc.PurchasesErrorHelper.getErrorCode(error)) {
-        rc.PurchasesErrorCode.purchaseCancelledError =>
-          const PurchaseCancelled(),
-        rc.PurchasesErrorCode.paymentPendingError => const PurchasePending(),
-        // The store will not sell a non-consumable twice. Whether the account
-        // has heard about the first one yet is the server's to say, so this is
-        // treated as done and confirmed there like any other purchase.
-        rc.PurchasesErrorCode.productAlreadyPurchasedError =>
-          const PurchaseCompleted(),
-        rc.PurchasesErrorCode.purchaseNotAllowedError => const PurchaseFailed(
-          'This device is not allowed to make purchases. Screen Time or a '
-          'work profile may be blocking them.',
-        ),
-        rc.PurchasesErrorCode.networkError => const PurchaseFailed(
-          'Could not reach the App Store. Check your connection and try '
-          'again.',
-        ),
-        rc.PurchasesErrorCode.productNotAvailableForPurchaseError =>
-          const PurchaseFailed(
-            'The App Store does not have this for sale right now.',
-          ),
-        rc.PurchasesErrorCode.receiptAlreadyInUseError ||
-        rc.PurchasesErrorCode.receiptInUseByOtherSubscriberError =>
-          const PurchaseFailed(
-            'This Apple ID already bought this for a different Kapy Notes '
-            'account.',
-          ),
-        _ => const PurchaseFailed(
-          'The App Store could not finish that. Try again in a moment.',
-        ),
-      };
+  PurchaseOutcome _outcomeFor(
+    PlatformException error,
+  ) => switch (rc.PurchasesErrorHelper.getErrorCode(error)) {
+    rc.PurchasesErrorCode.purchaseCancelledError => const PurchaseCancelled(),
+    rc.PurchasesErrorCode.paymentPendingError => const PurchasePending(),
+    // The store will not sell a non-consumable twice. Whether the account
+    // has heard about the first one yet is the server's to say, so this is
+    // treated as done and confirmed there like any other purchase.
+    rc.PurchasesErrorCode.productAlreadyPurchasedError =>
+      const PurchaseCompleted(),
+    rc.PurchasesErrorCode.purchaseNotAllowedError => const PurchaseFailed(
+      'This device is not allowed to make purchases. Screen Time or a '
+      'work profile may be blocking them.',
+    ),
+    rc.PurchasesErrorCode.networkError => PurchaseFailed(
+      'Could not reach $storeName. Check your connection and try again.',
+    ),
+    rc.PurchasesErrorCode.productNotAvailableForPurchaseError => PurchaseFailed(
+      'This is not for sale on $storeName right now.',
+    ),
+    rc.PurchasesErrorCode.receiptAlreadyInUseError ||
+    rc.PurchasesErrorCode.receiptInUseByOtherSubscriberError => PurchaseFailed(
+      'This $storeAccountName already bought this for a different Kapy '
+      'Notes account.',
+    ),
+    _ => PurchaseFailed(
+      'Something went wrong at $storeName. Try again in a moment.',
+    ),
+  };
 }
