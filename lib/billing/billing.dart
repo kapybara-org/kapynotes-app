@@ -21,7 +21,6 @@ enum RestoreResult {
   /// This store account bought Pro, but for another Kapy Notes account. The
   /// licence is the account that paid, so it stays there.
   belongsToAnotherAccount,
-  signedOut,
   failed,
 }
 

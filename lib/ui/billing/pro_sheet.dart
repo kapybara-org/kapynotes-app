@@ -108,8 +108,6 @@ class _ProSheetState extends State<ProSheet> {
           'Could not reach the App Store. Try again in a moment.',
           isError: true,
         );
-      case RestoreResult.signedOut:
-        break;
     }
   }
 
