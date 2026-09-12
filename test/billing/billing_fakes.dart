@@ -47,6 +47,10 @@ class FakeBillingApi implements BillingApi {
   /// Set to fail adopting, as an old server or a missing key would.
   Object? adoptFailure;
 
+  Uri checkoutUrl = Uri.parse('https://pay.rev.cat/pro-link/user-1');
+  Object? checkoutFailure;
+  int checkoutCalls = 0;
+
   @override
   Future<Entitlements> entitlements() async {
     calls++;
@@ -63,6 +67,14 @@ class FakeBillingApi implements BillingApi {
       heldByAnother: heldByAnother,
       entitlements: answer(),
     );
+  }
+
+  @override
+  Future<Uri> webCheckout() async {
+    checkoutCalls++;
+    final failure = checkoutFailure;
+    if (failure != null) throw failure;
+    return checkoutUrl;
   }
 }
 

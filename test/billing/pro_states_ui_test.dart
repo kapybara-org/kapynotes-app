@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/billing/entitlements.dart';
 import 'package:kapy_notes/billing/plan_terms.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -128,6 +129,8 @@ void main() {
   testWidgets('a trial says when it ends and what happens, on any build', (
     tester,
   ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     build(sells: false);
     billingApi.answer = () => trialFor(const Duration(days: 3, hours: 2));
     await signIn(tester);

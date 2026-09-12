@@ -1,9 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/billing/billing_api.dart';
 import 'package:kapy_notes/billing/entitlements.dart';
 import 'package:kapy_notes/billing/purchase_store.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/local_store.dart';
 
 import 'billing_fakes.dart';
@@ -44,6 +47,8 @@ void main() {
   late FakePurchaseStore store;
   late _MemoryStore cache;
   late Billing billing;
+  late List<Uri> openedCheckouts;
+  late bool canOpenCheckout;
 
   Billing build() => Billing(
     session: session,
@@ -55,6 +60,10 @@ void main() {
     },
     store: store,
     cache: cache,
+    launchWebCheckout: (url) async {
+      openedCheckouts.add(url);
+      return canOpenCheckout;
+    },
     confirmEvery: const Duration(milliseconds: 5),
     confirmFor: const Duration(milliseconds: 60),
     restoreConfirmFor: const Duration(milliseconds: 30),
@@ -65,6 +74,8 @@ void main() {
     api = FakeBillingApi();
     store = FakePurchaseStore();
     cache = _MemoryStore();
+    openedCheckouts = [];
+    canOpenCheckout = true;
     billing = build();
   });
 
@@ -344,6 +355,56 @@ void main() {
     expect(store.log, contains('offers as user-1'));
   });
 
+  group('desktop web checkout', () {
+    setUp(() {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      store.supported = false;
+    });
+
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    test('opens an identified checkout and refreshes when the app returns', () async {
+      session.signIn('user-1');
+      await settle();
+      final before = api.calls;
+
+      final result = await billing.buy(Sku.proLifetime);
+
+      expect(result, isA<PurchaseOpened>());
+      expect(api.checkoutCalls, 1);
+      expect(openedCheckouts, [api.checkoutUrl]);
+      expect(billing.notice, contains('Finish the purchase in your browser'));
+      expect(billing.canBuyPacks, isFalse);
+      expect(billing.canRestorePurchases, isFalse);
+
+      api.answer = () => entitlementsFor(pro: true);
+      await billing.refreshIfStale();
+      expect(api.calls, before + 1);
+      expect(billing.notice, isNull);
+    });
+
+    test('requires an account and never opens a public checkout', () async {
+      final result = await billing.buy(Sku.proLifetime);
+
+      expect(result, isA<PurchaseFailed>());
+      expect((result as PurchaseFailed).message, contains('Sign in first'));
+      expect(api.checkoutCalls, 0);
+      expect(openedCheckouts, isEmpty);
+    });
+
+    test('does not claim a browser was opened when the launcher refused', () async {
+      session.signIn('user-1');
+      await settle();
+      canOpenCheckout = false;
+
+      final result = await billing.buy(Sku.proLifetime);
+
+      expect(result, isA<PurchaseFailed>());
+      expect((result as PurchaseFailed).message, contains('Could not open'));
+      expect(billing.notice, isNull);
+    });
+  });
+
   test('a store with nothing to sell reads as a failure to answer', () async {
     store.offerList = const [];
     session.signIn('user-1');
@@ -458,5 +519,20 @@ void main() {
       token: () async => null,
     );
     await expectLater(http.entitlements(), throwsA(anything));
+  });
+
+  test('the http client reads an HTTPS web checkout for the account', () async {
+    final api = HttpBillingApi(
+      baseUrl: Uri.parse('https://api.example.test/'),
+      token: () async => 'account-token',
+      client: MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/billing/web-checkout');
+        expect(request.headers['authorization'], 'Bearer account-token');
+        return http.Response('{"url":"https://pay.rev.cat/pro-link/user-1"}', 200);
+      }),
+    );
+
+    expect(await api.webCheckout(), Uri.parse('https://pay.rev.cat/pro-link/user-1'));
   });
 }

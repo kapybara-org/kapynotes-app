@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/billing/entitlements.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -123,6 +124,8 @@ void main() {
   });
 
   testWidgets('a build with nothing to sell shows no plan row', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpSettings(
       tester,
       purchases: FakePurchaseStore(supported: false),
@@ -131,5 +134,13 @@ void main() {
     expect(find.byKey(const ValueKey('pro-row')), findsNothing);
     // The rest of the pane is untouched.
     expect(find.text('Sync now'), findsOneWidget);
+  });
+
+  testWidgets('a desktop build can sell through secure web checkout', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await pumpSettings(tester, purchases: FakePurchaseStore(supported: false));
+
+    expect(find.byKey(const ValueKey('pro-row')), findsOneWidget);
   });
 }

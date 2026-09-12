@@ -77,7 +77,10 @@ class _ProSheetState extends State<ProSheet> {
         });
       case PurchaseFailed(:final message):
         Toast.show(context, message, isError: true);
-      case PurchaseCompleted() || PurchaseCancelled() || PurchasePending():
+      case PurchaseCompleted() ||
+          PurchaseCancelled() ||
+          PurchasePending() ||
+          PurchaseOpened():
         // Completed-but-not-arrived and pending both leave a notice in the
         // sheet, which outlasts a toast; a cancel needs no comment at all.
         break;
@@ -197,7 +200,10 @@ class _ProSheetState extends State<ProSheet> {
                 _Benefits(detail: _syncDetail(now)),
                 const SizedBox(height: 12),
                 const _GrowthNote(),
-                if (isPro) ...[const SizedBox(height: 28), _packs(context)],
+                if (isPro && billing.canBuyPacks) ...[
+                  const SizedBox(height: 28),
+                  _packs(context),
+                ],
                 const SizedBox(height: 24),
                 _finePrint(context),
               ],
@@ -230,13 +236,17 @@ class _ProSheetState extends State<ProSheet> {
   Widget _signedOut(BuildContext context) {
     final palette = context.palette;
     final owned = _billing.proOnThisDevice;
+    final web = _billing.usesWebCheckout;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (owned) const _OwnedHere() else _buyPro(context),
+        if (owned) const _OwnedHere() else _buyPro(context, signInInstead: web),
         const SizedBox(height: 10),
         Text(
-          owned
+          web
+              ? 'Sign in first so Pro Lifetime belongs to the same account on '
+                    'every device. Payment opens in your browser.'
+              : owned
               ? 'Sign in to use it on your other devices, and to turn on sync, '
                     'sharing, storage and transcription.'
               : 'Unlimited notes unlock on this device straight away. Sync, '
@@ -258,27 +268,30 @@ class _ProSheetState extends State<ProSheet> {
             // Settings is right behind this sheet, on the pane with the
             // sign-in form in it.
             onPressed: () => Navigator.of(context).maybePop(),
-            child: Text(owned ? 'Sign in' : 'Sign in first'),
+            child: Text(owned || web ? 'Sign in' : 'Sign in first'),
           ),
         ),
       ],
     );
   }
 
-  Widget _buyPro(BuildContext context) {
+  Widget _buyPro(BuildContext context, {bool signInInstead = false}) {
     final palette = context.palette;
     final billing = _billing;
+    final web = billing.usesWebCheckout;
     final offer = billing.offerFor(Sku.proLifetime);
     final busy = billing.activity != BillingActivity.idle;
 
     final String label;
     if (billing.activity == BillingActivity.buying) {
-      label = 'Waiting for $storeName…';
+      label = web ? 'Opening secure checkout…' : 'Waiting for $storeName…';
     } else if (billing.activity == BillingActivity.confirming) {
       label = 'Adding Pro to your account…';
     } else if (billing.activity == BillingActivity.restoring) {
       label = 'Checking your purchases…';
-    } else if (offer != null) {
+    } else if (signInInstead) {
+      label = 'Sign in to buy on the web';
+    } else if (web || offer != null) {
       label = 'Get Pro Lifetime';
     } else if (billing.offersLoading) {
       label = 'Checking the price…';
@@ -323,7 +336,18 @@ class _ProSheetState extends State<ProSheet> {
                 ),
               ),
               const SizedBox(width: 16),
-              if (offer != null)
+              if (web)
+                Text(
+                  'Price shown\nat checkout',
+                  key: const ValueKey('pro-price'),
+                  textAlign: TextAlign.end,
+                  style: TextStyle(
+                    fontSize: AppTypeScale.caption,
+                    height: 1.3,
+                    color: palette.textSecondary,
+                  ),
+                )
+              else if (offer != null)
                 Text(
                   offer.price,
                   key: const ValueKey('pro-price'),
@@ -350,12 +374,16 @@ class _ProSheetState extends State<ProSheet> {
           FilledButton(
             key: const ValueKey('pro-buy'),
             style: _primaryActionStyle(context),
-            onPressed: offer == null || busy
+            onPressed: busy
                 ? null
-                : () => _buy(Sku.proLifetime),
+                : signInInstead
+                ? () => Navigator.of(context).maybePop()
+                : web || offer != null
+                ? () => _buy(Sku.proLifetime)
+                : null,
             child: Text(label),
           ),
-          if (offer == null && billing.offersFailed) ...[
+          if (!web && offer == null && billing.offersFailed) ...[
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -380,7 +408,9 @@ class _ProSheetState extends State<ProSheet> {
           ] else ...[
             const SizedBox(height: 10),
             Text(
-              'No subscription. Lifetime updates included.',
+              web
+                  ? 'Secure web checkout. No subscription.'
+                  : 'No subscription. Lifetime updates included.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: AppTypeScale.caption,
@@ -458,7 +488,10 @@ class _ProSheetState extends State<ProSheet> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          billing.isSignedIn
+          billing.usesWebCheckout
+              ? 'Paid once through secure web checkout. Not a subscription, '
+                    'and it belongs to this Kapy Notes account.'
+              : billing.isSignedIn
               ? 'Paid once through your $storeAccountName. Not a subscription, '
                     'and it belongs to this Kapy Notes account.'
               : 'Paid once through your $storeAccountName. Not a '
@@ -473,7 +506,7 @@ class _ProSheetState extends State<ProSheet> {
           children: [
             // Offered signed out too: restoring is how a wiped device, or a
             // second phone on the same store account, unlocks its notes again.
-            if (billing.canPurchase)
+            if (billing.canRestorePurchases)
               TextButton(
                 key: const ValueKey('pro-restore'),
                 style: _quietButtonStyle(context),

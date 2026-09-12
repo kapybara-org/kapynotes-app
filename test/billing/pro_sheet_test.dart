@@ -27,6 +27,7 @@ void main() {
   late FakeBillingApi api;
   late FakePurchaseStore store;
   late Billing billing;
+  late List<Uri> openedCheckouts;
 
   setUpAll(loadTestFonts);
 
@@ -34,12 +35,17 @@ void main() {
     session = _Session();
     api = FakeBillingApi();
     store = FakePurchaseStore();
+    openedCheckouts = [];
     billing = Billing(
       session: session,
       userId: () => session.userId,
       token: () => session.userId == null ? null : 'token',
       api: (_) => api,
       store: store,
+      launchWebCheckout: (url) async {
+        openedCheckouts.add(url);
+        return true;
+      },
       confirmEvery: const Duration(milliseconds: 10),
       confirmFor: const Duration(milliseconds: 50),
     );
@@ -133,6 +139,40 @@ void main() {
     expect(find.byKey(const ValueKey('pro-pack-voice_1000')), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('desktop opens web checkout and never offers mobile packs', (tester) async {
+    store.supported = false;
+    session.signIn('user-1');
+    await pumpSheet(tester, platform: TargetPlatform.macOS);
+
+    expect(find.text('Price shown\nat checkout'), findsOneWidget);
+    expect(find.text('Secure web checkout. No subscription.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pro-restore')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('pro-buy')));
+    await tester.pumpAndSettle();
+
+    expect(openedCheckouts, [api.checkoutUrl]);
+    expect(find.textContaining('Finish the purchase in your browser'), findsOneWidget);
+
+    api.answer = () => entitlementsFor(pro: true);
+    await billing.refresh();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('pro-pack-storage_5gb')), findsNothing);
+    expect(find.byKey(const ValueKey('pro-pack-voice_1000')), findsNothing);
+  });
+
+  testWidgets('desktop asks a signed-out person to sign in before checkout', (
+    tester,
+  ) async {
+    store.supported = false;
+    await pumpSheet(tester, platform: TargetPlatform.windows);
+
+    expect(find.text('Sign in to buy on the web'), findsOneWidget);
+    expect(find.textContaining('Sign in first so Pro Lifetime belongs'), findsOneWidget);
+    expect(find.textContaining('Unlimited notes unlock on this device'), findsNothing);
+    expect(find.byKey(const ValueKey('pro-restore')), findsNothing);
   });
 
   testWidgets('the button waits for a price rather than guessing one', (

@@ -1,11 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../core/platform.dart';
 import '../data/local_store.dart';
 import 'billing_api.dart';
 import 'entitlements.dart';
 import 'purchase_store.dart';
+
+typedef WebCheckoutLauncher = Future<bool> Function(Uri url);
+
+Future<bool> _openWebCheckout(Uri url) =>
+    launchUrl(url, mode: LaunchMode.externalApplication);
 
 /// What billing is busy with, so the sheet can say so instead of spinning.
 enum BillingActivity { idle, buying, confirming, restoring }
@@ -37,10 +44,10 @@ enum RestoreResult {
 ///
 /// Signed out there is no account for the server to grant to, and one thing
 /// still has to work: the note limit, which is the only part of Pro that needs
-/// no account. So buying signed out is allowed, [proOnThisDevice] comes from
-/// the store itself, and signing in hands the purchase over — the SDK aliases
-/// it, the server claims it (`adopt`), and from then on the server's answer is
-/// the only one that counts again.
+/// no account. A native mobile store may therefore sell Pro signed out,
+/// [proOnThisDevice] comes from that store, and signing in hands the purchase
+/// over. Desktop web checkout signs in first so the browser sale already names
+/// its account. From then on the server's answer is the only one that counts.
 class Billing extends ChangeNotifier {
   Billing({
     required Listenable session,
@@ -50,6 +57,7 @@ class Billing extends ChangeNotifier {
     required PurchaseStore store,
     LocalStore? cache,
     DateTime Function()? now,
+    WebCheckoutLauncher? launchWebCheckout,
     this.confirmEvery = const Duration(milliseconds: 1500),
     this.confirmFor = const Duration(seconds: 30),
     this.restoreConfirmFor = const Duration(seconds: 10),
@@ -60,7 +68,8 @@ class Billing extends ChangeNotifier {
        _apiFor = api,
        _store = store,
        _cache = cache,
-       _now = now ?? DateTime.now {
+       _now = now ?? DateTime.now,
+       _launchWebCheckout = launchWebCheckout ?? _openWebCheckout {
     _proOnThisDevice =
         _cache?.read<Map<String, Object?>>(_deviceKey)?['pro'] == true;
     _session.addListener(_onSession);
@@ -83,6 +92,7 @@ class Billing extends ChangeNotifier {
   final PurchaseStore _store;
   final LocalStore? _cache;
   final DateTime Function() _now;
+  final WebCheckoutLauncher _launchWebCheckout;
 
   /// Asks again the moment a trial ends, because every field of the answer
   /// changes then and nothing on the server announces it to an app without
@@ -119,8 +129,18 @@ class Billing extends ChangeNotifier {
   /// RevenueCat that it exists.
   bool _proOnThisDevice = false;
 
-  /// Whether this build can buy anything at all.
-  bool get canPurchase => _store.isSupported;
+  /// Whether this build can buy through a native store or secure web checkout.
+  bool get canPurchase => _store.isSupported || usesWebCheckout;
+
+  /// Desktop builds ship outside a store and hand Pro Lifetime to the browser.
+  bool get usesWebCheckout =>
+      !_store.isSupported && (AppPlatform.isMacOS || AppPlatform.isWindows);
+
+  /// Packs remain native-store purchases for now.
+  bool get canBuyPacks => _store.isSupported;
+
+  /// Only native stores have a restore operation.
+  bool get canRestorePurchases => _store.isSupported;
   bool get isSignedIn => _userId != null;
 
   /// Whether Pro was bought on this device but has no account yet.
@@ -161,6 +181,10 @@ class Billing extends ChangeNotifier {
   /// not heard about yet, or one waiting on approval.
   String? get notice => _notice;
 
+  /// A browser checkout was opened and the next foreground refresh should
+  /// briefly wait for its webhook, rather than asking once a little too soon.
+  bool _webCheckoutPending = false;
+
   StoreOffer? offerFor(Sku sku) {
     for (final offer in _offers) {
       if (offer.sku == sku) return offer;
@@ -193,6 +217,7 @@ class Billing extends ChangeNotifier {
     _offers = const [];
     _offersFailed = false;
     _notice = null;
+    _webCheckoutPending = false;
     // A null id is also what a launch looks like before the keystore has
     // been read, so it leaves the cache alone: the cache is keyed by account,
     // and a different account simply never reads this one's answer.
@@ -253,7 +278,7 @@ class Billing extends ChangeNotifier {
   /// Without [force] it asks only when this device already believes it bought
   /// something, so a fresh install never reaches RevenueCat at all.
   Future<void> _readStore({bool force = false}) async {
-    if (!canPurchase || (!force && !_proOnThisDevice)) return;
+    if (!_store.isSupported || (!force && !_proOnThisDevice)) return;
     try {
       final owned = await _store.ownsProHere();
       if (_userId != null || owned == _proOnThisDevice) return;
@@ -271,7 +296,12 @@ class Billing extends ChangeNotifier {
   Future<void> refreshIfStale({
     Duration maxAge = const Duration(minutes: 30),
   }) async {
-    if (_userId == null) return;
+    final id = _userId;
+    if (id == null) return;
+    if (_webCheckoutPending) {
+      await _waitFor(Sku.proLifetime, _entitlements, id, confirmFor);
+      return;
+    }
     final asked = _askedAt;
     final ends = _entitlements?.trialEndsAt;
     final trialOver =
@@ -311,6 +341,10 @@ class Billing extends ChangeNotifier {
       if (_userId != id) return null;
       _entitlements = fresh;
       _askedAt = _now();
+      if (_webCheckoutPending && fresh.isPro) {
+        _webCheckoutPending = false;
+        _notice = null;
+      }
       _cache?.put(_cacheKey, {'userId': id, 'entitlements': fresh.toJson()});
       _armTrialEnd();
       notifyListeners();
@@ -325,7 +359,7 @@ class Billing extends ChangeNotifier {
   /// store keeps an id of its own until an account claims what it sold.
   Future<void> loadOffers() async {
     final id = _userId;
-    if (!canPurchase || _offersLoading) return;
+    if (!_store.isSupported || _offersLoading) return;
     _offersLoading = true;
     _offersFailed = false;
     notifyListeners();
@@ -348,6 +382,7 @@ class Billing extends ChangeNotifier {
 
   Future<PurchaseOutcome> buy(Sku sku) async {
     final id = _userId;
+    if (usesWebCheckout) return _buyOnWeb(sku, id);
     // Signed out, only the one product that unlocks something without an
     // account: a pack bought with no account to add it to would be money for
     // nothing until somebody signed in.
@@ -401,8 +436,59 @@ class Billing extends ChangeNotifier {
     }
   }
 
+  Future<PurchaseOutcome> _buyOnWeb(Sku sku, String? id) async {
+    if (sku != Sku.proLifetime) {
+      return const PurchaseFailed(
+        'Storage and minutes packs are available in the mobile apps.',
+      );
+    }
+    if (id == null || _tokenOf() == null) {
+      return const PurchaseFailed('Sign in first to buy Pro on the web.');
+    }
+    if (_activity != BillingActivity.idle) {
+      return const PurchaseFailed('Another purchase is still finishing.');
+    }
+
+    _activity = BillingActivity.buying;
+    _activeSku = sku;
+    _notice = null;
+    notifyListeners();
+    try {
+      final token = _tokenOf();
+      if (token == null) {
+        return const PurchaseFailed('Sign in again to continue.');
+      }
+      final checkout = await _apiFor(token).webCheckout();
+      if (_userId != id) {
+        return const PurchaseFailed('Sign in again to continue.');
+      }
+      if (!await _launchWebCheckout(checkout)) {
+        return const PurchaseFailed('Could not open your browser. Try again.');
+      }
+
+      // Returning to the foreground must ask even if the previous answer was
+      // seconds old, then briefly poll if it beats the webhook back here.
+      _webCheckoutPending = true;
+      _askedAt = null;
+      _notice =
+          'Finish the purchase in your browser. Pro will appear here when '
+          'you return.';
+      return const PurchaseOpened();
+    } catch (error) {
+      debugPrint('KapyNotes: web checkout failed: $error');
+      return const PurchaseFailed(
+        'Secure checkout is not available right now. Try again shortly.',
+      );
+    } finally {
+      _activity = BillingActivity.idle;
+      _activeSku = null;
+      notifyListeners();
+    }
+  }
+
   Future<RestoreResult> restore() async {
     final id = _userId;
+    if (!_store.isSupported) return RestoreResult.failed;
     if (_activity != BillingActivity.idle) return RestoreResult.failed;
 
     _activity = BillingActivity.restoring;

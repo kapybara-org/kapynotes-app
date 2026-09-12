@@ -43,6 +43,11 @@ class PurchasePending extends PurchaseOutcome {
   const PurchasePending();
 }
 
+/// Secure checkout opened in the system browser. Payment is not complete yet.
+class PurchaseOpened extends PurchaseOutcome {
+  const PurchaseOpened();
+}
+
 class PurchaseFailed extends PurchaseOutcome {
   const PurchaseFailed(this.message);
 

@@ -52,6 +52,9 @@ abstract class BillingApi {
   /// Asks the server to claim whatever the store already holds for this
   /// account. Called once, on signing in.
   Future<AdoptedPurchases> adopt();
+
+  /// Creates an identified RevenueCat checkout for this signed-in account.
+  Future<Uri> webCheckout();
 }
 
 class HttpBillingApi implements BillingApi {
@@ -76,6 +79,19 @@ class HttpBillingApi implements BillingApi {
   @override
   Future<AdoptedPurchases> adopt() async =>
       AdoptedPurchases.fromJson(await _json('POST', 'billing/adopt'));
+
+  @override
+  Future<Uri> webCheckout() async {
+    final raw = (await _json('POST', 'billing/web-checkout'))['url'];
+    final url = raw is String ? Uri.tryParse(raw) : null;
+    if (url == null || url.scheme != 'https' || url.host.isEmpty) {
+      throw const SyncTransientException(
+        'server returned an invalid checkout URL',
+        answered: true,
+      );
+    }
+    return url;
+  }
 
   /// The same request shape and error ladder as the speech client, so a
   /// billing failure reads like every other server failure in the app.
