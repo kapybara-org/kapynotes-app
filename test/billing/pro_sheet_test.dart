@@ -2,10 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/billing/entitlements.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/billing/pro_sheet.dart';
 
 import 'billing_fakes.dart';
+import '../test_fonts.dart';
 
 class _Session extends ChangeNotifier {
   String? userId;
@@ -26,6 +28,8 @@ void main() {
   late FakePurchaseStore store;
   late Billing billing;
 
+  setUpAll(loadTestFonts);
+
   setUp(() {
     session = _Session();
     api = FakeBillingApi();
@@ -43,14 +47,24 @@ void main() {
 
   tearDown(() => billing.dispose());
 
-  Future<void> pumpSheet(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(900, 1000);
+  Future<void> pumpSheet(
+    WidgetTester tester, {
+    Size size = const Size(900, 1000),
+    Brightness brightness = Brightness.dark,
+    bool asSheet = false,
+    TargetPlatform? platform,
+  }) async {
+    AppPlatform.debugTargetPlatformOverride = platform;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
-        theme: KapyTheme.dark(),
-        home: Scaffold(body: ProSheet(billing: billing)),
+        theme: brightness == Brightness.dark
+            ? KapyTheme.dark()
+            : KapyTheme.light(),
+        home: Scaffold(body: ProSheet(billing: billing, asSheet: asSheet)),
       ),
     );
     await tester.pumpAndSettle();
@@ -66,7 +80,8 @@ void main() {
 
     // Buying is allowed with no account, because unlimited notes works
     // without one — and what does not is said before the money.
-    expect(find.text(r'Get Pro Lifetime · $24.00'), findsOneWidget);
+    expect(find.text('Get Pro Lifetime'), findsOneWidget);
+    expect(find.text(r'$24.00'), findsOneWidget);
     expect(
       find.textContaining('Unlimited notes unlock on this device'),
       findsOneWidget,
@@ -101,7 +116,8 @@ void main() {
     session.signIn('user-1');
     await pumpSheet(tester);
 
-    expect(find.text(r'Get Pro Lifetime · $24.00'), findsOneWidget);
+    expect(find.text('Get Pro Lifetime'), findsOneWidget);
+    expect(find.text(r'$24.00'), findsOneWidget);
     expect(find.byKey(const ValueKey('pro-restore')), findsOneWidget);
 
     store.onBuy = () => api.answer = () => entitlementsFor(pro: true);
@@ -137,10 +153,7 @@ void main() {
     session.signIn('user-1');
     await pumpSheet(tester);
 
-    expect(
-      find.textContaining('while Kapy Notes is in beta'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('during beta'), findsOneWidget);
   });
 
   testWidgets('a trial says what is left of it, and that it ends by itself', (
@@ -154,7 +167,7 @@ void main() {
     expect(find.textContaining('6 days left'), findsOneWidget);
     expect(find.textContaining('Nothing is charged'), findsOneWidget);
     // Not the beta's line: after launch, sync is on because of the trial.
-    expect(find.textContaining('in beta'), findsNothing);
+    expect(find.textContaining('during beta'), findsNothing);
     expect(find.textContaining('while you try Pro'), findsOneWidget);
     // Pro Lifetime is still the thing to buy, and no pack is: one bought
     // during a trial would be stranded on Free when the trial ended.
@@ -173,10 +186,7 @@ void main() {
     await pumpSheet(tester);
 
     expect(find.byKey(const ValueKey('pro-trial')), findsNothing);
-    expect(
-      find.textContaining('editing more than five notes'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Write past five notes'), findsOneWidget);
   });
 
   testWidgets('a Pro account at the storage cap cannot buy more storage', (
@@ -217,5 +227,49 @@ void main() {
 
     expect(find.textContaining('payment has gone through'), findsOneWidget);
     expect(find.text('Pro Lifetime is yours. Thank you.'), findsNothing);
+  });
+
+  testWidgets('the compact phone layout keeps the offer immediately visible', (
+    tester,
+  ) async {
+    session.signIn('user-1');
+    await pumpSheet(
+      tester,
+      size: const Size(328, 712),
+      brightness: Brightness.light,
+      asSheet: true,
+      platform: TargetPlatform.iOS,
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Write without limits.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pro-price')), findsOneWidget);
+    expect(
+      tester.getRect(find.byKey(const ValueKey('pro-buy'))).bottom,
+      lessThan(520),
+    );
+  });
+
+  testWidgets('phone Pro sheet golden', (tester) async {
+    session.signIn('user-1');
+    await pumpSheet(
+      tester,
+      size: const Size(328, 712),
+      brightness: Brightness.light,
+      asSheet: true,
+      platform: TargetPlatform.iOS,
+    );
+
+    await expectLater(
+      find.byType(ProSheet),
+      matchesGoldenFile('goldens/pro_sheet_phone_light.png'),
+    );
+
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -430));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(ProSheet),
+      matchesGoldenFile('goldens/pro_sheet_phone_light_details.png'),
+    );
   });
 }
