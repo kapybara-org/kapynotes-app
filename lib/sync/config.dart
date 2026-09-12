@@ -41,5 +41,5 @@ const String kRevenueCatAppleKey = String.fromEnvironment(
 /// what keeps the Android build from offering something it cannot sell.
 const String kRevenueCatGoogleKey = String.fromEnvironment(
   'KAPYNOTES_RC_GOOGLE_KEY',
-  defaultValue: '',
+  defaultValue: 'goog_sXpjJnAAcxGCgWLNipIjhfGQNfd',
 );
