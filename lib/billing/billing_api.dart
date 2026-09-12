@@ -24,18 +24,20 @@ class AdoptedPurchases {
 
   final Entitlements entitlements;
 
-  static AdoptedPurchases fromJson(Map<String, Object?> raw) => AdoptedPurchases(
-    claimed: [
-      for (final sku in raw['claimed'] is List ? raw['claimed'] as List : const [])
-        if (sku is String) sku,
-    ],
-    heldByAnother: raw['heldByAnother'] == true,
-    entitlements: Entitlements.fromJson(
-      raw['entitlements'] is Map
-          ? (raw['entitlements'] as Map).cast<String, Object?>()
-          : const {},
-    ),
-  );
+  static AdoptedPurchases fromJson(Map<String, Object?> raw) =>
+      AdoptedPurchases(
+        claimed: [
+          for (final sku
+              in raw['claimed'] is List ? raw['claimed'] as List : const [])
+            if (sku is String) sku,
+        ],
+        heldByAnother: raw['heldByAnother'] == true,
+        entitlements: Entitlements.fromJson(
+          raw['entitlements'] is Map
+              ? (raw['entitlements'] as Map).cast<String, Object?>()
+              : const {},
+        ),
+      );
 }
 
 /// The server's half of billing: what this account may do.
