@@ -7,6 +7,8 @@
 #   packaging/upload_play.py validate   run the bundle preflight, upload nothing
 #   packaging/upload_play.py upload     validate, then deliver to a track
 #   packaging/upload_play.py promote    move an uploaded build to a wider track
+#   packaging/upload_play.py data-safety              validate the declaration
+#   packaging/upload_play.py data-safety --confirm    replace it in Play Console
 #
 #   --track internal|alpha|beta|production   alpha is closed testing, beta open
 #   --rollout 0.2                            staged release, promote only
@@ -28,10 +30,10 @@
 # actually gets pushed. SUBMISSION.md carries the same text for review; if you
 # edit one, edit the other.
 #
-# What the API cannot do: the App content declarations. Data Safety, the
-# content rating questionnaire, target audience, ads and app access are all
-# Console-only, because they are attestations the developer makes rather than
-# data about the build. Their settled answers are in SUBMISSION.md.
+# Most App content declarations remain Console-only. Data Safety is the
+# exception: Google's applications.dataSafety endpoint accepts the same full
+# CSV the Console imports. A dry run is the default because --confirm replaces
+# the declaration for the whole package rather than only the current build.
 #
 #   --track internal|alpha|beta|production   default: internal
 #   --bundle PATH                            default: build/release/kapy-android.aab
@@ -63,6 +65,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import generate_play_data_safety
+
 PACKAGE_NAME = "com.kapybara.kapynotes"
 SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -76,6 +80,7 @@ CREDENTIALS = os.environ.get(
     os.path.join(ROOT, "packaging", ".play-credentials.json"),
 )
 VALID_TRACKS = ("internal", "alpha", "beta", "production")
+DATA_SAFETY_CSV = os.path.join(ROOT, "packaging", "play_data_safety.csv")
 
 BLUE, BOLD, RED, RESET = "\033[1;34m", "\033[1m", "\033[1;31m", "\033[0m"
 
@@ -337,6 +342,30 @@ def push_listing(text_only=False):
             call("DELETE", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}")
 
 
+def data_safety(path, confirmed=False):
+    """Validate, then optionally replace the package-wide Safety Labels CSV."""
+    info(f"Validating Data Safety declaration for {PACKAGE_NAME}")
+    try:
+        rows = generate_play_data_safety.load_declaration(path)
+    except (OSError, generate_play_data_safety.DeclarationError) as error:
+        die(str(error))
+    generate_play_data_safety.print_summary(rows)
+
+    if not confirmed:
+        print("\n  Dry run only. Nothing was sent to Google Play.")
+        print("  Re-run with --confirm to replace the package declaration.")
+        return
+
+    with open(path, encoding="utf-8", newline="") as handle:
+        declaration = handle.read()
+    call(
+        "POST",
+        f"{API}/applications/{PACKAGE_NAME}/dataSafety",
+        body={"safetyLabels": declaration},
+    )
+    print("\n  Data Safety declaration submitted. Google reviews it with the app.")
+
+
 def promote(version_code, track, rollout):
     """Move an already-uploaded build to another track.
 
@@ -483,11 +512,20 @@ def main():
     args = sys.argv[1:]
     mode, track, bundle = "all", "internal", DEFAULT_BUNDLE
     rollout, version_code, track_given = None, None, False
-    text_only = False
+    text_only, confirmed = False, False
+    data_safety_csv = DATA_SAFETY_CSV
     index = 0
     while index < len(args):
         argument = args[index]
-        if argument in ("confirm", "listing", "validate", "upload", "promote", "all"):
+        if argument in (
+            "confirm",
+            "listing",
+            "validate",
+            "upload",
+            "promote",
+            "data-safety",
+            "all",
+        ):
             mode = argument
         elif argument == "--track":
             index += 1
@@ -504,6 +542,11 @@ def main():
                 die("--rollout takes a fraction, for example 0.2")
         elif argument == "--text-only":
             text_only = True
+        elif argument == "--confirm":
+            confirmed = True
+        elif argument == "--data-safety":
+            index += 1
+            data_safety_csv = args[index] if index < len(args) else ""
         elif argument == "--version-code":
             index += 1
             version_code = args[index] if index < len(args) else ""
@@ -528,6 +571,8 @@ def main():
         confirm(track)
     if mode == "listing":
         push_listing(text_only)
+    if mode == "data-safety":
+        data_safety(data_safety_csv, confirmed)
     if mode == "promote":
         promote(version_code, track, rollout)
     if mode in ("validate", "upload", "all"):

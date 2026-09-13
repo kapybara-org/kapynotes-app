@@ -1213,3 +1213,39 @@ being published on the assumption that all of it is possible later, and it is.
   real disclosure covering what is uploaded, that it is encrypted in transit,
   and that users can request deletion. That is the same release that owes Play
   in-app account deletion, above.
+
+### Official launch 1.24.0 Data Safety declaration
+
+The historical release notes above describe what each feature changed. The
+package-wide declaration that replaces all of those snapshots for 1.24.0 is
+`packaging/play_data_safety.csv`. It is generated from Google's current full
+template and checked before upload:
+
+    SSL_CERT_FILE=/etc/ssl/cert.pem python3 packaging/generate_play_data_safety.py
+    python3 packaging/upload_play.py data-safety
+    SSL_CERT_FILE=/etc/ssl/cert.pem python3 packaging/upload_play.py data-safety --confirm
+
+The first upload command is deliberately a dry run. `--confirm` is required
+because the API replaces the declaration for the whole package.
+
+- Collection exists, all collection is encrypted in transit, and users can
+  request deletion both in the app and through the published support route.
+- Name, email address, user ID, purchase history, profile photos, other
+  user-generated content, and the sync device identifier are optional,
+  collected, retained, and not shared. They are used for app functionality;
+  the first four account-related types also serve account management.
+- Voice recordings are optional, collected for app functionality, processed
+  ephemerally for cloud transcription, and not shared.
+- Note text, note photos, note videos, and stored recordings are excluded from
+  the declaration because the sync copies are end-to-end encrypted and cannot
+  be read by Kapy Notes or an intermediary. Photos are still declared because
+  the optional collaborator profile photo is intentionally readable.
+- Cloudflare and RevenueCat act as service providers. Transfers to them do not
+  count as sharing under Play's service-provider exception. A collaborator
+  receives content only through a specific user-initiated sharing action,
+  which is also excluded from Play's sharing definition.
+- There is no advertising, analytics SDK, location inference, contacts access,
+  browsing-history collection, or crash-reporting service in the release.
+
+These answers were re-audited against the 1.24.0 app and server, not copied
+from the original local-only 1.0.0 declaration.
