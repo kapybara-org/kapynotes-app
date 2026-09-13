@@ -136,7 +136,7 @@ class LayoutPrefs extends ChangeNotifier {
   bool _resultsVisible = true;
   double _sidebarWidth = defaultSidebarWidth;
   bool _sidebarVisible = false;
-  bool _hiddenFolderVisible = false;
+  bool _hiddenFolderVisible = true;
   Size _windowSize = defaultWindowSize;
   Offset? _windowPosition;
   bool _readyToTypeOnOpen = true;
@@ -302,7 +302,7 @@ class LayoutPrefs extends ChangeNotifier {
     // Every launch begins on the page itself. Sidebar visibility is a window
     // state for this session, not a preference carried into the next one.
     _sidebarVisible = false;
-    _hiddenFolderVisible = _store.read<bool>(_hiddenFolderVisibleKey) ?? false;
+    _hiddenFolderVisible = _store.read<bool>(_hiddenFolderVisibleKey) ?? true;
     _windowSize = _clampWindowSize(
       Size(
         _readDouble(_windowWidthKey) ?? defaultWindowSize.width,

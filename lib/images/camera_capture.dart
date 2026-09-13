@@ -586,9 +586,12 @@ class _CameraBottomBar extends StatelessWidget {
                           size: 26,
                         ),
                       const SizedBox(height: 4),
-                      const Text(
+                      Text(
                         'Photos',
-                        style: TextStyle(color: Colors.white, fontSize: 12),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: AppTypeScale.small,
+                        ),
                       ),
                     ],
                   ),

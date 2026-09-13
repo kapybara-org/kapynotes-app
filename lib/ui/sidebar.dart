@@ -16,6 +16,7 @@ import '../sync/spaces.dart';
 import 'app_logo.dart';
 import 'collaborator_colors.dart';
 import 'compact_icon_button.dart';
+import 'control_surface.dart';
 import 'context_menu.dart';
 import 'editor/note_footer.dart';
 import 'editor_panes.dart';
@@ -281,7 +282,7 @@ extension on Sidebar {
   bool get _showDesktopHiddenEntry =>
       AppPlatform.isDesktop &&
       onHiddenToggle != null &&
-      (showHiddenFolder || hiddenMode);
+      (hiddenMode || (showHiddenFolder && hiddenCount > 0));
 
   bool get _hasPinned =>
       !_specialMode && notes.any((note) => pinnedNoteIds.contains(note.id));
@@ -1044,8 +1045,8 @@ class _FolderShortcutHint extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 9.5,
-            height: 1,
+            fontSize: AppPlatform.isWindows ? AppTypeScale.micro : 9.5,
+            height: AppPlatform.isWindows ? 1.1 : 1,
             color: palette.textTertiary,
           ),
         ),
@@ -1302,7 +1303,9 @@ class _SettingsEntry extends StatelessWidget {
                       child: Text(
                         'Update',
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: AppPlatform.isWindows
+                              ? AppTypeScale.micro
+                              : 10,
                           fontWeight: FontWeight.w400,
                           color: palette.chipCurrency,
                         ),
@@ -1389,7 +1392,7 @@ class _SearchFieldState extends State<_SearchField> {
     final palette = context.palette;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 1, 10, 9),
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
       child: Row(
         children: [
           Expanded(
@@ -1404,8 +1407,8 @@ class _SearchFieldState extends State<_SearchField> {
                 color: palette.textPrimary,
               ),
               cursorHeight: AppTypeScale.control + 2,
-              decoration: InputDecoration(
-                isDense: true,
+              decoration: kapyFieldDecoration(
+                context,
                 hintText: widget.archiveMode
                     ? 'Search Archived Notes'
                     : widget.hiddenMode
@@ -1452,29 +1455,6 @@ class _SearchFieldState extends State<_SearchField> {
                 contentPadding: EdgeInsets.symmetric(
                   vertical: AppControlMetrics.fieldVerticalPadding,
                 ),
-                filled: true,
-                fillColor: palette.controlBackground,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(
-                    color: palette.controlBorder,
-                    width: 0.5,
-                  ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(
-                    color: palette.controlBorder,
-                    width: 0.5,
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(
-                    color: palette.selectedBorder,
-                    width: 0.75,
-                  ),
-                ),
               ),
             ),
           ),
@@ -1515,8 +1495,8 @@ class _SearchShortcutHint extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                fontSize: 9.5,
-                height: 1,
+                fontSize: AppPlatform.isWindows ? AppTypeScale.micro : 9.5,
+                height: AppPlatform.isWindows ? 1.1 : 1,
                 color: palette.textTertiary,
               ),
             ),

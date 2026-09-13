@@ -66,6 +66,7 @@ Future<void> pumpForGolden(
   bool blankNote = false,
   bool withImages = false,
   bool withUpdates = false,
+  bool updateAvailable = false,
   bool firstRun = false,
   bool sidebarVisible = true,
   bool withPinnedNote = false,
@@ -104,7 +105,13 @@ Future<void> pumpForGolden(
     // A checked, current app: the state the pane is in almost all the time,
     // and the only one whose copy does not move with the calendar.
     store.data['updates.v1'] = {
-      'available': null,
+      'available': updateAvailable
+          ? {
+              'version': '1.2.0',
+              'build': 12,
+              'notesUrl': 'https://kapynotes.com/changelog/1.2.0',
+            }
+          : null,
       'checkedAt': DateTime.now().toIso8601String(),
     };
     // The list of releases too, and fresh, so the image is of the pane with
@@ -113,6 +120,20 @@ Future<void> pumpForGolden(
     store.data['changelog.v1'] = {
       'fetchedAt': DateTime.now().toIso8601String(),
       'releases': [
+        if (updateAvailable)
+          {
+            'version': '1.2.0',
+            'date': '2026-09-04',
+            'summary': 'A faster, calmer update for the tools you use most.',
+            'highlights': [
+              'Clearer controls and more readable supporting text.',
+              'Faster startup and smoother note editing.',
+              'A shorter update summary that is easy to scan.',
+            ],
+            'changes': [
+              'The complete explanation remains available in release history.',
+            ],
+          },
         {
           'version': '1.1.0',
           'date': '2026-09-03',
@@ -733,7 +754,9 @@ void main() {
     expect(toolbar.top, greaterThanOrEqualTo(0));
     expect(toolbar.right, lessThanOrEqualTo(760));
     expect(toolbar.bottom, lessThanOrEqualTo(520));
-    expect(toolbar.width, inInclusiveRange(230, 245));
+    // Copy leads the row now, ahead of the text style; there is no Paste here
+    // because nothing in this test puts anything on the clipboard.
+    expect(toolbar.width, inInclusiveRange(280, 296));
     final selectionFade = tester.widget<FadeTransition>(
       find
           .ancestor(
@@ -785,6 +808,42 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_settings.png'),
+    );
+  });
+
+  testWidgets('Windows desktop dark settings stays comfortably readable', (
+    tester,
+  ) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.windows,
+    );
+    await tapSettings(tester);
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_windows_dark_settings.png'),
+    );
+  });
+
+  testWidgets('Windows pending update stays concise and readable', (
+    tester,
+  ) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.windows,
+      withUpdates: true,
+      updateAvailable: true,
+    );
+    await tapSettings(tester);
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_windows_dark_update.png'),
     );
   });
 

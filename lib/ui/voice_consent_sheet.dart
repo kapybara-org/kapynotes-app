@@ -62,7 +62,10 @@ class _SpeechConsentSheet extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               'Version $speechConsentVersion',
-              style: TextStyle(fontSize: 11, color: palette.textTertiary),
+              style: TextStyle(
+                fontSize: AppTypeScale.caption,
+                color: palette.textTertiary,
+              ),
             ),
           ],
         ),

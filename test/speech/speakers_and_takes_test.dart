@@ -1,10 +1,8 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/theme.dart';
-import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
@@ -16,9 +14,6 @@ import 'package:kapy_notes/ui/editor/voice_chip.dart';
 import 'package:kapy_notes/ui/voice_note_dialog.dart';
 
 import '../test_fonts.dart';
-
-late Directory tempDir;
-late BlobStore blobs;
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'speakers-test.json');
@@ -78,22 +73,14 @@ Widget harness(
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   home: Scaffold(
-    body: VoiceNoteView(
-      ref: ref,
-      state: VoiceChipState.done,
-      blobs: blobs,
-      actions: actions,
-    ),
+    body: VoiceNoteView(ref: ref, state: VoiceChipState.done, actions: actions),
   ),
 );
 
 void main() {
   setUpAll(() async {
     await loadTestFonts();
-    tempDir = await Directory.systemTemp.createTemp('kapy-speakers');
-    blobs = BlobStore(directory: tempDir);
   });
-  tearDownAll(() => tempDir.delete(recursive: true));
 
   group('the transcript when more than one person spoke', () {
     testWidgets('says how many, and who said what', (tester) async {

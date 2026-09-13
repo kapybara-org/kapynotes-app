@@ -149,6 +149,13 @@ in `windows/runner/Runner.rc`. The release job writes both, plus `latest.json`,
 with a five-minute cache header; they are the only mutable objects in the
 bucket.
 
+Each appcast and the in-app update notice point a release at its own
+`kapynotes.com/changelog/<version>` page. WinSparkle embeds that page in its
+Windows update dialog, so it shows only what changes in the version being
+offered. That focused view uses the release's short `highlights`; Settings
+keeps the complete `changes` for the browsable history. The release job
+refuses to publish a feed until that page is live.
+
 Because macOS compares build numbers, a release that forgets to bump `+N` would
 tell every Mac it is already current. The `verify` job fails the release rather
 than let that ship.

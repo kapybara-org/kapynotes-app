@@ -274,6 +274,7 @@ class Space {
   final List<SpaceMember> members;
   final List<SpaceInvite> invites;
   final int liveNotes;
+  final int? attachmentMaxBytes;
   final DateTime createdAt;
 
   const Space({
@@ -288,6 +289,7 @@ class Space {
     required this.members,
     required this.invites,
     required this.liveNotes,
+    this.attachmentMaxBytes,
     required this.createdAt,
   });
 
@@ -449,6 +451,7 @@ class Space {
         },
     ],
     'liveNotes': liveNotes,
+    'attachmentMaxBytes': attachmentMaxBytes,
     'createdAt': createdAt.toUtc().toIso8601String(),
   };
 
@@ -478,6 +481,10 @@ class Space {
           ? invites.map(SpaceInvite.fromJson).whereType<SpaceInvite>().toList()
           : const [],
       liveNotes: liveNotes is int ? liveNotes : 0,
+      attachmentMaxBytes: switch (raw['attachmentMaxBytes']) {
+        final int value when value > 0 => value,
+        _ => null,
+      },
       createdAt: (created ?? DateTime.fromMillisecondsSinceEpoch(0)).toLocal(),
     );
   }

@@ -13,6 +13,7 @@ import '../sync/sync_api.dart' show SyncRefusedException;
 import '../sync/spaces.dart';
 import '../sync/trust.dart';
 import 'collaborator_colors.dart';
+import 'control_surface.dart';
 import 'member_avatars.dart';
 import 'profile_avatar.dart';
 import '../sync/joining.dart';
@@ -351,17 +352,28 @@ class _ShareDialogState extends State<_ShareDialog> {
     final space = _space;
     final sharing = widget.sharing;
     final note = _note;
+    final title = space == null
+        ? 'Share note'
+        : widget.noteId == null
+        ? space.titleFor(sharing.userId)
+        : 'Shared ${sharedPhrase(space, sharing.userId)}';
+    final subtitle = space == null
+        ? 'Invite someone to collaborate securely.'
+        : widget.noteId == null
+        ? 'Manage people and access for this space.'
+        : 'Manage people and access for this note.';
 
     return AlertDialog(
-      title: Text(
-        space == null
-            ? 'Share note'
-            : widget.noteId == null
-            ? space.titleFor(sharing.userId)
-            : 'Shared ${sharedPhrase(space, sharing.userId)}',
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      titlePadding: const EdgeInsets.fromLTRB(22, 20, 14, 0),
+      contentPadding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+      title: _ShareHeader(
+        title: title,
+        subtitle: subtitle,
+        onClose: () => Navigator.of(context).pop(),
       ),
       content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
+        constraints: const BoxConstraints(maxWidth: 448),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -373,40 +385,45 @@ class _ShareDialogState extends State<_ShareDialog> {
                   'It stays encrypted on the way, so only the people you '
                   'share it with can read it.',
                 ),
-                const SizedBox(height: 14),
-                _Label('Share with a person'),
-                _RolePicker(
-                  value: _inviteRole,
+                const SizedBox(height: 18),
+                _Label('Invite someone'),
+                _InviteControls(
+                  key: const ValueKey('share-invite-card'),
+                  role: _inviteRole,
                   enabled: !_busy,
-                  onChanged: (role) => setState(() => _inviteRole = role),
-                ),
-                const SizedBox(height: 8),
-                _EmailRow(
                   controller: _email,
-                  busy: _busy,
                   action: 'Share',
+                  autofocus: true,
+                  onRoleChanged: (role) => setState(() => _inviteRole = role),
+                  onEmailChanged: _clearMessage,
                   onSubmit: _shareWithEmail,
                 ),
                 if (sharing.teams.where(sharing.canAddNotesTo_).isNotEmpty) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
                   _Label('Or add it to a space you are already in'),
-                  for (final team in sharing.teams)
-                    if (sharing.canAddNotesTo_(team))
-                      _SpaceRow(
-                        key: ValueKey('share-into-${team.id}'),
-                        space: team,
-                        userId: sharing.userId,
-                        onTap: _busy || note == null
-                            ? null
-                            : () => _run(
-                                () => sharing.shareNote(
-                                  note.id,
-                                  spaceId: team.id,
-                                ),
-                                done:
-                                    'Shared ${sharedPhrase(team, sharing.userId)}.',
-                              ),
-                      ),
+                  KapyControlSurface(
+                    child: Column(
+                      children: [
+                        for (final team in sharing.teams)
+                          if (sharing.canAddNotesTo_(team))
+                            _SpaceRow(
+                              key: ValueKey('share-into-${team.id}'),
+                              space: team,
+                              userId: sharing.userId,
+                              onTap: _busy || note == null
+                                  ? null
+                                  : () => _run(
+                                      () => sharing.shareNote(
+                                        note.id,
+                                        spaceId: team.id,
+                                      ),
+                                      done:
+                                          'Shared ${sharedPhrase(team, sharing.userId)}.',
+                                    ),
+                            ),
+                      ],
+                    ),
+                  ),
                 ],
               ] else ...[
                 _Members(
@@ -449,42 +466,26 @@ class _ShareDialogState extends State<_ShareDialog> {
                       name: member.displayName,
                     ),
                   ),
+                  onReportNote: note == null ? null : _reportNote,
                   onRevoke: (invite) =>
                       _run(() => sharing.revokeInvite(space.id, invite.token)),
                   onTrust: sharing.trustNewKey,
                 ),
-                if (note != null) ...[
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      key: const ValueKey('report-note'),
-                      onPressed: _busy ? null : _reportNote,
-                      icon: KapyIcon(
-                        KapyIcons.flagOutlined,
-                        size: AppControlMetrics.iconControl,
-                      ),
-                      label: const Text('Report this note'),
-                    ),
-                  ),
-                ],
                 if (space.isOwner) ...[
-                  const SizedBox(height: 14),
-                  _Label('Add someone'),
-                  _RolePicker(
-                    value: _inviteRole,
+                  const SizedBox(height: 16),
+                  _Label('Invite someone'),
+                  _InviteControls(
+                    key: const ValueKey('share-invite-card'),
+                    role: _inviteRole,
                     enabled: !_busy && sharing.holdsKey(space.id),
-                    onChanged: (role) => setState(() => _inviteRole = role),
-                  ),
-                  const SizedBox(height: 8),
-                  _EmailRow(
                     controller: _email,
-                    busy: _busy || !sharing.holdsKey(space.id),
                     action: 'Invite',
+                    onRoleChanged: (role) => setState(() => _inviteRole = role),
+                    onEmailChanged: _clearMessage,
                     onSubmit: _shareWithEmail,
                   ),
                   if (JoiningScope.of(context) case final joining?) ...[
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 18),
                     SpaceLinkPanel(
                       spaceId: space.id,
                       joining: joining,
@@ -492,7 +493,6 @@ class _ShareDialogState extends State<_ShareDialog> {
                       role: _inviteRole,
                       enabled: !_busy && sharing.holdsKey(space.id),
                     ),
-                    const SizedBox(height: 14),
                     JoinRequestsPanel(
                       spaceId: space.id,
                       joining: joining,
@@ -517,96 +517,234 @@ class _ShareDialogState extends State<_ShareDialog> {
                 ],
               ],
               if (_notice case final notice?) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 _Message(notice),
               ],
               if (_error case final error?) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 _Message(error, isError: true),
+              ],
+              if (space != null) ...[
+                const SizedBox(height: 18),
+                Divider(height: 1, color: palette.separator),
+                const SizedBox(height: 10),
+                _ManagementActions(
+                  enabled: !_busy,
+                  onMoveToMine: note != null && space.canEdit
+                      ? () => _confirm(
+                          title: 'Move back to My notes?',
+                          body:
+                              'The note stops being shared '
+                              '${sharedPhrase(space, sharing.userId)} and '
+                              'becomes yours alone, under a new key. Others '
+                              'keep what they already downloaded.',
+                          action: 'Move it',
+                          run: () async {
+                            await sharing.unshareNote(note.id);
+                            if (context.mounted) Navigator.of(context).pop();
+                          },
+                        )
+                      : null,
+                  onStopSharing: space.isOwner
+                      ? () => _confirm(
+                          title: switch (space.chosenName) {
+                            final name? => 'Stop sharing $name?',
+                            null => switch (space.peoplePhrase(
+                              sharing.userId,
+                            )) {
+                              final people? => 'Stop sharing with $people?',
+                              null => 'Stop sharing?',
+                            },
+                          },
+                          body:
+                              'Every note in it comes back to your own notes '
+                              'and the space ends for everyone. Nothing is '
+                              'deleted.',
+                          action: 'Stop sharing',
+                          destructive: true,
+                          run: () async {
+                            await sharing.stopSharing(space.id);
+                            if (context.mounted) Navigator.of(context).pop();
+                          },
+                        )
+                      : null,
+                  onLeave: !space.isOwner
+                      ? () => _confirm(
+                          title: switch (space.chosenName) {
+                            final name? => 'Leave $name?',
+                            null => 'Leave these shared notes?',
+                          },
+                          body:
+                              'You stop receiving changes. Notes you have not '
+                              'synced yet stay with you as your own.',
+                          action: 'Leave',
+                          destructive: true,
+                          run: () async {
+                            await sharing.leave(space.id);
+                            if (context.mounted) Navigator.of(context).pop();
+                          },
+                        )
+                      : null,
+                ),
               ],
             ],
           ),
         ),
       ),
-      actions: [
-        if (space != null && note != null && space.canEdit)
-          TextButton(
-            key: const ValueKey('unshare-note'),
-            onPressed: _busy
-                ? null
-                : () => _confirm(
-                    title: 'Move back to My notes?',
-                    body:
-                        'The note stops being shared '
-                        '${sharedPhrase(space, sharing.userId)} and becomes '
-                        'yours alone, under a new key. Others keep what they '
-                        'already downloaded.',
-                    action: 'Move it',
-                    run: () async {
-                      await sharing.unshareNote(note.id);
-                      if (context.mounted) Navigator.of(context).pop();
-                    },
-                  ),
-            child: const Text('Move to My notes'),
+    );
+  }
+
+  void _clearMessage(String _) {
+    if (_error == null && _notice == null) return;
+    setState(() {
+      _error = null;
+      _notice = null;
+    });
+  }
+}
+
+class _ShareHeader extends StatelessWidget {
+  const _ShareHeader({
+    required this.title,
+    required this.subtitle,
+    required this.onClose,
+  });
+
+  final String title;
+  final String subtitle;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final accent = Theme.of(context).colorScheme.primary;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(AppRadii.button),
+            border: Border.all(color: accent.withValues(alpha: 0.28)),
           ),
-        if (space != null && space.isOwner)
-          TextButton(
-            key: const ValueKey('stop-sharing'),
-            onPressed: _busy
-                ? null
-                : () => _confirm(
-                    title: switch (space.chosenName) {
-                      final name? => 'Stop sharing $name?',
-                      null => switch (space.peoplePhrase(sharing.userId)) {
-                        final people? => 'Stop sharing with $people?',
-                        null => 'Stop sharing?',
-                      },
-                    },
-                    body:
-                        'Every note in it comes back to your own notes and '
-                        'the space ends for everyone. Nothing is deleted.',
-                    action: 'Stop sharing',
-                    destructive: true,
-                    run: () async {
-                      await sharing.stopSharing(space.id);
-                      if (context.mounted) Navigator.of(context).pop();
-                    },
+          alignment: Alignment.center,
+          child: KapyIcon(
+            KapyIcons.shareRounded,
+            size: AppControlMetrics.iconFeature,
+            color: accent,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  header: true,
+                  child: Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppTypeScale.heading,
+                      fontWeight: FontWeight.w600,
+                      color: palette.textPrimary,
+                    ),
                   ),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: AppTypeScale.small,
+                    fontWeight: FontWeight.w400,
+                    color: palette.textSecondary,
+                    height: 1.3,
+                  ),
+                ),
+              ],
             ),
-            child: const Text('Stop sharing'),
           ),
-        if (space != null && !space.isOwner)
-          TextButton(
-            key: const ValueKey('leave-space'),
-            onPressed: _busy
-                ? null
-                : () => _confirm(
-                    title: switch (space.chosenName) {
-                      final name? => 'Leave $name?',
-                      null => 'Leave these shared notes?',
-                    },
-                    body:
-                        'You stop receiving changes. Notes you have not '
-                        'synced yet stay with you as your own.',
-                    action: 'Leave',
-                    destructive: true,
-                    run: () async {
-                      await sharing.leave(space.id);
-                      if (context.mounted) Navigator.of(context).pop();
-                    },
-                  ),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Leave'),
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          key: const ValueKey('share-dialog-close'),
+          tooltip: 'Close',
+          onPressed: onClose,
+          icon: KapyIcon(
+            KapyIcons.closeRounded,
+            size: AppControlMetrics.iconControl,
           ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text('Done', style: TextStyle(color: palette.textPrimary)),
         ),
       ],
+    );
+  }
+}
+
+class _ManagementActions extends StatelessWidget {
+  const _ManagementActions({
+    required this.enabled,
+    this.onMoveToMine,
+    this.onStopSharing,
+    this.onLeave,
+  });
+
+  final bool enabled;
+  final VoidCallback? onMoveToMine;
+  final VoidCallback? onStopSharing;
+  final VoidCallback? onLeave;
+
+  @override
+  Widget build(BuildContext context) {
+    final danger = Theme.of(context).colorScheme.error;
+    final move = onMoveToMine;
+    final stop = onStopSharing;
+    final leave = onLeave;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          if (move != null)
+            OutlinedButton.icon(
+              key: const ValueKey('unshare-note'),
+              onPressed: enabled ? move : null,
+              icon: KapyIcon(
+                KapyIcons.restoreRounded,
+                size: AppControlMetrics.iconControl,
+              ),
+              label: const Text('Move to My notes'),
+            ),
+          if (stop != null)
+            TextButton.icon(
+              key: const ValueKey('stop-sharing'),
+              onPressed: enabled ? stop : null,
+              style: TextButton.styleFrom(foregroundColor: danger),
+              icon: KapyIcon(
+                KapyIcons.stopRounded,
+                size: AppControlMetrics.iconControl,
+              ),
+              label: const Text('Stop sharing'),
+            ),
+          if (leave != null)
+            TextButton.icon(
+              key: const ValueKey('leave-space'),
+              onPressed: enabled ? leave : null,
+              style: TextButton.styleFrom(foregroundColor: danger),
+              icon: KapyIcon(
+                KapyIcons.logoutRounded,
+                size: AppControlMetrics.iconControl,
+              ),
+              label: const Text('Leave'),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -635,6 +773,7 @@ class _Members extends StatelessWidget {
     required this.onRemove,
     required this.onBlock,
     required this.onReport,
+    required this.onReportNote,
     required this.onRevoke,
     required this.onTrust,
   });
@@ -649,6 +788,7 @@ class _Members extends StatelessWidget {
   final ValueChanged<SpaceMember> onRemove;
   final ValueChanged<SpaceMember> onBlock;
   final ValueChanged<SpaceMember> onReport;
+  final VoidCallback? onReportNote;
   final ValueChanged<SpaceInvite> onRevoke;
   final ValueChanged<TrustWarning> onTrust;
 
@@ -670,6 +810,34 @@ class _Members extends StatelessWidget {
       ...space.members.where(
         (m) => m.userId != me && !here.containsKey(m.userId),
       ),
+    ];
+    final rows = <Widget>[
+      for (final member in members)
+        _MemberRow(
+          key: ValueKey('member-row-${member.userId}'),
+          member: member,
+          isSelf: member.userId == me,
+          presence: here[member.userId],
+          trailing: member.userId == me
+              ? null
+              : _MemberMenu(
+                  key: ValueKey('member-menu-${member.userId}'),
+                  canRemove: space.isOwner && !member.isOwner,
+                  enabled: !busy,
+                  onReport: () => onReport(member),
+                  onBlock: () => onBlock(member),
+                  onRemove: () => onRemove(member),
+                ),
+        ),
+      for (final invite in space.invites)
+        _InviteeRow(
+          key: ValueKey('invite-row-${invite.token}'),
+          invite: invite,
+          canRevoke: space.isOwner,
+          busy: busy,
+          onCopyLink: () => onCopyLink(invite.token),
+          onRevoke: () => onRevoke(invite),
+        ),
     ];
 
     return Column(
@@ -695,33 +863,51 @@ class _Members extends StatelessWidget {
               child: const Text('Trust the new key'),
             ),
           ),
-        _Label('People with access'),
-        for (final member in members)
-          _MemberRow(
-            key: ValueKey('member-row-${member.userId}'),
-            member: member,
-            isSelf: member.userId == me,
-            presence: here[member.userId],
-            trailing: member.userId == me
-                ? null
-                : _MemberMenu(
-                    key: ValueKey('member-menu-${member.userId}'),
-                    canRemove: space.isOwner && !member.isOwner,
-                    enabled: !busy,
-                    onReport: () => onReport(member),
-                    onBlock: () => onBlock(member),
-                    onRemove: () => onRemove(member),
+        _Label(
+          'People with access',
+          trailing: onReportNote == null
+              ? null
+              : TextButton.icon(
+                  key: const ValueKey('report-note'),
+                  onPressed: busy ? null : onReportNote,
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 24),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 4,
+                    ),
+                    visualDensity: VisualDensity.standard,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: context.palette.textSecondary,
+                    textStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: AppTypeScale.caption,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
+                  icon: KapyIcon(
+                    KapyIcons.flagOutlined,
+                    size: AppControlMetrics.iconInline,
+                  ),
+                  label: const Text('Report this note'),
+                ),
+        ),
+        KapyControlSurface(
+          key: const ValueKey('share-access-card'),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Column(
+            children: [
+              for (var index = 0; index < rows.length; index++) ...[
+                if (index > 0)
+                  Divider(
+                    height: 1,
+                    indent: _MemberRow._avatar + 10,
+                    color: context.palette.separator,
+                  ),
+                rows[index],
+              ],
+            ],
           ),
-        for (final invite in space.invites)
-          _InviteeRow(
-            key: ValueKey('invite-row-${invite.token}'),
-            invite: invite,
-            canRevoke: space.isOwner,
-            busy: busy,
-            onCopyLink: () => onCopyLink(invite.token),
-            onRevoke: () => onRevoke(invite),
-          ),
+        ),
       ],
     );
   }
@@ -767,13 +953,14 @@ class _MemberRow extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
         fontSize: AppTypeScale.control,
+        fontWeight: FontWeight.w500,
         color: palette.textPrimary,
       ),
     );
     if (member.hasName) name = Tooltip(message: member.email, child: name);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         children: [
           ProfileAvatar(
@@ -841,7 +1028,7 @@ class _InviteeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         children: [
           Container(
@@ -849,8 +1036,8 @@ class _InviteeRow extends StatelessWidget {
             height: _MemberRow._avatar,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: palette.controlBackground,
-              border: Border.all(color: palette.controlBorder, width: 0.5),
+              color: palette.surfaceBackground,
+              border: Border.all(color: palette.controlBorder),
             ),
             child: KapyIcon(
               KapyIcons.mailOutlined,
@@ -869,7 +1056,8 @@ class _InviteeRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: AppTypeScale.control,
-                    color: palette.textSecondary,
+                    fontWeight: FontWeight.w500,
+                    color: palette.textPrimary,
                   ),
                 ),
                 Text(
@@ -893,7 +1081,7 @@ class _InviteeRow extends StatelessWidget {
           if (canRevoke)
             TextButton(
               onPressed: busy ? null : onRevoke,
-              child: const Text('Cancel'),
+              child: const Text('Revoke'),
             ),
         ],
       ),
@@ -976,9 +1164,9 @@ class _SpaceRow extends StatelessWidget {
           ].join(', ');
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadii.surface),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
           children: [
             KapyIcon(
@@ -997,6 +1185,7 @@ class _SpaceRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: AppTypeScale.control,
+                      fontWeight: FontWeight.w500,
                       color: palette.textPrimary,
                     ),
                   ),
@@ -1031,6 +1220,49 @@ class _SpaceRow extends StatelessWidget {
   }
 }
 
+class _InviteControls extends StatelessWidget {
+  const _InviteControls({
+    super.key,
+    required this.role,
+    required this.enabled,
+    required this.controller,
+    required this.action,
+    required this.onRoleChanged,
+    required this.onEmailChanged,
+    required this.onSubmit,
+    this.autofocus = false,
+  });
+
+  final SpaceRole role;
+  final bool enabled;
+  final TextEditingController controller;
+  final String action;
+  final ValueChanged<SpaceRole> onRoleChanged;
+  final ValueChanged<String> onEmailChanged;
+  final VoidCallback onSubmit;
+  final bool autofocus;
+
+  @override
+  Widget build(BuildContext context) => KapyControlSurface(
+    padding: const EdgeInsets.all(12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _RolePicker(value: role, enabled: enabled, onChanged: onRoleChanged),
+        const SizedBox(height: 10),
+        _EmailRow(
+          controller: controller,
+          busy: !enabled,
+          action: action,
+          autofocus: autofocus,
+          onChanged: onEmailChanged,
+          onSubmit: onSubmit,
+        ),
+      ],
+    ),
+  );
+}
+
 class _RolePicker extends StatelessWidget {
   const _RolePicker({
     required this.value,
@@ -1045,16 +1277,23 @@ class _RolePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SegmentedButton<SpaceRole>(
     key: const ValueKey('share-role'),
-    segments: const [
+    expandedInsets: EdgeInsets.zero,
+    segments: [
       ButtonSegment(
         value: SpaceRole.member,
-        icon: KapyIcon(KapyIcons.editOutlined),
-        label: Text('Editor'),
+        icon: KapyIcon(
+          KapyIcons.editOutlined,
+          size: AppControlMetrics.iconControl,
+        ),
+        label: const Text('Editor'),
       ),
       ButtonSegment(
         value: SpaceRole.viewer,
-        icon: KapyIcon(KapyIcons.visibilityOutlined),
-        label: Text('View only'),
+        icon: KapyIcon(
+          KapyIcons.visibilityOutlined,
+          size: AppControlMetrics.iconControl,
+        ),
+        label: const Text('View only'),
       ),
     ],
     selected: {value},
@@ -1072,57 +1311,76 @@ class _EmailRow extends StatelessWidget {
     required this.controller,
     required this.busy,
     required this.action,
+    required this.autofocus,
+    required this.onChanged,
     required this.onSubmit,
   });
 
   final TextEditingController controller;
   final bool busy;
   final String action;
+  final bool autofocus;
+  final ValueChanged<String> onChanged;
   final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            key: const ValueKey('share-email'),
-            controller: controller,
-            enabled: !busy,
-            autofocus: true,
-            keyboardType: TextInputType.emailAddress,
-            autocorrect: false,
-            enableSuggestions: false,
-            onSubmitted: (_) => busy ? null : onSubmit(),
-            style: TextStyle(
-              fontSize: AppTypeScale.control,
-              color: palette.textPrimary,
-            ),
-            decoration: InputDecoration(
-              hintText: 'One or more email addresses',
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 11,
-              ),
-              filled: true,
-              fillColor: palette.controlBackground,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(
-                  color: palette.controlBorder,
-                  width: 0.5,
-                ),
-              ),
-            ),
+    final field = TextField(
+      key: const ValueKey('share-email'),
+      controller: controller,
+      enabled: !busy,
+      autofocus: autofocus,
+      keyboardType: TextInputType.emailAddress,
+      autocorrect: false,
+      enableSuggestions: false,
+      onChanged: onChanged,
+      onSubmitted: (_) {
+        if (!busy) onSubmit();
+      },
+      style: TextStyle(
+        fontSize: AppTypeScale.control,
+        color: palette.textPrimary,
+      ),
+      decoration: kapyFieldDecoration(
+        context,
+        hintText: 'Email address or paste a list',
+        fillColor: palette.surfaceBackground,
+        prefixIcon: Center(
+          widthFactor: 1,
+          heightFactor: 1,
+          child: KapyIcon(
+            KapyIcons.mailOutlined,
+            size: AppControlMetrics.iconAdornment,
+            color: palette.textTertiary,
           ),
         ),
+        prefixIconConstraints: BoxConstraints(
+          minWidth: AppControlMetrics.fieldAdornmentSlot + 4,
+          minHeight: AppControlMetrics.fieldAdornmentSlot,
+        ),
+      ),
+    );
+    final submit = FilledButton(
+      key: ValueKey('share-submit-$action'),
+      onPressed: busy ? null : onSubmit,
+      child: Text(action),
+    );
+
+    if (MediaQuery.sizeOf(context).width < 520) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [field, const SizedBox(height: 8), submit],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(child: field),
         const SizedBox(width: 8),
-        FilledButton(
-          key: ValueKey('share-submit-$action'),
-          onPressed: busy ? null : onSubmit,
-          child: Text(action),
+        ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 76),
+          child: submit,
         ),
       ],
     );
@@ -1148,49 +1406,47 @@ class _Banner extends StatelessWidget {
     final color = isWarning
         ? Theme.of(context).colorScheme.error
         : palette.textSecondary;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(11, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: palette.controlBackground,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isWarning
-              ? color.withValues(alpha: 0.5)
-              : palette.controlBorder,
-          width: 0.5,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 1),
-                child: KapyIcon(
-                  icon,
-                  size: AppControlMetrics.iconAdornment,
-                  color: color,
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  text,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.small,
-                    color: palette.textSecondary,
-                    height: 1.45,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: KapyControlSurface(
+        color: isWarning
+            ? color.withValues(alpha: 0.07)
+            : palette.controlBackground,
+        borderColor: isWarning
+            ? color.withValues(alpha: 0.42)
+            : palette.controlBorder,
+        padding: const EdgeInsets.fromLTRB(11, 10, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: KapyIcon(
+                    icon,
+                    size: AppControlMetrics.iconAdornment,
+                    color: color,
                   ),
                 ),
-              ),
-            ],
-          ),
-          if (action case final action?)
-            Align(alignment: Alignment.centerRight, child: action),
-        ],
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: TextStyle(
+                      fontSize: AppTypeScale.small,
+                      color: palette.textSecondary,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (action case final action?)
+              Align(alignment: Alignment.centerRight, child: action),
+          ],
+        ),
       ),
     );
   }
@@ -1212,20 +1468,28 @@ class _Blurb extends StatelessWidget {
 }
 
 class _Label extends StatelessWidget {
-  const _Label(this.text);
+  const _Label(this.text, {this.trailing});
   final String text;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
-    child: Text(
-      text,
-      style: TextStyle(
-        fontSize: AppTypeScale.caption,
-        fontWeight: FontWeight.w400,
-        letterSpacing: 0.4,
-        color: context.palette.textTertiary,
-      ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: AppTypeScale.caption,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+              color: context.palette.textSecondary,
+            ),
+          ),
+        ),
+        ?trailing,
+      ],
     ),
   );
 }
@@ -1236,14 +1500,39 @@ class _Message extends StatelessWidget {
   final bool isError;
 
   @override
-  Widget build(BuildContext context) => Text(
-    text,
-    style: TextStyle(
-      fontSize: AppTypeScale.small,
-      color: isError
-          ? Theme.of(context).colorScheme.error
-          : context.palette.textSecondary,
-      height: 1.4,
-    ),
-  );
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final color = isError
+        ? Theme.of(context).colorScheme.error
+        : Theme.of(context).colorScheme.primary;
+    return KapyControlSurface(
+      color: color.withValues(alpha: 0.07),
+      borderColor: color.withValues(alpha: 0.34),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: KapyIcon(
+              isError ? KapyIcons.errorOutlined : KapyIcons.checkCircleRounded,
+              size: AppControlMetrics.iconAdornment,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: AppTypeScale.small,
+                color: isError ? color : palette.textSecondary,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

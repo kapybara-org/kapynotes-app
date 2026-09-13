@@ -18,7 +18,12 @@ Future<void> loadTestFonts() async {
   // Flutter's default UI family on macOS. Arial stands in for the real San
   // Francisco face, which ships only inside .ttc collections that
   // [FontLoader] cannot read.
-  for (final family in ['Roboto', '.SF Pro Text', '.AppleSystemUIFont']) {
+  for (final family in [
+    'Roboto',
+    '.SF Pro Text',
+    '.AppleSystemUIFont',
+    'Segoe UI',
+  ]) {
     await _load(family, ['/System/Library/Fonts/Supplemental/Arial.ttf']);
   }
   await _loadAll('Shantell Sans', [

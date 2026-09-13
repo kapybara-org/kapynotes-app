@@ -63,6 +63,21 @@ class JustAudioBackend implements VoicePlayerBackend {
   }
 }
 
+/// Finds the file a recording plays from, or null when this device cannot get
+/// it. Allowed to take its time: a recording made on another device is
+/// fetched first. See `openRecording`.
+typedef VoiceFileLocator = Future<File?> Function(String hash);
+
+/// Why the last recording asked for did not start.
+enum VoicePlaybackFailure {
+  /// The audio is not on this device and could not be fetched: no connection,
+  /// nobody signed in, or the device that recorded it has not uploaded it yet.
+  notDownloaded,
+
+  /// The file is here, and the audio engine would not open it.
+  unreadable,
+}
+
 /// Plays back one recording at a time, app-wide.
 ///
 /// One player rather than one per chip: a note can hold a dozen recordings,
@@ -73,12 +88,23 @@ class JustAudioBackend implements VoicePlayerBackend {
 /// The chip does not rebuild as playback moves. [progressFor] hands out a
 /// [ValueListenable] per hash, so the waveform's painter repaints inside its
 /// own [RepaintBoundary] while the editor above it does nothing at all.
+///
+/// It finds each recording's file itself, through a [VoiceFileLocator], rather
+/// than being handed one. Every caller used to look on disk and give up
+/// quietly when the audio was not there — and for a recording that arrived by
+/// sync it never is until something fetches it, so recordings played only on
+/// the device that made them. In here no button can skip the fetch, and a
+/// slow one is settled by the one object that knows whether the user has since
+/// asked for something else.
 class VoicePlayer extends ChangeNotifier {
   VoicePlayer({
+    required VoiceFileLocator files,
     VoicePlayerBackend? backend,
     this.idleTimeout = const Duration(minutes: 5),
-  }) : _backend = backend ?? JustAudioBackend();
+  }) : _files = files,
+       _backend = backend ?? JustAudioBackend();
 
+  final VoiceFileLocator _files;
   final VoicePlayerBackend _backend;
 
   /// How long an untouched player is kept alive before its engine is released.
@@ -98,6 +124,21 @@ class VoicePlayer extends ChangeNotifier {
   /// asked to carry on from the last millisecond of the file and did exactly
   /// that — nothing.
   bool _completed = false;
+
+  /// The recording asked for and still being found or fetched. It starts the
+  /// moment its file arrives, unless something else was asked for first.
+  String? _openingHash;
+
+  /// The last recording asked for that did not start, and why. Its play button
+  /// says so until the next press, which tries again.
+  String? _failedHash;
+  VoicePlaybackFailure? _failure;
+
+  /// Moves on with every request that changes what should be playing: another
+  /// recording, a pause before the audio arrived, a stop. A fetch that lands
+  /// under an older number is dropped — the user has moved on, and what was
+  /// fetched is kept on disk for when they come back.
+  int _request = 0;
 
   StreamSubscription<Duration>? _positions;
   StreamSubscription<void>? _completions;
@@ -134,11 +175,19 @@ class VoicePlayer extends ChangeNotifier {
 
   bool isPlaying(String hash) => _playing && _activeHash == hash;
 
+  /// Whether [hash] was asked for and is still on its way — almost always a
+  /// recording from another device, being fetched.
+  bool isOpening(String hash) => _openingHash == hash;
+
+  /// Why [hash] did not start the last time it was asked for, or null.
+  VoicePlaybackFailure? failureFor(String hash) =>
+      _failedHash == hash ? _failure : null;
+
   /// Starts or resumes [hash], optionally [from] a position.
   ///
   /// [from] is what a tap on the waveform of a recording nobody has played yet
   /// means: start it, and start it there.
-  Future<void> play(String hash, File file, {Duration? from}) async {
+  Future<void> play(String hash, {Duration? from}) async {
     _idle?.cancel();
     if (_activeHash == hash) {
       // Same recording: this is a resume, not a reload. Reloading would jump
@@ -157,8 +206,30 @@ class VoicePlayer extends ChangeNotifier {
       await _backend.play();
       return;
     }
+    // Already on its way. A second press is not a second download.
+    if (_openingHash == hash) return;
 
+    final request = ++_request;
+    _openingHash = hash;
+    _failedHash = null;
+    _failure = null;
     await _releaseActive();
+    if (_disposed || request != _request) return;
+    _notify();
+
+    File? file;
+    try {
+      file = await _files(hash);
+    } catch (error) {
+      debugPrint('KapyNotes: could not find recording $hash: $error');
+    }
+    if (_disposed || request != _request) return;
+    _openingHash = null;
+    if (file == null) {
+      _fail(hash, VoicePlaybackFailure.notDownloaded);
+      return;
+    }
+
     _activeHash = hash;
     _position = Duration.zero;
     _completed = false;
@@ -169,11 +240,15 @@ class VoicePlayer extends ChangeNotifier {
       await _backend.setSpeed(_speed);
       if (from != null) await _moveTo(from);
     } catch (error) {
+      // A newer request stopped the engine under this load. That is not a
+      // broken file, and the newer request already owns the player.
+      if (_disposed || request != _request) return;
       debugPrint('KapyNotes: could not open recording $hash: $error');
       _activeHash = null;
-      _notify();
+      _fail(hash, VoicePlaybackFailure.unreadable);
       return;
     }
+    if (_disposed || request != _request) return;
 
     _positions = _backend.positions.listen(_onPosition);
     _completions = _backend.completions.listen((_) => _onCompleted());
@@ -183,6 +258,14 @@ class VoicePlayer extends ChangeNotifier {
   }
 
   Future<void> pause() async {
+    // Not started yet: pausing a recording that is on its way means it should
+    // not start when it lands.
+    if (_openingHash != null) {
+      _request++;
+      _openingHash = null;
+      _notify();
+      return;
+    }
     if (!_playing) return;
     _playing = false;
     _notify();
@@ -212,8 +295,19 @@ class VoicePlayer extends ChangeNotifier {
   }
 
   Future<void> stop() async {
+    _request++;
+    if (_openingHash != null) {
+      _openingHash = null;
+      _notify();
+    }
     if (_activeHash == null) return;
     await _releaseActive();
+    _notify();
+  }
+
+  void _fail(String hash, VoicePlaybackFailure failure) {
+    _failedHash = hash;
+    _failure = failure;
     _notify();
   }
 

@@ -431,6 +431,47 @@ void main() {
       history.dispose();
     });
 
+    test('keeps concise update highlights separate from full notes', () async {
+      final store = _MemoryStore();
+      final history = ReleaseHistory(
+        store,
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'releases': [
+                {
+                  'version': '1.4.0',
+                  'date': '2026-09-04',
+                  'summary': 'A focused release.',
+                  'highlights': ['Faster startup.', 'Clearer settings.'],
+                  'changes': [
+                    'A long explanation that belongs in the full history.',
+                  ],
+                },
+              ],
+            }),
+            200,
+          ),
+        ),
+      );
+
+      await history.load();
+
+      expect(history.releases.single.highlights, [
+        'Faster startup.',
+        'Clearer settings.',
+      ]);
+      expect(history.releases.single.changes, [
+        'A long explanation that belongs in the full history.',
+      ]);
+      expect(
+        (store.read<Map<String, Object?>>('changelog.v1')!['releases'] as List)
+            .single,
+        containsPair('highlights', ['Faster startup.', 'Clearer settings.']),
+      );
+      history.dispose();
+    });
+
     test('keeps what it read, and does not ask again the same day', () async {
       final store = _MemoryStore();
       var requests = 0;

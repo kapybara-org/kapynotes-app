@@ -47,7 +47,7 @@ void main() {
     expect(prefs.windowPosition, isNull);
     expect(prefs.windowBounds, isNull);
     expect(prefs.resultsVisible, isTrue);
-    expect(prefs.hiddenFolderVisible, isFalse);
+    expect(prefs.hiddenFolderVisible, isTrue);
     expect(prefs.readyToTypeOnOpen, isTrue);
     expect(prefs.dailySeparatorsEnabled, isTrue);
     expect(prefs.spellCheckEnabled, isTrue);
@@ -152,12 +152,12 @@ void main() {
   test('the Hidden Notes folder visibility survives a launch', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();
-    expect(prefs.hiddenFolderVisible, isFalse);
+    expect(prefs.hiddenFolderVisible, isTrue);
 
     prefs.toggleHiddenFolder();
 
-    expect(prefs.hiddenFolderVisible, isTrue);
-    expect((LayoutPrefs(store)..load()).hiddenFolderVisible, isTrue);
+    expect(prefs.hiddenFolderVisible, isFalse);
+    expect((LayoutPrefs(store)..load()).hiddenFolderVisible, isFalse);
   });
 
   test('startup note follows the last opened note by default', () {

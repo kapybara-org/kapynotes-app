@@ -19,6 +19,7 @@ import '../core/quick_capture.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/engine_provider.dart';
+import '../data/attachment_limits.dart';
 import '../data/daily_separator.dart';
 import '../data/editor_workspace.dart';
 import '../data/layout_prefs.dart';
@@ -754,7 +755,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       context,
       ref: ref,
       state: state,
-      blobs: widget.notes.blobs,
       player: widget.player,
       recordedAt: note?.createdAt,
       actions: VoiceNoteActions(
@@ -1255,6 +1255,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ?.displayLabel;
     final discovery = AppPlatform.isMobile
         ? 'Pull down below Search to find it.'
+        : widget.prefs.hiddenFolderVisible
+        ? 'Open Hidden Notes from the sidebar.'
         : shortcut == null
         ? 'Show it from Settings to find it.'
         : 'Show it from Settings or press $shortcut.';
@@ -1571,6 +1573,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return widget.account?.sharing?.canEdit(note) ?? false;
   }
 
+  int _videoAttachmentMaxBytes(Note note) {
+    final account = widget.account;
+    final space = account?.sharing?.spaceById(note.spaceId);
+    // The account entitlement is freshest for a space this user owns, notably
+    // immediately after an in-app upgrade. For somebody else's space, their
+    // owner-paid limit comes only from the space response.
+    return resolveAttachmentMaxBytes(
+      accountUserId: account?.user?.id,
+      spaceOwnerId: space?.ownerId,
+      accountMaxBytes: account?.billing?.entitlements?.attachmentMaxBytes,
+      spaceMaxBytes: space?.attachmentMaxBytes,
+    );
+  }
+
   NoteLimit? get _noteLimit => widget.account?.noteLimit;
 
   /// Whether [note]'s content may change: [_canEditNote], and not held
@@ -1677,6 +1693,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The editable chord shown on the notes-list button in both layouts.
   String? get _sidebarShortcut =>
       widget.shortcuts.bindingFor(ShortcutAction.toggleSidebar)?.displayLabel;
+
+  /// The editable chord taught beside the direct Settings action.
+  String? get _settingsShortcut =>
+      widget.shortcuts.bindingFor(ShortcutAction.openSettings)?.displayLabel;
 
   void _recordKapyActivity() {
     if (_kapyHeader.needsWake) _kapyHeader.wake(hideAfter: true);
@@ -1947,7 +1967,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 mascotController: _kapyHeader,
                 sidebarVisible: widget.prefs.sidebarVisible,
                 sidebarShortcut: _sidebarShortcut,
+                settingsShortcut: _settingsShortcut,
                 onToggleSidebar: widget.prefs.toggleSidebar,
+                onSettingsPressed: _showSettings,
                 onCreate: _createNote,
                 onShare: _shareSelected,
                 members: _selectedMembers,
@@ -2262,11 +2284,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 mascotController: _kapyHeader,
                 sidebarVisible: false,
                 sidebarShortcut: _sidebarShortcut,
+                settingsShortcut: _settingsShortcut,
                 showActions: !_drawerOpen,
                 onToggleSidebar: () {
                   FocusScope.of(scaffoldContext).unfocus();
                   Scaffold.of(scaffoldContext).openDrawer();
                 },
+                onSettingsPressed: _showSettings,
                 onCreate: _createNote,
                 onShare: _shareSelected,
                 members: _selectedMembers,
@@ -2335,6 +2359,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
+          videoAttachmentMaxBytes: () => _videoAttachmentMaxBytes(note),
           onImagePrepared: (staged, prepared) =>
               _publishPreparedImage(note.id, staged, prepared),
           noteId: note.id,
@@ -2429,6 +2454,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
+          videoAttachmentMaxBytes: () => _videoAttachmentMaxBytes(note),
           onImagePrepared: (staged, prepared) =>
               _publishPreparedImage(note.id, staged, prepared),
           engine: widget.engines.engine,

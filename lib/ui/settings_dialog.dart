@@ -60,7 +60,7 @@ const _sheetCorners = BorderRadius.vertical(top: Radius.circular(22));
 const _sheetIndexKey = ValueKey('settings-sheet-index');
 
 /// Wide enough for the full desktop dialog, its insets, and the Windows frame.
-const double _windowsSettingsWindowWidth = 680;
+const double _windowsSettingsWindowWidth = 720;
 
 const _settingsRegularWeight = FontWeight.w400;
 const _settingsMediumWeight = FontWeight.w400;
@@ -242,9 +242,9 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// borrows enough host-window width before opening, and always keeps the
   /// section rail visible while that resize reaches Flutter.
   static const double _railBreakpoint = 520;
-  static const double _railWidth = 152;
-  static const double _panedWidth = 544;
-  static const double _stackedWidth = 410;
+  static const double _railWidth = 164;
+  static const double _panedWidth = 600;
+  static const double _stackedWidth = 440;
 
   String? _shortcutError;
   String? _loginItemError;
@@ -598,7 +598,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           child: Text(
             _speechError!,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: AppTypeScale.small,
               color: Theme.of(context).colorScheme.error,
             ),
           ),
@@ -1072,17 +1072,19 @@ class _SettingsDialogState extends State<SettingsDialog>
     final width = math.min(paned ? _panedWidth : _stackedWidth, available);
     // A fixed height keeps the dialog from resizing under the pointer
     // as sections of different lengths are selected.
-    final height = (media.height - 170).clamp(260.0, 470.0);
+    final height = (media.height - 140).clamp(260.0, 520.0);
 
     return AlertDialog(
-      titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 0),
-      contentPadding: EdgeInsets.fromLTRB(paned ? 14 : 20, 14, 20, 0),
-      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+      contentPadding: EdgeInsets.fromLTRB(paned ? 18 : 22, 18, 24, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
       title: const Text(
         'Settings',
         style: TextStyle(fontWeight: _settingsSemiboldWeight),
       ),
       content: SizedBox(
+        key: const ValueKey('settings-dialog-content'),
         width: width,
         height: height,
         child: paned ? _buildPaned(context) : _buildStacked(context),
@@ -1939,7 +1941,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           _loginItemError!,
           key: const ValueKey('login-item-error'),
           style: TextStyle(
-            fontSize: 11.5,
+            fontSize: AppTypeScale.caption,
             color: Theme.of(context).colorScheme.error,
           ),
         ),
@@ -2092,7 +2094,13 @@ class _SettingsDialogState extends State<SettingsDialog>
       padding: const EdgeInsets.fromLTRB(3, 0, 3, 12),
       child: Text(
         'Click a shortcut, then press the keys you want instead.',
-        style: TextStyle(fontSize: 11.5, color: context.palette.textTertiary),
+        style: TextStyle(
+          fontSize: AppTypeScale.caption,
+          height: AppPlatform.isWindows ? 1.4 : null,
+          color: AppPlatform.isWindows
+              ? context.palette.textSecondary
+              : context.palette.textTertiary,
+        ),
       ),
     ),
     const SettingsLabel('SYSTEM-WIDE'),
@@ -2133,7 +2141,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         _shortcutError!,
         key: const ValueKey('shortcut-error'),
         style: TextStyle(
-          fontSize: 11.5,
+          fontSize: AppTypeScale.caption,
           color: Theme.of(context).colorScheme.error,
         ),
       ),
@@ -2173,7 +2181,13 @@ class _SettingsDialogState extends State<SettingsDialog>
       // Keyed here rather than on the group below it: a search result scrolls
       // to what it lands on and lights it, and the group is taller than the
       // window by a dozen releases.
-      const SettingsLabel('RELEASE NOTES', key: ValueKey('changelog')),
+      ListenableBuilder(
+        listenable: updates,
+        builder: (context, _) => SettingsLabel(
+          updates.hasUpdate ? "WHAT'S NEW" : 'RELEASE NOTES',
+          key: const ValueKey('changelog'),
+        ),
+      ),
       _ChangelogGroup(updates: updates),
     ];
   }
@@ -3207,7 +3221,11 @@ class _ModelCredits extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final style = TextStyle(fontSize: 10.5, color: palette.textTertiary);
+    final style = TextStyle(
+      fontSize: AppTypeScale.micro,
+      height: 1.35,
+      color: palette.textSecondary,
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(3, 8, 3, 0),
       child: Column(
@@ -3517,7 +3535,10 @@ class _ModelProgress extends StatelessWidget {
       return Text(
         error,
         key: const ValueKey('voice-local-model-error'),
-        style: TextStyle(fontSize: 11, color: scheme.error),
+        style: TextStyle(
+          fontSize: AppPlatform.isWindows ? AppTypeScale.caption : 11,
+          color: scheme.error,
+        ),
       );
     }
     return Column(
@@ -3566,7 +3587,10 @@ class _ModelProgress extends StatelessWidget {
                   '${fileSize(state.totalBytes)}',
           },
           key: const ValueKey('voice-local-model-progress-line'),
-          style: TextStyle(fontSize: 10.5, color: palette.textTertiary),
+          style: TextStyle(
+            fontSize: AppPlatform.isWindows ? AppTypeScale.caption : 10.5,
+            color: palette.textSecondary,
+          ),
         ),
       ],
     );
@@ -3631,7 +3655,7 @@ class _ChoiceRow extends StatelessWidget {
                             TextStyle(
                               fontFamily: AppPlatform.monoFontFallback.first,
                               fontFamilyFallback: AppPlatform.monoFontFallback,
-                              fontSize: 11.5,
+                              fontSize: AppTypeScale.caption,
                               fontFeatures: const [
                                 FontFeature.tabularFigures(),
                               ],
@@ -3939,8 +3963,8 @@ class _UpdateRow extends StatelessWidget {
                 ),
                 child: Text(
                   available != null ? 'Update' : 'Check',
-                  style: const TextStyle(
-                    fontSize: 11.5,
+                  style: TextStyle(
+                    fontSize: AppTypeScale.caption,
                     fontWeight: _settingsMediumWeight,
                   ),
                 ),
@@ -3953,12 +3977,12 @@ class _UpdateRow extends StatelessWidget {
   }
 }
 
-/// Every release, and what each one changed.
+/// The pending release, or the full history when the app is up to date.
 ///
-/// Read from the site rather than built in: see [ReleaseHistory]. Collapsed,
-/// so the list reads as an index of versions and the pane does not open onto
-/// a wall of prose — except the newest, which is open because it is the one
-/// somebody looking at an update wants to read.
+/// Read from the site rather than built in: see [ReleaseHistory]. A pending
+/// update is deliberately a one-release view. Someone deciding whether to
+/// install 1.2.0 should see what 1.2.0 changes, not the entire history below
+/// it. Without a pending update this remains the browsable release index.
 class _ChangelogGroup extends StatefulWidget {
   const _ChangelogGroup({required this.updates});
 
@@ -3981,12 +4005,35 @@ class _ChangelogGroupState extends State<_ChangelogGroup> {
   /// nullable rather than seeded from the list, because the list arrives
   /// after the first build and state must not be invented during one.
   Set<String>? _open;
+  bool _requestedHistory = false;
+  String? _requestedVersion;
 
   @override
   void initState() {
     super.initState();
-    // The one request this pane makes, and only for somebody looking at it.
-    unawaited(widget.updates.history.load());
+    widget.updates.addListener(_updateRequestedRelease);
+    _loadRelevantHistory();
+  }
+
+  /// The manifest and changelog are cached independently. If the manifest
+  /// discovers a release after this pane opens, ask for that exact entry and
+  /// open it rather than leaving the previously cached history on screen.
+  void _updateRequestedRelease() {
+    final version = widget.updates.available?.version;
+    if (_requestedHistory && version == _requestedVersion) return;
+    _open = null;
+    _loadRelevantHistory();
+  }
+
+  void _loadRelevantHistory() {
+    final version = widget.updates.available?.version;
+    _requestedHistory = true;
+    _requestedVersion = version;
+    unawaited(
+      version == null
+          ? widget.updates.history.load()
+          : widget.updates.history.loadForVersion(version),
+    );
   }
 
   Set<String> _openIn(List<ReleaseNote> releases) =>
@@ -3999,11 +4046,23 @@ class _ChangelogGroupState extends State<_ChangelogGroup> {
   });
 
   @override
+  void dispose() {
+    widget.updates.removeListener(_updateRequestedRelease);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: _listenable,
     builder: (context, _) {
       final history = widget.updates.history;
-      final releases = history.releases;
+      final pendingVersion = widget.updates.available?.version;
+      final releases = pendingVersion == null
+          ? history.releases
+          : history.releases
+                .where((release) => release.version == pendingVersion)
+                .take(1)
+                .toList(growable: false);
       final open = _openIn(releases);
       return SettingsGroup(
         children: [
@@ -4014,13 +4073,14 @@ class _ChangelogGroupState extends State<_ChangelogGroup> {
               _ReleaseRow(
                 release: release,
                 installed: release.version == widget.updates.currentVersion,
+                compact: pendingVersion != null,
                 open: open.contains(release.version),
                 onToggle: () => _toggle(release, open),
               ),
-          // The page the list is read from, which has the same notes with
-          // the formatting a browser can give them — and is the whole
-          // answer when the list itself could not be read.
-          const _ChangelogLinkRow(),
+          // The public history is useful while browsing past releases, but
+          // would turn the focused update view back into the long changelog
+          // it intentionally replaces.
+          if (pendingVersion == null) const _ChangelogLinkRow(),
         ],
       );
     },
@@ -4061,6 +4121,7 @@ class _ReleaseRow extends StatelessWidget {
   const _ReleaseRow({
     required this.release,
     required this.installed,
+    required this.compact,
     required this.open,
     required this.onToggle,
   });
@@ -4070,6 +4131,10 @@ class _ReleaseRow extends StatelessWidget {
   /// Whether this is the build that is running, which is the one thing this
   /// list can say that the website's copy of it cannot.
   final bool installed;
+
+  /// Update prompts use the concise highlights. Browsing history keeps every
+  /// detail, so shortening the prompt never removes the full release notes.
+  final bool compact;
 
   final bool open;
   final VoidCallback onToggle;
@@ -4085,6 +4150,7 @@ class _ReleaseRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final changes = compact ? release.updateHighlights : release.changes;
     final body = TextStyle(
       fontSize: SettingsMetrics.subtitleSize,
       height: 1.45,
@@ -4157,7 +4223,7 @@ class _ReleaseRow extends StatelessWidget {
                       style: body.copyWith(color: palette.textPrimary),
                     ),
                   ),
-                for (final change in release.changes)
+                for (final change in changes)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Row(
@@ -4291,7 +4357,7 @@ class _ShortcutRow extends StatelessWidget {
             child: Text(
               binding?.displayLabel ?? 'None',
               style: TextStyle(
-                fontSize: 11.5,
+                fontSize: AppTypeScale.caption,
                 fontWeight: _settingsMediumWeight,
                 // Dimmed rather than absent: an empty button would look
                 // broken, and this one still opens the recorder.
@@ -4419,7 +4485,9 @@ class _TimeZonePickerDialogState extends State<_TimeZonePickerDialog> {
           children: [
             TextField(
               key: const ValueKey('time-zone-search'),
-              style: const TextStyle(fontSize: 13),
+              style: TextStyle(
+                fontSize: AppPlatform.isWindows ? AppTypeScale.control : 13,
+              ),
               decoration: InputDecoration(
                 hintText: 'Search cities or regions',
                 prefixIcon: const KapyIcon(KapyIcons.searchRounded, size: 16),
@@ -4655,7 +4723,7 @@ class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
                     Text(
                       'Press your new shortcut',
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: AppTypeScale.control,
                         fontWeight: _settingsMediumWeight,
                         color: palette.textPrimary,
                       ),
@@ -4666,8 +4734,8 @@ class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
                           ? 'Currently not set'
                           : 'Current: ${widget.current!.displayLabel}',
                       style: TextStyle(
-                        fontSize: 11.5,
-                        color: palette.textTertiary,
+                        fontSize: AppTypeScale.caption,
+                        color: palette.textSecondary,
                       ),
                     ),
                   ],
@@ -4678,7 +4746,7 @@ class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
                 Text(
                   _error!,
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: AppTypeScale.caption,
                     color: Theme.of(context).colorScheme.error,
                   ),
                 ),

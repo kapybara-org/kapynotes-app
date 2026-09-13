@@ -463,6 +463,69 @@ void main() {
     /// A store with no changelog on disk, so the pane goes and reads one.
     _MemoryStore emptyStore() => _MemoryStore()..data.remove('changelog.v1');
 
+    testWidgets(
+      'a pending Windows update shows only what is new in its version',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+        final store = _MemoryStore();
+        _seedPendingUpdate(store);
+        await _pump(
+          tester,
+          store,
+          checker: UpdateChecker(
+            store,
+            client: MockClient((request) async {
+              expect(request.url, ReleaseHistory.url);
+              return http.Response(
+                jsonEncode({
+                  'releases': [
+                    {
+                      'version': '1.0.1',
+                      'date': '2026-09-03',
+                      'summary': 'The update waiting to be installed.',
+                      'highlights': ['A calmer update experience.'],
+                      'changes': [
+                        'A much longer explanation for the full history.',
+                      ],
+                    },
+                    {
+                      'version': '1.0.0',
+                      'date': '2026-09-02',
+                      'summary': 'The build already installed.',
+                      'changes': ['The first public build.'],
+                    },
+                  ],
+                }),
+                200,
+              );
+            }),
+            packageInfo: PackageInfo(
+              appName: 'Kapy Notes',
+              packageName: 'com.kapybara.kapynotes',
+              version: '1.0.0',
+              buildNumber: '',
+            ),
+          ),
+        );
+        await _openUpdates(tester);
+
+        expect(find.text("WHAT'S NEW"), findsOneWidget);
+        expect(find.byKey(const ValueKey('release-1.0.1')), findsOneWidget);
+        expect(
+          find.text('The update waiting to be installed.'),
+          findsOneWidget,
+        );
+        expect(find.text('A calmer update experience.'), findsOneWidget);
+        expect(
+          find.text('A much longer explanation for the full history.'),
+          findsNothing,
+        );
+        expect(find.byKey(const ValueKey('release-1.0.0')), findsNothing);
+        expect(find.text('The build already installed.'), findsNothing);
+        expect(find.byKey(const ValueKey('changelog-page')), findsNothing);
+      },
+    );
+
     testWidgets('lists every release, marks the one running, and opens the '
         'newest', (tester) async {
       final store = emptyStore();

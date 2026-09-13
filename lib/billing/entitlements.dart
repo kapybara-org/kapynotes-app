@@ -1,3 +1,5 @@
+import '../data/attachment_limits.dart';
+
 /// What the server says this account may do.
 ///
 /// The server is the only authority on it, and the app never works it out for
@@ -10,6 +12,7 @@ class Entitlements {
     required this.plan,
     required this.storageBytes,
     required this.storageUsedBytes,
+    this.attachmentMaxBytes = freeAttachmentMaxBytes,
     required this.speechSecondsPerMonth,
     this.speechSecondsUsedThisMonth = 0,
     required this.speechCreditSeconds,
@@ -29,6 +32,9 @@ class Entitlements {
   /// The plan's storage plus every pack bought, already summed.
   final int storageBytes;
   final int storageUsedBytes;
+
+  /// Largest encrypted attachment the active plan accepts.
+  final int attachmentMaxBytes;
   final int speechSecondsPerMonth;
   final int speechSecondsUsedThisMonth;
 
@@ -74,6 +80,7 @@ class Entitlements {
     plan: 'free',
     storageBytes: 100 * 1024 * 1024,
     storageUsedBytes: 0,
+    attachmentMaxBytes: freeAttachmentMaxBytes,
     speechSecondsPerMonth: 15 * 60,
     speechSecondsUsedThisMonth: 0,
     speechCreditSeconds: 0,
@@ -106,6 +113,10 @@ class Entitlements {
       plan: plan,
       storageBytes: count('storageBytes'),
       storageUsedBytes: count('storageUsedBytes'),
+      attachmentMaxBytes: switch (count('attachmentMaxBytes')) {
+        final value when value > 0 => value,
+        _ => freeAttachmentMaxBytes,
+      },
       speechSecondsPerMonth: count('speechSecondsPerMonth'),
       speechSecondsUsedThisMonth: count('speechSecondsUsedThisMonth'),
       speechCreditSeconds: count('speechCreditSeconds'),
@@ -126,6 +137,7 @@ class Entitlements {
     'plan': plan,
     'storageBytes': storageBytes,
     'storageUsedBytes': storageUsedBytes,
+    'attachmentMaxBytes': attachmentMaxBytes,
     'speechSecondsPerMonth': speechSecondsPerMonth,
     'speechSecondsUsedThisMonth': speechSecondsUsedThisMonth,
     'speechCreditSeconds': speechCreditSeconds,
@@ -165,12 +177,6 @@ enum Sku {
     return null;
   }
 }
-
-/// Pro Lifetime's price in the US, for the one place a price has to be named
-/// before any store can be asked: the trial's notice at sign-up, which has to
-/// say what carrying on costs before the trial starts. Everywhere else shows
-/// the store's own, localised price. Matches `PRO_PRICE` on the site.
-const String proLifetimeUsPrice = r'US$24';
 
 /// What Pro gives on its own, before any pack. From the contract's
 /// `PLAN_ENTITLEMENTS`; used only to tell bought storage from the plan's.

@@ -217,16 +217,14 @@ void main() {
     testWidgets('uses a compact search glyph', (tester) async {
       await _open(tester, platform: TargetPlatform.macOS);
 
-      final icon = tester.widget<KapyIcon>(
-        find.descendant(
-          of: _field,
-          matching: find.byWidgetPredicate(
-            (widget) =>
-                widget is KapyIcon && widget.icon == KapyIcons.searchRounded,
-          ),
+      final icon = find.descendant(
+        of: _field,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is KapyIcon && widget.icon == KapyIcons.searchRounded,
         ),
       );
-      expect(icon.size, AppControlMetrics.iconAdornment - 2);
+      expect(tester.getSize(icon), Size.square(AppControlMetrics.iconSearch));
     });
 
     testWidgets('is waiting in the field when settings opens, and Return '

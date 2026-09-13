@@ -120,10 +120,13 @@ class _EditorContextMenuButton extends StatelessWidget {
   }
 }
 
-/// A compact formatting surface that appears beside a text selection.
+/// A compact formatting surface that appears beside a text selection, where
+/// there is a pointer.
 ///
-/// Native edit actions remain available behind the trailing overflow button,
-/// leaving the actions people use while writing visible in one row.
+/// Copy and Paste lead the row, because selecting something is most often
+/// about taking it somewhere; the platform's other edit actions wait behind
+/// the trailing overflow button. Touch gets the platform's own toolbar
+/// instead, which leads with the same two.
 class NoteSelectionFormattingToolbar extends StatelessWidget {
   const NoteSelectionFormattingToolbar({
     super.key,
@@ -144,6 +147,7 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
     this.onOpenLink,
     this.onCopyLink,
     this.onCopy,
+    this.onPaste,
     this.onCopyPlainText,
   });
 
@@ -166,13 +170,17 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
 
   /// Spelling corrections for the misspelled word this selection covers.
   ///
-  /// Right-clicking a misspelling selects it on macOS, and holding it does the
-  /// same on a phone, so the corrections have to be reachable from the
-  /// selection surface as well as from the caret menu.
+  /// Right-clicking a misspelling selects it on macOS, so the corrections
+  /// have to be reachable from the selection surface as well as from the
+  /// caret menu.
   final List<ContextMenuButtonItem> corrections;
   final VoidCallback? onOpenLink;
   final VoidCallback? onCopyLink;
   final VoidCallback? onCopy;
+
+  /// Pastes through the editor, so a picture on the clipboard is not quietly
+  /// dropped by the field's own text-only paste.
+  final VoidCallback? onPaste;
   final VoidCallback? onCopyPlainText;
 
   static const double _screenPadding = 8;
@@ -189,25 +197,31 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
         const Offset(0, _handleGap);
     final topPadding = MediaQuery.paddingOf(context).top + _screenPadding;
     final localAdjustment = Offset(_screenPadding, topPadding);
+    // Copy and Paste are out on the row, so the overflow keeps the rest of
+    // what the platform offers.
     final nativeItems = editableTextState.contextMenuButtonItems
         .where(
-          (item) => AdaptiveTextSelectionToolbar.getButtonLabel(
-            context,
-            item,
-          ).isNotEmpty,
-        )
-        .map(
-          (item) => item.type == ContextMenuButtonType.copy && onCopy != null
-              ? ContextMenuButtonItem(
-                  type: item.type,
-                  label: item.label,
-                  onPressed: () => _run(onCopy!),
-                )
-              : item,
+          (item) =>
+              item.type != ContextMenuButtonType.copy &&
+              item.type != ContextMenuButtonType.paste &&
+              AdaptiveTextSelectionToolbar.getButtonLabel(
+                context,
+                item,
+              ).isNotEmpty,
         )
         .toList(growable: false);
-    // Sits with the native Copy rather than out on the row: it is the same
-    // action with one difference, and the row is for writing, not clipboard
+    // Asked of the field rather than read off its button items, which stay
+    // empty until the clipboard has been checked. Copy never needed to wait
+    // for that.
+    final canCopy = editableTextState.copyEnabled;
+    final canPaste = editableTextState.pasteEnabled;
+    String labelFor(ContextMenuButtonType type) =>
+        AdaptiveTextSelectionToolbar.getButtonLabel(
+          context,
+          ContextMenuButtonItem(type: type, onPressed: null),
+        );
+    // Sits with the other edit actions rather than out on the row: it is Copy
+    // with one difference, and the row is for writing, not clipboard
     // housekeeping.
     final menuItems = [
       if (onCopyPlainText != null)
@@ -248,6 +262,34 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (canCopy)
+                      _SelectionTextButton(
+                        key: const ValueKey('selection-copy'),
+                        label: labelFor(ContextMenuButtonType.copy),
+                        onPressed: () => _run(
+                          onCopy ??
+                              () => editableTextState.copySelection(
+                                SelectionChangedCause.toolbar,
+                              ),
+                        ),
+                      ),
+                    if (canPaste)
+                      _SelectionTextButton(
+                        key: const ValueKey('selection-paste'),
+                        label: labelFor(ContextMenuButtonType.paste),
+                        onPressed: () => _run(
+                          onPaste ??
+                              () => editableTextState.pasteText(
+                                SelectionChangedCause.toolbar,
+                              ),
+                        ),
+                      ),
+                    if (canCopy || canPaste)
+                      Container(
+                        width: 0.5,
+                        height: 20,
+                        color: palette.separator,
+                      ),
                     if (onOpenLink != null)
                       _SelectionIconButton(
                         key: const ValueKey('selection-open-link'),
@@ -492,6 +534,59 @@ class _SelectionIconButton extends StatelessWidget {
           onPressed: onPressed,
           foregroundColor: active ? palette.textPrimary : palette.textSecondary,
           icon: KapyIcon(icon, size: AppControlMetrics.iconControl),
+        ),
+      ),
+    );
+  }
+}
+
+/// Copy or Paste on the formatting row: a word rather than an icon, because
+/// the row's only copy icon already means Copy link.
+class _SelectionTextButton extends StatelessWidget {
+  const _SelectionTextButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return SizedBox(
+      height: 40,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Center(
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onPressed,
+              borderRadius: BorderRadius.circular(6),
+              hoverColor: palette.hover,
+              focusColor: palette.hover,
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              child: Container(
+                height: AppControlMetrics.iconButtonExtent,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontSize: AppTypeScale.small,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

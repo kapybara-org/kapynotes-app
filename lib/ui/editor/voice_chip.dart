@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../audio/voice_player.dart';
 import '../../core/theme.dart';
 import '../../data/note_attachment.dart';
 import '../context_menu.dart';
@@ -76,6 +77,8 @@ class NoteVoiceChip extends StatelessWidget {
     required this.state,
     required this.progress,
     required this.playing,
+    this.opening = false,
+    this.failure,
     this.onPlayPause,
     this.onOpen,
     this.onRemove,
@@ -88,6 +91,13 @@ class NoteVoiceChip extends StatelessWidget {
   /// 0 to 1 while this recording is the one playing, else null.
   final ValueListenable<double?> progress;
   final bool playing;
+
+  /// Pressed, and still on its way: a recording from another device whose
+  /// audio is being fetched.
+  final bool opening;
+
+  /// Why the last press did not start this recording, if it did not.
+  final VoicePlaybackFailure? failure;
 
   final VoidCallback? onPlayPause;
   final VoidCallback? onOpen;
@@ -196,7 +206,12 @@ class NoteVoiceChip extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        _PlayButton(playing: playing, onPressed: onPlayPause),
+                        _PlayButton(
+                          playing: playing,
+                          opening: opening,
+                          failure: failure,
+                          onPressed: onPlayPause,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Column(
@@ -208,7 +223,7 @@ class NoteVoiceChip extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: AppTypeScale.small,
                                   color: _isTransient
                                       ? palette.textSecondary
                                       : palette.textPrimary,
@@ -222,7 +237,7 @@ class NoteVoiceChip extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontSize: 11,
+                                    fontSize: AppTypeScale.caption,
                                     color: palette.textSecondary,
                                   ),
                                 )
@@ -246,7 +261,7 @@ class NoteVoiceChip extends StatelessWidget {
                         Text(
                           formatVoiceDuration(ref.duration),
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: AppTypeScale.caption,
                             fontFeatures: const [FontFeature.tabularFigures()],
                             color: palette.textSecondary,
                           ),
@@ -257,7 +272,7 @@ class NoteVoiceChip extends StatelessWidget {
                             '...',
                             key: const ValueKey('voice-summary-more'),
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: AppTypeScale.caption,
                               color: palette.textTertiary,
                             ),
                           ),
@@ -311,20 +326,97 @@ class NoteVoiceChip extends StatelessWidget {
   }
 }
 
-class _PlayButton extends StatelessWidget {
-  const _PlayButton({required this.playing, this.onPressed});
+/// What a play button is called, which is what pressing it does next.
+///
+/// Shared by the chip and the recording's dialog so the two never describe
+/// the same recording differently. After a failure the press still tries
+/// again, and the name says why the last one did not work.
+String voicePlayButtonLabel({
+  required bool playing,
+  required bool opening,
+  VoicePlaybackFailure? failure,
+}) {
+  if (playing) return 'Pause';
+  if (opening) return 'Cancel';
+  return switch (failure) {
+    VoicePlaybackFailure.notDownloaded => "Couldn't download. Try again",
+    VoicePlaybackFailure.unreadable => "Couldn't play this recording",
+    null => 'Play',
+  };
+}
+
+/// The face of a play button: a spinner while the recording is on its way,
+/// otherwise the icon for what a press does.
+class VoicePlayGlyph extends StatelessWidget {
+  const VoicePlayGlyph({
+    super.key,
+    required this.playing,
+    required this.opening,
+    this.failure,
+    this.size,
+    this.color,
+  });
 
   final bool playing;
+  final bool opening;
+  final VoicePlaybackFailure? failure;
+  final double? size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    if (opening) {
+      final icon = IconTheme.of(context);
+      return Center(
+        child: SizedBox.square(
+          dimension: (size ?? icon.size ?? 24) * 0.8,
+          child: CircularProgressIndicator(
+            strokeWidth: 1.75,
+            color: color ?? icon.color,
+          ),
+        ),
+      );
+    }
+    return KapyIcon(
+      playing
+          ? KapyIcons.pauseRounded
+          : switch (failure) {
+              VoicePlaybackFailure.notDownloaded => KapyIcons.cloudOffRounded,
+              VoicePlaybackFailure.unreadable => KapyIcons.warningRounded,
+              null => KapyIcons.playRounded,
+            },
+      size: size,
+      color: color,
+    );
+  }
+}
+
+class _PlayButton extends StatelessWidget {
+  const _PlayButton({
+    required this.playing,
+    required this.opening,
+    this.failure,
+    this.onPressed,
+  });
+
+  final bool playing;
+  final bool opening;
+  final VoicePlaybackFailure? failure;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final label = voicePlayButtonLabel(
+      playing: playing,
+      opening: opening,
+      failure: failure,
+    );
     return Semantics(
       button: true,
-      label: playing ? 'Pause' : 'Play',
+      label: label,
       child: _hoverHint(
-        onPressed == null ? null : (playing ? 'Pause' : 'Play'),
+        onPressed == null ? null : label,
         SizedBox(
           width: 36,
           height: 36,
@@ -334,10 +426,16 @@ class _PlayButton extends StatelessWidget {
             child: InkWell(
               customBorder: const CircleBorder(),
               onTap: onPressed,
-              child: KapyIcon(
-                playing ? KapyIcons.pauseRounded : KapyIcons.playRounded,
+              child: VoicePlayGlyph(
+                playing: playing,
+                opening: opening,
+                failure: failure,
                 size: 20,
-                color: palette.textPrimary,
+                // Quieter rather than red: a recording that did not start is
+                // still a perfectly good recording.
+                color: failure == null && !opening
+                    ? palette.textPrimary
+                    : palette.textSecondary,
               ),
             ),
           ),

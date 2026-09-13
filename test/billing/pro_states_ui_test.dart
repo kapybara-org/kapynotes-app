@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/billing/billing.dart';
-import 'package:kapy_notes/billing/entitlements.dart';
 import 'package:kapy_notes/billing/plan_terms.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -45,12 +44,12 @@ void main() {
   late Account account;
   late FakeBillingApi billingApi;
 
-  void build({bool enforced = true, bool sells = true}) {
+  void build({bool enforced = true, bool sells = true, FakeAuth? auth}) {
     server = FakeServer();
     store = _MemoryStore();
     notes = NotesStore(store);
     account = Account(
-      auth: FakeAuth(),
+      auth: auth ?? FakeAuth(),
       syncApi: (_) => FakeApi(server, device: 'device-1'),
       keys: KeyStore(InMemorySecureStore()),
       notes: notes,
@@ -93,7 +92,7 @@ void main() {
     await account.billing!.refresh();
   });
 
-  testWidgets('a new account hears the trial, what stops, and the price first', (
+  testWidgets('signup does not mention plans or a trial before completion', (
     tester,
   ) async {
     build();
@@ -105,11 +104,11 @@ void main() {
     await tester.runAsync(() => account.planTerms!.refreshIfStale());
     await tester.pump();
 
-    final notice = find.byKey(const ValueKey('trial-notice'));
-    expect(notice, findsOneWidget);
-    expect(find.textContaining('14 days of Pro, free'), findsOneWidget);
-    expect(find.textContaining('sync and sharing stop'), findsOneWidget);
-    expect(find.textContaining(proLifetimeUsPrice), findsOneWidget);
+    expect(find.byKey(const ValueKey('trial-notice')), findsNothing);
+    expect(
+      find.textContaining(RegExp(r'\b(pro|trial)\b', caseSensitive: false)),
+      findsNothing,
+    );
   });
 
   testWidgets('before launch it promises no trial, because there is none', (
@@ -124,6 +123,44 @@ void main() {
     await pumpPane(tester);
 
     expect(find.byKey(const ValueKey('trial-notice')), findsNothing);
+  });
+
+  testWidgets('profile creation stays free of plan and trial messaging', (
+    tester,
+  ) async {
+    build(auth: FakeAuth(name: ''));
+    await tester.runAsync(() async {
+      await notes.load();
+      await account.restore();
+      await account.signIn(email: 'a@b.co', password: 'x');
+      await account.planTerms!.refreshIfStale();
+    });
+    await pumpPane(tester);
+
+    expect(find.text('What should people call you?'), findsOneWidget);
+    expect(
+      find.textContaining(RegExp(r'\b(pro|trial)\b', caseSensitive: false)),
+      findsNothing,
+    );
+  });
+
+  testWidgets('passphrase setup stays free of plan and trial messaging', (
+    tester,
+  ) async {
+    build();
+    await tester.runAsync(() async {
+      await notes.load();
+      await account.restore();
+      await account.signIn(email: 'a@b.co', password: 'x');
+      await account.planTerms!.refreshIfStale();
+    });
+    await pumpPane(tester);
+
+    expect(find.text('Save your passphrase'), findsOneWidget);
+    expect(
+      find.textContaining(RegExp(r'\b(pro|trial)\b', caseSensitive: false)),
+      findsNothing,
+    );
   });
 
   testWidgets('a trial says when it ends and what happens, on any build', (

@@ -10,6 +10,7 @@ import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
+import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:material_ui/material_ui.dart';
 
 class MemoryFakeStore extends LocalStore {
@@ -309,7 +310,7 @@ void main() {
     expect(
       (nativeCalls.lastWhere((call) => call.method == 'setBounds').arguments
           as Map)['width'],
-      680.0,
+      720.0,
       reason: 'the Windows host is widened before the dialog is shown',
     );
     expect(find.byType(AlertDialog), findsOneWidget);
@@ -330,6 +331,18 @@ void main() {
           as Map)['width'],
       520.0,
       reason: 'closing settings gives the user their narrow window back',
+    );
+  });
+
+  test('Windows settings keeps secondary copy comfortably readable', () {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+
+    expect(SettingsMetrics.titleSize, 14);
+    expect(SettingsMetrics.subtitleSize, 12.5);
+    expect(
+      SettingsMetrics.titleSize - SettingsMetrics.subtitleSize,
+      1.5,
+      reason: 'the hierarchy should be clear without miniaturising subtitles',
     );
   });
 

@@ -14,6 +14,7 @@ class ReleaseNote {
     required this.date,
     required this.summary,
     required this.changes,
+    this.highlights = const [],
   });
 
   final String version;
@@ -29,6 +30,15 @@ class ReleaseNote {
   /// What changed, in the order the changelog puts it.
   final List<String> changes;
 
+  /// Short, scan-friendly lines for an update prompt.
+  ///
+  /// Older releases predate this field, so update surfaces fall back to the
+  /// complete notes. The full history always uses [changes].
+  final List<String> highlights;
+
+  List<String> get updateHighlights =>
+      highlights.isEmpty ? changes : highlights;
+
   /// An entry the site would not recognise is dropped rather than drawn
   /// half-empty: a release with no version cannot be matched against the
   /// running build, and one with no changes has nothing to say.
@@ -43,6 +53,12 @@ class ReleaseNote {
         if (change is String && change.trim().isNotEmpty) change,
     ];
     if (lines.isEmpty) return null;
+    final highlights = decoded['highlights'];
+    final shortLines = [
+      if (highlights is List)
+        for (final highlight in highlights)
+          if (highlight is String && highlight.trim().isNotEmpty) highlight,
+    ];
     final date = decoded['date'];
     final summary = decoded['summary'];
     return ReleaseNote(
@@ -50,6 +66,7 @@ class ReleaseNote {
       date: date is String ? date : '',
       summary: summary is String ? summary : '',
       changes: lines,
+      highlights: shortLines,
     );
   }
 
@@ -58,6 +75,7 @@ class ReleaseNote {
     'date': date,
     'summary': summary,
     'changes': changes,
+    'highlights': highlights,
   };
 }
 
@@ -123,6 +141,20 @@ class ReleaseHistory extends ChangeNotifier {
         fetchedAt != null &&
         DateTime.now().isBefore(fetchedAt.add(staleAfter));
     if (fresh) return;
+    await refresh();
+  }
+
+  /// Makes sure the history contains the release an updater is about to
+  /// install.
+  ///
+  /// A fresh cache can still predate a release discovered by the update
+  /// manifest. In that case [load] would trust the cache for the rest of the
+  /// day and the update pane would describe an older build. The updater only
+  /// needs one exact entry, so keep an existing match and refresh otherwise.
+  Future<void> loadForVersion(String version) async {
+    if (_disposed) return;
+    _loadCache();
+    if (_releases.any((release) => release.version == version)) return;
     await refresh();
   }
 

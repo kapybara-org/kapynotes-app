@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/sync/presence.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/crdt/crdt.dart';
+import 'package:kapy_notes/data/attachment_limits.dart';
 
 SpaceMember member(
   String id,
@@ -72,6 +73,16 @@ void main() {
   });
 
   group('a space', () {
+    test('carries the owner-paid attachment ceiling through its cache', () {
+      final encoded = space(name: 'Family').toJson()
+        ..['attachmentMaxBytes'] = proAttachmentMaxBytes;
+
+      expect(
+        Space.fromJson(encoded)?.attachmentMaxBytes,
+        proAttachmentMaxBytes,
+      );
+    });
+
     test('is called by its people, never by its placeholder', () {
       final bob = member('bob', 'bob@example.com', name: 'Bob Stone');
       final pair = space(name: 'With bob', members: [me, bob]);

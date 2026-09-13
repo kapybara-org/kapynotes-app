@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'core/platform.dart';
 import 'core/appearance.dart';
 import 'core/desktop_integration.dart';
+import 'audio/recording_file.dart';
 import 'audio/voice_player.dart';
 import 'data/voice_prefs.dart';
 import 'speech/apple_summarizer.dart';
@@ -120,7 +121,17 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
   /// One player for the whole app: starting a second recording stops the
   /// first, and a phone never holds two claims on its audio session.
-  final VoicePlayer _player = VoicePlayer();
+  ///
+  /// The account is read at every press rather than once here: it signs in
+  /// and out while the player lives on, and a recording made on another device
+  /// needs one to come down.
+  late final VoicePlayer _player = VoicePlayer(
+    files: (hash) => openRecording(
+      hash,
+      blobs: widget.notes.blobs,
+      fetch: widget.account?.imageFetch,
+    ),
+  );
 
   /// Turns recordings into words, across launches. Its file is only touched
   /// once something has been recorded, so a device that never records pays a

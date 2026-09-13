@@ -1,10 +1,12 @@
 import 'package:kapy_notes/billing/billing_api.dart';
 import 'package:kapy_notes/billing/entitlements.dart';
 import 'package:kapy_notes/billing/purchase_store.dart';
+import 'package:kapy_notes/data/attachment_limits.dart';
 
 Entitlements entitlementsFor({
   bool pro = false,
   int? storageBytes,
+  int? attachmentMaxBytes,
   int speechCreditSeconds = 0,
   bool sync = true,
   int? noteLimit,
@@ -13,6 +15,9 @@ Entitlements entitlementsFor({
   plan: pro ? 'pro' : 'free',
   storageBytes: storageBytes ?? (pro ? proStorageBytes : 100 * 1024 * 1024),
   storageUsedBytes: 0,
+  attachmentMaxBytes:
+      attachmentMaxBytes ??
+      (pro ? proAttachmentMaxBytes : freeAttachmentMaxBytes),
   speechSecondsPerMonth: pro ? 7200 : 900,
   speechCreditSeconds: speechCreditSeconds,
   sync: sync,
@@ -22,8 +27,10 @@ Entitlements entitlementsFor({
 );
 
 /// A free account trying Pro, [left] from now.
-Entitlements trialFor(Duration left, {DateTime? from}) =>
-    entitlementsFor(trialEndsAt: (from ?? DateTime.now()).add(left));
+Entitlements trialFor(Duration left, {DateTime? from}) => entitlementsFor(
+  attachmentMaxBytes: proAttachmentMaxBytes,
+  trialEndsAt: (from ?? DateTime.now()).add(left),
+);
 
 /// A free account whose trial ended: no sync, and the note limit.
 Entitlements afterTrial({DateTime? endedAt}) => entitlementsFor(

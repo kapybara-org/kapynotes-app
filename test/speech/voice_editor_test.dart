@@ -29,7 +29,7 @@ late ShortcutPrefs shortcutPrefs;
 late Directory tempDir;
 late BlobStore store;
 late String recordingHash;
-late BlobStore immediateStore;
+late File recordingFile;
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'voice-editor-test.json');
@@ -44,20 +44,13 @@ class _MemoryStore extends LocalStore {
   void put(String key, Object? value) => data[key] = value;
 }
 
-/// A store that answers without touching the disk.
+/// Hands the player the recording without touching the disk.
 ///
 /// Real file I/O awaited inside `testWidgets` never completes — the body runs
-/// in a fake-async zone — so the editor's `fileFor` would hang rather than
-/// fail. The bytes are on disk from `setUpAll`; this only skips the `exists`
-/// round trip that cannot finish here.
-class _ImmediateBlobStore extends BlobStore {
-  _ImmediateBlobStore({required super.directory, required this.file});
-
-  final File file;
-
-  @override
-  Future<File?> fileFor(String hash) async => file;
-}
+/// in a fake-async zone — so a lookup that went to the store would hang rather
+/// than fail. The bytes are on disk from `setUpAll`; this only skips the
+/// `exists` round trip that cannot finish here.
+Future<File?> alreadyHere(String hash) async => recordingFile;
 
 class _FakeBackend implements VoicePlayerBackend {
   final positionController = StreamController<Duration>.broadcast();
@@ -152,10 +145,7 @@ void main() {
       Uint8List.fromList(List.filled(2048, 7)),
       extension: '.m4a',
     );
-    immediateStore = _ImmediateBlobStore(
-      directory: tempDir,
-      file: (await store.fileFor(recordingHash))!,
-    );
+    recordingFile = (await store.fileFor(recordingHash))!;
     shortcutPrefs = ShortcutPrefs(_MemoryStore())..load();
   });
 
@@ -274,12 +264,7 @@ void main() {
       // everywhere. Only the innermost region under the pointer decides, so
       // this is the test that the chip is the one being asked.
       await tester.pumpWidget(
-        harness(
-          '$anchor\nnotes',
-          [voice(0)],
-          images: immediateStore,
-          onOpenVoiceNote: (_) {},
-        ),
+        harness('$anchor\nnotes', [voice(0)], onOpenVoiceNote: (_) {}),
       );
       await tester.pumpAndSettle();
 
@@ -307,12 +292,7 @@ void main() {
 
     testWidgets('says what a click on the recording opens', (tester) async {
       await tester.pumpWidget(
-        harness(
-          '$anchor\n',
-          [voice(0)],
-          images: immediateStore,
-          onOpenVoiceNote: (_) {},
-        ),
+        harness('$anchor\n', [voice(0)], onOpenVoiceNote: (_) {}),
       );
       await tester.pumpAndSettle();
 
@@ -332,16 +312,9 @@ void main() {
       // Nothing listened to the player, so the chip kept the pause button it
       // was last built with after the audio had finished.
       final backend = _FakeBackend();
-      final player = VoicePlayer(backend: backend);
+      final player = VoicePlayer(backend: backend, files: alreadyHere);
 
-      await tester.pumpWidget(
-        harness(
-          '$anchor\n',
-          [voice(0)],
-          player: player,
-          images: immediateStore,
-        ),
-      );
+      await tester.pumpWidget(harness('$anchor\n', [voice(0)], player: player));
       await tester.pumpAndSettle();
 
       await tester.tap(find.bySemanticsLabel('Play'));
@@ -367,16 +340,9 @@ void main() {
       // that recording was already the one loaded, which is the one case where
       // the user has least reason to aim.
       final backend = _FakeBackend();
-      final player = VoicePlayer(backend: backend);
+      final player = VoicePlayer(backend: backend, files: alreadyHere);
 
-      await tester.pumpWidget(
-        harness(
-          '$anchor\n',
-          [voice(0)],
-          player: player,
-          images: immediateStore,
-        ),
-      );
+      await tester.pumpWidget(harness('$anchor\n', [voice(0)], player: player));
       await tester.pumpAndSettle();
 
       final waveform = tester.getRect(
@@ -398,6 +364,71 @@ void main() {
 
       player.dispose();
     });
+
+    testWidgets('fetches a recording from another device when it is played', (
+      tester,
+    ) async {
+      // A recording made on the phone reaches the desktop as a ref, and its
+      // audio comes down only when somebody presses play. The chip used to
+      // look on disk, find nothing, and do nothing at all.
+      final backend = _FakeBackend();
+      final arriving = Completer<File?>();
+      final player = VoicePlayer(
+        backend: backend,
+        files: (_) => arriving.future,
+      );
+
+      await tester.pumpWidget(harness('$anchor\n', [voice(0)], player: player));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.bySemanticsLabel('Play'));
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.bySemanticsLabel('Cancel'), findsOneWidget);
+      expect(backend.plays, 0);
+
+      arriving.complete(recordingFile);
+      await tester.pumpAndSettle();
+
+      expect(find.bySemanticsLabel('Pause'), findsOneWidget);
+      expect(backend.plays, 1);
+
+      player.dispose();
+    });
+
+    testWidgets(
+      'says when one could not come down, and tries again on a press',
+      (tester) async {
+        final backend = _FakeBackend();
+        File? answer;
+        final player = VoicePlayer(
+          backend: backend,
+          files: (_) async => answer,
+        );
+
+        await tester.pumpWidget(
+          harness('$anchor\n', [voice(0)], player: player),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.bySemanticsLabel('Play'));
+        await tester.pumpAndSettle();
+        expect(
+          find.bySemanticsLabel("Couldn't download. Try again"),
+          findsOneWidget,
+        );
+        expect(backend.plays, 0);
+
+        answer = recordingFile;
+        await tester.tap(find.bySemanticsLabel("Couldn't download. Try again"));
+        await tester.pumpAndSettle();
+
+        expect(find.bySemanticsLabel('Pause'), findsOneWidget);
+        expect(backend.plays, 1);
+
+        player.dispose();
+      },
+    );
   });
 
   group('recording insertion and removal', () {

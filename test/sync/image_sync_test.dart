@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/audio/recording_file.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -237,6 +238,51 @@ void main() {
     expect(server.storageUsed[one.api.userId], greaterThan(bytes.length));
     expect(await two.imageSync.fetch(hash), bytes);
     expect((await two.images.fileFor(hash))!.path, endsWith('.mp4'));
+  });
+
+  test('a recording reaches the other device, and plays there', () async {
+    // What was broken: a recording made on the phone synced to the desktop as
+    // a chip whose play button did nothing, because nothing ever asked for
+    // its audio. The ref arrived; the bytes never followed.
+    final one = Device(server, name: 'one', dir: await dirFor('one'));
+    final two = Device(server, name: 'two', dir: await dirFor('two'));
+    addTearDown(one.dispose);
+    addTearDown(two.dispose);
+    await one.boot();
+    await two.boot();
+
+    final bytes = picture(12);
+    final hash = await one.images.put(
+      bytes,
+      extension: NoteVoiceRef.voiceExtension,
+    );
+    final note = one.notes.create();
+    one.notes.updateDocument(note.id, anchor, const [], [
+      NoteVoiceRef(
+        offset: 0,
+        hash: hash,
+        key: randomKey(),
+        bytes: bytes.length,
+        durationMs: 4736,
+      ),
+    ]);
+
+    await one.sync.syncNow();
+    await settle(server);
+    await two.sync.syncNow();
+
+    final arrived = two.notes.notes.single.attachments.single as NoteVoiceRef;
+    expect(arrived.attachmentId, isNotNull);
+    expect(await two.images.has(hash), isFalse);
+
+    final file = await openRecording(
+      hash,
+      blobs: two.images,
+      fetch: two.imageSync.fetch,
+    );
+    // Kept as .m4a, or iOS holds a file it will not decode.
+    expect(file!.path, endsWith('.m4a'));
+    expect(await file.readAsBytes(), bytes);
   });
 
   test('reports attachment upload progress to the media tile', () async {

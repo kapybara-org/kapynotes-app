@@ -15,6 +15,7 @@ import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
+import 'package:kapy_notes/data/attachment_limits.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/images/image_clipboard.dart';
@@ -205,6 +206,7 @@ Widget harness(
   ImagePrepared? onImagePrepared,
   VideoFileAcquirer? videoAcquirer,
   VideoBatchIngestor? videoIngestor,
+  int Function()? videoAttachmentMaxBytes,
   AttachmentUploadProgressFor? uploadProgressFor,
   bool startAtEnd = false,
   bool readOnly = false,
@@ -226,6 +228,7 @@ Widget harness(
       onImagePrepared: onImagePrepared,
       videoAcquirer: videoAcquirer,
       videoIngestor: videoIngestor,
+      videoAttachmentMaxBytes: videoAttachmentMaxBytes,
       uploadProgressFor: uploadProgressFor,
       startAtEnd: startAtEnd,
       readOnly: readOnly,
@@ -651,6 +654,31 @@ void main() {
     expect(opened, 1);
     expect(find.byType(NoteVideoView), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('a Pro-sized video rejection names the 100 MB ceiling', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      harness(
+        'a note',
+        attachments: const [],
+        videoAttachmentMaxBytes: () => proAttachmentMaxBytes,
+        videoAcquirer: () async => [
+          XFile.fromData(Uint8List(0), name: 'large.mp4'),
+        ],
+        videoIngestor: (_, _) async => const VideoBatch(
+          videos: [],
+          rejections: [(name: 'large.mp4', reason: VideoRejection.tooLarge)],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('insert-video')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('100 MB attachment limit'), findsOneWidget);
   });
 
   testWidgets('clicking a video opens its full-screen player', (tester) async {

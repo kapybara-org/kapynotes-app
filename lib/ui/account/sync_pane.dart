@@ -4,9 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../billing/billing.dart';
-import '../../billing/entitlements.dart';
-import '../../billing/plan_terms.dart';
+import '../../core/file_export.dart';
 import '../../core/platform.dart';
+import '../../core/text_file_export.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../images/image_ingest.dart';
@@ -15,6 +15,7 @@ import '../../sync/account.dart';
 import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
 import 'recovery_key_dialog.dart';
+import '../control_surface.dart';
 import '../profile_avatar.dart';
 import '../billing/pro_sheet.dart';
 import '../settings_rows.dart';
@@ -30,10 +31,14 @@ class SyncPane extends StatelessWidget {
     super.key,
     required this.account,
     this.includeDeleteAccount = true,
+    this.saveTextFile,
+    this.passphraseGenerator,
   });
 
   final Account account;
   final bool includeDeleteAccount;
+  final TextFileSaver? saveTextFile;
+  final String Function()? passphraseGenerator;
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +48,11 @@ class SyncPane extends StatelessWidget {
         AccountState.restoring => const _Busy(),
         AccountState.signedOut => _SignInForm(account: account),
         AccountState.needsProfile => _ProfileSetup(account: account),
-        AccountState.needsPassphrase => _PassphraseForm(account: account),
+        AccountState.needsPassphrase => _PassphraseForm(
+          account: account,
+          saveTextFile: saveTextFile ?? TextFileExport.save,
+          passphraseGenerator: passphraseGenerator ?? generatePassphrase,
+        ),
         AccountState.locked => _UnlockForm(
           account: account,
           includeDeleteAccount: includeDeleteAccount,
@@ -77,6 +86,7 @@ class _Busy extends StatelessWidget {
 /// The shared frame: a sentence saying where things stand, then the controls.
 class _Panel extends StatelessWidget {
   const _Panel({
+    super.key,
     required this.title,
     required this.blurb,
     required this.children,
@@ -123,7 +133,6 @@ class _Field extends StatelessWidget {
     required this.hint,
     this.obscure = false,
     this.autofocus = false,
-    this.monospace = false,
     this.keyboardType,
     this.onSubmitted,
   });
@@ -132,9 +141,6 @@ class _Field extends StatelessWidget {
   final String hint;
   final bool obscure;
 
-  /// For a value that has to be read off the screen and typed somewhere else,
-  /// the way the recovery key dialog sets one.
-  final bool monospace;
   final bool autofocus;
   final TextInputType? keyboardType;
   final VoidCallback? onSubmitted;
@@ -154,9 +160,6 @@ class _Field extends StatelessWidget {
         style: TextStyle(
           fontSize: AppTypeScale.control,
           color: palette.textPrimary,
-          fontFamily: monospace ? AppPlatform.monoFontFallback.first : null,
-          fontFamilyFallback: monospace ? AppPlatform.monoFontFallback : null,
-          letterSpacing: monospace ? 0.3 : null,
         ),
         onSubmitted: (_) => onSubmitted?.call(),
         decoration: InputDecoration(
@@ -273,14 +276,6 @@ class _SignInFormState extends State<_SignInForm> {
   String? _note;
 
   @override
-  void initState() {
-    super.initState();
-    // Whether to say what a new account gets is the server's to decide, and
-    // this form is only ever shown with no account to ask instead.
-    unawaited(widget.account.planTerms?.refreshIfStale() ?? Future.value());
-  }
-
-  @override
   void dispose() {
     _email.dispose();
     _code.dispose();
@@ -360,7 +355,6 @@ class _SignInFormState extends State<_SignInForm> {
 
   @override
   Widget build(BuildContext context) {
-    final account = widget.account;
     return _Panel(
       title: _step == _SignInStep.resetRequest || _step == _SignInStep.resetCode
           ? 'Reset your password'
@@ -376,27 +370,14 @@ class _SignInFormState extends State<_SignInForm> {
           'We will email you a code. This changes how you sign in. It does '
               'not touch your encryption passphrase, and your notes stay '
               'locked with that.',
-        _ =>
-          'Sync your notes across your devices. Your notes are encrypted on '
-              'this device before they are sent. The server stores them '
-              'sealed and cannot read them.',
+        _ => 'Sync your notes across devices. They stay private and encrypted.',
       },
       children: [
         ..._fields(),
         ..._actions(),
         if (_note != null) _Message(_note!),
-        if (account.lastError != null) _Message(account.lastError!),
-        if (_step == _SignInStep.email || _step == _SignInStep.password)
-          if (account.planTerms case final terms?)
-            ListenableBuilder(
-              listenable: terms,
-              builder: (context, _) => terms.enforced
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 14),
-                      child: _TrialNotice(terms: terms),
-                    )
-                  : const SizedBox.shrink(),
-            ),
+        if (widget.account.lastError != null)
+          _Message(widget.account.lastError!),
       ],
     );
   }
@@ -540,9 +521,7 @@ class _ProfileSetup extends StatelessWidget {
   @override
   Widget build(BuildContext context) => _Panel(
     title: 'What should people call you?',
-    blurb:
-        'This name identifies you in shared notes. You can change it and your '
-        'profile picture later in Settings.',
+    blurb: 'This is the name people will see when you share a note.',
     children: [_ProfileEditor(account: account, firstRun: true)],
   );
 }
@@ -742,93 +721,61 @@ class _ProfileEditorState extends State<_ProfileEditor> {
 // ---------------------------------------------------------------------------
 
 class _PassphraseForm extends StatefulWidget {
-  const _PassphraseForm({required this.account});
+  const _PassphraseForm({
+    required this.account,
+    required this.saveTextFile,
+    required this.passphraseGenerator,
+  });
+
   final Account account;
+  final TextFileSaver saveTextFile;
+  final String Function() passphraseGenerator;
 
   @override
   State<_PassphraseForm> createState() => _PassphraseFormState();
 }
 
 class _PassphraseFormState extends State<_PassphraseForm> {
-  final _passphrase = TextEditingController();
-  final _confirm = TextEditingController();
+  late final String _passphrase = widget.passphraseGenerator();
   String? _problem;
   bool _busy = false;
-
-  /// The generated value, while it is still the thing in the field. Typing
-  /// over it clears this, because everything below keys off it — the copy
-  /// button, the saved-it gate, and whether the confirm field is worth
-  /// showing at all.
-  String? _generated;
   bool _copied = false;
-  bool _savedIt = false;
-
-  /// Not a password policy, a floor. This key is the only thing between the
-  /// notes and anyone holding the ciphertext, and unlike a password nobody
-  /// can reset it for you.
-  static const int _minimumLength = 10;
-
-  @override
-  void initState() {
-    super.initState();
-    _passphrase.addListener(_onPassphraseChanged);
-  }
-
-  @override
-  void dispose() {
-    _passphrase.removeListener(_onPassphraseChanged);
-    _passphrase.dispose();
-    _confirm.dispose();
-    super.dispose();
-  }
-
-  void _onPassphraseChanged() {
-    if (_generated == null || _passphrase.text == _generated) return;
-    // They have taken it over. It is theirs to confirm and remember now.
-    setState(() {
-      _generated = null;
-      _copied = false;
-      _savedIt = false;
-      _confirm.clear();
-    });
-  }
-
-  void _generate() {
-    final value = generatePassphrase();
-    setState(() {
-      _generated = value;
-      _copied = false;
-      _savedIt = false;
-      _problem = null;
-      _passphrase.text = value;
-      // Confirming means retyping thirty-two characters nobody chose, to
-      // catch a typo that cannot happen. The field goes away instead.
-      _confirm.text = value;
-    });
-  }
+  bool _savingFile = false;
+  bool _savedFile = false;
 
   Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: _passphrase.text));
+    await Clipboard.setData(ClipboardData(text: _passphrase));
     if (mounted) setState(() => _copied = true);
   }
 
-  Future<void> _create() async {
-    final passphrase = _passphrase.text;
-    if (passphrase.length < _minimumLength) {
-      setState(() => _problem = 'Use at least $_minimumLength characters.');
-      return;
-    }
-    if (_generated == null && passphrase != _confirm.text) {
-      setState(() => _problem = 'Those do not match.');
-      return;
-    }
+  Future<void> _download() async {
+    if (_savingFile) return;
+    setState(() {
+      _savingFile = true;
+      _problem = null;
+    });
+    final result = await widget.saveTextFile(
+      contents: '$_passphrase\n',
+      suggestedName: 'kapy-notes-passphrase.txt',
+    );
+    if (!mounted) return;
+    setState(() {
+      _savingFile = false;
+      if (result == FileExportOutcome.saved) _savedFile = true;
+      if (result == FileExportOutcome.failed ||
+          result == FileExportOutcome.unsupported) {
+        _problem = 'Could not save the file. Try Copy instead.';
+      }
+    });
+  }
 
+  Future<void> _create() async {
     setState(() {
       _problem = null;
       _busy = true;
     });
-    final progress = Toast.showProgress(context, 'Securing sync…');
-    final recovery = await widget.account.createPassphrase(passphrase);
+    final progress = Toast.showProgress(context, 'Finishing setup…');
+    final recovery = await widget.account.createPassphrase(_passphrase);
     if (!mounted) {
       progress.dismiss();
       return;
@@ -840,94 +787,78 @@ class _PassphraseFormState extends State<_PassphraseForm> {
       progress.error('Could not secure sync');
       return;
     }
-    progress.success('Sync secured');
-    await showRecoveryKeyDialog(context, recovery);
+    progress.dismiss();
+    await showRecoveryKeyDialog(
+      context,
+      recovery,
+      saveTextFile: widget.saveTextFile,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final generated = _generated != null;
 
     return _Panel(
-      title: 'Choose an encryption passphrase',
-      blurb:
-          'This is what your notes are locked with. It never leaves this '
-          'device, so nobody, including us, can reset it or read your notes '
-          'without it.',
+      key: const ValueKey('passphrase-setup'),
+      title: 'Save your passphrase',
+      blurb: "You'll use this to unlock your notes on another device.",
       children: [
-        const _InfoNote(
-          'Your notes are sealed on this device before any of them are sent, '
-          'and this passphrase is the key. We never receive it. That is '
-          'what makes "we cannot read your notes" a fact about how sync works '
-          'rather than a promise about how we behave.\n\n'
-          'The same choice is why there is no reset link. Forget this and '
-          'your recovery key, and the notes cannot be opened by anyone.',
+        KapyControlSurface(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: SelectableText(
+            _passphrase,
+            key: const ValueKey('generated-passphrase'),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppPlatform.monoFontFallback.first,
+              fontFamilyFallback: AppPlatform.monoFontFallback,
+              fontSize: AppTypeScale.control,
+              fontWeight: FontWeight.w500,
+              height: 1.6,
+              letterSpacing: 0.45,
+              color: palette.textPrimary,
+            ),
+          ),
         ),
         const SizedBox(height: 12),
-        _Field(
-          controller: _passphrase,
-          hint: 'Passphrase',
-          // A generated one has to be readable to be written down.
-          obscure: !generated,
-          monospace: generated,
-          autofocus: true,
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey('copy-passphrase'),
+              onPressed: _busy ? null : _copy,
+              icon: KapyIcon(
+                _copied ? KapyIcons.checkRounded : KapyIcons.copyRounded,
+                size: AppControlMetrics.iconControl,
+              ),
+              label: Text(_copied ? 'Copied' : 'Copy'),
+            ),
+            OutlinedButton.icon(
+              key: const ValueKey('download-passphrase'),
+              onPressed: _busy || _savingFile ? null : _download,
+              icon: _savingFile
+                  ? SizedBox.square(
+                      dimension: AppControlMetrics.iconControl,
+                      child: const CircularProgressIndicator(strokeWidth: 1.5),
+                    )
+                  : KapyIcon(
+                      _savedFile
+                          ? KapyIcons.checkRounded
+                          : KapyIcons.downloadRounded,
+                      size: AppControlMetrics.iconControl,
+                    ),
+              label: Text(_savedFile ? 'Saved' : 'Download'),
+            ),
+          ],
         ),
-        if (!generated)
-          _Field(
-            controller: _confirm,
-            hint: 'Type it again',
-            obscure: true,
-            onSubmitted: _busy ? null : _create,
-          ),
-        if (generated) ...[
-          Row(
-            children: [
-              OutlinedButton.icon(
-                onPressed: _copy,
-                icon: KapyIcon(
-                  _copied ? KapyIcons.checkRounded : KapyIcons.copyRounded,
-                  size: AppControlMetrics.iconControl,
-                ),
-                label: Text(_copied ? 'Copied' : 'Copy'),
-              ),
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: _generate,
-                child: const Text('Generate another'),
-              ),
-            ],
-          ),
-          CheckboxListTile(
-            key: const ValueKey('generated-passphrase-saved'),
-            value: _savedIt,
-            onChanged: (value) => setState(() => _savedIt = value ?? false),
-            controlAffinity: ListTileControlAffinity.leading,
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: Text(
-              'I have saved this somewhere safe',
-              style: TextStyle(
-                fontSize: AppTypeScale.body,
-                color: palette.textPrimary,
-              ),
-            ),
-          ),
-        ] else
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              key: const ValueKey('generate-passphrase'),
-              onPressed: _generate,
-              child: const Text('Generate a strong one for me'),
-            ),
-          ),
-        const SizedBox(height: 4),
-        FilledButton(
-          // Generated and unsaved is the one combination that ends with notes
-          // nobody can open, so it is the one the button waits on.
-          onPressed: _busy || (generated && !_savedIt) ? null : _create,
-          child: const Text('Set passphrase'),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          key: const ValueKey('confirm-passphrase-saved'),
+          onPressed: _busy || _savingFile ? null : _create,
+          icon: const KapyIcon(KapyIcons.checkRounded),
+          label: const Text("I've saved my passphrase"),
         ),
         if (_problem != null) _Message(_problem!),
       ],
@@ -1393,32 +1324,6 @@ class DeleteAccountSettings extends StatelessWidget {
       );
     },
   );
-}
-
-// ---------------------------------------------------------------------------
-
-/// What a new account gets, said before it exists: how long the trial lasts,
-/// what stops when it ends, and what carrying on costs.
-class _TrialNotice extends StatelessWidget {
-  const _TrialNotice({required this.terms});
-
-  final PlanTerms terms;
-
-  @override
-  Widget build(BuildContext context) {
-    final days = terms.trialDays;
-    final limit = terms.freeNoteLimit == 5 ? 'five' : '${terms.freeNoteLimit}';
-    return _InfoNote(
-      'New accounts get $days days of Pro, free, with no card: sync, sharing, '
-      'unlimited notes, 1 GB of storage and two hours of transcription a '
-      'month. Afterwards the account moves to Free by itself: sync and '
-      'sharing stop, and notes past the first $limit become read-only, with '
-      'nothing deleted. Pro Lifetime keeps everything for one payment of '
-      '$proLifetimeUsPrice.',
-      key: const ValueKey('trial-notice'),
-      icon: KapyIcons.verifiedOutlined,
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------

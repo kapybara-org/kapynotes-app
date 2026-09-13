@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/editor_font.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -42,6 +43,61 @@ void main() {
       (KapyTheme.dark().tooltipTheme.decoration! as BoxDecoration).boxShadow,
       anyOf(isNull, isEmpty),
     );
+  });
+
+  test('interactive primitives are rounded, emphatic, and flat', () {
+    final theme = KapyTheme.dark();
+    final filled = theme.filledButtonTheme.style!;
+    final outlined = theme.outlinedButtonTheme.style!;
+    final segmented = theme.segmentedButtonTheme.style!;
+
+    expect(filled.elevation!.resolve({}), 0);
+    expect(filled.shadowColor!.resolve({}), Colors.transparent);
+    expect(filled.minimumSize!.resolve({})!.height, 36);
+    expect(filled.visualDensity, VisualDensity.standard);
+    expect(filled.padding!.resolve({})!.vertical, greaterThanOrEqualTo(16));
+    expect(filled.textStyle!.resolve({})!.fontWeight, FontWeight.w600);
+    expect(
+      (filled.shape!.resolve({})! as RoundedRectangleBorder).borderRadius,
+      BorderRadius.circular(AppRadii.button),
+    );
+    expect(outlined.side!.resolve({})!.width, 1);
+    expect(outlined.minimumSize!.resolve({})!.height, 36);
+    expect(outlined.visualDensity, VisualDensity.standard);
+    expect(outlined.padding!.resolve({})!.vertical, greaterThanOrEqualTo(16));
+    expect(
+      segmented.backgroundColor!.resolve({WidgetState.selected}),
+      theme.colorScheme.primary,
+    );
+    expect(
+      segmented.foregroundColor!.resolve({WidgetState.selected}),
+      theme.colorScheme.onPrimary,
+    );
+    expect(segmented.iconSize!.resolve({}), AppControlMetrics.iconControl);
+    expect(theme.inputDecorationTheme.filled, isTrue);
+    expect(
+      (theme.inputDecorationTheme.border! as OutlineInputBorder).borderRadius,
+      BorderRadius.circular(AppRadii.control),
+    );
+  });
+
+  test('Windows uses native, readable typography for small interface copy', () {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    final theme = KapyTheme.dark();
+
+    expect(theme.textTheme.bodyMedium?.fontFamily, 'Segoe UI');
+    expect(theme.textTheme.bodyMedium?.fontWeight, FontWeight.w400);
+    expect(theme.textTheme.bodySmall?.fontWeight, FontWeight.w400);
+    expect(theme.textTheme.bodySmall?.fontSize, 12.5);
+    expect(theme.textTheme.labelMedium?.fontSize, 12.5);
+    expect(theme.textTheme.labelSmall?.fontSize, 11.5);
+    expect(AppTypeScale.micro, 11.5);
+    expect(AppTypeScale.caption, 12.5);
+    expect(AppTypeScale.small, 13);
+    expect(AppTypeScale.body, 13.5);
+    expect(AppTypeScale.control, 14);
   });
 
   test('transparency thins the surfaces and never the type', () {

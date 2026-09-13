@@ -358,6 +358,21 @@ class EditorMetrics {
       );
 }
 
+/// The small radius system shared by controls and surfaces.
+///
+/// Keeping these steps close makes the app feel friendly without turning
+/// every panel into a pill. Borders, never shadows, separate one layer from
+/// another.
+class AppRadii {
+  const AppRadii._();
+
+  static const double icon = 9;
+  static const double button = 11;
+  static const double control = 10;
+  static const double surface = 13;
+  static const double dialog = 18;
+}
+
 /// Control geometry shared by every app surface, resolved per input device.
 ///
 /// This is two apps wearing one codebase: a dense desktop tool whose controls
@@ -391,6 +406,12 @@ class AppControlMetrics {
   /// surface stays the size the layout was drawn around.
   static double get iconButtonExtent => _touch ? 44 : 24;
 
+  /// The space an icon action occupies during layout.
+  ///
+  /// Material expands a 44pt painted touch surface to a 48pt semantic target,
+  /// while pointer controls keep their painted and layout extents identical.
+  static double get iconButtonSlotExtent => _touch ? 48 : iconButtonExtent;
+
   /// The painted surface of an action in the persistent bottom bars.
   ///
   /// A footer is read as a strip of tools, not isolated title-bar actions. Its
@@ -413,7 +434,14 @@ class AppControlMetrics {
       : MaterialTapTargetSize.padded;
 
   /// Height of a text button, filled button or outlined button.
-  static double get buttonHeight => _touch ? 48 : 32;
+  static double get buttonHeight => _touch ? 48 : 36;
+
+  /// Visible breathing room above and below a button label.
+  ///
+  /// Declared explicitly because the app's compact desktop density otherwise
+  /// subtracts from a button's vertical geometry and turns a 32px control into
+  /// a cramped 24px one.
+  static double get buttonVerticalPadding => _touch ? 12 : 8;
 
   /// Actions inside a popover, which is tighter than a dialog but still has to
   /// be hittable. Below [iconButtonExtent] on touch only because a popover is
@@ -513,12 +541,12 @@ class AppControlMetrics {
 /// The app's type ramp, in the same two densities as [AppControlMetrics].
 ///
 /// Every size the chrome renders comes from here rather than from a literal at
-/// the call site. The pointer column is the desktop scale as shipped, which is
-/// roughly macOS's own 10–16px range for UI text. The touch column is pitched
-/// to iOS Dynamic Type at its default Large setting, where 17 is body and 13
-/// is the smallest size Apple sets anything a user is meant to actually read —
-/// a rule the phone build broke everywhere, since its whole ramp sat between
-/// 10.5 and 13.
+/// the call site. macOS keeps its compact 10–16px desktop rhythm. Windows gets
+/// a slightly larger optical column because Segoe UI is commonly rasterised at
+/// 96dpi there: the old 10.5px subtitles lost both shape and hierarchy. The
+/// touch column is pitched to iOS Dynamic Type at its default Large setting,
+/// where 17 is body and 13 is the smallest size Apple sets anything a user is
+/// meant to actually read.
 ///
 /// As with the icons, touch is the shorter ramp on purpose: desktop steps half
 /// a pixel apart collapse into one touch size, because they were never telling
@@ -527,21 +555,38 @@ class AppTypeScale {
   const AppTypeScale._();
 
   static bool get _touch => !AppPlatform.hasPointer;
+  static bool get _windows => AppPlatform.isWindows;
 
   /// The smallest legible annotation: an uppercase section label, a keycap
-  /// hint. 10.5 is a real size on a Mac and an unreadable one held at arm's
-  /// length, so touch jumps most of the ramp in one step to land on 13 — the
-  /// floor Apple sets for anything a reader is expected to parse.
-  static double get micro => _touch ? 13 : 10.5;
+  /// hint. 10.5 is a real size on a Mac but too fine on a typical Windows
+  /// display and unreadable on a phone held at arm's length, so each gets a
+  /// larger floor suited to its viewing distance and rasterisation.
+  static double get micro => _touch
+      ? 13
+      : _windows
+      ? 11.5
+      : 10.5;
 
   /// Metadata, list snippets, the helper line under a control.
-  static double get caption => _touch ? 13 : 11.5;
+  static double get caption => _touch
+      ? 13
+      : _windows
+      ? 12.5
+      : 11.5;
 
   /// Dense secondary copy that is still read as a sentence.
-  static double get small => _touch ? 13.5 : 12;
+  static double get small => _touch
+      ? 13.5
+      : _windows
+      ? 13
+      : 12;
 
   /// Running paragraph copy inside dialogs and panes.
-  static double get body => _touch ? 15 : 12.5;
+  static double get body => _touch
+      ? 15
+      : _windows
+      ? 13.5
+      : 12.5;
 
   /// The result chip in the gutter.
   ///
@@ -550,20 +595,40 @@ class AppTypeScale {
   /// the type has to be chosen against that column rather than against the
   /// prose elsewhere. Touch gains what the column can actually seat without
   /// pushing the writing area below half the screen.
-  static double get result => _touch ? 14 : 12.5;
+  static double get result => _touch
+      ? 14
+      : _windows
+      ? 13
+      : 12.5;
 
   /// Control labels: buttons, list rows, fields, menu items.
-  static double get control => _touch ? 15 : 13;
+  static double get control => _touch
+      ? 15
+      : _windows
+      ? 14
+      : 13;
 
   /// Section titles, the app-bar title, an empty state's first line.
-  static double get title => _touch ? 17 : 15;
+  static double get title => _touch
+      ? 17
+      : _windows
+      ? 16
+      : 15;
 
   /// Dialog titles — the largest step in ordinary chrome.
-  static double get heading => _touch ? 20 : 16;
+  static double get heading => _touch
+      ? 20
+      : _windows
+      ? 19
+      : 16;
 
   /// The brand lockup, which is set in its own face and carries its own
   /// optical size a half point off [title].
-  static double get wordmark => _touch ? 17 : 14.5;
+  static double get wordmark => _touch
+      ? 17
+      : _windows
+      ? 15.5
+      : 14.5;
 
   /// The lockup on the empty state, the one display-sized thing in the app.
   static double get display => _touch ? 34 : 31;
@@ -746,6 +811,13 @@ class KapyTheme {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: scheme,
+      // Use the face drawn for each operating system's interface. Flutter's
+      // Material default is Roboto even on Windows, where Segoe UI has clearer
+      // hinting and more familiar proportions at small desktop sizes.
+      fontFamily: AppPlatform.isWindows ? AppPlatform.uiFontFamily : null,
+      fontFamilyFallback: AppPlatform.isWindows
+          ? AppPlatform.uiFontFallback
+          : null,
       scaffoldBackgroundColor: palette.editorBackground,
       // Desktop wants tighter controls than the phone default.
       visualDensity: AppPlatform.isDesktop
@@ -789,27 +861,44 @@ class KapyTheme {
             fontWeight: FontWeight.w400,
           ),
           bodyLarge: base.textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.w300,
+            fontWeight: AppPlatform.isWindows
+                ? FontWeight.w400
+                : FontWeight.w300,
           ),
           bodyMedium: base.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w300,
+            fontWeight: AppPlatform.isWindows
+                ? FontWeight.w400
+                : FontWeight.w300,
           ),
           bodySmall: base.textTheme.bodySmall?.copyWith(
-            fontWeight: FontWeight.w300,
+            fontWeight: AppPlatform.isWindows
+                ? FontWeight.w400
+                : FontWeight.w300,
+            fontSize: AppPlatform.isWindows ? AppTypeScale.caption : null,
+            height: AppPlatform.isWindows ? 1.3 : null,
           ),
           labelLarge: base.textTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w400,
           ),
           labelMedium: base.textTheme.labelMedium?.copyWith(
             fontWeight: FontWeight.w400,
+            fontSize: AppPlatform.isWindows ? AppTypeScale.caption : null,
           ),
           labelSmall: base.textTheme.labelSmall?.copyWith(
             fontWeight: FontWeight.w400,
+            fontSize: AppPlatform.isWindows ? AppTypeScale.micro : null,
+            height: AppPlatform.isWindows ? 1.2 : null,
           ),
         )
         .apply(
           bodyColor: palette.textPrimary,
           displayColor: palette.textPrimary,
+        );
+
+    OutlineInputBorder fieldBorder(Color color, {double width = 1}) =>
+        OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+          borderSide: BorderSide(color: color, width: width),
         );
 
     return base.copyWith(
@@ -859,11 +948,11 @@ class KapyTheme {
         titleTextStyle: base.textTheme.titleMedium?.copyWith(
           color: palette.textPrimary,
           fontSize: AppTypeScale.heading,
-          fontWeight: FontWeight.w400,
+          fontWeight: FontWeight.w600,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: palette.controlBorder, width: 0.5),
+          borderRadius: BorderRadius.circular(AppRadii.dialog),
+          side: BorderSide(color: palette.controlBorder),
         ),
       ),
       popupMenuTheme: PopupMenuThemeData(
@@ -878,8 +967,8 @@ class KapyTheme {
           color: palette.textPrimary,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(9),
-          side: BorderSide(color: palette.controlBorder, width: 0.5),
+          borderRadius: BorderRadius.circular(AppRadii.surface),
+          side: BorderSide(color: palette.controlBorder),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
@@ -908,55 +997,189 @@ class KapyTheme {
             return BorderSide.none;
           }),
           shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadii.icon),
+            ),
           ),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          minimumSize: Size(0, buttonHeight),
-          padding: EdgeInsets.symmetric(horizontal: compactControls ? 12 : 18),
-          tapTargetSize: tapTarget,
-          elevation: 0,
-          shadowColor: Colors.transparent,
-          backgroundColor: accent,
-          foregroundColor: onAccent,
-          disabledBackgroundColor: palette.controlBackground,
-          disabledForegroundColor: palette.textTertiary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-          textStyle: base.textTheme.labelLarge?.copyWith(
-            fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
+        style:
+            FilledButton.styleFrom(
+              minimumSize: Size(0, buttonHeight),
+              padding: EdgeInsets.symmetric(
+                horizontal: compactControls ? 14 : 20,
+                vertical: AppControlMetrics.buttonVerticalPadding,
+              ),
+              visualDensity: VisualDensity.standard,
+              tapTargetSize: tapTarget,
+              elevation: 0,
+              shadowColor: Colors.transparent,
+              backgroundColor: accent,
+              foregroundColor: onAccent,
+              disabledBackgroundColor: palette.controlBackground,
+              disabledForegroundColor: palette.textTertiary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadii.button),
+              ),
+              textStyle: base.textTheme.labelLarge?.copyWith(
+                fontSize: AppTypeScale.control,
+                fontWeight: FontWeight.w600,
+              ),
+            ).copyWith(
+              backgroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.disabled)) {
+                  return palette.controlBackground;
+                }
+                if (states.contains(WidgetState.pressed)) {
+                  return Color.alphaBlend(
+                    onAccent.withValues(alpha: 0.13),
+                    accent,
+                  );
+                }
+                if (states.contains(WidgetState.hovered) ||
+                    states.contains(WidgetState.focused)) {
+                  return Color.alphaBlend(
+                    onAccent.withValues(alpha: 0.07),
+                    accent,
+                  );
+                }
+                return accent;
+              }),
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+              animationDuration: const Duration(milliseconds: 120),
+            ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          minimumSize: Size(0, buttonHeight),
-          padding: EdgeInsets.symmetric(horizontal: compactControls ? 12 : 18),
-          tapTargetSize: tapTarget,
-          elevation: 0,
-          foregroundColor: palette.textPrimary,
-          side: BorderSide(color: palette.controlBorder, width: 0.5),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: base.textTheme.labelLarge?.copyWith(
-            fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
+        style:
+            OutlinedButton.styleFrom(
+              minimumSize: Size(0, buttonHeight),
+              padding: EdgeInsets.symmetric(
+                horizontal: compactControls ? 14 : 20,
+                vertical: AppControlMetrics.buttonVerticalPadding,
+              ),
+              visualDensity: VisualDensity.standard,
+              tapTargetSize: tapTarget,
+              elevation: 0,
+              shadowColor: Colors.transparent,
+              foregroundColor: palette.textPrimary,
+              side: BorderSide(color: palette.controlBorder),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadii.button),
+              ),
+              textStyle: base.textTheme.labelLarge?.copyWith(
+                fontSize: AppTypeScale.control,
+                fontWeight: FontWeight.w600,
+              ),
+            ).copyWith(
+              backgroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.pressed)) {
+                  return accent.withValues(alpha: 0.13);
+                }
+                if (states.contains(WidgetState.hovered) ||
+                    states.contains(WidgetState.focused)) {
+                  return palette.hover;
+                }
+                return Colors.transparent;
+              }),
+              side: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.disabled)) {
+                  return BorderSide(
+                    color: palette.controlBorder.withValues(alpha: 0.55),
+                  );
+                }
+                if (states.contains(WidgetState.focused)) {
+                  return BorderSide(color: palette.selectedBorder, width: 1.25);
+                }
+                return BorderSide(color: palette.controlBorder);
+              }),
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+              animationDuration: const Duration(milliseconds: 120),
+            ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
+        style:
+            TextButton.styleFrom(
+              minimumSize: Size(0, buttonHeight),
+              padding: EdgeInsets.symmetric(
+                horizontal: compactControls ? 11 : 16,
+                vertical: AppControlMetrics.buttonVerticalPadding,
+              ),
+              visualDensity: VisualDensity.standard,
+              tapTargetSize: tapTarget,
+              foregroundColor: accent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadii.icon),
+              ),
+              textStyle: base.textTheme.labelLarge?.copyWith(
+                fontSize: AppTypeScale.control,
+                fontWeight: FontWeight.w600,
+              ),
+            ).copyWith(
+              backgroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.pressed)) {
+                  return accent.withValues(alpha: 0.14);
+                }
+                if (states.contains(WidgetState.hovered) ||
+                    states.contains(WidgetState.focused)) {
+                  return accent.withValues(alpha: 0.08);
+                }
+                return Colors.transparent;
+              }),
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+              animationDuration: const Duration(milliseconds: 120),
+            ),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: SegmentedButton.styleFrom(
+          foregroundColor: palette.textSecondary,
+          backgroundColor: palette.surfaceBackground,
+          selectedForegroundColor: onAccent,
+          selectedBackgroundColor: accent,
+          disabledForegroundColor: palette.textTertiary,
+          disabledBackgroundColor: palette.controlBackground,
+          shadowColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          iconSize: AppControlMetrics.iconControl,
           minimumSize: Size(0, buttonHeight),
-          padding: EdgeInsets.symmetric(horizontal: compactControls ? 10 : 14),
+          padding: EdgeInsets.symmetric(
+            horizontal: compactControls ? 14 : 18,
+            vertical: AppControlMetrics.buttonVerticalPadding,
+          ),
+          visualDensity: VisualDensity.standard,
+          side: BorderSide(color: palette.controlBorder),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.button),
+          ),
           tapTargetSize: tapTarget,
-          foregroundColor: accent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
           textStyle: base.textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w400,
+            fontWeight: FontWeight.w600,
           ),
+          overlayColor: Colors.transparent,
+          animationDuration: const Duration(milliseconds: 120),
         ),
+      ),
+      inputDecorationTheme: InputDecorationThemeData(
+        isDense: true,
+        filled: true,
+        fillColor: palette.controlBackground,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: compactControls ? 12 : 14,
+          vertical: AppControlMetrics.fieldVerticalPadding,
+        ),
+        hintStyle: base.textTheme.bodyMedium?.copyWith(
+          fontSize: AppTypeScale.control,
+          color: palette.textTertiary,
+        ),
+        labelStyle: base.textTheme.bodyMedium?.copyWith(
+          fontSize: AppTypeScale.control,
+          color: palette.textSecondary,
+        ),
+        prefixIconColor: palette.textTertiary,
+        suffixIconColor: palette.textTertiary,
+        border: fieldBorder(palette.controlBorder),
       ),
       switchTheme: SwitchThemeData(
         materialTapTargetSize: tapTarget,
@@ -1005,8 +1228,8 @@ class KapyTheme {
         ),
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: palette.controlBorder, width: 0.5),
+          borderRadius: BorderRadius.circular(AppRadii.control),
+          border: Border.all(color: palette.controlBorder),
         ),
       ),
     );

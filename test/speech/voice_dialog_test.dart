@@ -4,7 +4,6 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/audio/voice_player.dart';
-import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
@@ -13,21 +12,10 @@ import 'package:material_ui/material_ui.dart';
 
 import '../test_fonts.dart';
 
-late Directory tempDir;
-late BlobStore store;
-
-/// Answers without touching the disk: real file I/O awaited inside
-/// `testWidgets` runs in a fake-async zone and never completes.
-class _ImmediateBlobStore extends BlobStore {
-  _ImmediateBlobStore({required Directory directory})
-    : _directory = directory,
-      super(directory: directory);
-
-  final Directory _directory;
-
-  @override
-  Future<File?> fileFor(String hash) async => File('${_directory.path}/$hash');
-}
+/// Hands the player a file without touching the disk: real file I/O awaited
+/// inside `testWidgets` runs in a fake-async zone and never completes. The
+/// fake backend never reads it.
+Future<File?> _alreadyHere(String hash) async => File('/tmp/$hash.m4a');
 
 class _FakeBackend implements VoicePlayerBackend {
   final positionController = StreamController<Duration>.broadcast();
@@ -76,7 +64,6 @@ Widget harness(
     body: VoiceNoteView(
       ref: ref,
       state: state,
-      blobs: store,
       player: player,
       actions: actions,
     ),
@@ -86,11 +73,7 @@ Widget harness(
 void main() {
   setUpAll(() async {
     await loadTestFonts();
-    tempDir = await Directory.systemTemp.createTemp('kapy-voice-dialog');
-    store = _ImmediateBlobStore(directory: tempDir);
   });
-
-  tearDownAll(() => tempDir.delete(recursive: true));
 
   testWidgets('the elapsed time follows the recording as it plays', (
     tester,
@@ -100,7 +83,7 @@ void main() {
     // built against a figure that only ever changed when playback started or
     // stopped. It sat at 0:00 for the whole recording.
     final backend = _FakeBackend();
-    final player = VoicePlayer(backend: backend);
+    final player = VoicePlayer(backend: backend, files: _alreadyHere);
 
     await tester.pumpWidget(harness(recording(), player));
     await tester.pumpAndSettle();
@@ -117,10 +100,30 @@ void main() {
     player.dispose();
   });
 
+  testWidgets('says when a recording from another device could not come down', (
+    tester,
+  ) async {
+    // No connection, or not uploaded yet by the device that recorded it. The
+    // button used to stay an ordinary play button that did nothing at all.
+    final backend = _FakeBackend();
+    final player = VoicePlayer(backend: backend, files: (_) async => null);
+
+    await tester.pumpWidget(harness(recording(), player));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Play'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip("Couldn't download. Try again"), findsOneWidget);
+    expect(backend.plays, 0);
+
+    player.dispose();
+  });
+
   testWidgets('a local transcript remains readable while cloud summary waits', (
     tester,
   ) async {
-    final player = VoicePlayer(backend: _FakeBackend());
+    final player = VoicePlayer(backend: _FakeBackend(), files: _alreadyHere);
     final ref = recording(
       transcript: VoiceTranscript(
         lang: 'en',
@@ -143,7 +146,7 @@ void main() {
   testWidgets('signed out points to the transcription choice, not sign in', (
     tester,
   ) async {
-    final player = VoicePlayer(backend: _FakeBackend());
+    final player = VoicePlayer(backend: _FakeBackend(), files: _alreadyHere);
     var openedSettings = false;
 
     await tester.pumpWidget(
@@ -186,7 +189,7 @@ void main() {
       // already holding — so reading the transcript and tapping the line you
       // wanted to hear did nothing at all.
       final backend = _FakeBackend();
-      final player = VoicePlayer(backend: backend);
+      final player = VoicePlayer(backend: backend, files: _alreadyHere);
 
       await tester.pumpWidget(
         harness(recording(transcript: transcript), player),

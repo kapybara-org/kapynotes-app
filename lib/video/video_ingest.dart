@@ -5,14 +5,18 @@ import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
 
 import '../data/blob_store.dart';
+import '../data/attachment_limits.dart';
 import '../data/note_attachment.dart';
 import '../sync/aead.dart';
 import '../sync/sealed_box.dart';
 
-/// The server's 25 MiB object ceiling minus the framing and authentication
-/// bytes added when the local file is sealed.
-const int maxVideoBytes =
-    25 * 1024 * 1024 - 1 - SealedBox.nonceLength - SealedBox.macLength;
+/// The local source must leave room for framing and authentication bytes when
+/// it is sealed. The server measures the resulting ciphertext.
+const int videoSealingOverhead =
+    1 + SealedBox.nonceLength + SealedBox.macLength;
+
+int maxVideoSourceBytesFor(int attachmentMaxBytes) =>
+    attachmentMaxBytes - videoSealingOverhead;
 
 const Set<String> supportedVideoExtensions = {'mp4', 'm4v', 'mov'};
 
@@ -79,6 +83,7 @@ Future<VideoBatch> ingestVideoFiles(
   required BlobStore store,
   VideoMetadataReader metadataReader = readVideoMetadata,
   int limit = 10,
+  int attachmentMaxBytes = freeAttachmentMaxBytes,
 }) async {
   final videos = <NoteVideoRef>[];
   final rejections = <({String name, VideoRejection reason})>[];
@@ -100,7 +105,7 @@ Future<VideoBatch> ingestVideoFiles(
         rejections.add((name: name, reason: VideoRejection.empty));
         continue;
       }
-      if (length > maxVideoBytes) {
+      if (length > maxVideoSourceBytesFor(attachmentMaxBytes)) {
         rejections.add((name: name, reason: VideoRejection.tooLarge));
         continue;
       }
@@ -109,7 +114,7 @@ Future<VideoBatch> ingestVideoFiles(
         rejections.add((name: name, reason: VideoRejection.empty));
         continue;
       }
-      if (bytes.length > maxVideoBytes) {
+      if (bytes.length > maxVideoSourceBytesFor(attachmentMaxBytes)) {
         rejections.add((name: name, reason: VideoRejection.tooLarge));
         continue;
       }
@@ -167,8 +172,12 @@ String mimeForVideoFilename(String name) {
   };
 }
 
-String describeVideoRejection(VideoRejection reason) => switch (reason) {
-  VideoRejection.tooLarge => 'is larger than the 25 MB attachment limit',
+String describeVideoRejection(
+  VideoRejection reason, {
+  int attachmentMaxBytes = freeAttachmentMaxBytes,
+}) => switch (reason) {
+  VideoRejection.tooLarge =>
+    'is larger than the ${attachmentMaxBytes ~/ (1024 * 1024)} MB attachment limit',
   VideoRejection.tooMany => 'is beyond the 10-video selection limit',
   VideoRejection.unsupported => 'is not an MP4, M4V, or MOV video',
   VideoRejection.unreadable => 'is not a video this device can play',

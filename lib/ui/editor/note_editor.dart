@@ -5,7 +5,9 @@ import 'dart:ui' show BoxHeightStyle, BoxWidthStyle, Locale;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart'
     show
+        PointerDeviceKind,
         computeHitSlop,
+        kDoubleTapTimeout,
         kLongPressTimeout,
         kPrimaryButton,
         kSecondaryButton,
@@ -26,6 +28,7 @@ import '../../core/appearance.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../data/daily_separator.dart';
+import '../../data/attachment_limits.dart';
 import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
 import '../notebook_paper.dart';
@@ -119,6 +122,7 @@ class NoteEditor extends StatefulWidget {
     this.onImagesRejected,
     this.videoAcquirer,
     this.videoIngestor,
+    this.videoAttachmentMaxBytes,
     this.uploadProgressFor,
     this.typing = const [],
     this.remoteCarets,
@@ -215,6 +219,11 @@ class NoteEditor extends StatefulWidget {
 
   final VideoFileAcquirer? videoAcquirer;
   final VideoBatchIngestor? videoIngestor;
+
+  /// Read when a selection is made rather than when the editor is built, so
+  /// an in-app upgrade or a refreshed shared-space owner limit applies without
+  /// remounting the note.
+  final int Function()? videoAttachmentMaxBytes;
 
   /// Null while signed out. Media is then fully local and should clear as
   /// soon as preparation finishes rather than wait for a network that is not
@@ -342,6 +351,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   late final _DailySeparatorFormatter _dailySeparatorFormatter;
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
+  Timer? _pasteOfferTimer;
+
+  /// How many of the editor's edit menus are on screen. A count rather than a
+  /// flag: a menu shown again can mount before the one it replaces goes.
+  int _editMenus = 0;
   Timer? _keywordHoverTimer;
   Timer? _kapyPeekIdleTimer;
   VoidCallback? _kapyPeekDismiss;
@@ -588,6 +602,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _correctionsArrived.dispose();
     _keyboardRetryTimer?.cancel();
     _selectionToolbarTimer?.cancel();
+    _pasteOfferTimer?.cancel();
     _keywordHoverTimer?.cancel();
     _kapyPeekIdleTimer?.cancel();
     _dismissKapyPeek();
@@ -850,6 +865,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       return;
     }
     _markdownQuiet = true;
+    // Typing straight after a tap is writing, not asking to paste.
+    _pasteOfferTimer?.cancel();
 
     // The text moved under the panel, so the rect it is pinned to no longer
     // describes the link.
@@ -1021,6 +1038,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           player?.progressFor(ref.hash) ??
           const AlwaysStoppedAnimation<double?>(null),
       playing: player?.isPlaying(ref.hash) ?? false,
+      opening: player?.isOpening(ref.hash) ?? false,
+      failure: player?.failureFor(ref.hash),
       onPlayPause: player == null ? null : () => _playPause(ref),
       onOpen: widget.onOpenVoiceNote == null
           ? null
@@ -1042,17 +1061,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   Future<void> _playPause(NoteVoiceRef ref) async {
     final player = widget.player;
-    final store = widget.images;
-    if (player == null || store == null) return;
-    if (player.isPlaying(ref.hash)) {
+    if (player == null) return;
+    // A press on a recording still on its way calls it off, as a pause would.
+    if (player.isPlaying(ref.hash) || player.isOpening(ref.hash)) {
       await player.pause();
       return;
     }
-    final file = await store.fileFor(ref.hash);
-    // Not on this device yet: it arrived by sync and the bytes have not come
-    // down. Silence is the honest outcome; the chip already says so.
-    if (file == null) return;
-    await player.play(ref.hash, file);
+    await player.play(ref.hash);
     if (mounted) setState(() {});
   }
 
@@ -1070,11 +1085,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       await player.seek(total * fraction);
       return;
     }
-    final store = widget.images;
-    if (store == null) return;
-    final file = await store.fileFor(ref.hash);
-    if (file == null) return;
-    await player.play(ref.hash, file, from: ref.duration * fraction);
+    await player.play(ref.hash, from: ref.duration * fraction);
   }
 
   /// Records refs this edit took out, against the text they were taken from.
@@ -1895,11 +1906,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       context,
       count == 1 ? 'Adding video…' : 'Adding $count videos…',
     );
+    final attachmentMaxBytes =
+        widget.videoAttachmentMaxBytes?.call() ?? freeAttachmentMaxBytes;
     try {
-      final batch = await (widget.videoIngestor ?? _ingestVideoFiles)(
-        files,
-        store,
-      );
+      final batch = widget.videoIngestor == null
+          ? await ingestVideoFiles(
+              files,
+              store: store,
+              attachmentMaxBytes: attachmentMaxBytes,
+            )
+          : await widget.videoIngestor!(files, store);
       if (!mounted) {
         progress.dismiss();
         return;
@@ -1912,7 +1928,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         progress.error(
           first == null
               ? 'Could not add that video'
-              : '${first.name} ${describeVideoRejection(first.reason)}',
+              : '${first.name} ${describeVideoRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes)}',
         );
       } else if (rejected > 0) {
         progress.success(
@@ -2191,10 +2207,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _caretForSecondaryTapOnMisspelling(event.position);
     }
     _prefetchCorrectionsAt(event.position);
+    // A new press is a new gesture — a second tap, a drag, a scroll — and
+    // whatever the last tap was about to offer is no longer the question.
+    _pasteOfferTimer?.cancel();
+    final touch =
+        event.kind == PointerDeviceKind.touch && !AppPlatform.hasPointer;
     _pointerDownDetails[event.pointer] = _PointerDownDetails(
       position: event.position,
       timeStamp: event.timeStamp,
       wasPrimary: event.buttons & kPrimaryButton != 0,
+      wasTouch: touch,
+      menuWasOpen: touch && _editMenus > 0,
+      selection: _controller.selection,
     );
     _stillPress = event.pointer;
   }
@@ -2372,7 +2396,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final editable = root == null ? null : _findRenderEditable(root);
     if (editable == null) return;
 
-    if (_caretToBlankRow(editable, event.position)) return;
+    if (_caretToBlankRow(editable, event.position)) {
+      _offerPasteAfterTap(down);
+      return;
+    }
 
     final offset = editable.getPositionForPoint(event.position).offset;
     final task = _markdownTaskAt(editable, event.position, offset);
@@ -2410,7 +2437,62 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       return;
     }
     final keyword = _keywordAtPoint(editable, event.position, offset);
-    if (keyword != null) _showKeywordTooltip(keyword);
+    if (keyword != null) {
+      _showKeywordTooltip(keyword);
+      return;
+    }
+    _offerPasteAfterTap(down);
+  }
+
+  /// Offers Paste after a plain tap on a phone, when there is something to
+  /// paste.
+  ///
+  /// Neither platform does on its own. Android hides its menu on every tap,
+  /// and iOS opens one only for a second tap landing exactly on the caret, so
+  /// Paste was a press-and-hold nobody finds. Only a tap that did nothing
+  /// else arrives here: one that ticked a box, opened a link's panel or
+  /// explained a calculator word has already been answered.
+  ///
+  /// It waits out a double tap, which selects a word instead, and asks the
+  /// clipboard before showing anything, since a menu offering Paste with
+  /// nothing to paste is only in the way. A tap on the caret while the menu is
+  /// open puts it away, and so does a tap that ends a selection; a tap
+  /// anywhere else brings it to the new caret.
+  void _offerPasteAfterTap(_PointerDownDetails down) {
+    _pasteOfferTimer?.cancel();
+    if (widget.readOnly || !down.wasTouch) return;
+    final before = down.selection;
+    if (down.menuWasOpen && before.isValid && !before.isCollapsed) return;
+    final putAwayAt = down.menuWasOpen ? before : null;
+    _pasteOfferTimer = Timer(
+      kDoubleTapTimeout,
+      () => unawaited(_showPasteOffer(putAwayAt: putAwayAt)),
+    );
+  }
+
+  Future<void> _showPasteOffer({TextSelection? putAwayAt}) async {
+    final editable = _editableTextState();
+    final caret = _controller.selection;
+    if (!mounted ||
+        editable == null ||
+        !_focusNode.hasFocus ||
+        !caret.isValid ||
+        !caret.isCollapsed ||
+        (putAwayAt != null && caret.baseOffset == putAwayAt.baseOffset)) {
+      return;
+    }
+    final text = _controller.text;
+    await editable.clipboardStatus.update();
+    if (!mounted ||
+        !_focusNode.hasFocus ||
+        _controller.text != text ||
+        _controller.selection != caret ||
+        editable.clipboardStatus.value != ClipboardStatus.pasteable) {
+      return;
+    }
+    // Does nothing when the menu is already up, as it is when iOS opened its
+    // own for a tap on the caret.
+    editable.showToolbar();
   }
 
   /// Confetti over the box just ticked, with a fuller burst for the last one.
@@ -2811,20 +2893,30 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     ];
   }
 
-  /// The menu behind a right-click, a press-and-hold, or the keyboard.
+  /// The menu behind a right-click, a press-and-hold, a tap on a phone, or
+  /// the keyboard.
+  ///
+  /// A phone shows the first few buttons of its toolbar and hides the rest
+  /// behind More, so there the order is the design: the edit people came for
+  /// leads — Copy with something selected, Paste with nothing — and the
+  /// note's own actions follow. A pointer's menu is a column that shows
+  /// everything, and keeps the order it has always had.
   Widget _contextMenu(
     BuildContext context,
     EditableTextState editableTextState,
   ) {
     final selection = editableTextState.textEditingValue.selection;
+    final touch = !AppPlatform.hasPointer;
     final link = _linkForSelection(selection);
     final linkItems = _linkContextMenuItems(link);
     if (widget.readOnly) {
+      final editItems = _withRichCopy(_editItems(editableTextState), selection);
       return NoteEditorContextMenu(
         anchors: editableTextState.contextMenuAnchors,
         buttonItems: [
-          ...linkItems,
-          ..._withRichCopy(editableTextState.contextMenuButtonItems, selection),
+          if (!touch) ...linkItems,
+          ...editItems,
+          if (touch) ...linkItems,
           if (_controller.text.isNotEmpty)
             ContextMenuButtonItem(
               label: 'Copy plain text',
@@ -2835,12 +2927,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
     if (selection.isCollapsed) {
       final spellingItems = _spellingContextMenuItems(selection);
+      final editItems = _withImagePaste(_editItems(editableTextState));
+      bool isPaste(ContextMenuButtonItem item) =>
+          item.type == ContextMenuButtonType.paste;
       return NoteEditorContextMenu(
         anchors: editableTextState.contextMenuAnchors,
         buttonItems: [
+          if (touch) ...editItems.where(isPaste),
           ...spellingItems,
           ...linkItems,
-          if (widget.images != null && !AppPlatform.hasPointer)
+          if (touch) ...editItems.where((item) => !isPaste(item)),
+          if (widget.images != null && touch)
             ContextMenuButtonItem(
               label: 'Add image',
               onPressed: () {
@@ -2848,7 +2945,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 unawaited(pickAndInsertImages());
               },
             ),
-          if (widget.images != null && !AppPlatform.hasPointer)
+          if (widget.images != null && touch)
             ContextMenuButtonItem(
               label: 'Add video',
               onPressed: () {
@@ -2859,7 +2956,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           // Touch only, beside Add Image: on a phone the footer
           // row has no space left, so the press-and-hold menu is
           // where every insert action already lives.
-          if (widget.onRecordVoice != null && !AppPlatform.hasPointer)
+          if (widget.onRecordVoice != null && touch)
             ContextMenuButtonItem(
               label: 'Record voice note',
               onPressed: () {
@@ -2872,8 +2969,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               label: 'Copy plain text',
               onPressed: () => unawaited(_copyPlainText(selection)),
             ),
-          ..._withImagePaste(editableTextState.contextMenuButtonItems),
+          if (!touch) ...editItems,
         ],
+      );
+    }
+    if (touch) {
+      return NoteEditorContextMenu(
+        anchors: editableTextState.contextMenuAnchors,
+        buttonItems: _touchSelectionItems(
+          editableTextState,
+          selection,
+          linkItems,
+        ),
       );
     }
     return NoteSelectionFormattingToolbar(
@@ -2898,8 +3005,101 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       onCopy: _selectionContainsImage(selection)
           ? () => unawaited(_copyRichSelection(selection))
           : null,
+      // The same rule as the menu's Paste: through the editor wherever a
+      // picture could be on the clipboard, and the field's own paste where
+      // one could not.
+      onPaste: widget.images == null
+          ? null
+          : () => unawaited(handlePaste(SelectionChangedCause.toolbar)),
       onCopyPlainText: () => unawaited(_copyPlainText(selection)),
     );
+  }
+
+  /// The field's Cut, Copy, Paste and Select All, asked of the field itself,
+  /// followed by whatever else the platform adds.
+  ///
+  /// `contextMenuButtonItems` withholds every one of the four until the
+  /// clipboard has been checked, and goes on withholding them if that check
+  /// fails, which left a phone's menu without Copy for as long as the check
+  /// took, or for good. Only Paste needs the answer; the builder rebuilds the
+  /// menu when it comes.
+  List<ContextMenuButtonItem> _editItems(EditableTextState editable) {
+    const ownTypes = {
+      ContextMenuButtonType.cut,
+      ContextMenuButtonType.copy,
+      ContextMenuButtonType.paste,
+      ContextMenuButtonType.selectAll,
+    };
+    return [
+      if (editable.cutEnabled)
+        ContextMenuButtonItem(
+          type: ContextMenuButtonType.cut,
+          onPressed: () => editable.cutSelection(SelectionChangedCause.toolbar),
+        ),
+      if (editable.copyEnabled)
+        ContextMenuButtonItem(
+          type: ContextMenuButtonType.copy,
+          onPressed: () =>
+              editable.copySelection(SelectionChangedCause.toolbar),
+        ),
+      if (editable.pasteEnabled)
+        ContextMenuButtonItem(
+          type: ContextMenuButtonType.paste,
+          onPressed: () =>
+              unawaited(editable.pasteText(SelectionChangedCause.toolbar)),
+        ),
+      if (editable.selectAllEnabled)
+        ContextMenuButtonItem(
+          type: ContextMenuButtonType.selectAll,
+          onPressed: () => editable.selectAll(SelectionChangedCause.toolbar),
+        ),
+      for (final item in editable.contextMenuButtonItems)
+        if (!ownTypes.contains(item.type)) item,
+    ];
+  }
+
+  /// A phone's toolbar for selected text.
+  ///
+  /// The platform's Cut, Copy and Paste lead, because copying is what a
+  /// selection on a phone is usually for — the formatting row a pointer gets
+  /// had put Copy behind a More button. The rest follows in the order the
+  /// toolbar tucks it away: corrections, the platform's other actions, the
+  /// link, and the note's own formatting, which the footer's writing tools
+  /// also carry.
+  List<ContextMenuButtonItem> _touchSelectionItems(
+    EditableTextState editableTextState,
+    TextSelection selection,
+    List<ContextMenuButtonItem> linkItems,
+  ) {
+    final nativeItems = _withImagePaste(
+      _withRichCopy(_editItems(editableTextState), selection),
+    );
+    bool isEdit(ContextMenuButtonItem item) =>
+        item.type == ContextMenuButtonType.cut ||
+        item.type == ContextMenuButtonType.copy ||
+        item.type == ContextMenuButtonType.paste;
+    ContextMenuButtonItem action(String label, VoidCallback onPressed) =>
+        ContextMenuButtonItem(
+          label: label,
+          onPressed: () {
+            ContextMenuController.removeAny();
+            onPressed();
+          },
+        );
+    return [
+      ...nativeItems.where(isEdit),
+      ..._spellingContextMenuItems(selection),
+      ...nativeItems.where((item) => !isEdit(item)),
+      ...linkItems,
+      ContextMenuButtonItem(
+        label: 'Copy plain text',
+        onPressed: () => unawaited(_copyPlainText(selection)),
+      ),
+      action('Bold', () => _toggleInlineFormat(NoteFormat.bold)),
+      action('Italic', () => _toggleInlineFormat(NoteFormat.italic)),
+      action('Bulleted list', _toggleBullets),
+      action('Checklist', _toggleChecklist),
+    ];
   }
 
   /// The misspelling a selection is asking about: the caret inside a word, or
@@ -3949,12 +4149,22 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   const _ImageLineFormatter(),
                 ],
                 contextMenuBuilder: (context, editableTextState) =>
-                    ValueListenableBuilder<int>(
-                      // Rebuilds the menu if a word's corrections arrive after
-                      // it opened, rather than leaving it half-answered.
-                      valueListenable: _correctionsArrived,
-                      builder: (context, _, _) =>
-                          _contextMenu(context, editableTextState),
+                    _EditMenuPresence(
+                      // Counted, not read off the field: a tap on a phone
+                      // needs to know whether it is putting a menu away.
+                      onPresence: (shown) => _editMenus += shown ? 1 : -1,
+                      child: ListenableBuilder(
+                        // Rebuilds the menu when a word's corrections arrive
+                        // after it opened, and when the clipboard answers:
+                        // until it has, the field offers no Paste at all.
+                        // Either way the menu is not left half-answered.
+                        listenable: Listenable.merge([
+                          _correctionsArrived,
+                          editableTextState.clipboardStatus,
+                        ]),
+                        builder: (context, _) =>
+                            _contextMenu(context, editableTextState),
+                      ),
                     ),
                 textAlignVertical: TextAlignVertical.top,
                 // Spelling may point something out, but the calculator must
@@ -3971,6 +4181,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 decoration: const InputDecoration(
                   isCollapsed: true,
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  focusedErrorBorder: InputBorder.none,
                   filled: false,
                   hoverColor: Colors.transparent,
                   contentPadding: EdgeInsets.zero,
@@ -3988,9 +4203,6 @@ Future<ImageIngestResult> _finishStagedImage(
   StagedImage staged,
   BlobStore store,
 ) => finishStagedImage(staged, store: store);
-
-Future<VideoBatch> _ingestVideoFiles(List<XFile> files, BlobStore store) =>
-    ingestVideoFiles(files, store: store);
 
 /// A link and where it was drawn, paired so the panel can be put against it.
 class _LinkHit {
@@ -4019,11 +4231,56 @@ class _PointerDownDetails {
     required this.position,
     required this.timeStamp,
     required this.wasPrimary,
+    required this.wasTouch,
+    required this.menuWasOpen,
+    required this.selection,
   });
 
   final Offset position;
   final Duration timeStamp;
   final bool wasPrimary;
+
+  /// A finger on a touch device, rather than a mouse, a trackpad or a pen.
+  final bool wasTouch;
+
+  /// Whether the edit menu was showing when the press began, which is what
+  /// makes a tap on the caret put it away rather than bring it back.
+  final bool menuWasOpen;
+
+  /// The selection the press began with.
+  final TextSelection selection;
+}
+
+/// Reports an edit menu arriving on screen and leaving it.
+///
+/// Flutter keeps whether its toolbar is showing to itself — the overlay that
+/// knows is marked for tests — but the editor builds the menu, so it can watch
+/// its own widget come and go instead.
+class _EditMenuPresence extends StatefulWidget {
+  const _EditMenuPresence({required this.onPresence, required this.child});
+
+  final ValueChanged<bool> onPresence;
+  final Widget child;
+
+  @override
+  State<_EditMenuPresence> createState() => _EditMenuPresenceState();
+}
+
+class _EditMenuPresenceState extends State<_EditMenuPresence> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onPresence(true);
+  }
+
+  @override
+  void dispose() {
+    widget.onPresence(false);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _Placeholder extends StatelessWidget {
@@ -4509,7 +4766,10 @@ class _UnknownChip extends StatelessWidget {
           'Needs a newer Kapy Notes',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 12, color: palette.textSecondary),
+          style: TextStyle(
+            fontSize: AppTypeScale.small,
+            color: palette.textSecondary,
+          ),
         ),
       ),
     );

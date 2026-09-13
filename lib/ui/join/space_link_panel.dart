@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../sync/joining.dart';
 import '../../sync/spaces.dart';
+import '../control_surface.dart';
 import 'joining_ui.dart';
 
 /// Runs a sharing action the way the share dialog runs all of them: progress
@@ -106,19 +107,31 @@ class _SpaceLinkPanelState extends State<SpaceLinkPanel> {
 
     if (link == null) {
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        key: const ValueKey('space-link-panel'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const JoinLabel('Or share a link'),
-          const JoinMessage(
-            'Anyone with the link can ask to join, from a group chat or '
-            'anywhere else. Nobody gets in until you let them.',
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            key: const ValueKey('space-link-create'),
-            onPressed: enabled ? _create : null,
-            icon: Icon(Icons.link_rounded, size: AppControlMetrics.iconControl),
-            label: const Text('Create a link'),
+          const JoinLabel('Share a link'),
+          KapyControlSurface(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const JoinMessage(
+                  'Anyone with the link can ask to join. Nobody gets in '
+                  'until you let them.',
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  key: const ValueKey('space-link-create'),
+                  onPressed: enabled ? _create : null,
+                  icon: KapyIcon(
+                    KapyIcons.linkRounded,
+                    size: AppControlMetrics.iconControl,
+                  ),
+                  label: const Text('Create a link'),
+                ),
+              ],
+            ),
           ),
         ],
       );
@@ -128,60 +141,71 @@ class _SpaceLinkPanelState extends State<SpaceLinkPanel> {
       context,
     ).formatMediumDate(link.expiresAt);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      key: const ValueKey('space-link-panel'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const JoinLabel('Link to ask to join'),
-        Container(
-          padding: const EdgeInsets.fromLTRB(10, 4, 4, 4),
-          decoration: BoxDecoration(
-            color: palette.controlBackground,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: palette.controlBorder, width: 0.5),
-          ),
-          child: Row(
+        KapyControlSurface(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: SelectableText(
-                  link.url.toString(),
-                  key: const ValueKey('space-link-url'),
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.small,
-                    color: palette.textPrimary,
-                  ),
+              Container(
+                padding: const EdgeInsets.fromLTRB(11, 4, 4, 4),
+                decoration: BoxDecoration(
+                  color: palette.surfaceBackground,
+                  borderRadius: BorderRadius.circular(AppRadii.control),
+                  border: Border.all(color: palette.controlBorder),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        link.url.toString(),
+                        key: const ValueKey('space-link-url'),
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: AppTypeScale.small,
+                          color: palette.textPrimary,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      key: const ValueKey('space-link-copy'),
+                      tooltip: 'Copy link',
+                      onPressed: () => _copy(link),
+                      icon: KapyIcon(
+                        KapyIcons.copyRounded,
+                        size: AppControlMetrics.iconControl,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              IconButton(
-                key: const ValueKey('space-link-copy'),
-                tooltip: 'Copy link',
-                onPressed: () => _copy(link),
-                icon: Icon(
-                  Icons.copy_rounded,
-                  size: AppControlMetrics.iconControl,
-                ),
+              const SizedBox(height: 8),
+              JoinMessage(
+                'Works until $until. People you let in can '
+                '${_access(link.role)}.',
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  TextButton(
+                    key: const ValueKey('space-link-new'),
+                    onPressed: enabled ? _replace : null,
+                    child: const Text('New link'),
+                  ),
+                  TextButton(
+                    key: const ValueKey('space-link-off'),
+                    onPressed: enabled ? _turnOff : null,
+                    child: const Text('Turn off'),
+                  ),
+                ],
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 6),
-        JoinMessage(
-          'Works until $until. People you let in can ${_access(link.role)}.',
-        ),
-        const SizedBox(height: 4),
-        Wrap(
-          spacing: 4,
-          children: [
-            TextButton(
-              key: const ValueKey('space-link-new'),
-              onPressed: enabled ? _replace : null,
-              child: const Text('New link'),
-            ),
-            TextButton(
-              key: const ValueKey('space-link-off'),
-              onPressed: enabled ? _turnOff : null,
-              child: const Text('Turn off'),
-            ),
-          ],
         ),
       ],
     );

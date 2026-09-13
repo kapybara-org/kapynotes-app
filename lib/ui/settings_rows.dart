@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import 'control_surface.dart';
 
 /// The parts every settings pane is built from.
 ///
@@ -32,8 +33,24 @@ class SettingsMetrics {
   static double get iconSize => _touch ? 19 : 16;
   static double get iconSlot => _touch ? 30 : 25;
   static double get gap => _touch ? 11 : 9;
-  static double get titleSize => _touch ? 14.5 : 12.5;
-  static double get subtitleSize => _touch ? 12.25 : 10.75;
+  static double get titleSize => _touch
+      ? 14.5
+      : AppPlatform.isWindows
+      ? AppTypeScale.control
+      : 12.5;
+  static double get subtitleSize => _touch
+      ? 12.25
+      : AppPlatform.isWindows
+      ? AppTypeScale.caption
+      : 10.75;
+  static double get sectionLabelSize =>
+      AppPlatform.isWindows ? AppTypeScale.micro : 10.5;
+  static double get noteSize =>
+      AppPlatform.isWindows ? AppTypeScale.caption : 11;
+  static double get buttonLabelSize =>
+      AppPlatform.isWindows ? AppTypeScale.small : 12;
+  static FontWeight get titleWeight =>
+      AppPlatform.isWindows ? FontWeight.w500 : _mediumWeight;
   static double get chevronSize => _touch ? 21 : 18;
 
   /// Lines the dividers up under the copy rather than under the icons.
@@ -52,10 +69,12 @@ class SettingsLabel extends StatelessWidget {
     child: Text(
       text,
       style: TextStyle(
-        fontSize: 10.5,
-        fontWeight: _mediumWeight,
+        fontSize: SettingsMetrics.sectionLabelSize,
+        fontWeight: AppPlatform.isWindows ? FontWeight.w600 : _mediumWeight,
         letterSpacing: 0.65,
-        color: context.palette.textTertiary,
+        color: AppPlatform.isWindows
+            ? context.palette.textSecondary
+            : context.palette.textTertiary,
       ),
     ),
   );
@@ -70,28 +89,20 @@ class SettingsGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.controlBackground,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: palette.controlBorder, width: 0.5),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Column(
-          children: [
-            for (var index = 0; index < children.length; index++) ...[
-              if (index > 0)
-                Divider(
-                  height: 0.5,
-                  thickness: 0.5,
-                  indent: SettingsMetrics.dividerIndent,
-                  color: palette.separator,
-                ),
-              children[index],
-            ],
+    return KapyControlSurface(
+      child: Column(
+        children: [
+          for (var index = 0; index < children.length; index++) ...[
+            if (index > 0)
+              Divider(
+                height: 0.5,
+                thickness: 0.5,
+                indent: SettingsMetrics.dividerIndent,
+                color: palette.separator,
+              ),
+            children[index],
           ],
-        ),
+        ],
       ),
     );
   }
@@ -111,9 +122,11 @@ class SettingsNote extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final style = TextStyle(
-      fontSize: 11,
+      fontSize: SettingsMetrics.noteSize,
       height: 1.4,
-      color: palette.textTertiary,
+      color: AppPlatform.isWindows
+          ? palette.textSecondary
+          : palette.textTertiary,
     );
     final icon = this.icon;
     return Padding(
@@ -158,7 +171,7 @@ class SettingsRowCopy extends StatelessWidget {
           title,
           style: TextStyle(
             fontSize: SettingsMetrics.titleSize,
-            fontWeight: _mediumWeight,
+            fontWeight: SettingsMetrics.titleWeight,
             color: titleColor ?? palette.textPrimary,
           ),
         ),
@@ -168,6 +181,7 @@ class SettingsRowCopy extends StatelessWidget {
             subtitle,
             style: TextStyle(
               fontSize: SettingsMetrics.subtitleSize,
+              height: AppPlatform.isWindows ? 1.25 : null,
               color: palette.textSecondary,
             ),
           ),
@@ -337,7 +351,10 @@ class SettingsRowButton extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 12, fontWeight: _mediumWeight),
+        style: TextStyle(
+          fontSize: SettingsMetrics.buttonLabelSize,
+          fontWeight: SettingsMetrics.titleWeight,
+        ),
       ),
     );
   }

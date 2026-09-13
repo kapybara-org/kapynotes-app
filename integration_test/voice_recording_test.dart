@@ -96,13 +96,14 @@ void main() {
     final result = await controller.stop();
     expect(result, isNotNull);
 
-    final player = VoicePlayer();
+    final file = result!.file;
+    final player = VoicePlayer(files: (_) async => file);
     addTearDown(player.dispose);
 
     // iOS picks its decoder from the file extension, so a recording stored
     // without one is silent there and nowhere else. The temp file already ends
     // in .m4a; this proves the decoder accepts what the encoder wrote.
-    await player.play('hash', result!.file);
+    await player.play('hash');
     expect(player.activeHash, 'hash');
     expect(
       player.duration,

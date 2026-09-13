@@ -370,12 +370,14 @@ jobs:
         run: |
           set -euo pipefail
           downloads="https://dl.kapynotes.com/downloads"
-          # What "What's new" opens, in Settings and in the update panel: the
-          # entry on the site's changelog, not the auto-generated release page.
-          # The anchor is built the same way website/src/data/releases.ts does
-          # it — 1.2.0 becomes v1-2-0 — so the entry has to be deployed before
-          # the tag, or the reader lands at the top of the page instead.
-          notes="https://kapynotes.com/changelog#v$(echo "$VERSION" | tr '.' '-')"
+          # Every update surface gets a dedicated page. A fragment only
+          # scrolls the full changelog and used to leave every older release
+          # below the version somebody was deciding whether to install.
+          notes="https://kapynotes.com/changelog/$VERSION"
+          if ! curl -fsS --max-time 20 "$notes" | grep -Fq "data-release-version=\"$VERSION\""; then
+            echo "::error::$notes is missing. Add and deploy the changelog entry before tagging $VERSION."
+            exit 1
+          fi
           published="$(date -u '+%a, %d %b %Y %H:%M:%S +0000')"
           win_bytes="$(stat -c %s "dist/KapyNotes-$VERSION-setup.exe")"
 
@@ -460,19 +462,19 @@ jobs:
             "dist/KapyNotes-$VERSION-symbols-macos.zip" \
             "dist/KapyNotes-$VERSION-symbols-windows.zip"
 
-      # The site names this version in two load-bearing places: the download
-      # links, and the changelog anchor the update feeds just pointed every
-      # client at. Both come from one entry in releases.ts, and both are wrong
-      # until it is deployed — so check rather than assume, and say which.
+      # The site names this version in three load-bearing places: the download
+      # links, the public changelog anchor, and the focused page WinSparkle
+      # displays. They all come from one entry in releases.ts and are checked
+      # before the feeds publish; leave the confirmation in the run summary.
       - name: The site has to know about this version
         env:
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
-          anchor="v$(echo "$VERSION" | tr '.' '-')"
-          if curl -fsS --max-time 20 https://kapynotes.com/changelog | grep -q "id=\"$anchor\""; then
-            state="kapynotes.com/changelog already lists $VERSION. Nothing left to do."
+          notes="https://kapynotes.com/changelog/$VERSION"
+          if curl -fsS --max-time 20 "$notes" | grep -Fq "data-release-version=\"$VERSION\""; then
+            state="kapynotes.com already has the focused What's New page for $VERSION. Nothing left to do."
           else
-            state="**kapynotes.com/changelog does not list $VERSION yet.** Add the entry to \`website/src/data/releases.ts\` and run \`npm run deploy\` from \`website/\`. Until then the download links offer the previous release, and every \"What's new\" link lands at the top of the changelog."
+            state="**kapynotes.com does not have the focused What's New page for $VERSION.** Add the entry to \`website/src/data/releases.ts\` and run \`npm run deploy\` from \`website/\`."
           fi
           {
             echo "### Released $VERSION"

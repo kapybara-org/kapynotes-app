@@ -1,10 +1,12 @@
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/sync/joining.dart';
 import 'package:kapy_notes/sync/presence.dart';
 import 'package:kapy_notes/sync/sharing.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
@@ -14,9 +16,11 @@ import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
 import 'package:kapy_notes/ui/share_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
+import 'package:kapy_notes/ui/join/joining_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'sync/fake_server.dart';
+import 'test_fonts.dart';
 
 class MemoryStore extends LocalStore {
   MemoryStore() : super(fileName: 'share-dialog-test.json');
@@ -92,6 +96,7 @@ class Device {
 
 Widget harness(Widget child) => MaterialApp(
   theme: KapyTheme.dark(),
+  debugShowCheckedModeBanner: false,
   home: Scaffold(body: child),
 );
 
@@ -109,6 +114,8 @@ void main() {
   late FakeServer server;
   late Device alice;
   late Device bob;
+
+  setUpAll(loadTestFonts);
 
   setUp(() async {
     server = FakeServer();
@@ -166,8 +173,20 @@ void main() {
     expect(find.textContaining('Invitation sent to'), findsOneWidget);
     expect(find.text(bob.email), findsOneWidget);
     expect(find.text('View only · Invited, not joined yet'), findsOneWidget);
+    expect(find.byKey(const ValueKey('share-dialog-close')), findsOneWidget);
+    expect(find.byKey(const ValueKey('share-access-card')), findsOneWidget);
+    expect(find.byKey(const ValueKey('share-invite-card')), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Done'), findsNothing);
     expect(find.byKey(const ValueKey('unshare-note')), findsOneWidget);
     expect(find.byKey(const ValueKey('stop-sharing')), findsOneWidget);
+    final accessLabel = tester.getRect(find.text('People with access'));
+    final report = tester.getRect(find.byKey(const ValueKey('report-note')));
+    final accessCard = tester.getRect(
+      find.byKey(const ValueKey('share-access-card')),
+    );
+    expect(report.center.dx, greaterThan(accessLabel.center.dx));
+    expect(report.center.dy, closeTo(accessLabel.center.dy, 2));
+    expect(report.bottom, lessThanOrEqualTo(accessCard.top));
     expect(alice.notes.byId(note.id)!.isShared, isTrue);
     expect(server.outbox.single.to, bob.email);
     expect(
@@ -236,6 +255,10 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
     await tester.pumpAndSettle();
+    // Reconciliation persists the remade personal-note document on a short
+    // debounce. Advance it explicitly so the dialog test does not leave that
+    // storage timer behind after the route transition has finished.
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Share note'), findsNothing, reason: 'the sheet closed');
     expect(alice.notes.byId(note.id)!.isShared, isFalse);
@@ -616,5 +639,81 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('My notes'), findsNothing);
     expect(find.text('Only mine'), findsOneWidget);
+  });
+
+  testWidgets('shared note dialog stays clear and flat', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.physicalSize = const Size(560, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    late Note note;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      note = alice.notes.create(body: 'Holiday budget');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(note.id, email: bob.email);
+    });
+
+    final joining = Joining(
+      send: (method, path, {payload}) async => switch (path) {
+        final value when value.endsWith('/link') => {'link': null},
+        final value when value.endsWith('/requests') => {'requests': []},
+        _ => <String, Object?>{},
+      },
+      refreshSpaces: () async {},
+      requestSync: () {},
+    );
+    addTearDown(joining.dispose);
+
+    await tester.pumpWidget(
+      JoiningScope.value(joining: joining, child: opener(note, alice.sharing)),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await expectLater(
+      find.byType(AlertDialog),
+      matchesGoldenFile('goldens/share_dialog_dark.png'),
+    );
+  });
+
+  testWidgets('shared note dialog stacks its invite action on a phone', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    late Note note;
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      note = alice.notes.create(body: 'Holiday budget');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(note.id, email: bob.email);
+    });
+
+    await tester.pumpWidget(opener(note, alice.sharing));
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final field = tester.getRect(find.byKey(const ValueKey('share-email')));
+    final submit = tester.getRect(
+      find.byKey(const ValueKey('share-submit-Invite')),
+    );
+    expect(submit.top, greaterThan(field.bottom));
+    expect(tester.takeException(), isNull);
   });
 }

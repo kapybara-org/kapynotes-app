@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/blob_store.dart';
+import 'package:kapy_notes/data/attachment_limits.dart';
 import 'package:kapy_notes/video/video_ingest.dart';
 
 void main() {
@@ -91,6 +92,32 @@ void main() {
     expect(batch.videos, isEmpty);
     expect(batch.rejections.single.reason, VideoRejection.unsupported);
     expect(metadataReads, 0);
+  });
+
+  test('applies the active plan limit before opening a decoder', () async {
+    var metadataReads = 0;
+    final batch = await ingestVideoFiles(
+      [
+        await file('clip.mp4', [1, 2, 3]),
+      ],
+      store: store,
+      attachmentMaxBytes: videoSealingOverhead + 2,
+      metadataReader: (_) async {
+        metadataReads++;
+        return null;
+      },
+    );
+
+    expect(batch.videos, isEmpty);
+    expect(batch.rejections.single.reason, VideoRejection.tooLarge);
+    expect(metadataReads, 0);
+    expect(
+      describeVideoRejection(
+        VideoRejection.tooLarge,
+        attachmentMaxBytes: proAttachmentMaxBytes,
+      ),
+      'is larger than the 100 MB attachment limit',
+    );
   });
 
   test(

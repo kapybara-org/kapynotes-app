@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import 'compact_icon_button.dart';
+import 'control_surface.dart';
 import 'settings_rows.dart';
 
 /// One setting a search can find: what it is called, what else somebody
@@ -159,10 +160,6 @@ class SettingsSearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    OutlineInputBorder outline(Color color, double width) => OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8),
-      borderSide: BorderSide(color: color, width: width),
-    );
 
     return Focus(
       canRequestFocus: false,
@@ -192,19 +189,23 @@ class SettingsSearchField extends StatelessWidget {
             color: palette.textPrimary,
           ),
           cursorHeight: AppTypeScale.control + 2,
-          decoration: InputDecoration(
-            isDense: true,
+          decoration: kapyFieldDecoration(
+            context,
             hintText: 'Search settings',
             hintStyle: TextStyle(
               fontSize: AppTypeScale.control,
               color: palette.textTertiary,
             ),
-            prefixIcon: KapyIcon(
-              KapyIcons.searchRounded,
-              // This glyph has a wide circular silhouette, so the generic
-              // adornment size makes it look larger than the field's text.
-              size: AppControlMetrics.iconAdornment - 2,
-              color: palette.textTertiary,
+            // InputDecorator gives its prefix the whole adornment slot. Center
+            // loosens those constraints so the glyph keeps its intended size.
+            prefixIcon: Center(
+              widthFactor: 1,
+              heightFactor: 1,
+              child: KapyIcon(
+                KapyIcons.searchRounded,
+                size: AppControlMetrics.iconSearch,
+                color: palette.textTertiary,
+              ),
             ),
             prefixIconConstraints: BoxConstraints(
               minWidth: AppControlMetrics.fieldAdornmentSlot + 2,
@@ -233,11 +234,6 @@ class SettingsSearchField extends StatelessWidget {
             contentPadding: EdgeInsets.symmetric(
               vertical: AppControlMetrics.fieldVerticalPadding,
             ),
-            filled: true,
-            fillColor: palette.controlBackground,
-            border: outline(palette.controlBorder, 0.5),
-            enabledBorder: outline(palette.controlBorder, 0.5),
-            focusedBorder: outline(palette.selectedBorder, 0.75),
           ),
         ),
       ),

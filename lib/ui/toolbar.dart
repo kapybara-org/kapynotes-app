@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
@@ -22,9 +24,11 @@ class NoteToolbar extends StatelessWidget {
     super.key,
     required this.onToggleSidebar,
     required this.onCreate,
+    this.onSettingsPressed,
     this.onShare,
     this.sidebarVisible = true,
     this.sidebarShortcut,
+    this.settingsShortcut,
     this.showActions = true,
     this.alwaysOnTop = false,
     this.onToggleAlwaysOnTop,
@@ -40,6 +44,7 @@ class NoteToolbar extends StatelessWidget {
 
   final VoidCallback onToggleSidebar;
   final VoidCallback onCreate;
+  final VoidCallback? onSettingsPressed;
 
   /// Shares the note that is open. Null while nothing is selected, which
   /// leaves the action in place but greyed rather than moving the ones beside
@@ -52,6 +57,9 @@ class NoteToolbar extends StatelessWidget {
   /// Kept beside the action so a hover teaches the shortcut in either the
   /// wide sidebar or compact drawer layout.
   final String? sidebarShortcut;
+
+  /// The current chord for opening Settings, taught by the adjacent gear.
+  final String? settingsShortcut;
   final bool showActions;
 
   /// Whether the window is currently floating over other applications.
@@ -118,95 +126,114 @@ class NoteToolbar extends StatelessWidget {
       child: SizedBox(
         height: barHeight + topInset,
         child: LayoutBuilder(
-          builder: (context, constraints) => Stack(
-            children: [
-              // The bare drag surface. Everything above it either drags on its
-              // own account or is a button, and anything that is neither falls
-              // through to here — which is what keeps the empty stretches of
-              // the toolbar draggable.
-              Positioned.fill(
-                top: topInset,
-                child: const WindowDragArea(child: SizedBox.expand()),
+          builder: (context, constraints) {
+            final desiredLeadingRight =
+                constraints.maxWidth / 2 + _centreReserve;
+            final fixedLeadingWidth =
+                AppControlMetrics.iconButtonSlotExtent *
+                    (onSettingsPressed == null ? 1 : 2) +
+                (onSettingsPressed == null ? 0 : 2);
+            final leadingRight = math.max(
+              0.0,
+              math.min(
+                desiredLeadingRight,
+                constraints.maxWidth - _leadingInset - fixedLeadingWidth,
               ),
-              Positioned.fill(
-                top: topInset,
-                child: Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Balances the pin on the other side, so the lockup keeps
-                      // the exact centre of the toolbar rather than being
-                      // shouldered off it — two tests hold that to half a
-                      // pixel, and it is the reason the title bar reads as
-                      // centred at any window width.
-                      // Not gated on showActions: that hides the note actions
-                      // while the drawer covers them, and the pin is about the
-                      // window rather than the note.
-                      if (pinned != null)
-                        SizedBox(
-                          width: AppControlMetrics.iconButtonExtent + _pinGap,
+            );
+
+            return Stack(
+              children: [
+                // The bare drag surface. Everything above it either drags on its
+                // own account or is a button, and anything that is neither falls
+                // through to here — which is what keeps the empty stretches of
+                // the toolbar draggable.
+                Positioned.fill(
+                  top: topInset,
+                  child: const WindowDragArea(child: SizedBox.expand()),
+                ),
+                Positioned.fill(
+                  top: topInset,
+                  child: Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Balances the pin on the other side, so the lockup keeps
+                        // the exact centre of the toolbar rather than being
+                        // shouldered off it — two tests hold that to half a
+                        // pixel, and it is the reason the title bar reads as
+                        // centred at any window width.
+                        // Not gated on showActions: that hides the note actions
+                        // while the drawer covers them, and the pin is about the
+                        // window rather than the note.
+                        if (pinned != null)
+                          SizedBox(
+                            width: AppControlMetrics.iconButtonExtent + _pinGap,
+                          ),
+                        // The lockup carries its own drag region rather than
+                        // sitting inside one with the pin: DragToMoveArea waits
+                        // out the double-tap timeout before it yields, so a
+                        // button beneath it answers late on every single click.
+                        WindowDragArea(
+                          child: AppWordmark(
+                            key: const ValueKey('toolbar-app-wordmark'),
+                            markSize: AppControlMetrics.wordmarkMark,
+                            fontSize: AppTypeScale.wordmark,
+                            spacing: 6.5,
+                            mark: mascotController == null
+                                ? null
+                                : KapyHeaderMascot(
+                                    controller: mascotController!,
+                                    markSize: AppControlMetrics.wordmarkMark,
+                                  ),
+                          ),
                         ),
-                      // The lockup carries its own drag region rather than
-                      // sitting inside one with the pin: DragToMoveArea waits
-                      // out the double-tap timeout before it yields, so a
-                      // button beneath it answers late on every single click.
-                      WindowDragArea(
-                        child: AppWordmark(
-                          key: const ValueKey('toolbar-app-wordmark'),
-                          markSize: AppControlMetrics.wordmarkMark,
-                          fontSize: AppTypeScale.wordmark,
-                          spacing: 6.5,
-                          mark: mascotController == null
-                              ? null
-                              : KapyHeaderMascot(
-                                  controller: mascotController!,
-                                  markSize: AppControlMetrics.wordmarkMark,
-                                ),
-                        ),
-                      ),
-                      if (pinned != null) ...[
-                        const SizedBox(width: _pinGap),
-                        _ToolbarButton(
-                          icon: alwaysOnTop
-                              ? KapyIcons.pinRounded
-                              : KapyIcons.pinOutlined,
-                          tooltip: [
-                            alwaysOnTop ? 'Stop keeping on top' : 'Keep on top',
-                            ?alwaysOnTopShortcut,
-                          ].join('  '),
-                          selected: alwaysOnTop,
-                          onPressed: pinned,
-                        ),
+                        if (pinned != null) ...[
+                          const SizedBox(width: _pinGap),
+                          _ToolbarButton(
+                            icon: alwaysOnTop
+                                ? KapyIcons.pinRounded
+                                : KapyIcons.pinOutlined,
+                            tooltip: [
+                              alwaysOnTop
+                                  ? 'Stop keeping on top'
+                                  : 'Keep on top',
+                              ?alwaysOnTopShortcut,
+                            ].join('  '),
+                            selected: alwaysOnTop,
+                            onPressed: pinned,
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
-              // Both clusters sit over the lockup rather than under it: on a
-              // bar too narrow for all three, a button the reader can press
-              // beats a wordmark they have already read.
-              if (showActions) ...[
-                Positioned(
-                  top: topInset,
-                  left: _leadingInset,
-                  // Stops short of the lockup instead of running under it. The
-                  // avatars inside give up circles, then names, to fit.
-                  right: constraints.maxWidth / 2 + _centreReserve,
-                  height: barHeight,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: _leading(),
+                // Both clusters sit over the lockup rather than under it: on a
+                // bar too narrow for all three, a button the reader can press
+                // beats a wordmark they have already read.
+                if (showActions) ...[
+                  Positioned(
+                    top: topInset,
+                    left: _leadingInset,
+                    // Stops short of the lockup when there is room. On the
+                    // narrowest phones, reserve the two fixed actions first;
+                    // avatars still give up circles, then names, to fit.
+                    right: leadingRight,
+                    height: barHeight,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _leading(),
+                    ),
                   ),
-                ),
-                Positioned(
-                  top: topInset,
-                  right: _edgeGap,
-                  height: barHeight,
-                  child: _trailing(),
-                ),
+                  Positioned(
+                    top: topInset,
+                    right: _edgeGap,
+                    height: barHeight,
+                    child: _trailing(),
+                  ),
+                ],
               ],
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -237,6 +264,15 @@ class NoteToolbar extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         _menuButton(),
+        if (onSettingsPressed != null) ...[
+          const SizedBox(width: 2),
+          _ToolbarButton(
+            key: const ValueKey('toolbar-settings'),
+            icon: KapyIcons.settingsOutlined,
+            tooltip: ['Settings', ?settingsShortcut].join('  '),
+            onPressed: onSettingsPressed,
+          ),
+        ],
         if (members.isNotEmpty)
           Flexible(
             child: Padding(

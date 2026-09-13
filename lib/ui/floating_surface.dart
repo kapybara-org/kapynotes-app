@@ -32,7 +32,7 @@ class FloatingSurface extends StatelessWidget {
   /// One radius for everything that floats, matching the settings cards. A
   /// panel that is nearly the same shape as the app's other surfaces is a
   /// panel nobody notices, which is the whole job.
-  static const double radius = 10;
+  static const double radius = AppRadii.surface;
 
   /// The style a floating panel's text starts from.
   ///
@@ -55,7 +55,7 @@ class FloatingSurface extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
           borderRadius: BorderRadius.circular(radius),
-          border: Border.all(color: palette.controlBorder, width: 0.5),
+          border: Border.all(color: palette.controlBorder),
         ),
         child: child,
       ),

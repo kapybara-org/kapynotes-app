@@ -2059,6 +2059,53 @@ void main() {
     );
   });
 
+  testWidgets(
+    'toolbar settings sits beside notes, teaches its shortcut, and opens',
+    (tester) async {
+      await pumpApp(tester);
+
+      final toolbar = find.byType(NoteToolbar);
+      final menu = find.descendant(
+        of: toolbar,
+        matching: findKapyIcon(KapyIcons.menuRounded),
+      );
+      final settings = find.descendant(
+        of: toolbar,
+        matching: findKapyIcon(KapyIcons.settingsOutlined),
+      );
+      expect(settings, findsOneWidget);
+      expect(
+        tester.getCenter(settings).dx,
+        greaterThan(tester.getCenter(menu).dx),
+      );
+      final tooltip = tester.widget<Tooltip>(
+        find.ancestor(of: settings, matching: find.byType(Tooltip)).first,
+      );
+      expect(
+        tooltip.message,
+        contains(
+          shortcuts.bindingFor(ShortcutAction.openSettings)!.displayLabel,
+        ),
+      );
+
+      await tester.tap(settings);
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsDialog), findsOneWidget);
+    },
+  );
+
+  testWidgets('desktop Settings has room for a calm two-pane layout', (
+    tester,
+  ) async {
+    await pumpApp(tester, size: const Size(1100, 760));
+    await openSettings(tester);
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('settings-dialog-content'))),
+      const Size(600, 520),
+    );
+  });
+
   testWidgets('note actions fade in inside a sidebar that can hold them', (
     tester,
   ) async {
@@ -2162,6 +2209,21 @@ void main() {
     await tester.tap(add);
     await tester.pumpAndSettle();
     expect(notes.notes, hasLength(before + 1));
+  });
+
+  testWidgets('leaves breathing room above the sidebar search row', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+
+    final sidebar = tester.getRect(find.byType(Sidebar));
+    final search = tester.getRect(
+      find.byKey(const ValueKey('sidebar-search-field')),
+    );
+    final add = tester.getRect(find.byKey(const ValueKey('sidebar-new-note')));
+
+    expect(search.top - sidebar.top, greaterThanOrEqualTo(8));
+    expect(add.center.dy, closeTo(search.center.dy, 0.5));
   });
 
   group('asking for a new note while already in one', () {
@@ -2400,7 +2462,7 @@ void main() {
       final hiddenShortcut = shortcuts.bindingFor(
         ShortcutAction.toggleHiddenFolder,
       )!;
-      expect(prefs.hiddenFolderVisible, isFalse);
+      expect(prefs.hiddenFolderVisible, isTrue);
       expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
 
       await openNoteActions(tester, private.id);
@@ -2411,15 +2473,21 @@ void main() {
       expect(notes.search('Private'), isEmpty);
       expect(
         find.text(
-          'Note moved to Hidden Notes. Show it from Settings or press '
-          '${hiddenShortcut.displayLabel}.',
+          'Note moved to Hidden Notes. Open Hidden Notes from the sidebar.',
         ),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const ValueKey('sidebar-hidden-notes')),
+        findsOneWidget,
+      );
+
+      await pressShortcut(tester, hiddenShortcut);
+      expect(gate.unlockCalls, 0, reason: 'the shortcut only hides the row');
+      expect(prefs.hiddenFolderVisible, isFalse);
       expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
 
       await pressShortcut(tester, hiddenShortcut);
-      expect(gate.unlockCalls, 0, reason: 'the shortcut only reveals the row');
       expect(prefs.hiddenFolderVisible, isTrue);
       expect(
         find.byKey(const ValueKey('sidebar-hidden-notes')),
@@ -2485,6 +2553,11 @@ void main() {
   ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await notes.load();
+    final private = notes.create(body: 'Private note');
+    notes.hide(private.id);
+    prefs.load();
+    prefs.hiddenFolderVisible = false;
     await pumpApp(tester);
 
     expect(prefs.hiddenFolderVisible, isFalse);
@@ -2541,10 +2614,6 @@ void main() {
       },
     );
 
-    await pressShortcut(
-      tester,
-      shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)!,
-    );
     await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
     await tester.pumpAndSettle();
     expect(openNoteBody(tester), 'Private note');
@@ -2644,10 +2713,6 @@ void main() {
     final gate = _HiddenGate(allowUnlock: false);
     await pumpApp(tester, hiddenNotesGate: gate);
 
-    await pressShortcut(
-      tester,
-      shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)!,
-    );
     await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
     await tester.pumpAndSettle();
 

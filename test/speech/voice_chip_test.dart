@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/audio/voice_player.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
@@ -31,6 +32,8 @@ Widget harness(
   NoteVoiceRef ref, {
   VoiceChipState state = VoiceChipState.idle,
   bool playing = false,
+  bool opening = false,
+  VoicePlaybackFailure? failure,
   double? progress,
   VoidCallback? onOpen,
   VoidCallback? onPlayPause,
@@ -45,6 +48,8 @@ Widget harness(
         ref: ref,
         state: state,
         playing: playing,
+        opening: opening,
+        failure: failure,
         progress: ValueNotifier<double?>(progress),
         onOpen: onOpen,
         onPlayPause: onPlayPause,
@@ -239,6 +244,46 @@ void main() {
 
       await tester.pumpWidget(harness(recording(), playing: true));
       expect(findKapyIcon(KapyIcons.pauseRounded), findsOneWidget);
+    });
+
+    testWidgets(
+      'spins while the recording is on its way, and offers to cancel',
+      (tester) async {
+        await tester.pumpWidget(
+          harness(recording(), opening: true, onPlayPause: () {}),
+        );
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(findKapyIcon(KapyIcons.playRounded), findsNothing);
+        expect(find.bySemanticsLabel('Cancel'), findsOneWidget);
+      },
+    );
+
+    testWidgets('says why the last press did not start it', (tester) async {
+      await tester.pumpWidget(
+        harness(
+          recording(),
+          failure: VoicePlaybackFailure.notDownloaded,
+          onPlayPause: () {},
+        ),
+      );
+      expect(findKapyIcon(KapyIcons.cloudOffRounded), findsOneWidget);
+      expect(
+        find.bySemanticsLabel("Couldn't download. Try again"),
+        findsOneWidget,
+      );
+
+      await tester.pumpWidget(
+        harness(
+          recording(),
+          failure: VoicePlaybackFailure.unreadable,
+          onPlayPause: () {},
+        ),
+      );
+      expect(findKapyIcon(KapyIcons.warningRounded), findsOneWidget);
+      expect(
+        find.bySemanticsLabel("Couldn't play this recording"),
+        findsOneWidget,
+      );
     });
   });
 

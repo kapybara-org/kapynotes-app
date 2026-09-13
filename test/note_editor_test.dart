@@ -1,7 +1,7 @@
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout, kSecondaryButton;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -199,6 +199,23 @@ void main() {
   setUp(() {
     engine = CalcEngine(ratesPerUsd: _rates);
     shortcutPrefs = ShortcutPrefs(_MemoryStore())..load();
+  });
+
+  testWidgets('the writing surface never inherits form-field outlines', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('A note without a box', autofocus: true));
+    await tester.pumpAndSettle();
+
+    final decoration = tester
+        .widget<TextField>(find.byType(TextField))
+        .decoration!;
+    expect(decoration.border, InputBorder.none);
+    expect(decoration.enabledBorder, InputBorder.none);
+    expect(decoration.focusedBorder, InputBorder.none);
+    expect(decoration.disabledBorder, InputBorder.none);
+    expect(decoration.errorBorder, InputBorder.none);
+    expect(decoration.focusedErrorBorder, InputBorder.none);
   });
 
   testWidgets('ticking a box celebrates, unticking it does not', (
@@ -1585,6 +1602,62 @@ void main() {
     ]);
   });
 
+  testWidgets('puts Copy and Paste on the selection toolbar itself', (
+    tester,
+  ) async {
+    // They used to wait behind the More button, so copying a selection took
+    // a click, a menu, and another click.
+    final copied = <String>[];
+    String? body;
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      switch (call.method) {
+        case 'Clipboard.hasStrings':
+          return {'value': true};
+        case 'Clipboard.getData':
+          return {'text': 'pasted'};
+        case 'Clipboard.setData':
+          copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    await tester.pumpWidget(
+      harness(
+        'Select this text',
+        autofocus: true,
+        onBodyChanged: (value) => body = value,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    Future<void> selectFirstWord() async {
+      field.controller!.selection = const TextSelection.collapsed(offset: 0);
+      await tester.pump();
+      field.controller!.selection = const TextSelection(
+        baseOffset: 0,
+        extentOffset: 6,
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+    }
+
+    await selectFirstWord();
+    expect(find.byKey(const ValueKey('selection-copy')), findsOneWidget);
+    expect(find.byKey(const ValueKey('selection-paste')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('selection-copy')));
+    await tester.pumpAndSettle();
+    expect(copied, ['Select']);
+
+    await selectFirstWord();
+    await tester.tap(find.byKey(const ValueKey('selection-paste')));
+    await tester.pumpAndSettle();
+    expect(body, 'pasted this text');
+  });
+
   testWidgets('offers one-tap open and full-link copy for selected URLs', (
     tester,
   ) async {
@@ -2222,13 +2295,19 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
 
-    final toolbar = tester.getRect(
-      find.byKey(const ValueKey('selection-formatting-toolbar')),
-    );
+    // A phone gets the platform's own toolbar, which keeps itself on the
+    // screen and moves whatever does not fit behind More. Copy leads it, and
+    // is there before the clipboard has been asked anything: no clipboard
+    // answers in this test at all.
+    final toolbar = tester.getRect(find.byType(TextSelectionToolbar));
     expect(toolbar.left, greaterThanOrEqualTo(0));
     expect(toolbar.right, lessThanOrEqualTo(320));
-    expect(find.byKey(const ValueKey('selection-open-link')), findsOneWidget);
-    expect(find.byKey(const ValueKey('selection-copy-link')), findsOneWidget);
+    expect(find.text('Copy').hitTestable(), findsOneWidget);
+
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    expect(find.text('Open link').hitTestable(), findsOneWidget);
+    expect(find.text('Copy link').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -3679,6 +3758,193 @@ total to usd''';
         SystemMouseCursors.text,
         reason: 'the hand must not stick once the pointer leaves the box',
       );
+    });
+  });
+
+  group('the edit menu on a phone', () {
+    // Selected text on a phone has to show Copy where a phone shows it, and a
+    // tap into a note has to offer Paste. Copy used to wait behind More on a
+    // formatting row, and Paste came only from a press-and-hold.
+    late List<String> copied;
+
+    setUp(() {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      copied = [];
+    });
+
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    /// What the phone's clipboard holds; null for nothing at all.
+    void clipboardHolds(WidgetTester tester, String? text) {
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        switch (call.method) {
+          case 'Clipboard.hasStrings':
+            return {'value': text != null};
+          case 'Clipboard.getData':
+            return text == null ? null : {'text': text};
+          case 'Clipboard.setData':
+            copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+    }
+
+    /// Past the end of a line's words, where there is nothing.
+    Offset besideLine(WidgetTester tester, String body, String lastWord) =>
+        _centerOf(tester, body, lastWord) + const Offset(120, 0);
+
+    Future<void> tapAndWait(WidgetTester tester, Offset position) async {
+      await tester.tapAt(position);
+      // A double tap would select a word instead, so the offer waits one out.
+      await tester.pump(kDoubleTapTimeout);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> selectFirstWord(WidgetTester tester) async {
+      final field = tester.widget<TextField>(find.byType(TextField));
+      field.controller!.selection = const TextSelection(
+        baseOffset: 0,
+        extentOffset: 6,
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a tap offers Paste, first, when there is something to paste', (
+      tester,
+    ) async {
+      clipboardHolds(tester, 'from elsewhere');
+      String? body;
+      await tester.pumpWidget(
+        harness(
+          'First line',
+          autofocus: true,
+          resultsVisible: false,
+          onBodyChanged: (value) => body = value,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tapAndWait(tester, besideLine(tester, 'First line', 'line'));
+
+      final paste = find.text('Paste').hitTestable();
+      expect(paste, findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(TextSelectionToolbarTextButton).first,
+          matching: find.text('Paste'),
+        ),
+        findsOneWidget,
+        reason: 'Paste leads, where a phone always has room for it',
+      );
+
+      await tester.tap(paste);
+      await tester.pumpAndSettle();
+      expect(body, 'First linefrom elsewhere');
+    });
+
+    testWidgets('a tap with nothing to paste opens no menu', (tester) async {
+      clipboardHolds(tester, null);
+      await tester.pumpWidget(
+        harness('First line', autofocus: true, resultsVisible: false),
+      );
+      await tester.pumpAndSettle();
+
+      await tapAndWait(tester, besideLine(tester, 'First line', 'line'));
+
+      expect(find.byType(TextSelectionToolbar), findsNothing);
+    });
+
+    testWidgets('a second tap on the caret puts the menu away', (tester) async {
+      clipboardHolds(tester, 'from elsewhere');
+      await tester.pumpWidget(
+        harness('First line', autofocus: true, resultsVisible: false),
+      );
+      await tester.pumpAndSettle();
+      final spot = besideLine(tester, 'First line', 'line');
+
+      await tapAndWait(tester, spot);
+      expect(find.text('Paste').hitTestable(), findsOneWidget);
+
+      await tapAndWait(tester, spot);
+      expect(find.byType(TextSelectionToolbar), findsNothing);
+    });
+
+    testWidgets('a tap that ticks a box offers nothing', (tester) async {
+      clipboardHolds(tester, 'from elsewhere');
+      const body = '☐ milk';
+      String? changed;
+      await tester.pumpWidget(
+        harness(
+          body,
+          autofocus: true,
+          resultsVisible: false,
+          onBodyChanged: (value) => changed = value,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tapAndWait(tester, _centerOf(tester, body, '☐'));
+
+      expect(changed, isNot(body), reason: 'the box was ticked');
+      expect(find.byType(TextSelectionToolbar), findsNothing);
+    });
+
+    testWidgets('selected text shows Cut, Copy and Paste in the row', (
+      tester,
+    ) async {
+      clipboardHolds(tester, 'from elsewhere');
+      await tester.pumpWidget(
+        harness('Select this text', autofocus: true, resultsVisible: false),
+      );
+      await tester.pumpAndSettle();
+
+      await selectFirstWord(tester);
+
+      expect(
+        find.byKey(const ValueKey('selection-formatting-toolbar')),
+        findsNothing,
+      );
+      expect(find.text('Cut').hitTestable(), findsOneWidget);
+      expect(find.text('Copy').hitTestable(), findsOneWidget);
+      expect(find.text('Paste').hitTestable(), findsOneWidget);
+
+      await tester.tap(find.text('Copy'));
+      await tester.pumpAndSettle();
+      expect(copied, ['Select']);
+    });
+
+    testWidgets('formatting a selection is still there, behind More', (
+      tester,
+    ) async {
+      clipboardHolds(tester, null);
+      tester.view.physicalSize = const Size(360, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final formats = <List<NoteFormatRange>>[];
+      await tester.pumpWidget(
+        harness(
+          'Select this text',
+          autofocus: true,
+          resultsVisible: false,
+          onFormatsChanged: formats.add,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await selectFirstWord(tester);
+      await tester.tap(find.byTooltip('More'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Bold'));
+      await tester.pumpAndSettle();
+
+      expect(formats.last, const [
+        NoteFormatRange(start: 0, end: 6, format: NoteFormat.bold),
+      ]);
     });
   });
 }

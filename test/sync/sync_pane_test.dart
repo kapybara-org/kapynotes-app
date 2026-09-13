@@ -1,4 +1,8 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/file_export.dart';
+import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/text_file_export.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -6,10 +10,12 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/account/recovery_key_dialog.dart';
 import 'package:kapy_notes/ui/account/sync_pane.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'fake_server.dart';
+import '../test_fonts.dart';
 
 class MemoryStore extends LocalStore {
   MemoryStore() : super(fileName: 'sync-pane-test.json');
@@ -42,14 +48,18 @@ class MemoryStore extends LocalStore {
   );
 }
 
-Widget harness(Account account) => MaterialApp(
+Widget harness(Account account, {TextFileSaver? saveTextFile}) => MaterialApp(
   theme: KapyTheme.dark(),
   home: Scaffold(
-    body: SingleChildScrollView(child: SyncPane(account: account)),
+    body: SingleChildScrollView(
+      child: SyncPane(account: account, saveTextFile: saveTextFile),
+    ),
   ),
 );
 
 void main() {
+  setUpAll(loadTestFonts);
+
   testWidgets('a signed-out account is offered a way in', (tester) async {
     final app = build();
     await app.notes.load();
@@ -91,8 +101,8 @@ void main() {
     await tester.tap(signIn);
     await tester.pumpAndSettle();
 
-    // Signed in, and now it wants the encryption passphrase.
-    expect(find.text('Choose an encryption passphrase'), findsOneWidget);
+    // Signed in, and the app has prepared the passphrase for them.
+    expect(find.text('Save your passphrase'), findsOneWidget);
     app.account.dispose();
   });
 
@@ -127,7 +137,7 @@ void main() {
     app.account.dispose();
   });
 
-  testWidgets('signing in with no key asks for a passphrase', (tester) async {
+  testWidgets('signing in with no key prepares a passphrase', (tester) async {
     final app = build();
     await app.notes.load();
     await app.account.restore();
@@ -135,9 +145,8 @@ void main() {
     await tester.pumpWidget(harness(app.account));
     await tester.pumpAndSettle();
 
-    expect(find.text('Choose an encryption passphrase'), findsOneWidget);
-    // The promise the screen has to make, in the place it has to make it.
-    expect(find.textContaining('nobody'), findsOneWidget);
+    expect(find.text('Save your passphrase'), findsOneWidget);
+    expect(find.byKey(const ValueKey('generated-passphrase')), findsOneWidget);
     app.account.dispose();
   });
 
@@ -169,11 +178,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(app.account.user!.name, 'Maya');
-    expect(find.text('Choose an encryption passphrase'), findsOneWidget);
+    expect(find.text('Save your passphrase'), findsOneWidget);
     app.account.dispose();
   });
 
-  testWidgets('a generated passphrase cannot be set until it is saved', (
+  testWidgets('a strong passphrase is ready to save without typing', (
     tester,
   ) async {
     final app = build();
@@ -183,69 +192,206 @@ void main() {
     await tester.pumpWidget(harness(app.account));
     await tester.pumpAndSettle();
 
-    // Why there is no reset link, said before the field rather than after.
-    expect(find.textContaining('no reset link'), findsOneWidget);
-    expect(find.byType(TextField), findsNWidgets(2));
-
-    await tester.tap(find.byKey(const ValueKey('generate-passphrase')));
-    await tester.pumpAndSettle();
-
-    // Nothing to confirm, and it has to be readable to be written down.
-    expect(find.byType(TextField), findsOneWidget);
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.obscureText, isFalse);
-    expect(field.controller!.text, isNotEmpty);
-    expect(field.controller!.text.length, greaterThan(20));
-
-    final setButton = find.widgetWithText(FilledButton, 'Set passphrase');
-    expect(
-      tester.widget<FilledButton>(setButton).onPressed,
-      isNull,
-      reason: 'a generated passphrase nobody saved opens nothing',
+    expect(find.byType(TextField), findsNothing);
+    final value = tester.widget<SelectableText>(
+      find.byKey(const ValueKey('generated-passphrase')),
     );
-
-    await tester.tap(find.byKey(const ValueKey('generated-passphrase-saved')));
-    await tester.pumpAndSettle();
-    expect(tester.widget<FilledButton>(setButton).onPressed, isNotNull);
-
-    app.account.dispose();
-  });
-
-  testWidgets('typing over a generated passphrase hands it back to you', (
-    tester,
-  ) async {
-    final app = build();
-    await app.notes.load();
-    await app.account.restore();
-    await app.account.signIn(email: 'a@b.co', password: 'x');
-    await tester.pumpWidget(harness(app.account));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('generate-passphrase')));
-    await tester.pumpAndSettle();
+    expect(value.data, isNotEmpty);
+    expect(value.data!.length, greaterThan(20));
+    expect(find.byKey(const ValueKey('copy-passphrase')), findsOneWidget);
+    expect(find.byKey(const ValueKey('download-passphrase')), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('generated-passphrase-saved')),
+      find.widgetWithText(FilledButton, "I've saved my passphrase"),
       findsOneWidget,
     );
+    expect(find.text('Set passphrase'), findsNothing);
+    expect(find.text('Generate a strong one for me'), findsNothing);
+    expect(find.textContaining('no reset link'), findsNothing);
 
-    await tester.enterText(find.byType(TextField).first, 'one I thought of');
+    app.account.dispose();
+  });
+
+  testWidgets('generated passphrase desktop golden', (tester) async {
+    final app = build();
+    await app.notes.load();
+    await app.account.restore();
+    await app.account.signIn(email: 'a@b.co', password: 'x');
+    tester.view.physicalSize = const Size(520, 420);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(24),
+            child: SingleChildScrollView(
+              child: SyncPane(
+                account: app.account,
+                passphraseGenerator: () => 'HKX2-NSKH-RCRJ-9DMS-YF0Y-BT30-CG',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    // Their passphrase, their confirmation, and no saved-it gate.
-    expect(find.byType(TextField), findsNWidgets(2));
-    expect(
-      find.byKey(const ValueKey('generated-passphrase-saved')),
-      findsNothing,
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/passphrase_setup_dark.png'),
     );
+    app.account.dispose();
+  });
+
+  testWidgets('generated passphrase actions fit a narrow phone', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final app = build();
+    await app.notes.load();
+    await app.account.restore();
+    await app.account.signIn(email: 'a@b.co', password: 'x');
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(16),
+            child: SingleChildScrollView(
+              child: SyncPane(
+                account: app.account,
+                passphraseGenerator: () => 'HKX2-NSKH-RCRJ-9DMS-YF0Y-BT30-CG',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
     expect(
-      tester
-          .widget<FilledButton>(
-            find.widgetWithText(FilledButton, 'Set passphrase'),
-          )
-          .onPressed,
-      isNotNull,
+      find.byKey(const ValueKey('confirm-passphrase-saved')).hitTestable(),
+      findsOneWidget,
+    );
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/passphrase_setup_phone_dark.png'),
+    );
+    app.account.dispose();
+  });
+
+  testWidgets('recovery key dialog golden', (tester) async {
+    tester.view.physicalSize = const Size(520, 420);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final key = RecoveryKey(
+      Uint8List.fromList(List.generate(32, (index) => index)),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: FilledButton(
+                onPressed: () => showRecoveryKeyDialog(context, key),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(AlertDialog),
+      matchesGoldenFile('goldens/recovery_key_dialog_dark.png'),
+    );
+  });
+
+  testWidgets('the generated passphrase can be copied in one tap', (
+    tester,
+  ) async {
+    final app = build();
+    await app.notes.load();
+    await app.account.restore();
+    await app.account.signIn(email: 'a@b.co', password: 'x');
+    await tester.pumpWidget(harness(app.account));
+    await tester.pumpAndSettle();
+
+    String? clipboard;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboard =
+              (call.arguments as Map<Object?, Object?>)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
     );
 
+    final passphrase = tester
+        .widget<SelectableText>(
+          find.byKey(const ValueKey('generated-passphrase')),
+        )
+        .data;
+    await tester.tap(find.byKey(const ValueKey('copy-passphrase')));
+    await tester.pumpAndSettle();
+
+    expect(clipboard, passphrase);
+    expect(find.text('Copied'), findsOneWidget);
+
+    app.account.dispose();
+  });
+
+  testWidgets('the generated passphrase downloads as a simple text file', (
+    tester,
+  ) async {
+    final app = build();
+    await app.notes.load();
+    await app.account.restore();
+    await app.account.signIn(email: 'a@b.co', password: 'x');
+    String? savedName;
+    String? savedContents;
+    await tester.pumpWidget(
+      harness(
+        app.account,
+        saveTextFile:
+            ({required String contents, required String suggestedName}) async {
+              savedName = suggestedName;
+              savedContents = contents;
+              return FileExportOutcome.saved;
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final passphrase = tester
+        .widget<SelectableText>(
+          find.byKey(const ValueKey('generated-passphrase')),
+        )
+        .data!;
+    await tester.tap(find.byKey(const ValueKey('download-passphrase')));
+    await tester.pumpAndSettle();
+
+    expect(savedName, 'kapy-notes-passphrase.txt');
+    expect(savedContents, '$passphrase\n');
+    expect(find.text('Saved'), findsOneWidget);
     app.account.dispose();
   });
 
@@ -254,39 +400,50 @@ void main() {
     await app.notes.load();
     await app.account.restore();
     await app.account.signIn(email: 'a@b.co', password: 'x');
-    await tester.pumpWidget(harness(app.account));
+    String? savedName;
+    String? savedContents;
+    await tester.pumpWidget(
+      harness(
+        app.account,
+        saveTextFile:
+            ({required String contents, required String suggestedName}) async {
+              savedName = suggestedName;
+              savedContents = contents;
+              return FileExportOutcome.saved;
+            },
+      ),
+    );
     await tester.pumpAndSettle();
-
-    await tester.enterText(find.byType(TextField).first, 'a good passphrase');
-    await tester.enterText(find.byType(TextField).last, 'a good passphrase');
 
     // Argon2id runs in a real isolate, which the fake clock inside
     // testWidgets cannot advance. runAsync hands back the real one.
     await tester.runAsync(() async {
-      await tester.tap(find.text('Set passphrase'));
+      await tester.tap(
+        find.widgetWithText(FilledButton, "I've saved my passphrase"),
+      );
       await Future<void>.delayed(const Duration(seconds: 2));
     });
     await tester.pumpAndSettle();
 
     expect(find.text('Save your recovery key'), findsOneWidget);
 
-    // Done stays dead until the box is ticked.
-    expect(
-      tester
-          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Done'))
-          .onPressed,
-      isNull,
-      reason: 'not until they say they have saved it',
-    );
+    final recoveryKey = tester
+        .widget<SelectableText>(
+          find.byKey(const ValueKey('recovery-key-value')),
+        )
+        .data!;
+    await tester.tap(find.byKey(const ValueKey('download-recovery-key')));
+    await tester.pumpAndSettle();
+    expect(savedName, 'kapy-notes-recovery-key.txt');
+    expect(savedContents, '$recoveryKey\n');
+    expect(find.text('Saved'), findsOneWidget);
 
-    // And tapping outside must not dismiss it either.
+    // Tapping outside must not dismiss it.
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
     expect(find.text('Save your recovery key'), findsOneWidget);
 
-    await tester.tap(find.byType(Checkbox));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.text("I've saved my recovery key"));
     await tester.pumpAndSettle();
 
     expect(find.text('Save your recovery key'), findsNothing);

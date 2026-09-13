@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/billing/billing_api.dart';
 import 'package:kapy_notes/billing/entitlements.dart';
 import 'package:kapy_notes/billing/plan_usage.dart';
+import 'package:kapy_notes/data/attachment_limits.dart';
 import 'package:kapy_notes/data/local_store.dart';
 
 class _Session extends ChangeNotifier {
@@ -37,6 +38,7 @@ Entitlements _answer({bool pro = false}) => Entitlements(
   plan: pro ? 'pro' : 'free',
   storageBytes: pro ? 1024 * 1024 * 1024 : 100 * 1024 * 1024,
   storageUsedBytes: 42,
+  attachmentMaxBytes: pro ? proAttachmentMaxBytes : freeAttachmentMaxBytes,
   speechSecondsPerMonth: pro ? 7200 : 900,
   speechSecondsUsedThisMonth: 120,
   speechCreditSeconds: 60,
@@ -111,6 +113,17 @@ void main() {
 
     expect(parsed.summaryGenerationsPerMonth, 1000);
     expect(parsed.summaryGenerationsUsedThisMonth, 0);
+    expect(parsed.attachmentMaxBytes, freeAttachmentMaxBytes);
+  });
+
+  test('keeps the server-provided Pro attachment ceiling in the cache', () {
+    final parsed = Entitlements.fromJson({
+      'plan': 'pro',
+      'attachmentMaxBytes': proAttachmentMaxBytes,
+    });
+
+    expect(parsed.attachmentMaxBytes, proAttachmentMaxBytes);
+    expect(parsed.toJson()['attachmentMaxBytes'], proAttachmentMaxBytes);
   });
 
   test('signing in reads every server usage total', () async {

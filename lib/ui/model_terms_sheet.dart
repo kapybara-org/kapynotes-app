@@ -55,7 +55,10 @@ class _ModelTermsDialog extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               '${fileSize(model.bytes)} to download.',
-              style: TextStyle(fontSize: 12, color: palette.textTertiary),
+              style: TextStyle(
+                fontSize: AppTypeScale.small,
+                color: palette.textTertiary,
+              ),
             ),
           ],
         ),

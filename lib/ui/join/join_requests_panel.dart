@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
 import '../../sync/joining.dart';
+import '../control_surface.dart';
 import 'joining_ui.dart';
 import 'space_link_panel.dart' show SharingRun;
 
@@ -111,68 +112,90 @@ class _JoinRequestsPanelState extends State<JoinRequestsPanel> {
     if (waiting.isEmpty) return const SizedBox.shrink();
     final enabled = widget.enabled;
 
-    return Column(
-      key: const ValueKey('join-requests'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        JoinLabel('Waiting to join (${waiting.length})'),
-        for (final r in waiting)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: Column(
+        key: const ValueKey('join-requests'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          JoinLabel('Waiting to join (${waiting.length})'),
+          KapyControlSurface(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Column(
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        r.name ?? r.email,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: AppTypeScale.body,
-                          fontWeight: FontWeight.w500,
-                          color: palette.textPrimary,
-                        ),
-                      ),
-                      if (r.name != null)
-                        Text(
-                          r.email,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: AppTypeScale.small,
-                            color: palette.textSecondary,
+                for (var index = 0; index < waiting.length; index++) ...[
+                  if (index > 0) Divider(height: 1, color: palette.separator),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                waiting[index].name ?? waiting[index].email,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: AppTypeScale.body,
+                                  fontWeight: FontWeight.w500,
+                                  color: palette.textPrimary,
+                                ),
+                              ),
+                              if (waiting[index].name != null)
+                                Text(
+                                  waiting[index].email,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: AppTypeScale.small,
+                                    color: palette.textSecondary,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                    ],
+                        TextButton(
+                          key: ValueKey(
+                            'join-request-approve-${waiting[index].userId}',
+                          ),
+                          onPressed: enabled
+                              ? () => _letIn([waiting[index]])
+                              : null,
+                          child: const Text('Let in'),
+                        ),
+                        IconButton(
+                          key: ValueKey(
+                            'join-request-decline-${waiting[index].userId}',
+                          ),
+                          tooltip: 'Do not let in',
+                          onPressed: enabled
+                              ? () => _decline(waiting[index])
+                              : null,
+                          icon: KapyIcon(
+                            KapyIcons.closeRounded,
+                            size: AppControlMetrics.iconControl,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                TextButton(
-                  key: ValueKey('join-request-approve-${r.userId}'),
-                  onPressed: enabled ? () => _letIn([r]) : null,
-                  child: const Text('Let in'),
-                ),
-                IconButton(
-                  key: ValueKey('join-request-decline-${r.userId}'),
-                  tooltip: 'Do not let in',
-                  onPressed: enabled ? () => _decline(r) : null,
-                  icon: Icon(
-                    Icons.close_rounded,
-                    size: AppControlMetrics.iconControl,
+                ],
+                if (waiting.length > 1) ...[
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.tonal(
+                      key: const ValueKey('join-requests-approve-all'),
+                      onPressed: enabled ? () => _letIn(waiting) : null,
+                      child: Text('Let all ${waiting.length} in'),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
-        if (waiting.length > 1)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.tonal(
-              key: const ValueKey('join-requests-approve-all'),
-              onPressed: enabled ? () => _letIn(waiting) : null,
-              child: Text('Let all ${waiting.length} in'),
-            ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }

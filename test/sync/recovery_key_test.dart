@@ -29,6 +29,19 @@ void main() {
     }
   });
 
+  test('generated passphrases are strong, grouped, and unique', () {
+    final generated = List.generate(8, (_) => generatePassphrase());
+
+    expect(generated.toSet(), hasLength(generated.length));
+    for (final passphrase in generated) {
+      expect(parseRecoveryKey(passphrase, expectedLength: 16), isNotNull);
+      expect(passphrase.split('-').every((group) => group.length <= 4), isTrue);
+      for (final confusable in ['I', 'L', 'O', 'U']) {
+        expect(passphrase, isNot(contains(confusable)));
+      }
+    }
+  });
+
   test('a key read off a screen by eye still opens the account', () {
     final key = bytes(0xa7);
     final written = formatRecoveryKey(key);

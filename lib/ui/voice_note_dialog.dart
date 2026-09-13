@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 import '../audio/voice_player.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
-import '../data/blob_store.dart';
 import '../data/note_attachment.dart';
 import '../speech/speech_errors.dart';
 import '../speech/summarizer.dart';
@@ -79,7 +78,6 @@ Future<void> openVoiceNoteDialog(
   BuildContext context, {
   required NoteVoiceRef ref,
   required VoiceChipState state,
-  required BlobStore blobs,
   VoicePlayer? player,
   VoiceNoteActions actions = const VoiceNoteActions(),
   DateTime? recordedAt,
@@ -87,7 +85,6 @@ Future<void> openVoiceNoteDialog(
   Widget build({required bool asSheet}) => VoiceNoteView(
     ref: ref,
     state: state,
-    blobs: blobs,
     player: player,
     actions: actions,
     recordedAt: recordedAt,
@@ -114,7 +111,6 @@ class VoiceNoteView extends StatefulWidget {
     super.key,
     required this.ref,
     required this.state,
-    required this.blobs,
     this.player,
     this.actions = const VoiceNoteActions(),
     this.recordedAt,
@@ -123,7 +119,6 @@ class VoiceNoteView extends StatefulWidget {
 
   final NoteVoiceRef ref;
   final VoiceChipState state;
-  final BlobStore blobs;
   final VoicePlayer? player;
   final VoiceNoteActions actions;
   final DateTime? recordedAt;
@@ -150,9 +145,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
       await player.seek(position);
       return;
     }
-    final file = await widget.blobs.fileFor(widget.ref.hash);
-    if (file == null) return;
-    await player.play(widget.ref.hash, file, from: position);
+    await player.play(widget.ref.hash, from: position);
   }
 
   late bool _onSummary;
@@ -215,11 +208,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
           subtitle: _subtitle(),
           onClose: () => Navigator.of(context).maybePop(),
         ),
-        VoiceNotePlayerRow(
-          ref: _ref,
-          player: widget.player,
-          blobs: widget.blobs,
-        ),
+        VoiceNotePlayerRow(ref: _ref, player: widget.player),
         _Tabs(
           onSummary: _onSummary,
           hasSummary: _ref.summary != null,
@@ -356,7 +345,10 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
             Expanded(
               child: Text(
                 'Written from the transcript',
-                style: TextStyle(fontSize: 11, color: palette.textTertiary),
+                style: TextStyle(
+                  fontSize: AppTypeScale.caption,
+                  color: palette.textTertiary,
+                ),
               ),
             ),
             if (widget.actions.onSaveSummaryInstruction != null)
@@ -373,7 +365,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
           Text(
             'MAKE SOMETHING FROM THIS',
             style: TextStyle(
-              fontSize: 10.5,
+              fontSize: AppTypeScale.micro,
               letterSpacing: 0.8,
               fontWeight: FontWeight.w400,
               color: palette.textTertiary,
@@ -404,7 +396,10 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
             const SizedBox(height: 10),
             Text(
               reason,
-              style: TextStyle(fontSize: 12, color: palette.textSecondary),
+              style: TextStyle(
+                fontSize: AppTypeScale.small,
+                color: palette.textSecondary,
+              ),
             ),
           ],
           for (final take in takes) ...[
@@ -589,7 +584,10 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
             padding: const EdgeInsets.only(top: 12),
             child: Text(
               'Transcribed · ${transcript.lang}',
-              style: TextStyle(fontSize: 11, color: palette.textTertiary),
+              style: TextStyle(
+                fontSize: AppTypeScale.caption,
+                color: palette.textTertiary,
+              ),
             ),
           );
         }
@@ -620,7 +618,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
                         Duration(milliseconds: row.paragraph.first.s),
                       ),
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: AppTypeScale.caption,
                         color: palette.textTertiary,
                       ),
                     ),
@@ -817,7 +815,10 @@ class _Header extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                  style: TextStyle(
+                    fontSize: AppTypeScale.small,
+                    color: palette.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -835,15 +836,9 @@ class _Header extends StatelessWidget {
 
 /// Play, scrub, elapsed/total, and the speed cycle.
 class VoiceNotePlayerRow extends StatefulWidget {
-  const VoiceNotePlayerRow({
-    super.key,
-    required this.ref,
-    required this.blobs,
-    this.player,
-  });
+  const VoiceNotePlayerRow({super.key, required this.ref, this.player});
 
   final NoteVoiceRef ref;
-  final BlobStore blobs;
   final VoicePlayer? player;
 
   @override
@@ -873,6 +868,9 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
       animation: player,
       builder: (context, _) {
         final active = player.activeHash == widget.ref.hash;
+        final playing = player.isPlaying(widget.ref.hash);
+        final opening = player.isOpening(widget.ref.hash);
+        final failure = player.failureFor(widget.ref.hash);
         final total = active
             ? (player.duration ?? widget.ref.duration)
             : widget.ref.duration;
@@ -885,14 +883,16 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: KapyIcon(
-                      player.isPlaying(widget.ref.hash)
-                          ? KapyIcons.pauseRounded
-                          : KapyIcons.playRounded,
+                    icon: VoicePlayGlyph(
+                      playing: playing,
+                      opening: opening,
+                      failure: failure,
                     ),
-                    tooltip: player.isPlaying(widget.ref.hash)
-                        ? 'Pause'
-                        : 'Play',
+                    tooltip: voicePlayButtonLabel(
+                      playing: playing,
+                      opening: opening,
+                      failure: failure,
+                    ),
                     onPressed: _toggle,
                   ),
                   Expanded(
@@ -922,7 +922,7 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
                     '${formatVoiceDuration(_scrubbing == null ? position : total * _scrubbing!)}'
                     ' / ${formatVoiceDuration(total)}',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: AppTypeScale.caption,
                       fontFeatures: const [FontFeature.tabularFigures()],
                       color: palette.textSecondary,
                     ),
@@ -951,7 +951,9 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
   Future<void> _toggle() async {
     final player = widget.player;
     if (player == null) return;
-    if (player.isPlaying(widget.ref.hash)) {
+    final hash = widget.ref.hash;
+    // A press on a recording still on its way calls it off, as a pause would.
+    if (player.isPlaying(hash) || player.isOpening(hash)) {
       await player.pause();
       return;
     }
@@ -959,11 +961,7 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
   }
 
   Future<void> _start({Duration? from}) async {
-    final player = widget.player;
-    if (player == null) return;
-    final file = await widget.blobs.fileFor(widget.ref.hash);
-    if (file == null) return;
-    await player.play(widget.ref.hash, file, from: from);
+    await widget.player?.play(widget.ref.hash, from: from);
   }
 }
 
@@ -1059,7 +1057,10 @@ class _Empty extends StatelessWidget {
               Text(
                 caption!,
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11, color: palette.textTertiary),
+                style: TextStyle(
+                  fontSize: AppTypeScale.caption,
+                  color: palette.textTertiary,
+                ),
               ),
             ],
             if (actionLabel != null && onAction != null) ...[
@@ -1164,7 +1165,7 @@ class _SpeakerBar extends StatelessWidget {
           Text(
             '${speakers.length} speakers',
             style: TextStyle(
-              fontSize: 11,
+              fontSize: AppTypeScale.caption,
               fontWeight: FontWeight.w400,
               color: palette.textSecondary,
             ),
@@ -1186,7 +1187,10 @@ class _SpeakerBar extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Tap a name to change it.',
-              style: TextStyle(fontSize: 11, color: palette.textTertiary),
+              style: TextStyle(
+                fontSize: AppTypeScale.caption,
+                color: palette.textTertiary,
+              ),
             ),
           ],
         ],
@@ -1222,7 +1226,7 @@ class _SpeakerLabel extends StatelessWidget {
         Text(
           name,
           style: TextStyle(
-            fontSize: 11.5,
+            fontSize: AppTypeScale.caption,
             fontWeight: FontWeight.w400,
             color: palette.textSecondary,
           ),
@@ -1263,7 +1267,7 @@ class _QuietButton extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 11,
+            fontSize: AppTypeScale.caption,
             fontWeight: FontWeight.w400,
             color: palette.textSecondary,
           ),
@@ -1315,7 +1319,7 @@ class _RewriteChip extends StatelessWidget {
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: AppTypeScale.small,
                   fontWeight: FontWeight.w400,
                   color: enabled ? palette.textPrimary : palette.textTertiary,
                 ),
@@ -1361,7 +1365,7 @@ class _TakeCard extends StatelessWidget {
                 child: Text(
                   take.kind.label,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: AppTypeScale.caption,
                     fontWeight: FontWeight.w400,
                     color: palette.textSecondary,
                   ),
@@ -1411,7 +1415,7 @@ class _TakeCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: AppTypeScale.caption,
                   fontStyle: FontStyle.italic,
                   color: palette.textTertiary,
                 ),
@@ -1501,7 +1505,10 @@ Future<String?> showInstructionSheet(
             children: [
               Text(
                 help,
-                style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                style: TextStyle(
+                  fontSize: AppTypeScale.small,
+                  color: palette.textSecondary,
+                ),
               ),
               const SizedBox(height: 12),
               TextField(

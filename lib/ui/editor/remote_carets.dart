@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../crdt/text_diff.dart';
+import '../../core/theme.dart';
 import '../../sync/presence.dart';
 import '../collaborator_colors.dart';
 
@@ -153,10 +154,10 @@ class _RemoteCaretLayerState extends State<RemoteCaretLayer> {
         editable: widget.editable,
         brightness: Theme.of(context).brightness,
         labelStyle: DefaultTextStyle.of(context).style.merge(
-          const TextStyle(
-            fontSize: 11,
+          TextStyle(
+            fontSize: AppTypeScale.caption,
             fontWeight: FontWeight.w400,
-            color: Color(0xFFFFFFFF),
+            color: const Color(0xFFFFFFFF),
             height: 1.25,
             letterSpacing: 0.1,
             decoration: TextDecoration.none,
