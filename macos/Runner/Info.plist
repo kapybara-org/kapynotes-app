@@ -18,6 +18,23 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<!-- kapynotes://join/<token> and kapynotes://space/<token>, which the join
+	     pages' "Open in Kapy Notes" button opens. Scheme only: universal links
+	     would need an associated-domains entitlement, and a Developer ID build
+	     carrying that without a matching provisioning profile will not launch. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>com.kapybara.kapynotes.join</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>kapynotes</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleVersion</key>

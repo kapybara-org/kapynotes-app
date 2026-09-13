@@ -11,6 +11,7 @@ import 'auth_api.dart';
 import 'key_bundle.dart';
 import 'doc_store.dart';
 import 'image_sync.dart';
+import 'joining.dart';
 import 'key_store.dart';
 import 'recovery_key.dart';
 import 'sharing.dart';
@@ -140,6 +141,7 @@ class Account extends ChangeNotifier {
   DocStore? _docs;
   SyncService? _sync;
   Sharing? _sharing;
+  Joining? _joining;
   SpeechApi? _speech;
   ImageSync? _images;
   SpaceKeyring? _keyring;
@@ -157,6 +159,11 @@ class Account extends ChangeNotifier {
   /// Shared spaces, once the account is unlocked. Null before that: there is
   /// no key to share anything with.
   Sharing? get sharing => _sharing;
+
+  /// Several invitations at once, a space's link, and who is waiting to be
+  /// let in. Null while signed out — and against an API that is not the real
+  /// HTTP one, as in tests that drive [Account] with a fake server.
+  Joining? get joining => _joining;
 
   /// Transcription, once there is a session to do it under.
   ///
@@ -495,6 +502,14 @@ class Account extends ChangeNotifier {
       notes: _notes,
       sync: service,
     )..addListener(notifyListeners);
+    final sharing = _sharing!;
+    _joining = api is HttpSyncApi
+        ? Joining(
+            send: api.send,
+            refreshSpaces: sharing.refresh,
+            requestSync: service.requestSync,
+          )
+        : null;
     _moveTo(AccountState.ready);
     // Before the first pass rather than after it: the app is already in front
     // of the user by the time this runs, and a change that lands while that
@@ -505,6 +520,8 @@ class Account extends ChangeNotifier {
 
   void _teardownSync() {
     final images = _images;
+    _joining?.dispose();
+    _joining = null;
     _sharing?.dispose();
     _sharing = null;
     _images = null;

@@ -11,6 +11,9 @@ import '../../sync/sync_api.dart' show SyncRefusedException;
 import '../../sync/safety.dart';
 import '../../sync/spaces.dart';
 import '../member_avatars.dart';
+import '../../sync/joining.dart';
+import '../join/join_link_sheet.dart';
+import '../join/joining_ui.dart';
 import '../safety_dialogs.dart';
 import '../settings_rows.dart';
 import '../share_dialog.dart';
@@ -185,7 +188,22 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
   }
 
   Future<void> _join() async {
-    final token = tokenFrom(_code.text);
+    // A space's link asks the owner rather than joining outright, so it opens
+    // the sheet that says what the space is before anything is asked.
+    final target = parseJoinTarget(_code.text);
+    if (target is SpaceLinkTarget) {
+      final joining = JoiningScope.of(context);
+      if (joining == null) return;
+      _code.clear();
+      await showJoinLinkSheet(
+        context,
+        token: target.token,
+        joining: joining,
+        sharing: widget.sharing,
+      );
+      return;
+    }
+    final token = target?.token ?? tokenFrom(_code.text);
     if (token.isEmpty) return;
     await _run(() async {
       final space = await widget.sharing.acceptInvite(token);

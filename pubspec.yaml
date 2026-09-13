@@ -129,6 +129,19 @@ dependencies:
   # the Apple devices below that line.
   sherpa_onnx: ^1.13.7
 
+  # Opening the app from a link: `kapynotes://join/<token>` for an invitation
+  # and `kapynotes://space/<token>` for a space's shareable link, plus the
+  # https links Android verifies against kapynotes.com. One API across the
+  # four platforms this app ships on, including the Windows hand-off when a
+  # link is clicked while the app is already running. Pinned to the newest
+  # release whose public package keeps this app's Dart 3.10 floor; 7.1 moved
+  # to ^3.12.
+  app_links: 7.0.0
+  # Not used directly: named only to hold the floor. app_links 7.0.0 accepts
+  # ^2.0.2, and pub would otherwise pick 2.0.4, which needs Dart ^3.12 — the
+  # floor holding for direct dependencies and quietly failing one level down.
+  app_links_platform_interface: 2.0.2
+
   # Reading an image off the system clipboard, which Flutter's own
   # `Clipboard` cannot do — it handles text and nothing else. Chosen over
   # super_clipboard, which is more capable but needs a Rust toolchain on every

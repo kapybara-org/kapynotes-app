@@ -31,6 +31,12 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Links are app_links' to hand to the app. Left on, Flutter would push a
+	     link's path as a route: kapynotes://write has none, which is why Quick
+	     Capture never met it, but kapynotes://space/<token> has one, and there is
+	     no such route. -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>

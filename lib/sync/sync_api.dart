@@ -1101,6 +1101,18 @@ class HttpSyncApi implements SyncApi {
 
   /// Returns the decoded body, or an empty map when [absentIsNull] turned a
   /// 404 into "there isn't one".
+  /// The same request every call here makes — session, device and protocol
+  /// headers, and the same errors — for the joining calls in `joining.dart`.
+  ///
+  /// Public, and on this class rather than [SyncApi], so that inviting
+  /// several people or handling a space's link does not become something
+  /// every implementation of [SyncApi], the test fakes included, must learn.
+  Future<Map<String, Object?>> send(
+    String method,
+    String path, {
+    Map<String, Object?>? payload,
+  }) => _send(method, _baseUrl.resolve(path), payload: payload);
+
   Future<Map<String, Object?>> _send(
     String method,
     Uri url, {

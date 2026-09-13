@@ -15,6 +15,10 @@ import '../sync/trust.dart';
 import 'collaborator_colors.dart';
 import 'member_avatars.dart';
 import 'profile_avatar.dart';
+import '../sync/joining.dart';
+import 'join/join_requests_panel.dart';
+import 'join/joining_ui.dart';
+import 'join/space_link_panel.dart';
 import 'safety_dialogs.dart';
 
 /// The share sheet for one note.
@@ -175,6 +179,8 @@ class _ShareDialogState extends State<_ShareDialog> {
   }
 
   Future<void> _shareWithEmail() async {
+    final addresses = splitAddresses(_email.text);
+    if (addresses.length > 1) return _shareWithMany(addresses);
     final email = _email.text.trim();
     if (!email.contains('@')) {
       setState(() => _error = 'Enter an email address.');
@@ -203,6 +209,91 @@ class _ShareDialogState extends State<_ShareDialog> {
       }
       _email.clear();
     }, done: 'Invitation sent to $email as ${_inviteRole.accessLabel}.');
+  }
+
+  /// Several addresses at once: into this space when there is one, and
+  /// otherwise into a new space made for exactly these people.
+  ///
+  /// Never into a two-person space that happens to exist already, as sharing
+  /// with one person does. Adding several people to "With priya" would show
+  /// every one of them the notes shared with Priya before.
+  ///
+  /// And never a new space with nobody in it. The owner's device ends any
+  /// space that holds notes and no one else — it brings them home — so a note
+  /// moved into a space the server then turned every address away from would
+  /// be moved straight back out, racing the cleanup of spaces left behind.
+  /// Nothing is made until an address could be somebody, and the note moves
+  /// only once an invitation has actually been written.
+  Future<void> _shareWithMany(List<String> addresses) async {
+    final joining = JoiningScope.of(context);
+    if (joining == null) {
+      setState(
+        () => _error = 'Sign in again to invite several people at once.',
+      );
+      return;
+    }
+    if (addresses.length > kBatchInviteMax) {
+      setState(
+        () => _error = 'Invite up to $kBatchInviteMax people at a time.',
+      );
+      return;
+    }
+    final noteId = widget.noteId;
+    if (_space == null && !addresses.any(_looksLikeEmail)) {
+      setState(() => _error = 'None of those look like email addresses.');
+      return;
+    }
+    var results = const <BatchInviteResult>[];
+    await _run(() async {
+      final existing = _space;
+      if (existing != null) {
+        results = await joining.inviteMany(
+          existing.id,
+          addresses,
+          role: _inviteRole,
+        );
+      } else if (noteId != null) {
+        // The order sharing with one person uses: make the space, invite,
+        // then move the note in. Making it is what asks for the sharing
+        // rules, so a retry after agreeing starts from nothing made.
+        final space = await widget.sharing.createSpace(
+          groupSpaceName(addresses),
+        );
+        try {
+          results = await joining.inviteMany(
+            space.id,
+            addresses,
+            role: _inviteRole,
+          );
+        } catch (_) {
+          await _endQuietly(space.id);
+          rethrow;
+        }
+        if (!results.any((r) => r.sent)) {
+          await _endQuietly(space.id);
+          return;
+        }
+        await widget.sharing.shareNote(noteId, spaceId: space.id);
+      }
+      _lastInviteToken = null;
+      _email.clear();
+    }, waiting: 'Sending invitations…');
+    if (mounted && _error == null && results.isNotEmpty) {
+      setState(() => _notice = describeBatch(results));
+    }
+  }
+
+  static bool _looksLikeEmail(String address) =>
+      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(address);
+
+  /// Ends a space this dialog just made for nobody. Best effort: if it cannot
+  /// be ended now, it holds no notes, so it is harmless where it is.
+  Future<void> _endQuietly(String spaceId) async {
+    try {
+      await widget.sharing.stopSharing(spaceId);
+    } on Object {
+      // Left for the owner to stop from the list; it shares nothing.
+    }
   }
 
   Future<void> _copyLink(String token) async {
@@ -392,6 +483,23 @@ class _ShareDialogState extends State<_ShareDialog> {
                     action: 'Invite',
                     onSubmit: _shareWithEmail,
                   ),
+                  if (JoiningScope.of(context) case final joining?) ...[
+                    const SizedBox(height: 14),
+                    SpaceLinkPanel(
+                      spaceId: space.id,
+                      joining: joining,
+                      run: _run,
+                      role: _inviteRole,
+                      enabled: !_busy && sharing.holdsKey(space.id),
+                    ),
+                    const SizedBox(height: 14),
+                    JoinRequestsPanel(
+                      spaceId: space.id,
+                      joining: joining,
+                      run: _run,
+                      enabled: !_busy,
+                    ),
+                  ],
                 ],
                 if (_lastInviteToken case final token?) ...[
                   const SizedBox(height: 6),
@@ -992,7 +1100,7 @@ class _EmailRow extends StatelessWidget {
               color: palette.textPrimary,
             ),
             decoration: InputDecoration(
-              hintText: 'Their email address',
+              hintText: 'One or more email addresses',
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 10,
