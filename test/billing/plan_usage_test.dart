@@ -56,6 +56,16 @@ class _Api implements BillingApi {
     calls++;
     return answer();
   }
+
+  @override
+  Future<AdoptedPurchases> adopt() async => AdoptedPurchases(
+    claimed: const [],
+    heldByAnother: false,
+    entitlements: answer(),
+  );
+
+  @override
+  Future<Uri> webCheckout() async => Uri.parse('https://kapynotes.com/buy');
 }
 
 Future<void> _settle() => Future<void>.delayed(const Duration(milliseconds: 5));

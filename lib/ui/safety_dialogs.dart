@@ -356,6 +356,8 @@ String describeSharingError(Object error) => switch (error) {
   SyncOutdatedException() => 'Update Kapy Notes to keep sharing.',
   SyncRefusedException(:final code) => switch (code) {
     termsRequiredCode => 'Agree to the sharing rules first.',
+    // Starting or growing a space, on Free: never an exit, which stay open.
+    proRequiredCode => 'Sharing is part of Pro.',
     'view-only' => 'You have View only access to this space.',
     'already a member' => 'They are already in this space.',
     'too many pending invitations' => 'Too many people are still to accept.',

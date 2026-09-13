@@ -167,6 +167,23 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// the server already, and the seed would be refused.
   final Set<String> _caughtUp = {};
 
+  /// Spaces the server will not sync until somebody in them has Pro, as it
+  /// last said.
+  ///
+  /// Per space, because that is how the server answers: a free account in a
+  /// space somebody Pro owns syncs that space and not its own. Nothing in one
+  /// of these is subscribed to, pulled, reconciled or pushed. Its notes stay
+  /// dirty, and one diff takes them up once it is covered again, instead of a
+  /// month of keystrokes queued against a refusal. A space leaves only when
+  /// the server serves it again, so what the UI shows never flickers.
+  final Set<String> _needsPro = {};
+
+  /// Whether the next pass asks about [_needsPro] again. Set only by something
+  /// that could have changed the answer: a purchase or a trial ending, the
+  /// server saying the spaces changed, a new connection. Asking on every pass
+  /// is what the builds before this one did, as fast as the network allowed.
+  bool _askAboutPro = false;
+
   /// Pushes awaiting an acknowledgement, by request id.
   final Map<String, ({DocRecord record, OutboxEntry entry})> _awaiting = {};
 
@@ -220,6 +237,22 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// True while the socket is up: changes elsewhere reach this device
   /// without being asked for.
   bool get isLive => _live;
+
+  /// Spaces held back until somebody in them has Pro.
+  Set<String> get spacesNeedingPro => Set.unmodifiable(_needsPro);
+
+  /// Whether this account's own notes are held back for want of Pro.
+  bool get personalNeedsPro {
+    final personal = _keyring.personal;
+    return personal != null && _needsPro.contains(personal.id);
+  }
+
+  /// A purchase, refund, or trial transition may have changed coverage.
+  void recheckCoverage() {
+    if (_disposed || _vault == null || _needsPro.isEmpty) return;
+    _askAboutPro = true;
+    unawaited(syncNow());
+  }
 
   /// Everyone else with [noteId] open, one entry per person however many of
   /// their devices have it, in the order they arrived.
@@ -454,6 +487,8 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   void lock() {
     leaveNote();
     _vault = null;
+    _needsPro.clear();
+    _askAboutPro = false;
     _sendTimer?.cancel();
     _sendTimer = null;
     _retryTimer?.cancel();
@@ -535,6 +570,14 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _setStatus(SyncStatus.offline);
       _scheduleRetry();
     } on SyncException catch (error) {
+      // Every path that can meet one handles it per space, so this is only
+      // a net: a space held back is not a failure of the pass.
+      if (error is SyncRefusedException && error.code == proRequiredCode) {
+        final spaceId = error.body['spaceId'];
+        if (spaceId is String) _holdForPro(spaceId);
+        _setStatus(SyncStatus.idle);
+        return;
+      }
       _lastError = error.message;
       _setStatus(SyncStatus.failed);
     }
@@ -586,6 +629,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         _socketDown = false;
         _subscribed.clear();
         _stopPolling();
+        // Whatever the server said about Pro while this was away — a
+        // purchase on another device — is only learned by asking.
+        _askAboutPro = _needsPro.isNotEmpty;
         notifyListeners();
         // A pass on every connect: the spaces may have changed while the
         // socket was down, and the subscription needs the current list.
@@ -612,11 +658,16 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     for (final space in _keyring.spaces) {
       if (space.isTeam && !_keyring.holdsKey(space.id)) continue;
       if (_subscribed.contains(space.id)) continue;
+      if (_needsPro.contains(space.id) && !_askAboutPro) continue;
       wanted[space.id] = _state.cursorFor(space.id);
     }
-    if (wanted.isEmpty) return;
+    if (wanted.isEmpty) {
+      _askAboutPro = false;
+      return;
+    }
     if (socket.send({'t': 'sub', 'spaces': wanted})) {
       _subscribed.addAll(wanted.keys);
+      _askAboutPro = false;
     }
   }
 
@@ -630,6 +681,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       case 'synced':
         final spaceId = message['spaceId'];
         if (spaceId is String) {
+          _servedAgain(spaceId);
           _caughtUp.add(spaceId);
           _resendPresence(spaceId);
           _reconcileDirty();
@@ -638,12 +690,21 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       case 'ack':
         await _onAck(message);
       case 'spaces':
+        // What this account may see has changed, and a purchase or a refund
+        // is among the things that change it.
+        _askAboutPro = _needsPro.isNotEmpty;
         unawaited(syncNow());
       case 'error':
         final spaceId = message['spaceId'];
         if (spaceId is String) _subscribed.remove(spaceId);
-        debugPrint('KapyNotes: socket error: ${message['error']}');
-        unawaited(syncNow());
+        if (spaceId is String && message['error'] == proRequiredCode) {
+          // Not a pass: asking again would be refused again. It waits for
+          // something that could change the answer; see [_askAboutPro].
+          _holdForPro(spaceId);
+        } else {
+          debugPrint('KapyNotes: socket error: ${message['error']}');
+          unawaited(syncNow());
+        }
       case 'pong':
         break;
       case 'presence':
@@ -927,6 +988,8 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
 
     for (final note in _notes.dirtyNotes) {
       final spaceId = note.spaceId ?? personal.id;
+      // Left dirty, not diffed: the diff is taken once, when it can go.
+      if (_needsPro.contains(spaceId)) continue;
       final space = _keyring.byId(spaceId);
       if (space == null) continue;
       if (!space.canEdit) continue;
@@ -977,6 +1040,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
 
     for (final stone in _notes.dirtyTombstones) {
       final spaceId = stone.spaceId ?? personal.id;
+      if (_needsPro.contains(spaceId)) continue;
       final space = _keyring.byId(spaceId);
       if (space == null || !space.canEdit) continue;
       final record = _docs.get(stone.id);
@@ -1140,6 +1204,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       if (record.outbox.isEmpty) continue;
       final entry = record.outbox.first;
       if (entry.inFlight) continue;
+      // What was queued before the refusal waits in the outbox, in order.
+      if (_needsPro.contains(entry.spaceId) ||
+          (entry.from != null && _needsPro.contains(entry.from))) {
+        continue;
+      }
       final note = _notes.byId(record.noteId);
       final push = await _preparePush(vault, record, entry, note);
       if (push == null) continue;
@@ -1157,6 +1226,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           _acknowledge(record, entry, result);
         } on SyncRefusedException catch (error) {
           entry.inFlight = false;
+          if (error.code == proRequiredCode) {
+            final spaceId = error.body['spaceId'];
+            _holdForPro(spaceId is String ? spaceId : entry.spaceId);
+            continue;
+          }
           await _refused(record, entry, error.code, error.body);
         } on SyncException catch (error) {
           entry.inFlight = false;
@@ -1284,6 +1358,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         _scheduleRetry();
         return;
       }
+      if (error == proRequiredCode) {
+        // The socket's ack names no space; the entry does.
+        final spaceId = message['spaceId'];
+        _holdForPro(spaceId is String ? spaceId : waiting.entry.spaceId);
+        return;
+      }
       await _refused(waiting.record, waiting.entry, error, message);
       return;
     }
@@ -1297,6 +1377,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   }
 
   void _acknowledge(DocRecord record, OutboxEntry entry, OpsPushResult result) {
+    _servedAgain(entry.spaceId);
     record.outbox.remove(entry);
     record.seeded = true;
     final note = _notes.byId(record.noteId);
@@ -1373,6 +1454,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         record.opsSinceSnapshot = snapshotEvery;
         record.ownOpsSinceSnapshot = snapshotEvery;
         _scheduleSend();
+      case proRequiredCode:
+        // The entry stays exactly as it is, to go once the space is covered.
+        _holdForPro(entry.spaceId);
       default:
         // Something this build cannot answer. The entry is replaced by a
         // snapshot of the whole document, which carries every op it held,
@@ -1440,18 +1524,43 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   // -------------------------------------------------------------------------
 
   Future<void> _pullAllOverHttp() async {
+    final asking = _askAboutPro;
+    _askAboutPro = false;
     for (final space in _keyring.spaces) {
       if (space.isTeam && !_keyring.holdsKey(space.id)) continue;
-      for (var page = 0; page < 100; page++) {
-        final batch = await _api.pullOps(
-          space: space.id,
-          after: _state.cursorFor(space.id),
-        );
-        if (!batch.isEmpty) await _applyBatch(_vault!, batch);
-        if (!batch.hasMore) break;
+      if (_needsPro.contains(space.id) && !asking) continue;
+      try {
+        for (var page = 0; page < 100; page++) {
+          final batch = await _api.pullOps(
+            space: space.id,
+            after: _state.cursorFor(space.id),
+          );
+          if (!batch.isEmpty) await _applyBatch(_vault!, batch);
+          if (!batch.hasMore) break;
+        }
+      } on SyncRefusedException catch (error) {
+        if (error.code != proRequiredCode) rethrow;
+        // One space refused is not the pass refused: the rest still come.
+        _holdForPro(space.id);
+        continue;
       }
+      _servedAgain(space.id);
       _caughtUp.add(space.id);
     }
+  }
+
+  /// The server refused [spaceId] for want of Pro. See [_needsPro].
+  void _holdForPro(String spaceId) {
+    _subscribed.remove(spaceId);
+    // Its log is no longer being followed, so it has to be caught up again
+    // before anything new is seeded into it.
+    _caughtUp.remove(spaceId);
+    if (_needsPro.add(spaceId) && !_disposed) notifyListeners();
+  }
+
+  /// The server served [spaceId] again, so whatever held it has changed.
+  void _servedAgain(String spaceId) {
+    if (_needsPro.remove(spaceId) && !_disposed) notifyListeners();
   }
 
   /// Applies one page of one space's log, in seq order, and moves the
@@ -1711,14 +1820,25 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       final key = _keyring.keyFor(space.id);
       if (key == null || !space.canEdit) continue;
       try {
-        if (await _grantWaiting(space, key)) changed = true;
+        // Handing a key to somebody new grows the space, which needs Pro;
+        // rotating and bringing notes home are ways out, and never do.
+        if (!_needsPro.contains(space.id) && await _grantWaiting(space, key)) {
+          changed = true;
+        }
         if (space.rotationPending && await _rotate(space, key)) changed = true;
         if (space.owedTripHome && space.isOwner && await bringHome(space.id)) {
           changed = true;
         }
       } on SyncRefusedException catch (error) {
         debugPrint('KapyNotes: duty on ${space.id} refused: ${error.code}');
-        changed = true;
+        if (error.code == proRequiredCode) {
+          // A way out can still meet it — a trip home writes into the personal
+          // space — so it is held under whichever space said so.
+          final spaceId = error.body['spaceId'];
+          _holdForPro(spaceId is String ? spaceId : space.id);
+        } else {
+          changed = true;
+        }
       }
     }
     if (changed) await _keyring.refresh(_api, vault);

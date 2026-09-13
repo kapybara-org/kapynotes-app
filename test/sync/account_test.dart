@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/speech/speech_api.dart';
@@ -7,6 +8,7 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 
+import '../billing/billing_fakes.dart';
 import 'fake_server.dart';
 
 /// Only its identity matters: the test asks whether one exists at all.
@@ -138,6 +140,37 @@ void main() {
 
     expect(d.account.state, AccountState.ready);
     expect(d.account.speech, isA<_StubSpeech>());
+    d.dispose();
+  });
+
+  test('Pro bought here brings back the spaces sync was holding', () async {
+    final d = Device(server);
+    final billingApi = FakeBillingApi()..answer = afterTrial;
+    d.account.billing = Billing(
+      session: d.account,
+      userId: () => d.account.user?.id,
+      token: () => d.account.token,
+      api: (_) => billingApi,
+      store: FakePurchaseStore(),
+    );
+    await d.boot();
+    await d.account.signIn(email: 'a@b.co', password: 'x');
+    await d.account.createPassphrase('a good passphrase');
+    final sync = d.account.sync!;
+    d.notes.create(body: 'Written on Free');
+    server.needsPro.add(server.personal('user-1').id);
+    await sync.syncNow();
+    await settle(server);
+    expect(sync.personalNeedsPro, isTrue);
+
+    // Nothing announces it on the socket here: billing is what notices.
+    server.needsPro.clear();
+    billingApi.answer = () => entitlementsFor(pro: true);
+    await d.account.billing!.refresh();
+    await settle(server);
+
+    expect(sync.personalNeedsPro, isFalse);
+    expect(d.notes.notes.single.isDirty, isFalse);
     d.dispose();
   });
 

@@ -1,8 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/billing/billing_api.dart';
 import 'package:kapy_notes/billing/entitlements.dart';
-import 'package:kapy_notes/billing/plan_usage.dart';
+import 'package:kapy_notes/billing/purchase_store.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -37,6 +38,16 @@ class _BillingApi implements BillingApi {
 
   @override
   Future<Entitlements> entitlements() async => answer;
+
+  @override
+  Future<AdoptedPurchases> adopt() async => AdoptedPurchases(
+    claimed: const [],
+    heldByAnother: false,
+    entitlements: answer,
+  );
+
+  @override
+  Future<Uri> webCheckout() async => Uri.parse('https://kapynotes.com/buy');
 }
 
 /// Settings, opened with an account that has been signed in and unlocked —
@@ -70,11 +81,12 @@ Future<void> pumpSettings(
     docStorage: MemoryDocStorage(),
   );
   if (entitlements != null) {
-    account.planUsage = PlanUsage(
+    account.billing = Billing(
       session: account,
       userId: () => account.user?.id,
       token: () => account.token,
       api: (_) => _BillingApi(entitlements),
+      store: const UnsupportedPurchaseStore(),
       cache: store,
     );
   }

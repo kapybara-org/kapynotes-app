@@ -1,45 +1,75 @@
-/// The current plan and usage totals returned by the server.
+/// What the server says this account may do.
 ///
-/// The app renders this answer and never derives a signed-in account's plan
-/// from local state. Purchases can happen on another device or on the web,
-/// while storage and cloud usage are enforced by the server itself.
+/// The server is the only authority on it, and the app never works it out for
+/// itself: storage and transcription are enforced there on the way in, and a
+/// purchase made anywhere but this device would be invisible to anything the
+/// store SDK here could say. So this is parsed, cached and rendered — never
+/// computed.
 class Entitlements {
   const Entitlements({
     required this.plan,
     required this.storageBytes,
     required this.storageUsedBytes,
     required this.speechSecondsPerMonth,
-    required this.speechSecondsUsedThisMonth,
+    this.speechSecondsUsedThisMonth = 0,
     required this.speechCreditSeconds,
-    required this.summaryGenerationsPerMonth,
-    required this.summaryGenerationsUsedThisMonth,
-    required this.speechResetsAt,
+    this.summaryGenerationsPerMonth = 0,
+    this.summaryGenerationsUsedThisMonth = 0,
+    this.speechResetsAt,
     required this.sync,
     required this.sharing,
+    this.noteLimit,
+    this.trialEndsAt,
   });
 
+  /// `free` or `pro`. Anything else a newer server invents reads as free,
+  /// which is the answer that never unlocks something by mistake.
   final String plan;
+
+  /// The plan's storage plus every pack bought, already summed.
   final int storageBytes;
   final int storageUsedBytes;
   final int speechSecondsPerMonth;
   final int speechSecondsUsedThisMonth;
-  final int speechCreditSeconds;
+
+  /// Successful cloud summaries and rewrites used during this UTC month.
   final int summaryGenerationsPerMonth;
   final int summaryGenerationsUsedThisMonth;
+
+  /// The first instant of the next UTC month, when metered usage resets.
   final DateTime? speechResetsAt;
+
+  /// Bought minutes, spent only once a month's allowance is gone.
+  final int speechCreditSeconds;
+
+  /// Sent rather than derived from [plan]: until plans are enforced every
+  /// account may sync and share, whatever it paid.
   final bool sync;
   final bool sharing;
+
+  /// How many notes may be kept editable, or null for no limit. Past it the
+  /// rest turn read-only; see `NoteLimit` for which.
+  ///
+  /// Sent for the same reason [sync] is: it is null for everybody until plans
+  /// are enforced and for as long as Pro, or a trial of it, lasts. A server
+  /// that predates it sends nothing, which reads as no limit.
+  final int? noteLimit;
+
+  /// When this account's Pro trial ends, or ended. Null where there is no
+  /// trial to speak of: the account owns Pro, or plans are not enforced yet.
+  ///
+  /// While it is ahead, everything above already describes Pro. Once it has
+  /// passed, this answer is stale — every field changes at that moment — and
+  /// has to be asked for again rather than read.
+  final DateTime? trialEndsAt;
 
   bool get isPro => plan == 'pro';
 
   static const int freeSummaryGenerationsPerMonth = 100;
   static const int proSummaryGenerationsPerMonth = 1000;
 
-  /// What Settings can explain before there is an account to ask.
-  ///
-  /// These are the published free-plan limits mirrored from the wire contract,
-  /// not an entitlement decision. Once signed in, only the server response is
-  /// shown.
+  /// Published Free limits for Settings before there is an account to ask.
+  /// Entitlement decisions are still made only from the server once signed in.
   static const freePreview = Entitlements(
     plan: 'free',
     storageBytes: 100 * 1024 * 1024,
@@ -49,10 +79,14 @@ class Entitlements {
     speechCreditSeconds: 0,
     summaryGenerationsPerMonth: freeSummaryGenerationsPerMonth,
     summaryGenerationsUsedThisMonth: 0,
-    speechResetsAt: null,
     sync: false,
     sharing: false,
+    noteLimit: 5,
   );
+
+  /// Trying Pro rather than owning it.
+  bool trialRunningAt(DateTime now) =>
+      !isPro && (trialEndsAt?.isAfter(now) ?? false);
 
   static Entitlements fromJson(Map<String, Object?> raw) {
     int count(String key) => switch (raw[key]) {
@@ -60,17 +94,14 @@ class Entitlements {
       final double value when value >= 0 => value.round(),
       _ => 0,
     };
-
+    final limit = raw['noteLimit'];
+    final trial = raw['trialEndsAt'];
     final plan = raw['plan'] == 'pro' ? 'pro' : 'free';
-    // During a rolling deploy an updated app can briefly reach the previous
-    // endpoint shape. New accounting begins at zero, so the published plan
-    // limit and zero usage are the truthful bridge until the server catches up.
     final summaryLimit = raw.containsKey('summaryGenerationsPerMonth')
         ? count('summaryGenerationsPerMonth')
         : plan == 'pro'
         ? proSummaryGenerationsPerMonth
         : freeSummaryGenerationsPerMonth;
-
     return Entitlements(
       plan: plan,
       storageBytes: count('storageBytes'),
@@ -86,6 +117,8 @@ class Entitlements {
       },
       sync: raw['sync'] == true,
       sharing: raw['sharing'] == true,
+      noteLimit: limit is int && limit > 0 ? limit : null,
+      trialEndsAt: trial is String ? DateTime.tryParse(trial) : null,
     );
   }
 
@@ -101,5 +134,53 @@ class Entitlements {
     'speechResetsAt': speechResetsAt?.toUtc().toIso8601String(),
     'sync': sync,
     'sharing': sharing,
+    'noteLimit': noteLimit,
+    'trialEndsAt': trialEndsAt?.toUtc().toIso8601String(),
   };
 }
+
+/// The three things that can be bought, by the server's name for them.
+///
+/// Mirrors `PRODUCTS` in the contract. The server maps store ids onto these
+/// same names, so a purchase and the entitlement it turns into are spoken of
+/// the same way at both ends.
+enum Sku {
+  proLifetime('pro_lifetime', 'com.kapybara.kapynotes.pro_lifetime'),
+  storage5gb('storage_5gb', 'com.kapybara.kapynotes.storage_5gb'),
+  voice1000('voice_1000', 'com.kapybara.kapynotes.voice_1000');
+
+  const Sku(this.id, this.storeProductId);
+
+  final String id;
+
+  /// The product id in App Store Connect. The contract's
+  /// `STORE_PRODUCT_SKUS` maps exactly these back to [id]; a store id the
+  /// server does not know is recorded and never granted.
+  final String storeProductId;
+
+  static Sku? forStoreProduct(String productId) {
+    for (final sku in values) {
+      if (sku.storeProductId == productId) return sku;
+    }
+    return null;
+  }
+}
+
+/// Pro Lifetime's price in the US, for the one place a price has to be named
+/// before any store can be asked: the trial's notice at sign-up, which has to
+/// say what carrying on costs before the trial starts. Everywhere else shows
+/// the store's own, localised price. Matches `PRO_PRICE` on the site.
+const String proLifetimeUsPrice = r'US$24';
+
+/// What Pro gives on its own, before any pack. From the contract's
+/// `PLAN_ENTITLEMENTS`; used only to tell bought storage from the plan's.
+const int proStorageBytes = 1024 * 1024 * 1024;
+
+/// One storage pack. From the contract's `PRODUCTS`.
+const int storagePackBytes = 5 * 1024 * 1024 * 1024;
+
+/// The most packs may add, from the contract's `MAX_BONUS_STORAGE_BYTES`.
+///
+/// The server clamps anything past it rather than refusing, because by then
+/// the money is taken — so the buy button is where it has to stop.
+const int maxBonusStorageBytes = 100 * 1024 * 1024 * 1024;

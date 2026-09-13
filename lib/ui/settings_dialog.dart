@@ -7,7 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../billing/entitlements.dart';
-import '../billing/plan_usage.dart';
+import '../billing/billing.dart';
 import '../core/appearance.dart';
 import '../core/desktop_integration.dart';
 import '../core/device_memory.dart';
@@ -33,6 +33,7 @@ import '../data/notes_store.dart';
 import '../sync/account.dart';
 import 'account/sharing_pane.dart';
 import 'account/sync_pane.dart';
+import 'billing/pro_sheet.dart';
 import 'export_import.dart';
 import '../data/rates.dart';
 import '../data/shortcut_prefs.dart';
@@ -284,7 +285,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     if (!widget.asSheet) HardwareKeyboard.instance.addHandler(_onFindKey);
     _shortcutError = widget.desktopIntegration?.registrationError;
     _loadSpeechState();
-    unawaited(widget.account?.planUsage?.refresh());
+    unawaited(widget.account?.billing?.refresh());
     // The only disk read this dialog does, and only in a build that offers
     // models: a handful of `stat` calls to see which are already here.
     unawaited(widget.localModels?.refresh());
@@ -2338,7 +2339,7 @@ class _SheetPage extends StatelessWidget {
 
 /// The account's plan and all server-metered usage in one place.
 ///
-/// This listens to both the account and its usage controller. A sign-in made
+/// This listens to both the account and its billing controller. A sign-in made
 /// from the neighbouring pane therefore replaces the free-plan preview with
 /// the real account answer without settings needing to be reopened.
 class _PlanUsagePane extends StatelessWidget {
@@ -2350,37 +2351,40 @@ class _PlanUsagePane extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: account,
     builder: (context, _) {
-      final planUsage = account.planUsage;
-      if (planUsage == null) {
+      final billing = account.billing;
+      if (billing == null) {
         return _contents(context, null);
       }
       return ListenableBuilder(
-        listenable: planUsage,
-        builder: (context, _) => _contents(context, planUsage),
+        listenable: billing,
+        builder: (context, _) => _contents(context, billing),
       );
     },
   );
 
-  Widget _contents(BuildContext context, PlanUsage? planUsage) {
-    final signedIn = account.user != null;
-    final current = planUsage?.entitlements;
+  Widget _contents(BuildContext context, Billing? billing) {
+    final signedIn = billing?.isSignedIn ?? account.user != null;
+    final current = billing?.entitlements;
     final shown = current ?? (!signedIn ? Entitlements.freePreview : null);
     final initialLoad =
-        signedIn && current == null && !(planUsage?.refreshFailed ?? false);
-    final failed = signedIn && (planUsage?.refreshFailed ?? false);
+        signedIn && current == null && !(billing?.refreshFailed ?? false);
+    final failed = signedIn && (billing?.refreshFailed ?? false);
 
-    final planTitle = switch ((signedIn, current)) {
-      (false, _) => 'Free plan',
-      (true, final Entitlements value) =>
+    final planTitle = switch ((signedIn, current, billing?.trialRunning)) {
+      (false, _, _) => 'Free plan',
+      (true, _, true) => 'Pro trial',
+      (true, final Entitlements value, _) =>
         value.isPro ? 'Pro plan' : 'Free plan',
       _ when failed => 'Plan unavailable',
       _ => 'Checking your plan',
     };
-    final planSubtitle = switch ((signedIn, current)) {
-      (false, _) => 'Sign in to see your account and live usage',
-      (true, final Entitlements value) =>
+    final planSubtitle = switch ((signedIn, current, billing?.trialDaysLeft)) {
+      (false, _, _) => 'Sign in to see your account and live usage',
+      (true, _, 1) => 'Your Pro trial is on its last day',
+      (true, _, final int days) => 'Your Pro trial has $days days left',
+      (true, final Entitlements value, _) =>
         value.isPro
-            ? 'Your current plan with expanded cloud allowances'
+            ? 'Pro Lifetime with expanded cloud allowances'
             : 'Your current plan and included cloud allowances',
       _ when failed =>
         'Could not reach your account. Your plan has not changed.',
@@ -2398,8 +2402,11 @@ class _PlanUsagePane extends StatelessWidget {
               icon: KapyIcons.verifiedOutlined,
               title: planTitle,
               subtitle: planSubtitle,
-              trailing: signedIn && planUsage != null
-                  ? planUsage.refreshing
+              onTap: billing != null && billing.canPurchase
+                  ? () => unawaited(showProSheet(context, billing: billing))
+                  : null,
+              trailing: signedIn && billing != null
+                  ? billing.refreshing
                         ? const SizedBox.square(
                             dimension: 18,
                             child: CircularProgressIndicator(strokeWidth: 1.5),
@@ -2407,7 +2414,7 @@ class _PlanUsagePane extends StatelessWidget {
                         : SettingsRowButton(
                             key: const ValueKey('plan-refresh'),
                             label: 'Refresh',
-                            onPressed: () => unawaited(planUsage.refresh()),
+                            onPressed: () => unawaited(billing.refresh()),
                           )
                   : null,
             ),

@@ -551,7 +551,11 @@ class _TeamRow extends StatelessWidget {
     final palette = context.palette;
     final people = space.peopleExcept(sharing.userId);
     final warnings = sharing.trust.warningsFor(space.id);
-    final detail = !sharing.holdsKey(space.id)
+    final detail = sharing.needsPro(space.id)
+        ? (space.isOwner
+              ? 'Paused until you have Pro'
+              : 'Paused until you or its owner has Pro')
+        : !sharing.holdsKey(space.id)
         ? 'Waiting for someone to let you in'
         : warnings.isNotEmpty
         ? "A member's key changed"

@@ -316,6 +316,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       widget.updates?.loadCache();
       final account = widget.account;
       if (account != null) {
+        account.planTerms?.loadCache();
         unawaited(account.restore());
       }
       _scheduleBackgroundFetches();
@@ -427,6 +428,11 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       // Coming back is the likeliest moment for another device to have moved
       // on without us.
       unawaited(sync?.syncNow() ?? Future<void>.value());
+      // And for a trial to have ended while nothing here was running to
+      // notice: a suspended phone does not fire timers.
+      unawaited(
+        widget.account?.billing?.refreshIfStale() ?? Future<void>.value(),
+      );
     } else {
       // Deliberately not on `inactive` or `hidden`. On desktop those mean a
       // window that lost focus or was minimised, and an open window quietly

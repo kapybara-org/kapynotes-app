@@ -4,8 +4,12 @@ import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
+import 'billing/billing.dart';
 import 'billing/billing_api.dart';
-import 'billing/plan_usage.dart';
+import 'billing/note_limit.dart';
+import 'billing/plan_terms.dart';
+import 'billing/purchase_store.dart';
+import 'billing/revenuecat_store.dart';
 import 'core/desktop_integration.dart';
 import 'core/focus_hold.dart';
 import 'core/platform.dart';
@@ -71,19 +75,41 @@ Future<void> main() async {
       : null;
   // Built here rather than inside Account so that a build with no
   // transcription in it simply never sets this, and the queue never runs.
+  account?.speechApiFor = (token) =>
+      HttpSpeechApi(baseUrl: Uri.parse(kApiBaseUrl), token: () async => token);
   if (account != null) {
-    account.speechApiFor = (token) => HttpSpeechApi(
-      baseUrl: Uri.parse(kApiBaseUrl),
-      token: () async => token,
-    );
-    account.planUsage = PlanUsage(
+    // Whichever store this build can take money through. The desktop builds
+    // ship outside any store and take none, but still get the server's answer
+    // about what the account has.
+    final storeKey = AppPlatform.isIOS
+        ? kRevenueCatAppleKey
+        : AppPlatform.isAndroid
+        ? kRevenueCatGoogleKey
+        : '';
+    account.billing = Billing(
       session: account,
       userId: () => account.user?.id,
       token: () => account.token,
-      api: (token) =>
-          HttpBillingApi(baseUrl: Uri.parse(kApiBaseUrl), token: token),
+      api: (token) => HttpBillingApi(
+        baseUrl: Uri.parse(kApiBaseUrl),
+        token: () async => token,
+      ),
+      store: switch (storeKey) {
+        final key when key.isNotEmpty => RevenueCatStore(apiKey: key),
+        // The desktop builds ship outside any store, and a phone build with
+        // no key yet must not offer what it cannot sell.
+        _ => const UnsupportedPurchaseStore(),
+      },
       cache: store,
     );
+    // On every platform, whatever it can sell: the limits are the server's,
+    // and a build that cannot take money still has to keep to them.
+    final terms = PlanTerms(
+      store: store,
+      api: HttpPlanTermsApi(baseUrl: Uri.parse(kApiBaseUrl)),
+    );
+    account.planTerms = terms;
+    account.noteLimit = NoteLimit(notes: notes, account: account, terms: terms);
   }
 
   DesktopIntegration? desktopIntegration;

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../billing/entitlements.dart';
+import '../../billing/plan_terms.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
@@ -181,9 +183,10 @@ class _Field extends StatelessWidget {
 /// reset, no support request, no way back without the recovery key. Somebody
 /// who skims past that discovers it at the worst possible moment.
 class _InfoNote extends StatelessWidget {
-  const _InfoNote(this.text);
+  const _InfoNote(this.text, {super.key, this.icon = KapyIcons.lockRounded});
 
   final String text;
+  final KapyIconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -201,7 +204,7 @@ class _InfoNote extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 1),
             child: KapyIcon(
-              KapyIcons.lockRounded,
+              icon,
               size: AppControlMetrics.iconAdornment,
               color: palette.textSecondary,
             ),
@@ -266,6 +269,14 @@ class _SignInFormState extends State<_SignInForm> {
   _SignInStep _step = _SignInStep.email;
   bool _busy = false;
   String? _note;
+
+  @override
+  void initState() {
+    super.initState();
+    // Whether to say what a new account gets is the server's to decide, and
+    // this form is only ever shown with no account to ask instead.
+    unawaited(widget.account.planTerms?.refreshIfStale() ?? Future.value());
+  }
 
   @override
   void dispose() {
@@ -373,6 +384,17 @@ class _SignInFormState extends State<_SignInForm> {
         ..._actions(),
         if (_note != null) _Message(_note!),
         if (account.lastError != null) _Message(account.lastError!),
+        if (_step == _SignInStep.email || _step == _SignInStep.password)
+          if (account.planTerms case final terms?)
+            ListenableBuilder(
+              listenable: terms,
+              builder: (context, _) => terms.enforced
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: _TrialNotice(terms: terms),
+                    )
+                  : const SizedBox.shrink(),
+            ),
       ],
     );
   }
@@ -1099,7 +1121,12 @@ class _ReadyState extends State<_Ready> {
 
   Account get account => widget.account;
 
-  String get _status => switch (account.sync?.status) {
+  String get _status => account.sync?.personalNeedsPro ?? false
+      ? 'Sync is part of Pro. Your notes stay on this device, and nothing '
+            'already synced is deleted.'
+      : _syncStatus;
+
+  String get _syncStatus => switch (account.sync?.status) {
     SyncStatus.syncing => 'Syncing…',
     SyncStatus.offline => 'Offline. Will retry',
     SyncStatus.signedOut => 'Session expired. Sign in again',
@@ -1123,10 +1150,15 @@ class _ReadyState extends State<_Ready> {
     if (sync == null) return;
     final progress = Toast.showProgress(context, 'Syncing notes…');
     try {
+      // Pressed by a person, so it is worth asking about what is held back
+      // once more: Pro may have been bought somewhere this device never heard.
+      sync.recheckCoverage();
       await sync.syncNow();
       if (sync.status == SyncStatus.failed ||
           sync.status == SyncStatus.offline) {
         progress.error(sync.lastError ?? 'Could not sync notes');
+      } else if (sync.personalNeedsPro) {
+        progress.error('Sync is part of Pro');
       } else {
         progress.success('Notes synced');
       }
@@ -1319,6 +1351,32 @@ class DeleteAccountSettings extends StatelessWidget {
       );
     },
   );
+}
+
+// ---------------------------------------------------------------------------
+
+/// What a new account gets, said before it exists: how long the trial lasts,
+/// what stops when it ends, and what carrying on costs.
+class _TrialNotice extends StatelessWidget {
+  const _TrialNotice({required this.terms});
+
+  final PlanTerms terms;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = terms.trialDays;
+    final limit = terms.freeNoteLimit == 5 ? 'five' : '${terms.freeNoteLimit}';
+    return _InfoNote(
+      'New accounts get $days days of Pro, free, with no card: sync, sharing, '
+      'unlimited notes, 1 GB of storage and two hours of transcription a '
+      'month. Afterwards the account moves to Free by itself: sync and '
+      'sharing stop, and notes past the first $limit become read-only, with '
+      'nothing deleted. Pro Lifetime keeps everything for one payment of '
+      '$proLifetimeUsPrice.',
+      key: const ValueKey('trial-notice'),
+      icon: KapyIcons.verifiedOutlined,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

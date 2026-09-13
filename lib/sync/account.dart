@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../billing/plan_usage.dart';
+import '../billing/billing.dart';
+import '../billing/note_limit.dart';
+import '../billing/plan_terms.dart';
 import '../data/local_store.dart';
 import '../data/notes_store.dart';
 import 'auth_api.dart';
@@ -84,10 +86,40 @@ class Account extends ChangeNotifier {
   /// case [speech] stays null and the queue never runs.
   SpeechApi Function(String token)? speechApiFor;
 
-  /// Server-authoritative plan and usage, attached by the production root.
-  /// Kept separate from sync because a signed-in, still-locked account can
-  /// already have a plan and cloud usage worth showing.
-  PlanUsage? planUsage;
+  /// What this account has bought, and the way to buy more. Set once by
+  /// `main` and never torn down with sync: a purchase belongs to the session,
+  /// not to the unlocked vault, so it follows this object's user rather than
+  /// living inside [_start]. Null in a build with nothing wired up to sell.
+  Billing? get billing => _billing;
+  set billing(Billing? value) {
+    _billing?.removeListener(_onBilling);
+    _billing = value;
+    value?.addListener(_onBilling);
+  }
+
+  Billing? _billing;
+  Object? _coverage;
+
+  /// Whether plans are enforced, for when there is no account to ask. Set
+  /// once by `main`, like [billing]; null in a build that never limits.
+  PlanTerms? planTerms;
+
+  /// Which notes the plan leaves editable. Set once by `main` beside
+  /// [planTerms]; null in a build that never limits.
+  NoteLimit? noteLimit;
+
+  /// What the server syncs for this account follows what billing says it
+  /// has, so a change there — a purchase, a refund, a trial ending — is the
+  /// cue for sync to ask about the spaces it is holding back. Billing
+  /// notifies for much else besides, so only those three fields count.
+  void _onBilling() {
+    final now = _billing?.entitlements;
+    final coverage = now == null ? null : (now.plan, now.sync, now.trialEndsAt);
+    if (coverage == _coverage) return;
+    _coverage = coverage;
+    _sync?.recheckCoverage();
+  }
+
   final KeyStore _keys;
   final NotesStore _notes;
   final SyncState _state;
@@ -583,7 +615,9 @@ class Account extends ChangeNotifier {
   @override
   void dispose() {
     _teardownSync();
-    planUsage?.dispose();
+    noteLimit?.dispose();
+    planTerms?.dispose();
+    billing?.dispose();
     super.dispose();
   }
 }

@@ -1,7 +1,7 @@
 name: kapy_notes
 description: "Notes where every line is a live calculator."
 publish_to: 'none'
-version: 1.21.0+22
+version: 1.23.0+27
 
 environment:
   sdk: ^3.10.0
@@ -146,6 +146,12 @@ dependencies:
   # One quiet, consistent line-icon language across every app surface.
   # Hugeicons' free stroke-rounded set is MIT licensed and tree-shaken.
   hugeicons: ^1.1.7
+  # Buying Pro and the packs through the App Store. RevenueCat forwards each
+  # transaction to the server's webhook, which is what actually grants it; the
+  # app only starts purchases and never reads entitlements out of this. Swift
+  # Package Manager on iOS and macOS, so it forces no Podfile into `ios/`.
+  # Registered on macOS and Android too, and never called there.
+  purchases_flutter: ^10.12.0
 # The Apple halves of sherpa_onnx carry a 26 MB (iOS) or 56 MB (macOS) native
 # library the app never uses there: Apple's own on-device recogniser does the
 # job. These stand-ins have no native code. See packages/apple_stubs/README.md.
