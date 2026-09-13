@@ -32,6 +32,7 @@ FIELDS = [QUESTION, RESPONSE, VALUE, REQUIREMENT, LABEL]
 
 APP_FUNCTIONALITY = "PSL_APP_FUNCTIONALITY"
 ACCOUNT_MANAGEMENT = "PSL_ACCOUNT_MANAGEMENT"
+ACCOUNT_CREATION_RESPONSE = "PSL_ACM_USER_ID_OTHER_AUTH"
 ACCOUNT_DELETION_URL = "https://kapynotes.com/support#delete-your-account"
 DATA_DELETION_URL = "https://kapynotes.com/support#deleting-your-data"
 
@@ -282,7 +283,7 @@ def build(template_text):
         rows,
         "PSL_SUPPORTED_ACCOUNT_CREATION_METHODS",
         "TRUE",
-        "PSL_ACM_USER_ID_PASSWORD",
+        ACCOUNT_CREATION_RESPONSE,
     )
     _set(rows, "PSL_ACCOUNT_DELETION_URL", ACCOUNT_DELETION_URL)
     _set(
@@ -348,7 +349,7 @@ def validate_rows(rows):
         allowed_values[(question, "")] = "TRUE"
 
     required_account_answers = {
-        ("PSL_SUPPORTED_ACCOUNT_CREATION_METHODS", "PSL_ACM_USER_ID_PASSWORD"): "TRUE",
+        ("PSL_SUPPORTED_ACCOUNT_CREATION_METHODS", ACCOUNT_CREATION_RESPONSE): "TRUE",
         ("PSL_ACCOUNT_DELETION_URL", ""): ACCOUNT_DELETION_URL,
         ("PSL_SUPPORT_DATA_DELETION_BY_USER", "DATA_DELETION_YES"): "TRUE",
         ("PSL_DATA_DELETION_URL", ""): DATA_DELETION_URL,
@@ -437,7 +438,7 @@ def render(rows):
 def print_summary(rows):
     validate_rows(rows)
     print("  encrypted in transit: yes")
-    print("  account creation:     email and password")
+    print("  account creation:     email and one-time code")
     print("  account deletion:     in-app and published web route")
     print("  data deletion:        in-app and published web route")
     print("  shared data:          none")

@@ -1,8 +1,8 @@
 Question ID (machine readable),Response ID (machine readable),Response value,Answer requirement,Human-friendly question label
 PSL_DATA_COLLECTION_COLLECTS_PERSONAL_DATA,,TRUE,REQUIRED,Does your app collect or share any of the required user data types?
 PSL_DATA_COLLECTION_ENCRYPTED_IN_TRANSIT,,TRUE,MAYBE_REQUIRED,Is all of the user data collected by your app encrypted in transit?
-PSL_SUPPORTED_ACCOUNT_CREATION_METHODS,PSL_ACM_USER_ID_PASSWORD,TRUE,MULTIPLE_CHOICE,Which account creation methods does the app support? / Username and password
-PSL_SUPPORTED_ACCOUNT_CREATION_METHODS,PSL_ACM_USER_ID_OTHER_AUTH,,MULTIPLE_CHOICE,Which account creation methods does the app support? / Username and other authentication
+PSL_SUPPORTED_ACCOUNT_CREATION_METHODS,PSL_ACM_USER_ID_PASSWORD,,MULTIPLE_CHOICE,Which account creation methods does the app support? / Username and password
+PSL_SUPPORTED_ACCOUNT_CREATION_METHODS,PSL_ACM_USER_ID_OTHER_AUTH,TRUE,MULTIPLE_CHOICE,Which account creation methods does the app support? / Username and other authentication
 PSL_SUPPORTED_ACCOUNT_CREATION_METHODS,PSL_ACM_USER_ID_PASSWORD_OTHER_AUTH,,MULTIPLE_CHOICE,"Which account creation methods does the app support? / Username, password, and other authentication"
 PSL_SUPPORTED_ACCOUNT_CREATION_METHODS,PSL_ACM_OAUTH,,MULTIPLE_CHOICE,Which account creation methods does the app support? / OAuth
 PSL_SUPPORTED_ACCOUNT_CREATION_METHODS,PSL_ACM_OTHER,,MULTIPLE_CHOICE,Which account creation methods does the app support? / Other
