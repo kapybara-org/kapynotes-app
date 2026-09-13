@@ -14,6 +14,7 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
+import 'package:kapy_notes/ui/settings_rows.dart';
 
 import '../sync/fake_server.dart';
 import 'billing_fakes.dart';
@@ -30,9 +31,9 @@ class _Store extends LocalStore {
   void putNow(String key, Object? value) => data[key] = value;
 }
 
-/// Settings on Profile & sync, for an account that signed in with billing
+/// Settings on Plan & usage, for an account that signed in with billing
 /// already following it — the order `main` wires them in.
-Future<FakeBillingApi> pumpSettings(
+Future<Account> pumpSettings(
   WidgetTester tester, {
   required FakePurchaseStore purchases,
   Entitlements Function()? answer,
@@ -86,61 +87,97 @@ Future<FakeBillingApi> pumpSettings(
           rates: RatesRepository(store),
           notes: notes,
           account: account,
-          section: SettingsSection.sync,
+          section: SettingsSection.plan,
         ),
       ),
     ),
   );
   await tester.pumpAndSettle();
-  return api;
+  return account;
 }
 
 void main() {
-  testWidgets('the plan is the first thing in Profile & sync', (tester) async {
+  testWidgets('Plan & usage shows the current plan and opens its details', (
+    tester,
+  ) async {
     final purchases = FakePurchaseStore();
     await pumpSettings(tester, purchases: purchases);
 
-    expect(find.byKey(const ValueKey('pro-row')), findsOneWidget);
-    expect(find.text('Kapy Notes Pro'), findsOneWidget);
-    expect(find.text('Free · see what Pro adds'), findsOneWidget);
+    expect(find.text('Plan & usage'), findsOneWidget);
+    expect(find.byKey(const ValueKey('plan-current')), findsOneWidget);
+    expect(find.text('Free plan'), findsOneWidget);
+    expect(
+      find.text('Your current plan and included cloud allowances'),
+      findsOneWidget,
+    );
     // The store was told whose purchases these will be as soon as the
     // account signed in, not at the moment of buying.
     expect(purchases.log, contains('logIn user-1'));
 
-    await tester.tap(find.byKey(const ValueKey('pro-row')));
+    await tester.tap(find.byKey(const ValueKey('plan-current')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('pro-buy')), findsOneWidget);
   });
 
-  testWidgets('a trial says how long is left, right in the row', (tester) async {
-    await pumpSettings(
+  testWidgets('a trial says how long is left, right in the row', (
+    tester,
+  ) async {
+    final account = await pumpSettings(
       tester,
       purchases: FakePurchaseStore(),
       answer: () => trialFor(const Duration(days: 8, hours: 3)),
     );
 
-    expect(find.text('Pro trial · 9 days left'), findsOneWidget);
+    expect(find.text('Pro trial'), findsOneWidget);
+    expect(find.text('Your Pro trial has 9 days left'), findsOneWidget);
+
+    // Cancel the real trial-end timer before Flutter checks for leaked timers.
+    final billing = account.billing;
+    account.billing = null;
+    billing?.dispose();
   });
 
-  testWidgets('a build with nothing to sell shows no plan row', (tester) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    await pumpSettings(
-      tester,
-      purchases: FakePurchaseStore(supported: false),
-    );
+  testWidgets(
+    'a build with nothing to sell still explains its plan and limits',
+    (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpSettings(
+        tester,
+        purchases: FakePurchaseStore(supported: false),
+      );
 
-    expect(find.byKey(const ValueKey('pro-row')), findsNothing);
-    // The rest of the pane is untouched.
-    expect(find.text('Sync now'), findsOneWidget);
-  });
+      expect(find.byKey(const ValueKey('plan-current')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('plan-transcription-usage')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('plan-summary-usage')), findsOneWidget);
+      expect(find.byKey(const ValueKey('plan-storage-usage')), findsOneWidget);
+      // It explains usage without offering a purchase this build cannot make.
+      expect(
+        tester
+            .widget<SettingsRow>(find.byKey(const ValueKey('plan-current')))
+            .onTap,
+        isNull,
+      );
+    },
+  );
 
-  testWidgets('a desktop build can sell through secure web checkout', (tester) async {
+  testWidgets('a desktop build can sell through secure web checkout', (
+    tester,
+  ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpSettings(tester, purchases: FakePurchaseStore(supported: false));
 
-    expect(find.byKey(const ValueKey('pro-row')), findsOneWidget);
+    expect(find.byKey(const ValueKey('plan-current')), findsOneWidget);
+    expect(
+      tester
+          .widget<SettingsRow>(find.byKey(const ValueKey('plan-current')))
+          .onTap,
+      isNotNull,
+    );
   });
 }

@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/billing/note_limit.dart';
 import 'package:kapy_notes/billing/plan_terms.dart';
+import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
@@ -18,6 +19,7 @@ import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 
 import '../sync/fake_server.dart';
+import '../kapy_icon_finder.dart';
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'note-limit-ui-test.json');
@@ -65,9 +67,8 @@ void main() {
     var tick = 0;
     notes = NotesStore(
       store,
-      now: () => now
-          .subtract(const Duration(days: 1))
-          .add(Duration(minutes: tick++)),
+      now: () =>
+          now.subtract(const Duration(days: 1)).add(Duration(minutes: tick++)),
     );
     await notes.load();
     written = [for (var i = 0; i < 7; i++) notes.create(body: 'Note $i')];
@@ -122,7 +123,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(Sidebar),
-        matching: find.byIcon(Icons.lock_outline_rounded),
+        matching: findKapyIcon(KapyIcons.lockRounded),
       ),
       findsNWidgets(2),
     );
@@ -158,7 +159,10 @@ void main() {
 
     expect(notes.allNotes, hasLength(before));
     expect(find.text('Free keeps up to five notes'), findsOneWidget);
-    expect(find.textContaining('delete a note you no longer need'), findsOneWidget);
+    expect(
+      find.textContaining('delete a note you no longer need'),
+      findsOneWidget,
+    );
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
   });

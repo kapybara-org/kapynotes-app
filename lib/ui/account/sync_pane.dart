@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../billing/billing.dart';
 import '../../billing/entitlements.dart';
 import '../../billing/plan_terms.dart';
 import '../../core/platform.dart';
@@ -15,6 +16,7 @@ import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
 import 'recovery_key_dialog.dart';
 import '../profile_avatar.dart';
+import '../billing/pro_sheet.dart';
 import '../settings_rows.dart';
 
 /// Everything about the account, in one settings pane.
@@ -1169,7 +1171,25 @@ class _ReadyState extends State<_Ready> {
 
   @override
   Widget build(BuildContext context) {
+    final billing = account.billing;
+    if (billing == null) return _contents(context, null);
+    return ListenableBuilder(
+      listenable: billing,
+      builder: (context, _) => _contents(context, billing),
+    );
+  }
+
+  static String _trialLine(int daysLeft) {
+    final when = daysLeft == 1 ? 'today' : 'in $daysLeft days';
+    return 'Your Pro trial ends $when. Then this account moves to Free by '
+        'itself: sync and sharing stop, and notes past the first five become '
+        'read-only. Nothing is deleted.';
+  }
+
+  Widget _contents(BuildContext context, Billing? billing) {
     final email = account.user?.email ?? '';
+    final trialDays = billing?.trialDaysLeft;
+    final needsPro = account.sync?.personalNeedsPro ?? false;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1190,6 +1210,28 @@ class _ReadyState extends State<_Ready> {
             account: account,
             onEdit: () => setState(() => _editing = true),
           ),
+        if (trialDays != null) ...[
+          const SizedBox(height: 12),
+          _InfoNote(
+            _trialLine(trialDays),
+            key: const ValueKey('sync-trial'),
+            icon: KapyIcons.scheduleRounded,
+          ),
+        ],
+        if (billing != null &&
+            billing.canPurchase &&
+            (needsPro || trialDays != null)) ...[
+          const SizedBox(height: 12),
+          SettingsNavigationRow(
+            key: const ValueKey('sync-get-pro'),
+            icon: KapyIcons.verifiedOutlined,
+            title: 'Get Pro Lifetime',
+            subtitle: needsPro
+                ? 'Restore sync and sharing with one purchase'
+                : 'Keep Pro after your trial with one purchase',
+            onTap: () => unawaited(showProSheet(context, billing: billing)),
+          ),
+        ],
         const SizedBox(height: 18),
         const SettingsLabel('ACCOUNT'),
         SettingsGroup(

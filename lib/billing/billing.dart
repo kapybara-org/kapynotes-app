@@ -121,6 +121,11 @@ class Billing extends ChangeNotifier {
   BillingActivity _activity = BillingActivity.idle;
   Sku? _activeSku;
   String? _notice;
+  bool _disposed = false;
+
+  void _notifyListeners() {
+    if (!_disposed) notifyListeners();
+  }
 
   /// What the store said was bought here, for the stretch where there is no
   /// account to ask instead. Never consulted while signed in.
@@ -209,7 +214,7 @@ class Billing extends ChangeNotifier {
   void clearNotice() {
     if (_notice == null) return;
     _notice = null;
-    notifyListeners();
+    _notifyListeners();
   }
 
   /// Runs on every account notification, which is often — sync forwards its
@@ -238,16 +243,16 @@ class Billing extends ChangeNotifier {
     } else {
       unawaited(_joinAccount(id));
     }
-    notifyListeners();
+    _notifyListeners();
   }
 
   /// Signing in: the store hands whatever was bought here to this account,
   /// and the server claims it. Only then is its answer worth asking for.
   Future<void> _joinAccount(String id) async {
     await _quietly(() => _store.logIn(id));
-    if (_userId != id) return;
+    if (_disposed || _userId != id) return;
     await _adopt(id);
-    if (_userId == id) await refresh();
+    if (!_disposed && _userId == id) await refresh();
   }
 
   /// Claims a purchase made before there was an account. Quiet unless the
@@ -257,7 +262,7 @@ class Billing extends ChangeNotifier {
     if (token == null) return;
     try {
       final adopted = await _apiFor(token).adopt();
-      if (_userId != id) return;
+      if (_disposed || _userId != id) return;
       _entitlements = adopted.entitlements;
       _askedAt = _now();
       _cache?.put(_cacheKey, {
@@ -270,7 +275,7 @@ class Billing extends ChangeNotifier {
             'A purchase on this $storeAccountName belongs to a different '
             'Kapy Notes account. Sign in to that account to use it.';
       }
-      notifyListeners();
+      _notifyListeners();
     } catch (error) {
       // A server too old to know the route, no key configured, or offline.
       // The webhook is the ordinary way in; this was the repair.
@@ -287,10 +292,10 @@ class Billing extends ChangeNotifier {
     if (!_store.isSupported || (!force && !_proOnThisDevice)) return;
     try {
       final owned = await _store.ownsProHere();
-      if (_userId != null || owned == _proOnThisDevice) return;
+      if (_disposed || _userId != null || owned == _proOnThisDevice) return;
       _proOnThisDevice = owned;
       _cache?.put(_deviceKey, {'pro': owned});
-      notifyListeners();
+      _notifyListeners();
     } catch (error) {
       debugPrint('KapyNotes: could not read the store: $error');
     }
@@ -343,11 +348,11 @@ class Billing extends ChangeNotifier {
     if (id == null || token == null || _refreshing) return _entitlements;
     _refreshing = true;
     _refreshFailed = false;
-    notifyListeners();
+    _notifyListeners();
     try {
       final fresh = await _apiFor(token).entitlements();
       // Signed out, or somebody else signed in, while this was in flight.
-      if (_userId != id) return null;
+      if (_disposed || _userId != id) return null;
       _entitlements = fresh;
       _askedAt = _now();
       if (_webCheckoutPending && fresh.isPro) {
@@ -356,7 +361,7 @@ class Billing extends ChangeNotifier {
       }
       _cache?.put(_cacheKey, {'userId': id, 'entitlements': fresh.toJson()});
       _armTrialEnd();
-      notifyListeners();
+      _notifyListeners();
       return fresh;
     } catch (error) {
       debugPrint('KapyNotes: could not read entitlements: $error');
@@ -365,7 +370,7 @@ class Billing extends ChangeNotifier {
     } finally {
       if (_userId == id) {
         _refreshing = false;
-        notifyListeners();
+        _notifyListeners();
       }
     }
   }
@@ -377,10 +382,10 @@ class Billing extends ChangeNotifier {
     if (!_store.isSupported || _offersLoading) return;
     _offersLoading = true;
     _offersFailed = false;
-    notifyListeners();
+    _notifyListeners();
     try {
       final offers = await _store.offers(userId: id);
-      if (_userId != id) return;
+      if (_disposed || _userId != id) return;
       // Asking for prices is the first thing a signed-out sheet does, and it
       // sets the store up; what it already sold is worth reading while there.
       if (id == null) unawaited(_readStore(force: true));
@@ -391,7 +396,7 @@ class Billing extends ChangeNotifier {
       if (_userId == id) _offersFailed = true;
     } finally {
       _offersLoading = false;
-      notifyListeners();
+      _notifyListeners();
     }
   }
 
@@ -413,7 +418,7 @@ class Billing extends ChangeNotifier {
     _activity = BillingActivity.buying;
     _activeSku = sku;
     _notice = null;
-    notifyListeners();
+    _notifyListeners();
     try {
       // The baseline a pack is measured against. Packs are only offered to an
       // account whose answer is already here, but asking costs one request
@@ -426,7 +431,7 @@ class Billing extends ChangeNotifier {
         await _readStore(force: true);
       } else if (outcome is PurchaseCompleted) {
         _activity = BillingActivity.confirming;
-        notifyListeners();
+        _notifyListeners();
         final arrived = await _waitFor(sku, before, id!, confirmFor);
         if (!arrived && _userId == id) {
           _notice =
@@ -447,7 +452,7 @@ class Billing extends ChangeNotifier {
     } finally {
       _activity = BillingActivity.idle;
       _activeSku = null;
-      notifyListeners();
+      _notifyListeners();
     }
   }
 
@@ -467,7 +472,7 @@ class Billing extends ChangeNotifier {
     _activity = BillingActivity.buying;
     _activeSku = sku;
     _notice = null;
-    notifyListeners();
+    _notifyListeners();
     try {
       final token = _tokenOf();
       if (token == null) {
@@ -497,7 +502,7 @@ class Billing extends ChangeNotifier {
     } finally {
       _activity = BillingActivity.idle;
       _activeSku = null;
-      notifyListeners();
+      _notifyListeners();
     }
   }
 
@@ -508,7 +513,7 @@ class Billing extends ChangeNotifier {
 
     _activity = BillingActivity.restoring;
     _notice = null;
-    notifyListeners();
+    _notifyListeners();
     try {
       final owned = await _store.restore(userId: id);
       if (id == null) {
@@ -539,7 +544,7 @@ class Billing extends ChangeNotifier {
       return RestoreResult.failed;
     } finally {
       _activity = BillingActivity.idle;
-      notifyListeners();
+      _notifyListeners();
     }
   }
 
@@ -589,6 +594,7 @@ class Billing extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _trialEnd?.cancel();
     _session.removeListener(_onSession);
     super.dispose();

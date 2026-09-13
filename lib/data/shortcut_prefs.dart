@@ -225,7 +225,14 @@ class ShortcutBinding {
 }
 
 class ShortcutPrefs extends ChangeNotifier {
-  ShortcutPrefs(this._store);
+  ShortcutPrefs(this._store) {
+    // Settings can be painted while the on-disk store is still opening. The
+    // shipped defaults are a safe answer for that brief window; [load] then
+    // replaces them with the user's saved choices and notifies listeners.
+    _bindings = {
+      for (final action in ShortcutAction.values) action: defaultFor(action),
+    };
+  }
 
   static const String _key = 'shortcuts.v1';
 
