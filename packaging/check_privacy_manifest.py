@@ -27,8 +27,10 @@ import sys
 # for the audio one and is wrong; the real token is AUDIO. Read them with
 # "asc web privacy catalog" before adding a row.
 KEYS = {
+    "NAME": "NSPrivacyCollectedDataTypeName",
     "EMAIL_ADDRESS": "NSPrivacyCollectedDataTypeEmailAddress",
     "USER_ID": "NSPrivacyCollectedDataTypeUserID",
+    "DEVICE_ID": "NSPrivacyCollectedDataTypeDeviceID",
     "OTHER_USER_CONTENT": "NSPrivacyCollectedDataTypeOtherUserContent",
     "PHOTOS_OR_VIDEOS": "NSPrivacyCollectedDataTypePhotosorVideos",
     "AUDIO": "NSPrivacyCollectedDataTypeAudioData",

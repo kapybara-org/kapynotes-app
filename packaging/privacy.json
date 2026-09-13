@@ -11,7 +11,25 @@
       ]
     },
     {
+      "category": "DEVICE_ID",
+      "purposes": [
+        "APP_FUNCTIONALITY"
+      ],
+      "dataProtections": [
+        "DATA_LINKED_TO_YOU"
+      ]
+    },
+    {
       "category": "EMAIL_ADDRESS",
+      "purposes": [
+        "APP_FUNCTIONALITY"
+      ],
+      "dataProtections": [
+        "DATA_LINKED_TO_YOU"
+      ]
+    },
+    {
+      "category": "NAME",
       "purposes": [
         "APP_FUNCTIONALITY"
       ],

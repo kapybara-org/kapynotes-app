@@ -240,9 +240,14 @@ is a dependency.
   category Apple offers either.
 
   `packaging/preflight_ios.sh` now derives the expected list from
-  `packaging/privacy.json` instead of spelling it out, so a sixth type is one
-  edit rather than three, and a category the script has never heard of fails
-  loudly instead of passing.
+  `packaging/privacy.json` instead of spelling it out, so an added type is one
+  declaration edit plus its manifest mapping, and a category the script has
+  never heard of fails loudly instead of passing.
+
+  **Official launch update, 2026-09-13.** The published 1.24.0 record and the
+  build 29 privacy manifest contain eight types: Audio, Device ID, Email
+  Address, Name, Other User Content, Photos or Videos, Purchase History, and
+  User ID. Each is App Functionality, Linked to You, and not used for tracking.
 
   It is **not in the public API** — `asc capabilities` classifies it
   `web-session`. Drive it with a web session and the canonical file:
@@ -461,7 +466,7 @@ All three must be corrected **before** 1.7.0 is submitted:
    `NSPrivacyCollectedDataTypes` for the same eleven versions, and
    `preflight_ios.sh` asserted that emptiness as a PASS — so the gate agreed
    with the stale answer instead of catching it. Both are fixed; the preflight
-   now checks the manifest against the four declared types by name.
+   now checks the manifest against every declared type by name.
 
 ### What's New
 
@@ -910,9 +915,10 @@ a takedown rather than a rejection:
 
    The published iOS App Privacy record is the list to mirror, because it is
    the one that has been checked against the code and submitted. Read it with
-   `asc web privacy pull --app 6807810082`; today it is five types — Audio,
-   Email address, Other user content, Photos or videos, User ID — all
-   App functionality, all linked to the user, none shared.
+   `asc web privacy pull --app 6807810082`; for the 1.24.0 launch it is eight
+   types — Audio, Device ID, Email address, Name, Other user content, Photos or
+   videos, Purchase history, and User ID — all App functionality, all linked
+   to the user, and none used for tracking.
 2. **In-app account deletion — done, as of the sync release.** Recorded here
    because the form asks and the answer used to be no.
    `lib/ui/account/sync_pane.dart` has a Delete account flow behind a typed
