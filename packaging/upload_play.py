@@ -232,6 +232,7 @@ IMAGE_SLOTS = [
 # Play truncates silently rather than refusing, so a copy overrun would ship as
 # a half sentence. Check before sending, not after.
 COPY_LIMITS = {"title": 30, "shortDescription": 80, "fullDescription": 4000}
+RELEASE_NOTES_LIMIT = 500
 
 
 def listing_copy():
@@ -245,6 +246,12 @@ def listing_copy():
             die(f"{field} is empty in play_listing.json")
         if len(value) > limit:
             die(f"{field} is {len(value)} characters, over Play's limit of {limit}")
+    release_notes = copy.get("releaseNotes") or ""
+    if len(release_notes) > RELEASE_NOTES_LIMIT:
+        die(
+            f"releaseNotes is {len(release_notes)} characters, over Play's "
+            f"limit of {RELEASE_NOTES_LIMIT}"
+        )
     return copy
 
 
