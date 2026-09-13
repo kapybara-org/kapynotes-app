@@ -9,7 +9,9 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
 import 'package:kapy_notes/speech/summarizer.dart';
+import 'package:kapy_notes/speech/speech_api.dart';
 import 'package:kapy_notes/speech/summary_instructions.dart';
+import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
 import 'package:kapy_notes/ui/voice_note_dialog.dart';
 
@@ -70,18 +72,20 @@ VoiceSummary aSummary() => VoiceSummary(
   points: const ['Ship the export fix.'],
 );
 
-Widget harness(NoteVoiceRef ref, {VoiceNoteActions actions = const VoiceNoteActions()}) =>
-    MaterialApp(
-      theme: KapyTheme.dark(),
-      home: Scaffold(
-        body: VoiceNoteView(
-          ref: ref,
-          state: VoiceChipState.done,
-          blobs: blobs,
-          actions: actions,
-        ),
-      ),
-    );
+Widget harness(
+  NoteVoiceRef ref, {
+  VoiceNoteActions actions = const VoiceNoteActions(),
+}) => MaterialApp(
+  theme: KapyTheme.dark(),
+  home: Scaffold(
+    body: VoiceNoteView(
+      ref: ref,
+      state: VoiceChipState.done,
+      blobs: blobs,
+      actions: actions,
+    ),
+  ),
+);
 
 void main() {
   setUpAll(() async {
@@ -252,7 +256,38 @@ void main() {
 
       await tester.tap(find.text('Post for X'));
       await tester.pumpAndSettle();
-      expect(find.text('Transcribe this recording again to write from it.'), findsOneWidget);
+      expect(
+        find.text('Transcribe this recording again to write from it.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a spent cloud AI allowance says when it returns', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(
+          recording(transcript: conversation(), summary: aSummary()),
+          actions: VoiceNoteActions(
+            onChanged: (_) {},
+            onRewrite: (instruction) async => throw const SyncRefusedException(
+              409,
+              SpeechCodes.summariesExhausted,
+              {'resetsAt': '2026-10-01T00:00:00.000Z'},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Post for X'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining("used this month's cloud AI summaries"),
+        findsOneWidget,
+      );
+      expect(find.textContaining('1 Oct'), findsOneWidget);
     });
 
     testWidgets('there is nothing to make one from without a transcript', (
@@ -335,7 +370,8 @@ void main() {
           takes: const [
             VoiceTake(
               kind: VoiceTakeKind.x,
-              text: 'Spent the morning on an export bug that turned out to '
+              text:
+                  'Spent the morning on an export bug that turned out to '
                   'be in the zip writer rather than the markdown.',
               engine: 'cf/llama',
               at: 2,

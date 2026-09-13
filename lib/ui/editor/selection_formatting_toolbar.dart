@@ -1,8 +1,124 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../compact_icon_button.dart';
+import '../context_menu.dart';
 import 'editor_formatting.dart';
+import 'markdown_editing.dart';
+
+/// The editor's ordinary Cut, Copy, Paste and custom actions.
+///
+/// Touch keeps the platform toolbar people already know. Pointer platforms
+/// use the same quiet surface as the rest of Kapy Notes instead of dropping a
+/// second visual language into the editor.
+class NoteEditorContextMenu extends StatelessWidget {
+  const NoteEditorContextMenu({
+    super.key,
+    required this.anchors,
+    required this.buttonItems,
+  });
+
+  final TextSelectionToolbarAnchors anchors;
+  final List<ContextMenuButtonItem> buttonItems;
+
+  static const double _screenPadding = 8;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleItems = [
+      for (final item in buttonItems)
+        if (AdaptiveTextSelectionToolbar.getButtonLabel(
+          context,
+          item,
+        ).isNotEmpty)
+          item,
+    ];
+    if (visibleItems.isEmpty) return const SizedBox.shrink();
+
+    // The native touch toolbar remains the most familiar and compact way to
+    // edit text around selection handles and the on-screen keyboard.
+    if (!AppPlatform.hasPointer) {
+      return AdaptiveTextSelectionToolbar.buttonItems(
+        anchors: anchors,
+        buttonItems: visibleItems,
+      );
+    }
+
+    final topPadding = MediaQuery.paddingOf(context).top + _screenPadding;
+    final localAdjustment = Offset(_screenPadding, topPadding);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        _screenPadding,
+        topPadding,
+        _screenPadding,
+        _screenPadding,
+      ),
+      child: CustomSingleChildLayout(
+        delegate: DesktopTextSelectionToolbarLayoutDelegate(
+          anchor: anchors.primaryAnchor - localAdjustment,
+        ),
+        child: RepaintBoundary(
+          key: const ValueKey('editor-context-menu'),
+          child: KapyContextMenuSurface(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final item in visibleItems)
+                  _EditorContextMenuButton(item: item),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EditorContextMenuButton extends StatelessWidget {
+  const _EditorContextMenuButton({required this.item});
+
+  final ContextMenuButtonItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final label = AdaptiveTextSelectionToolbar.getButtonLabel(context, item);
+    final enabled = item.onPressed != null;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey('editor-context-action-$label'),
+        onTap: !enabled
+            ? null
+            : () {
+                ContextMenuController.removeAny();
+                item.onPressed!();
+              },
+        hoverColor: palette.hover,
+        focusColor: palette.hover,
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        child: Container(
+          height: 32,
+          alignment: AlignmentDirectional.centerStart,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: enabled ? palette.textPrimary : palette.textTertiary,
+              fontSize: AppTypeScale.control,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// A compact formatting surface that appears beside a text selection.
 ///
@@ -13,6 +129,8 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
     super.key,
     required this.editableTextState,
     required this.paragraphStyle,
+    this.markdown = false,
+    this.markdownHeadingLevel,
     required this.boldActive,
     required this.italicActive,
     required this.bulletsActive,
@@ -31,6 +149,11 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
 
   final EditableTextState editableTextState;
   final NoteParagraphStyle? paragraphStyle;
+
+  /// Whether the note is written in markdown, where the style control steps
+  /// through [markdownHeadingLevel] instead of [paragraphStyle].
+  final bool markdown;
+  final int? markdownHeadingLevel;
   final bool boldActive;
   final bool italicActive;
   final bool bulletsActive;
@@ -89,7 +212,7 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
     final menuItems = [
       if (onCopyPlainText != null)
         ContextMenuButtonItem(
-          label: 'Copy Plain Text',
+          label: 'Copy plain text',
           onPressed: () => _run(onCopyPlainText!),
         ),
       ...nativeItems,
@@ -113,7 +236,10 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
             color: palette.surfaceBackground,
             elevation: 0,
             shadowColor: Colors.transparent,
-            borderRadius: BorderRadius.circular(9),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(9),
+              side: BorderSide(color: palette.controlBorder, width: 0.5),
+            ),
             clipBehavior: Clip.antiAlias,
             child: _WithCorrections(
               corrections: corrections,
@@ -125,7 +251,7 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
                     if (onOpenLink != null)
                       _SelectionIconButton(
                         key: const ValueKey('selection-open-link'),
-                        icon: Icons.open_in_new_rounded,
+                        icon: KapyIcons.openExternalRounded,
                         tooltip: 'Open link',
                         active: false,
                         onPressed: () => _run(onOpenLink!),
@@ -133,7 +259,7 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
                     if (onCopyLink != null)
                       _SelectionIconButton(
                         key: const ValueKey('selection-copy-link'),
-                        icon: Icons.content_copy_rounded,
+                        icon: KapyIcons.copyRounded,
                         tooltip: 'Copy link',
                         active: false,
                         onPressed: () => _run(onCopyLink!),
@@ -146,33 +272,35 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
                       ),
                     _SelectionStyleCycle(
                       style: paragraphStyle,
+                      markdown: markdown,
+                      markdownHeadingLevel: markdownHeadingLevel,
                       onPressed: onParagraphStylePressed,
                     ),
                     Container(width: 0.5, height: 20, color: palette.separator),
                     _SelectionIconButton(
                       key: const ValueKey('selection-bold'),
-                      icon: Icons.format_bold_rounded,
+                      icon: KapyIcons.formatBoldRounded,
                       tooltip: 'Bold',
                       active: boldActive,
                       onPressed: () => _run(onBoldPressed),
                     ),
                     _SelectionIconButton(
                       key: const ValueKey('selection-italic'),
-                      icon: Icons.format_italic_rounded,
+                      icon: KapyIcons.formatItalicRounded,
                       tooltip: 'Italic',
                       active: italicActive,
                       onPressed: () => _run(onItalicPressed),
                     ),
                     _SelectionIconButton(
                       key: const ValueKey('selection-bullets'),
-                      icon: Icons.format_list_bulleted_rounded,
+                      icon: KapyIcons.bulletedListRounded,
                       tooltip: 'Bulleted list',
                       active: bulletsActive,
                       onPressed: () => _run(onBulletsPressed),
                     ),
                     _SelectionIconButton(
                       key: const ValueKey('selection-checklist'),
-                      icon: Icons.checklist_rounded,
+                      icon: KapyIcons.checklistRounded,
                       tooltip: 'Checklist',
                       active: checklistActive,
                       onPressed: () => _run(onChecklistPressed),
@@ -260,7 +388,7 @@ class _CorrectionButton extends StatelessWidget {
             style: TextStyle(
               color: palette.textPrimary,
               fontSize: AppTypeScale.small,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ),
@@ -270,22 +398,33 @@ class _CorrectionButton extends StatelessWidget {
 }
 
 class _SelectionStyleCycle extends StatelessWidget {
-  const _SelectionStyleCycle({required this.style, required this.onPressed});
+  const _SelectionStyleCycle({
+    required this.style,
+    required this.markdown,
+    required this.markdownHeadingLevel,
+    required this.onPressed,
+  });
 
   final NoteParagraphStyle? style;
+  final bool markdown;
+  final int? markdownHeadingLevel;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final next = nextParagraphStyle(style);
+    final label = markdown
+        ? markdownHeadingLabel(markdownHeadingLevel)
+        : style?.label ?? 'Mixed';
+    final next = markdown
+        ? markdownHeadingLabel(nextMarkdownHeadingLevel(markdownHeadingLevel))
+        : nextParagraphStyle(style).label;
     return SizedBox(
       width: 78,
       height: 40,
       child: Center(
         child: Tooltip(
-          message:
-              'Text style: ${style?.label ?? 'Mixed'}. Click for ${next.label}',
+          message: 'Text style: $label. Click for $next',
           child: Material(
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(6),
@@ -303,14 +442,15 @@ class _SelectionStyleCycle extends StatelessWidget {
                 height: AppControlMetrics.iconButtonExtent,
                 child: Center(
                   child: Text(
-                    style?.label ?? 'Mixed',
+                    label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: palette.textPrimary,
                       fontSize: AppTypeScale.small,
-                      fontWeight: FontWeight.w500,
-                      fontStyle: style == NoteParagraphStyle.subtitle
+                      fontWeight: FontWeight.w400,
+                      fontStyle:
+                          !markdown && style == NoteParagraphStyle.subtitle
                           ? FontStyle.italic
                           : FontStyle.normal,
                     ),
@@ -334,7 +474,7 @@ class _SelectionIconButton extends StatelessWidget {
     required this.onPressed,
   });
 
-  final IconData icon;
+  final KapyIconData icon;
   final String tooltip;
   final bool active;
   final VoidCallback onPressed;
@@ -351,7 +491,7 @@ class _SelectionIconButton extends StatelessWidget {
           selected: active,
           onPressed: onPressed,
           foregroundColor: active ? palette.textPrimary : palette.textSecondary,
-          icon: Icon(icon, size: AppControlMetrics.iconControl),
+          icon: KapyIcon(icon, size: AppControlMetrics.iconControl),
         ),
       ),
     );
@@ -383,14 +523,15 @@ class _NativeActionsMenu extends StatelessWidget {
                   PopupMenuItem(
                     value: index,
                     enabled: items[index].onPressed != null,
+                    height: 36,
                     child: Text(labels[index]),
                   ),
               ]);
               if (selected != null) items[selected].onPressed?.call();
             },
             foregroundColor: context.palette.textSecondary,
-            icon: Icon(
-              Icons.more_horiz_rounded,
+            icon: KapyIcon(
+              KapyIcons.moreRounded,
               size: AppControlMetrics.iconAction,
             ),
           ),
@@ -406,24 +547,14 @@ Future<T?> _showToolbarMenu<T>(
 ) {
   final navigator = Navigator.of(buttonContext);
   final button = buttonContext.findRenderObject()! as RenderBox;
-  final overlay = navigator.overlay!.context.findRenderObject()! as RenderBox;
-  final topLeft = button.localToGlobal(Offset.zero, ancestor: overlay);
-  final bottomRight = button.localToGlobal(
-    button.size.bottomRight(Offset.zero),
-    ancestor: overlay,
-  );
-  final position = RelativeRect.fromRect(
-    Rect.fromPoints(topLeft, bottomRight),
-    Offset.zero & overlay.size,
-  );
+  final position = button.localToGlobal(Offset(0, button.size.height));
   // PopupMenuButton waits for its own State before firing onSelected. This
   // toolbar is intentionally removed as the menu opens, so keep the durable
-  // Navigator context and await showMenu directly instead.
+  // Navigator context and await the context-menu route directly instead.
   ContextMenuController.removeAny();
-  return showMenu<T>(
+  return showKapyContextMenu<T>(
     context: navigator.context,
-    position: position,
+    globalPosition: position,
     items: items,
-    requestFocus: false,
   );
 }

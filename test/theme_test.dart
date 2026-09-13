@@ -5,12 +5,12 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 
 void main() {
-  test('dark theme keeps a restrained Numi-style palette', () {
+  test('dark theme keeps a restrained warm-neutral palette', () {
     const palette = KapyTheme.darkPalette;
 
-    expect(palette.editorBackground, const Color(0xFF202125));
+    expect(palette.editorBackground, const Color(0xFF202126));
     expect(palette.gutterBackground, palette.editorBackground);
-    expect(palette.textPrimary, const Color(0xFFE7E9EC));
+    expect(palette.textPrimary, const Color(0xFFE8E7E4));
     expect(palette.paperFiber, Colors.transparent);
 
     expect({
@@ -21,7 +21,7 @@ void main() {
       palette.function,
       palette.variable,
       palette.operator,
-    }, hasLength(3));
+    }, hasLength(4));
     expect(
       {
         palette.chipNumber,
@@ -30,9 +30,11 @@ void main() {
         palette.chipBoolean,
         palette.chipOther,
       },
-      {const Color(0xFF8DD32D)},
+      {const Color(0xFFB5C28D)},
     );
-    expect(KapyTheme.dark().colorScheme.primary, const Color(0xFF6CC4EE));
+    expect(KapyTheme.dark().colorScheme.primary, const Color(0xFFE0A06B));
+    expect(KapyTheme.dark().textTheme.bodyMedium?.fontWeight, FontWeight.w300);
+    expect(KapyTheme.dark().textTheme.titleMedium?.fontWeight, FontWeight.w400);
     expect(KapyTheme.dark().shadowColor, Colors.transparent);
     expect(KapyTheme.dark().dialogTheme.elevation, 0);
     expect(KapyTheme.dark().popupMenuTheme.elevation, 0);

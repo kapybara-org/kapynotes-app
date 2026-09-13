@@ -7,6 +7,7 @@ import '../data/notes_store.dart';
 import 'aead.dart';
 import 'config.dart';
 import 'key_wrap.dart';
+import 'presence.dart';
 import 'safety.dart';
 import 'space_keyring.dart';
 import 'spaces.dart';
@@ -90,6 +91,14 @@ class Sharing extends ChangeNotifier {
   /// Whether this device has the key needed to read a space right now.
   bool holdsKey(String spaceId) => _keyring.holdsKey(spaceId);
 
+  /// Whoever else is in one of a space's notes right now.
+  List<Collaborator> presentIn(String spaceId) =>
+      _sync.collaboratorsInSpace(spaceId);
+
+  /// Fires as people arrive in and leave shared notes, which this object's
+  /// own notifications do not cover.
+  Listenable get presenceChanges => _sync;
+
   /// Personal notes and notes in spaces where this account may make changes.
   bool canEdit(Note note) {
     if (!note.isShared) return true;
@@ -137,6 +146,9 @@ class Sharing extends ChangeNotifier {
   /// Moves a note into a shared space under a freshly minted content key,
   /// and pushes it so the other members receive it.
   Future<void> shareNote(String noteId, {required String spaceId}) async {
+    if (_notes.byId(noteId)?.isHidden ?? false) {
+      throw const SyncRefusedException(409, 'hidden-note', {});
+    }
     final space = _keyring.byId(spaceId);
     if (space == null || !space.isTeam) {
       throw const SyncProtocolException('no such shared space');
@@ -163,6 +175,12 @@ class Sharing extends ChangeNotifier {
     required String email,
     SpaceRole role = SpaceRole.member,
   }) async {
+    // Refuse before creating the pair space or sending its invitation. The
+    // lower-level [shareNote] guard is still needed for callers that already
+    // have a space, but it is too late to prevent those external side effects.
+    if (_notes.byId(noteId)?.isHidden ?? false) {
+      throw const SyncRefusedException(409, 'hidden-note', {});
+    }
     final address = email.trim().toLowerCase();
     final access = role == SpaceRole.viewer
         ? SpaceRole.viewer

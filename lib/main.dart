@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
+import 'billing/billing_api.dart';
+import 'billing/plan_usage.dart';
 import 'core/desktop_integration.dart';
 import 'core/focus_hold.dart';
 import 'core/platform.dart';
+import 'core/window_placement.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
 import 'data/notes_store.dart';
@@ -66,20 +71,34 @@ Future<void> main() async {
       : null;
   // Built here rather than inside Account so that a build with no
   // transcription in it simply never sets this, and the queue never runs.
-  account?.speechApiFor = (token) =>
-      HttpSpeechApi(baseUrl: Uri.parse(kApiBaseUrl), token: () async => token);
+  if (account != null) {
+    account.speechApiFor = (token) => HttpSpeechApi(
+      baseUrl: Uri.parse(kApiBaseUrl),
+      token: () async => token,
+    );
+    account.planUsage = PlanUsage(
+      session: account,
+      userId: () => account.user?.id,
+      token: () => account.token,
+      api: (token) =>
+          HttpBillingApi(baseUrl: Uri.parse(kApiBaseUrl), token: token),
+      cache: store,
+    );
+  }
 
   DesktopIntegration? desktopIntegration;
   if (AppPlatform.isDesktop) {
-    // Desktop needs saved window geometry and the global shortcuts before its
-    // native window is shown. Mobile starts Flutter immediately and hydrates
-    // behind an editable first frame inside KapyNotesApp.
-    await notes.load();
+    // Desktop needs the saved window geometry before its native window is
+    // shown, and the geometry lives in the same file as the notes. The window
+    // plugin's own handshake needs nothing from that file, so the two run
+    // side by side rather than one behind the other. Mobile starts Flutter
+    // immediately and hydrates behind an editable first frame inside
+    // KapyNotesApp.
+    await Future.wait([notes.load(), windowManager.ensureInitialized()]);
     prefs.load();
     shortcuts.load();
-    await _configureWindow(prefs.windowSize);
+    await _configureWindow(prefs);
     desktopIntegration = DesktopIntegration(layoutPrefs: prefs);
-    await desktopIntegration.initialize(shortcuts);
   }
 
   runApp(
@@ -94,15 +113,21 @@ Future<void> main() async {
       account: account,
     ),
   );
+
+  // Behind the first frame rather than in front of it. The global shortcuts,
+  // the tray icon, the pin and the login item are each a round trip to the
+  // platform — some thirty milliseconds in a row, measured — and none of them
+  // is anything the user can see at the moment the window appears. runApp
+  // has already queued the frame by this line, so the replies land after it.
+  if (desktopIntegration != null) {
+    unawaited(desktopIntegration.initialize(shortcuts));
+  }
 }
 
-Future<void> _configureWindow(Size size) async {
-  await windowManager.ensureInitialized();
-
+Future<void> _configureWindow(LayoutPrefs prefs) async {
   final options = WindowOptions(
-    size: size,
+    size: prefs.windowSize,
     minimumSize: LayoutPrefs.minimumWindowSize,
-    center: true,
     title: 'Kapy Notes',
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
@@ -115,8 +140,8 @@ Future<void> _configureWindow(Size size) async {
     windowButtonVisibility: true,
   );
 
-  await windowManager.waitUntilReadyToShow(options, () async {
-    await windowManager.show();
-    await windowManager.focus();
-  });
+  await windowManager.waitUntilReadyToShow(options);
+  await placeInitialDesktopWindow(prefs);
+  await windowManager.show();
+  await windowManager.focus();
 }

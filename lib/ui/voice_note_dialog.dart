@@ -8,8 +8,10 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/blob_store.dart';
 import '../data/note_attachment.dart';
+import '../speech/speech_errors.dart';
 import '../speech/summarizer.dart';
 import '../speech/summary_instructions.dart';
+import '../sync/sync_api.dart';
 import 'editor/voice_chip.dart';
 
 /// What the dialog can offer beyond playback, decided by the caller.
@@ -271,15 +273,17 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
   Widget? _emptyState() {
     final actions = widget.actions;
     return switch (widget.state) {
-      VoiceChipState.needsConsent => _Empty(
+      VoiceChipState.needsConsent when _ref.transcript == null => _Empty(
         message: 'Turn on transcription to get text and a summary.',
         actionLabel: 'Turn on',
         onAction: actions.onTurnOnTranscription,
       ),
-      VoiceChipState.needsAccount => _Empty(
-        message: 'Sign in to get text and a summary.',
-        actionLabel: actions.onSignIn != null ? 'Sign in' : null,
-        onAction: actions.onSignIn,
+      VoiceChipState.needsAccount when _ref.transcript == null => _Empty(
+        message: 'Choose cloud or local transcription in Voice Settings.',
+        actionLabel: actions.onTurnOnTranscription != null
+            ? 'Turn on transcription'
+            : null,
+        onAction: actions.onTurnOnTranscription,
       ),
       VoiceChipState.outOfMinutes => const _Empty(
         message: "You've used this month's minutes.",
@@ -299,9 +303,11 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
         message: "Transcription didn't go through. Trying again soon.",
       ),
       VoiceChipState.failed => _Empty(
-        message: "Couldn't transcribe this recording.",
+        message: _ref.transcript == null
+            ? "Couldn't transcribe this recording."
+            : "Couldn't summarise this recording.",
         caption: actions.failureReason,
-        actionLabel: 'Retry',
+        actionLabel: _ref.transcript == null ? 'Retry' : 'Try summary again',
         onAction: actions.onRetry,
       ),
       _ when _onSummary && _ref.summary == null => _Empty(
@@ -369,7 +375,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
             style: TextStyle(
               fontSize: 10.5,
               letterSpacing: 0.8,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w400,
               color: palette.textTertiary,
             ),
           ),
@@ -479,6 +485,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
 
   static String _describe(Object error) => switch (error) {
     SummarizerUnavailable(:final message) => message,
+    SyncException() => describeSpeechError(error),
     _ => 'That did not work. Try again in a moment.',
   };
 
@@ -803,7 +810,7 @@ class _Header extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w400,
                     color: palette.textPrimary,
                   ),
                 ),
@@ -816,7 +823,7 @@ class _Header extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.close_rounded, size: 18),
+            icon: const KapyIcon(KapyIcons.closeRounded, size: 18),
             tooltip: 'Close',
             onPressed: onClose,
           ),
@@ -878,10 +885,10 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: Icon(
+                    icon: KapyIcon(
                       player.isPlaying(widget.ref.hash)
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
+                          ? KapyIcons.pauseRounded
+                          : KapyIcons.playRounded,
                     ),
                     tooltip: player.isPlaying(widget.ref.hash)
                         ? 'Pause'
@@ -1084,7 +1091,7 @@ class _Footer extends StatelessWidget {
           ),
           const Spacer(),
           IconButton(
-            icon: const Icon(Icons.more_horiz_rounded, size: 20),
+            icon: const KapyIcon(KapyIcons.moreRounded, size: 20),
             tooltip: 'More',
             onPressed: onMenu,
           ),
@@ -1158,7 +1165,7 @@ class _SpeakerBar extends StatelessWidget {
             '${speakers.length} speakers',
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w400,
               color: palette.textSecondary,
             ),
           ),
@@ -1216,7 +1223,7 @@ class _SpeakerLabel extends StatelessWidget {
           name,
           style: TextStyle(
             fontSize: 11.5,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w400,
             color: palette.textSecondary,
           ),
         ),
@@ -1257,7 +1264,7 @@ class _QuietButton extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 11,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w400,
             color: palette.textSecondary,
           ),
         ),
@@ -1309,7 +1316,7 @@ class _RewriteChip extends StatelessWidget {
                 label,
                 style: TextStyle(
                   fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w400,
                   color: enabled ? palette.textPrimary : palette.textTertiary,
                 ),
               ),
@@ -1355,7 +1362,7 @@ class _TakeCard extends StatelessWidget {
                   take.kind.label,
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w400,
                     color: palette.textSecondary,
                   ),
                 ),
@@ -1365,8 +1372,8 @@ class _TakeCard extends StatelessWidget {
                   onPressed: onAgain,
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Write it again',
-                  icon: Icon(
-                    Icons.refresh,
+                  icon: KapyIcon(
+                    KapyIcons.refreshRounded,
                     size: 16,
                     color: palette.textTertiary,
                   ),
@@ -1375,8 +1382,8 @@ class _TakeCard extends StatelessWidget {
                 onPressed: onCopy,
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Copy',
-                icon: Icon(
-                  Icons.copy_all_outlined,
+                icon: KapyIcon(
+                  KapyIcons.copyAllOutlined,
                   size: 16,
                   color: palette.textTertiary,
                 ),
@@ -1385,7 +1392,11 @@ class _TakeCard extends StatelessWidget {
                 onPressed: onRemove,
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Remove',
-                icon: Icon(Icons.close, size: 16, color: palette.textTertiary),
+                icon: KapyIcon(
+                  KapyIcons.closeRounded,
+                  size: 16,
+                  color: palette.textTertiary,
+                ),
               ),
             ],
           ),

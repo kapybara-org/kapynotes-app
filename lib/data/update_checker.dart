@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../core/platform.dart';
 import 'local_store.dart';
+import 'release_history.dart';
 
 /// A release newer than the running build, as advertised by the manifest.
 class AvailableUpdate {
@@ -96,9 +97,22 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
   /// by the tray, which first flushes notes and disables close interception.
   Future<void> Function()? onBeforeQuitForUpdate;
 
-  UpdateChecker(this._store, {http.Client? client, PackageInfo? packageInfo})
-    : _client = client,
-      _packageInfo = packageInfo;
+  /// Every release, for the pane that lists them.
+  ///
+  /// Kept here because it answers the other half of the same question — this
+  /// class says whether there is a newer build, and this says what any of
+  /// them changed — and because it means the pane that shows both is handed
+  /// one object rather than two.
+  final ReleaseHistory history;
+
+  UpdateChecker(
+    LocalStore store, {
+    http.Client? client,
+    PackageInfo? packageInfo,
+  }) : _store = store,
+       _client = client,
+       _packageInfo = packageInfo,
+       history = ReleaseHistory(store, client: client);
 
   /// The newer release, or null when the running build is the latest known.
   ///
@@ -407,6 +421,7 @@ class UpdateChecker extends ChangeNotifier with UpdaterListener {
     _disposed = true;
     onBeforeQuitForUpdate = null;
     _timer?.cancel();
+    history.dispose();
     _client?.close();
     if (_listening) autoUpdater.removeListener(this);
     super.dispose();

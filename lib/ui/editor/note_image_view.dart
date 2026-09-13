@@ -1,5 +1,7 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/services.dart';
-import 'package:flutter/gestures.dart' show kDoubleTapSlop, kDoubleTapTimeout;
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
@@ -7,6 +9,7 @@ import '../../core/theme.dart';
 import '../../data/note_attachment.dart';
 import '../../data/blob_store.dart';
 import '../../images/note_image_provider.dart';
+import '../context_menu.dart';
 import 'note_image_layout.dart';
 
 /// The sizes the menu offers, as a fraction of the writing column.
@@ -35,6 +38,7 @@ class NoteImageView extends StatefulWidget {
     this.resizable = false,
     this.selected = false,
     this.fetch,
+    this.uploadProgress,
     this.onSelect,
     this.onOpen,
     this.onCopy,
@@ -59,6 +63,7 @@ class NoteImageView extends StatefulWidget {
   final bool selected;
 
   final NoteImageFetcher? fetch;
+  final ValueListenable<double?>? uploadProgress;
   final VoidCallback? onSelect;
   final VoidCallback? onOpen;
   final VoidCallback? onCopy;
@@ -78,8 +83,6 @@ class NoteImageView extends StatefulWidget {
 class _NoteImageViewState extends State<NoteImageView> {
   bool _hovering = false;
   bool _dragging = false;
-  DateTime? _lastTapAt;
-  Offset? _lastTapPosition;
 
   bool get _hasMenu =>
       widget.onOpen != null ||
@@ -103,26 +106,9 @@ class _NoteImageViewState extends State<NoteImageView> {
     );
   }
 
-  void _tap(TapUpDetails details) {
-    if (!AppPlatform.hasPointer) {
-      widget.onOpen?.call();
-      return;
-    }
-    final now = DateTime.now();
-    final lastAt = _lastTapAt;
-    final lastPosition = _lastTapPosition;
-    final isDoubleTap =
-        lastAt != null &&
-        now.difference(lastAt) <= kDoubleTapTimeout &&
-        lastPosition != null &&
-        (details.globalPosition - lastPosition).distance <= kDoubleTapSlop;
-    _lastTapAt = isDoubleTap ? null : now;
-    _lastTapPosition = isDoubleTap ? null : details.globalPosition;
-    if (isDoubleTap) {
-      widget.onOpen?.call();
-    } else {
-      widget.onSelect?.call();
-    }
+  void _tap() {
+    widget.onSelect?.call();
+    widget.onOpen?.call();
   }
 
   void _selectAndShowMenu(Offset position) {
@@ -143,20 +129,14 @@ class _NoteImageViewState extends State<NoteImageView> {
 
   Future<void> _showMenu(Offset position) async {
     if (!_hasMenu) return;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (overlay == null) return;
 
     final palette = context.palette;
     final error = Theme.of(context).colorScheme.error;
     final current = widget.ref.widthFactor;
 
-    final choice = await showMenu<String>(
+    final choice = await showKapyContextMenu<String>(
       context: context,
-      position: RelativeRect.fromRect(
-        position & const Size(1, 1),
-        Offset.zero & overlay.size,
-      ),
+      globalPosition: position,
       items: [
         if (widget.onOpen != null)
           PopupMenuItem(
@@ -164,17 +144,21 @@ class _NoteImageViewState extends State<NoteImageView> {
             height: 36,
             child: Row(
               children: [
-                Icon(
-                  Icons.open_in_full_rounded,
+                KapyIcon(
+                  KapyIcons.openInFullRounded,
                   size: AppControlMetrics.iconControl,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  'Open Image',
-                  style: TextStyle(
-                    fontSize: AppTypeScale.control,
-                    color: palette.textPrimary,
+                Expanded(
+                  child: Text(
+                    'Open Image',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppTypeScale.control,
+                      color: palette.textPrimary,
+                    ),
                   ),
                 ),
               ],
@@ -186,17 +170,21 @@ class _NoteImageViewState extends State<NoteImageView> {
             height: 36,
             child: Row(
               children: [
-                Icon(
-                  Icons.content_copy_rounded,
+                KapyIcon(
+                  KapyIcons.copyRounded,
                   size: AppControlMetrics.iconControl,
                   color: palette.textSecondary,
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  'Copy Image',
-                  style: TextStyle(
-                    fontSize: AppTypeScale.control,
-                    color: palette.textPrimary,
+                Expanded(
+                  child: Text(
+                    'Copy Image',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppTypeScale.control,
+                      color: palette.textPrimary,
+                    ),
                   ),
                 ),
               ],
@@ -215,19 +203,23 @@ class _NoteImageViewState extends State<NoteImageView> {
                   SizedBox(
                     width: AppControlMetrics.iconControl,
                     child: (current - entry.value).abs() < 0.02
-                        ? Icon(
-                            Icons.check_rounded,
+                        ? KapyIcon(
+                            KapyIcons.checkRounded,
                             size: AppControlMetrics.iconControl,
                             color: palette.textSecondary,
                           )
                         : null,
                   ),
                   const SizedBox(width: 10),
-                  Text(
-                    entry.key,
-                    style: TextStyle(
-                      fontSize: AppTypeScale.control,
-                      color: palette.textPrimary,
+                  Expanded(
+                    child: Text(
+                      entry.key,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: AppTypeScale.control,
+                        color: palette.textPrimary,
+                      ),
                     ),
                   ),
                 ],
@@ -239,17 +231,21 @@ class _NoteImageViewState extends State<NoteImageView> {
             height: 36,
             child: Row(
               children: [
-                Icon(
-                  Icons.delete_outline_rounded,
+                KapyIcon(
+                  KapyIcons.deleteOutlined,
                   size: AppControlMetrics.iconControl,
                   color: error,
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  'Remove image',
-                  style: TextStyle(
-                    fontSize: AppTypeScale.control,
-                    color: error,
+                Expanded(
+                  child: Text(
+                    'Remove image',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppTypeScale.control,
+                      color: error,
+                    ),
                   ),
                 ),
               ],
@@ -297,6 +293,82 @@ class _NoteImageViewState extends State<NoteImageView> {
         wantsThumbnail &&
         (widget.ref.thumbId != null || widget.ref.attachmentId == null);
     final source = thumbnailAvailable ? widget.ref.thumbHash! : widget.ref.hash;
+    final preview = widget.ref.previewBytes;
+    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final ImageProvider provider = preview == null
+        ? NoteImageProvider(
+            hash: source,
+            fallbackHash: source == widget.ref.hash ? null : widget.ref.hash,
+            store: widget.store,
+            fetch: widget.fetch,
+            cover: widget.box.cropped,
+          )
+        : ResizeImage.resizeIfNeeded(
+            (widget.box.width * pixelRatio).ceil(),
+            (widget.box.height * pixelRatio).ceil(),
+            MemoryImage(preview),
+          );
+
+    Widget imageSurface(double? uploadProgress) {
+      final preparing = widget.ref.isPreparing;
+      final uploading = !widget.ref.isUploaded && widget.uploadProgress != null;
+      final showsTransfer = preparing || uploading;
+      final fraction = preparing ? null : uploadProgress?.clamp(0.0, 1.0);
+      final blur = !showsTransfer
+          ? 0.0
+          : preparing
+          ? 12.0
+          : 10.0 * (1 - (fraction ?? 0));
+
+      return ClipRRect(
+        borderRadius: radius,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: palette.controlBackground,
+            borderRadius: radius,
+            border: Border.all(color: palette.separator, width: 0.5),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ImageFiltered(
+                enabled: blur > 0.05,
+                imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                child: Image(
+                  image: provider,
+                  width: widget.box.width,
+                  height: widget.box.height,
+                  fit: widget.box.cropped ? BoxFit.cover : BoxFit.contain,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.medium,
+                  frameBuilder: (context, child, frame, wasSync) =>
+                      AnimatedOpacity(
+                        opacity: frame == null ? 0 : 1,
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOut,
+                        child: child,
+                      ),
+                  errorBuilder: (context, error, stack) => _Unavailable(
+                    palette: palette,
+                    compact: widget.box.height < 120,
+                  ),
+                ),
+              ),
+              if (showsTransfer)
+                _ImageTransferCover(preparing: preparing, progress: fraction),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final progress = widget.uploadProgress;
+    final media = progress == null
+        ? imageSurface(null)
+        : ValueListenableBuilder<double?>(
+            valueListenable: progress,
+            builder: (context, value, _) => imageSurface(value),
+          );
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: noteImageGap / 2),
@@ -307,9 +379,7 @@ class _NoteImageViewState extends State<NoteImageView> {
             ? MouseCursor.defer
             : SystemMouseCursors.click,
         child: GestureDetector(
-          onTapUp: widget.onSelect == null && widget.onOpen == null
-              ? null
-              : _tap,
+          onTap: widget.onSelect == null && widget.onOpen == null ? null : _tap,
           onSecondaryTapUp: !_hasMenu
               ? null
               : (details) => _selectAndShowMenu(details.globalPosition),
@@ -321,51 +391,7 @@ class _NoteImageViewState extends State<NoteImageView> {
             height: widget.box.height,
             child: Stack(
               children: [
-                Positioned.fill(
-                  child: ClipRRect(
-                    borderRadius: radius,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: palette.controlBackground,
-                        borderRadius: radius,
-                        border: Border.all(
-                          color: palette.separator,
-                          width: 0.5,
-                        ),
-                      ),
-                      child: Image(
-                        image: NoteImageProvider(
-                          hash: source,
-                          fallbackHash: source == widget.ref.hash
-                              ? null
-                              : widget.ref.hash,
-                          store: widget.store,
-                          fetch: widget.fetch,
-                          cover: widget.box.cropped,
-                        ),
-                        width: widget.box.width,
-                        height: widget.box.height,
-                        fit: widget.box.cropped ? BoxFit.cover : BoxFit.contain,
-                        gaplessPlayback: true,
-                        filterQuality: FilterQuality.medium,
-                        // No spinner. A note that flickers a progress ring
-                        // over every picture on open reads as broken; an empty
-                        // box that fills in reads as loading, which it is.
-                        frameBuilder: (context, child, frame, wasSync) =>
-                            AnimatedOpacity(
-                              opacity: frame == null ? 0 : 1,
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOut,
-                              child: child,
-                            ),
-                        errorBuilder: (context, error, stack) => _Unavailable(
-                          palette: palette,
-                          compact: widget.box.height < 120,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                Positioned.fill(child: media),
                 if (widget.selected)
                   Positioned.fill(
                     child: IgnorePointer(
@@ -391,7 +417,7 @@ class _NoteImageViewState extends State<NoteImageView> {
                       ),
                       tooltip: 'Remove image',
                       onPressed: widget.onRemove,
-                      icon: const Icon(Icons.close_rounded, size: 17),
+                      icon: const KapyIcon(KapyIcons.closeRounded, size: 17),
                       color: Colors.white,
                       style: IconButton.styleFrom(
                         backgroundColor: Colors.black.withValues(alpha: 0.58),
@@ -418,6 +444,62 @@ class _NoteImageViewState extends State<NoteImageView> {
                       },
                     ),
                   ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ImageTransferCover extends StatelessWidget {
+  const _ImageTransferCover({required this.preparing, required this.progress});
+
+  final bool preparing;
+  final double? progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final percentage = progress == null ? null : (progress! * 100).round();
+    return ColoredBox(
+      color: Colors.black.withValues(alpha: 0.18),
+      child: Center(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.62),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox.square(
+                  dimension: 17,
+                  child: CircularProgressIndicator(
+                    value: progress,
+                    strokeWidth: 2,
+                    color: Colors.white,
+                    backgroundColor: Colors.white24,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  preparing
+                      ? 'Preparing…'
+                      : percentage == null
+                      ? 'Waiting to upload…'
+                      : 'Uploading $percentage%',
+                  key: ValueKey(
+                    preparing ? 'image-preparing' : 'image-upload-percentage',
+                  ),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: AppTypeScale.caption,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
@@ -498,8 +580,8 @@ class _Unavailable extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.image_outlined,
+            KapyIcon(
+              KapyIcons.imageOutlined,
               size: compact ? 18 : 24,
               color: palette.textTertiary,
             ),
@@ -544,9 +626,7 @@ class NoteImageViewer extends StatefulWidget {
     NoteImageFetcher? fetch,
   }) => Navigator.of(context).push(
     PageRouteBuilder<void>(
-      opaque: false,
-      barrierColor: Colors.black.withValues(alpha: 0.86),
-      barrierDismissible: true,
+      opaque: true,
       pageBuilder: (context, animation, secondary) => FadeTransition(
         opacity: animation,
         child: NoteImageViewer(ref: ref, store: store, fetch: fetch),
@@ -604,8 +684,15 @@ class _NoteImageViewerState extends State<NoteImageViewer> {
 
   @override
   Widget build(BuildContext context) {
+    final ImageProvider provider = widget.ref.previewBytes == null
+        ? NoteImageProvider(
+            hash: widget.ref.hash,
+            store: widget.store,
+            fetch: widget.fetch,
+          )
+        : MemoryImage(widget.ref.previewBytes!);
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.black,
       body: Shortcuts(
         shortcuts: const {
           SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
@@ -626,23 +713,14 @@ class _NoteImageViewerState extends State<NoteImageViewer> {
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: SafeArea(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: InteractiveViewer(
-                          maxScale: 8,
-                          child: Center(
-                            child: Image(
-                              key: _imageKey,
-                              image: NoteImageProvider(
-                                hash: widget.ref.hash,
-                                store: widget.store,
-                                fetch: widget.fetch,
-                              ),
-                              fit: BoxFit.contain,
-                              filterQuality: FilterQuality.high,
-                            ),
-                          ),
+                    child: InteractiveViewer(
+                      maxScale: 8,
+                      child: Center(
+                        child: Image(
+                          key: _imageKey,
+                          image: provider,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.high,
                         ),
                       ),
                     ),
@@ -655,7 +733,7 @@ class _NoteImageViewerState extends State<NoteImageViewer> {
                         key: _closeKey,
                         tooltip: 'Close',
                         onPressed: () => Navigator.of(context).maybePop(),
-                        icon: const Icon(Icons.close_rounded),
+                        icon: const KapyIcon(KapyIcons.closeRounded),
                         color: Colors.white,
                       ),
                     ),

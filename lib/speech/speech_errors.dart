@@ -21,6 +21,7 @@ String describeSpeechError(Object error) => switch (error) {
       'Transcription is unavailable right now. It will try again.',
     SpeechCodes.jobUnknown => 'Transcribe this recording again first.',
     SpeechCodes.summaryLimit => 'That is enough summaries for this recording.',
+    SpeechCodes.summariesExhausted => _outOfSummaries(body),
     SpeechCodes.summaryFailed =>
       'Could not write a summary. The transcript is here.',
     SpeechCodes.retryLimit => 'Too many tries. Transcribe again to start over.',
@@ -41,6 +42,12 @@ String _outOfMinutes(Map<String, Object?> body) {
   final resetsAt = DateTime.tryParse('${body['resetsAt']}')?.toLocal();
   if (resetsAt == null) return "You have used this month's transcription.";
   return "You have used this month's transcription. More on ${_shortDate(resetsAt)}.";
+}
+
+String _outOfSummaries(Map<String, Object?> body) {
+  final resetsAt = DateTime.tryParse('${body['resetsAt']}')?.toLocal();
+  if (resetsAt == null) return "You have used this month's cloud AI summaries.";
+  return "You have used this month's cloud AI summaries. More on ${_shortDate(resetsAt)}.";
 }
 
 String _shortDate(DateTime at) {

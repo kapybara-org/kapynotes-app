@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../sync/account.dart';
@@ -9,7 +10,9 @@ import '../../sync/sharing.dart';
 import '../../sync/sync_api.dart' show SyncRefusedException;
 import '../../sync/safety.dart';
 import '../../sync/spaces.dart';
+import '../member_avatars.dart';
 import '../safety_dialogs.dart';
+import '../settings_rows.dart';
 import '../share_dialog.dart';
 
 /// Shared spaces, in settings: invitations waiting for an answer, a place to
@@ -29,19 +32,32 @@ class SharingPane extends StatelessWidget {
     builder: (context, _) {
       final sharing = account.sharing;
       if (sharing == null) {
-        return _Panel(
-          title: 'Sharing',
-          blurb: switch (account.state) {
-            AccountState.signedOut =>
-              'Sign in, and unlock your notes, to share them with people.',
-            AccountState.needsProfile =>
-              'Finish your profile before sharing notes.',
-            AccountState.needsPassphrase =>
-              'Choose an encryption passphrase to start sharing notes.',
-            AccountState.locked => 'Unlock your notes to share them.',
-            _ => 'Sharing becomes available once your notes are unlocked.',
-          },
-          children: const [],
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SettingsLabel('SHARING'),
+            SettingsGroup(
+              children: [
+                SettingsRow(
+                  icon: KapyIcons.peopleOutlined,
+                  title: switch (account.state) {
+                    AccountState.signedOut =>
+                      'Sign in, and unlock your notes, to share them with '
+                          'people.',
+                    AccountState.needsProfile =>
+                      'Finish your profile before sharing notes.',
+                    AccountState.needsPassphrase =>
+                      'Choose an encryption passphrase to start sharing '
+                          'notes.',
+                    AccountState.locked => 'Unlock your notes to share them.',
+                    _ =>
+                      'Sharing becomes available once your notes are '
+                          'unlocked.',
+                  },
+                ),
+              ],
+            ),
+          ],
         );
       }
       return SharingPaneBody(sharing: sharing);
@@ -72,12 +88,14 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
   void initState() {
     super.initState();
     widget.sharing.addListener(_changed);
+    widget.sharing.presenceChanges.addListener(_changed);
     unawaited(_refreshQuietly());
   }
 
   @override
   void dispose() {
     widget.sharing.removeListener(_changed);
+    widget.sharing.presenceChanges.removeListener(_changed);
     _code.dispose();
     super.dispose();
   }
@@ -172,7 +190,8 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
     await _run(() async {
       final space = await widget.sharing.acceptInvite(token);
       _code.clear();
-      _message = 'You are in ${space.displayName}.';
+      final title = space.titleFor(widget.sharing.userId);
+      _message = space.chosenName == null ? '$title.' : 'You are in $title.';
     }, done: 'Joined.');
   }
 
@@ -183,180 +202,225 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
     final invites = sharing.invites;
     final teams = sharing.teams;
 
-    return _Panel(
-      title: 'Sharing',
-      blurb:
-          'Share a note from the note itself — right-click it in the list, '
-          'or hover it and choose Share. Spaces you have been invited to, '
-          'and the ones you are in, are here.',
+    // One card for everything you can act on — what is waiting for an
+    // answer, what you are in, and the way into another — with the reading
+    // underneath it. It used to open on two paragraphs and a boxed third
+    // before the first thing that could be pressed.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _InfoNote(
-          'Shared notes are encrypted on your devices with keys only the '
-          'members hold. Our servers store and relay sealed bytes and cannot '
-          'read them. Until you have compared a member\'s key fingerprint '
-          'with them in person, this protects against a server that only '
-          'looks, not one that lies about whose key is whose — the app pins '
-          'every member\'s key the first time it sees it and warns if it '
-          'changes.',
-        ),
-        if (invites.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          _Label('Invitations'),
-          for (final invite in invites)
-            _InviteRow(
-              key: ValueKey('invite-${invite.token}'),
-              invite: invite,
-              busy: _busy,
-              onAccept: () => _run(
-                () => sharing.acceptInvite(invite.token),
-                done:
-                    'You are in ${invite.spaceName}. The notes arrive once '
-                    'a member lets you in.',
-              ),
-              onDecline: () => _run(() => sharing.declineInvite(invite.token)),
-              onBlock: () => _run(
-                () => sharing.blockPerson(invite.invitedBy),
-                done:
-                    'Blocked ${invite.invitedBy}. They cannot invite you '
-                    'again.',
-              ),
-              onReport: () => showReportDialog(
-                context,
-                sharing: sharing,
-                target: ReportTarget.invitation(
-                  token: invite.token,
-                  email: invite.invitedBy,
-                ),
-              ),
-            ),
-        ],
-        const SizedBox(height: 14),
-        _Label('Have an invitation link?'),
-        Row(
+        const SettingsLabel('SHARING'),
+        SettingsGroup(
+          key: const ValueKey('sharing-group'),
           children: [
-            Expanded(
-              child: TextField(
-                key: const ValueKey('join-code'),
-                controller: _code,
-                enabled: !_busy,
-                autocorrect: false,
-                enableSuggestions: false,
-                onSubmitted: (_) => _busy ? null : _join(),
-                style: TextStyle(
-                  fontSize: AppTypeScale.control,
-                  color: palette.textPrimary,
+            for (final invite in invites)
+              _InviteRow(
+                key: ValueKey('invite-${invite.token}'),
+                invite: invite,
+                busy: _busy,
+                onAccept: () => _run(
+                  () => sharing.acceptInvite(invite.token),
+                  done:
+                      'You are in. The notes arrive once '
+                      '${invite.inviterDisplayName} or another member lets '
+                      'you in.',
                 ),
-                decoration: InputDecoration(
-                  hintText: 'Paste the link or its code',
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 11,
-                  ),
-                  filled: true,
-                  fillColor: palette.controlBackground,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(
-                      color: palette.controlBorder,
-                      width: 0.5,
-                    ),
+                onDecline: () =>
+                    _run(() => sharing.declineInvite(invite.token)),
+                onBlock: () => _run(
+                  () => sharing.blockPerson(invite.invitedBy),
+                  done:
+                      'Blocked ${invite.inviterDisplayName}. They cannot '
+                      'invite you again.',
+                ),
+                onReport: () => showReportDialog(
+                  context,
+                  sharing: sharing,
+                  target: ReportTarget.invitation(
+                    token: invite.token,
+                    email: invite.invitedBy,
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton(
-              key: const ValueKey('join-submit'),
-              onPressed: _busy ? null : _join,
-              child: const Text('Join'),
-            ),
+            if (teams.isEmpty)
+              const SettingsRow(
+                icon: KapyIcons.peopleOutlined,
+                title: 'No shared spaces',
+                subtitle: 'None yet. Share a note with someone to start one.',
+              ),
+            for (final team in teams)
+              _TeamRow(
+                key: ValueKey('space-${team.id}'),
+                space: team,
+                sharing: sharing,
+                onTap: () => showSpaceDialog(
+                  context,
+                  spaceId: team.id,
+                  sharing: sharing,
+                ),
+              ),
+            _JoinRow(controller: _code, busy: _busy, onJoin: _join),
           ],
         ),
-        const SizedBox(height: 14),
-        _Label('Shared spaces'),
-        if (teams.isEmpty)
-          Text(
-            'None yet. Share a note with someone to start one.',
-            style: TextStyle(
-              fontSize: AppTypeScale.body,
-              color: palette.textTertiary,
+        if (_message case final message?)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(3, 8, 3, 0),
+            child: Text(
+              message,
+              style: TextStyle(
+                fontSize: AppTypeScale.small,
+                color: _messageIsError
+                    ? Theme.of(context).colorScheme.error
+                    : palette.textSecondary,
+                height: 1.4,
+              ),
             ),
           ),
-        for (final team in teams)
-          _TeamRow(
-            key: ValueKey('space-${team.id}'),
-            space: team,
-            sharing: sharing,
-            onTap: () =>
-                showSpaceDialog(context, spaceId: team.id, sharing: sharing),
-          ),
+        SettingsNote(
+          AppPlatform.hasPointer
+              ? 'To share a note, open it and use the people button at the '
+                    'top, or right-click it in the list.'
+              : 'To share a note, open it and use the people button at the '
+                    'top, or long-press it in the list.',
+        ),
         if (sharing.blocks.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          _Label('Blocked'),
-          for (final block in sharing.blocks)
-            Padding(
-              key: ValueKey('block-${block.email}'),
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.block_rounded,
-                    size: AppControlMetrics.iconControl,
-                    color: palette.textTertiary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      block.email,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: AppTypeScale.control,
-                        color: palette.textSecondary,
-                      ),
-                    ),
-                  ),
-                  TextButton(
+          const SizedBox(height: 18),
+          const SettingsLabel('BLOCKED'),
+          SettingsGroup(
+            children: [
+              for (final block in sharing.blocks)
+                SettingsRow(
+                  key: ValueKey('block-${block.email}'),
+                  icon: KapyIcons.blockedRounded,
+                  title: block.email,
+                  trailing: SettingsRowButton(
                     key: ValueKey('unblock-${block.email}'),
+                    label: 'Unblock',
                     onPressed: _busy
                         ? null
                         : () => _run(
                             () => sharing.unblockPerson(block.email),
                             done: 'Unblocked ${block.email}.',
                           ),
-                    child: const Text('Unblock'),
                   ),
-                ],
-              ),
-            ),
+                ),
+            ],
+          ),
         ],
         const SizedBox(height: 14),
-        Text(
+        // The one honest caveat about what "encrypted" means when more than
+        // one person holds a key. Kept in full and on the pane, not behind a
+        // tap — but under the controls, where it no longer stands between
+        // somebody and the thing they came to do.
+        const SettingsNote(
+          'Shared notes are encrypted on your devices with keys only the '
+          'members hold. Our servers store and relay sealed bytes and cannot '
+          'read them. Until you have compared a member\'s key fingerprint '
+          'with them in person, this protects against a server that only '
+          'looks, not one that lies about whose key is whose. The app pins '
+          'every member\'s key the first time it sees it and warns if it '
+          'changes.',
+          icon: KapyIcons.lockRounded,
+        ),
+        const SettingsNote(
           'Something wrong in a shared space? Block the person from their '
-          'invitation or from the space, and report it — one person reads '
+          'invitation or from the space, and report it. One person reads '
           'every report, usually within $reportResponseDays working days. You '
           'can also write to $safetyContact.',
-          style: TextStyle(
-            fontSize: AppTypeScale.small,
-            color: palette.textTertiary,
-            height: 1.45,
-          ),
+          icon: KapyIcons.flagOutlined,
         ),
-        if (_message case final message?) ...[
-          const SizedBox(height: 10),
-          Text(
-            message,
-            style: TextStyle(
-              fontSize: AppTypeScale.small,
-              color: _messageIsError
-                  ? Theme.of(context).colorScheme.error
-                  : palette.textSecondary,
-              height: 1.4,
+      ],
+    );
+  }
+}
+
+/// Where a pasted invitation goes in: a field and a button, as a row of the
+/// card, since joining is one more way into a shared space.
+class _JoinRow extends StatelessWidget {
+  const _JoinRow({
+    required this.controller,
+    required this.busy,
+    required this.onJoin,
+  });
+
+  final TextEditingController controller;
+  final bool busy;
+  final VoidCallback onJoin;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: SettingsMetrics.padding,
+      child: Row(
+        children: [
+          SizedBox(
+            width: SettingsMetrics.iconSlot,
+            child: KapyIcon(
+              KapyIcons.linkRounded,
+              size: SettingsMetrics.iconSize,
+              color: palette.textSecondary,
             ),
           ),
+          SizedBox(width: SettingsMetrics.gap),
+          Expanded(
+            child: TextField(
+              key: const ValueKey('join-code'),
+              controller: controller,
+              enabled: !busy,
+              autocorrect: false,
+              enableSuggestions: false,
+              onSubmitted: (_) => busy ? null : onJoin(),
+              style: TextStyle(
+                fontSize: AppTypeScale.control,
+                color: palette.textPrimary,
+              ),
+              decoration: InputDecoration(
+                hintText: 'Invitation link or code',
+                hintStyle: TextStyle(
+                  fontSize: AppTypeScale.control,
+                  color: palette.textTertiary,
+                ),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                filled: true,
+                fillColor: palette.surfaceBackground,
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: palette.controlBorder,
+                    width: 0.5,
+                  ),
+                ),
+                disabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: palette.controlBorder,
+                    width: 0.5,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                    color: palette.selectedBorder,
+                    width: 0.75,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SettingsRowButton(
+            key: const ValueKey('join-submit'),
+            label: 'Join',
+            prominent: true,
+            onPressed: busy ? null : onJoin,
+          ),
         ],
-      ],
+      ),
     );
   }
 }
@@ -382,31 +446,61 @@ class _InviteRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 6),
-      decoration: BoxDecoration(
-        color: palette.controlBackground,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.controlBorder, width: 0.5),
-      ),
+    // The words line up with every other row in the card; the buttons take
+    // the row's whole width, which four of them need on a phone.
+    return Padding(
+      padding: EdgeInsets.fromLTRB(SettingsMetrics.padding.left, 10, 8, 6),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            '${invite.invitedBy} invited you to ${invite.spaceName}',
-            style: TextStyle(
-              fontSize: AppTypeScale.control,
-              color: palette.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '${invite.role.accessLabel} access',
-            style: TextStyle(
-              fontSize: AppTypeScale.caption,
-              color: palette.textSecondary,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: SettingsMetrics.iconSlot,
+                child: KapyIcon(
+                  KapyIcons.mailOutlined,
+                  size: SettingsMetrics.iconSize,
+                  color: palette.textSecondary,
+                ),
+              ),
+              SizedBox(width: SettingsMetrics.gap),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      invite.hasGeneratedSpaceName
+                          ? '${invite.inviterDisplayName} invited you to '
+                                'share notes'
+                          : '${invite.inviterDisplayName} invited you to '
+                                '${invite.spaceName}',
+                      style: TextStyle(
+                        fontSize: AppTypeScale.control,
+                        color: palette.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    // The address stays on an invitation, and only here: it
+                    // comes from somebody you may not know yet, and a name is
+                    // only what they call themselves. The address is the part
+                    // that was verified.
+                    Text(
+                      [
+                        if (invite.invitedByName != null) invite.invitedBy,
+                        '${invite.role.accessLabel} access',
+                      ].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: AppTypeScale.caption,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           Row(
             children: [
@@ -455,34 +549,37 @@ class _TeamRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final others = space.othersThan(sharing.userId);
+    final people = space.peopleExcept(sharing.userId);
     final warnings = sharing.trust.warningsFor(space.id);
     final detail = !sharing.holdsKey(space.id)
         ? 'Waiting for someone to let you in'
         : warnings.isNotEmpty
         ? "A member's key changed"
-        : others.isEmpty
-        ? (space.invites.isEmpty
-              ? 'Only you'
-              : 'Invited: ${space.invites.map((i) => i.email).join(', ')}')
-        : others.map((m) => m.displayName).join(', ');
+        : people.isEmpty
+        ? 'Only you'
+        : [
+            for (final person in people)
+              person.isInvited ? '${person.name} (invited)' : person.fullName,
+          ].join(', ');
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        padding: SettingsMetrics.padding,
         child: Row(
           children: [
-            Icon(
-              warnings.isNotEmpty
-                  ? Icons.warning_amber_rounded
-                  : Icons.people_outline_rounded,
-              size: AppControlMetrics.iconControl,
-              color: warnings.isNotEmpty
-                  ? Theme.of(context).colorScheme.error
-                  : palette.textSecondary,
+            SizedBox(
+              width: SettingsMetrics.iconSlot,
+              child: KapyIcon(
+                warnings.isNotEmpty
+                    ? KapyIcons.warningRounded
+                    : KapyIcons.peopleOutlined,
+                size: SettingsMetrics.iconSize,
+                color: warnings.isNotEmpty
+                    ? Theme.of(context).colorScheme.error
+                    : palette.textSecondary,
+              ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: SettingsMetrics.gap),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -491,7 +588,7 @@ class _TeamRow extends StatelessWidget {
                     children: [
                       Flexible(
                         child: Text(
-                          '${space.displayName}${space.isOwner ? '' : ' · shared with you'}',
+                          space.titleFor(sharing.userId),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -506,7 +603,7 @@ class _TeamRow extends StatelessWidget {
                           space.role.accessLabel,
                           style: TextStyle(
                             fontSize: AppTypeScale.caption,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w400,
                             color: palette.textTertiary,
                           ),
                         ),
@@ -525,8 +622,18 @@ class _TeamRow extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(
-              Icons.chevron_right_rounded,
+            const SizedBox(width: 8),
+            SpacePeopleAvatars(
+              space: space,
+              currentUserId: sharing.userId,
+              present: {
+                for (final person in sharing.presentIn(space.id)) person.userId,
+              },
+              extent: 22,
+              maxAvatars: 4,
+            ),
+            KapyIcon(
+              KapyIcons.chevronRightRounded,
               size: AppControlMetrics.iconControl,
               color: palette.textTertiary,
             ),
@@ -535,106 +642,4 @@ class _TeamRow extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Panel extends StatelessWidget {
-  const _Panel({
-    required this.title,
-    required this.blurb,
-    required this.children,
-  });
-
-  final String title;
-  final String blurb;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: AppTypeScale.title,
-            fontWeight: FontWeight.w500,
-            color: palette.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          blurb,
-          style: TextStyle(
-            fontSize: AppTypeScale.body,
-            color: palette.textSecondary,
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: 14),
-        ...children,
-      ],
-    );
-  }
-}
-
-class _InfoNote extends StatelessWidget {
-  const _InfoNote(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(11, 10, 12, 11),
-      decoration: BoxDecoration(
-        color: palette.controlBackground,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.controlBorder, width: 0.5),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: Icon(
-              Icons.lock_outline_rounded,
-              size: AppControlMetrics.iconAdornment,
-              color: palette.textSecondary,
-            ),
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: AppTypeScale.small,
-                color: palette.textSecondary,
-                height: 1.45,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Label extends StatelessWidget {
-  const _Label(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: Text(
-      text,
-      style: TextStyle(
-        fontSize: AppTypeScale.caption,
-        fontWeight: FontWeight.w500,
-        letterSpacing: 0.4,
-        color: context.palette.textTertiary,
-      ),
-    ),
-  );
 }

@@ -17,6 +17,12 @@ class SidebarTimestamp {
     'Dec',
   ];
 
+  /// A day with no time on it, for anything dated rather than timed — the
+  /// releases in Settings › Updates. Same table of months, so a date reads
+  /// the same wherever the app writes one.
+  static String formatDay(DateTime day) =>
+      '${day.day} ${_months[day.month - 1]} ${day.year}';
+
   static String format(
     DateTime timestamp, {
     required DateTime Function(DateTime) displayTime,

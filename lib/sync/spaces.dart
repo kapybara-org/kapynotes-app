@@ -68,8 +68,18 @@ class SpaceMember {
     if (clean.isNotEmpty && clean.toLowerCase() != email.toLowerCase()) {
       return clean;
     }
-    final local = email.split('@').first.trim();
-    return local.isEmpty ? email : local;
+    return _localPart(email);
+  }
+
+  /// What to call them in a sentence — "Priya is typing" — where a full name
+  /// would crowd the line.
+  String get firstName => _firstWord(displayName);
+
+  /// Whether they have a name of their own, so the address need not stand in
+  /// for one. The address stays reachable, for checking who somebody is.
+  bool get hasName {
+    final clean = name.trim();
+    return clean.isNotEmpty && clean.toLowerCase() != email.toLowerCase();
   }
 
   /// True when this member can be granted the key: they have a public key
@@ -117,6 +127,10 @@ class SpaceInvite {
     required this.createdAt,
   });
 
+  /// An invitation has an address and nothing else: until they accept there
+  /// is no profile to take a name from.
+  String get displayName => _localPart(email);
+
   static SpaceInvite? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final token = raw['token'];
@@ -139,7 +153,13 @@ class PendingInvite {
   final String token;
   final String spaceId;
   final String spaceName;
+
+  /// The inviter's verified address.
   final String invitedBy;
+
+  /// The inviter's own name, where the server sent one. Servers before it
+  /// did send only the address, which is then all there is to show.
+  final String? invitedByName;
   final SpaceRole role;
   final DateTime expiresAt;
 
@@ -148,9 +168,23 @@ class PendingInvite {
     required this.spaceId,
     required this.spaceName,
     required this.invitedBy,
+    this.invitedByName,
     this.role = SpaceRole.member,
     required this.expiresAt,
   });
+
+  /// Who sent it, by name where they have one.
+  String get inviterDisplayName => invitedByName ?? invitedBy;
+
+  /// Whether the space still carries the placeholder it was made with.
+  ///
+  /// To the invitee that placeholder is "With" and a piece of their *own*
+  /// address, so it tells them nothing and is better left unsaid. Judged by
+  /// shape alone — one word after "With" — because an invitation carries no
+  /// member list to check it against; a chosen name of that shape is merely
+  /// not repeated back.
+  bool get hasGeneratedSpaceName =>
+      RegExp(r'^With \S+$').hasMatch(spaceName.trim());
 
   static PendingInvite? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -158,6 +192,7 @@ class PendingInvite {
     final spaceId = raw['spaceId'];
     final name = raw['spaceName'];
     final by = raw['invitedBy'];
+    final byName = raw['invitedByName'];
     final expires = DateTime.tryParse(raw['expiresAt'] as String? ?? '');
     if (token is! String ||
         spaceId is! String ||
@@ -171,10 +206,47 @@ class PendingInvite {
       spaceId: spaceId,
       spaceName: name,
       invitedBy: by,
+      invitedByName:
+          byName is String &&
+              byName.trim().isNotEmpty &&
+              byName.trim().toLowerCase() != by.toLowerCase()
+          ? byName.trim()
+          : null,
       role: _spaceRole(raw['role']),
       expiresAt: expires.toLocal(),
     );
   }
+}
+
+/// Somebody a space is shared with: a member, or an address with an
+/// invitation still outstanding. Enough to name them and draw an avatar.
+class SpacePerson {
+  const SpacePerson._({
+    required this.id,
+    required this.name,
+    required this.fullName,
+    required this.seed,
+    this.image,
+    this.member,
+    this.invite,
+  });
+
+  /// The member's account id, or the invited address.
+  final String id;
+
+  /// What to call them in a sentence. Unique among the people in the space.
+  final String name;
+
+  /// What to call them in a list.
+  final String fullName;
+
+  /// What a default avatar is drawn from.
+  final String seed;
+  final String? image;
+  final SpaceMember? member;
+  final SpaceInvite? invite;
+
+  bool get isInvited => invite != null;
 }
 
 class Space {
@@ -239,6 +311,99 @@ class Space {
   /// Members other than [userId] — what "who is this shared with" means.
   List<SpaceMember> othersThan(String userId) =>
       members.where((m) => m.userId != userId).toList(growable: false);
+
+  /// Whether [name] is the placeholder this app gave the space when it made
+  /// it — "With" and a piece of the first invitee's address — rather than a
+  /// name somebody chose.
+  ///
+  /// The placeholder is part of an email address, and to the invitee it
+  /// names themselves. Where it is one, the space goes by its people instead.
+  bool get hasGeneratedName {
+    final raw = name?.trim();
+    if (raw == null || !raw.startsWith('With ')) return false;
+    final rest = raw.substring(5).trim().toLowerCase();
+    bool matches(String email) {
+      final address = email.trim().toLowerCase();
+      return rest == address || rest == address.split('@').first;
+    }
+
+    return members.any((m) => matches(m.email)) ||
+        invites.any((i) => matches(i.email));
+  }
+
+  /// A name somebody chose for the space, or null for one that has none.
+  String? get chosenName {
+    final raw = name?.trim();
+    if (!isTeam || raw == null || raw.isEmpty || hasGeneratedName) return null;
+    return raw;
+  }
+
+  /// What to call [userId] in a sentence here: their first name, or their
+  /// full one where somebody else in the space shares the first.
+  String shortNameOf(String userId) {
+    final member = this.member(userId);
+    if (member == null) return 'Someone';
+    final first = member.firstName.toLowerCase();
+    final clash = members.any(
+      (other) =>
+          other.userId != userId && other.firstName.toLowerCase() == first,
+    );
+    return clash ? member.displayName : member.firstName;
+  }
+
+  /// Everyone but [userId], in the order a sentence names them: the owner,
+  /// then members as they joined, then anyone whose invitation is waiting.
+  List<SpacePerson> peopleExcept(String userId) {
+    final others = othersThan(userId).toList()
+      ..sort((a, b) {
+        if (a.isOwner != b.isOwner) return a.isOwner ? -1 : 1;
+        return a.joinedAt.compareTo(b.joinedAt);
+      });
+    final pending = invites.toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return [
+      for (final member in others)
+        SpacePerson._(
+          id: member.userId,
+          name: shortNameOf(member.userId),
+          fullName: member.displayName,
+          seed: member.userId.isEmpty ? member.email : member.userId,
+          image: member.image,
+          member: member,
+        ),
+      for (final invite in pending)
+        SpacePerson._(
+          id: invite.email,
+          name: invite.displayName,
+          fullName: invite.email,
+          seed: invite.email,
+          invite: invite,
+        ),
+    ];
+  }
+
+  /// "Priya", "Priya and Sam", "Priya and 4 others": who [userId] shares
+  /// this space with, or null while that is nobody.
+  String? peoplePhrase(String userId) {
+    final people = peopleExcept(userId);
+    return switch (people.length) {
+      0 => null,
+      1 => people[0].name,
+      2 => '${people[0].name} and ${people[1].name}',
+      _ => '${people[0].name} and ${people.length - 1} others',
+    };
+  }
+
+  /// What to call the space in a heading: the name somebody gave it, or else
+  /// the current account's relationship to it.
+  String titleFor(String userId) {
+    if (isPersonal) return displayName;
+    final chosen = chosenName;
+    if (chosen != null) return chosen;
+    if (ownerId != userId) return 'Shared by ${shortNameOf(ownerId)}';
+    final phrase = peoplePhrase(userId);
+    return phrase == null ? 'Only you' : 'Shared with $phrase';
+  }
 
   /// A team space whose only member is its owner, with no unexpired invite
   /// and live notes still in it, is owed a trip home: only the owner's client
@@ -336,6 +501,17 @@ class InviteResult {
     required this.expiresAt,
     required this.emailed,
   });
+}
+
+String _localPart(String email) {
+  final local = email.split('@').first.trim();
+  return local.isEmpty ? email : local;
+}
+
+String _firstWord(String value) {
+  final clean = value.trim();
+  final gap = RegExp(r'\s').firstMatch(clean);
+  return gap == null ? clean : clean.substring(0, gap.start);
 }
 
 Uint8List? _bytes(Object? raw) {

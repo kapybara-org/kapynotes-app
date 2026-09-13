@@ -80,6 +80,10 @@ class ReportTarget {
   final String? noteId;
   final String? email;
 
+  /// What to call the person reported, in the dialog. Only [email] goes to
+  /// the server: it is the part of them that was verified.
+  final String? name;
+
   /// The note's text, when there is one to offer. Held here so the dialog can
   /// show what would be sent, and sent only if the person says so.
   final String? noteBody;
@@ -89,7 +93,8 @@ class ReportTarget {
     : kind = ReportKind.invitation,
       spaceId = null,
       noteId = null,
-      noteBody = null;
+      noteBody = null,
+      name = null;
 
   /// A note. [noteBody] is what *could* be attached, and is not attached
   /// unless the person reporting chooses to.
@@ -99,11 +104,13 @@ class ReportTarget {
     required String this.noteBody,
   }) : kind = ReportKind.note,
        token = null,
-       email = null;
+       email = null,
+       name = null;
 
   const ReportTarget.member({
     required String this.spaceId,
     required String this.email,
+    this.name,
   }) : kind = ReportKind.member,
        token = null,
        noteId = null,
@@ -116,7 +123,7 @@ class ReportTarget {
   String get what => switch (kind) {
     ReportKind.invitation => 'this invitation',
     ReportKind.note => 'this note',
-    ReportKind.member => email ?? 'this person',
+    ReportKind.member => name ?? email ?? 'this person',
   };
 }
 
@@ -187,5 +194,5 @@ const String sharingTermsSummary =
     'or to share sexual content involving children, threats, or anything '
     'illegal.\n\n'
     'Your notes stay encrypted and we cannot read them. That also means we '
-    'cannot find a problem on our own — if somebody does any of this to you, '
+    'cannot find a problem on our own. If somebody does any of this to you, '
     'block them and report it, and we will act on it.';

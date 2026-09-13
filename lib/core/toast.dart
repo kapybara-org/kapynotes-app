@@ -27,7 +27,7 @@ class Toast {
   static void show(
     BuildContext context,
     String message, {
-    IconData? icon,
+    KapyIconData? icon,
     bool isError = false,
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
@@ -37,7 +37,7 @@ class Toast {
       overlay,
       message,
       icon:
-          icon ?? (isError ? Icons.error_outline_rounded : Icons.check_rounded),
+          icon ?? (isError ? KapyIcons.errorOutlined : KapyIcons.checkRounded),
       isError: isError,
       progress: false,
       duration: const Duration(milliseconds: 1800),
@@ -57,7 +57,7 @@ class Toast {
     final generation = _showOn(
       overlay,
       message,
-      icon: Icons.hourglass_top_rounded,
+      icon: KapyIcons.hourglassRounded,
       isError: false,
       progress: true,
       duration: null,
@@ -68,7 +68,7 @@ class Toast {
   static int _showOn(
     OverlayState overlay,
     String message, {
-    required IconData icon,
+    required KapyIconData icon,
     required bool isError,
     required bool progress,
     required Duration? duration,
@@ -102,7 +102,7 @@ class Toast {
     OverlayState? overlay,
     int generation,
     String message, {
-    required IconData icon,
+    required KapyIconData icon,
     required bool isError,
   }) {
     if (overlay == null || !overlay.mounted || generation != _generation) {
@@ -142,7 +142,7 @@ class ToastProgress {
   final OverlayState? _overlay;
   final int _generation;
 
-  void success(String message, {IconData icon = Icons.check_rounded}) =>
+  void success(String message, {KapyIconData icon = KapyIcons.checkRounded}) =>
       Toast._complete(
         _overlay,
         _generation,
@@ -155,7 +155,7 @@ class ToastProgress {
     _overlay,
     _generation,
     message,
-    icon: Icons.error_outline_rounded,
+    icon: KapyIcons.errorOutlined,
     isError: true,
   );
 
@@ -176,7 +176,7 @@ class _ToastBody extends StatefulWidget {
   });
 
   final String message;
-  final IconData icon;
+  final KapyIconData icon;
   final bool isError;
   final bool progress;
   final Duration? duration;
@@ -299,7 +299,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                                         color: statusColor,
                                       ),
                                     )
-                                  : Icon(
+                                  : KapyIcon(
                                       widget.icon,
                                       key: const ValueKey('toast-status-icon'),
                                       size: compact ? 14 : 16,

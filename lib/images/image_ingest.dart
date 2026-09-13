@@ -80,6 +80,111 @@ class ImageIngestResult {
   bool get isOk => image != null;
 }
 
+/// A picker result that can be painted before compression has finished.
+///
+/// Reading the encoded header is intentionally the only image work on this
+/// path. The expensive pixel decode and re-encode still happen in the isolate
+/// below, while [ref.previewBytes] gives the editor an immediate local source.
+class StagedImage {
+  const StagedImage({
+    required this.ref,
+    required this.source,
+    required this.sourceMime,
+  });
+
+  final NoteImageRef ref;
+  final Uint8List source;
+  final String sourceMime;
+}
+
+class ImageStageResult {
+  const ImageStageResult.ok(this.staged) : rejection = null;
+  const ImageStageResult.rejected(this.rejection) : staged = null;
+
+  final StagedImage? staged;
+  final ImageRejection? rejection;
+
+  bool get isOk => staged != null;
+}
+
+/// Builds the local-only ref used while an image is prepared for storage.
+Future<ImageStageResult> stageImage({
+  required Uint8List source,
+  required String sourceMime,
+}) async {
+  if (source.isEmpty) {
+    return const ImageStageResult.rejected(ImageRejection.empty);
+  }
+  if (source.length > maxSourceBytes) {
+    return const ImageStageResult.rejected(ImageRejection.tooLarge);
+  }
+
+  ui.ImmutableBuffer? buffer;
+  ui.ImageDescriptor? descriptor;
+  try {
+    buffer = await ui.ImmutableBuffer.fromUint8List(source);
+    descriptor = await ui.ImageDescriptor.encoded(buffer);
+    final width = descriptor.width;
+    final height = descriptor.height;
+    if (width <= 0 || height <= 0) {
+      return const ImageStageResult.rejected(ImageRejection.unreadable);
+    }
+    final key = randomKey();
+    final ref = NoteImageRef(
+      offset: 0,
+      hash: BlobStore.hashOf(source),
+      key: key,
+      mime: sourceMime,
+      width: width,
+      height: height,
+      bytes: source.length,
+      isPreparing: true,
+      previewBytes: source,
+    );
+    return ImageStageResult.ok(
+      StagedImage(ref: ref, source: source, sourceMime: sourceMime),
+    );
+  } catch (error) {
+    debugPrint('KapyNotes: image header could not be read: $error');
+    return const ImageStageResult.rejected(ImageRejection.unreadable);
+  } finally {
+    descriptor?.dispose();
+    buffer?.dispose();
+  }
+}
+
+/// Completes a staged image while retaining the file key already anchored in
+/// the note. Keeping that key makes the prepared ref a replacement, not a new
+/// attachment that could race the user's edits or removal.
+Future<ImageIngestResult> finishStagedImage(
+  StagedImage staged, {
+  required BlobStore store,
+}) => ingestImage(
+  source: staged.source,
+  sourceMime: staged.sourceMime,
+  store: store,
+  key: staged.ref.key,
+);
+
+/// Safe fallback when the platform could display a file whose pure-Dart
+/// compressor could not re-encode it. It keeps the original bytes rather than
+/// making the optimistic preview disappear after the user already saw it.
+Future<NoteImageRef> storeStagedImageAsIs(
+  StagedImage staged, {
+  required BlobStore store,
+}) async {
+  final hash = await store.put(staged.source);
+  return NoteImageRef(
+    offset: staged.ref.offset,
+    hash: hash,
+    key: staged.ref.key,
+    mime: staged.sourceMime,
+    width: staged.ref.width,
+    height: staged.ref.height,
+    bytes: staged.source.length,
+  );
+}
+
 /// Turns bytes from a file, a drop or a picker into something a note can hold.
 ///
 /// The heavy half runs off the UI isolate. Compressing a 12 MP photograph is
@@ -90,6 +195,7 @@ Future<ImageIngestResult> ingestImage({
   required Uint8List source,
   required String sourceMime,
   required BlobStore store,
+  Uint8List? key,
 }) async {
   if (source.isEmpty) {
     return const ImageIngestResult.rejected(ImageRejection.empty);
@@ -123,7 +229,7 @@ Future<ImageIngestResult> ingestImage({
       ref: NoteImageRef(
         offset: 0,
         hash: hash,
-        key: randomKey(),
+        key: key ?? randomKey(),
         mime: prepared.mime,
         width: prepared.width,
         height: prepared.height,

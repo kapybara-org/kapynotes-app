@@ -5,6 +5,7 @@ import 'note_attachment.dart';
 import 'note_format.dart';
 
 const Object _keepArchivedAt = Object();
+const Object _keepHiddenAt = Object();
 
 /// A single note. Its title is derived from [body] rather than stored, so it
 /// can never drift out of sync with the text.
@@ -28,6 +29,14 @@ class Note {
   /// Archiving is content state rather than a tombstone. It therefore travels
   /// with the note, can be synced, and can be cleared to restore the note.
   final DateTime? archivedAt;
+
+  /// When the note entered Hidden Notes, or null while it is not hidden.
+  ///
+  /// Like [archivedAt], this is content state: it follows the note between the
+  /// owner's devices inside the encrypted payload. Access credentials do not
+  /// follow it. Each device protects the folder with its own system lock or
+  /// PIN.
+  final DateTime? hiddenAt;
 
   /// The [updatedAt] the server has confirmed it holds, or null if this note
   /// has never been pushed.
@@ -71,6 +80,7 @@ class Note {
     required this.createdAt,
     required this.updatedAt,
     this.archivedAt,
+    this.hiddenAt,
     this.syncedAt,
     this.spaceId,
     this.contentKey,
@@ -84,6 +94,7 @@ class Note {
   /// True when this note is in a shared space rather than the personal one.
   bool get isShared => spaceId != null;
   bool get isArchived => archivedAt != null;
+  bool get isHidden => hiddenAt != null;
 
   Note copyWith({
     String? body,
@@ -91,6 +102,7 @@ class Note {
     List<NoteAttachmentRef>? attachments,
     DateTime? updatedAt,
     Object? archivedAt = _keepArchivedAt,
+    Object? hiddenAt = _keepHiddenAt,
   }) => Note(
     id: id,
     body: body ?? this.body,
@@ -101,6 +113,9 @@ class Note {
     archivedAt: identical(archivedAt, _keepArchivedAt)
         ? this.archivedAt
         : archivedAt as DateTime?,
+    hiddenAt: identical(hiddenAt, _keepHiddenAt)
+        ? this.hiddenAt
+        : hiddenAt as DateTime?,
     // Deliberately carried over: an edit must not look synced.
     syncedAt: syncedAt,
     spaceId: spaceId,
@@ -118,6 +133,7 @@ class Note {
     createdAt: createdAt,
     updatedAt: updatedAt,
     archivedAt: archivedAt,
+    hiddenAt: hiddenAt,
     syncedAt: at,
     spaceId: spaceId,
     contentKey: contentKey,
@@ -142,6 +158,7 @@ class Note {
     createdAt: createdAt,
     updatedAt: at,
     archivedAt: archivedAt,
+    hiddenAt: hiddenAt,
     syncedAt: null,
     spaceId: spaceId,
     contentKey: contentKey,
@@ -163,6 +180,7 @@ class Note {
     createdAt: createdAt,
     updatedAt: updatedAt,
     archivedAt: archivedAt,
+    hiddenAt: hiddenAt,
     syncedAt: syncedAt,
     spaceId: spaceId,
     contentKey: contentKey,
@@ -210,66 +228,122 @@ class Note {
 
   bool get isEmpty => body.trim().isEmpty;
 
-  /// Case-insensitive match against the whole body, and anything a recording
-  /// was heard to say.
+  /// Case-insensitive match across every piece of searchable note content.
   ///
-  /// A transcript is searchable because that is most of the point of having
-  /// one: a recording you cannot find is a recording you will not listen to.
-  /// The words live inside the ref rather than in [body] — putting them in the
-  /// body would mean the user's own note filling with text they did not type —
-  /// so search has to look in both places.
+  /// Separate words may live in separate lines or attachments. This matters
+  /// for outline-shaped notes: searching for a project name from the heading
+  /// and a task from a deeply nested line should still find the note. Quoted
+  /// text stays one phrase.
   bool matches(String query) {
-    final needle = query.toLowerCase();
-    if (body.toLowerCase().contains(needle)) return true;
-    for (final ref in attachments) {
-      if (ref is! NoteVoiceRef) continue;
-      if (_spokenText(ref).any((line) => line.toLowerCase().contains(needle))) {
-        return true;
-      }
-    }
-    return false;
+    final terms = _noteSearchTerms(query);
+    if (terms.isEmpty) return true;
+    final candidates = _searchCandidates().toList(growable: false);
+    return terms.every(
+      (term) =>
+          candidates.any((candidate) => candidate.normalized.contains(term)),
+    );
   }
 
-  /// The first line containing [query], shown while searching so the user can
-  /// see why a note matched.
+  /// The line that best explains why this note matched [query].
+  ///
+  /// The title is already visible above this text in the sidebar, so a nested
+  /// line wins a tie. A summary wins over raw transcript speech, and generated
+  /// takes are included too: all of them are content the user can see inside
+  /// the note even though they are stored on its attachment.
   String? matchSnippet(String query) {
-    if (query.isEmpty) return null;
-    final needle = query.toLowerCase();
-    for (final line in body.split('\n')) {
-      if (line.toLowerCase().contains(needle)) {
-        final trimmed = line
-            .replaceAll(NoteAttachmentRef.placeholder, '')
-            .trim();
-        if (trimmed.isNotEmpty) return trimmed;
+    final terms = _noteSearchTerms(query);
+    if (terms.isEmpty) return null;
+    final candidates = _searchCandidates().toList(growable: false);
+    if (!terms.every(
+      (term) =>
+          candidates.any((candidate) => candidate.normalized.contains(term)),
+    )) {
+      return null;
+    }
+
+    final phrase = terms.join(' ');
+    _NoteSearchCandidate? best;
+    var bestScore = -1;
+    for (final candidate in candidates) {
+      final matched = terms.where(candidate.normalized.contains).length;
+      if (matched == 0) continue;
+      final score =
+          matched * 1000 +
+          (candidate.normalized.contains(phrase) ? 100 : 0) +
+          candidate.priority;
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
       }
     }
-    // Nothing in the text: the match was something said out loud. The glyph is
-    // what tells the reader why a note they never typed those words into is in
-    // their results.
+    return best?.display;
+  }
+
+  Iterable<_NoteSearchCandidate> _searchCandidates() sync* {
+    var foundTitle = false;
+    for (final line in body.split('\n')) {
+      final text = line.replaceAll(NoteAttachmentRef.placeholder, '').trim();
+      if (text.isEmpty) continue;
+      final isTitle = !foundTitle;
+      foundTitle = true;
+      yield _NoteSearchCandidate(
+        text,
+        display: text,
+        // A detail line explains a result the visible title cannot.
+        priority: isTitle ? 10 : 60,
+      );
+    }
+
     for (final ref in attachments) {
       if (ref is! NoteVoiceRef) continue;
-      for (final line in _spokenText(ref)) {
-        if (line.toLowerCase().contains(needle)) {
-          final trimmed = line.trim();
-          if (trimmed.isNotEmpty) return '🎙 $trimmed';
+      final summary = ref.summary;
+      if (summary != null) {
+        yield _NoteSearchCandidate(
+          summary.title,
+          display: '🎙 ${summary.title.trim()}',
+          priority: 50,
+        );
+        for (final point in summary.points) {
+          yield _NoteSearchCandidate(
+            point,
+            display: '🎙 ${point.trim()}',
+            priority: 50,
+          );
         }
       }
-    }
-    return null;
-  }
 
-  /// Everything a recording is known to have said: its summary first, because
-  /// a hit there is the better snippet, then the transcript segment by segment.
-  static Iterable<String> _spokenText(NoteVoiceRef ref) sync* {
-    final summary = ref.summary;
-    if (summary != null) {
-      yield summary.title;
-      yield* summary.points;
-    }
-    final transcript = ref.transcript;
-    if (transcript != null) {
-      for (final segment in transcript.segments) {
-        yield segment.t;
+      final transcript = ref.transcript;
+      if (transcript != null) {
+        for (final name in transcript.speakers.values) {
+          yield _NoteSearchCandidate(
+            name,
+            display: '🎙 ${name.trim()}',
+            priority: 20,
+          );
+        }
+        for (final segment in transcript.segments) {
+          yield _NoteSearchCandidate(
+            segment.t,
+            display: '🎙 ${segment.t.trim()}',
+            priority: 20,
+          );
+        }
+      }
+
+      for (final take in ref.takes) {
+        yield _NoteSearchCandidate(
+          take.text,
+          display: '${take.kind.label}: ${take.text.trim()}',
+          priority: 40,
+        );
+        final instruction = take.instruction;
+        if (instruction != null) {
+          yield _NoteSearchCandidate(
+            instruction,
+            display: '${take.kind.label}: ${instruction.trim()}',
+            priority: 30,
+          );
+        }
       }
     }
   }
@@ -325,6 +399,7 @@ class Note {
     'createdAt': createdAt.millisecondsSinceEpoch,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
     if (archivedAt != null) 'archivedAt': archivedAt!.millisecondsSinceEpoch,
+    if (hiddenAt != null) 'hiddenAt': hiddenAt!.millisecondsSinceEpoch,
     // Omitted while null so a store that has never synced stays byte-identical
     // to what earlier builds wrote.
     if (syncedAt != null) 'syncedAt': syncedAt!.millisecondsSinceEpoch,
@@ -351,6 +426,7 @@ class Note {
       createdAt: _date(raw['createdAt']),
       updatedAt: _date(raw['updatedAt']),
       archivedAt: _optionalDate(raw['archivedAt']),
+      hiddenAt: _optionalDate(raw['hiddenAt']),
       syncedAt: _optionalDate(raw['syncedAt']),
       spaceId: spaceId is String && spaceId.isNotEmpty ? spaceId : null,
       contentKey: _optionalKey(raw['contentKey']),
@@ -376,4 +452,35 @@ class Note {
       return null;
     }
   }
+}
+
+final RegExp _noteSearchToken = RegExp(r'"([^"]+)"|(\S+)');
+final RegExp _noteSearchWhitespace = RegExp(r'\s+');
+
+List<String> _noteSearchTerms(String query) {
+  final terms = <String>[];
+  for (final match in _noteSearchToken.allMatches(query)) {
+    final value = match.group(1) ?? match.group(2)?.replaceAll('"', '');
+    if (value == null) continue;
+    final normalized = _normalizeNoteSearch(value);
+    if (normalized.isNotEmpty && !terms.contains(normalized)) {
+      terms.add(normalized);
+    }
+  }
+  return terms;
+}
+
+String _normalizeNoteSearch(String value) =>
+    value.toLowerCase().replaceAll(_noteSearchWhitespace, ' ').trim();
+
+class _NoteSearchCandidate {
+  _NoteSearchCandidate(
+    String text, {
+    required this.display,
+    required this.priority,
+  }) : normalized = _normalizeNoteSearch(text);
+
+  final String normalized;
+  final String display;
+  final int priority;
 }

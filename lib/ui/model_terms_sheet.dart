@@ -92,8 +92,8 @@ class _TermsLink extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.open_in_new_rounded,
+            KapyIcon(
+              KapyIcons.openExternalRounded,
               size: 13,
               color: palette.textTertiary,
             ),
@@ -124,7 +124,7 @@ class _TermsLink extends StatelessWidget {
     Toast.show(
       context,
       'Could not open ${target.host}',
-      icon: Icons.error_outline_rounded,
+      icon: KapyIcons.errorOutlined,
       isError: true,
     );
   }

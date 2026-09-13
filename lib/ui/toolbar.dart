@@ -3,9 +3,11 @@ import 'package:material_ui/material_ui.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/window_chrome.dart';
+import '../sync/presence.dart';
 import '../sync/spaces.dart';
 import 'app_logo.dart';
 import 'compact_icon_button.dart';
+import 'editor_panes.dart';
 import 'glass_surface.dart';
 import 'kapy_header_mascot.dart';
 import 'member_avatars.dart';
@@ -22,12 +24,16 @@ class NoteToolbar extends StatelessWidget {
     required this.onCreate,
     this.onShare,
     this.sidebarVisible = true,
+    this.sidebarShortcut,
     this.showActions = true,
     this.alwaysOnTop = false,
     this.onToggleAlwaysOnTop,
     this.alwaysOnTopShortcut,
+    this.onSplit,
+    this.splitTooltip,
     this.mascotController,
     this.members = const [],
+    this.present = const [],
     this.currentUserId = '',
     this.noteShared = false,
   });
@@ -41,6 +47,11 @@ class NoteToolbar extends StatelessWidget {
   final VoidCallback? onShare;
 
   final bool sidebarVisible;
+
+  /// The user's current chord for showing or hiding the notes list.
+  /// Kept beside the action so a hover teaches the shortcut in either the
+  /// wide sidebar or compact drawer layout.
+  final String? sidebarShortcut;
   final bool showActions;
 
   /// Whether the window is currently floating over other applications.
@@ -54,12 +65,26 @@ class NoteToolbar extends StatelessWidget {
   /// preferences rather than written here, because the binding is editable.
   final String? alwaysOnTopShortcut;
 
+  /// Opens a pane beside the open note. Null greys the button out rather than
+  /// removing it: once three notes are side by side, while the focused pane is
+  /// still empty, and in the archive.
+  final VoidCallback? onSplit;
+
+  /// What the split button says, which is also why it is grey when it is.
+  /// Null leaves the button out altogether, where there is only ever one note
+  /// on screen: a phone, or a window too narrow for the notes list beside it.
+  final String? splitTooltip;
+
   /// Drives the optional animated mark without changing toolbar geometry.
   final KapyHeaderController? mascotController;
 
   /// Everyone the open note is shared with. Empty on a personal note, which
   /// is what keeps that note's title bar as quiet as it has always been.
   final List<SpaceMember> members;
+
+  /// Whoever else has the open note up right now, drawn first and ringed in
+  /// the colour of their caret.
+  final List<Collaborator> present;
 
   /// Whose account this is, so one avatar can read "You".
   final String currentUserId;
@@ -143,8 +168,8 @@ class NoteToolbar extends StatelessWidget {
                         const SizedBox(width: _pinGap),
                         _ToolbarButton(
                           icon: alwaysOnTop
-                              ? Icons.push_pin_rounded
-                              : Icons.push_pin_outlined,
+                              ? KapyIcons.pinRounded
+                              : KapyIcons.pinOutlined,
                           tooltip: [
                             alwaysOnTop ? 'Stop keeping on top' : 'Keep on top',
                             ?alwaysOnTopShortcut,
@@ -218,6 +243,7 @@ class NoteToolbar extends StatelessWidget {
               padding: const EdgeInsets.only(left: 6),
               child: MemberAvatars(
                 members: members,
+                present: present,
                 currentUserId: currentUserId,
                 onPressed: onShare,
               ),
@@ -228,40 +254,59 @@ class NoteToolbar extends StatelessWidget {
   }
 
   Widget _trailing() {
+    final splitTooltip = this.splitTooltip;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         _ToolbarButton(
-          icon: Icons.add_rounded,
+          icon: KapyIcons.addRounded,
           tooltip: AppPlatform.isMacOS ? 'New note  ⌘N' : 'New note  Ctrl+N',
           onPressed: onCreate,
         ),
         const SizedBox(width: 2),
         _ToolbarButton(
-          icon: Icons.people_outline_rounded,
+          icon: KapyIcons.peopleOutlined,
           tooltip: noteShared ? 'Sharing' : 'Share note',
           onPressed: onShare,
         ),
+        if (splitTooltip != null) ...[
+          const SizedBox(width: 2),
+          _ToolbarButton(
+            key: const ValueKey('toolbar-split-view'),
+            glyph: SplitViewIcon(size: AppControlMetrics.iconAction),
+            tooltip: splitTooltip,
+            onPressed: onSplit,
+          ),
+        ],
       ],
     );
   }
 
   Widget _menuButton() => _ToolbarButton(
-    icon: Icons.menu_rounded,
-    tooltip: sidebarVisible ? 'Hide notes' : 'Show notes',
+    key: const ValueKey('toolbar-notes-toggle'),
+    icon: KapyIcons.menuRounded,
+    tooltip: [
+      sidebarVisible ? 'Hide notes' : 'Show notes',
+      ?sidebarShortcut,
+    ].join('  '),
     onPressed: onToggleSidebar,
   );
 }
 
 class _ToolbarButton extends StatelessWidget {
   const _ToolbarButton({
-    required this.icon,
+    super.key,
+    this.icon,
+    this.glyph,
     required this.tooltip,
     required this.onPressed,
     this.selected = false,
-  });
+  }) : assert((icon == null) != (glyph == null));
 
-  final IconData icon;
+  final KapyIconData? icon;
+
+  /// A drawn icon, for an action the icon font has nothing clear for.
+  final Widget? glyph;
   final String tooltip;
 
   /// Null greys the action out rather than removing it.
@@ -280,7 +325,7 @@ class _ToolbarButton extends StatelessWidget {
           : selected
           ? palette.textPrimary
           : palette.textSecondary,
-      icon: Icon(icon, size: AppControlMetrics.iconAction),
+      icon: glyph ?? KapyIcon(icon!, size: AppControlMetrics.iconAction),
     );
   }
 }

@@ -118,9 +118,10 @@ swift tool/generate_windows_installer_art.swift
 Kapy himself comes from `design/mascot/` in the `kapynotes` repository beside
 this one; the script fails rather than draw the panel without him. Both images
 are written at Inno's 250% DPI sizes — 534x1022 and 159x159 — and Inno scales
-them down, as far as 202x386 on a 100% DPI screen. That last number is why the
-panel carries no body copy: a tagline survives the scaling at about eight
-pixels tall.
+them down, as far as 202x386 on a 100% DPI screen. The small image keeps its
+own transparent inset because Inno anchors the image control to the top-right
+edge of the window. The panel carries no body copy: a tagline survives the
+scaling at about eight pixels tall.
 
 The Welcome page, which would show the panel at the start rather than the end,
 is off by default in Inno 6 and left that way. It is a page whose only job is
@@ -359,6 +360,42 @@ Currency codes can sit directly beside an amount, such as `10usd` or `10eur`;
 `rs` is accepted as an INR shorthand, so `10rs` and `10inr` are equivalent.
 Lines that start with `//` are treated and styled as quiet comments.
 
+**Markdown in notes** (Settings → General, off by default) reads a note as
+CommonMark with GitHub's tables, strikethrough and task lists. The parser is
+[`dart_markdown`](https://pub.dev/packages/dart_markdown), the one Dart parser
+that reports where every node and marker sits in the source, which is what
+styling an editable field needs. A note is drawn the way GitHub renders one,
+and edited in place like a word processor's page: the markers stay in the text
+but are hidden, so a heading is large and bold with no `#` in sight, a list
+has bullets and checkboxes that tick with a tap, code sits on a tinted panel,
+a table is a grid, and a link is just its words. Inline markers show, quietly,
+only while the caret has been moved against them (`**` either side of a bold
+word, a link's address), and a code block's fences or a table's pipes only
+while the caret is in it. The structure at the start of a line (`## `, `> `,
+`- [ ] `) is never shown: the caret steps over it, Backspace at the start of
+the words takes the formatting off, and `# `, `- `, `1. `, `> ` or `[] ` typed
+at the start of a line make one. Bold switched on with nothing selected
+applies to the next word typed, Enter continues lists and quotes, and the
+formatting buttons and shortcuts write markdown rather than styles kept beside
+the text. Nothing in a note is converted either way, and off, the editor is
+exactly what it was.
+
+Hidden markers are laid out at a size too small to take room or be seen, which
+the editor's fixed line height keeps from moving the line they sit on; bullets,
+boxes and table grids are painted behind the field
+(`markdown_backdrop.dart`) in the room their own characters keep, so a click
+still lands where it looks as though it does.
+
+The calculator reads a markdown note the way it is drawn. A list marker is a
+bullet, not a minus sign or a running tally; code blocks and struck-through
+text are not calculated; emphasis is read for its words, so `**5 + 3**` is 8;
+and a `*` between two operands is always multiplication, never emphasis, so
+`2*3*4` and `(2+3)*4*(5)` stay arithmetic. A long note is parsed in pieces the
+parser is guaranteed to read the same way on their own, and only the piece
+that changed is read again (`markdown_syntax.dart`);
+`test/markdown_syntax_test.dart` checks the pieces against a whole-note parse
+over thousands of generated notes and edits.
+
 Daily separator timestamps follow the time zone selected in Settings. The
 default follows the device, while an explicit city uses bundled IANA rules so
 day boundaries and daylight-saving changes are based on the original edit
@@ -369,6 +406,35 @@ The sidebar uses that same time zone for each note's compact updated date and
 time. Notes are kept newest-updated-first on load and move to the top as soon
 as they are edited. During a search, the timestamp is temporarily replaced by
 the matching line so body-only results still have context.
+
+### Split view (`lib/data/editor_workspace.dart`, `lib/ui/editor_panes.dart`)
+
+A desktop-width window can put up to three notes side by side. Each pane holds
+exactly one note, and a note is only ever open in one pane: choosing a note
+that is already on screen focuses its pane rather than opening it twice. There
+are no tabs piling up behind a pane.
+
+- The split button in the title bar (⌘\ or Ctrl+\\) opens an empty pane beside
+  the focused note, and the next note chosen from the list goes into it.
+- A note's menu in the list has **Open to the Side**; Option-click (Alt-click)
+  does the same.
+- A note dragged from the list, or a pane dragged by its title bar, lands
+  beside a pane when dropped on its outer part and in that pane's place when
+  dropped in its middle, swapping with it if the note was already open. The
+  highlight says which before anything moves. With three panes open there is
+  no room beside, so an edge means the pane itself.
+- ⌘1, ⌘2 and ⌘3 (Ctrl on Windows and Linux) focus a pane and ⌘W closes the
+  focused one. All of them can be changed under Settings › Shortcuts › Split
+  view. Closing a pane never archives or deletes its note.
+
+A single pane has no title bar, so the editor looks exactly as it did before
+panes existed. Panes share the row evenly whenever one opens or closes;
+dragging a divider resizes the two panes beside it, and double-clicking one
+evens them all out again. The panes, their widths and which one is focused come
+back at the next launch; an empty pane does not. A window too narrow for the notes list
+beside a note shows only the focused pane's note, and the rest return when it
+widens. Only the focused pane reports presence in a shared note, and a
+recording is delivered before a change would take its note off the screen.
 
 ### Storage (`lib/data/`)
 
@@ -461,11 +527,13 @@ The spec described an Electron build. These changed for Flutter:
   opens focused on a fresh line, and returning to the app starts another
   append position without saving empty lines. It can be disabled in Settings
   › General.
-- Shortcuts: `⌘/Ctrl N` new note, `⌘/Ctrl F` search, `⌘/Ctrl \` toggle
-  sidebar, `⌘/Ctrl ⌫` delete note. Two more are registered with the OS and
-  answer from inside any other app: `⌥⌘X` / `Ctrl+Shift+X` summons the window,
-  `⌥⌘N` / `Ctrl+Shift+N` summons it onto a blank note. All of them are
-  rebindable in Settings › Shortcuts.
+- Shortcuts: `⌘/Ctrl N` new note, `⌘/Ctrl F` search, `⌘/Ctrl S` toggle
+  sidebar, `⇧⌘⌫` / `Ctrl+Shift+Delete` archive the note. Two more are
+  registered with the OS and answer from inside any other app — which also
+  means every other app loses them while this one runs, so they sit on chords
+  little else uses: `⇧⌥⌘X` / `Alt+Shift+X` summons the window, `⇧⌥⌘N` /
+  `Alt+Shift+N` summons it onto a blank note. All of them are rebindable in
+  Settings › Shortcuts.
 - Closing the window quits on Windows and leaves the process running on macOS,
   each platform's own convention. *Keep running in the tray* (Settings ›
   General, off by default) makes both hide to a tray icon instead, so the

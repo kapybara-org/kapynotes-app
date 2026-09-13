@@ -37,7 +37,7 @@ class EmptyState extends StatelessWidget {
             'No note selected',
             style: TextStyle(
               fontSize: AppTypeScale.title,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w400,
               color: palette.textPrimary,
             ),
           ),
@@ -54,13 +54,16 @@ class EmptyState extends StatelessWidget {
           const SizedBox(height: 18),
           FilledButton.icon(
             onPressed: onCreate,
-            icon: Icon(Icons.add_rounded, size: AppControlMetrics.iconAction),
+            icon: KapyIcon(
+              KapyIcons.addRounded,
+              size: AppControlMetrics.iconAction,
+            ),
             label: const Text('New Note'),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ),

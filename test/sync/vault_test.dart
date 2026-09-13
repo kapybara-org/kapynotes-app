@@ -15,9 +15,7 @@ KdfParams cheapKdf(Uint8List salt) =>
 
 NotePayload samplePayload({String body = 'Hello, world'}) => NotePayload(
   body: body,
-  formats: [
-    NoteFormatRange(start: 0, end: 5, format: NoteFormat.bold),
-  ],
+  formats: [NoteFormatRange(start: 0, end: 5, format: NoteFormat.bold)],
   createdAt: 1700000000000,
 );
 
@@ -26,7 +24,9 @@ void main() {
     late Vault vault;
 
     setUp(() {
-      vault = Vault.fromMasterKey(Uint8List(Vault.keyLength)..fillRange(0, 32, 7));
+      vault = Vault.fromMasterKey(
+        Uint8List(Vault.keyLength)..fillRange(0, 32, 7),
+      );
     });
 
     test('a payload survives a round trip intact', () async {
@@ -39,6 +39,31 @@ void main() {
       expect(opened.formats.single.format, NoteFormat.bold);
       expect(opened.formats.single.start, 0);
       expect(opened.formats.single.end, 5);
+    });
+
+    test('hidden state stays inside the encrypted note envelope', () async {
+      const hiddenAt = 1788271200000;
+      final sealed = await vault.seal(
+        NotePayload(
+          body: 'Private',
+          hiddenAt: hiddenAt,
+          createdAt: 1700000000000,
+        ),
+      );
+
+      expect(sealed.toJson().keys, unorderedEquals(['ct', 'n', 'v']));
+      final opened = await vault.open(sealed);
+      expect(opened?.hiddenAt, hiddenAt);
+      expect(
+        opened
+            ?.toNote(
+              id: 'hidden-note',
+              updatedAt: DateTime.fromMillisecondsSinceEpoch(hiddenAt),
+            )
+            .hiddenAt
+            ?.millisecondsSinceEpoch,
+        hiddenAt,
+      );
     });
 
     test('formats and attachments ride inside the envelope', () async {
@@ -198,10 +223,7 @@ void main() {
 
       // ...and the note was never rewritten, which is the whole point of
       // wrapping a master key instead of deriving one.
-      expect(
-        setup.vault.masterKeyForKeystore,
-        reopened.masterKeyForKeystore,
-      );
+      expect(setup.vault.masterKeyForKeystore, reopened.masterKeyForKeystore);
     });
 
     test('the recovery key still works after a passphrase change', () async {
@@ -233,7 +255,10 @@ void main() {
 
     test('malformed boxes are rejected rather than thrown on', () {
       expect(SealedBox.fromJson(null), isNull);
-      expect(SealedBox.fromJson({'ct': 'not base64!!', 'n': 'AA==', 'v': 1}), isNull);
+      expect(
+        SealedBox.fromJson({'ct': 'not base64!!', 'n': 'AA==', 'v': 1}),
+        isNull,
+      );
       // A nonce of the wrong width means a different algorithm wrote it.
       expect(
         SealedBox.fromJson({

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show Rect, Size;
 
 import 'package:flutter/foundation.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
@@ -12,9 +13,10 @@ import 'system_shutdown.dart';
 import 'window_pin.dart';
 
 /// Native desktop behavior that has no useful mobile equivalent: remembering
-/// the window size, summoning an already-running app from anywhere — either
-/// to whatever you left on screen, or straight onto a blank note — and, for
-/// those who ask for it, staying alive in the tray once the window is closed.
+/// the window size and position; summoning an already-running app from
+/// anywhere, either to whatever you left on screen or straight onto a blank
+/// note; and, for those who ask for it, staying alive in the tray once the
+/// window is closed.
 class DesktopIntegration extends ChangeNotifier with WindowListener {
   DesktopIntegration({required this.layoutPrefs}) {
     _tray = AppTray(
@@ -33,8 +35,9 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   late final AppTray _tray;
 
   final Map<ShortcutAction, HotKey> _hotKeys = {};
-  Timer? _resizeDebounce;
+  Timer? _windowGeometryDebounce;
   String? _registrationError;
+  int _temporaryWindowResizeDepth = 0;
 
   /// Called when the new-note shortcut or the tray's New Note fires, once the
   /// window is up. Set by the notes UI when it mounts, which is a frame later
@@ -234,6 +237,9 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   Future<void> quit() => _quitting ??= _quit();
 
   Future<void> _quit() async {
+    // Catch a last Linux move whose debounced event has not landed yet, and
+    // make tray quits just as faithful as closing a visible window.
+    await _rememberWindowBounds();
     try {
       await onBeforeQuit?.call();
     } catch (error) {
@@ -329,17 +335,89 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     if (notifyOpen) onOpenRequested?.call();
   }
 
+  /// Gives a modal enough horizontal room, then returns the window to the
+  /// bounds the user chose before it opened.
+  ///
+  /// Flutter dialogs cannot be wider than their host window. Windows users
+  /// can keep the notes window narrow, so a modal which needs two panes has
+  /// to borrow width from that window while it is on screen. The temporary
+  /// minimum also stops a resize from collapsing the modal midway through.
+  Future<T> withMinimumWindowWidth<T>(
+    double minimumWidth,
+    Future<T> Function() action,
+  ) async {
+    Rect originalBounds;
+    try {
+      originalBounds = await windowManager.getBounds();
+    } catch (error) {
+      // Settings is still useful if an older or incomplete runner does not
+      // answer the sizing call. Its in-window fallback remains functional.
+      debugPrint('KapyNotes: could not read the window before a modal: $error');
+      return action();
+    }
+    if (originalBounds.width >= minimumWidth) return action();
+
+    final expandedBounds = Rect.fromCenter(
+      center: originalBounds.center,
+      width: minimumWidth,
+      height: originalBounds.height,
+    );
+    _temporaryWindowResizeDepth++;
+    var minimumWasRaised = false;
+    try {
+      await windowManager.setMinimumSize(
+        Size(minimumWidth, LayoutPrefs.minimumWindowSize.height),
+      );
+      minimumWasRaised = true;
+      await windowManager.setBounds(expandedBounds);
+    } catch (error) {
+      if (minimumWasRaised) {
+        try {
+          await windowManager.setMinimumSize(LayoutPrefs.minimumWindowSize);
+        } catch (_) {}
+      }
+      _temporaryWindowResizeDepth--;
+      debugPrint('KapyNotes: could not widen the window for a modal: $error');
+      return action();
+    }
+
+    try {
+      return await action();
+    } finally {
+      // Drop the borrowed minimum first, otherwise Windows quite correctly
+      // refuses to put the narrow bounds back.
+      try {
+        await windowManager.setMinimumSize(LayoutPrefs.minimumWindowSize);
+        await windowManager.setBounds(originalBounds);
+      } catch (error) {
+        debugPrint(
+          'KapyNotes: could not restore the window after a modal: $error',
+        );
+      } finally {
+        _temporaryWindowResizeDepth--;
+        // A user can finish a resize and open Settings before the ordinary
+        // debounce writes it. The captured pre-modal bounds are authoritative
+        // and must not be replaced by the borrowed width.
+        layoutPrefs.rememberWindowBounds(originalBounds);
+      }
+    }
+  }
+
   /// Both platforms report the close before honouring it, whether or not it
   /// was prevented. Doing nothing is therefore the correct response to a
   /// close the app did not ask to intercept: Windows quits, macOS keeps the
   /// process alive for the summon shortcut, and both are what should happen.
   @override
   void onWindowClose() {
-    if (!_hidesOnClose) return;
+    if (!_hidesOnClose) {
+      unawaited(_rememberWindowBounds());
+      return;
+    }
     unawaited(_hideAfterClosing());
   }
 
   Future<void> _hideAfterClosing() async {
+    await _rememberWindowBounds();
     await onBeforeClose?.call();
     await windowManager.hide();
   }
@@ -366,32 +444,58 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
 
   @override
   void onWindowResize() {
-    // Linux does not emit the one-shot onWindowResized event. The debounce is
-    // also harmless on macOS and Windows and avoids a disk write per pixel.
-    _resizeDebounce?.cancel();
-    _resizeDebounce = Timer(
+    _scheduleWindowGeometrySave();
+  }
+
+  @override
+  void onWindowMove() {
+    _scheduleWindowGeometrySave();
+  }
+
+  /// Linux emits the continuous events but not their one-shot counterparts.
+  /// The debounce is also harmless on macOS and Windows and avoids a disk
+  /// write for every pixel of a drag.
+  void _scheduleWindowGeometrySave() {
+    _windowGeometryDebounce?.cancel();
+    _windowGeometryDebounce = Timer(
       const Duration(milliseconds: 180),
-      () => unawaited(_rememberWindowSize()),
+      () => unawaited(_rememberWindowBounds()),
     );
   }
 
   @override
   void onWindowResized() {
-    _resizeDebounce?.cancel();
-    unawaited(_rememberWindowSize());
+    _rememberCompletedWindowGeometry();
   }
 
-  Future<void> _rememberWindowSize() async {
-    if (await windowManager.isMaximized() ||
-        await windowManager.isFullScreen()) {
-      return;
+  @override
+  void onWindowMoved() {
+    _rememberCompletedWindowGeometry();
+  }
+
+  void _rememberCompletedWindowGeometry() {
+    _windowGeometryDebounce?.cancel();
+    unawaited(_rememberWindowBounds());
+  }
+
+  Future<void> _rememberWindowBounds() async {
+    if (_temporaryWindowResizeDepth > 0) return;
+    try {
+      if (await windowManager.isMaximized() ||
+          await windowManager.isFullScreen()) {
+        return;
+      }
+      layoutPrefs.rememberWindowBounds(await windowManager.getBounds());
+    } catch (error) {
+      // Window events must never become unhandled async errors because an
+      // older runner omitted one of the geometry methods.
+      debugPrint('KapyNotes: could not remember the window bounds: $error');
     }
-    layoutPrefs.windowSize = await windowManager.getSize();
   }
 
   @override
   void dispose() {
-    _resizeDebounce?.cancel();
+    _windowGeometryDebounce?.cancel();
     windowManager.removeListener(this);
     SystemShutdown.stopListening();
     WindowPin.stopListening();

@@ -15,6 +15,7 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/time_zones.dart';
+import 'package:kapy_notes/ui/editor/blank_line_highlight.dart';
 import 'package:kapy_notes/ui/editor/editor_formatting.dart';
 import 'package:kapy_notes/ui/celebrate.dart';
 import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
@@ -184,17 +185,12 @@ Future<void> sendShortcut(WidgetTester tester, ShortcutBinding binding) async {
   }
 }
 
-/// Reveals the formatting cluster the same way the current platform does.
+/// Reveals the formatting cluster through its explicit toggle on every
+/// platform. Pointer users can leave the button after clicking without losing
+/// the tools, just like touch users can.
 Future<void> revealFormatting(WidgetTester tester) async {
   final toggle = find.byKey(const ValueKey('formatting-toggle'));
-  if (AppPlatform.hasPointer) {
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    addTearDown(mouse.removePointer);
-    await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(tester.getCenter(toggle));
-  } else {
-    await tester.tap(toggle);
-  }
+  await tester.tap(toggle);
   await tester.pumpAndSettle();
 }
 
@@ -523,6 +519,225 @@ void main() {
     final selection = state.textEditingValue.selection;
     expect(selection.isCollapsed, isFalse);
     expect(selection.extentOffset, 12);
+  });
+
+  group('blank lines', () {
+    // "one" ends at 3, the blank lines' breaks are 4 to 7, "two" starts at 8.
+    const body = 'one\n\n\n\n\ntwo';
+
+    /// A point on the line [offset] starts, a little in from its edge.
+    Offset onLineOf(WidgetTester tester, int offset) {
+      final editable = tester
+          .state<EditableTextState>(find.byType(EditableText))
+          .renderEditable;
+      final caret = editable.getLocalRectForCaret(TextPosition(offset: offset));
+      return editable.localToGlobal(caret.center + const Offset(20, 0));
+    }
+
+    TextSelection selectionOf(WidgetTester tester) => tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .textEditingValue
+        .selection;
+
+    /// What the blank-line highlight paints, in global coordinates.
+    List<({Rect rect, Color color})> blankLineBlocks(WidgetTester tester) {
+      final layer = tester.renderObject<RenderBox>(
+        find.byType(BlankLineHighlight),
+      );
+      final canvas = TestRecordingCanvas();
+      layer.paint(TestRecordingPaintingContext(canvas), Offset.zero);
+      final origin = layer.localToGlobal(Offset.zero);
+      return [
+        for (final call in canvas.invocations)
+          if (call.invocation.memberName == #drawRect)
+            (
+              rect: (call.invocation.positionalArguments[0] as Rect).shift(
+                origin,
+              ),
+              color: (call.invocation.positionalArguments[1] as Paint).color,
+            ),
+      ];
+    }
+
+    // Every selection made only of line breaks used to collapse to a caret.
+    // Meant for a double click on a blank line, the rule also swallowed a
+    // drag over blank lines, Shift with the arrows, and Select All — so a run
+    // of them could be neither selected nor deleted in one go.
+    testWidgets('can be selected by dragging over them', (tester) async {
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+
+      final drag = await tester.startGesture(
+        onLineOf(tester, 4),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await drag.moveTo(onLineOf(tester, 7));
+      await tester.pump();
+      await drag.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        selectionOf(tester),
+        const TextSelection(baseOffset: 4, extentOffset: 7),
+      );
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('selected with Shift and the arrows go in one keystroke', (
+      tester,
+    ) async {
+      var saved = body;
+      await tester.pumpWidget(
+        harness(body, autofocus: true, onBodyChanged: (text) => saved = text),
+      );
+      await tester.pumpAndSettle();
+      final state = tester.state<EditableTextState>(find.byType(EditableText));
+      state.userUpdateTextEditingValue(
+        state.textEditingValue.copyWith(
+          selection: const TextSelection.collapsed(offset: 4),
+        ),
+        SelectionChangedCause.tap,
+      );
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      for (var i = 0; i < 3; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      }
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      expect(
+        selectionOf(tester),
+        const TextSelection(baseOffset: 4, extentOffset: 7),
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      await tester.pumpAndSettle();
+      expect(saved, 'one\n\ntwo');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('that make up the whole note go with Select All', (
+      tester,
+    ) async {
+      var saved = '\n\n\n\n';
+      await tester.pumpWidget(
+        harness(
+          '\n\n\n\n',
+          autofocus: true,
+          onBodyChanged: (text) => saved = text,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      await tester.pumpAndSettle();
+
+      expect(saved, isEmpty);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    // A press that selects by word finds nothing on a blank line but its
+    // break. Left standing, that hid the caret, opened the formatting toolbar
+    // over nothing, and let a Paste from the menu replace the break.
+    testWidgets('double or right clicking one leaves a caret', (tester) async {
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+
+      final blank = onLineOf(tester, 5);
+      final mouse = await tester.startGesture(
+        blank,
+        kind: PointerDeviceKind.mouse,
+      );
+      await mouse.up();
+      await tester.pump(const Duration(milliseconds: 50));
+      await mouse.down(blank);
+      await tester.pump();
+      await mouse.up();
+      await tester.pumpAndSettle();
+      expect(selectionOf(tester), const TextSelection.collapsed(offset: 5));
+
+      // Well clear of the double-click window.
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tapAt(
+        onLineOf(tester, 6),
+        buttons: kSecondaryButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(selectionOf(tester), const TextSelection.collapsed(offset: 6));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('a long press on one leaves a caret', (tester) async {
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+
+      await tester.longPressAt(onLineOf(tester, 5));
+      await tester.pumpAndSettle();
+
+      expect(selectionOf(tester), const TextSelection.collapsed(offset: 5));
+    });
+
+    // The field highlights each line only as far as its text, and a blank
+    // line has none — its break is a zero-width box — so a selection over
+    // blank lines showed nothing on them at all.
+    testWidgets('are highlighted where a selection covers them', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      final state = tester.state<EditableTextState>(find.byType(EditableText));
+      state.userUpdateTextEditingValue(
+        state.textEditingValue.copyWith(
+          selection: const TextSelection(baseOffset: 4, extentOffset: 7),
+        ),
+        SelectionChangedCause.drag,
+      );
+      await tester.pumpAndSettle();
+
+      final editable = state.renderEditable;
+      final blocks = blankLineBlocks(tester);
+      // The break at 7 ends the selection rather than sitting in it.
+      expect(blocks, hasLength(3));
+      for (final (index, block) in blocks.indexed) {
+        final line = editable
+            .getBoxesForSelection(
+              TextSelection(baseOffset: 4 + index, extentOffset: 5 + index),
+            )
+            .single;
+        final lineOrigin = editable.localToGlobal(Offset(line.left, line.top));
+        expect(block.rect.left, moreOrLessEquals(lineOrigin.dx));
+        expect(block.rect.top, moreOrLessEquals(lineOrigin.dy));
+        expect(block.rect.height, moreOrLessEquals(line.bottom - line.top));
+        expect(block.rect.width, greaterThan(2));
+        expect(block.color, isSameColorAs(editable.selectionColor!));
+      }
+
+      // Lines holding text are the field's own business.
+      state.userUpdateTextEditingValue(
+        state.textEditingValue.copyWith(
+          selection: const TextSelection(baseOffset: 0, extentOffset: 3),
+        ),
+        SelectionChangedCause.drag,
+      );
+      await tester.pumpAndSettle();
+      expect(blankLineBlocks(tester), isEmpty);
+
+      // And like the field's highlight, it goes with the focus.
+      state.userUpdateTextEditingValue(
+        state.textEditingValue.copyWith(
+          selection: const TextSelection(baseOffset: 4, extentOffset: 7),
+        ),
+        SelectionChangedCause.drag,
+      );
+      await tester.pumpAndSettle();
+      expect(blankLineBlocks(tester), hasLength(3));
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      expect(blankLineBlocks(tester), isEmpty);
+    });
   });
 
   // Flutter pads every selected line that carries a line break out to the
@@ -929,6 +1144,49 @@ void main() {
       reason: 'the controls belong at the edge the eye starts from',
     );
     expect(total.right, closeTo(footer.right - 12, 1));
+  });
+
+  testWidgets('the formatting button keeps tools open until clicked again', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('2 + 2'));
+    await tester.pumpAndSettle();
+
+    final toggle = find.byKey(const ValueKey('formatting-toggle'));
+    final style = find.byKey(const ValueKey('format-style'));
+    double revealFactor() => tester
+        .widgetList<Align>(
+          find.ancestor(of: style, matching: find.byType(Align)),
+        )
+        .singleWhere((align) => align.widthFactor != null)
+        .widthFactor!;
+
+    final mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+      pointer: 92,
+    );
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+
+    await mouse.moveTo(tester.getCenter(toggle));
+    await mouse.down(tester.getCenter(toggle));
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(revealFactor(), 1);
+
+    await mouse.moveTo(tester.getCenter(find.byType(TextField)));
+    await tester.pumpAndSettle();
+    expect(
+      revealFactor(),
+      1,
+      reason: 'leaving the footer must not undo an explicit click',
+    );
+
+    await mouse.moveTo(tester.getCenter(toggle));
+    await mouse.down(tester.getCenter(toggle));
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(revealFactor(), 0);
   });
 
   testWidgets('the controls do not move when the nesting buttons appear', (
@@ -1714,7 +1972,14 @@ void main() {
     tester.state<EditableTextState>(find.byType(EditableText)).showToolbar();
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Copy Plain Text'));
+    final contextMenu = find.byKey(const ValueKey('editor-context-menu'));
+    expect(contextMenu, findsOneWidget);
+    expect(tester.getSize(contextMenu).width, lessThanOrEqualTo(208));
+    expect(
+      find.ancestor(of: contextMenu, matching: find.byType(FadeTransition)),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Copy plain text'));
     await tester.pumpAndSettle();
 
     // Nothing selected, so the whole note comes across: glyphs turned to
@@ -1758,7 +2023,14 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('selection-more')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Copy Plain Text'));
+    final editActions = find.byKey(const ValueKey('kapy-context-menu'));
+    expect(editActions, findsOneWidget);
+    expect(tester.getSize(editActions).width, lessThanOrEqualTo(208));
+    expect(
+      find.ancestor(of: editActions, matching: find.byType(FadeTransition)),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Copy plain text'));
     await tester.pumpAndSettle();
 
     expect(copied, ['- [ ] first']);
@@ -2749,6 +3021,57 @@ void main() {
     expect(after, closeTo(lineAfter, 1.5));
   });
 
+  testWidgets('keeps clean-font results aligned after focusing at the end', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(500, 471);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const body = '''
+Lisbon trip budget
+
+Flights for two
+flights = 412 eur
+flights to usd
+
+Hotel: 7 nights
+nightly = 128 eur
+nightly * 7
+
+Food and getting around // rough guess
+daily = 55 eur
+daily * 7
+
+total
+total to usd''';
+
+    await tester.pumpWidget(
+      harness(
+        body,
+        writingFont: WritingFont.clean,
+        startAtEnd: true,
+        autofocus: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.controller!.text, '$body\n\n');
+    final scroll = field.scrollController!;
+    expect(scroll.offset, greaterThan(0));
+    for (final entry in {
+      4: '479.07 USD',
+      8: '896.00 EUR',
+      12: '385.00 EUR',
+    }.entries) {
+      expect(
+        tester.getRect(chipWithText(entry.value)).center.dy,
+        closeTo(lineRect(tester, body, entry.key).center.dy, 1.5),
+        reason: 'chip "${entry.value}" should sit on line ${entry.key}',
+      );
+    }
+  });
+
   testWidgets('scrolling down a mobile note dismisses the keyboard to read', (
     tester,
   ) async {
@@ -3082,6 +3405,84 @@ void main() {
           : FakeViewPadding.zero;
       await tester.pump();
     }
+
+    testWidgets(
+      'the footer pins keyboard dismissal outside its formatting scroller',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        tester.view.physicalSize = const Size(320, 700);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          harness(
+            'one\ntwo',
+            startAtEnd: true,
+            autofocus: true,
+            ensureKeyboardVisible: true,
+            onRecordVoice: () {},
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        const dismissKey = ValueKey('dismiss-keyboard');
+        expect(find.byKey(dismissKey), findsNothing);
+
+        await setKeyboard(tester, 300);
+        final dismiss = find.byKey(dismissKey);
+        final footer = find.byType(NoteFooter);
+        expect(dismiss, findsOneWidget);
+        final pinned = tester.getRect(dismiss);
+        expect(pinned.right, closeTo(tester.getRect(footer).right - 8, 0.1));
+
+        await tester.tap(find.byKey(const ValueKey('formatting-toggle')));
+        await tester.pumpAndSettle();
+
+        final formattingScroll = find.byKey(
+          const ValueKey('note-formatting-scroll'),
+        );
+        expect(formattingScroll, findsOneWidget);
+        expect(
+          tester
+              .widget<SingleChildScrollView>(formattingScroll)
+              .scrollDirection,
+          Axis.horizontal,
+        );
+        final scrollable = find.descendant(
+          of: formattingScroll,
+          matching: find.byType(Scrollable),
+        );
+        expect(
+          tester.state<ScrollableState>(scrollable).position.maxScrollExtent,
+          greaterThan(0),
+        );
+        expect(tester.getRect(dismiss), pinned);
+
+        await tester.drag(formattingScroll, const Offset(-100, 0));
+        await tester.pumpAndSettle();
+        expect(tester.getRect(dismiss), pinned);
+
+        final focus = tester
+            .widget<TextField>(find.byType(TextField))
+            .focusNode!;
+        expect(focus.hasFocus, isTrue);
+        tester.testTextInput.log.clear();
+        await tester.tap(dismiss);
+        await tester.pump();
+
+        expect(focus.hasFocus, isFalse);
+        expect(tester.testTextInput.isVisible, isFalse);
+        expect(
+          tester.testTextInput.log.map((call) => call.method),
+          contains('TextInput.hide'),
+        );
+
+        await setKeyboard(tester, 0);
+        expect(find.byKey(dismissKey), findsNothing);
+      },
+    );
 
     testWidgets('the editor lets go, so the keyboard stays down', (
       tester,

@@ -5,8 +5,9 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../images/image_codec.dart';
+import '../../video/video_ingest.dart';
 
-/// Lets images be dropped straight onto the page.
+/// Lets images and videos be dropped straight onto the page.
 ///
 /// Only built where there is a pointer to drop with. On a phone this is the
 /// identity widget, which keeps the plugin's channel out of the mobile app
@@ -47,7 +48,7 @@ class _ImageDropTargetState extends State<ImageDropTarget> {
           for (final item in details.files)
             // A dropped folder is not a mistake worth an error message; it is
             // simply not an image, so it is passed over in silence.
-            if (item is! DropItemDirectory && _looksLikeImage(item.name)) item,
+            if (item is! DropItemDirectory && _looksLikeMedia(item.name)) item,
         ];
         if (files.isNotEmpty) widget.onFiles(files);
       },
@@ -63,12 +64,12 @@ class _ImageDropTargetState extends State<ImageDropTarget> {
     );
   }
 
-  static bool _looksLikeImage(String name) {
+  static bool _looksLikeMedia(String name) {
     final dot = name.lastIndexOf('.');
     if (dot < 0) return false;
-    return supportedImageExtensions.contains(
-      name.substring(dot + 1).toLowerCase(),
-    );
+    final extension = name.substring(dot + 1).toLowerCase();
+    return supportedImageExtensions.contains(extension) ||
+        supportedVideoExtensions.contains(extension);
   }
 }
 
@@ -99,13 +100,13 @@ class _DropHint extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.image_outlined, size: 18, color: accent),
+                KapyIcon(KapyIcons.videoOutlined, size: 18, color: accent),
                 const SizedBox(width: 8),
                 Text(
-                  'Drop to add to this note',
+                  'Drop media to add to this note',
                   style: TextStyle(
                     fontSize: AppTypeScale.control,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w400,
                     color: palette.textPrimary,
                   ),
                 ),

@@ -67,7 +67,7 @@ void main() {
     await tester.pumpWidget(harness(app.account));
     await tester.pumpAndSettle();
 
-    expect(find.text('Sharing'), findsOneWidget);
+    expect(find.text('SHARING'), findsOneWidget);
     expect(find.textContaining('Sign in'), findsOneWidget);
     expect(find.byKey(const ValueKey('join-code')), findsNothing);
     app.account.dispose();
@@ -110,8 +110,14 @@ void main() {
         find.textContaining('only looks, not one that lies'),
         findsOneWidget,
       );
-      expect(find.textContaining('invited you to With user-2'), findsOneWidget);
-      expect(find.text('View only access'), findsOneWidget);
+      // Who it is from, by name, with the address that was verified beside
+      // it; and not the space's placeholder, which to Bob names himself.
+      expect(find.text('Someone invited you to share notes'), findsOneWidget);
+      expect(find.textContaining('With user-2'), findsNothing);
+      expect(
+        find.text('${server.user('user-1').email} · View only access'),
+        findsOneWidget,
+      );
       expect(
         find.text('None yet. Share a note with someone to start one.'),
         findsOneWidget,
@@ -131,7 +137,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('invited you'), findsNothing);
-      expect(find.text('With user-2 · shared with you'), findsOneWidget);
+      // A recipient can immediately see who shared the space.
+      expect(find.text('Shared by Someone'), findsOneWidget);
       expect(find.text('View only'), findsOneWidget);
       expect(find.text('Waiting for someone to let you in'), findsNothing);
       expect(find.text(server.user('user-1').name), findsOneWidget);

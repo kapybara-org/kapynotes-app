@@ -5,10 +5,13 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/shortcut_prefs.dart';
+import '../../sync/presence.dart';
+import '../collaborator_colors.dart';
 import '../compact_icon_button.dart';
 import '../glass_surface.dart';
 import '../mobile_page_swipe.dart';
 import 'editor_formatting.dart';
+import 'markdown_editing.dart';
 
 /// What a button is called, with the key that does it after a separator.
 ///
@@ -37,7 +40,7 @@ class NoteFooter extends StatelessWidget {
   const NoteFooter({
     super.key,
     required this.total,
-    this.typingNames = const [],
+    this.typing = const [],
     this.readOnly = false,
     required this.paragraphStyleShortcut,
     required this.boldShortcut,
@@ -53,6 +56,8 @@ class NoteFooter extends StatelessWidget {
     required this.onChecklistPressed,
     this.onInsertImagePressed,
     this.imageBusy = false,
+    this.onInsertVideoPressed,
+    this.videoBusy = false,
     this.onRecordVoicePressed,
     this.voiceBusy = false,
     required this.onIndentPressed,
@@ -65,10 +70,17 @@ class NoteFooter extends StatelessWidget {
     required this.bulletsActive,
     required this.checklistActive,
     required this.paragraphStyle,
+    this.markdown = false,
+    this.markdownHeadingLevel,
+    this.onDismissKeyboardPressed,
   });
 
   final String? total;
-  final List<String> typingNames;
+
+  /// Whoever else is typing in the note, by name. Their caret's colour marks
+  /// the line, so the words in the footer and the flag in the text read as
+  /// the same person.
+  final List<Collaborator> typing;
   final bool readOnly;
   final ShortcutBinding? paragraphStyleShortcut;
   final ShortcutBinding? boldShortcut;
@@ -89,6 +101,9 @@ class NoteFooter extends StatelessWidget {
   final VoidCallback? onInsertImagePressed;
   final bool imageBusy;
 
+  final VoidCallback? onInsertVideoPressed;
+  final bool videoBusy;
+
   /// Starts a recording, or stops the one running.
   final VoidCallback? onRecordVoicePressed;
   final bool voiceBusy;
@@ -106,6 +121,19 @@ class NoteFooter extends StatelessWidget {
   final bool bulletsActive;
   final bool checklistActive;
   final NoteParagraphStyle? paragraphStyle;
+
+  /// Whether the note is written in markdown, where the style control steps
+  /// through heading levels instead of [paragraphStyle].
+  final bool markdown;
+
+  /// The markdown heading level under the caret: 0 for body text, null when
+  /// the selected lines differ. Read only when [markdown] is true.
+  final int? markdownHeadingLevel;
+
+  /// Present only on a phone while its software keyboard is visible. Kept
+  /// outside the formatting scroller so expanding or dragging the tools can
+  /// never move the escape hatch away from the footer's right edge.
+  final VoidCallback? onDismissKeyboardPressed;
 
   static double get height => AppControlMetrics.footerHeight;
 
@@ -157,7 +185,9 @@ class NoteFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final typingText = typingStatusText(typingNames);
+    final typingText = typingStatusText([
+      for (final person in typing) person.name,
+    ]);
     // The bar holds the bottom edge the way the toolbar holds the top one: its
     // background runs under the home indicator or the navigation bar while the
     // controls stay above them. Insetting the page instead left the bar
@@ -194,6 +224,7 @@ class NoteFooter extends StatelessWidget {
                 final insertButtonCount = readOnly
                     ? 0
                     : (onInsertImagePressed == null ? 0 : 1) +
+                          (onInsertVideoPressed == null ? 0 : 1) +
                           (onRecordVoicePressed == null ? 0 : 1);
                 final buttonCount = readOnly
                     ? 0
@@ -204,8 +235,18 @@ class NoteFooter extends StatelessWidget {
                 final rowWidth =
                     buttonCount * AppControlMetrics.footerButtonSlotExtent +
                     insertFormatGap;
+                final dismissKeyboard = AppPlatform.isMobile
+                    ? onDismissKeyboardPressed
+                    : null;
+                final dismissSlot = dismissKeyboard == null
+                    ? 0.0
+                    : AppControlMetrics.footerButtonSlotExtent + _edgeInset;
                 final fixed =
-                    _edgeInset + rowWidth + _groupGap + _textEdgeInset;
+                    _edgeInset +
+                    rowWidth +
+                    _groupGap +
+                    _textEdgeInset +
+                    dismissSlot;
                 // Whatever is genuinely left over, up to a readable maximum. The
                 // floor is what makes the controls scroll instead of the readout
                 // shrinking to nothing on a narrow phone with nesting showing.
@@ -229,7 +270,8 @@ class NoteFooter extends StatelessWidget {
                                   _edgeInset -
                                   readoutSlot -
                                   _groupGap -
-                                  _textEdgeInset,
+                                  _textEdgeInset -
+                                  dismissSlot,
                             ),
                             rowWidth,
                             leadingButtonCount: insertButtonCount,
@@ -240,6 +282,7 @@ class NoteFooter extends StatelessWidget {
                         // the nesting controls showing still cannot. Left-anchored,
                         // so what is on screen stays where it was.
                         child: SingleChildScrollView(
+                          key: const ValueKey('note-formatting-scroll'),
                           scrollDirection: Axis.horizontal,
                           physics: const ClampingScrollPhysics(),
                           child: ExcludeFocus(
@@ -255,8 +298,8 @@ class NoteFooter extends StatelessWidget {
                                   _FormatButton(
                                     key: const ValueKey('insert-image'),
                                     icon: AppPlatform.isMobile
-                                        ? Icons.camera_alt_outlined
-                                        : Icons.image_outlined,
+                                        ? KapyIcons.cameraOutlined
+                                        : KapyIcons.imageOutlined,
                                     tooltip: imageBusy
                                         ? 'Adding photo…'
                                         : _withShortcut(
@@ -275,10 +318,26 @@ class NoteFooter extends StatelessWidget {
                                         : onInsertImagePressed,
                                   ),
                                 ],
+                                if (onInsertVideoPressed != null)
+                                  _FormatButton(
+                                    key: const ValueKey('insert-video'),
+                                    icon: KapyIcons.videoOutlined,
+                                    tooltip: videoBusy
+                                        ? 'Adding video…'
+                                        : 'Add a video',
+                                    active: false,
+                                    busy: videoBusy,
+                                    progressKey: const ValueKey(
+                                      'insert-video-progress',
+                                    ),
+                                    onPressed: videoBusy
+                                        ? null
+                                        : onInsertVideoPressed,
+                                  ),
                                 if (onRecordVoicePressed != null)
                                   _FormatButton(
                                     key: const ValueKey('record-voice'),
-                                    icon: Icons.mic_none_rounded,
+                                    icon: KapyIcons.micRounded,
                                     tooltip: voiceBusy
                                         ? 'Starting recording…'
                                         : _withShortcut(
@@ -295,10 +354,13 @@ class NoteFooter extends StatelessWidget {
                                         : onRecordVoicePressed,
                                   ),
                                 if (onInsertImagePressed != null ||
+                                    onInsertVideoPressed != null ||
                                     onRecordVoicePressed != null)
                                   SizedBox(width: _formatGroupGap),
                                 _ExpandableFormattingControls(
                                   paragraphStyle: paragraphStyle,
+                                  markdown: markdown,
+                                  markdownHeadingLevel: markdownHeadingLevel,
                                   paragraphStyleShortcut:
                                       paragraphStyleShortcut,
                                   boldShortcut: boldShortcut,
@@ -341,15 +403,22 @@ class NoteFooter extends StatelessWidget {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: palette.function,
+                              for (final person in typing.take(3))
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 3),
+                                  child: Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: collaboratorColor(
+                                        person.userId,
+                                        on: palette.brightness,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 3),
                               Flexible(
                                 child: Text(
                                   typingText,
@@ -359,7 +428,7 @@ class NoteFooter extends StatelessWidget {
                                   textAlign: TextAlign.right,
                                   style: TextStyle(
                                     fontSize: AppTypeScale.caption,
-                                    fontWeight: FontWeight.w500,
+                                    fontWeight: FontWeight.w400,
                                     color: palette.textSecondary,
                                   ),
                                 ),
@@ -375,8 +444,8 @@ class NoteFooter extends StatelessWidget {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Icon(
-                              Icons.visibility_outlined,
+                            KapyIcon(
+                              KapyIcons.visibilityOutlined,
                               size: AppControlMetrics.iconAction,
                               color: palette.textTertiary,
                             ),
@@ -386,7 +455,7 @@ class NoteFooter extends StatelessWidget {
                               key: const ValueKey('view-only-status'),
                               style: TextStyle(
                                 fontSize: AppTypeScale.caption,
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w400,
                                 color: palette.textSecondary,
                               ),
                             ),
@@ -403,14 +472,14 @@ class NoteFooter extends StatelessWidget {
                             text: compactTotal ? '\u03a3 ' : 'Total: ',
                             style: TextStyle(
                               fontSize: AppTypeScale.caption,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w400,
                               color: palette.textTertiary,
                             ),
                             children: [
                               TextSpan(
                                 text: total,
                                 style: TextStyle(
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w400,
                                   color: palette.textPrimary,
                                 ),
                               ),
@@ -422,6 +491,18 @@ class NoteFooter extends StatelessWidget {
                         ),
                       ),
                       SizedBox(width: _textEdgeInset),
+                    ],
+                    if (dismissKeyboard != null) ...[
+                      ExcludeFocus(
+                        child: _FormatButton(
+                          key: const ValueKey('dismiss-keyboard'),
+                          icon: KapyIcons.chevronDownRounded,
+                          tooltip: 'Hide keyboard',
+                          active: false,
+                          onPressed: dismissKeyboard,
+                        ),
+                      ),
+                      SizedBox(width: _edgeInset),
                     ],
                   ],
                 );
@@ -436,12 +517,14 @@ class NoteFooter extends StatelessWidget {
 
 /// Keeps writing tools out of the way until the user reaches for them.
 ///
-/// Pointer devices reveal the row as the pointer enters this control. Touch
-/// devices use the same leading button as an explicit toggle, since hover is
-/// not a meaningful interaction there.
+/// The leading button is an explicit toggle on every platform. Once opened,
+/// the tools stay put while the pointer returns to the note, matching the
+/// dependable tap-to-open behavior on touch devices.
 class _ExpandableFormattingControls extends StatefulWidget {
   const _ExpandableFormattingControls({
     required this.paragraphStyle,
+    required this.markdown,
+    required this.markdownHeadingLevel,
     required this.paragraphStyleShortcut,
     required this.boldShortcut,
     required this.italicShortcut,
@@ -464,6 +547,8 @@ class _ExpandableFormattingControls extends StatefulWidget {
   });
 
   final NoteParagraphStyle? paragraphStyle;
+  final bool markdown;
+  final int? markdownHeadingLevel;
   final ShortcutBinding? paragraphStyleShortcut;
   final ShortcutBinding? boldShortcut;
   final ShortcutBinding? italicShortcut;
@@ -483,6 +568,10 @@ class _ExpandableFormattingControls extends StatefulWidget {
   final bool italicActive;
   final bool bulletsActive;
   final bool checklistActive;
+
+  bool get _styled => markdown
+      ? (markdownHeadingLevel ?? 0) > 0
+      : paragraphStyle != null && paragraphStyle != NoteParagraphStyle.text;
 
   @override
   State<_ExpandableFormattingControls> createState() =>
@@ -505,110 +594,103 @@ class _ExpandableFormattingControlsState
         widget.italicActive ||
         widget.bulletsActive ||
         widget.checklistActive ||
-        (widget.paragraphStyle != null &&
-            widget.paragraphStyle != NoteParagraphStyle.text);
+        widget._styled;
 
-    return MouseRegion(
-      onEnter: AppPlatform.hasPointer ? (_) => _setExpanded(true) : null,
-      onExit: AppPlatform.hasPointer ? (_) => _setExpanded(false) : null,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _FormatButton(
-            key: const ValueKey('formatting-toggle'),
-            icon: Icons.text_format_rounded,
-            tooltip: AppPlatform.hasPointer
-                ? 'Formatting tools'
-                : (_expanded
-                      ? 'Hide formatting tools'
-                      : 'Show formatting tools'),
-            active: anyActive || _expanded,
-            onPressed: AppPlatform.hasPointer
-                ? () => _setExpanded(true)
-                : () => _setExpanded(!_expanded),
-          ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            alignment: Alignment.centerLeft,
-            child: ClipRect(
-              child: Align(
-                alignment: Alignment.centerLeft,
-                widthFactor: _expanded ? 1 : 0,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Everything that changes a whole line comes first — the
-                    // style, then the two kinds of list — and the marks that
-                    // change a word follow. Nesting stays at the end, beside
-                    // the lists it belongs to.
-                    _StyleCycleButton(
-                      key: const ValueKey('format-style'),
-                      style: widget.paragraphStyle,
-                      shortcut: widget.paragraphStyleShortcut,
-                      onPressed: widget.onParagraphStylePressed,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _FormatButton(
+          key: const ValueKey('formatting-toggle'),
+          icon: KapyIcons.textFormatRounded,
+          tooltip: _expanded
+              ? 'Hide formatting tools'
+              : 'Show formatting tools',
+          active: anyActive || _expanded,
+          onPressed: () => _setExpanded(!_expanded),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.centerLeft,
+          child: ClipRect(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              widthFactor: _expanded ? 1 : 0,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Everything that changes a whole line comes first — the
+                  // style, then the two kinds of list — and the marks that
+                  // change a word follow. Nesting stays at the end, beside
+                  // the lists it belongs to.
+                  _StyleCycleButton(
+                    key: const ValueKey('format-style'),
+                    style: widget.paragraphStyle,
+                    markdown: widget.markdown,
+                    markdownHeadingLevel: widget.markdownHeadingLevel,
+                    shortcut: widget.paragraphStyleShortcut,
+                    onPressed: widget.onParagraphStylePressed,
+                  ),
+                  _FormatButton(
+                    key: const ValueKey('format-checklist'),
+                    icon: KapyIcons.checklistRounded,
+                    tooltip: _withShortcut(
+                      'Checklist',
+                      widget.checklistShortcut,
+                    ),
+                    active: widget.checklistActive,
+                    onPressed: widget.onChecklistPressed,
+                  ),
+                  _FormatButton(
+                    key: const ValueKey('format-bullets'),
+                    icon: KapyIcons.bulletedListRounded,
+                    tooltip: _withShortcut(
+                      'Bulleted list',
+                      widget.bulletsShortcut,
+                    ),
+                    active: widget.bulletsActive,
+                    onPressed: widget.onBulletsPressed,
+                  ),
+                  _FormatButton(
+                    key: const ValueKey('format-bold'),
+                    icon: KapyIcons.formatBoldRounded,
+                    tooltip: _withShortcut('Bold', widget.boldShortcut),
+                    active: widget.boldActive,
+                    onPressed: widget.onBoldPressed,
+                  ),
+                  _FormatButton(
+                    key: const ValueKey('format-italic'),
+                    icon: KapyIcons.formatItalicRounded,
+                    tooltip: _withShortcut('Italic', widget.italicShortcut),
+                    active: widget.italicActive,
+                    onPressed: widget.onItalicPressed,
+                  ),
+                  if (widget.showIndentControls) ...[
+                    _FormatButton(
+                      key: const ValueKey('format-outdent'),
+                      icon: KapyIcons.indentDecreaseRounded,
+                      tooltip: 'Move out \u00b7 Shift + Tab',
+                      active: false,
+                      onPressed: widget.canOutdent
+                          ? widget.onOutdentPressed
+                          : null,
                     ),
                     _FormatButton(
-                      key: const ValueKey('format-checklist'),
-                      icon: Icons.checklist_rounded,
-                      tooltip: _withShortcut(
-                        'Checklist',
-                        widget.checklistShortcut,
-                      ),
-                      active: widget.checklistActive,
-                      onPressed: widget.onChecklistPressed,
+                      key: const ValueKey('format-indent'),
+                      icon: KapyIcons.indentIncreaseRounded,
+                      tooltip: 'Move in \u00b7 Tab',
+                      active: false,
+                      onPressed: widget.canIndent
+                          ? widget.onIndentPressed
+                          : null,
                     ),
-                    _FormatButton(
-                      key: const ValueKey('format-bullets'),
-                      icon: Icons.format_list_bulleted_rounded,
-                      tooltip: _withShortcut(
-                        'Bulleted list',
-                        widget.bulletsShortcut,
-                      ),
-                      active: widget.bulletsActive,
-                      onPressed: widget.onBulletsPressed,
-                    ),
-                    _FormatButton(
-                      key: const ValueKey('format-bold'),
-                      icon: Icons.format_bold_rounded,
-                      tooltip: _withShortcut('Bold', widget.boldShortcut),
-                      active: widget.boldActive,
-                      onPressed: widget.onBoldPressed,
-                    ),
-                    _FormatButton(
-                      key: const ValueKey('format-italic'),
-                      icon: Icons.format_italic_rounded,
-                      tooltip: _withShortcut('Italic', widget.italicShortcut),
-                      active: widget.italicActive,
-                      onPressed: widget.onItalicPressed,
-                    ),
-                    if (widget.showIndentControls) ...[
-                      _FormatButton(
-                        key: const ValueKey('format-outdent'),
-                        icon: Icons.format_indent_decrease_rounded,
-                        tooltip: 'Move out \u00b7 Shift + Tab',
-                        active: false,
-                        onPressed: widget.canOutdent
-                            ? widget.onOutdentPressed
-                            : null,
-                      ),
-                      _FormatButton(
-                        key: const ValueKey('format-indent'),
-                        icon: Icons.format_indent_increase_rounded,
-                        tooltip: 'Move in \u00b7 Tab',
-                        active: false,
-                        onPressed: widget.canIndent
-                            ? widget.onIndentPressed
-                            : null,
-                      ),
-                    ],
                   ],
-                ),
+                ],
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -617,30 +699,38 @@ class _StyleCycleButton extends StatelessWidget {
   const _StyleCycleButton({
     super.key,
     required this.style,
+    required this.markdown,
+    required this.markdownHeadingLevel,
     required this.shortcut,
     required this.onPressed,
   });
 
   final NoteParagraphStyle? style;
+  final bool markdown;
+  final int? markdownHeadingLevel;
   final ShortcutBinding? shortcut;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final active = style != null && style != NoteParagraphStyle.text;
-    final label = switch (style) {
-      NoteParagraphStyle.heading => 'H',
-      NoteParagraphStyle.subtitle => 'S',
-      _ => 'Aa',
-    };
+    final active = markdown
+        ? (markdownHeadingLevel ?? 0) > 0
+        : style != null && style != NoteParagraphStyle.text;
+    final label = markdown
+        ? markdownHeadingShortLabel(markdownHeadingLevel)
+        : switch (style) {
+            NoteParagraphStyle.heading => 'H',
+            NoteParagraphStyle.subtitle => 'S',
+            _ => 'Aa',
+          };
+    final name = markdown
+        ? markdownHeadingLabel(markdownHeadingLevel)
+        : style?.label ?? 'Mixed';
     return _FooterButtonSlot(
       child: CompactIconButton(
         extent: AppControlMetrics.footerButtonExtent,
-        tooltip: _withShortcut(
-          'Text style: ${style?.label ?? 'Mixed'}',
-          shortcut,
-        ),
+        tooltip: _withShortcut('Text style: $name', shortcut),
         selected: active,
         foregroundColor: active ? palette.textPrimary : palette.textTertiary,
         onPressed: onPressed,
@@ -650,8 +740,8 @@ class _StyleCycleButton extends StatelessWidget {
             fontSize: AppPlatform.hasPointer
                 ? AppTypeScale.control
                 : AppTypeScale.caption,
-            fontWeight: FontWeight.w500,
-            fontStyle: style == NoteParagraphStyle.subtitle
+            fontWeight: FontWeight.w400,
+            fontStyle: !markdown && style == NoteParagraphStyle.subtitle
                 ? FontStyle.italic
                 : FontStyle.normal,
           ),
@@ -672,7 +762,7 @@ class _FormatButton extends StatelessWidget {
     this.progressKey,
   });
 
-  final IconData icon;
+  final KapyIconData icon;
   final String tooltip;
   final bool active;
   final bool busy;
@@ -706,7 +796,7 @@ class _FormatButton extends StatelessWidget {
                   color: foreground,
                 ),
               )
-            : Icon(icon, size: AppControlMetrics.footerIconAction),
+            : KapyIcon(icon, size: AppControlMetrics.footerIconAction),
       ),
     );
   }

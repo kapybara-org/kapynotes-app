@@ -18,12 +18,18 @@ import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/images/image_clipboard.dart';
+import 'package:kapy_notes/images/image_codec.dart';
+import 'package:kapy_notes/images/image_ingest.dart';
 import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_image_view.dart';
+import 'package:kapy_notes/ui/editor/note_video_view.dart';
+import 'package:kapy_notes/video/video_ingest.dart';
+import 'package:kapy_notes/video/video_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../kapy_icon_finder.dart';
 import '../test_fonts.dart';
 
 const anchor = NoteAttachmentRef.placeholder;
@@ -62,6 +68,13 @@ class _ImmediateBlobStore extends BlobStore {
 
   @override
   Future<Uint8List?> read(String hash) async => bytesByHash[hash];
+
+  @override
+  Future<String> put(Uint8List bytes, {String extension = ''}) async {
+    final hash = BlobStore.hashOf(bytes);
+    bytesByHash[hash] = bytes;
+    return hash;
+  }
 }
 
 /// A real, decodable PNG of the given size, so the editor is exercising the
@@ -95,6 +108,17 @@ Future<NoteImageRef> storeImage({
 /// One of the prepared images, anchored where the caller needs it.
 NoteImageRef at(int offset, {int which = 0}) =>
     refs[which].copyWith(offset: offset);
+
+NoteVideoRef videoAt(int offset) => NoteVideoRef(
+  offset: offset,
+  hash: 'video-that-is-not-local',
+  key: Uint8List(32),
+  mime: 'video/mp4',
+  bytes: 1024,
+  width: 1920,
+  height: 1080,
+  durationMs: 95000,
+);
 
 Future<void> sendShortcut(WidgetTester tester, ShortcutBinding binding) async {
   if (binding.meta) {
@@ -176,6 +200,12 @@ Widget harness(
   GlobalKey<NoteEditorState>? editorKey,
   ImageFileAcquirer? imageAcquirer,
   ImageBatchIngestor? imageIngestor,
+  Future<ImageIngestResult> Function(StagedImage staged, BlobStore store)?
+  imageFinalizer,
+  ImagePrepared? onImagePrepared,
+  VideoFileAcquirer? videoAcquirer,
+  VideoBatchIngestor? videoIngestor,
+  AttachmentUploadProgressFor? uploadProgressFor,
   bool startAtEnd = false,
   bool readOnly = false,
 }) => MaterialApp(
@@ -192,6 +222,11 @@ Widget harness(
       clipboard: clipboard ?? FakeClipboard(),
       imageAcquirer: imageAcquirer,
       imageIngestor: imageIngestor,
+      imageFinalizer: imageFinalizer,
+      onImagePrepared: onImagePrepared,
+      videoAcquirer: videoAcquirer,
+      videoIngestor: videoIngestor,
+      uploadProgressFor: uploadProgressFor,
       startAtEnd: startAtEnd,
       readOnly: readOnly,
       engine: engine,
@@ -476,6 +511,158 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   });
 
+  testWidgets('shows a blurred local preview before preparation finishes', (
+    tester,
+  ) async {
+    final editorKey = GlobalKey<NoteEditorState>();
+    final finishing = Completer<ImageIngestResult>();
+    StagedImage? staged;
+    List<NoteAttachmentRef> reported = const [];
+    await tester.pumpWidget(
+      harness(
+        'a note',
+        attachments: const [],
+        images: immediateStore,
+        editorKey: editorKey,
+        imageFinalizer: (image, _) {
+          staged = image;
+          return finishing.future;
+        },
+        onAttachmentsChanged: (attachments) => reported = attachments,
+      ),
+    );
+    await tester.pump();
+
+    late Future<void> adding;
+    await tester.runAsync(() async {
+      adding = editorKey.currentState!.insertFiles([
+        XFile.fromData(
+          pngOf(320, 180, seed: 9),
+          name: 'instant.png',
+          mimeType: 'image/png',
+        ),
+      ]);
+      while (staged == null) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+    });
+    await tester.pump();
+
+    expect(reported, hasLength(1));
+    final preview = reported.single as NoteImageRef;
+    expect(preview.isPreparing, isTrue);
+    expect(preview.previewBytes, isNotEmpty);
+    expect(find.byType(NoteImageView), findsOneWidget);
+    expect(find.byKey(const ValueKey('image-preparing')), findsOneWidget);
+    expect(
+      tester.widget<ImageFiltered>(find.byType(ImageFiltered)).enabled,
+      isTrue,
+    );
+
+    final ready = staged!.ref.copyWith(isPreparing: false, previewBytes: null);
+    finishing.complete(
+      ImageIngestResult.ok(
+        IngestedImage(
+          ref: ready,
+          originalBytes: staged!.source.length,
+          kind: ImageKind.graphic,
+          reencoded: false,
+        ),
+      ),
+    );
+    await tester.runAsync(() => adding);
+    await tester.pump();
+
+    expect((reported.single as NoteImageRef).isPreparing, isFalse);
+    expect(find.byKey(const ValueKey('image-preparing')), findsNothing);
+    expect(
+      tester.widget<ImageFiltered>(find.byType(ImageFiltered)).enabled,
+      isFalse,
+    );
+  });
+
+  testWidgets(
+    'shows real upload percentage and clears the blur at completion',
+    (tester) async {
+      final progress = ValueNotifier<double?>(0.37);
+      addTearDown(progress.dispose);
+      final ref = at(0);
+      await tester.pumpWidget(
+        harness(
+          anchor,
+          attachments: [ref],
+          images: immediateStore,
+          uploadProgressFor: (_) => progress,
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Uploading 37%'), findsOneWidget);
+      expect(
+        tester.widget<ImageFiltered>(find.byType(ImageFiltered)).enabled,
+        isTrue,
+      );
+
+      progress.value = 1;
+      await tester.pump();
+      expect(find.text('Uploading 100%'), findsOneWidget);
+      expect(
+        tester.widget<ImageFiltered>(find.byType(ImageFiltered)).enabled,
+        isFalse,
+      );
+
+      await tester.pumpWidget(
+        harness(
+          anchor,
+          attachments: [ref.copyWith(attachmentId: 'uploaded')],
+          images: immediateStore,
+          uploadProgressFor: (_) => progress,
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('image-upload-percentage')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('the video footer action inserts a playable video block', (
+    tester,
+  ) async {
+    var opened = 0;
+    await tester.pumpWidget(
+      harness(
+        'a note',
+        attachments: const [],
+        videoAcquirer: () async {
+          opened++;
+          return [XFile.fromData(Uint8List(0), name: 'clip.mp4')];
+        },
+        videoIngestor: (_, _) async =>
+            VideoBatch(videos: [videoAt(0)], rejections: const []),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('insert-video')));
+    await tester.pumpAndSettle();
+
+    expect(opened, 1);
+    expect(find.byType(NoteVideoView), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('clicking a video opens its full-screen player', (tester) async {
+    await tester.pumpWidget(harness(anchor, attachments: [videoAt(0)]));
+    await tester.pump();
+
+    await tester.tap(find.byType(NoteVideoView));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NoteVideoViewer), findsOneWidget);
+  });
+
   testWidgets('the mobile footer opens capture and inserts its result', (
     tester,
   ) async {
@@ -500,7 +687,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(opened, 1);
-    expect(find.byIcon(Icons.camera_alt_outlined), findsOneWidget);
+    expect(findKapyIcon(KapyIcons.cameraOutlined), findsOneWidget);
     expect(find.byType(NoteImageView), findsOneWidget);
   });
 
@@ -558,42 +745,35 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('clicking an image selects it and Ctrl-C copies its bytes', (
-      tester,
-    ) async {
-      final ref = at(7);
-      final clipboard = FakeClipboard();
-      await tester.pumpWidget(
-        harness(
-          'before $anchor after',
-          attachments: [ref],
-          clipboard: clipboard,
-          images: immediateStore,
-        ),
-      );
-      await tester.pump();
+    testWidgets(
+      'single-clicking an image selects it and opens it full-screen',
+      (tester) async {
+        final ref = at(7);
+        await tester.pumpWidget(
+          harness(
+            'before $anchor after',
+            attachments: [ref],
+            images: immediateStore,
+          ),
+        );
+        await tester.pump();
 
-      await tester.tap(find.byType(NoteImageView));
-      await tester.pump();
+        await tester.tap(find.byType(NoteImageView));
+        await tester.pumpAndSettle();
 
-      expect(find.byType(NoteImageViewer), findsNothing);
-      expect(
-        tester
-            .state<EditableTextState>(find.byType(EditableText))
-            .textEditingValue
-            .selection,
-        const TextSelection(baseOffset: 7, extentOffset: 8),
-      );
-
-      await pressCopy(tester, clipboard);
-
-      final copied = clipboard.writes.single;
-      expect(copied.body, anchor);
-      expect(copied.images, hasLength(1));
-      expect(copied.images.single.offset, 0);
-      expect(BlobStore.hashOf(copied.images.single.bytes), ref.hash);
-      debugDefaultTargetPlatformOverride = null;
-    });
+        expect(find.byType(NoteImageViewer), findsOneWidget);
+        expect(
+          tester
+              .state<EditableTextState>(
+                find.byType(EditableText, skipOffstage: false),
+              )
+              .textEditingValue
+              .selection,
+          const TextSelection(baseOffset: 7, extentOffset: 8),
+        );
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
 
     testWidgets('a view-only image has a right-click Copy Image action', (
       tester,
@@ -735,7 +915,7 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     });
 
-    testWidgets('double-click opens a desktop image after selecting it', (
+    testWidgets('one click opens a desktop image after selecting it', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -743,8 +923,6 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.byType(NoteImageView));
-      await tester.pump(const Duration(milliseconds: 40));
       await tester.tap(find.byType(NoteImageView));
       await tester.pumpAndSettle();
 
@@ -984,6 +1162,17 @@ void main() {
         await tester.tap(find.text('Open image'));
         await tester.pumpAndSettle();
         expect(find.byType(NoteImageViewer), findsOneWidget);
+        final viewport = find.byType(InteractiveViewer);
+        expect(tester.getTopLeft(viewport), Offset.zero);
+        expect(tester.getSize(viewport), size);
+        expect(
+          find.ancestor(of: viewport, matching: find.byType(Padding)),
+          findsNothing,
+        );
+        expect(
+          find.ancestor(of: viewport, matching: find.byType(SafeArea)),
+          findsNothing,
+        );
 
         final outside = target == TargetPlatform.android
             ? const Offset(195, 100)

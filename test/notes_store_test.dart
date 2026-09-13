@@ -199,6 +199,78 @@ void main() {
     expect(restored.archivedNotes.single.id, note.id);
   });
 
+  test(
+    'hidden notes leave every ordinary view and survive a restart',
+    () async {
+      var now = DateTime.utc(2026, 9, 5, 8);
+      final storage = _MemoryStore();
+      final notes = NotesStore(storage, now: () => now);
+      await notes.load();
+      final visible = notes.create(body: 'Keep visible');
+      final secret = notes.create(body: 'Private thought');
+
+      now = DateTime.utc(2026, 9, 5, 9);
+      notes.hide(secret.id);
+
+      expect(notes.notes.map((note) => note.id), [visible.id]);
+      expect(notes.archivedNotes, isEmpty);
+      expect(notes.hiddenNotes.single.id, secret.id);
+      expect(notes.search('private'), isEmpty);
+      expect(notes.searchArchived('private'), isEmpty);
+      expect(notes.searchHidden('private').single.id, secret.id);
+      expect(notes.byId(secret.id)?.hiddenAt, now);
+      expect(notes.tombstones, isEmpty, reason: 'hiding is not deletion');
+
+      final restored = NotesStore(storage);
+      await restored.load();
+      expect(restored.hiddenNotes.single.id, secret.id);
+      expect(restored.notes.single.id, visible.id);
+
+      restored.unhide(secret.id);
+      expect(restored.hiddenNotes, isEmpty);
+      expect(restored.notes.first.id, secret.id);
+      expect(restored.byId(secret.id)?.hiddenAt, isNull);
+    },
+  );
+
+  test('shared and archived notes cannot be hidden', () async {
+    final storage = _MemoryStore();
+    final notes = NotesStore(storage);
+    await notes.load();
+    final archived = notes.create(body: 'Already archived');
+    final shared = notes.create(
+      body: 'Shared',
+      spaceId: 'team-1',
+      contentKey: Uint8List(32),
+    );
+    notes.archive(archived.id);
+
+    notes.hide(archived.id);
+    notes.hide(shared.id);
+    final hidden = notes.create(body: 'Private');
+    notes.hide(hidden.id);
+
+    expect(
+      notes.moveToSpace(
+        hidden.id,
+        spaceId: 'team-1',
+        contentKey: Uint8List(32),
+      ),
+      isNull,
+    );
+    expect(notes.hiddenNotes.single.id, hidden.id);
+    expect(notes.archivedNotes.single.id, archived.id);
+    expect(notes.notes.single.id, shared.id);
+
+    final requestedHiddenShared = notes.create(
+      body: 'Shared directly',
+      spaceId: 'team-1',
+      contentKey: Uint8List(32),
+      hidden: true,
+    );
+    expect(requestedHiddenShared.isHidden, isFalse);
+  });
+
   test('persists text formatting and restores it with the note', () async {
     final store = _MemoryStore();
     final notes = NotesStore(store);

@@ -4,6 +4,10 @@
          fails every rate refresh. -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- Unlocks Hidden Notes with the phone's ordinary biometric or device
+         credential prompt. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+
     <!-- Recording a voice note. Runtime-requested on first use, never at
          launch: a user who never records is never asked. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>

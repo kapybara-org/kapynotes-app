@@ -78,20 +78,20 @@ class Onboarding {
   Note? seedWelcomeNote(NotesStore notes) {
     if (hasSeenWelcome || !notes.isEmpty) return null;
     markWelcomeShown();
-    return notes.create(body: welcomeNoteBody);
+    return notes.create(body: welcomeNoteBody, authored: false);
   }
 
   /// The welcome note as it stands, made again if it was edited or deleted.
   ///
-  /// What "Welcome note" in settings opens. Matching on the exact body is what
-  /// keeps a second visit from stacking up copies, while still leaving a note
-  /// the user has since made their own alone.
+  /// Matching on the exact body keeps another explicit onboarding request
+  /// from stacking up copies, while leaving a note the user has since made
+  /// their own alone.
   Note openWelcomeNote(NotesStore notes) {
     markWelcomeShown();
     for (final note in notes.notes) {
       if (note.body == welcomeNoteBody) return note;
     }
-    return notes.create(body: welcomeNoteBody);
+    return notes.create(body: welcomeNoteBody, authored: false);
   }
 
   /// Written through [LocalStore.putNow]: the launch that shows the note is

@@ -19,13 +19,13 @@ import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/engine_provider.dart';
 import '../data/daily_separator.dart';
+import '../data/editor_workspace.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/note_format.dart';
 import '../data/notes_store.dart';
-import '../data/onboarding.dart';
 import 'editor/voice_chip.dart';
 import 'editor/voice_insertion.dart';
 import 'voice_note_dialog.dart';
@@ -35,15 +35,19 @@ import 'voice_consent_sheet.dart';
 import '../sync/aead.dart';
 import '../sync/sync_api.dart';
 import '../sync/account.dart';
+import '../sync/presence.dart';
 import '../sync/spaces.dart';
 import '../data/rates.dart';
 import 'share_dialog.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
 import '../images/image_picker.dart';
+import '../video/video_picker.dart';
 import 'editor/note_editor.dart';
 import 'editor/image_insertion.dart';
+import 'editor_panes.dart';
 import 'empty_state.dart';
+import 'hidden_notes_gate.dart';
 import 'kapy_header_mascot.dart';
 import 'mobile_page_swipe.dart';
 import 'sidebar.dart';
@@ -81,6 +85,7 @@ class HomePage extends StatefulWidget {
     this.transcriber,
     this.imageAcquirer,
     this.lostImageRetriever,
+    required this.hiddenNotesGate,
   });
 
   /// Kapy settles into sleep after a full minute without local interaction.
@@ -147,6 +152,7 @@ class HomePage extends StatefulWidget {
   /// Android photo-library result.
   final ImageFileAcquirer? imageAcquirer;
   final LostImageRetriever? lostImageRetriever;
+  final HiddenNotesGate hiddenNotesGate;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -160,7 +166,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final KapyHeaderController _kapyHeader = KapyHeaderController();
   final Set<String> _totalAnimatedFor = {};
   GlobalKey<NoteEditorState> _compactEditorKey = GlobalKey<NoteEditorState>();
-  GlobalKey<NoteEditorState> _wideEditorKey = GlobalKey<NoteEditorState>();
+  GlobalKey<NoteEditorState> _archiveEditorKey = GlobalKey<NoteEditorState>();
+
+  /// One key per note on screen in the panes, rather than one per pane, so a
+  /// note keeps its caret, scroll and undo while its pane moves or swaps. A
+  /// note that leaves the screen loses its key, and comes back fresh.
+  final Map<String, GlobalKey<NoteEditorState>> _paneEditorKeys = {};
+  late final EditorWorkspace _workspace;
 
   String? _selectedId;
   String _query = '';
@@ -168,7 +180,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _openSessionScheduled = false;
   bool _drawerContentReady = false;
   bool _drawerOpen = false;
+  bool _settingsOpen = false;
   bool _archiveMode = false;
+  bool _hiddenMode = false;
+  bool _hiddenAuthBusy = false;
+  int _hiddenSystemUiDepth = 0;
   bool _voiceActionBusy = false;
 
   /// Whether the archive is picking notes rather than opening them, and which
@@ -182,6 +198,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// reachable from a context below the Scaffold.
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  bool get _specialMode => _archiveMode || _hiddenMode;
+
+  /// A mobile overlay owns the screen while it is open. Editors can rebuild
+  /// underneath one when a folder changes, but must not reclaim focus and
+  /// raise the software keyboard behind it.
+  bool get _editorFocusSuppressed =>
+      AppPlatform.isMobile && (_drawerOpen || _settingsOpen);
+
   /// Everything the toolbar draws itself from: the pin's state comes from
   /// [LayoutPrefs], and the chord its tooltip names from [ShortcutPrefs].
   /// Listening to only the first left the tooltip quoting a shortcut the user
@@ -193,6 +217,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   late final Listenable _toolbarSources = Listenable.merge([
     widget.prefs,
     widget.shortcuts,
+    ?widget.voicePrefs,
     // The sidebar groups shared notes by space once the account is unlocked,
     // and that is a fact of the account, not of the notes.
     ?widget.account,
@@ -209,11 +234,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _untouchedWelcomeId = widget.welcomeNoteId;
-    _selectedId =
+    final openingId =
         widget.prefs.resolveOpeningNoteId(
           widget.notes.notes.map((note) => note.id),
         ) ??
         widget.notes.lastEditedNote?.id;
+    _workspace = EditorWorkspace(widget.store)
+      ..load(
+        availableNoteIds: widget.notes.notes.map((note) => note.id),
+        openingNoteId: openingId,
+      );
+    _selectedId = _workspace.selectedNoteId;
     widget.notes.addListener(_onNotesChanged);
     // The system-wide new-note shortcut has already raised the window by the
     // time this runs; the note itself is this page's to make.
@@ -239,7 +270,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    widget.account?.sync?.stopTyping(_selectedId);
+    widget.account?.sync?.leaveNote(_selectedId);
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
     widget.desktopIntegration?.onNewNoteRequested = null;
@@ -252,6 +283,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_hiddenMode &&
+        _hiddenSystemUiDepth == 0 &&
+        state != AppLifecycleState.resumed) {
+      _leaveHiddenNotes();
+    }
     if (state == AppLifecycleState.resumed) {
       _recordKapyActivity();
       _beginOpenSession();
@@ -265,6 +301,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  @override
+  void didChangeMetrics() {
+    // An open compact drawer is disposed when a desktop window crosses into
+    // the two-pane layout. Scaffold cannot report a closing transition after
+    // that disposal, so clear the transient flag here. Otherwise returning to
+    // a compact width builds a closed drawer whose toolbar still hides every
+    // edge action.
+    if (mounted && _drawerOpen && !_usesCompactLayout) {
+      setState(() => _drawerOpen = false);
+    }
+    // A narrow window shows only the focused pane's note. An empty pane has
+    // none, so focus a pane that does rather than show nothing at all.
+    if (mounted &&
+        !_specialMode &&
+        _usesCompactLayout &&
+        _workspace.selectedNoteId == null) {
+      final filled = _workspace.panes.indexWhere((pane) => pane.noteId != null);
+      final previous = _selectedId;
+      if (filled >= 0 && _workspace.activate(filled)) {
+        setState(() => _adoptWorkspaceSelection(previous));
+      }
+    }
+  }
+
   void _beginOpenSession() {
     // A welcome note nobody has typed into yet is there to be read. Appending
     // a dated line to it and dropping the cursor underneath is the opposite of
@@ -272,14 +332,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // explains itself.
     if (_selectedId != null && _selectedId == _untouchedWelcomeId) return;
     if (!widget.prefs.readyToTypeOnOpen ||
-        _drawerOpen ||
+        _editorFocusSuppressed ||
         _openSessionScheduled) {
       return;
     }
     _openSessionScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _openSessionScheduled = false;
-      if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
+      if (!mounted ||
+          _editorFocusSuppressed ||
+          ModalRoute.of(context)?.isCurrent == false) {
+        return;
+      }
       // Coming back to the app on the same day is coming back to the middle
       // of something. Take the focus, and leave the caret where it is.
       final id = _selectedId;
@@ -316,23 +380,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _runWidgetAction(widget.launchIntent);
   }
 
-  Future<List<XFile>> _acquireImages(BuildContext context) {
-    final override = widget.imageAcquirer;
-    if (override != null) return override(context);
-    if (!AppPlatform.isAndroid) return acquireNoteImages(context);
-    return acquireNoteImages(
-      context,
-      chooseFromLibrary: _pickImagesFromAndroidLibrary,
-    );
+  Future<List<XFile>> _acquireImages(
+    BuildContext context,
+    String noteId,
+  ) async {
+    final protectsHiddenSession =
+        _hiddenMode && (widget.notes.byId(noteId)?.isHidden ?? false);
+    if (protectsHiddenSession) _hiddenSystemUiDepth++;
+    try {
+      final override = widget.imageAcquirer;
+      if (override != null) return await override(context);
+      if (!AppPlatform.isAndroid) return await acquireNoteImages(context);
+      return await acquireNoteImages(
+        context,
+        chooseFromLibrary: () => _pickImagesFromAndroidLibrary(noteId),
+      );
+    } finally {
+      if (protectsHiddenSession) _hiddenSystemUiDepth--;
+    }
+  }
+
+  Future<List<XFile>> _acquireVideos(String noteId) async {
+    final protectsHiddenSession =
+        _hiddenMode && (widget.notes.byId(noteId)?.isHidden ?? false);
+    if (protectsHiddenSession) _hiddenSystemUiDepth++;
+    try {
+      return await acquireNoteVideos();
+    } finally {
+      if (protectsHiddenSession) _hiddenSystemUiDepth--;
+    }
   }
 
   /// Remembers the target note only for the moment Android leaves Flutter for
   /// its system photo picker. This durable marker is needed where the operating
   /// system may reclaim the Activity while another one is choosing photos.
-  Future<List<XFile>> _pickImagesFromAndroidLibrary() async {
-    final noteId = _selectedId;
-    if (noteId == null) return const [];
-
+  Future<List<XFile>> _pickImagesFromAndroidLibrary(String noteId) async {
     widget.store.put(_pendingImageNoteKey, noteId);
     await widget.store.flush();
     try {
@@ -362,7 +444,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         Toast.show(
           context,
           'Could not recover the selected photo',
-          icon: Icons.error_outline_rounded,
+          icon: KapyIcons.errorOutlined,
         );
       }
       return true;
@@ -373,7 +455,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       Toast.show(
         context,
         'The note for that photo is no longer available',
-        icon: Icons.error_outline_rounded,
+        icon: KapyIcons.errorOutlined,
       );
       return true;
     }
@@ -415,7 +497,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         caret: body.length,
         incoming: batch.images,
       );
-      if (_selectedId != targetId) {
+      final mayReveal = _mayRevealInCurrentCollection(current);
+      if (_selectedId != targetId && mayReveal) {
         setState(() => _setSelectedId(targetId));
         widget.prefs.lastOpenedNoteId = targetId;
       }
@@ -431,10 +514,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         progress.success(
           'Recovered $added ${added == 1 ? 'photo' : 'photos'}; '
           '$rejected could not be added',
-          icon: Icons.warning_amber_rounded,
+          icon: KapyIcons.warningRounded,
         );
       } else {
-        progress.success(added == 1 ? 'Photo added' : '$added photos added');
+        progress.success(
+          current.isHidden && !mayReveal
+              ? added == 1
+                    ? 'Photo added to Hidden Notes'
+                    : '$added photos added to Hidden Notes'
+              : added == 1
+              ? 'Photo added'
+              : '$added photos added',
+        );
       }
     } catch (error, stack) {
       FlutterError.reportError(
@@ -460,10 +551,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// [voiceNotesEnabled] is off a Dictate tap is a Write tap — the note is
   /// open, at the end, with the keyboard up, which is the part of dictating
   /// the phone's own keyboard can already finish.
-  Future<void> _startVoiceRecording() async {
+  Future<void> _startVoiceRecording({String? noteId}) async {
     if (!voiceNotesEnabled || _voiceActionBusy) return;
     final recording = widget.recording;
-    final id = _selectedId;
+    final id = noteId ?? _selectedId;
     if (recording == null || id == null) return;
 
     final stopping = recording.isRecording;
@@ -537,7 +628,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       peaks: result.peaks,
     );
 
-    final editor = _selectedId == noteId ? _selectedEditor : null;
+    // Any pane showing the note takes it at its caret, focused or not. Only a
+    // note that is off the screen is appended to directly.
+    final editor = _mountedEditorFor(noteId);
     if (editor != null) {
       editor.insertVoice(ref);
     } else {
@@ -580,6 +673,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  bool _mayRevealInCurrentCollection(Note note) {
+    if (note.isHidden) return _hiddenMode;
+    if (note.isArchived) return _archiveMode;
+    return !_specialMode;
+  }
+
   /// Drains the queue, offering the consent sheet the first time the server
   /// asks for it.
   Future<void> _drainTranscriptions() async {
@@ -619,16 +718,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   VoiceChipState _voiceStateFor(NoteVoiceRef ref) =>
       widget.transcriptions?.stateFor(ref) ?? VoiceChipState.idle;
 
+  /// Retries the recording that led into Voice Settings once an engine is
+  /// selected. This bypasses the consent prompt in [_drainTranscriptions]:
+  /// the cloud row has just collected it, and local transcription needs none.
+  void _resumeTranscriptionsFromSettings() {
+    final queue = widget.transcriptions;
+    if (queue == null) return;
+    queue.needsConsent = false;
+    for (final entry in queue.entries) {
+      queue.retry(entry.noteId, entry.hash);
+    }
+    unawaited(queue.drain());
+  }
+
   Future<void> _openVoiceNote(NoteVoiceRef ref) async {
     final state = _voiceStateFor(ref);
     // Two states are not about this recording at all: they are about the
     // account and the consent behind every recording. A dialog explaining
     // that, with a button that opens settings, is one screen too many.
-    if (state == VoiceChipState.needsAccount) {
-      _showSettings(section: SettingsSection.sync);
-      return;
-    }
-    if (state == VoiceChipState.needsConsent) {
+    if (ref.transcript == null &&
+        (state == VoiceChipState.needsAccount ||
+            state == VoiceChipState.needsConsent)) {
       _showSettings(section: SettingsSection.voice);
       return;
     }
@@ -666,7 +776,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 widget.transcriptions?.enqueue(noteId, ref.hash, fresh: true);
                 unawaited(_drainTranscriptions());
               },
-        onTurnOnTranscription: () => unawaited(_drainTranscriptions()),
+        onTurnOnTranscription: () =>
+            _showSettings(section: SettingsSection.voice),
         onRegenerateSummary: noteId == null || ref.transcript == null
             ? null
             : () {
@@ -711,11 +822,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return describeSpeechError(SyncRefusedException(400, code, const {}));
   }
 
-  /// The editor the user is actually looking at, of the two this page keeps
-  /// keys for. Only one of them is mounted at a time.
-  NoteEditorState? get _selectedEditor => _usesCompactLayout
-      ? _compactEditorKey.currentState
-      : _wideEditorKey.currentState;
+  /// The editor the user is actually looking at. Split panes keep every
+  /// editor mounted; the focused pane's is the one global actions such as Add
+  /// Image and Record address.
+  NoteEditorState? get _selectedEditor {
+    final id = _selectedId;
+    return id == null ? null : _mountedEditorFor(id);
+  }
+
+  /// The editor showing [noteId], wherever on screen it is, or null.
+  NoteEditorState? _mountedEditorFor(String noteId) {
+    if (_usesCompactLayout) {
+      return _selectedId == noteId ? _compactEditorKey.currentState : null;
+    }
+    if (_specialMode) {
+      return _selectedId == noteId ? _archiveEditorKey.currentState : null;
+    }
+    return _paneEditorKeys[noteId]?.currentState;
+  }
+
+  GlobalKey<NoteEditorState> _paneEditorKey(String noteId) =>
+      _paneEditorKeys.putIfAbsent(noteId, () => GlobalKey<NoteEditorState>());
 
   /// The recording bar is part of the footer, so its state is this page's to
   /// rebuild on.
@@ -733,19 +860,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _reconcileSelection() {
     final available = _archiveMode
         ? widget.notes.archivedNotes
+        : _hiddenMode
+        ? widget.notes.hiddenNotes
         : widget.notes.notes;
-    final preferred = _archiveMode
-        ? null
-        : widget.prefs.resolveOpeningNoteId(
-            widget.notes.notes.map((note) => note.id),
-          );
-    if (available.isEmpty) {
-      _setSelectedId(null);
-      if (_usesCompactLayout && !_archiveMode) _scheduleInitialNote();
+    if (_specialMode) {
+      if (available.isEmpty) {
+        _setSelectedId(null);
+        return;
+      }
+      if (available.any((note) => note.id == _selectedId)) return;
+      _setSelectedId(available.first.id);
       return;
     }
-    if (available.any((note) => note.id == _selectedId)) return;
-    _setSelectedId(preferred ?? available.first.id);
+
+    final preferred = widget.prefs.resolveOpeningNoteId(
+      widget.notes.notes.map((note) => note.id),
+    );
+    final previous = _selectedId;
+    _workspace.reconcile(
+      available.map((note) => note.id),
+      fallbackId: preferred ?? available.firstOrNull?.id,
+    );
+    _adoptWorkspaceSelection(previous);
+    if (available.isEmpty && _usesCompactLayout) _scheduleInitialNote();
   }
 
   /// Read from the window because selection is also reconciled outside build.
@@ -755,12 +892,36 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _setSelectedId(String? id) {
-    if (_selectedId != id) {
-      widget.account?.sync?.stopTyping(_selectedId);
-      _compactEditorKey = GlobalKey<NoteEditorState>();
-      _wideEditorKey = GlobalKey<NoteEditorState>();
+    final previous = _selectedId;
+    if (_specialMode) {
+      if (previous != id) {
+        _archiveEditorKey = GlobalKey<NoteEditorState>();
+        _compactEditorKey = GlobalKey<NoteEditorState>();
+        widget.account?.sync?.leaveNote(previous);
+      }
+      _selectedId = id;
+      return;
     }
-    _selectedId = id;
+
+    if (id == null) {
+      _workspace.reconcile(const <String>[], persist: true);
+    } else {
+      _workspace.open(id);
+    }
+    _adoptWorkspaceSelection(previous);
+  }
+
+  /// Takes up whatever the panes now have focused, after any change to them,
+  /// and lets go of the editors of notes no longer on screen.
+  void _adoptWorkspaceSelection(String? previous) {
+    final next = _workspace.selectedNoteId;
+    if (previous != next) {
+      widget.account?.sync?.leaveNote(previous);
+      _compactEditorKey = GlobalKey<NoteEditorState>();
+    }
+    _selectedId = next;
+    final open = _workspace.openNoteIds;
+    _paneEditorKeys.removeWhere((id, _) => !open.contains(id));
   }
 
   void _scheduleInitialNote() {
@@ -770,7 +931,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _initialNoteScheduled = false;
       if (!mounted ||
           !_usesCompactLayout ||
-          _archiveMode ||
+          _specialMode ||
           !widget.notes.isEmpty) {
         return;
       }
@@ -778,28 +939,136 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  void _select(String id) {
-    // A recording running in a different note has to be delivered before the
-    // switch, or it would arrive after the editor holding its note is gone.
+  /// Runs [change] at once, unless it would take the note being recorded into
+  /// off the screen. That recording is delivered first, while the editor
+  /// holding its note is still there to take it at the caret.
+  void _afterRecordingLeaves(String? leaving, VoidCallback change) {
     final recording = widget.recording;
-    if (recording != null &&
+    if (leaving != null &&
+        recording != null &&
         recording.isRecording &&
-        recording.session?.noteId != id) {
+        recording.session?.noteId == leaving) {
       unawaited(
         recording.finishRecordingAndFlush().then((_) {
-          if (mounted) _selectNow(id);
+          if (mounted) change();
         }),
       );
       return;
     }
-    _selectNow(id);
+    change();
+  }
+
+  void _select(String id) {
+    // Showing a note replaces the focused one, unless it is already open in a
+    // pane of its own, which is then only focused.
+    final replaces =
+        id != _selectedId &&
+        (_usesCompactLayout || _specialMode || _workspace.paneOf(id) < 0);
+    _afterRecordingLeaves(replaces ? _selectedId : null, () => _selectNow(id));
   }
 
   void _selectNow(String id) {
+    final paneBefore = _workspace.activePane;
     setState(() => _setSelectedId(id));
     widget.prefs.lastOpenedNoteId = id;
     _recordKapyActivity();
     _reactToSelectedTotal();
+    // Already open in another pane, whose editor is not rebuilt, so it will
+    // not take the keyboard by itself.
+    if (!_specialMode && _workspace.activePane != paneBefore) {
+      _focusSelectedEditorHere();
+    }
+  }
+
+  void _openNoteToSide(String id) {
+    if (_usesCompactLayout || _specialMode) return;
+    _afterRecordingLeaves(
+      _workspace.displacedByOpenToSide(id),
+      () => _openNoteToSideNow(id),
+    );
+  }
+
+  void _openNoteToSideNow(String id) {
+    final previous = _selectedId;
+    setState(() {
+      _workspace.openToSide(id);
+      _adoptWorkspaceSelection(previous);
+    });
+    _afterPaneChange();
+  }
+
+  /// Opens an empty pane beside the focused note, for the next note chosen.
+  void _splitEditor() {
+    if (_usesCompactLayout || _specialMode || !_workspace.canSplit) return;
+    final previous = _selectedId;
+    setState(() {
+      _workspace.split();
+      _adoptWorkspaceSelection(previous);
+    });
+    // Nothing to focus yet: the empty pane takes the keyboard itself.
+    _afterPaneChange(focus: false);
+  }
+
+  /// What every change to the panes ends on. The focused note is remembered
+  /// for the next launch and, unless [focus] is false, given the keyboard.
+  void _afterPaneChange({bool focus = true}) {
+    final id = _selectedId;
+    if (id != null) widget.prefs.lastOpenedNoteId = id;
+    _recordKapyActivity();
+    _reactToSelectedTotal();
+    if (focus) _focusSelectedEditorHere();
+  }
+
+  void _activatePane(int index) {
+    if (_specialMode || _usesCompactLayout) return;
+    final previous = _selectedId;
+    if (!_workspace.activate(index)) return;
+    setState(() => _adoptWorkspaceSelection(previous));
+    _afterPaneChange(focus: false);
+  }
+
+  /// Focuses the pane at [index] and puts the keyboard in its note: the
+  /// pane's number shortcut, and a click on its title.
+  void _focusPane(int index) {
+    if (_specialMode || _usesCompactLayout) return;
+    if (index >= _workspace.paneCount) return;
+    _activatePane(index);
+    _focusSelectedEditorHere();
+  }
+
+  /// Closes a pane. The note in it stays exactly where it is in the list.
+  void _closePane(int index) {
+    if (_specialMode || _usesCompactLayout) return;
+    if (index >= _workspace.paneCount) return;
+    final pane = _workspace.panes[index];
+    _afterRecordingLeaves(pane.noteId, () {
+      final previous = _selectedId;
+      final at = _workspace.panes.indexWhere((open) => open.id == pane.id);
+      if (!_workspace.close(at)) return;
+      setState(() => _adoptWorkspaceSelection(previous));
+      _afterPaneChange();
+    });
+  }
+
+  PaneDropPlan? _planDrop(NoteDragData data, int index, PaneDropZone zone) {
+    if (_specialMode || widget.notes.byId(data.noteId) == null) return null;
+    return _workspace.planDrop(data.noteId, index, zone);
+  }
+
+  void _dropNote(NoteDragData data, int index, PaneDropZone zone) {
+    final plan = _planDrop(data, index, zone);
+    if (plan == null) return;
+    final target = _workspace.panes[index];
+    _afterRecordingLeaves(
+      plan.action == PaneDropAction.replace ? target.noteId : null,
+      () {
+        final previous = _selectedId;
+        final at = _workspace.panes.indexWhere((pane) => pane.id == target.id);
+        if (!_workspace.drop(data.noteId, at, zone)) return;
+        setState(() => _adoptWorkspaceSelection(previous));
+        _afterPaneChange();
+      },
+    );
   }
 
   /// Walks the selection [delta] notes along the list the sidebar is showing,
@@ -810,7 +1079,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// reorder anything — only editing moves a note to the top — so holding the
   /// key down passes each note exactly once.
   void _cycleNote(int delta) {
-    final visible = _visibleNotes;
+    // Past the notes open in other panes: they are already on screen, and
+    // walking onto one would only move the focus sideways.
+    final panes = !_specialMode && !_usesCompactLayout;
+    final visible = [
+      for (final note in _visibleNotes)
+        if (!panes || note.id == _selectedId || _workspace.paneOf(note.id) < 0)
+          note,
+    ];
     if (visible.length < 2) return;
     final current = visible.indexWhere((note) => note.id == _selectedId);
     // Nothing selected, or a selection the search has filtered out: start at
@@ -843,11 +1119,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   bool _createNoteNow() {
     _recordKapyActivity();
+    final creatingHidden = _hiddenMode;
     final blank = _blankNoteAlreadyOpen();
-    final note = blank ?? widget.notes.create();
+    final note = blank ?? widget.notes.create(hidden: creatingHidden);
     setState(() {
       _query = '';
       _archiveMode = false;
+      if (!creatingHidden) _hiddenMode = false;
       _setSelectedId(note.id);
     });
     widget.prefs.lastOpenedNoteId = note.id;
@@ -874,8 +1152,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (id == null) return null;
     final note = widget.notes.byId(id);
     if (note == null || note.isArchived || note.isShared) return null;
+    if (note.isHidden != _hiddenMode) return null;
     if (!note.isEmpty || note.attachments.isNotEmpty) return null;
     return note;
+  }
+
+  /// What the archive shortcut does to the note that is open.
+  ///
+  /// The rule the notes list follows too: the key does what that note's own
+  /// glyph does. In the list it files the note away; in the archive, where
+  /// there is nothing left to file, it is the permanent delete — behind the
+  /// question that one always asks. Null where no note is open, or where a
+  /// shared one is not this reader's to change.
+  VoidCallback? get _removeOpenNote {
+    final id = _selectedId;
+    if (id == null || !_canEditNote(widget.notes.byId(id))) return null;
+    return _specialMode
+        ? () => unawaited(_deleteNote(id))
+        : () => _archiveNote(id);
   }
 
   void _archiveNote(String id) {
@@ -885,9 +1179,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
     final index = widget.notes.activeIndexOf(id);
     final archivingSelected = id == _selectedId;
+    final closesPane = !_usesCompactLayout && _workspace.isSplit;
     widget.notes.archive(id);
-    Toast.show(context, 'Note moved to Archive', icon: archiveIcon);
+    Toast.show(context, 'Note moved to Archived Notes', icon: archiveIcon);
     if (!archivingSelected) return;
+    // Its pane closed with it, and the pane beside it has the focus. Opening
+    // the next note in the list there would take the place of a note the
+    // reader chose to keep on screen.
+    if (closesPane) {
+      widget.prefs.lastOpenedNoteId = _selectedId;
+      _focusSelectedEditorHere();
+      return;
+    }
 
     final next = widget.notes.successorTo(index);
     setState(() => _setSelectedId(next));
@@ -913,6 +1216,73 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.prefs.lastOpenedNoteId = next;
   }
 
+  Future<void> _hideNote(String id) async {
+    var note = widget.notes.byId(id);
+    if (note == null || note.isArchived || note.isHidden || note.isShared) {
+      return;
+    }
+    if (_hiddenAuthBusy) return;
+    setState(() => _hiddenAuthBusy = true);
+    final configured = await widget.hiddenNotesGate.ensureConfigured(context);
+    if (!mounted) return;
+    setState(() => _hiddenAuthBusy = false);
+    if (!configured) return;
+
+    note = widget.notes.byId(id);
+    if (note == null || note.isArchived || note.isHidden || note.isShared) {
+      return;
+    }
+    _recordKapyActivity();
+    _totalAnimatedFor.remove(id);
+    if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
+    final index = widget.notes.activeIndexOf(id);
+    final hidingSelected = id == _selectedId;
+    final closesPane = !_usesCompactLayout && _workspace.isSplit;
+    widget.notes.hide(id);
+    final shortcut = widget.shortcuts
+        .bindingFor(ShortcutAction.toggleHiddenFolder)
+        ?.displayLabel;
+    final discovery = AppPlatform.isMobile
+        ? 'Pull down below Search to find it.'
+        : shortcut == null
+        ? 'Show it from Settings to find it.'
+        : 'Show it from Settings or press $shortcut.';
+    Toast.show(
+      context,
+      'Note moved to Hidden Notes. $discovery',
+      icon: hiddenIcon,
+    );
+    if (!hidingSelected) return;
+    if (closesPane) {
+      widget.prefs.lastOpenedNoteId = _selectedId;
+      _focusSelectedEditorHere();
+      return;
+    }
+    final next = widget.notes.successorTo(index);
+    setState(() => _setSelectedId(next));
+    widget.prefs.lastOpenedNoteId = next;
+    if (_usesCompactLayout && next == null) _scheduleInitialNote();
+    _focusSelectedEditorAtEnd();
+  }
+
+  void _unhideNote(String id) {
+    final note = widget.notes.byId(id);
+    if (note == null || !note.isHidden) return;
+    _recordKapyActivity();
+    final unhiddenSelected = id == _selectedId;
+    final index = _visibleNotes.indexWhere((item) => item.id == id);
+    widget.notes.unhide(id);
+    Toast.show(context, 'Note returned to All notes', icon: unhideIcon);
+    if (!unhiddenSelected) return;
+
+    final remaining = _visibleNotes;
+    final next = remaining.isEmpty
+        ? null
+        : remaining[index.clamp(0, remaining.length - 1)].id;
+    setState(() => _setSelectedId(next));
+    widget.prefs.lastOpenedNoteId = next;
+  }
+
   void _togglePinnedNote(String id) {
     _recordKapyActivity();
     final pinned = widget.notes.togglePinned(id);
@@ -920,7 +1290,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Toast.show(
       context,
       pinned ? 'Note pinned' : 'Note unpinned',
-      icon: pinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+      icon: pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
     );
   }
 
@@ -956,7 +1326,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (ids.isEmpty) return;
     _recordKapyActivity();
     final confirmed = await _confirmDelete(
-      title: 'Empty the Archive?',
+      title: 'Empty Archived Notes?',
       body:
           '${_noteCount(ids.length)} will be gone from every device you sync '
           'with. It cannot be undone.',
@@ -1097,16 +1467,70 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _toggleArchive() {
     _recordKapyActivity();
     setState(() {
-      _archiveMode = !_archiveMode;
+      final entering = !_archiveMode;
+      _archiveMode = entering;
+      _hiddenMode = false;
       _selectingArchived = false;
       _checkedArchived.clear();
       _query = '';
-      final notes = _archiveMode
-          ? widget.notes.archivedNotes
-          : widget.notes.notes;
-      _setSelectedId(notes.firstOrNull?.id);
+      if (entering) {
+        _setSelectedId(widget.notes.archivedNotes.firstOrNull?.id);
+      } else {
+        final previous = _selectedId;
+        _workspace.reconcile(
+          widget.notes.notes.map((note) => note.id),
+          fallbackId: widget.notes.notes.firstOrNull?.id,
+        );
+        _adoptWorkspaceSelection(previous);
+      }
     });
     widget.prefs.lastOpenedNoteId = _selectedId;
+  }
+
+  Future<void> _toggleHiddenNotes() async {
+    _recordKapyActivity();
+    if (_hiddenMode) {
+      _leaveHiddenNotes();
+      return;
+    }
+    if (_hiddenAuthBusy) return;
+    setState(() => _hiddenAuthBusy = true);
+    final unlocked = await widget.hiddenNotesGate.unlock(context);
+    if (!mounted) return;
+    setState(() => _hiddenAuthBusy = false);
+    if (!unlocked) return;
+
+    setState(() {
+      _archiveMode = false;
+      _hiddenMode = true;
+      _selectingArchived = false;
+      _checkedArchived.clear();
+      _query = '';
+      _setSelectedId(widget.notes.hiddenNotes.firstOrNull?.id);
+    });
+    widget.prefs.lastOpenedNoteId = _selectedId;
+  }
+
+  void _leaveHiddenNotes() {
+    if (!_hiddenMode || !mounted) return;
+    final previous = _selectedId;
+    setState(() {
+      _hiddenMode = false;
+      _query = '';
+      _workspace.reconcile(
+        widget.notes.notes.map((note) => note.id),
+        fallbackId: widget.notes.notes.firstOrNull?.id,
+      );
+      _adoptWorkspaceSelection(previous);
+    });
+    widget.prefs.lastOpenedNoteId = _selectedId;
+    if (_usesCompactLayout && widget.notes.isEmpty) _scheduleInitialNote();
+  }
+
+  void _toggleHiddenFolderVisibility() {
+    final hiding = widget.prefs.hiddenFolderVisible;
+    if (hiding && _hiddenMode) _leaveHiddenNotes();
+    widget.prefs.toggleHiddenFolder();
   }
 
   /// Whether opening [note] should place the cursor at its end and raise the
@@ -1117,6 +1541,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// would show a first-time reader the one part that says nothing.
   bool _readyToTypeIn(Note note) =>
       _canEditNote(note) &&
+      !_editorFocusSuppressed &&
       widget.prefs.readyToTypeOnOpen &&
       note.id != _untouchedWelcomeId;
 
@@ -1135,25 +1560,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return widget.account?.sharing?.canEdit(note) ?? false;
   }
 
-  /// Opens the welcome note again, from settings.
-  ///
-  /// Selected rather than focused, and shown from the top, exactly as a first
-  /// launch shows it.
-  void _openWelcomeNote() {
-    _recordKapyActivity();
-    final note = Onboarding(widget.store).openWelcomeNote(widget.notes);
-    setState(() {
-      _query = '';
-      _archiveMode = false;
-      _setSelectedId(note.id);
-      _untouchedWelcomeId = note.id;
-    });
-    widget.prefs.lastOpenedNoteId = note.id;
-    // On a phone the settings sheet was opened from inside the notes drawer,
-    // which would otherwise stay over the note it just opened.
-    _scaffoldKey.currentState?.closeDrawer();
-  }
-
   void _updateDocument(
     String id,
     String body,
@@ -1170,6 +1576,48 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.notes.updateDocument(id, body, formats, attachments);
   }
 
+  void _publishPreparedImage(
+    String noteId,
+    NoteImageRef staged,
+    NoteImageRef prepared,
+  ) {
+    widget.notes.updateAttachment(
+      noteId,
+      staged.hash,
+      (current) => current is NoteImageRef
+          ? prepared.copyWith(
+              offset: current.offset,
+              widthFactor: current.widthFactor,
+            )
+          : current,
+      key: staged.key,
+      touch: true,
+    );
+  }
+
+  /// Where this device's caret is in a shared note, for the people in it.
+  /// A personal note has nobody to tell, and costs nothing here.
+  void _reportPresence(
+    String id,
+    TextSelection selection,
+    String text, {
+    required bool edited,
+  }) {
+    final sync = widget.account?.sync;
+    if (sync == null || !(widget.notes.byId(id)?.isShared ?? false)) return;
+    if (!selection.isValid) {
+      sync.reportPresence(id, edited: edited);
+      return;
+    }
+    sync.reportPresence(
+      id,
+      base: selection.baseOffset,
+      extent: selection.extentOffset,
+      text: text,
+      edited: edited,
+    );
+  }
+
   /// The pin's toggle, or null where there is no window to float.
   ///
   /// Desktop always, mobile never — and deliberately not conditioned on
@@ -1184,6 +1632,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String? get _pinShortcut => widget.shortcuts
       .bindingFor(ShortcutAction.toggleAlwaysOnTop)
       ?.displayLabel;
+
+  /// The editable chord shown on the notes-list button in both layouts.
+  String? get _sidebarShortcut =>
+      widget.shortcuts.bindingFor(ShortcutAction.toggleSidebar)?.displayLabel;
 
   void _recordKapyActivity() {
     if (_kapyHeader.needsWake) _kapyHeader.wake(hideAfter: true);
@@ -1214,7 +1666,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// shifting the ones beside it every time the selection changes.
   VoidCallback? get _shareSelected {
     final id = _selectedId;
-    return id == null ? null : () => _shareNote(id);
+    return id == null || _specialMode ? null : () => _shareNote(id);
   }
 
   /// Everyone the open note is shared with, for the avatars in the title bar.
@@ -1227,11 +1679,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return sharing.spaceById(note.spaceId)?.members ?? const [];
   }
 
+  /// Opens a shared space's people from its heading in the notes list.
+  void _openSpace(String spaceId) {
+    final sharing = widget.account?.sharing;
+    if (sharing == null) return;
+    _recordKapyActivity();
+    unawaited(showSpaceDialog(context, spaceId: spaceId, sharing: sharing));
+  }
+
+  /// Whoever else has the open note up right now.
+  List<Collaborator> get _selectedPresence {
+    final id = _selectedId;
+    final sync = widget.account?.sync;
+    if (id == null || sync == null) return const [];
+    return sync.collaboratorsIn(id);
+  }
+
   void _shareNote(String id) {
     _recordKapyActivity();
     final note = widget.notes.byId(id);
     final sharing = widget.account?.sharing;
-    if (note == null) return;
+    if (note == null || note.isHidden || note.isArchived) return;
     if (sharing == null) {
       _showSettings();
       return;
@@ -1240,8 +1708,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _showSettings({SettingsSection? section}) {
-    unawaited(
-      showSettings(
+    if (_settingsOpen) return;
+    if (AppPlatform.isMobile) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      setState(() => _settingsOpen = true);
+    }
+    unawaited(_openSettings(section));
+  }
+
+  Future<void> _openSettings(SettingsSection? section) async {
+    try {
+      await showSettings(
         context,
         section: section,
         account: widget.account,
@@ -1251,13 +1728,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         rates: widget.rates,
         updates: widget.updates,
         desktopIntegration: widget.desktopIntegration,
-        onOpenWelcomeNote: _openWelcomeNote,
         voicePrefs: widget.voicePrefs,
         localModels: widget.localModels,
         deviceSummarizer: widget.deviceSummarizer,
         deviceTranscriber: widget.deviceTranscriber,
-      ),
-    );
+        onTranscriptionReady: _resumeTranscriptionsFromSettings,
+        authorizeHiddenNotes: widget.hiddenNotesGate.unlock,
+      );
+    } finally {
+      if (mounted && _settingsOpen) setState(() => _settingsOpen = false);
+    }
   }
 
   void _focusSelectedEditorAtEnd() {
@@ -1265,18 +1745,58 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // out of the notes drawer, which is how settings is reached on a phone
     // and would otherwise answer "open the welcome note" with a keyboard over
     // the bottom half of it.
-    if (_selectedId != null && _selectedId == _untouchedWelcomeId) return;
+    if (_editorFocusSuppressed ||
+        (_selectedId != null && _selectedId == _untouchedWelcomeId)) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _editorFocusSuppressed) return;
+      _selectedEditor?.focusAtEnd();
+    });
+  }
+
+  void _focusSelectedEditorHere() {
+    if (_editorFocusSuppressed ||
+        (_selectedId != null && _selectedId == _untouchedWelcomeId)) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_editorFocusSuppressed) _selectedEditor?.focusHere();
+    });
+  }
+
+  /// Opens whichever shape the notes list has at this width, then hands its
+  /// search field the keyboard. Deferring focus matters when the shortcut is
+  /// what makes a hidden sidebar or an unbuilt compact drawer exist.
+  void _focusGlobalSearch() {
+    _recordKapyActivity();
+    if (!_usesCompactLayout) {
+      if (!widget.prefs.sidebarVisible) widget.prefs.toggleSidebar();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchFocus.requestFocus();
+      });
+      return;
+    }
+
+    if (!_drawerContentReady) setState(() => _drawerContentReady = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final editor = _usesCompactLayout
-          ? _compactEditorKey.currentState
-          : _wideEditorKey.currentState;
-      editor?.focusAtEnd();
+      final scaffold = _scaffoldKey.currentState;
+      if (scaffold == null) return;
+      if (!scaffold.isDrawerOpen) {
+        FocusManager.instance.primaryFocus?.unfocus();
+        scaffold.openDrawer();
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchFocus.requestFocus();
+      });
     });
   }
 
   List<Note> get _visibleNotes => _archiveMode
       ? widget.notes.searchArchived(_query)
+      : _hiddenMode
+      ? widget.notes.searchHidden(_query)
       : widget.notes.search(_query);
 
   @override
@@ -1310,27 +1830,37 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           builder: (context, _) => _DesktopShortcuts(
             shortcuts: widget.shortcuts,
             onNewNote: _createNote,
-            onFindNotes: () {
-              if (!widget.prefs.sidebarVisible) widget.prefs.toggleSidebar();
-              _searchFocus.requestFocus();
-            },
+            onFindNotes: _focusGlobalSearch,
             onNextNote: () => _cycleNote(1),
             onPreviousNote: () => _cycleNote(-1),
+            onSplitEditor: compact || _specialMode || !_workspace.canSplit
+                ? null
+                : _splitEditor,
+            // Unbound with a single pane, so the chord closes nothing at all
+            // rather than something the reader did not mean it to.
+            onClosePane: compact || _specialMode || !_workspace.isSplit
+                ? null
+                : () => _closePane(_workspace.activePane),
+            onFocusPane: [
+              for (var index = 0; index < EditorWorkspace.maxPanes; index++)
+                compact || _specialMode || index >= _workspace.paneCount
+                    ? null
+                    : () => _focusPane(index),
+            ],
             onOpenSettings: _showSettings,
             onInsertImage: () => unawaited(
               _selectedEditor?.pickAndInsertImages() ?? Future<void>.value(),
             ),
             onRecordVoice: () => unawaited(_startVoiceRecording()),
-            onToggleSidebar: widget.prefs.toggleSidebar,
+            onToggleSidebar: compact
+                ? _toggleCompactSidebarFromTrackpad
+                : widget.prefs.toggleSidebar,
+            onToggleHiddenFolder: _toggleHiddenFolderVisibility,
             onToggleResults: widget.prefs.toggleResults,
             onToggleAlwaysOnTop: AppPlatform.isDesktop
                 ? widget.prefs.toggleAlwaysOnTop
                 : null,
-            onDeleteNote:
-                _selectedId == null ||
-                    !_canEditNote(widget.notes.byId(_selectedId))
-                ? null
-                : () => _archiveNote(_selectedId!),
+            onDeleteNote: _removeOpenNote,
             autofocus: _selectedId == null || !widget.prefs.readyToTypeOnOpen,
             child: content,
           ),
@@ -1375,15 +1905,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               NoteToolbar(
                 mascotController: _kapyHeader,
                 sidebarVisible: widget.prefs.sidebarVisible,
+                sidebarShortcut: _sidebarShortcut,
                 onToggleSidebar: widget.prefs.toggleSidebar,
                 onCreate: _createNote,
                 onShare: _shareSelected,
                 members: _selectedMembers,
+                present: _selectedPresence,
                 currentUserId: widget.account?.sharing?.userId ?? '',
                 noteShared: selected?.isShared ?? false,
                 alwaysOnTop: widget.prefs.alwaysOnTop,
                 onToggleAlwaysOnTop: _pinToggle,
                 alwaysOnTopShortcut: _pinShortcut,
+                onSplit: _specialMode || !_workspace.canSplit
+                    ? null
+                    : _splitEditor,
+                splitTooltip: _splitTooltip,
               ),
               Expanded(
                 child: SplitView(
@@ -1403,11 +1939,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     onQueryChanged: (value) => setState(() => _query = value),
                     onSelect: _select,
                     onCreate: _createNote,
+                    onOpenToSide: _specialMode ? null : _openNoteToSide,
+                    openElsewhereIds: _specialMode
+                        ? const {}
+                        : _workspace.openNoteIds.difference({?_selectedId}),
                     onArchive: _archiveNote,
                     onRestore: _restoreNote,
-                    onTogglePin: _archiveMode ? null : _togglePinnedNote,
+                    onHide: (id) => unawaited(_hideNote(id)),
+                    onUnhide: _unhideNote,
+                    onTogglePin: _specialMode ? null : _togglePinnedNote,
                     onArchiveToggle: _toggleArchive,
+                    onHiddenToggle: () => unawaited(_toggleHiddenNotes()),
                     archiveMode: _archiveMode,
+                    hiddenMode: _hiddenMode,
                     onDelete: _deleteNote,
                     onDeleteAll: () => unawaited(_deleteAllArchived()),
                     selecting: _selectingArchived,
@@ -1419,11 +1963,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     onDeleteChecked: () => unawaited(_deleteChecked()),
                     onRestoreChecked: _restoreChecked,
                     archivedCount: widget.notes.archivedNotes.length,
+                    hiddenCount: widget.notes.hiddenNotes.length,
+                    showHiddenFolder: widget.prefs.hiddenFolderVisible,
+                    streak: widget.notes.streak,
                     onShare: widget.account == null ? null : _shareNote,
                     sharing: widget.account?.sharing,
+                    collaborators:
+                        widget.account?.sync?.collaboratorsByNote ?? const {},
+                    onOpenSpace: widget.account?.sharing == null
+                        ? null
+                        : _openSpace,
                     onSettingsPressed: _showSettings,
+                    searchShortcut: widget.shortcuts.bindingFor(
+                      ShortcutAction.findNotes,
+                    ),
                     settingsShortcut: widget.shortcuts.bindingFor(
                       ShortcutAction.openSettings,
+                    ),
+                    archiveShortcut: widget.shortcuts.bindingFor(
+                      ShortcutAction.deleteNote,
+                    ),
+                    hiddenShortcut: widget.shortcuts.bindingFor(
+                      ShortcutAction.toggleHiddenFolder,
                     ),
                     updates: widget.updates,
                     showHeader: false,
@@ -1432,15 +1993,96 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   // to the bottom edge and holds its own controls above the
                   // home indicator, and the empty state does the same with its
                   // paper.
-                  body: selected == null
-                      ? EmptyState(onCreate: _createNote)
-                      : _buildEditor(selected),
+                  body: _buildWideWorkspace(),
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// The split button's words, which also say why it is grey when it is.
+  String get _splitTooltip {
+    if (!_specialMode) {
+      if (_workspace.paneCount >= EditorWorkspace.maxPanes) {
+        return 'Up to three notes side by side';
+      }
+      if (_selectedId == null) return 'Choose a note for this pane first';
+    }
+    return [
+      'Split view',
+      ?widget.shortcuts.bindingFor(ShortcutAction.splitEditor)?.displayLabel,
+    ].join('  ');
+  }
+
+  Widget _buildWideWorkspace() {
+    if (_specialMode) {
+      final selected = widget.notes.byId(_selectedId);
+      return selected == null
+          ? EmptyState(onCreate: _createNote)
+          : _buildEditor(selected, key: _archiveEditorKey, active: true);
+    }
+    final panes = _workspace.panes;
+    if (panes.isEmpty) return EmptyState(onCreate: _createNote);
+
+    return PaneSplitView(
+      weights: _workspace.weights,
+      onWeightsChanged: (weights) =>
+          setState(() => _workspace.weights = weights),
+      onEqualize: () => setState(_workspace.equalizeWeights),
+      children: [
+        for (var index = 0; index < panes.length; index++) _buildPane(index),
+      ],
+    );
+  }
+
+  Widget _buildPane(int index) {
+    final pane = _workspace.panes[index];
+    final note = widget.notes.byId(pane.noteId);
+    final active = _workspace.activePane == index;
+    final split = _workspace.isSplit;
+
+    final Widget body;
+    if (note != null) {
+      body = _buildEditor(
+        note,
+        key: _paneEditorKey(note.id),
+        active: active,
+        onFocus: () => _activatePane(index),
+      );
+    } else if (split) {
+      body = EmptyPane(
+        active: active,
+        onCreate: _createNote,
+        onShowNotes: widget.prefs.sidebarVisible
+            ? null
+            : widget.prefs.toggleSidebar,
+      );
+    } else {
+      body = EmptyState(onCreate: _createNote);
+    }
+
+    return EditorPaneFrame(
+      key: ValueKey('editor-pane-${pane.id}'),
+      index: index,
+      paneCount: _workspace.paneCount,
+      active: active,
+      title: note?.title,
+      shared: note?.isShared ?? false,
+      dragData: note == null
+          ? null
+          : NoteDragData(noteId: note.id, title: note.title),
+      onActivate: () => _activatePane(index),
+      onTitlePressed: () => _focusPane(index),
+      onClose: split ? () => _closePane(index) : null,
+      closeShortcut: widget.shortcuts
+          .bindingFor(ShortcutAction.closePane)
+          ?.displayLabel,
+      planDrop: (data, zone) => _planDrop(data, index, zone),
+      onDrop: (data, zone) => _dropNote(data, index, zone),
+      child: body,
     );
   }
 
@@ -1512,9 +2154,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       },
                       onArchive: _archiveNote,
                       onRestore: _restoreNote,
-                      onTogglePin: _archiveMode ? null : _togglePinnedNote,
+                      onHide: (id) => unawaited(_hideNote(id)),
+                      onUnhide: _unhideNote,
+                      onTogglePin: _specialMode ? null : _togglePinnedNote,
                       onArchiveToggle: _toggleArchive,
+                      onHiddenToggle: () => unawaited(_toggleHiddenNotes()),
                       archiveMode: _archiveMode,
+                      hiddenMode: _hiddenMode,
                       onDelete: _deleteNote,
                       onDeleteAll: () => unawaited(_deleteAllArchived()),
                       selecting: _selectingArchived,
@@ -1526,11 +2172,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onDeleteChecked: () => unawaited(_deleteChecked()),
                       onRestoreChecked: _restoreChecked,
                       archivedCount: widget.notes.archivedNotes.length,
+                      hiddenCount: widget.notes.hiddenNotes.length,
+                      showHiddenFolder: widget.prefs.hiddenFolderVisible,
+                      streak: widget.notes.streak,
                       onShare: widget.account == null ? null : _shareNote,
                       sharing: widget.account?.sharing,
+                      collaborators:
+                          widget.account?.sync?.collaboratorsByNote ?? const {},
+                      onOpenSpace: widget.account?.sharing == null
+                          ? null
+                          : _openSpace,
                       onSettingsPressed: _showSettings,
+                      searchShortcut: widget.shortcuts.bindingFor(
+                        ShortcutAction.findNotes,
+                      ),
                       settingsShortcut: widget.shortcuts.bindingFor(
                         ShortcutAction.openSettings,
+                      ),
+                      archiveShortcut: widget.shortcuts.bindingFor(
+                        ShortcutAction.deleteNote,
+                      ),
+                      hiddenShortcut: widget.shortcuts.bindingFor(
+                        ShortcutAction.toggleHiddenFolder,
                       ),
                       updates: widget.updates,
                     ),
@@ -1555,6 +2218,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               builder: (scaffoldContext, _) => NoteToolbar(
                 mascotController: _kapyHeader,
                 sidebarVisible: false,
+                sidebarShortcut: _sidebarShortcut,
                 showActions: !_drawerOpen,
                 onToggleSidebar: () {
                   FocusScope.of(scaffoldContext).unfocus();
@@ -1563,6 +2227,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 onCreate: _createNote,
                 onShare: _shareSelected,
                 members: _selectedMembers,
+                present: _selectedPresence,
                 currentUserId: widget.account?.sharing?.userId ?? '',
                 noteShared: selected?.isShared ?? false,
                 alwaysOnTop: widget.prefs.alwaysOnTop,
@@ -1603,13 +2268,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildCompactEditor(Note note) {
     // Narrow desktop windows still have a precise pointer and enough room for
-    // the results column to be resized. Phone-sized test surfaces preserve the
-    // fixed mobile gutter, matching real iOS and Android builds. Wide phones
-    // get enough room for a grouped currency plus its three-letter code.
+    // the results column to be resized. On Windows, the native minimum is an
+    // outer window size, so the Flutter client can be a few pixels narrower
+    // than that minimum. Platform capability is therefore the durable rule.
+    // Phones preserve the fixed mobile gutter, and wide phones get enough
+    // room for a grouped currency plus its three-letter code.
     final compactWidth = MediaQuery.sizeOf(context).width;
-    final desktopResultsDivider =
-        AppPlatform.isDesktop &&
-        compactWidth >= LayoutPrefs.minimumWindowSize.width;
+    final desktopResultsDivider = AppPlatform.isDesktop;
     final mobileGutterWidth = compactWidth >= 400 ? 152.0 : 132.0;
     return ListenableBuilder(
       listenable: widget.engines,
@@ -1625,7 +2290,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ? () => unawaited(_startVoiceRecording())
               : null,
           voiceActionBusy: _voiceActionBusy,
-          imageAcquirer: _acquireImages,
+          imageAcquirer: (context) => _acquireImages(context, note.id),
+          videoAcquirer: () => _acquireVideos(note.id),
+          onImagePrepared: (staged, prepared) =>
+              _publishPreparedImage(note.id, staged, prepared),
           noteId: note.id,
           initialBody: note.body,
           initialFormats: note.formats,
@@ -1653,11 +2321,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           writingFont: widget.prefs.writingFont,
           shortcuts: widget.shortcuts,
           spellCheckEnabled: widget.prefs.spellCheckEnabled,
+          markdownEnabled: widget.prefs.markdownEnabled,
           initialAttachments: note.attachments,
           images: widget.notes.blobs,
           imageFetch: widget.account?.imageFetch,
-          typingNames:
-              widget.account?.sync?.typingNamesFor(note.id) ?? const [],
+          uploadProgressFor: widget.account?.uploadProgressFor,
+          typing: widget.account?.sync?.typistsIn(note.id) ?? const [],
+          remoteCarets: note.isShared ? widget.account?.sync : null,
+          onActivity: (selection, text, {required edited}) =>
+              _reportPresence(note.id, selection, text, edited: edited),
           readOnly: !_canEditNote(note),
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
@@ -1676,16 +2348,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildEditor(Note note) {
+  Widget _buildEditor(
+    Note note, {
+    required GlobalKey<NoteEditorState> key,
+    required bool active,
+    VoidCallback? onFocus,
+  }) {
     return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
         // The wide layout already listens to the account around this body.
         listenable: widget.prefs,
         builder: (context, _) => NoteEditor(
-          // Remounting on note change keeps one note's editing state from
-          // leaking into the next.
-          key: _wideEditorKey,
+          // A key per note keeps one note's editing state from leaking into
+          // the next, and lets it follow its note when the panes reorder.
+          key: key,
           noteId: note.id,
           initialBody: note.body,
           initialFormats: note.formats,
@@ -1694,20 +2371,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onOpenVoiceNote: _openVoiceNote,
           recording: widget.recording,
           onRecordVoice: voiceNotesEnabled && _canEditNote(note)
-              ? () => unawaited(_startVoiceRecording())
+              ? () {
+                  onFocus?.call();
+                  unawaited(_startVoiceRecording(noteId: note.id));
+                }
               : null,
           voiceActionBusy: _voiceActionBusy,
-          imageAcquirer: _acquireImages,
+          imageAcquirer: (context) => _acquireImages(context, note.id),
+          videoAcquirer: () => _acquireVideos(note.id),
+          onImagePrepared: (staged, prepared) =>
+              _publishPreparedImage(note.id, staged, prepared),
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
           gutterWidth: widget.prefs.gutterWidth,
           resultsVisible: widget.prefs.resultsVisible,
-          autofocus: _readyToTypeIn(note),
-          startAtEnd: _readyToTypeIn(note),
+          autofocus: active && _readyToTypeIn(note),
+          startAtEnd: active && _readyToTypeIn(note),
           initialCaret: _resumeCaretIn(note),
           onCaretChanged: (offset) =>
               widget.prefs.rememberCaret(note.id, offset),
           ensureKeyboardVisible:
+              active &&
               _readyToTypeIn(note) &&
               (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
@@ -1717,11 +2401,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           writingFont: widget.prefs.writingFont,
           shortcuts: widget.shortcuts,
           spellCheckEnabled: widget.prefs.spellCheckEnabled,
+          markdownEnabled: widget.prefs.markdownEnabled,
           initialAttachments: note.attachments,
           images: widget.notes.blobs,
           imageFetch: widget.account?.imageFetch,
-          typingNames:
-              widget.account?.sync?.typingNamesFor(note.id) ?? const [],
+          uploadProgressFor: widget.account?.uploadProgressFor,
+          typing: widget.account?.sync?.typistsIn(note.id) ?? const [],
+          remoteCarets: note.isShared ? widget.account?.sync : null,
+          onFocus: onFocus,
+          onActivity: (selection, text, {required edited}) {
+            // Only the focused pane says where this device is. An editor that
+            // is merely on screen beside it is not the one being worked in.
+            if (_selectedId != note.id) return;
+            _reportPresence(note.id, selection, text, edited: edited);
+          },
           readOnly: !_canEditNote(note),
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
@@ -1745,10 +2438,14 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onFindNotes,
     required this.onNextNote,
     required this.onPreviousNote,
+    required this.onSplitEditor,
+    required this.onClosePane,
+    required this.onFocusPane,
     required this.onOpenSettings,
     required this.onInsertImage,
     required this.onRecordVoice,
     required this.onToggleSidebar,
+    required this.onToggleHiddenFolder,
     required this.onToggleResults,
     required this.onToggleAlwaysOnTop,
     required this.onDeleteNote,
@@ -1761,10 +2458,16 @@ class _DesktopShortcuts extends StatelessWidget {
   final VoidCallback onFindNotes;
   final VoidCallback onNextNote;
   final VoidCallback onPreviousNote;
+  final VoidCallback? onSplitEditor;
+  final VoidCallback? onClosePane;
+
+  /// One per pane position, left to right; null past the panes that are open.
+  final List<VoidCallback?> onFocusPane;
   final VoidCallback onOpenSettings;
   final VoidCallback onInsertImage;
   final VoidCallback onRecordVoice;
   final VoidCallback onToggleSidebar;
+  final VoidCallback onToggleHiddenFolder;
   final VoidCallback onToggleResults;
   final VoidCallback? onToggleAlwaysOnTop;
   final VoidCallback? onDeleteNote;
@@ -1782,6 +2485,16 @@ class _DesktopShortcuts extends StatelessWidget {
         ?shortcuts.bindingFor(ShortcutAction.nextNote)?.activator: onNextNote,
         ?shortcuts.bindingFor(ShortcutAction.previousNote)?.activator:
             onPreviousNote,
+        ?shortcuts.bindingFor(ShortcutAction.splitEditor)?.activator:
+            ?onSplitEditor,
+        ?shortcuts.bindingFor(ShortcutAction.closePane)?.activator:
+            ?onClosePane,
+        ?shortcuts.bindingFor(ShortcutAction.focusFirstPane)?.activator:
+            ?onFocusPane[0],
+        ?shortcuts.bindingFor(ShortcutAction.focusSecondPane)?.activator:
+            ?onFocusPane[1],
+        ?shortcuts.bindingFor(ShortcutAction.focusThirdPane)?.activator:
+            ?onFocusPane[2],
         ?shortcuts.bindingFor(ShortcutAction.openSettings)?.activator:
             onOpenSettings,
         ?shortcuts.bindingFor(ShortcutAction.insertImage)?.activator:
@@ -1790,6 +2503,8 @@ class _DesktopShortcuts extends StatelessWidget {
             onRecordVoice,
         ?shortcuts.bindingFor(ShortcutAction.toggleSidebar)?.activator:
             onToggleSidebar,
+        ?shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)?.activator:
+            onToggleHiddenFolder,
         ?shortcuts.bindingFor(ShortcutAction.toggleResults)?.activator:
             onToggleResults,
         ?shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop)?.activator:

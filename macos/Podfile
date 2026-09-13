@@ -87,21 +87,35 @@ post_install do |installer|
         FRAMEWORKS="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Frameworks"
         sh "${STAGER}" "${FRAMEWORKS}"
 
+        # Google ships these with their local symbol tables in: tens of
+        # thousands of names that only a debugger attached to the framework
+        # itself would read, and that nothing loads them by. Out they go —
+        # five megabytes of a hundred-megabyte app, measured — leaving the
+        # exported symbols the runtime resolves and the unwind tables a crash
+        # log needs. Invalidates the signature, so the re-signing below is
+        # unconditional rather than only for a real identity.
+        for FW in GemmaModelConstraintProvider LiteRtMetalAccelerator LiteRtTopKMetalSampler LiteRtLm; do
+          BIN="${FRAMEWORKS}/${FW}.framework/Versions/A/${FW}"
+          if [ -f "${BIN}" ]; then
+            strip -x -no_code_signature_warning "${BIN}"
+          fi
+        done
+
         # The stager signs what it stages ad-hoc, which a Developer ID build
         # cannot load: library validation refuses a dylib signed by anyone but
         # the team that signed the app. The documented fix is to add
         # `com.apple.security.cs.disable-library-validation`, which turns that
         # check off for every library the app will ever load. Re-signing these
-        # four with the app's own identity keeps the check on instead.
-        if [ -n "${EXPANDED_CODE_SIGN_IDENTITY}" ] && [ "${EXPANDED_CODE_SIGN_IDENTITY}" != "-" ]; then
-          for FW in GemmaModelConstraintProvider LiteRtMetalAccelerator LiteRtTopKMetalSampler LiteRtLm; do
-            BIN="${FRAMEWORKS}/${FW}.framework/Versions/A/${FW}"
-            if [ -f "${BIN}" ]; then
-              codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" \
-                ${OTHER_CODE_SIGN_FLAGS} --timestamp=none "${BIN}"
-            fi
-          done
-        fi
+        # four with the app's own identity keeps the check on instead; with no
+        # identity, ad-hoc, which is what the stager did before the strip.
+        IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:--}"
+        for FW in GemmaModelConstraintProvider LiteRtMetalAccelerator LiteRtTopKMetalSampler LiteRtLm; do
+          BIN="${FRAMEWORKS}/${FW}.framework/Versions/A/${FW}"
+          if [ -f "${BIN}" ]; then
+            codesign --force --sign "${IDENTITY}" \
+              ${OTHER_CODE_SIGN_FLAGS} --timestamp=none "${BIN}"
+          fi
+        done
 
         mkdir -p "$(dirname "${SCRIPT_OUTPUT_FILE_0}")"
         touch "${SCRIPT_OUTPUT_FILE_0}"

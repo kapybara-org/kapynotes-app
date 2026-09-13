@@ -16,16 +16,25 @@ class AppLogo extends StatelessWidget {
   final bool excludeFromSemantics;
 
   @override
-  Widget build(BuildContext context) => Image.asset(
-    assetPath,
-    width: size,
-    height: size,
-    fit: BoxFit.contain,
-    filterQuality: FilterQuality.medium,
-    isAntiAlias: true,
-    excludeFromSemantics: excludeFromSemantics,
-    semanticLabel: excludeFromSemantics ? null : 'Kapy Notes',
-  );
+  Widget build(BuildContext context) {
+    // Decoded at the size it is drawn. The asset is 512 px square and this
+    // mark is at most a few dozen points, so a full decode would keep a
+    // megabyte of pixels resident for the life of the header to paint a few
+    // hundred of them. Rounded up so the sampler never upscales.
+    final pixels = (size * MediaQuery.devicePixelRatioOf(context)).ceil();
+    return Image.asset(
+      assetPath,
+      width: size,
+      height: size,
+      cacheWidth: pixels,
+      cacheHeight: pixels,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.medium,
+      isAntiAlias: true,
+      excludeFromSemantics: excludeFromSemantics,
+      semanticLabel: excludeFromSemantics ? null : 'Kapy Notes',
+    );
+  }
 }
 
 /// Horizontal brand lockup used when there is room for the full product name.
@@ -66,11 +75,10 @@ class AppWordmark extends StatelessWidget {
           maxLines: 1,
           style: TextStyle(
             color: textColor ?? context.palette.textPrimary,
-            fontFamily: 'OdinRounded',
             fontSize: fontSize,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w400,
             height: 1,
-            letterSpacing: -0.15,
+            letterSpacing: -0.2,
           ),
         ),
       ],

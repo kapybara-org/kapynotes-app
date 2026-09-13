@@ -146,6 +146,7 @@ class SpeechCodes {
   static const unavailable = 'speech-unavailable';
   static const jobUnknown = 'speech-job-unknown';
   static const summaryLimit = 'speech-summary-limit';
+  static const summariesExhausted = 'speech-summaries-exhausted';
   static const summaryFailed = 'speech-summary-failed';
   static const retryLimit = 'speech-retry-limit';
 

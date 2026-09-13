@@ -166,8 +166,8 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                       IconButton(
                         key: const ValueKey('link-popover-copy'),
                         onPressed: widget.onCopy,
-                        icon: Icon(
-                          Icons.content_copy_rounded,
+                        icon: KapyIcon(
+                          KapyIcons.copyRounded,
                           size: AppControlMetrics.iconAdornment,
                         ),
                         color: palette.textTertiary,

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -10,6 +12,7 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
+import 'package:kapy_notes/data/release_history.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/update_checker.dart';
 import 'package:material_ui/material_ui.dart';
@@ -19,9 +22,22 @@ import 'test_fonts.dart';
 
 class _MemoryStore extends LocalStore {
   /// Every test here is about the update row in an install somebody already
-  /// uses, so none of them wants the note a first launch seeds.
+  /// uses, so none of them wants the note a first launch seeds — nor the
+  /// request the changelog beside it would otherwise make. The list is on
+  /// disk and fresh; the tests that are about it take it away again.
   _MemoryStore() : super(fileName: 'update-ui-test.json') {
     data[Onboarding.storeKey] = Onboarding.welcomeRevision;
+    data['changelog.v1'] = {
+      'fetchedAt': DateTime.now().toIso8601String(),
+      'releases': [
+        {
+          'version': '1.0.0',
+          'date': '2026-09-02',
+          'summary': 'The build these tests are running.',
+          'changes': ['Nothing that matters to the row above it.'],
+        },
+      ],
+    };
   }
 
   @override
@@ -35,8 +51,9 @@ class _MemoryStore extends LocalStore {
 }
 
 /// A checker wired to a client that fails the test if it is ever used. Every
-/// case here starts from a state the app already knows, so nothing should
-/// reach the network while the UI is on screen.
+/// case here starts from a state the app already knows — the last check and
+/// the changelog are both on disk — so nothing should reach the network while
+/// the UI is on screen.
 UpdateChecker _offlineChecker(LocalStore store) => UpdateChecker(
   store,
   client: MockClient((_) async => throw StateError('no network in this test')),
@@ -130,7 +147,10 @@ Future<UpdateChecker> _pump(
 Future<void> _openSettings(WidgetTester tester) async {
   // Settings is a row in the notes list, and nowhere else, so a layout with
   // the list put away opens it first.
-  final open = find.byTooltip('Show notes');
+  final open = find.byWidgetPredicate(
+    (widget) =>
+        widget is Tooltip && (widget.message ?? '').startsWith('Show notes'),
+  );
   if (open.evaluate().isNotEmpty) {
     await tester.tap(open.first);
     await tester.pumpAndSettle();
@@ -417,7 +437,131 @@ void main() {
       find.byKey(const ValueKey('settings-section-updates')),
       findsNothing,
     );
-    expect(find.text('SOFTWARE UPDATE'), findsNothing);
+    expect(find.text('KAPY NOTES'), findsNothing);
     expect(find.widgetWithText(TextButton, 'Check'), findsNothing);
+  });
+
+  group('the changelog', () {
+    /// Two releases: the one running and the one before it.
+    String body() => jsonEncode({
+      'releases': [
+        {
+          'version': '1.0.0',
+          'date': '2026-09-02',
+          'summary': 'The first public build.',
+          'changes': ['A notebook that does the math.', 'Dark and light.'],
+        },
+        {
+          'version': '0.9.0',
+          'date': '2026-08-28',
+          'summary': 'Before it had a name.',
+          'changes': ['Everything, for the first time.'],
+        },
+      ],
+    });
+
+    /// A store with no changelog on disk, so the pane goes and reads one.
+    _MemoryStore emptyStore() => _MemoryStore()..data.remove('changelog.v1');
+
+    testWidgets('lists every release, marks the one running, and opens the '
+        'newest', (tester) async {
+      final store = emptyStore();
+      _seedUpToDate(store);
+      await _pump(
+        tester,
+        store,
+        checker: UpdateChecker(
+          store,
+          client: MockClient((request) async {
+            expect(request.url, ReleaseHistory.url);
+            return http.Response(body(), 200);
+          }),
+          packageInfo: PackageInfo(
+            appName: 'Kapy Notes',
+            packageName: 'com.kapybara.kapynotes',
+            version: '1.0.0',
+            buildNumber: '1',
+          ),
+        ),
+      );
+      await _openUpdates(tester);
+
+      expect(find.text('RELEASE NOTES'), findsOneWidget);
+      expect(find.byKey(const ValueKey('release-1.0.0')), findsOneWidget);
+      expect(find.byKey(const ValueKey('release-0.9.0')), findsOneWidget);
+      expect(find.text('2 Sep 2026'), findsOneWidget);
+      expect(find.text('Installed'), findsOneWidget);
+
+      // The newest is open; the one below it is a heading and nothing more.
+      expect(find.text('The first public build.'), findsOneWidget);
+      expect(find.text('A notebook that does the math.'), findsOneWidget);
+      expect(find.text('Before it had a name.'), findsNothing);
+    });
+
+    testWidgets('opens a release, and closes it again', (tester) async {
+      final store = emptyStore();
+      _seedUpToDate(store);
+      await _pump(
+        tester,
+        store,
+        checker: UpdateChecker(
+          store,
+          client: MockClient((_) async => http.Response(body(), 200)),
+          packageInfo: PackageInfo(
+            appName: 'Kapy Notes',
+            packageName: 'com.kapybara.kapynotes',
+            version: '1.0.0',
+            buildNumber: '1',
+          ),
+        ),
+      );
+      await _openUpdates(tester);
+
+      await tester.tap(find.byKey(const ValueKey('release-0.9.0')));
+      await tester.pumpAndSettle();
+      expect(find.text('Everything, for the first time.'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('release-0.9.0')));
+      await tester.pumpAndSettle();
+      expect(find.text('Everything, for the first time.'), findsNothing);
+    });
+
+    testWidgets('says so when it cannot be read, and asks again when told', (
+      tester,
+    ) async {
+      final store = emptyStore();
+      _seedUpToDate(store);
+      var answer = false;
+      await _pump(
+        tester,
+        store,
+        checker: UpdateChecker(
+          store,
+          client: MockClient(
+            (_) async =>
+                answer ? http.Response(body(), 200) : http.Response('no', 500),
+          ),
+          packageInfo: PackageInfo(
+            appName: 'Kapy Notes',
+            packageName: 'com.kapybara.kapynotes',
+            version: '1.0.0',
+            buildNumber: '1',
+          ),
+        ),
+      );
+      await _openUpdates(tester);
+
+      expect(find.text('Could not read the changelog'), findsOneWidget);
+      expect(find.byKey(const ValueKey('release-1.0.0')), findsNothing);
+      // The page itself is still offered, which is the whole answer here.
+      expect(find.byKey(const ValueKey('changelog-page')), findsOneWidget);
+
+      answer = true;
+      await tester.tap(find.byKey(const ValueKey('changelog-retry')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Could not read the changelog'), findsNothing);
+      expect(find.byKey(const ValueKey('release-1.0.0')), findsOneWidget);
+    });
   });
 }

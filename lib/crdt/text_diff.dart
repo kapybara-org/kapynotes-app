@@ -43,3 +43,17 @@ TextEdit diffTexts(String oldText, String newText) {
     newEnd: newLength - suffix,
   );
 }
+
+/// Where [offset] in the old text of [edit] lands in the new text.
+///
+/// Before the edit it stays put; after it, it moves by the edit's change in
+/// length; inside the replaced run it keeps its distance from the start,
+/// clamped to the replacement. The same rule the editor applies to its own
+/// caret when somebody else's words land around it.
+int mapOffsetAcross(TextEdit edit, int offset) {
+  if (offset <= edit.start) return offset < 0 ? 0 : offset;
+  if (offset >= edit.oldEnd) return offset + edit.newEnd - edit.oldEnd;
+  final into = offset - edit.start;
+  final span = edit.newEnd - edit.start;
+  return edit.start + (into < span ? into : span);
+}

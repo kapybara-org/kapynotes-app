@@ -69,7 +69,10 @@ jobs:
       # with macOS system fonts by design, so they cannot pass on Windows.
       - run: flutter analyze
 
-      - run: flutter build windows --release
+      # The same flags release.sh passes on every other platform: an
+      # obfuscated snapshot with its symbols split out is about a sixth
+      # smaller. See the header of packaging/release.sh.
+      - run: flutter build windows --release --obfuscate --split-debug-info=build/symbols/windows
 
       - name: Read version from pubspec.yaml
         id: version

@@ -97,7 +97,16 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Everything Flutter put in the build directory, minus the Intel NPU stack the
+; on-device summariser's runtime carries for Lunar Lake and Panther Lake
+; laptops: OpenVINO, its NPU plugin and compiler, TBB, and the LiteRT dispatch
+; bridge that loads them. Around a hundred megabytes on disk, and the app never
+; asks for that backend — GemmaSummarizer opens the model on the GPU, and the
+; runtime falls back to the CPU by itself. Mirrors what the iOS build does with
+; the whole runtime and Android does with Play Feature Delivery: nobody pays
+; for on-device code they never turn on. Patterns without a path match on the
+; file name wherever it is in the tree.
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "openvino*.dll,tbb*.dll,LiteRtDispatch.dll"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"

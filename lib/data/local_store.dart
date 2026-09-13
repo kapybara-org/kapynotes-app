@@ -24,6 +24,17 @@ class LocalStore {
   Future<void>? _loadFuture;
   bool _dirty = false;
 
+  /// How long the last write came out, so the next one knows whether it is
+  /// worth an isolate. Starts high so a store that has never been written
+  /// takes the safe path once and measures itself.
+  int _lastEncodedLength = _inlineEncodeLimit;
+
+  /// Below this an encode is faster than spawning an isolate to do it in.
+  /// The same line [_load] draws for decoding: a spawn costs a copy of the
+  /// whole tree on the way in and a copy of the text on the way out, which
+  /// for a small store is more work than the encode it was meant to hide.
+  static const _inlineEncodeLimit = 64 * 1024;
+
   LocalStore({
     required this.fileName,
     this.debounce = const Duration(milliseconds: 250),
@@ -102,8 +113,17 @@ class LocalStore {
     if (file == null) return;
     try {
       await file.parent.create(recursive: true);
-      final snapshot = Map<String, Object?>.from(_data);
-      final encoded = await Isolate.run(() => jsonEncode(snapshot));
+      // Every keystroke lands here a quarter of a second later, so this is
+      // the hottest write in the app. Small stores encode on the spot; large
+      // note histories go to an isolate so a long note never stalls a frame.
+      final String encoded;
+      if (_lastEncodedLength < _inlineEncodeLimit) {
+        encoded = jsonEncode(_data);
+      } else {
+        final snapshot = Map<String, Object?>.from(_data);
+        encoded = await Isolate.run(() => jsonEncode(snapshot));
+      }
+      _lastEncodedLength = encoded.length;
       // Write-then-rename so a crash mid-write cannot truncate the notes.
       final temp = File('${file.path}.tmp');
       await temp.writeAsString(encoded, flush: true);

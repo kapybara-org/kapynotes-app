@@ -406,7 +406,7 @@ class HttpAuthApi implements AuthApi {
     final message = body['message'];
     if (status == 403 || (code is String && code.contains('VERIFIED'))) {
       return const AuthRejected(
-        'Confirm your email address first — check your inbox.',
+        'Confirm your email address first. Check your inbox.',
       );
     }
     if (message is String && message.isNotEmpty) return AuthRejected(message);

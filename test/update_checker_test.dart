@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show SocketException;
 
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/release_history.dart';
 import 'package:kapy_notes/data/update_checker.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -392,5 +394,179 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(quits, 1, reason: 'the native callback may be delivered twice');
     checker.dispose();
+  });
+
+  group('the changelog', () {
+    String changelog({int count = 2}) => jsonEncode({
+      'releases': [
+        for (var index = count; index >= 1; index -= 1)
+          {
+            'version': '1.$index.0',
+            'date': '2026-09-0$index',
+            'summary': 'Release 1.$index.0',
+            'changes': ['Something changed in 1.$index.0'],
+          },
+      ],
+    });
+
+    test('lists every release the site serves, newest first', () async {
+      final store = _MemoryStore();
+      final history = ReleaseHistory(
+        store,
+        client: MockClient(
+          (_) async => http.Response(changelog(count: 3), 200),
+        ),
+      );
+
+      await history.load();
+
+      expect(history.releases.map((release) => release.version), [
+        '1.3.0',
+        '1.2.0',
+        '1.1.0',
+      ]);
+      expect(history.releases.first.summary, 'Release 1.3.0');
+      expect(history.releases.first.changes.single, endsWith('1.3.0'));
+      expect(history.hasFailed, isFalse);
+      history.dispose();
+    });
+
+    test('keeps what it read, and does not ask again the same day', () async {
+      final store = _MemoryStore();
+      var requests = 0;
+      ReleaseHistory build() => ReleaseHistory(
+        store,
+        client: MockClient((_) async {
+          requests++;
+          return http.Response(changelog(), 200);
+        }),
+      );
+
+      final first = build();
+      await first.load();
+      await first.load();
+      first.dispose();
+      expect(requests, 1, reason: 'a fresh list is not asked for twice');
+
+      // A second run of the app, reading what the first one kept.
+      final second = build();
+      await second.load();
+      expect(requests, 1);
+      expect(second.releases, hasLength(2));
+      second.dispose();
+    });
+
+    test('shows the list it kept when the site cannot be reached', () async {
+      final store = _MemoryStore();
+      final online = ReleaseHistory(
+        store,
+        client: MockClient((_) async => http.Response(changelog(), 200)),
+      );
+      await online.load();
+      online.dispose();
+
+      // A day later, offline: the answer on disk is still the answer.
+      store.data['changelog.v1'] = {
+        ...store.read<Map<String, Object?>>('changelog.v1')!,
+        'fetchedAt': DateTime.now()
+            .subtract(const Duration(days: 2))
+            .toIso8601String(),
+      };
+      final offline = ReleaseHistory(
+        store,
+        client: MockClient((_) async => throw const SocketException('offline')),
+      );
+
+      await offline.load();
+
+      expect(offline.releases, hasLength(2));
+      expect(offline.hasFailed, isTrue);
+      offline.dispose();
+    });
+
+    test('says nothing rather than an empty changelog', () async {
+      final store = _MemoryStore();
+      final history = ReleaseHistory(
+        store,
+        client: MockClient((_) async => http.Response('not json at all', 200)),
+      );
+
+      await history.load();
+
+      expect(history.releases, isEmpty);
+      expect(history.hasFailed, isTrue);
+      expect(
+        store.read<Map<String, Object?>>('changelog.v1'),
+        isNull,
+        reason: 'an answer it could not read must not be kept',
+      );
+      history.dispose();
+    });
+
+    test('drops an entry it cannot read and keeps the rest', () async {
+      final store = _MemoryStore();
+      final history = ReleaseHistory(
+        store,
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'releases': [
+                {'version': '1.2.0', 'changes': <String>[]},
+                {
+                  'date': '2026-09-01',
+                  'changes': ['No version on this one'],
+                },
+                {
+                  'version': '1.1.0',
+                  'date': '2026-09-01',
+                  'changes': ['Something changed'],
+                },
+              ],
+            }),
+            200,
+          ),
+        ),
+      );
+
+      await history.load();
+
+      expect(history.releases.single.version, '1.1.0');
+      // No date, no summary: shown for what it has rather than dropped.
+      expect(history.releases.single.summary, isEmpty);
+      history.dispose();
+    });
+
+    test(
+      'a release that answers with an error leaves the list alone',
+      () async {
+        final store = _MemoryStore();
+        final history = ReleaseHistory(
+          store,
+          client: MockClient((_) async => http.Response('nope', 503)),
+        );
+
+        await history.load();
+
+        expect(history.releases, isEmpty);
+        expect(history.hasFailed, isTrue);
+        history.dispose();
+      },
+    );
+
+    test('the checker carries one, on the same client', () async {
+      final store = _MemoryStore();
+      final checker = _checker(
+        store,
+        client: MockClient((request) async {
+          expect(request.url, ReleaseHistory.url);
+          return http.Response(changelog(), 200);
+        }),
+      );
+
+      await checker.history.load();
+
+      expect(checker.history.releases, hasLength(2));
+      checker.dispose();
+    });
   });
 }

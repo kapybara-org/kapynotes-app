@@ -1,4 +1,4 @@
-import 'dart:ui' show Locale;
+import 'dart:ui' show Locale, Offset, Rect, Size;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +9,7 @@ import 'package:kapy_notes/core/appearance.dart';
 import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/time_zones.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 
 class _MemoryStore extends LocalStore {
@@ -39,15 +40,18 @@ class _FlushOnlyStore extends LocalStore {
 }
 
 void main() {
-  test('desktop window size defaults to the compact portrait layout', () {
+  test('desktop window geometry defaults to the tall portrait layout', () {
     final prefs = LayoutPrefs(_MemoryStore())..load();
 
-    expect(prefs.windowSize, const Size(600, 630));
+    expect(prefs.windowSize, const Size(600, 720));
+    expect(prefs.windowPosition, isNull);
+    expect(prefs.windowBounds, isNull);
     expect(prefs.resultsVisible, isTrue);
+    expect(prefs.hiddenFolderVisible, isFalse);
     expect(prefs.readyToTypeOnOpen, isTrue);
     expect(prefs.dailySeparatorsEnabled, isTrue);
     expect(prefs.spellCheckEnabled, isTrue);
-    expect(prefs.writingFont, WritingFont.handwritten);
+    expect(prefs.writingFont, WritingFont.clean);
     expect(prefs.transparencyEnabled, isFalse);
     expect(prefs.timeZoneId, isNull);
   });
@@ -56,26 +60,40 @@ void main() {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();
 
-    prefs.windowSize = const Size(684, 712);
+    prefs.rememberWindowBounds(const Rect.fromLTWH(-120, 84, 684, 712));
     prefs.sidebarWidth = 318;
     prefs.gutterWidth = 224;
     prefs.resultsVisible = false;
     prefs.readyToTypeOnOpen = false;
     prefs.dailySeparatorsEnabled = false;
     prefs.spellCheckEnabled = false;
-    prefs.writingFont = WritingFont.clean;
+    prefs.writingFont = WritingFont.handwritten;
     prefs.transparencyEnabled = true;
 
     final restored = LayoutPrefs(store)..load();
     expect(restored.windowSize, const Size(684, 712));
+    expect(restored.windowPosition, const Offset(-120, 84));
+    expect(restored.windowBounds, const Rect.fromLTWH(-120, 84, 684, 712));
     expect(restored.sidebarWidth, 318);
     expect(restored.gutterWidth, 224);
     expect(restored.resultsVisible, isFalse);
     expect(restored.readyToTypeOnOpen, isFalse);
     expect(restored.dailySeparatorsEnabled, isFalse);
     expect(restored.spellCheckEnabled, isFalse);
-    expect(restored.writingFont, WritingFont.clean);
+    expect(restored.writingFont, WritingFont.handwritten);
     expect(restored.transparencyEnabled, isTrue);
+  });
+
+  test('a partial or invalid saved position is treated as a first launch', () {
+    final missingY = _MemoryStore()
+      ..data['windowX.v1'] = 320.0
+      ..data['windowWidth.v1'] = 700.0;
+    expect((LayoutPrefs(missingY)..load()).windowPosition, isNull);
+
+    final invalid = _MemoryStore()
+      ..data['windowX.v1'] = double.nan
+      ..data['windowY.v1'] = 80.0;
+    expect((LayoutPrefs(invalid)..load()).windowPosition, isNull);
   });
 
   test('resetting panel widths also brings a hidden results pane back', () {
@@ -107,11 +125,11 @@ void main() {
     final store = _FlushOnlyStore();
     final prefs = LayoutPrefs(store)..load();
 
-    prefs.writingFont = WritingFont.clean;
+    prefs.writingFont = WritingFont.handwritten;
 
     expect(
       store.persisted['writingFont.v1'],
-      'clean',
+      'handwritten',
       reason: 'changing then quitting must not lose the choice',
     );
   });
@@ -129,6 +147,17 @@ void main() {
     // A second instance over the same storage is the next launch.
     final restarted = LayoutPrefs(store)..load();
     expect(restarted.sidebarVisible, isFalse);
+  });
+
+  test('the Hidden Notes folder visibility survives a launch', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.hiddenFolderVisible, isFalse);
+
+    prefs.toggleHiddenFolder();
+
+    expect(prefs.hiddenFolderVisible, isTrue);
+    expect((LayoutPrefs(store)..load()).hiddenFolderVisible, isTrue);
   });
 
   test('startup note follows the last opened note by default', () {
@@ -235,11 +264,25 @@ void main() {
     expect(prefs.digitGrouping, DigitGrouping.international);
   });
 
-  test('an unreadable writing font falls back to handwritten', () {
+  test('an unreadable writing font falls back to the clean face', () {
     final store = _MemoryStore()..put('writingFont.v1', 'papyrus');
     final prefs = LayoutPrefs(store)..load();
 
-    expect(prefs.writingFont, WritingFont.handwritten);
+    expect(prefs.writingFont, WritingFont.clean);
+  });
+
+  test('markdown in notes starts off, and a yes survives reload', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.markdownEnabled, isFalse);
+
+    var notified = 0;
+    prefs.addListener(() => notified++);
+    prefs.markdownEnabled = true;
+    prefs.markdownEnabled = true;
+
+    expect(notified, 1);
+    expect((LayoutPrefs(store)..load()).markdownEnabled, isTrue);
   });
 
   test('time zone selection converts timestamps and survives reload', () {
@@ -264,7 +307,13 @@ void main() {
     final store = _MemoryStore()..put('timeZone.v1', 'Mars/Olympus_Mons');
     final prefs = LayoutPrefs(store)..load();
 
-    expect(prefs.timeZoneId, isNull);
+    // Loading keeps the id as stored rather than checking it against the zone
+    // table, which would parse the whole database in front of the first
+    // frame. Readers normalize, so the effect is the same as no zone at all.
+    final instant = DateTime.utc(2026, 9, 1, 18, 12);
+    expect(prefs.displayTime(instant), instant.toLocal());
+    expect(AppTimeZones.displayName(prefs.timeZoneId), 'System time zone');
+    expect(AppTimeZones.normalize(prefs.timeZoneId), isNull);
   });
 
   test('a desktop app stays in the tray, and a no is remembered', () {
@@ -311,7 +360,7 @@ void main() {
 
       expect(prefs.appearance, AppearanceMode.system);
       expect(prefs.appearance.themeMode, ThemeMode.system);
-      expect(prefs.paperStyle, PaperStyle.notepad);
+      expect(prefs.paperStyle, PaperStyle.plain);
 
       prefs.appearance = AppearanceMode.dark;
       prefs.paperStyle = PaperStyle.ruled;
@@ -331,7 +380,7 @@ void main() {
         final prefs = LayoutPrefs(store)..load();
 
         expect(prefs.appearance, AppearanceMode.system);
-        expect(prefs.paperStyle, PaperStyle.notepad);
+        expect(prefs.paperStyle, PaperStyle.plain);
       },
     );
 
@@ -458,22 +507,28 @@ void main() {
     expect((LayoutPrefs(store)..load()).loginItemDefaultApplied, isTrue);
   });
 
-  // The summon shortcut is the only one registered system-wide, so the exact
-  // chord matters: Cmd/Ctrl+Shift+Space collided with 1Password's Quick Access
-  // and simply never fired. Windows differs from macOS on purpose — Ctrl+Alt is
-  // AltGr on international layouts.
+  // The summon shortcut is registered system-wide, so the exact chord matters:
+  // while the app runs, every other app loses it. Cmd/Ctrl+Shift+Space was
+  // 1Password's Quick Access; Ctrl+Shift+X was VS Code's Extensions.
   test('the summon shortcut avoids the combinations other apps claim', () {
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     final mac = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
-    expect(mac.displayLabel, 'Cmd + Option + X');
-    expect(mac.shift, isFalse, reason: 'Cmd+Shift+Space is 1Password');
+    expect(mac.displayLabel, 'Cmd + Option + Shift + X');
+    expect(mac.control, isFalse, reason: 'Control+Option is VoiceOver');
 
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
     final windows = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
-    expect(windows.displayLabel, 'Ctrl + Shift + X');
-    expect(windows.alt, isFalse, reason: 'Ctrl+Alt is AltGr on many layouts');
+    expect(windows.displayLabel, 'Alt + Shift + X');
+    expect(
+      windows.control,
+      isFalse,
+      reason:
+          'Ctrl+Alt is AltGr on many layouts, and Ctrl+Shift is where other '
+          'apps keep their own shortcuts',
+    );
+    expect(windows.meta, isFalse, reason: 'Win chords belong to Windows');
   });
 
   // The second and last shortcut the OS hears. It mirrors the summon chord so
@@ -483,12 +538,121 @@ void main() {
 
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     final mac = ShortcutPrefs.defaultFor(ShortcutAction.newNoteAnywhere);
-    expect(mac.displayLabel, 'Cmd + Option + N');
+    expect(mac.displayLabel, 'Cmd + Option + Shift + N');
 
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
     final windows = ShortcutPrefs.defaultFor(ShortcutAction.newNoteAnywhere);
-    expect(windows.displayLabel, 'Ctrl + Shift + N');
-    expect(windows.alt, isFalse, reason: 'Ctrl+Alt is AltGr on many layouts');
+    expect(
+      windows.displayLabel,
+      'Alt + Shift + N',
+      reason: "Ctrl+Shift+N is Explorer's New folder",
+    );
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final summon = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
+      final newNote = ShortcutPrefs.defaultFor(ShortcutAction.newNoteAnywhere);
+      expect(
+        [newNote.meta, newNote.control, newNote.alt, newNote.shift],
+        [summon.meta, summon.control, summon.alt, summon.shift],
+        reason: 'same modifiers as the summon chord on $platform',
+      );
+    }
+  });
+
+  // The key every machine already uses to take a row out of a list, which is
+  // the whole point of changing it: Cmd+Delete is the Finder's and Apple
+  // Notes', Shift+Delete is Explorer's.
+  test('archiving a note answers the key the machine itself uses', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    final mac = ShortcutPrefs.defaultFor(ShortcutAction.deleteNote);
+    expect(mac.logicalKey, LogicalKeyboardKey.backspace);
+    expect(
+      [mac.meta, mac.control, mac.alt, mac.shift],
+      [true, false, false, false],
+    );
+    expect(mac.displayLabel, 'Cmd + Delete');
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    final windows = ShortcutPrefs.defaultFor(ShortcutAction.deleteNote);
+    expect(windows.logicalKey, LogicalKeyboardKey.delete);
+    expect(
+      [windows.meta, windows.control, windows.alt, windows.shift],
+      [false, false, false, true],
+    );
+    expect(windows.displayLabel, 'Shift + Delete');
+  });
+
+  test('Hidden Notes uses Cmd or Ctrl H', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    expect(
+      ShortcutPrefs.defaultFor(ShortcutAction.toggleHiddenFolder).displayLabel,
+      'Cmd + H',
+    );
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    expect(
+      ShortcutPrefs.defaultFor(ShortcutAction.toggleHiddenFolder).displayLabel,
+      'Ctrl + H',
+    );
+  });
+
+  test('an install still on the old archive chord is moved across', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final useMeta = platform == TargetPlatform.macOS;
+      final store = _MemoryStore();
+      // What it shipped as: Cmd+Shift+Delete and Ctrl+Shift+Delete.
+      store.data['shortcuts.v1'] = {
+        'deleteNote': ShortcutBinding(
+          logicalKey: useMeta
+              ? LogicalKeyboardKey.backspace
+              : LogicalKeyboardKey.delete,
+          physicalKey: useMeta
+              ? PhysicalKeyboardKey.backspace
+              : PhysicalKeyboardKey.delete,
+          meta: useMeta,
+          control: !useMeta,
+          shift: true,
+        ).toJson(),
+      };
+
+      ShortcutPrefs(store).load();
+
+      // Read back from disk, so the move is known to have been written.
+      final reloaded = ShortcutPrefs(store)..load();
+      expect(
+        reloaded.bindingFor(ShortcutAction.deleteNote),
+        ShortcutPrefs.defaultFor(ShortcutAction.deleteNote),
+        reason: 'deleteNote on $platform',
+      );
+    }
+  });
+
+  // Somebody who chose the old chord for themselves is not "still on the
+  // default", and keeps it.
+  test('a chord the reader picked for archiving is left alone', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+
+    final chosen = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyK,
+      physicalKey: PhysicalKeyboardKey.keyK,
+      meta: true,
+      shift: true,
+    );
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {'deleteNote': chosen.toJson()};
+
+    final prefs = ShortcutPrefs(store)..load();
+
+    expect(prefs.bindingFor(ShortcutAction.deleteNote), chosen);
   });
 
   test('no two shortcuts ship on the same combination', () {
@@ -538,17 +702,91 @@ void main() {
       final prefs = ShortcutPrefs(store)..load();
       expect(
         prefs.bindingFor(ShortcutAction.openApp)!.displayLabel,
-        'Cmd + Option + X',
+        'Cmd + Option + Shift + X',
       );
 
       // Written back, so the move survives a restart.
       final reloaded = ShortcutPrefs(store)..load();
       expect(
         reloaded.bindingFor(ShortcutAction.openApp)!.displayLabel,
-        'Cmd + Option + X',
+        'Cmd + Option + Shift + X',
       );
     },
   );
+
+  test('an install still on the old system-wide pair is moved across', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final useMeta = platform == TargetPlatform.macOS;
+
+      // What the pair shipped as until now: Option+Cmd+X and +N on macOS,
+      // Ctrl+Shift+X and +N on Windows.
+      final store = _MemoryStore();
+      store.data['shortcuts.v1'] = {
+        'openApp': ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyX,
+          physicalKey: PhysicalKeyboardKey.keyX,
+          meta: useMeta,
+          control: !useMeta,
+          alt: useMeta,
+          shift: !useMeta,
+        ).toJson(),
+        'newNoteAnywhere': ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyN,
+          physicalKey: PhysicalKeyboardKey.keyN,
+          meta: useMeta,
+          control: !useMeta,
+          alt: useMeta,
+          shift: !useMeta,
+        ).toJson(),
+      };
+
+      ShortcutPrefs(store).load();
+
+      // Checked after a second load, so the move is known to be on disk.
+      final reloaded = ShortcutPrefs(store)..load();
+      for (final action in [
+        ShortcutAction.openApp,
+        ShortcutAction.newNoteAnywhere,
+      ]) {
+        expect(
+          reloaded.bindingFor(action),
+          ShortcutPrefs.defaultFor(action),
+          reason: '${action.name} on $platform',
+        );
+      }
+    }
+  });
+
+  // The user put something of their own on the chord the new default wants.
+  // Moving across anyway would leave two actions on one key, and the
+  // system-wide one would swallow the other.
+  test('an old default is kept when its replacement is already taken', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+
+    final oldNewNote = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyN,
+      physicalKey: PhysicalKeyboardKey.keyN,
+      control: true,
+      shift: true,
+    );
+    final boldOnAltShiftN = ShortcutPrefs.defaultFor(
+      ShortcutAction.newNoteAnywhere,
+    );
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {
+      'newNoteAnywhere': oldNewNote.toJson(),
+      'formatBold': boldOnAltShiftN.toJson(),
+    };
+
+    final prefs = ShortcutPrefs(store)..load();
+
+    expect(prefs.bindingFor(ShortcutAction.newNoteAnywhere), oldNewNote);
+    expect(prefs.bindingFor(ShortcutAction.formatBold), boldOnAltShiftN);
+  });
 
   test('a shortcut the user chose themselves is left alone', () {
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -804,8 +1042,8 @@ void main() {
   test('a new install opens on a page, not on a list of nothing', () {
     final prefs = LayoutPrefs(_MemoryStore())..load();
     expect(prefs.sidebarVisible, isFalse);
-    // And the paper-like face, not the mixed one.
-    expect(prefs.writingFont, WritingFont.handwritten);
+    // And the clean face, not the expressive or fixed-width options.
+    expect(prefs.writingFont, WritingFont.clean);
   });
 
   test('an opened sidebar is only open for the current session', () {

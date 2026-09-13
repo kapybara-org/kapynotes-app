@@ -18,6 +18,7 @@ class DocView {
     required this.attachments,
     required this.createdAt,
     required this.archivedAt,
+    required this.hiddenAt,
   });
 
   final String body;
@@ -25,6 +26,7 @@ class DocView {
   final List<NoteAttachmentRef> attachments;
   final DateTime? createdAt;
   final DateTime? archivedAt;
+  final DateTime? hiddenAt;
 }
 
 /// A last-writer-wins cell. Ties on [ts] break on [replica] so every client
@@ -102,6 +104,7 @@ class NoteDoc {
   static const String _attKey = 'att';
   static const String _createdKey = 'created';
   static const String _archivedKey = 'archived';
+  static const String _hiddenKey = 'hidden';
 
   final String replica;
 
@@ -144,6 +147,7 @@ class NoteDoc {
     attachments: _renderAttachments(),
     createdAt: _createdAt(),
     archivedAt: _archivedAt(),
+    hiddenAt: _hiddenAt(),
   );
 
   // ---------------------------------------------------------------------------
@@ -163,6 +167,7 @@ class NoteDoc {
     required List<NoteAttachmentRef> attachments,
     required DateTime createdAt,
     DateTime? archivedAt,
+    DateTime? hiddenAt,
     DateTime? now,
   }) {
     final ops = <Object?>[];
@@ -219,6 +224,12 @@ class NoteDoc {
     if ((archivedMs != null || _regs.containsKey(_archivedKey)) &&
         _regs[_archivedKey]?.value != archivedMs) {
       ops.add(_setLocal(_archivedKey, archivedMs, nowMs));
+    }
+
+    final hiddenMs = hiddenAt?.millisecondsSinceEpoch;
+    if ((hiddenMs != null || _regs.containsKey(_hiddenKey)) &&
+        _regs[_hiddenKey]?.value != hiddenMs) {
+      ops.add(_setLocal(_hiddenKey, hiddenMs, nowMs));
     }
 
     _drain();
@@ -473,6 +484,16 @@ class NoteDoc {
     return Anchor(_tree.visible[clamped - 1].id);
   }
 
+  /// Whether [anchor] names a character this document holds, alive or not.
+  ///
+  /// A caret from another device can arrive before the ops that typed the
+  /// character it sits after; [offsetOf] would read that as the start of the
+  /// note, so a caller that can wait asks here first.
+  bool knows(Anchor anchor) {
+    final id = anchor.id;
+    return id == null || _tree.node(id) != null;
+  }
+
   /// The offset an anchor now denotes. A deleted anchor falls back to the
   /// nearest earlier visible character — where the caret would be after the
   /// text under it was backspaced away.
@@ -570,6 +591,13 @@ class NoteDoc {
 
   DateTime? _archivedAt() {
     final ms = _asInt(_regs[_archivedKey]?.value);
+    return ms == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+  }
+
+  DateTime? _hiddenAt() {
+    final ms = _asInt(_regs[_hiddenKey]?.value);
     return ms == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);

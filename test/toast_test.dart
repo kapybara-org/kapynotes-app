@@ -115,7 +115,7 @@ void main() {
     late BuildContext context;
     await tester.pumpWidget(_harness((value) => context = value));
 
-    Toast.show(context, 'Copied 1,234', icon: Icons.copy_rounded);
+    Toast.show(context, 'Copied 1,234', icon: KapyIcons.copyRounded);
     await tester.pumpAndSettle();
 
     final surface = find.byKey(const ValueKey('toast-surface'));
@@ -129,7 +129,7 @@ void main() {
       tester.widget<Text>(find.text('Copied 1,234')).style!.fontWeight,
       FontWeight.w400,
     );
-    final icon = tester.widget<Icon>(
+    final icon = tester.widget<KapyIcon>(
       find.byKey(const ValueKey('toast-status-icon')),
     );
     expect(icon.size, 14);
@@ -157,10 +157,10 @@ void main() {
     Toast.show(context, 'Could not save', isError: true);
     await tester.pumpAndSettle();
 
-    final icon = tester.widget<Icon>(
+    final icon = tester.widget<KapyIcon>(
       find.byKey(const ValueKey('toast-status-icon')),
     );
-    expect(icon.icon, Icons.error_outline_rounded);
+    expect(icon.icon, KapyIcons.errorOutlined);
     expect(icon.color, Theme.of(context).colorScheme.error);
     await expectLater(
       find.byKey(const ValueKey('toast-repaint-boundary')),

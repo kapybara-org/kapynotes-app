@@ -10,6 +10,25 @@ under the SIL Open Font License 1.1.
 
 Source: <https://github.com/google/fonts/tree/main/ofl/shantellsans>
 
+The two files here are not the upstream fonts as downloaded. The app pins
+three of the four axes to constants (`WritingFontDetails.fontVariations` in
+`lib/core/editor_font.dart`: `INFM` 16, `BNCE` 0, `SPAC` 0) and only ever
+varies the weight, so those three are baked in and only `wght` is left
+variable. Same glyphs, same coverage, identical rendering at the values the
+app uses, and half the bytes in every install: 1.28 MB + 1.53 MB became
+0.73 MB + 0.74 MB. To regenerate from the upstream variable fonts:
+
+```sh
+pip install fonttools
+fonttools varLib.instancer -o ShantellSans-Variable.ttf \
+  ShantellSans-Variable.ttf INFM=16 BNCE=0 SPAC=0
+fonttools varLib.instancer -o ShantellSans-Italic-Variable.ttf \
+  ShantellSans-Italic-Variable.ttf INFM=16 BNCE=0 SPAC=0
+```
+
+Change the pinned values in `editor_font.dart` and this has to be redone
+with the new ones, from the upstream files, or the change will not show.
+
 License: [`ShantellSans-OFL.txt`](ShantellSans-OFL.txt)
 
 ## Brand font

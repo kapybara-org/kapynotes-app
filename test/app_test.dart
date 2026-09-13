@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +11,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
+import 'package:kapy_notes/data/editor_workspace.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
@@ -18,11 +19,14 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
+import 'package:kapy_notes/ui/editor_panes.dart';
 import 'package:kapy_notes/ui/empty_state.dart';
+import 'package:kapy_notes/ui/hidden_notes_gate.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
@@ -30,6 +34,7 @@ import 'package:kapy_notes/ui/sidebar_swipe.dart';
 import 'package:kapy_notes/ui/toolbar.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
+import 'kapy_icon_finder.dart';
 import 'test_fonts.dart';
 
 /// A store that never touches the filesystem, so tests stay hermetic.
@@ -83,6 +88,8 @@ Future<void> pumpApp(
   DesktopIntegration? desktopIntegration,
   bool sidebarVisible = true,
   bool firstRun = false,
+  HiddenNotesGate? hiddenNotesGate,
+  ImageFileAcquirer? imageAcquirer,
 }) async {
   // Almost everything here speaks for somebody who has opened the app before,
   // and they have already met the welcome note. The tests about a genuinely
@@ -109,9 +116,32 @@ Future<void> pumpApp(
       prefs: prefs,
       shortcuts: shortcuts,
       desktopIntegration: desktopIntegration,
+      hiddenNotesGate: hiddenNotesGate,
+      imageAcquirer: imageAcquirer,
     ),
   );
   await tester.pumpAndSettle();
+}
+
+class _HiddenGate implements HiddenNotesGate {
+  _HiddenGate({this.allowConfigure = true, this.allowUnlock = true});
+
+  bool allowConfigure;
+  bool allowUnlock;
+  int configureCalls = 0;
+  int unlockCalls = 0;
+
+  @override
+  Future<bool> ensureConfigured(BuildContext context) async {
+    configureCalls++;
+    return allowConfigure;
+  }
+
+  @override
+  Future<bool> unlock(BuildContext context) async {
+    unlockCalls++;
+    return allowUnlock;
+  }
 }
 
 /// The [TextField] of the note the editor is currently showing.
@@ -127,18 +157,80 @@ TextField openNoteField(WidgetTester tester) => tester.widget<TextField>(
 String openNoteBody(WidgetTester tester) =>
     openNoteField(tester).controller!.text.trimRight();
 
+/// The text field of the note in the pane at [index], counting from the left.
+TextField fieldInPane(WidgetTester tester, int index) =>
+    tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(EditorPaneFrame).at(index),
+        matching: find.byType(TextField),
+      ),
+    );
+
+/// What the note in the pane at [index] says, read as [openNoteBody] reads.
+String bodyInPane(WidgetTester tester, int index) =>
+    fieldInPane(tester, index).controller!.text.trimRight();
+
 /// The one way into settings on every layout: the notes list's labelled row.
 Finder settingsAffordance() => find.byKey(const ValueKey('sidebar-settings'));
+
+/// Finds the notes-list toolbar action without coupling tests to the shortcut
+/// suffix that its hover tooltip now teaches.
+Finder notesToggleWithLabel(String label) => find.byWidgetPredicate(
+  (widget) => widget is Tooltip && (widget.message ?? '').startsWith(label),
+);
 
 /// Puts the notes list on screen, wherever this layout keeps it.
 ///
 /// The toolbar button says which state it is in, and it is the same button on
 /// a window with the list closed and on a phone with the drawer shut.
 Future<void> showNotesList(WidgetTester tester) async {
-  final open = find.byTooltip('Show notes');
+  final open = notesToggleWithLabel('Show notes');
   if (open.evaluate().isEmpty) return;
   await tester.tap(open.first);
   await tester.pumpAndSettle();
+}
+
+Future<void> openNoteActions(WidgetTester tester, String noteId) async {
+  await tester.tap(find.byKey(ValueKey('note-actions-$noteId')));
+  await tester.pumpAndSettle();
+}
+
+Future<void> pressShortcut(
+  WidgetTester tester,
+  ShortcutBinding binding, {
+  bool settle = true,
+}) async {
+  if (binding.meta) {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+  }
+  if (binding.control) {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  }
+  if (binding.alt) {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+  }
+  if (binding.shift) {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+  }
+  await tester.sendKeyDownEvent(binding.logicalKey);
+  await tester.sendKeyUpEvent(binding.logicalKey);
+  if (binding.shift) {
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+  }
+  if (binding.alt) {
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+  }
+  if (binding.control) {
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+  }
+  if (binding.meta) {
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+  }
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+  }
 }
 
 /// Opens settings and selects [section].
@@ -305,7 +397,7 @@ void main() {
     expect(field.controller!.text, 'Leave this exactly here');
     expect(field.focusNode!.hasFocus, isFalse);
 
-    await tester.tap(find.byIcon(Icons.add_rounded).first);
+    await tester.tap(findKapyIcon(KapyIcons.addRounded).first);
     await tester.pumpAndSettle();
     final newNoteField = tester.widget<TextField>(
       find.descendant(
@@ -405,7 +497,7 @@ void main() {
     await pumpApp(tester);
     await tester.pumpAndSettle();
 
-    final pin = find.byIcon(Icons.push_pin_outlined);
+    final pin = findKapyIcon(KapyIcons.pinOutlined);
     final wordmark = find.byKey(const ValueKey('toolbar-app-wordmark'));
     expect(pin, findsOneWidget);
 
@@ -432,8 +524,8 @@ void main() {
 
     await tester.tap(pin);
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.push_pin_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.push_pin_outlined), findsNothing);
+    expect(findKapyIcon(KapyIcons.pinRounded), findsOneWidget);
+    expect(findKapyIcon(KapyIcons.pinOutlined), findsNothing);
   });
 
   testWidgets('a first run opens on a page, with the notes list closed', (
@@ -448,9 +540,42 @@ void main() {
     // the container around it, so the list's own rect is 260 wide either way
     // and geometry says nothing here. The toolbar does: it offers to show the
     // notes rather than to hide them.
-    expect(find.byTooltip('Show notes'), findsOneWidget);
-    expect(find.byTooltip('Hide notes'), findsNothing);
+    expect(notesToggleWithLabel('Show notes'), findsOneWidget);
+    expect(notesToggleWithLabel('Hide notes'), findsNothing);
   });
+
+  testWidgets(
+    'keeps Windows header actions after returning to a compact width',
+    (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+      Finder toolbarIcon(KapyIconData icon) => find.descendant(
+        of: find.byType(NoteToolbar),
+        matching: findKapyIcon(icon),
+      );
+
+      await pumpApp(tester, size: const Size(620, 620), sidebarVisible: false);
+
+      // Open the compact drawer, then let the window cross into the wide
+      // layout while it is open. The new compact Scaffold starts closed when
+      // the window is narrowed again, so its header actions must come back.
+      await tester.tap(notesToggleWithLabel('Show notes'));
+      await tester.pumpAndSettle();
+      expect(toolbarIcon(KapyIcons.menuRounded), findsNothing);
+
+      tester.view.physicalSize = const Size(760, 620);
+      await tester.pumpAndSettle();
+      expect(toolbarIcon(KapyIcons.menuRounded), findsOneWidget);
+
+      tester.view.physicalSize = const Size(622, 620);
+      await tester.pumpAndSettle();
+
+      expect(toolbarIcon(KapyIcons.menuRounded), findsOneWidget);
+      expect(toolbarIcon(KapyIcons.addRounded), findsOneWidget);
+      expect(toolbarIcon(KapyIcons.peopleOutlined), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'the pin survives every desktop width, and never reaches a phone',
@@ -465,7 +590,7 @@ void main() {
       ]) {
         await pumpApp(tester, size: size);
         expect(
-          find.byIcon(Icons.push_pin_outlined),
+          findKapyIcon(KapyIcons.pinOutlined),
           findsOneWidget,
           reason: 'the pin went missing at $size',
         );
@@ -474,10 +599,10 @@ void main() {
       // The drawer hides the note actions while it covers them. The pin is
       // about the window, not the note, so it stays.
       await pumpApp(tester, size: const Size(700, 620));
-      await tester.tap(find.byTooltip('Show notes'));
+      await tester.tap(notesToggleWithLabel('Show notes'));
       await tester.pumpAndSettle();
       expect(
-        find.byIcon(Icons.push_pin_outlined),
+        findKapyIcon(KapyIcons.pinOutlined),
         findsOneWidget,
         reason: 'the pin went with the drawer',
       );
@@ -487,8 +612,8 @@ void main() {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpApp(tester, size: const Size(420, 800));
-      expect(find.byIcon(Icons.push_pin_outlined), findsNothing);
-      expect(find.byIcon(Icons.push_pin_rounded), findsNothing);
+      expect(findKapyIcon(KapyIcons.pinOutlined), findsNothing);
+      expect(findKapyIcon(KapyIcons.pinRounded), findsNothing);
     },
   );
 
@@ -497,8 +622,8 @@ void main() {
 
     final toolbar = find.byType(NoteToolbar);
     final wordmark = find.byKey(const ValueKey('toolbar-app-wordmark'));
-    final add = find.byIcon(Icons.add_rounded).first;
-    final menu = find.byIcon(Icons.menu_rounded);
+    final add = findKapyIcon(KapyIcons.addRounded).first;
+    final menu = findKapyIcon(KapyIcons.menuRounded);
 
     expect(toolbar, findsOneWidget);
     expect(find.textContaining('Rates'), findsNothing);
@@ -514,7 +639,7 @@ void main() {
     expect(
       find.descendant(
         of: toolbar,
-        matching: find.byIcon(Icons.more_horiz_rounded),
+        matching: findKapyIcon(KapyIcons.moreRounded),
       ),
       findsNothing,
     );
@@ -528,19 +653,19 @@ void main() {
     await tester.pumpAndSettle();
 
     final toolbar = find.byType(NoteToolbar);
-    Finder toolbarButton(IconData icon) => find
+    Finder toolbarButton(KapyIconData icon) => find
         .ancestor(
-          of: find.descendant(of: toolbar, matching: find.byIcon(icon)),
+          of: find.descendant(of: toolbar, matching: findKapyIcon(icon)),
           matching: find.byType(IconButton),
         )
         .first;
 
     expect(
-      tester.getSize(toolbarButton(Icons.add_rounded)),
+      tester.getSize(toolbarButton(KapyIcons.addRounded)),
       const Size.square(24),
     );
     expect(
-      tester.getSize(toolbarButton(Icons.menu_rounded)),
+      tester.getSize(toolbarButton(KapyIcons.menuRounded)),
       const Size.square(24),
     );
     final footerBold = find.descendant(
@@ -554,21 +679,17 @@ void main() {
       matching: find.byType(IconButton),
     );
     final image = tester.getRect(footerButton('insert-image'));
+    final video = tester.getRect(footerButton('insert-video'));
     final mic = tester.getRect(footerButton('record-voice'));
     final formatting = tester.getRect(footerButton('formatting-toggle'));
-    final pointer = await tester.createGesture(
-      kind: PointerDeviceKind.mouse,
-      pointer: 91,
-    );
-    await pointer.addPointer(location: Offset.zero);
-    addTearDown(pointer.removePointer);
-    await pointer.moveTo(formatting.center);
+    await tester.tap(footerButton('formatting-toggle'));
     await tester.pumpAndSettle();
     final style = tester.getRect(footerButton('format-style'));
-    expect(mic.left - image.right, 4);
+    expect(video.left - image.right, 4);
+    expect(mic.left - video.right, 4);
     expect(formatting.left - mic.right, 12);
     expect(style.left - formatting.right, 4);
-    // The row starts at the bar's own edge inset: nothing precedes the two
+    // The row starts at the bar's own edge inset: nothing precedes the three
     // insert actions now that settings is only ever in the notes list.
     expect(
       image.left - tester.getRect(find.byType(NoteFooter)).left,
@@ -617,7 +738,7 @@ void main() {
 
     expect(prefs.sidebarVisible, isFalse);
     expect(find.byKey(const ValueKey('sidebar-divider')), findsNothing);
-    expect(find.byTooltip('Show notes'), findsOneWidget);
+    expect(notesToggleWithLabel('Show notes'), findsOneWidget);
   });
 
   testWidgets('types into a note, calculates, and derives its title', (
@@ -670,7 +791,7 @@ void main() {
 
     // Twice over now: the sidebar row that opened it, and the dialog's title.
     expect(find.text('Settings'), findsWidgets);
-    expect(find.text('Desktop sidebar'), findsOneWidget);
+    expect(find.text('Notes list'), findsOneWidget);
     final dailyToggle = find.byKey(const ValueKey('daily-separators-toggle'));
     final compactSwitch = find.descendant(
       of: dailyToggle,
@@ -687,11 +808,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(prefs.readyToTypeOnOpen, isFalse);
 
-    await tester.tap(find.byKey(const ValueKey('sidebar-toggle')));
+    // With the window's own rows, at the foot of the pane.
+    final sidebarToggle = find.byKey(const ValueKey('sidebar-toggle'));
+    await tester.ensureVisible(sidebarToggle);
+    await tester.pumpAndSettle();
+    await tester.tap(sidebarToggle);
     await tester.pumpAndSettle();
     expect(prefs.sidebarVisible, isFalse);
 
-    final reset = find.text('Reset panel widths');
+    final reset = find.byKey(const ValueKey('reset-panel-widths'));
     await tester.ensureVisible(reset);
     await tester.tap(reset);
     await tester.pumpAndSettle();
@@ -735,7 +860,9 @@ void main() {
     );
   });
 
-  testWidgets('settings keeps system labels medium or lighter', (tester) async {
+  testWidgets('settings keeps system labels regular or lighter', (
+    tester,
+  ) async {
     await pumpApp(tester);
     await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
     await tester.pumpAndSettle();
@@ -766,12 +893,12 @@ void main() {
           FontWeight.w400;
     }
 
-    expect(weightOf('Settings'), FontWeight.w500);
-    expect(weightOf('General'), FontWeight.w500);
+    expect(weightOf('Settings'), FontWeight.w400);
+    expect(weightOf('General'), FontWeight.w400);
     expect(weightOf('Appearance'), FontWeight.w400);
-    expect(weightOf('NOTES'), FontWeight.w500);
-    expect(weightOf('Daily separators'), FontWeight.w500);
-    expect(weightOf('Done'), FontWeight.w500);
+    expect(weightOf('OPENING'), FontWeight.w400);
+    expect(weightOf('Daily separators'), FontWeight.w400);
+    expect(weightOf('Done'), FontWeight.w400);
   });
 
   testWidgets('selects and persists the note time zone from settings', (
@@ -784,7 +911,12 @@ void main() {
 
     final setting = find.byKey(const ValueKey('time-zone-setting'));
     await tester.ensureVisible(setting);
-    expect(find.text('System time zone'), findsOneWidget);
+    // Named for what it is; the zone in use is the line under the name.
+    expect(
+      find.descendant(of: setting, matching: find.text('Time zone')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('System time zone · UTC'), findsOneWidget);
     await tester.tap(setting);
     await tester.pumpAndSettle();
 
@@ -799,8 +931,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(prefs.timeZoneId, 'Asia/Kolkata');
-    expect(find.text('Asia/Kolkata'), findsOneWidget);
-    expect(find.text('New separators · UTC+05:30'), findsOneWidget);
+    expect(find.text('Asia/Kolkata · UTC+05:30'), findsOneWidget);
     expect((LayoutPrefs(store)..load()).timeZoneId, 'Asia/Kolkata');
   });
 
@@ -950,8 +1081,8 @@ void main() {
       ),
     );
 
-    expect(prefs.writingFont, WritingFont.handwritten);
-    expect(editor().style?.fontFamily, WritingFont.handwritten.fontFamily);
+    expect(prefs.writingFont, WritingFont.clean);
+    expect(editor().style?.fontFamily, WritingFont.clean.fontFamily);
 
     await openSettings(tester, section: SettingsSection.appearance);
     expect(find.text('WRITING FONT'), findsOneWidget);
@@ -984,7 +1115,10 @@ void main() {
       reason: 'the number inherits the mixed option\'s monospace base',
     );
 
-    await tester.tap(find.byKey(const ValueKey('writing-font-monospace')));
+    final monospace = find.byKey(const ValueKey('writing-font-monospace'));
+    await tester.ensureVisible(monospace);
+    await tester.pumpAndSettle();
+    await tester.tap(monospace);
     await tester.pumpAndSettle();
     expect(prefs.writingFont, WritingFont.monospace);
     expect(editor().style?.fontFamily, WritingFont.monospace.fontFamily);
@@ -1305,19 +1439,26 @@ void main() {
     await tester.pumpAndSettle();
     await openSettings(tester, section: SettingsSection.shortcuts);
 
-    expect(find.text('SYSTEM-WIDE'), findsOneWidget);
-    expect(find.text('APP'), findsOneWidget);
-    expect(find.text('FORMATTING'), findsOneWidget);
     // The shortcuts another app can refuse lead the pane, then the in-app
-    // keys, then formatting.
-    expect(
-      tester.getTopLeft(find.text('SYSTEM-WIDE')).dy,
-      lessThan(tester.getTopLeft(find.text('APP')).dy),
-    );
-    expect(
-      tester.getTopLeft(find.text('APP')).dy,
-      lessThan(tester.getTopLeft(find.text('FORMATTING')).dy),
-    );
+    // keys by what they act on: the list, the panes beside it, the window,
+    // what goes into a note, and how it is formatted.
+    const headings = [
+      'SYSTEM-WIDE',
+      'NOTES',
+      'SPLIT VIEW',
+      'WINDOW',
+      'INSERT',
+      'FORMATTING',
+    ];
+    for (final heading in headings) {
+      expect(find.text(heading), findsOneWidget);
+    }
+    for (var index = 1; index < headings.length; index++) {
+      expect(
+        tester.getTopLeft(find.text(headings[index - 1])).dy,
+        lessThan(tester.getTopLeft(find.text(headings[index])).dy),
+      );
+    }
     // The rail shows one pane at a time, so the general options are gone.
     expect(find.text('Daily separators'), findsNothing);
     for (final action in ShortcutAction.values) {
@@ -1353,21 +1494,21 @@ void main() {
     await pumpApp(tester, size: LayoutPrefs.defaultWindowSize);
     notes.create(body: 'alpha');
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.push_pin_outlined), findsOneWidget);
+    expect(findKapyIcon(KapyIcons.pinOutlined), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.push_pin_outlined));
+    await tester.tap(findKapyIcon(KapyIcons.pinOutlined));
     await tester.pumpAndSettle();
 
     // The window really did go on top; the icon has to say so in the same
     // frame, without waiting for something else to redraw the page.
     expect(prefs.alwaysOnTop, isTrue);
-    expect(find.byIcon(Icons.push_pin_rounded), findsOneWidget);
+    expect(findKapyIcon(KapyIcons.pinRounded), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.push_pin_rounded));
+    await tester.tap(findKapyIcon(KapyIcons.pinRounded));
     await tester.pumpAndSettle();
 
     expect(prefs.alwaysOnTop, isFalse);
-    expect(find.byIcon(Icons.push_pin_outlined), findsOneWidget);
+    expect(findKapyIcon(KapyIcons.pinOutlined), findsOneWidget);
   });
 
   testWidgets('rebinding a shortcut updates the hints already on screen', (
@@ -1568,6 +1709,287 @@ void main() {
     );
   });
 
+  testWidgets('each pane holds one note, and a note is never open twice', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    final first = notes.create(body: 'First note');
+    final second = notes.create(body: 'Second note');
+    final third = notes.create(body: 'Third note');
+    await tester.pumpAndSettle();
+
+    // A list click shows the note in place of the one on screen. Nothing
+    // piles up behind it, and a lone pane has no title bar: it looks exactly
+    // as the editor always has.
+    await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+    await tester.pumpAndSettle();
+    expect(openNoteBody(tester), 'Second note');
+    expect(find.byType(EditorPaneFrame), findsOneWidget);
+    expect(find.byKey(const ValueKey('pane-title-0')), findsNothing);
+
+    // The title bar's split button opens an empty pane beside the note, and
+    // the list fills whichever pane has the focus: the new one.
+    await tester.tap(find.byKey(const ValueKey('toolbar-split-view')));
+    await tester.pumpAndSettle();
+    expect(find.byType(EditorPaneFrame), findsNWidgets(2));
+    expect(find.text('Choose a note'), findsOneWidget);
+    expect(
+      find.byTooltip('Choose a note for this pane first'),
+      findsOneWidget,
+      reason: 'no second blank beside the first',
+    );
+
+    await tester.tap(find.widgetWithText(NoteRow, 'Third note'));
+    await tester.pumpAndSettle();
+    expect(bodyInPane(tester, 0), 'Second note');
+    expect(bodyInPane(tester, 1), 'Third note');
+
+    // A note already on screen is focused where it is, never opened again,
+    // and the list rings the one open beside it.
+    await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+    await tester.pumpAndSettle();
+    expect(find.byType(NoteEditor), findsNWidgets(2));
+    expect(bodyInPane(tester, 1), 'Third note');
+    expect(fieldInPane(tester, 0).focusNode!.hasFocus, isTrue);
+    NoteRow row(String title) =>
+        tester.widget<NoteRow>(find.widgetWithText(NoteRow, title));
+    expect(row('Third note').openElsewhere, isTrue);
+    expect(row('Second note').openElsewhere, isFalse);
+
+    // The menu offers the side only to a note that is not on screen.
+    await tester.tap(
+      find.widgetWithText(NoteRow, 'Third note'),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Open to the side'), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.widgetWithText(NoteRow, 'First note'),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Open in New Tab'), findsNothing);
+    await tester.tap(find.text('Open to the side'));
+    await tester.pumpAndSettle();
+    expect(
+      [for (var index = 0; index < 3; index++) bodyInPane(tester, index)],
+      ['Second note', 'First note', 'Third note'],
+    );
+    expect(fieldInPane(tester, 1).focusNode!.hasFocus, isTrue);
+
+    // Closing a pane takes the note off the screen and nothing else.
+    await tester.tap(find.byKey(const ValueKey('close-pane-2')));
+    await tester.pumpAndSettle();
+    expect(find.byType(NoteEditor), findsNWidgets(2));
+    expect(notes.byId(third.id)?.body, 'Third note');
+    expect(notes.byId(first.id)?.isArchived, isFalse);
+    expect(notes.byId(second.id)?.isArchived, isFalse);
+  });
+
+  testWidgets('three panes answer the split, focus and close shortcuts', (
+    tester,
+  ) async {
+    await pumpApp(tester, size: const Size(1400, 800));
+    notes.create(body: 'Left note');
+    final middle = notes.create(body: 'Middle note');
+    final right = notes.create(body: 'Right note');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NoteRow, 'Left note'));
+    await tester.pumpAndSettle();
+
+    Future<void> press(ShortcutAction action) =>
+        pressShortcut(tester, shortcuts.bindingFor(action)!);
+
+    // With one pane there is nothing for the close chord to close.
+    await press(ShortcutAction.closePane);
+    expect(find.byType(EditorPaneFrame), findsOneWidget);
+
+    await press(ShortcutAction.splitEditor);
+    await tester.tap(find.widgetWithText(NoteRow, 'Middle note'));
+    await tester.pumpAndSettle();
+    await press(ShortcutAction.splitEditor);
+    await tester.tap(find.widgetWithText(NoteRow, 'Right note'));
+    await tester.pumpAndSettle();
+    expect(
+      [for (var index = 0; index < 3; index++) bodyInPane(tester, index)],
+      ['Left note', 'Middle note', 'Right note'],
+    );
+
+    // Three is as many as there are.
+    await press(ShortcutAction.splitEditor);
+    expect(find.byType(EditorPaneFrame), findsNWidgets(3));
+    expect(find.byTooltip('Up to three notes side by side'), findsOneWidget);
+
+    await press(ShortcutAction.focusSecondPane);
+    expect(fieldInPane(tester, 1).focusNode!.hasFocus, isTrue);
+    await press(ShortcutAction.focusThirdPane);
+    expect(fieldInPane(tester, 2).focusNode!.hasFocus, isTrue);
+    await press(ShortcutAction.focusFirstPane);
+    expect(fieldInPane(tester, 0).focusNode!.hasFocus, isTrue);
+
+    // Every pane is a live editor on its own note.
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(EditorPaneFrame).at(1),
+        matching: find.byType(TextField),
+      ),
+      'Middle note, edited',
+    );
+    await tester.pumpAndSettle();
+    expect(notes.byId(middle.id)?.body, 'Middle note, edited');
+    expect(bodyInPane(tester, 0), 'Left note');
+    expect(bodyInPane(tester, 2), 'Right note');
+
+    List<num> savedWeights() =>
+        ((store.data[EditorWorkspace.storeKey] as Map)['weights'] as List)
+            .cast<num>();
+
+    // A divider resizes the two panes either side of it, and is remembered.
+    final before = savedWeights();
+    await tester.drag(
+      find.byKey(const ValueKey('editor-split-divider-0')),
+      const Offset(60, 0),
+    );
+    await tester.pumpAndSettle();
+    final after = savedWeights();
+    expect(after[0], greaterThan(before[0]));
+    expect(after[1], lessThan(before[1]));
+    expect(after[2], closeTo(before[2], 1e-9));
+
+    // A double click evens every pane out.
+    final divider = find.byKey(const ValueKey('editor-split-divider-1'));
+    await tester.tap(divider);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.tap(divider);
+    await tester.pumpAndSettle();
+    for (final weight in savedWeights()) {
+      expect(weight, closeTo(1 / 3, 1e-9));
+    }
+
+    // Closing the focused pane hands the focus to the pane beside it, and
+    // leaves its note exactly as it was.
+    await press(ShortcutAction.focusThirdPane);
+    await press(ShortcutAction.closePane);
+    expect(find.byType(EditorPaneFrame), findsNWidgets(2));
+    expect(notes.byId(right.id)?.body, 'Right note');
+    expect(fieldInPane(tester, 1).focusNode!.hasFocus, isTrue);
+
+    // A pane that is not there cannot take the focus.
+    await press(ShortcutAction.focusThirdPane);
+    expect(fieldInPane(tester, 1).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('dragging a note opens it beside a pane, in place, or moves it', (
+    tester,
+  ) async {
+    await pumpApp(tester, size: const Size(1400, 800));
+    final alpha = notes.create(body: 'Alpha');
+    notes.create(body: 'Bravo');
+    notes.create(body: 'Charlie');
+    notes.create(body: 'Delta');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NoteRow, 'Alpha'));
+    await tester.pumpAndSettle();
+
+    List<String> panes() => [
+      for (
+        var index = 0;
+        index < find.byType(EditorPaneFrame).evaluate().length;
+        index++
+      )
+        bodyInPane(tester, index),
+    ];
+
+    Offset spot(int pane, PaneDropZone zone) {
+      final rect = tester.getRect(find.byType(EditorPaneFrame).at(pane));
+      return switch (zone) {
+        PaneDropZone.left => rect.centerLeft + const Offset(24, 0),
+        PaneDropZone.center => rect.center,
+        PaneDropZone.right => rect.centerRight - const Offset(24, 0),
+      };
+    }
+
+    // Drags with a mouse, and reads what the highlight promises before
+    // letting go: a drop is never a guess.
+    Future<void> dragTo(
+      Finder from,
+      Offset to, {
+      required String promise,
+    }) async {
+      final gesture = await tester.startGesture(
+        tester.getCenter(from),
+        kind: PointerDeviceKind.mouse,
+      );
+      await gesture.moveBy(const Offset(12, 0));
+      await tester.pump();
+      await gesture.moveTo(to);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text(promise), findsOneWidget);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.text(promise), findsNothing);
+    }
+
+    // Beside a pane: a new pane, in that half of it.
+    await dragTo(
+      find.widgetWithText(NoteRow, 'Bravo'),
+      spot(0, PaneDropZone.right),
+      promise: 'Open on the right',
+    );
+    expect(panes(), ['Alpha', 'Bravo']);
+
+    await dragTo(
+      find.widgetWithText(NoteRow, 'Charlie'),
+      spot(0, PaneDropZone.left),
+      promise: 'Open on the left',
+    );
+    expect(panes(), ['Charlie', 'Alpha', 'Bravo']);
+
+    // Three open leave no room beside, so an edge means the pane itself.
+    await dragTo(
+      find.widgetWithText(NoteRow, 'Delta'),
+      spot(1, PaneDropZone.right),
+      promise: 'Open here',
+    );
+    expect(panes(), ['Charlie', 'Delta', 'Bravo']);
+    expect(notes.byId(alpha.id)?.isArchived, isFalse);
+
+    // A pane moves by its title bar.
+    await dragTo(
+      find.byKey(const ValueKey('pane-title-2')),
+      spot(0, PaneDropZone.left),
+      promise: 'Move to the left',
+    );
+    expect(panes(), ['Bravo', 'Charlie', 'Delta']);
+
+    // A note already open trades places with the one it lands on.
+    await dragTo(
+      find.widgetWithText(NoteRow, 'Delta'),
+      spot(0, PaneDropZone.center),
+      promise: 'Swap places',
+    );
+    expect(panes(), ['Delta', 'Charlie', 'Bravo']);
+    expect(find.byType(NoteEditor), findsNWidgets(3));
+
+    // Over its own pane a note promises nothing, and changes nothing.
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('pane-title-1'))),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(40, 0));
+    await tester.pump();
+    for (final promise in ['Open here', 'Swap places', 'Move here']) {
+      expect(find.text(promise), findsNothing);
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(panes(), ['Delta', 'Charlie', 'Bravo']);
+  });
+
   testWidgets('the results column has a shortcut like the notes list', (
     tester,
   ) async {
@@ -1602,6 +2024,64 @@ void main() {
     expect(prefs.sidebarVisible, isFalse);
   });
 
+  testWidgets('the notes shortcut opens and closes the compact drawer', (
+    tester,
+  ) async {
+    await pumpApp(tester, size: const Size(600, 700));
+    notes.create(body: 'Compact note');
+    await tester.pumpAndSettle();
+
+    final scaffold = tester.state<ScaffoldState>(find.byType(Scaffold).first);
+    final binding = shortcuts.bindingFor(ShortcutAction.toggleSidebar)!;
+    expect(scaffold.isDrawerOpen, isFalse);
+
+    await pressShortcut(tester, binding);
+    expect(scaffold.isDrawerOpen, isTrue);
+
+    await pressShortcut(tester, binding);
+    expect(scaffold.isDrawerOpen, isFalse);
+  });
+
+  testWidgets('the hamburger tooltip includes its current shortcut', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+
+    final menu = findKapyIcon(KapyIcons.menuRounded).first;
+    final tooltip = tester.widget<Tooltip>(
+      find.ancestor(of: menu, matching: find.byType(Tooltip)).first,
+    );
+    expect(
+      tooltip.message,
+      contains(
+        shortcuts.bindingFor(ShortcutAction.toggleSidebar)!.displayLabel,
+      ),
+    );
+  });
+
+  testWidgets('note actions fade in inside a sidebar that can hold them', (
+    tester,
+  ) async {
+    await pumpApp(tester, size: const Size(760, 520));
+    notes.create(body: 'Context menu');
+    await tester.pumpAndSettle();
+    final note = notes.notes.single;
+
+    await openNoteActions(tester, note.id);
+
+    final menu = find.byKey(const ValueKey('kapy-context-menu'));
+    expect(menu, findsOneWidget);
+    expect(
+      find.ancestor(of: menu, matching: find.byType(FadeTransition)),
+      findsOneWidget,
+    );
+    final menuRect = tester.getRect(menu);
+    final rowRect = tester.getRect(find.byType(NoteRow).first);
+    expect(menuRect.width, lessThanOrEqualTo(208));
+    expect(menuRect.left, greaterThanOrEqualTo(rowRect.left));
+    expect(menuRect.right, lessThanOrEqualTo(rowRect.right));
+  });
+
   testWidgets('searches note bodies and shows the matching line', (
     tester,
   ) async {
@@ -1621,6 +2101,53 @@ void main() {
     // Search temporarily replaces the updated timestamp with the matching
     // line, so a body-only result still explains why it appeared.
     expect(find.widgetWithText(NoteRow, 'olive oil 12.50'), findsOneWidget);
+  });
+
+  testWidgets('global search reveals a hidden sidebar and finds nested content', (
+    tester,
+  ) async {
+    await pumpApp(tester, sidebarVisible: false);
+    notes.create(
+      body:
+          '# Launch plan\n- Website\n  - Accessibility\n    - Check contrast tokens',
+    );
+    notes.create(body: 'Weekend errands\n- Buy coffee');
+    await tester.pumpAndSettle();
+
+    final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
+    await pressShortcut(tester, binding);
+
+    expect(prefs.sidebarVisible, isTrue);
+    final search = find.byKey(const ValueKey('sidebar-search-field'));
+    expect(search, findsOneWidget);
+    expect(tester.widget<TextField>(search).focusNode?.hasFocus, isTrue);
+    expect(find.text(binding.displayLabel), findsOneWidget);
+
+    await tester.enterText(search, 'launch contrast');
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NoteRow), findsOneWidget);
+    expect(
+      find.widgetWithText(NoteRow, '- Check contrast tokens'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('global search opens and focuses the compact notes drawer', (
+    tester,
+  ) async {
+    await pumpApp(tester, size: const Size(600, 760));
+    notes.create(body: 'Compact search result');
+    await tester.pumpAndSettle();
+
+    await pressShortcut(
+      tester,
+      shortcuts.bindingFor(ShortcutAction.findNotes)!,
+    );
+
+    final search = find.byKey(const ValueKey('sidebar-search-field'));
+    expect(search, findsOneWidget);
+    expect(tester.widget<TextField>(search).focusNode?.hasFocus, isTrue);
   });
 
   testWidgets('creates a note from the plus beside search', (tester) async {
@@ -1801,6 +2328,7 @@ void main() {
 
     await tester.tap(find.widgetWithText(NoteRow, 'Reference'));
     await tester.pumpAndSettle();
+    await openNoteActions(tester, reference.id);
     await tester.tap(find.byKey(ValueKey('pin-note-${reference.id}')));
     await tester.pumpAndSettle();
 
@@ -1812,8 +2340,9 @@ void main() {
     expect(find.text('Notes'), findsOneWidget);
     expect(rowTitles(), ['Reference', 'Today']);
     expect(notes.isPinned(reference.id), isTrue);
-    expect(find.byTooltip('Unpin note'), findsOneWidget);
 
+    await openNoteActions(tester, reference.id);
+    expect(find.text('Unpin note'), findsOneWidget);
     await tester.tap(find.byKey(ValueKey('pin-note-${reference.id}')));
     await tester.pumpAndSettle();
 
@@ -1837,6 +2366,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final third = notes.notes.singleWhere((note) => note.title == 'Third');
+    await openNoteActions(tester, third.id);
     await tester.tap(find.byKey(ValueKey('archive-note-${third.id}')));
     await tester.pumpAndSettle();
 
@@ -1849,10 +2379,665 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(NoteRow, 'Third'), findsOneWidget);
 
+    await openNoteActions(tester, third.id);
     await tester.tap(find.byKey(ValueKey('restore-note-${third.id}')));
     await tester.pumpAndSettle();
     expect(notes.archivedNotes, isEmpty);
     expect(notes.notes.first.title, 'Third');
+  });
+
+  testWidgets(
+    'Hidden Notes authenticates every entry and locks when the app leaves',
+    (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await notes.load();
+      notes.create(body: 'Visible note');
+      final private = notes.create(body: 'Private note');
+      final gate = _HiddenGate();
+      await pumpApp(tester, hiddenNotesGate: gate);
+
+      final hiddenShortcut = shortcuts.bindingFor(
+        ShortcutAction.toggleHiddenFolder,
+      )!;
+      expect(prefs.hiddenFolderVisible, isFalse);
+      expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
+
+      await openNoteActions(tester, private.id);
+      await tester.tap(find.byKey(ValueKey('hide-note-${private.id}')));
+      await tester.pumpAndSettle();
+      expect(gate.configureCalls, 1);
+      expect(notes.hiddenNotes.single.id, private.id);
+      expect(notes.search('Private'), isEmpty);
+      expect(
+        find.text(
+          'Note moved to Hidden Notes. Show it from Settings or press '
+          '${hiddenShortcut.displayLabel}.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
+
+      await pressShortcut(tester, hiddenShortcut);
+      expect(gate.unlockCalls, 0, reason: 'the shortcut only reveals the row');
+      expect(prefs.hiddenFolderVisible, isTrue);
+      expect(
+        find.byKey(const ValueKey('sidebar-hidden-notes')),
+        findsOneWidget,
+      );
+      expect(find.text(hiddenShortcut.displayLabel), findsOneWidget);
+      expect(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('sidebar-hidden-notes')))
+            .dy,
+        lessThan(
+          tester.getTopLeft(find.byKey(const ValueKey('sidebar-archive'))).dy,
+        ),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sidebar-hidden-notes')),
+          matching: find.text('1'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
+      await tester.pumpAndSettle();
+      expect(gate.unlockCalls, 1);
+      expect(find.widgetWithText(NoteRow, 'Private note'), findsOneWidget);
+      expect(openNoteBody(tester), 'Private note');
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-all-notes')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
+      await tester.pumpAndSettle();
+      expect(gate.unlockCalls, 2, reason: 'entering again must authenticate');
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Private note'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('sidebar-hidden-notes')),
+        findsOneWidget,
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      await pressShortcut(tester, hiddenShortcut);
+      expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
+      expect(gate.unlockCalls, 2, reason: 'hiding the row must not enter it');
+      await pressShortcut(tester, hiddenShortcut);
+      expect(
+        find.byKey(const ValueKey('sidebar-hidden-notes')),
+        findsOneWidget,
+      );
+      expect(
+        gate.unlockCalls,
+        2,
+        reason: 'revealing the row must not enter it',
+      );
+    },
+  );
+
+  testWidgets('desktop Settings can reveal Hidden Notes in the sidebar', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await pumpApp(tester);
+
+    expect(prefs.hiddenFolderVisible, isFalse);
+    expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
+
+    await openSettings(tester);
+    final toggle = find.byKey(const ValueKey('hidden-notes-sidebar-toggle'));
+    final settingsPane = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(SingleChildScrollView),
+    );
+    final settingsScrollable = find.descendant(
+      of: settingsPane,
+      matching: find.byType(Scrollable),
+    );
+    expect(settingsScrollable, findsOneWidget);
+    await tester.scrollUntilVisible(
+      toggle,
+      180,
+      scrollable: settingsScrollable,
+    );
+    expect(
+      find.descendant(
+        of: toggle,
+        matching: find.textContaining(
+          shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)!.displayLabel,
+        ),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(prefs.hiddenFolderVisible, isTrue);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Done'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsOneWidget);
+  });
+
+  testWidgets('system image UI does not close an unlocked hidden note', (
+    tester,
+  ) async {
+    await notes.load();
+    notes.create(body: 'Visible note');
+    final private = notes.create(body: 'Private note');
+    notes.hide(private.id);
+    final picker = Completer<void>();
+    await pumpApp(
+      tester,
+      hiddenNotesGate: _HiddenGate(),
+      imageAcquirer: (_) async {
+        await picker.future;
+        return const [];
+      },
+    );
+
+    await pressShortcut(
+      tester,
+      shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)!,
+    );
+    await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
+    await tester.pumpAndSettle();
+    expect(openNoteBody(tester), 'Private note');
+
+    await pressShortcut(
+      tester,
+      shortcuts.bindingFor(ShortcutAction.insertImage)!,
+      settle: false,
+    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(openNoteBody(tester), 'Private note');
+
+    picker.complete();
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(NoteRow, 'Private note'), findsNothing);
+  });
+
+  testWidgets('settings does not name a hidden startup note', (tester) async {
+    await notes.load();
+    final private = notes.create(body: 'Private startup note');
+    notes.hide(private.id);
+    prefs.load();
+    prefs.defaultNoteId = private.id;
+    shortcuts.load();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: SettingsDialog(
+          layoutPrefs: prefs,
+          shortcuts: shortcuts,
+          rates: rates,
+          notes: notes,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final setting = find.byKey(const ValueKey('default-note-setting'));
+    expect(
+      find.descendant(of: setting, matching: find.text('Last opened note')),
+      findsOneWidget,
+    );
+    expect(find.text('Private startup note'), findsNothing);
+  });
+
+  testWidgets('a note is not hidden when credential setup is canceled', (
+    tester,
+  ) async {
+    await notes.load();
+    final note = notes.create(body: 'Keep this visible');
+    final gate = _HiddenGate(allowConfigure: false);
+    await pumpApp(tester, hiddenNotesGate: gate);
+
+    await openNoteActions(tester, note.id);
+    await tester.tap(find.byKey(ValueKey('hide-note-${note.id}')));
+    await tester.pumpAndSettle();
+
+    expect(gate.configureCalls, 1);
+    expect(notes.hiddenNotes, isEmpty);
+    expect(notes.notes.single.id, note.id);
+  });
+
+  testWidgets('phone note actions open as one labeled bottom sheet', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await notes.load();
+    final note = notes.create(body: 'Mobile actions');
+    await pumpApp(tester, size: const Size(390, 844));
+    await showNotesList(tester);
+
+    expect(find.byKey(ValueKey('pin-note-${note.id}')), findsNothing);
+    expect(find.byKey(ValueKey('archive-note-${note.id}')), findsNothing);
+    expect(find.byKey(ValueKey('hide-note-${note.id}')), findsNothing);
+
+    await openNoteActions(tester, note.id);
+
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.text('Pin note'), findsOneWidget);
+    expect(find.text('Archive note'), findsOneWidget);
+    expect(find.text('Move to Hidden Notes'), findsOneWidget);
+
+    await tester.tap(find.byKey(ValueKey('pin-note-${note.id}')));
+    await tester.pumpAndSettle();
+    expect(notes.isPinned(note.id), isTrue);
+  });
+
+  testWidgets('a failed unlock leaves Hidden Notes closed', (tester) async {
+    await notes.load();
+    final note = notes.create(body: 'Still private');
+    notes.hide(note.id);
+    final gate = _HiddenGate(allowUnlock: false);
+    await pumpApp(tester, hiddenNotesGate: gate);
+
+    await pressShortcut(
+      tester,
+      shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)!,
+    );
+    await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
+    await tester.pumpAndSettle();
+
+    expect(gate.unlockCalls, 1);
+    expect(find.widgetWithText(NoteRow, 'Still private'), findsNothing);
+    expect(find.text('Hidden Notes is empty'), findsNothing);
+  });
+
+  testWidgets('a phone reveals Hidden Notes by pulling down below Search', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await notes.load();
+    for (var index = 0; index < 30; index++) {
+      notes.create(body: 'Note $index');
+    }
+    final gate = _HiddenGate();
+    await pumpApp(tester, size: const Size(390, 844), hiddenNotesGate: gate);
+    await showNotesList(tester);
+
+    final drawerList = find.descendant(
+      of: find.byType(Drawer),
+      matching: find.byType(CustomScrollView),
+    );
+    expect(drawerList, findsOneWidget);
+    final hidden = find.byKey(const ValueKey('sidebar-hidden-notes'));
+    expect(hidden.hitTestable(), findsNothing);
+
+    await tester.drag(drawerList, Offset(0, NoteFooter.height + 20));
+    await tester.pumpAndSettle();
+
+    expect(hidden.hitTestable(), findsOneWidget);
+    expect(
+      tester.getTopLeft(hidden).dy,
+      greaterThanOrEqualTo(
+        tester
+            .getBottomLeft(find.byKey(const ValueKey('sidebar-search-field')))
+            .dy,
+      ),
+    );
+    await tester.tap(hidden);
+    await tester.pumpAndSettle();
+
+    expect(gate.unlockCalls, 1);
+    expect(find.text('Hidden Notes is empty'), findsOneWidget);
+
+    // A new app session starts at the notes again, never at the revealed
+    // pull-down position from the previous one.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    rates = RatesRepository(store);
+    await pumpApp(tester, size: const Size(390, 844), hiddenNotesGate: gate);
+    await showNotesList(tester);
+    expect(
+      find.byKey(const ValueKey('sidebar-hidden-notes')).hitTestable(),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a phone explains how to find a note after hiding it', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await notes.load();
+    final private = notes.create(body: 'Only private note');
+    final gate = _HiddenGate();
+    await pumpApp(tester, size: const Size(390, 844), hiddenNotesGate: gate);
+    await showNotesList(tester);
+
+    await openNoteActions(tester, private.id);
+    await tester.tap(find.byKey(ValueKey('hide-note-${private.id}')));
+    await tester.pumpAndSettle();
+
+    expect(gate.configureCalls, 1);
+    expect(notes.notes.map((note) => note.id), isNot(contains(private.id)));
+    expect(notes.hiddenNotes.single.id, private.id);
+    expect(
+      find.text(
+        'Note moved to Hidden Notes. Pull down below Search to find it.',
+      ),
+      findsOneWidget,
+    );
+
+    final drawerList = find.descendant(
+      of: find.byType(Drawer),
+      matching: find.byType(CustomScrollView),
+    );
+    expect(drawerList, findsOneWidget);
+    final hidden = find.byKey(const ValueKey('sidebar-hidden-notes'));
+    expect(hidden.hitTestable(), findsNothing);
+
+    await tester.drag(drawerList, Offset(0, NoteFooter.height + 20));
+    await tester.pumpAndSettle();
+    expect(hidden.hitTestable(), findsOneWidget);
+    expect(
+      find.descendant(of: hidden, matching: find.text('1')),
+      findsOneWidget,
+    );
+
+    await tester.tap(hidden);
+    await tester.pumpAndSettle();
+    expect(gate.unlockCalls, 1);
+    expect(find.widgetWithText(NoteRow, 'Only private note'), findsOneWidget);
+  });
+
+  testWidgets('keeps all note actions reachable at the narrowest sidebar', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    final note = notes.create(
+      body: 'A title long enough that a narrow list has to cut it short',
+    );
+    await tester.pumpAndSettle();
+
+    prefs.sidebarWidth = LayoutPrefs.minSidebarWidth;
+    await tester.pumpAndSettle();
+
+    // Open it as a reader would, then use the one compact menu for both
+    // actions without sacrificing the title to a strip of glyphs.
+    await tester.tap(find.byType(NoteRow));
+    await tester.pumpAndSettle();
+
+    await openNoteActions(tester, note.id);
+    await tester.tap(find.byKey(ValueKey('pin-note-${note.id}')));
+    await tester.pumpAndSettle();
+    expect(notes.isPinned(note.id), isTrue);
+
+    await openNoteActions(tester, note.id);
+    await tester.tap(find.byKey(ValueKey('archive-note-${note.id}')));
+    await tester.pumpAndSettle();
+    expect(notes.archivedNotes.single.id, note.id);
+  });
+
+  group('the archive shortcut', () {
+    /// Three notes with the newest open and the caret in it, which is where
+    /// "Ready to type on open" leaves it.
+    Future<void> openNote(WidgetTester tester, TargetPlatform platform) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester);
+      for (final body in ['First', 'Second', 'Third']) {
+        notes.create();
+        notes.updateBody(notes.notes.first.id, body);
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'Third'));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> press(
+      WidgetTester tester,
+      LogicalKeyboardKey modifier,
+      LogicalKeyboardKey key,
+    ) async {
+      await tester.sendKeyDownEvent(modifier);
+      await tester.sendKeyEvent(key);
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('is Cmd+Delete on a Mac, and answers with the caret in the '
+        'note', (tester) async {
+      await openNote(tester, TargetPlatform.macOS);
+      expect(
+        shortcuts.bindingFor(ShortcutAction.deleteNote)!.displayLabel,
+        'Cmd + Delete',
+      );
+
+      await press(
+        tester,
+        LogicalKeyboardKey.metaLeft,
+        LogicalKeyboardKey.backspace,
+      );
+
+      expect(notes.archivedNotes.single.title, 'Third');
+      expect(notes.notes.map((note) => note.title), ['Second', 'First']);
+    });
+
+    testWidgets('is Shift+Delete on Windows', (tester) async {
+      await openNote(tester, TargetPlatform.windows);
+      expect(
+        shortcuts.bindingFor(ShortcutAction.deleteNote)!.displayLabel,
+        'Shift + Delete',
+      );
+
+      await press(
+        tester,
+        LogicalKeyboardKey.shiftLeft,
+        LogicalKeyboardKey.delete,
+      );
+
+      expect(notes.archivedNotes.single.title, 'Third');
+    });
+
+    testWidgets('deletes for good inside the archive, once the question is '
+        'answered', (tester) async {
+      await openNote(tester, TargetPlatform.macOS);
+      for (final note in [...notes.notes]) {
+        notes.archive(note.id);
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'Third'));
+      await tester.pumpAndSettle();
+
+      await press(
+        tester,
+        LogicalKeyboardKey.metaLeft,
+        LogicalKeyboardKey.backspace,
+      );
+
+      // Nothing has gone, and nothing has been archived twice either.
+      expect(notes.archivedNotes, hasLength(3));
+      expect(find.text('Delete note?'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+      expect(
+        notes.archivedNotes.map((note) => note.title),
+        unorderedEquals(['First', 'Second']),
+      );
+      expect(notes.tombstones, hasLength(1));
+    });
+
+    testWidgets('names itself in the row menu', (tester) async {
+      await openNote(tester, TargetPlatform.macOS);
+
+      await tester.longPress(find.widgetWithText(NoteRow, 'Third'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Archive note'), findsOneWidget);
+      expect(find.text('Cmd + Delete'), findsOneWidget);
+    });
+  });
+
+  group('the Delete key in the notes list', () {
+    /// The app with the notes list holding the keyboard.
+    ///
+    /// "Ready to type on open" is what decides where the keyboard goes when a
+    /// note is opened: on, and opening one puts the caret in it, which is
+    /// where a Delete belongs to the text. Off, and the list keeps it — which
+    /// is the state these are about.
+    Future<void> listHasTheKeyboard(WidgetTester tester) async {
+      store.data['readyToTypeOnOpen.v1'] = false;
+      await pumpApp(tester);
+    }
+
+    /// Three notes, newest first, with the list showing them.
+    Future<void> threeNotes(WidgetTester tester) async {
+      await listHasTheKeyboard(tester);
+      for (final body in ['First', 'Second', 'Third']) {
+        notes.create();
+        notes.updateBody(notes.notes.first.id, body);
+      }
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('archives the note that was clicked, and the next one after '
+        'it', (tester) async {
+      await threeNotes(tester);
+
+      await tester.tap(find.widgetWithText(NoteRow, 'Third'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pumpAndSettle();
+
+      expect(notes.archivedNotes.single.title, 'Third');
+      expect(find.text('Note moved to Archived Notes'), findsOneWidget);
+
+      // The list keeps the keyboard: archiving the open note hands the caret
+      // to the note that takes its place, and a second press must still be
+      // the list's and not that editor's.
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pumpAndSettle();
+      expect(
+        notes.archivedNotes.map((note) => note.title),
+        unorderedEquals(['Third', 'Second']),
+      );
+      expect(notes.notes.single.title, 'First');
+    });
+
+    testWidgets('answers Cmd+Delete, the way macOS files from a list', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await threeNotes(tester);
+
+      await tester.tap(find.widgetWithText(NoteRow, 'Third'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+
+      expect(notes.archivedNotes.single.title, 'Third');
+    });
+
+    testWidgets('leaves the note alone once the editor has the keyboard', (
+      tester,
+    ) async {
+      await threeNotes(tester);
+
+      // The list first, so this is the press that has to go back to being a
+      // character: clicking into the note is what hands the keyboard over.
+      await tester.tap(find.widgetWithText(NoteRow, 'Third'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NoteEditor),
+          matching: find.byType(EditableText),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pumpAndSettle();
+
+      expect(notes.archivedNotes, isEmpty);
+      expect(notes.notes.first.title, 'Third');
+    });
+
+    testWidgets('leaves the note alone while the search field has it', (
+      tester,
+    ) async {
+      await threeNotes(tester);
+      await tester.tap(find.widgetWithText(NoteRow, 'Third'));
+      await tester.pumpAndSettle();
+
+      final search = find.byKey(const ValueKey('sidebar-search-field'));
+      await tester.tap(search);
+      await tester.enterText(search, 'Third');
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pumpAndSettle();
+
+      expect(notes.archivedNotes, isEmpty);
+      expect(notes.notes, hasLength(3));
+    });
+
+    testWidgets('stops when the list has nothing left to archive', (
+      tester,
+    ) async {
+      await listHasTheKeyboard(tester);
+      notes.create(body: 'Only');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(NoteRow, 'Only'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pumpAndSettle();
+      expect(notes.notes, isEmpty);
+
+      // The list still holds the keyboard, and now has nothing to answer
+      // with. Pressing again must be a press that does nothing.
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pumpAndSettle();
+      expect(notes.notes, isEmpty);
+      expect(notes.archivedNotes, hasLength(1));
+    });
+
+    testWidgets('asks before it throws an archived note away for good', (
+      tester,
+    ) async {
+      await threeNotes(tester);
+      for (final note in [...notes.notes]) {
+        notes.archive(note.id);
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(NoteRow, 'Third'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pumpAndSettle();
+
+      expect(notes.archivedNotes, hasLength(3));
+      expect(find.text('Delete note?'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+      expect(
+        notes.archivedNotes.map((note) => note.title),
+        unorderedEquals(['First', 'Second']),
+      );
+      expect(notes.tombstones, hasLength(1));
+    });
   });
 
   group('emptying the archive', () {
@@ -1887,7 +3072,7 @@ void main() {
       final entry = find.byKey(const ValueKey('sidebar-archive'));
       expect(entry, findsOneWidget);
       expect(
-        find.descendant(of: entry, matching: find.byIcon(archiveIcon)),
+        find.descendant(of: entry, matching: findKapyIcon(archiveIcon)),
         findsOneWidget,
       );
     });
@@ -1902,6 +3087,7 @@ void main() {
       await tester.tap(find.widgetWithText(NoteRow, 'Third'));
       await tester.pumpAndSettle();
 
+      await openNoteActions(tester, third.id);
       await tester.tap(find.byKey(ValueKey('delete-note-${third.id}')));
       await tester.pumpAndSettle();
 
@@ -1920,6 +3106,7 @@ void main() {
 
     testWidgets('backing out of the question keeps the note', (tester) async {
       final archived = await openArchive(tester);
+      await openNoteActions(tester, archived.first.id);
       await tester.tap(
         find.byKey(ValueKey('delete-note-${archived.first.id}')),
       );
@@ -1936,7 +3123,7 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('archive-delete-all')));
       await tester.pumpAndSettle();
-      expect(find.text('Empty the Archive?'), findsOneWidget);
+      expect(find.text('Empty Archived Notes?'), findsOneWidget);
       await confirm(tester);
 
       expect(notes.archivedNotes, isEmpty);
@@ -2044,7 +3231,7 @@ void main() {
       final note = notes.notes.single;
       expect(find.byKey(ValueKey('delete-note-${note.id}')), findsNothing);
       expect(find.byKey(const ValueKey('archive-delete-all')), findsNothing);
-      expect(find.byKey(ValueKey('archive-note-${note.id}')), findsOneWidget);
+      expect(find.byKey(ValueKey('note-actions-${note.id}')), findsOneWidget);
     });
   });
 
@@ -2075,9 +3262,46 @@ void main() {
       );
     });
 
+    testWidgets(
+      'Windows keeps the results shortcut at its minimum client width',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        store.data['notes.v1'] = [
+          {
+            'id': 'windows-minimum',
+            'body': 'Minimum window\n6 * 7',
+            'createdAt': 1000,
+            'updatedAt': 1000,
+          },
+        ];
+
+        // The Windows frame consumes a few pixels of the native minimum
+        // width, so Flutter can receive a client area just below 520 px.
+        await pumpApp(
+          tester,
+          size: Size(LayoutPrefs.minimumWindowSize.width - 12, 630),
+        );
+
+        expect(find.byType(GutterDivider), findsOneWidget);
+        await pressShortcut(
+          tester,
+          shortcuts.bindingFor(ShortcutAction.toggleResults)!,
+        );
+
+        expect(prefs.resultsVisible, isFalse);
+        expect(
+          find.byKey(const ValueKey('results-restore-handle')),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('keeps the results divider out of phone-sized layouts', (
       tester,
     ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       store.data['notes.v1'] = [
         {
           'id': 'phone-compact',
@@ -2096,6 +3320,8 @@ void main() {
     testWidgets('gives prose-only phone notes the full writing width', (
       tester,
     ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       store.data['notes.v1'] = [
         {
           'id': 'phone-prose',
@@ -2345,7 +3571,7 @@ void main() {
       expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
       expect(find.byType(NoteRow), findsNothing);
 
-      await tester.tap(find.byTooltip('Show notes'));
+      await tester.tap(notesToggleWithLabel('Show notes'));
       await tester.pumpAndSettle();
 
       expect(find.byType(AppLogo), findsNWidgets(2));
@@ -2366,6 +3592,88 @@ void main() {
         field.controller!.text.length,
       );
       expect(field.focusNode!.hasFocus, isTrue);
+    });
+
+    testWidgets('archive and hidden folders never raise a keyboard in drawer', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await notes.load();
+      notes.create(body: 'Visible note');
+      final archived = notes.create(body: 'Archived note');
+      notes.archive(archived.id);
+      final hidden = notes.create(body: 'Hidden note');
+      notes.hide(hidden.id);
+
+      await pumpApp(
+        tester,
+        size: const Size(420, 800),
+        hiddenNotesGate: _HiddenGate(),
+      );
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      await showNotesList(tester);
+      expect(tester.testTextInput.isVisible, isFalse);
+      tester.testTextInput.log.clear();
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Archived note'), findsOneWidget);
+      expect(openNoteField(tester).focusNode!.hasFocus, isFalse);
+      expect(tester.testTextInput.isVisible, isFalse);
+      expect(
+        tester.testTextInput.log.map((call) => call.method),
+        isNot(contains('TextInput.show')),
+      );
+
+      tester.testTextInput.log.clear();
+      await tester.tap(find.byKey(const ValueKey('sidebar-all-notes')));
+      await tester.pumpAndSettle();
+      final drawerList = find.descendant(
+        of: find.byType(Drawer),
+        matching: find.byType(Scrollable),
+      );
+      await tester.drag(drawerList.last, const Offset(0, 200));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('sidebar-hidden-notes')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Hidden note'), findsOneWidget);
+      expect(openNoteField(tester).focusNode!.hasFocus, isFalse);
+      expect(tester.testTextInput.isVisible, isFalse);
+      expect(
+        tester.testTextInput.log.map((call) => call.method),
+        isNot(contains('TextInput.show')),
+      );
+    });
+
+    testWidgets('opening settings directly lowers the mobile keyboard', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'mobile-settings',
+          'body': 'A focused note',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(420, 800));
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      await tester.tap(find.byTooltip('Share note'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Settings'), findsWidgets);
+      expect(tester.testTextInput.isVisible, isFalse);
+      expect(openNoteField(tester).focusNode!.hasFocus, isFalse);
     });
 
     testWidgets(
@@ -2544,7 +3852,7 @@ void main() {
 
         expect(find.byType(NoteToolbar), findsOneWidget);
         expect(
-          tester.getTopLeft(find.byTooltip('Show notes')).dx,
+          tester.getTopLeft(notesToggleWithLabel('Show notes')).dx,
           greaterThanOrEqualTo(WindowChrome.trafficLightsWidth),
           reason: 'the compact toolbar overlapped the macOS traffic lights',
         );
@@ -2562,7 +3870,7 @@ void main() {
       final toolbar = find.byType(NoteToolbar);
       final wordmark = find.byKey(const ValueKey('toolbar-app-wordmark'));
       final add = find.byTooltip('New note  ⌘N');
-      final menu = find.byTooltip('Hide notes');
+      final menu = notesToggleWithLabel('Hide notes');
 
       // One title bar spans both panes, so native controls sit over an inert
       // drag region instead of forcing a second, taller sidebar header.
@@ -2583,7 +3891,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.getTopLeft(toolbar).dx, 0);
-      expect(find.byTooltip('Show notes'), findsOneWidget);
+      expect(notesToggleWithLabel('Show notes'), findsOneWidget);
     }, skip: !WindowChrome.overlaysContent);
 
     testWidgets('starts both panes below one seamless macOS title bar', (
@@ -2636,7 +3944,7 @@ void main() {
       // Toolbar: contents below the status bar, background still behind it.
       expect(tester.getTopLeft(find.byType(NoteToolbar)).dy, 0);
       expect(
-        tester.getTopLeft(find.byIcon(Icons.add_rounded).last).dy,
+        tester.getTopLeft(findKapyIcon(KapyIcons.addRounded).last).dy,
         greaterThanOrEqualTo(safeTop),
       );
 

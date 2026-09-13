@@ -144,7 +144,21 @@ jobs:
           cache: true
 
       - run: flutter pub get
-      - run: flutter build windows --release
+
+      # Obfuscated, symbols split out — the same flags release.sh passes on
+      # every other platform; see its header. The symbols are what makes a
+      # stack trace from this build readable, so they ride along as an
+      # artifact and publish attaches them to the release.
+      - run: flutter build windows --release --obfuscate --split-debug-info=build/symbols/windows
+
+      - name: Bundle the Dart symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The installer step below creates build/release; this runs first.
+          mkdir -p build/release
+          cd build/symbols
+          7z a -tzip "../release/KapyNotes-${{ needs.verify.outputs.version }}-symbols-windows.zip" windows >/dev/null
 
       - name: Build installer
         run: |
@@ -190,7 +204,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: build/release/KapyNotes-${{ needs.verify.outputs.version }}-setup.exe
+          path: |
+            build/release/KapyNotes-${{ needs.verify.outputs.version }}-setup.exe
+            build/release/KapyNotes-${{ needs.verify.outputs.version }}-symbols-windows.zip
           if-no-files-found: error
 
   macos:
@@ -282,10 +298,22 @@ jobs:
           security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
           rm -f "$RUNNER_TEMP/asc-key.p8"
 
+      # release.sh leaves the Dart symbols under build/release/symbols/
+      # <version>/macos; zipped here so the publish job can attach them.
+      - name: Bundle the Dart symbols
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd "build/release/symbols/$VERSION"
+          zip -qr "../../KapyNotes-$VERSION-symbols-macos.zip" macos
+
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: build/release/KapyNotes-${{ needs.verify.outputs.version }}.dmg
+          path: |
+            build/release/KapyNotes-${{ needs.verify.outputs.version }}.dmg
+            build/release/KapyNotes-${{ needs.verify.outputs.version }}-symbols-macos.zip
           if-no-files-found: error
 
   publish:
@@ -420,12 +448,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
+          # The symbol bundles are attached here and nowhere else: they are
+          # for reading a crash from this build (`flutter symbolize`), not for
+          # users, so they stay off R2 and off the site.
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Kapy Notes $VERSION" \
             --generate-notes \
             "dist/KapyNotes-$VERSION.dmg" \
-            "dist/KapyNotes-$VERSION-setup.exe"
+            "dist/KapyNotes-$VERSION-setup.exe" \
+            "dist/KapyNotes-$VERSION-symbols-macos.zip" \
+            "dist/KapyNotes-$VERSION-symbols-windows.zip"
 
       # The site names this version in two load-bearing places: the download
       # links, and the changelog anchor the update feeds just pointed every

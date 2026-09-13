@@ -21,11 +21,7 @@ List<NoteAttachmentRef> edit(
   String before,
   String after,
   List<NoteAttachmentRef> refs,
-) => rebaseNoteAttachments(
-  oldText: before,
-  newText: after,
-  attachments: refs,
-);
+) => rebaseNoteAttachments(oldText: before, newText: after, attachments: refs);
 
 /// Backspace at [caret]: the character *before* it goes.
 List<NoteAttachmentRef> backspaceAt(
@@ -135,7 +131,10 @@ void main() {
       final refs = rebaseNoteAttachments(
         oldText: '$anchor$anchor',
         newText: anchor,
-        attachments: [ref(0, hash: 'one'), ref(1, hash: 'two')],
+        attachments: [
+          ref(0, hash: 'one'),
+          ref(1, hash: 'two'),
+        ],
         selectionStart: 0,
         selectionEnd: 0,
       );
@@ -144,9 +143,14 @@ void main() {
 
     test('a selection replaced across two images drops both', () {
       final refs = rebaseNoteAttachments(
-        oldText: 'a$anchor$anchor' 'b',
+        oldText:
+            'a$anchor$anchor'
+            'b',
         newText: 'aXb',
-        attachments: [ref(1, hash: 'one'), ref(2, hash: 'two')],
+        attachments: [
+          ref(1, hash: 'one'),
+          ref(2, hash: 'two'),
+        ],
         selectionStart: 1,
         selectionEnd: 3,
       );
@@ -258,13 +262,26 @@ void main() {
   });
 
   group('kinds', () {
-    NoteVoiceRef voice(int offset, {VoiceTranscript? transcript}) => NoteVoiceRef(
+    NoteVoiceRef voice(int offset, {VoiceTranscript? transcript}) =>
+        NoteVoiceRef(
+          offset: offset,
+          hash: 'v',
+          key: Uint8List(32),
+          bytes: 2048,
+          durationMs: 5000,
+          transcript: transcript,
+        );
+
+    NoteVideoRef video(int offset) => NoteVideoRef(
       offset: offset,
-      hash: 'v',
+      hash: 'movie',
       key: Uint8List(32),
-      bytes: 2048,
-      durationMs: 5000,
-      transcript: transcript,
+      mime: 'video/quicktime',
+      bytes: 4096,
+      width: 1920,
+      height: 1080,
+      durationMs: 95000,
+      widthFactor: 0.6,
     );
 
     test('a voice ref round-trips', () {
@@ -291,6 +308,27 @@ void main() {
       expect(NoteAttachmentRef.fromJson(json), isA<NoteImageRef>());
     });
 
+    test('a video ref round-trips its layout and playback metadata', () {
+      final original = video(3);
+      final back = NoteAttachmentRef.fromJson(original.toJson());
+
+      expect(back, isA<NoteVideoRef>());
+      final read = back! as NoteVideoRef;
+      expect(read.offset, 3);
+      expect(read.extension, '.mov');
+      expect(read.aspectRatio, closeTo(16 / 9, 0.001));
+      expect(read.duration, const Duration(seconds: 95));
+      expect(read.widthFactor, 0.6);
+      expect(read, original);
+    });
+
+    test('a video with missing playback metadata is refused', () {
+      for (final field in ['width', 'height', 'durationMs']) {
+        final json = video(0).toJson()..remove(field);
+        expect(NoteAttachmentRef.fromJson(json), isNull);
+      }
+    });
+
     test('a voice ref with no duration is refused', () {
       final json = voice(0).toJson()..remove('durationMs');
       expect(NoteAttachmentRef.fromJson(json), isNull);
@@ -306,7 +344,10 @@ void main() {
     test('peaks survive only at exactly 100 bytes', () {
       final json = voice(0).toJson();
       json['peaks'] = base64.encode(Uint8List(100));
-      expect((NoteAttachmentRef.fromJson(json)! as NoteVoiceRef).peaks, hasLength(100));
+      expect(
+        (NoteAttachmentRef.fromJson(json)! as NoteVoiceRef).peaks,
+        hasLength(100),
+      );
       json['peaks'] = base64.encode(Uint8List(64));
       expect((NoteAttachmentRef.fromJson(json)! as NoteVoiceRef).peaks, isNull);
     });
@@ -402,9 +443,11 @@ void main() {
       final large = timeComparing(100000).inMicroseconds;
       // Content comparison would be five orders of magnitude apart here, so a
       // generous bound still catches the only regression that matters.
-      expect(large / (small == 0 ? 1 : small), lessThan(5),
-          reason: 'small=${small}us large=${large}us');
+      expect(
+        large / (small == 0 ? 1 : small),
+        lessThan(5),
+        reason: 'small=${small}us large=${large}us',
+      );
     });
   });
 }
-

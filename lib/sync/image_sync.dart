@@ -41,6 +41,21 @@ class ImageSync {
   /// at the same picture cost one download rather than ten.
   final Map<String, Future<Uint8List?>> _inFlight = {};
 
+  /// One listenable per local blob that has appeared in the editor. A media
+  /// tile listens only to its own hash, so upload chunks do not rebuild the
+  /// note around it.
+  final Map<String, ValueNotifier<double?>> _uploadProgress = {};
+
+  ValueListenable<double?> progressFor(String hash) =>
+      _uploadProgress.putIfAbsent(hash, () => ValueNotifier<double?>(null));
+
+  void _setProgress(String hash, double? value) {
+    _uploadProgress
+            .putIfAbsent(hash, () => ValueNotifier<double?>(null))
+            .value =
+        value;
+  }
+
   /// Uploads whatever [note] holds that the server does not.
   ///
   /// Returns the note with server ids filled in, or the same note when there
@@ -71,11 +86,24 @@ class ImageSync {
     Note note,
     NoteAttachmentRef ref,
   ) async {
+    // The preview is visible, but compression has not produced the durable
+    // object yet. Uploading this temporary source would race the replacement.
+    if (ref case NoteImageRef(isPreparing: true)) return null;
+
     var current = ref;
     try {
       var id = current.attachmentId;
       if (id == null) {
-        id = await _put(note, current.hash, current.key);
+        _setProgress(current.hash, 0);
+        final mainShare = current is NoteImageRef && current.thumbHash != null
+            ? 0.9
+            : 1.0;
+        id = await _put(
+          note,
+          current.hash,
+          current.key,
+          onProgress: (value) => _setProgress(current.hash, value * mainShare),
+        );
         if (id == null) return null;
         current = current.copyWith(attachmentId: id);
       }
@@ -85,17 +113,27 @@ class ImageSync {
       if (current is NoteImageRef) {
         var thumbId = current.thumbId;
         if (current.thumbHash != null && thumbId == null) {
-          thumbId = await _put(note, current.thumbHash!, current.key);
+          _setProgress(current.hash, 0.9);
+          thumbId = await _put(
+            note,
+            current.thumbHash!,
+            current.key,
+            onProgress: (value) =>
+                _setProgress(current.hash, 0.9 + value * 0.1),
+          );
           if (thumbId == null) return current;
         }
+        _setProgress(current.hash, 1);
         return current.copyWith(attachmentId: id, thumbId: thumbId);
       }
+      _setProgress(current.hash, 1);
       return current;
     } catch (error) {
       // Quota refusals land here too, and are the ordinary reason an upload
       // does not happen. Preserve whichever object already completed so a
       // thumbnail interruption never retransmits and bills the full image.
       debugPrint('KapyNotes: could not upload image ${current.hash}: $error');
+      _setProgress(current.hash, null);
       return current.attachmentId == null ? null : current;
     }
   }
@@ -103,7 +141,12 @@ class ImageSync {
   /// Seals one blob under its file key and stores it. Null when the bytes are
   /// not on this device, which happens on a device that pulled the note but
   /// never had the picture.
-  Future<String?> _put(Note note, String hash, Uint8List key) async {
+  Future<String?> _put(
+    Note note,
+    String hash,
+    Uint8List key, {
+    void Function(double progress)? onProgress,
+  }) async {
     final plaintext = await _store.read(hash);
     if (plaintext == null) return null;
 
@@ -114,7 +157,7 @@ class ImageSync {
       spaceId: note.spaceId,
       bytes: body.length,
     );
-    await _api.putBlob(slot.uploadUrl, body);
+    await _api.putBlob(slot.uploadUrl, body, onProgress: onProgress);
     await _api.completeAttachment(slot.id);
     return slot.id;
   }
@@ -202,6 +245,7 @@ class ImageSync {
       for (final ref in note.attachments) {
         if (ref.hash != hash) continue;
         if (ref is NoteVoiceRef) return NoteVoiceRef.voiceExtension;
+        if (ref is NoteVideoRef) return ref.extension;
         // Images keep the empty extension they have always had, so nothing
         // already on disk has to be migrated.
         return '';
@@ -225,5 +269,12 @@ class ImageSync {
       }
     }
     return null;
+  }
+
+  void dispose() {
+    for (final notifier in _uploadProgress.values) {
+      notifier.dispose();
+    }
+    _uploadProgress.clear();
   }
 }

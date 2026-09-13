@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:ui' show Locale, PlatformDispatcher, Size;
+import 'dart:ui' show Locale, Offset, PlatformDispatcher, Rect, Size;
 
 import 'package:flutter/foundation.dart';
 
@@ -80,7 +80,7 @@ DigitGrouping _autoGrouping(Locale locale, String? region) {
 /// handful of display options the settings dialog exposes, and how the app
 /// behaves once its window is closed.
 class LayoutPrefs extends ChangeNotifier {
-  static const Size defaultWindowSize = Size(600, 630);
+  static const Size defaultWindowSize = Size(600, 720);
   static const Size minimumWindowSize = Size(520, 360);
 
   static const double minGutterWidth = 72;
@@ -94,11 +94,15 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _gutterKey = 'gutter.v1';
   static const String _resultsVisibleKey = 'resultsVisible.v1';
   static const String _sidebarKey = 'sidebar.v1';
+  static const String _hiddenFolderVisibleKey = 'hiddenFolderVisible.v1';
   static const String _windowWidthKey = 'windowWidth.v1';
   static const String _windowHeightKey = 'windowHeight.v1';
+  static const String _windowXKey = 'windowX.v1';
+  static const String _windowYKey = 'windowY.v1';
   static const String _readyToTypeOnOpenKey = 'readyToTypeOnOpen.v1';
   static const String _dailySeparatorsKey = 'dailySeparators.v1';
   static const String _spellCheckKey = 'spellCheck.v1';
+  static const String _markdownKey = 'markdownInNotes.v1';
   static const String _numberSystemKey = 'numberSystem.v1';
   static const String _writingFontKey = 'writingFont.v1';
   static const String _transparencyKey = 'transparencyEnabled.v1';
@@ -132,16 +136,19 @@ class LayoutPrefs extends ChangeNotifier {
   bool _resultsVisible = true;
   double _sidebarWidth = defaultSidebarWidth;
   bool _sidebarVisible = false;
+  bool _hiddenFolderVisible = false;
   Size _windowSize = defaultWindowSize;
+  Offset? _windowPosition;
   bool _readyToTypeOnOpen = true;
   bool _dailySeparatorsEnabled = true;
   bool _spellCheckEnabled = true;
+  bool _markdownEnabled = false;
   NumberSystem _numberSystem = NumberSystem.auto;
-  WritingFont _writingFont = WritingFont.handwritten;
+  WritingFont _writingFont = WritingFont.clean;
   final ValueNotifier<AppearanceMode> _appearance = ValueNotifier(
     AppearanceMode.system,
   );
-  PaperStyle _paperStyle = PaperStyle.notepad;
+  PaperStyle _paperStyle = PaperStyle.plain;
   final ValueNotifier<bool> _transparencyEnabled = ValueNotifier(false);
   final ValueNotifier<double> _transparencyAmount = ValueNotifier(
     defaultTransparencyAmount,
@@ -165,10 +172,29 @@ class LayoutPrefs extends ChangeNotifier {
   bool get resultsVisible => _resultsVisible;
   double get sidebarWidth => _sidebarWidth;
   bool get sidebarVisible => _sidebarVisible;
+  bool get hiddenFolderVisible => _hiddenFolderVisible;
   Size get windowSize => _windowSize;
+  Offset? get windowPosition => _windowPosition;
+
+  /// The complete desktop placement once this install has seen a real
+  /// window. A missing position distinguishes a first launch from a window
+  /// deliberately left at `(0, 0)`.
+  Rect? get windowBounds {
+    final position = _windowPosition;
+    return position == null ? null : position & _windowSize;
+  }
+
   bool get readyToTypeOnOpen => _readyToTypeOnOpen;
   bool get dailySeparatorsEnabled => _dailySeparatorsEnabled;
   bool get spellCheckEnabled => _spellCheckEnabled;
+
+  /// Whether notes are written in markdown: `# `, `**`, `- ` and the rest
+  /// drawn as what they mean, and the formatting controls writing them.
+  ///
+  /// Off by default, and a matter of how this device shows and edits notes
+  /// rather than of the notes: nothing is converted either way, so switching
+  /// it back leaves every note exactly as it was written.
+  bool get markdownEnabled => _markdownEnabled;
   WritingFont get writingFont => _writingFont;
 
   /// Light, dark, or whatever the machine is set to.
@@ -276,15 +302,18 @@ class LayoutPrefs extends ChangeNotifier {
     // Every launch begins on the page itself. Sidebar visibility is a window
     // state for this session, not a preference carried into the next one.
     _sidebarVisible = false;
+    _hiddenFolderVisible = _store.read<bool>(_hiddenFolderVisibleKey) ?? false;
     _windowSize = _clampWindowSize(
       Size(
         _readDouble(_windowWidthKey) ?? defaultWindowSize.width,
         _readDouble(_windowHeightKey) ?? defaultWindowSize.height,
       ),
     );
+    _windowPosition = _readWindowPosition();
     _readyToTypeOnOpen = _store.read<bool>(_readyToTypeOnOpenKey) ?? true;
     _dailySeparatorsEnabled = _store.read<bool>(_dailySeparatorsKey) ?? true;
     _spellCheckEnabled = _store.read<bool>(_spellCheckKey) ?? true;
+    _markdownEnabled = _store.read<bool>(_markdownKey) ?? false;
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
     unawaited(_loadRegion());
@@ -293,13 +322,17 @@ class LayoutPrefs extends ChangeNotifier {
       AppearanceMode.values,
       AppearanceMode.system,
     );
-    _paperStyle = _readEnum(_paperKey, PaperStyle.values, PaperStyle.notepad);
+    _paperStyle = _readEnum(_paperKey, PaperStyle.values, PaperStyle.plain);
     _transparencyEnabled.value =
         supportsTransparency && (_store.read<bool>(_transparencyKey) ?? false);
     _transparencyAmount.value =
         (_readDouble(_transparencyAmountKey) ?? defaultTransparencyAmount)
             .clamp(0.0, 1.0);
-    _timeZoneId = AppTimeZones.normalize(_store.read<String>(_timeZoneKey));
+    // As stored, not checked against the zone table: checking parses the
+    // whole IANA database, and this runs in front of the first frame. Every
+    // reader normalizes on use, so an id the table does not know follows the
+    // device there exactly as it would have here.
+    _timeZoneId = _storedTimeZoneId();
     _keepRunningInBackground =
         _store.read<bool>(_keepRunningKey) ?? AppPlatform.isDesktop;
     _loginItemDefaultApplied = _store.read<bool>(_loginItemDefaultKey) ?? false;
@@ -338,9 +371,40 @@ class LayoutPrefs extends ChangeNotifier {
     final clamped = _clampWindowSize(value);
     if (clamped == _windowSize) return;
     _windowSize = clamped;
-    _store.putNow(_windowWidthKey, clamped.width);
+    // Queue both fields before forcing the write, so a single resize becomes
+    // one atomic JSON-file replacement rather than two successive writes.
+    _store.put(_windowWidthKey, clamped.width);
     _store.putNow(_windowHeightKey, clamped.height);
     notifyListeners();
+  }
+
+  /// Remembers the normal desktop window in one operation.
+  ///
+  /// Maximized and full-screen bounds are filtered by [DesktopIntegration]
+  /// before they arrive here. Invalid native values are ignored rather than
+  /// replacing the last placement with something the next launch cannot use.
+  void rememberWindowBounds(Rect value) {
+    if (!value.left.isFinite ||
+        !value.top.isFinite ||
+        !value.width.isFinite ||
+        !value.height.isFinite) {
+      return;
+    }
+
+    final size = _clampWindowSize(value.size);
+    final position = value.topLeft;
+    final sizeChanged = size != _windowSize;
+    if (!sizeChanged && position == _windowPosition) return;
+
+    _windowSize = size;
+    _windowPosition = position;
+    // All four values are in memory before putNow starts the write. This
+    // matters when a resize also moves the top-left corner.
+    _store.put(_windowWidthKey, size.width);
+    _store.put(_windowHeightKey, size.height);
+    _store.put(_windowXKey, position.dx);
+    _store.putNow(_windowYKey, position.dy);
+    if (sizeChanged) notifyListeners();
   }
 
   set dailySeparatorsEnabled(bool value) {
@@ -361,6 +425,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _spellCheckEnabled) return;
     _spellCheckEnabled = value;
     _store.putNow(_spellCheckKey, value);
+    notifyListeners();
+  }
+
+  set markdownEnabled(bool value) {
+    if (value == _markdownEnabled) return;
+    _markdownEnabled = value;
+    _store.putNow(_markdownKey, value);
     notifyListeners();
   }
 
@@ -414,6 +485,11 @@ class LayoutPrefs extends ChangeNotifier {
     _transparencyAmount.value = clamped;
     _store.putNow(_transparencyAmountKey, clamped);
     notifyListeners();
+  }
+
+  String? _storedTimeZoneId() {
+    final id = _store.read<String>(_timeZoneKey)?.trim();
+    return id == null || id.isEmpty ? null : id;
   }
 
   set timeZoneId(String? value) {
@@ -583,6 +659,15 @@ class LayoutPrefs extends ChangeNotifier {
   /// anyone whose hands are on the keyboard.
   void toggleResults() => resultsVisible = !_resultsVisible;
 
+  set hiddenFolderVisible(bool value) {
+    if (value == _hiddenFolderVisible) return;
+    _hiddenFolderVisible = value;
+    _store.putNow(_hiddenFolderVisibleKey, value);
+    notifyListeners();
+  }
+
+  void toggleHiddenFolder() => hiddenFolderVisible = !_hiddenFolderVisible;
+
   void toggleSidebar() {
     _sidebarVisible = !_sidebarVisible;
     notifyListeners();
@@ -612,13 +697,13 @@ class LayoutPrefs extends ChangeNotifier {
     );
   }
 
-  /// New installs open with the paper-like face. Unknown values can come from
+  /// New installs open in the clean system face. Unknown values can come from
   /// a newer app version, so they also fall back to that safe default.
   WritingFont _readWritingFont() {
     final stored = _store.read<String>(_writingFontKey);
     return WritingFont.values.firstWhere(
       (font) => font.name == stored,
-      orElse: () => WritingFont.handwritten,
+      orElse: () => WritingFont.clean,
     );
   }
 
@@ -637,6 +722,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (value is num) return value.toDouble();
     if (value is String) return double.tryParse(value);
     return null;
+  }
+
+  Offset? _readWindowPosition() {
+    final x = _readDouble(_windowXKey);
+    final y = _readDouble(_windowYKey);
+    if (x == null || y == null || !x.isFinite || !y.isFinite) return null;
+    return Offset(x, y);
   }
 
   String? _readNoteId(String key) => _normalizeNoteId(_store.read<String>(key));

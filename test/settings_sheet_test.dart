@@ -1,4 +1,6 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -31,6 +33,7 @@ Future<void> _pumpPhone(
   WidgetTester tester, {
   Size size = const Size(390, 844),
   VoicePrefs? voicePrefs,
+  DesktopIntegration? desktopIntegration,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -49,6 +52,7 @@ Future<void> _pumpPhone(
               rates: RatesRepository(store),
               notes: notes,
               voicePrefs: voicePrefs,
+              desktopIntegration: desktopIntegration,
             ),
             child: const Text('open'),
           ),
@@ -119,7 +123,7 @@ void main() {
 
     // The whole point of the list: none of the panes are on this screen.
     expect(find.text('Daily separators'), findsNothing);
-    expect(find.text('NUMBER FORMAT'), findsNothing);
+    expect(find.text('NUMBERS'), findsNothing);
   });
 
   testWidgets('pushes one category and comes back to the list', (tester) async {
@@ -158,6 +162,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(prefs.dailySeparatorsEnabled, isFalse);
+  });
+
+  testWidgets('markdown in notes is a switch among the writing settings', (
+    tester,
+  ) async {
+    await _pumpPhone(tester);
+    await _openSettings(tester);
+    await _openCategory(tester, 'general');
+
+    final toggle = find.byKey(const ValueKey('markdown-toggle'));
+    await tester.scrollUntilVisible(toggle, 200);
+    expect(
+      find.descendant(of: toggle, matching: find.text('Markdown in notes')),
+      findsOneWidget,
+    );
+    expect(prefs.markdownEnabled, isFalse);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(prefs.markdownEnabled, isTrue);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(prefs.markdownEnabled, isFalse);
   });
 
   testWidgets('the back gesture leaves the category before the sheet', (
@@ -246,32 +274,88 @@ void main() {
     );
   });
 
-  testWidgets('a pointer still gets the rail dialog, however narrow', (
+  testWidgets('narrow Windows settings keeps sections beside their pane', (
     tester,
   ) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
-    // Narrower than the rail breakpoint: what decides the shape is the input,
-    // not the width, so a shrunk desktop window keeps its dialog.
-    await _pumpPhone(tester, size: const Size(560, 720));
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    final nativeCalls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const windowChannel = MethodChannel('window_manager');
+    messenger.setMockMethodCallHandler(windowChannel, (call) async {
+      nativeCalls.add(call);
+      if (call.method == 'getBounds') {
+        return {'x': 200.0, 'y': 80.0, 'width': 520.0, 'height': 720.0};
+      }
+      return true;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(windowChannel, null));
+    final integration = DesktopIntegration(layoutPrefs: prefs);
+    addTearDown(integration.dispose);
+    // Narrower than the old rail breakpoint. Settings on Windows is always a
+    // section rail beside one selected pane, even while the native window is
+    // catching up with the comfortable width requested before it opens.
+    await _pumpPhone(
+      tester,
+      size: Size(LayoutPrefs.minimumWindowSize.width, 720),
+      desktopIntegration: integration,
+    );
     await _openSettings(tester);
 
+    expect(
+      nativeCalls.map((call) => call.method),
+      containsAllInOrder(['getBounds', 'setMinimumSize', 'setBounds']),
+    );
+    expect(
+      (nativeCalls.lastWhere((call) => call.method == 'setBounds').arguments
+          as Map)['width'],
+      680.0,
+      reason: 'the Windows host is widened before the dialog is shown',
+    );
     expect(find.byType(AlertDialog), findsOneWidget);
-    // The dialog shows a pane outright; there is no list to push through.
+    final general = find.byKey(const ValueKey('settings-section-general'));
+    expect(general, findsOneWidget);
     expect(find.text('Daily separators'), findsOneWidget);
+    expect(
+      tester.getCenter(general).dx,
+      lessThan(tester.getCenter(find.text('Daily separators')).dx),
+    );
+    expect(find.text('WRITING FONT'), findsNothing);
     expect(find.byKey(const ValueKey('settings-sheet-done')), findsNothing);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Done'));
+    await tester.pumpAndSettle();
+    expect(
+      (nativeCalls.lastWhere((call) => call.method == 'setBounds').arguments
+          as Map)['width'],
+      520.0,
+      reason: 'closing settings gives the user their narrow window back',
+    );
   });
 
-  testWidgets('voice notes separates the cloud from this device', (
+  testWidgets('voice notes groups recording and summary choices together', (
     tester,
   ) async {
     await _pumpPhone(tester, voicePrefs: VoicePrefs(store)..load());
     await _openSettings(tester);
     await _openCategory(tester, 'voice');
 
-    // Two headings, because where the recording goes is the difference that
-    // matters, not which button transcribes it.
-    expect(find.text('RECORDINGS'), findsOneWidget);
-    expect(find.text('LOCAL'), findsOneWidget);
+    // The two transcription engines are one mutually exclusive choice, so
+    // they are adjacent rather than split across distant sections.
+    expect(find.text('TRANSCRIPTION'), findsOneWidget);
+    expect(find.text('RECORDINGS & SUMMARIES'), findsOneWidget);
+    expect(find.text('RECORDINGS'), findsNothing);
+    expect(find.text('ON THIS DEVICE'), findsNothing);
+    expect(
+      tester
+          .getTopLeft(find.byKey(const ValueKey('cloud-transcription-row')))
+          .dy,
+      lessThan(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('local-transcription-row')))
+            .dy,
+      ),
+    );
 
     // One row per engine, both of them, whether or not this build can offer
     // either: the shelf is where you look to find out.
@@ -297,24 +381,42 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await _openCategory(tester, 'voice');
-    expect(find.text('RECORDINGS'), findsOneWidget);
+    expect(find.text('RECORDINGS & SUMMARIES'), findsOneWidget);
+  });
+
+  testWidgets('general settings no longer offers the welcome note', (
+    tester,
+  ) async {
+    await _pumpPhone(tester, voicePrefs: VoicePrefs(store)..load());
+    await _openSettings(tester);
+    await _openCategory(tester, 'general');
+
+    expect(find.byKey(const ValueKey('open-welcome-note')), findsNothing);
+    expect(find.text('Welcome note'), findsNothing);
   });
 
   testWidgets(
-    'signed out, transcription is a way in rather than a dead switch',
+    'signed out, cloud explains the account and local remains available',
     (tester) async {
       await _pumpPhone(tester, voicePrefs: VoicePrefs(store)..load());
       await _openSettings(tester);
       await _openCategory(tester, 'voice');
 
       // No account is wired up here, which is what signed out looks like.
-      expect(find.byKey(const ValueKey('voice-sign-in-row')), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('voice-transcription-toggle')),
-        findsNothing,
-        reason: 'a switch that cannot move reads as a setting that is off',
+        find.byKey(const ValueKey('cloud-transcription-row')),
+        findsOneWidget,
       );
-      expect(find.text('Sign in to turn recordings into text'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('voice-sign-in-row')),
+        findsNothing,
+        reason: 'the cloud choice is disabled, not a detour out of Voice',
+      );
+      expect(
+        find.text('Sign in first for cloud transcription and summaries'),
+        findsOneWidget,
+      );
+      expect(find.text('Local transcription'), findsOneWidget);
     },
   );
 }

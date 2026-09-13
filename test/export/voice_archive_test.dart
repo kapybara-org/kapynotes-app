@@ -62,16 +62,15 @@ void main() {
   test('the recording is written where a person can play it', () {
     final contents = readExportArchive(build(recording()));
     expect(contents.isReadable, isTrue);
-    expect(
-      contents.images,
-      contains('$exportAttachmentsDirectory/$hash.m4a'),
-    );
+    expect(contents.images, contains('$exportAttachmentsDirectory/$hash.m4a'));
     expect(contents.images.values.single, audio);
   });
 
   test('it is linked as a link, not as a broken image', () {
     // `![]()` on an audio file renders as a broken picture everywhere.
-    final markdown = readExportArchive(build(recording())).markdown.values.single;
+    final markdown = readExportArchive(
+      build(recording()),
+    ).markdown.values.single;
     expect(markdown, contains('](../attachments/$hash.m4a)'));
     expect(markdown, isNot(contains('![](../attachments/')));
     // The placeholder never reaches the file: it is invisible in every editor.
@@ -86,7 +85,9 @@ void main() {
   });
 
   test('and by its length when there is not', () {
-    final markdown = readExportArchive(build(recording())).markdown.values.single;
+    final markdown = readExportArchive(
+      build(recording()),
+    ).markdown.values.single;
     expect(markdown, contains('[Voice note 2:14](../attachments/$hash.m4a)'));
   });
 
@@ -178,7 +179,7 @@ void main() {
     expect(read.note.attachments.map((r) => r.offset), [0, 2]);
   });
 
-  test('the archive says it is schema 2', () {
-    expect(readExportArchive(build(recording())).manifest!.schema, 2);
+  test('the archive uses the current schema', () {
+    expect(readExportArchive(build(recording())).manifest!.schema, 3);
   });
 }

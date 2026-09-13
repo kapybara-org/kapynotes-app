@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FCF6EA</color>
+    <!-- Full-bleed adaptive-icon tile. This matches the source artwork's
+         sampled corner colour, so circular OEM masks never expose a ring. -->
+    <color name="ic_launcher_background">#E07045</color>
     <color name="launch_background">#FAF9F7</color>
     <!-- The widgets wear the same paper and ink as the surface they open
          onto, so a tap looks like the app growing rather than replacing it.

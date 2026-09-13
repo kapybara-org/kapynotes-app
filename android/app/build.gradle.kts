@@ -71,6 +71,21 @@ android {
 
     buildTypes {
         release {
+            // Stated rather than inherited. Flutter's Gradle plugin turns R8
+            // on for a release build by itself, and R8 is what keeps the dex
+            // under four megabytes with CameraX, Media3 and Play Core in it —
+            // but a default is a thing a plugin upgrade can change without a
+            // word, and the build would go on succeeding at twice the size.
+            // The plugin still adds its own keep rules alongside these.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            // Function names for a native crash in the Play console, without
+            // the full debug info of every speech library: FULL puts 220 MB
+            // of symbols in the bundle for a 14 MB download and slows every
+            // upload. Play strips both before delivery either way.
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
             // Falls back to the debug key so `flutter run --release` still
             // works without the keystore. That build is not uploadable, and
             // preflight_android.sh fails rather than let one reach Play.

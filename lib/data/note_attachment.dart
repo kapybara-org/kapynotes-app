@@ -125,6 +125,16 @@ sealed class NoteAttachmentRef {
           bytes: bytes,
           attachmentId: attachmentId,
         );
+      case 'video':
+        return NoteVideoRef._fromJson(
+          raw,
+          offset: offset,
+          hash: hash,
+          key: key,
+          mime: mime,
+          bytes: bytes,
+          attachmentId: attachmentId,
+        );
       default:
         // Everything the shared fields need is here, so the record is
         // well-formed — it is simply newer than this build. Keep it whole.
@@ -145,6 +155,8 @@ sealed class NoteAttachmentRef {
 
 /// An image. Everything attachments could be before voice notes existed.
 final class NoteImageRef extends NoteAttachmentRef {
+  static const Object _keepPreview = Object();
+
   /// Intrinsic size of the stored image, in pixels. Held so the editor can
   /// reserve the right box *before* any bytes are decoded — without it every
   /// note with images would reflow as each one loaded.
@@ -169,6 +181,13 @@ final class NoteImageRef extends NoteAttachmentRef {
   /// of tiles decides the width instead.
   final double widthFactor;
 
+  /// A picker result that is already visible while its storage copy is being
+  /// compressed. Both fields are deliberately local-only: sync waits for the
+  /// prepared ref, and persisted notes never carry a large byte array inside
+  /// their JSON payload.
+  final bool isPreparing;
+  final Uint8List? previewBytes;
+
   const NoteImageRef({
     required super.offset,
     required super.hash,
@@ -181,6 +200,8 @@ final class NoteImageRef extends NoteAttachmentRef {
     this.widthFactor = 1,
     super.attachmentId,
     this.thumbId,
+    this.isPreparing = false,
+    this.previewBytes,
   });
 
   /// Narrower than this and an image stops being a picture and starts being a
@@ -196,7 +217,9 @@ final class NoteImageRef extends NoteAttachmentRef {
   /// object they are meant to fetch.
   @override
   bool get isUploaded =>
-      attachmentId != null && (thumbHash == null || thumbId != null);
+      !isPreparing &&
+      attachmentId != null &&
+      (thumbHash == null || thumbId != null);
 
   static NoteImageRef? _fromJson(
     Map<Object?, Object?> raw, {
@@ -237,6 +260,8 @@ final class NoteImageRef extends NoteAttachmentRef {
     double? widthFactor,
     String? attachmentId,
     String? thumbId,
+    bool? isPreparing,
+    Object? previewBytes = _keepPreview,
   }) => NoteImageRef(
     offset: offset ?? this.offset,
     hash: hash,
@@ -249,6 +274,10 @@ final class NoteImageRef extends NoteAttachmentRef {
     widthFactor: clampImageWidthFactor(widthFactor ?? this.widthFactor),
     attachmentId: attachmentId ?? this.attachmentId,
     thumbId: thumbId ?? this.thumbId,
+    isPreparing: isPreparing ?? this.isPreparing,
+    previewBytes: identical(previewBytes, _keepPreview)
+        ? this.previewBytes
+        : previewBytes as Uint8List?,
   );
 
   @override
@@ -283,7 +312,8 @@ final class NoteImageRef extends NoteAttachmentRef {
       other.thumbHash == thumbHash &&
       other.widthFactor == widthFactor &&
       other.attachmentId == attachmentId &&
-      other.thumbId == thumbId;
+      other.thumbId == thumbId &&
+      other.isPreparing == isPreparing;
 
   @override
   int get hashCode => Object.hash(
@@ -297,6 +327,133 @@ final class NoteImageRef extends NoteAttachmentRef {
     widthFactor,
     attachmentId,
     thumbId,
+    isPreparing,
+  );
+}
+
+/// A video anchored in the note.
+///
+/// Its intrinsic size and duration travel with the ref so the editor can lay
+/// out a stable poster and duration label without opening the media file.
+/// Playback still reads the encrypted attachment bytes only on the device.
+final class NoteVideoRef extends NoteAttachmentRef {
+  final int width;
+  final int height;
+  final int durationMs;
+  final double widthFactor;
+
+  const NoteVideoRef({
+    required super.offset,
+    required super.hash,
+    required super.key,
+    required super.mime,
+    required super.bytes,
+    required this.width,
+    required this.height,
+    required this.durationMs,
+    this.widthFactor = 1,
+    super.attachmentId,
+  });
+
+  double get aspectRatio => height <= 0 || width <= 0 ? 16 / 9 : width / height;
+
+  Duration get duration => Duration(milliseconds: durationMs);
+
+  String get extension => switch (mime) {
+    'video/quicktime' => '.mov',
+    'video/x-m4v' => '.m4v',
+    _ => '.mp4',
+  };
+
+  static NoteVideoRef? _fromJson(
+    Map<Object?, Object?> raw, {
+    required int offset,
+    required String hash,
+    required Uint8List key,
+    required String mime,
+    required int bytes,
+    required String? attachmentId,
+  }) {
+    final width = raw['width'];
+    final height = raw['height'];
+    final durationMs = raw['durationMs'];
+    if (width is! int || width <= 0) return null;
+    if (height is! int || height <= 0) return null;
+    if (durationMs is! int || durationMs <= 0) return null;
+    final widthFactor = raw['widthFactor'];
+    return NoteVideoRef(
+      offset: offset,
+      hash: hash,
+      key: key,
+      mime: mime,
+      bytes: bytes,
+      width: width,
+      height: height,
+      durationMs: durationMs,
+      widthFactor: widthFactor is num
+          ? clampImageWidthFactor(widthFactor.toDouble())
+          : 1,
+      attachmentId: attachmentId,
+    );
+  }
+
+  @override
+  NoteVideoRef copyWith({
+    int? offset,
+    double? widthFactor,
+    String? attachmentId,
+  }) => NoteVideoRef(
+    offset: offset ?? this.offset,
+    hash: hash,
+    key: key,
+    mime: mime,
+    bytes: bytes,
+    width: width,
+    height: height,
+    durationMs: durationMs,
+    widthFactor: clampImageWidthFactor(widthFactor ?? this.widthFactor),
+    attachmentId: attachmentId ?? this.attachmentId,
+  );
+
+  @override
+  Map<String, Object?> toJson() => {
+    'kind': 'video',
+    'offset': offset,
+    'hash': hash,
+    'key': base64.encode(key),
+    'mime': mime,
+    'bytes': bytes,
+    'width': width,
+    'height': height,
+    'durationMs': durationMs,
+    if (widthFactor < 1) 'widthFactor': widthFactor,
+    if (attachmentId != null) 'attachmentId': attachmentId,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is NoteVideoRef &&
+      other.offset == offset &&
+      other.hash == hash &&
+      other.mime == mime &&
+      other.bytes == bytes &&
+      other.width == width &&
+      other.height == height &&
+      other.durationMs == durationMs &&
+      other.widthFactor == widthFactor &&
+      other.attachmentId == attachmentId;
+
+  @override
+  int get hashCode => Object.hash(
+    offset,
+    hash,
+    mime,
+    bytes,
+    width,
+    height,
+    durationMs,
+    widthFactor,
+    attachmentId,
   );
 }
 

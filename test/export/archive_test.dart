@@ -15,6 +15,7 @@ Note _note({
   List<NoteFormatRange> formats = const [],
   DateTime? updatedAt,
   DateTime? archivedAt,
+  DateTime? hiddenAt,
 }) => Note(
   id: id,
   body: body,
@@ -22,6 +23,7 @@ Note _note({
   createdAt: DateTime.utc(2026, 8, 1),
   updatedAt: updatedAt ?? DateTime.utc(2026, 9, 1),
   archivedAt: archivedAt,
+  hiddenAt: hiddenAt,
 );
 
 Uint8List _archiveOf(List<Note> notes) => buildExportArchive(
@@ -141,6 +143,23 @@ void main() {
       expect(
         read.note.archivedAt?.millisecondsSinceEpoch,
         archivedAt.millisecondsSinceEpoch,
+      );
+    });
+
+    test('a hidden note stays hidden through an export', () {
+      final hiddenAt = DateTime.utc(2026, 9, 2, 13, 30);
+      final contents = readExportArchive(
+        _archiveOf([_note(id: 'private', body: 'Private', hiddenAt: hiddenAt)]),
+      );
+
+      final read = noteFromArchive(
+        contents.manifest!.notes.single,
+        contents.markdown,
+      )!;
+
+      expect(
+        read.note.hiddenAt?.millisecondsSinceEpoch,
+        hiddenAt.millisecondsSinceEpoch,
       );
     });
 

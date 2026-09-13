@@ -19,6 +19,13 @@ Two deliberate exceptions:
 - The **DMG filename** has no space, `KapyNotes-1.0.0.dmg`, so the download URL
   needs no `%20`. The volume and the app inside it are both `Kapy Notes`.
 
+Every one of these builds is obfuscated with its Dart symbols split out, so a
+stack trace from a shipped build is unreadable on its own. `release.sh` keeps
+the symbols under `build/release/symbols/<version>/<target>/`; the desktop
+release workflow attaches them to the GitHub release as
+`KapyNotes-<version>-symbols-<target>.zip`. Keep them with the release, and read
+a trace with `flutter symbolize -d <that directory> -i <trace file>`.
+
 ---
 
 ## The Mac DMG

@@ -13,6 +13,8 @@ import 'package:kapy_notes/speech/transcriber.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../kapy_icon_finder.dart';
+
 /// A store that keeps what it is given, in memory.
 class _MemoryStore extends LocalStore {
   _MemoryStore({super.fileName = 'transcript-engine-test.json'});
@@ -54,6 +56,7 @@ Future<void> _openVoicePane(
   WidgetTester tester, {
   required VoicePrefs prefs,
   Transcriber? deviceTranscriber,
+  VoidCallback? onTranscriptionReady,
 }) async {
   tester.view.physicalSize = const Size(1000, 1600);
   tester.view.devicePixelRatio = 1;
@@ -73,6 +76,7 @@ Future<void> _openVoicePane(
               notes: notes,
               voicePrefs: prefs,
               deviceTranscriber: deviceTranscriber,
+              onTranscriptionReady: onTranscriptionReady,
               section: SettingsSection.voice,
             ),
             child: const Text('open'),
@@ -137,8 +141,8 @@ void main() {
     ) async {
       await _openVoicePane(tester, prefs: VoicePrefs(store)..load());
 
-      // The row is always there — the section is where you look to find out
-      // whether this machine can do it — but there is no switch to move.
+      // The row is always there, because the section is where you look to find
+      // out whether this machine can do it. Its choice is disabled here.
       expect(find.byKey(const ValueKey('local-transcription-row')), findsOne);
       expect(
         find.descendant(
@@ -147,10 +151,10 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(_switchIn(tester, 'local-transcription-row'), isNull);
+      expect(_choiceIn(tester, 'local-transcription-row'), isFalse);
     });
 
-    testWidgets('an engine that is here is a switch, not a picker', (
+    testWidgets('an engine that is here is one of two visible choices', (
       tester,
     ) async {
       final prefs = VoicePrefs(store)..load();
@@ -160,35 +164,47 @@ void main() {
         deviceTranscriber: _Fake(TranscriberReadiness.ready),
       );
 
-      // The question the two pickers used to ask, in the one place the answer
-      // can be seen without opening anything.
-      expect(find.text('Where recordings are transcribed'), findsNothing);
+      expect(find.text('Cloud transcription'), findsOneWidget);
+      expect(find.text('Local transcription'), findsOneWidget);
       expect(
         find.text('Built into this device, and never uploaded'),
         findsOneWidget,
       );
-      expect(_switchIn(tester, 'local-transcription-row'), isFalse);
+      expect(_choiceIn(tester, 'cloud-transcription-row'), isFalse);
+      expect(_choiceIn(tester, 'local-transcription-row'), isFalse);
     });
 
-    testWidgets('switching it on is the whole of the choice', (tester) async {
+    testWidgets('signed out can choose only local transcription', (
+      tester,
+    ) async {
       final prefs = VoicePrefs(store)..load();
+      var readyCalls = 0;
       await _openVoicePane(
         tester,
         prefs: prefs,
         deviceTranscriber: _Fake(TranscriberReadiness.ready),
+        onTranscriptionReady: () => readyCalls++,
       );
 
       await tester.tap(find.byKey(const ValueKey('local-transcription-row')));
       await tester.pumpAndSettle();
 
       expect(prefs.transcriptEngine, TranscriptEngine.device);
-      expect(_switchIn(tester, 'local-transcription-row'), isTrue);
+      expect(readyCalls, 1);
+      expect(_choiceIn(tester, 'local-transcription-row'), isTrue);
+      expect(_choiceIn(tester, 'cloud-transcription-row'), isFalse);
 
-      // And off again sends it back to the cloud, which is the other half of
-      // what the picker used to do.
+      // A radio choice does not turn itself off, and the cloud row cannot be
+      // selected without an account.
       await tester.tap(find.byKey(const ValueKey('local-transcription-row')));
       await tester.pumpAndSettle();
-      expect(prefs.transcriptEngine, TranscriptEngine.cloud);
+      expect(prefs.transcriptEngine, TranscriptEngine.device);
+      expect(readyCalls, 1);
+
+      await tester.tap(find.byKey(const ValueKey('cloud-transcription-row')));
+      await tester.pumpAndSettle();
+      expect(prefs.transcriptEngine, TranscriptEngine.device);
+      expect(readyCalls, 1);
     });
 
     testWidgets('a device still fetching its language says which', (
@@ -201,7 +217,7 @@ void main() {
       );
 
       expect(find.text('Still fetching the language it needs'), findsOneWidget);
-      expect(_switchIn(tester, 'local-transcription-row'), isNull);
+      expect(_choiceIn(tester, 'local-transcription-row'), isFalse);
     });
 
     testWidgets('a permission that was never given names itself', (
@@ -221,9 +237,7 @@ void main() {
       );
     });
 
-    testWidgets('signing in stops being the only way once this device can', (
-      tester,
-    ) async {
+    testWidgets('signed out cloud says what needs an account', (tester) async {
       await _openVoicePane(
         tester,
         prefs: VoicePrefs(store)..load(),
@@ -231,37 +245,19 @@ void main() {
       );
 
       expect(
-        find.text('Sign in, or switch this device on below'),
+        find.text('Sign in first for cloud transcription and summaries'),
         findsOneWidget,
       );
-      expect(
-        find.text('Sign in to turn recordings into text'),
-        findsNothing,
-        reason: 'it would be false on a machine that can do it alone',
-      );
+      expect(find.text('Local transcription'), findsOneWidget);
     });
   });
 }
 
-/// The switch inside a local engine row, or null when the row has none —
-/// which is how "this machine cannot" is said.
-bool? _switchIn(WidgetTester tester, String rowKey) {
-  final indicator = find.descendant(
+/// Whether an engine row's mutually exclusive choice is selected.
+bool _choiceIn(WidgetTester tester, String rowKey) {
+  final checked = find.descendant(
     of: find.byKey(ValueKey(rowKey)),
-    matching: find.byKey(const ValueKey('compact-switch-indicator')),
+    matching: findKapyIcon(KapyIcons.radioCheckedRounded),
   );
-  if (indicator.evaluate().isEmpty) return null;
-  return tester
-      .widget<Semantics>(
-        find
-            .ancestor(
-              of: indicator,
-              matching: find.byWidgetPredicate(
-                (w) => w is Semantics && w.properties.toggled != null,
-              ),
-            )
-            .first,
-      )
-      .properties
-      .toggled;
+  return checked.evaluate().isNotEmpty;
 }

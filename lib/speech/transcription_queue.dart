@@ -696,6 +696,7 @@ class TranscriptionQueue extends ChangeNotifier {
       code == SpeechCodes.engineUnavailable ||
       code == SpeechCodes.consentRequired ||
       code == SpeechCodes.minutesExhausted ||
+      code == SpeechCodes.summariesExhausted ||
       code == SpeechCodes.retryLimit ||
       code == SpeechCodes.unreadable ||
       code == SpeechCodes.tooLong ||

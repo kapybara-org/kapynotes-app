@@ -2,11 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
+import 'package:kapy_notes/sync/presence.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/toolbar.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'kapy_icon_finder.dart';
 import 'test_fonts.dart';
 
 SpaceMember member(
@@ -70,7 +72,7 @@ void main() {
       // difference is that the corner it leads from belongs to the window
       // controls, so it begins where they end rather than underneath them.
       expect(
-        tester.getTopLeft(find.byIcon(Icons.menu_rounded)).dx,
+        tester.getTopLeft(findKapyIcon(KapyIcons.menuRounded)).dx,
         greaterThanOrEqualTo(WindowChrome.trafficLightsWidth),
       );
     });
@@ -98,21 +100,43 @@ void main() {
           find.byKey(const ValueKey('toolbar-app-wordmark')),
         );
         expect(
-          tester.getCenter(find.byIcon(Icons.menu_rounded)).dx,
+          tester.getCenter(findKapyIcon(KapyIcons.menuRounded)).dx,
           lessThan(wordmark.left),
         );
         expect(
-          tester.getCenter(find.byIcon(Icons.add_rounded)).dx,
+          tester.getCenter(findKapyIcon(KapyIcons.addRounded)).dx,
           greaterThan(wordmark.right),
         );
         expect(
-          tester.getCenter(find.byIcon(Icons.add_rounded)).dx,
-          lessThan(
-            tester.getCenter(find.byIcon(Icons.people_outline_rounded)).dx,
-          ),
+          tester.getCenter(findKapyIcon(KapyIcons.addRounded)).dx,
+          lessThan(tester.getCenter(findKapyIcon(KapyIcons.peopleOutlined)).dx),
         );
       });
     }
+
+    testWidgets('split view is the extreme-right action beside sharing', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(
+          NoteToolbar(
+            onToggleSidebar: () {},
+            onCreate: () {},
+            onShare: () {},
+            onSplit: () {},
+            splitTooltip: 'Split view',
+          ),
+        ),
+      );
+
+      final add = tester.getCenter(findKapyIcon(KapyIcons.addRounded)).dx;
+      final share = tester.getCenter(findKapyIcon(KapyIcons.peopleOutlined)).dx;
+      final split = tester
+          .getCenter(find.byKey(const ValueKey('toolbar-split-view')))
+          .dx;
+      expect(add, lessThan(share));
+      expect(share, lessThan(split));
+    });
 
     testWidgets('the wordmark keeps the exact centre either way', (
       tester,
@@ -156,7 +180,7 @@ void main() {
       final button = tester.widget<IconButton>(
         find
             .ancestor(
-              of: find.byIcon(Icons.people_outline_rounded),
+              of: findKapyIcon(KapyIcons.peopleOutlined),
               matching: find.byType(IconButton),
             )
             .first,
@@ -178,7 +202,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.byIcon(Icons.people_outline_rounded));
+      await tester.tap(findKapyIcon(KapyIcons.peopleOutlined));
       await tester.pumpAndSettle();
       expect(shared, 1);
     });
@@ -274,6 +298,48 @@ void main() {
       );
       expect(find.byKey(const ValueKey('member-avatar-user-3')), findsNothing);
       expect(find.text('+4'), findsOneWidget);
+    });
+
+    testWidgets('whoever is in the note moves up, and is said to be here', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(
+          NoteToolbar(
+            onToggleSidebar: () {},
+            onCreate: () {},
+            onShare: () {},
+            members: [
+              member('user-1', 'alice@example.com', name: 'Alice'),
+              for (var i = 2; i <= 6; i++)
+                member('user-$i', 'person$i@example.com', name: 'Person $i'),
+            ],
+            present: const [
+              Collaborator(
+                userId: 'user-5',
+                name: 'Person 5',
+                fullName: 'Person 5',
+                typing: true,
+              ),
+            ],
+            currentUserId: 'user-1',
+            noteShared: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Beside this account, ahead of everybody who is not here, rather than
+      // hidden in the count because the space happened to list them late.
+      expect(
+        find.byKey(const ValueKey('member-avatar-user-5')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('member-avatar-user-2')), findsNothing);
+      expect(
+        find.bySemanticsLabel(RegExp(r'Person 5 here now$')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a narrow bar drops the names rather than truncating them', (

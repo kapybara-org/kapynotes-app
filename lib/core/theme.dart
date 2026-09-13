@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'editor_font.dart';
 import 'platform.dart';
 
+export 'iconography.dart';
+
 /// Colours for calculator-specific surfaces: syntax highlighting and result
 /// chips. Carried as a [ThemeExtension] so widgets read them from the theme
 /// rather than importing a palette directly.
@@ -460,6 +462,10 @@ class AppControlMetrics {
   /// button, a hover-revealed delete.
   static double get iconAdornment => _touch ? 18 : 15;
 
+  /// Search is visually circular and reads larger than other adornments at
+  /// the same box size, so it uses a slightly quieter glyph.
+  static double get iconSearch => _touch ? 16 : 13;
+
   /// A secondary icon that is itself the button.
   static double get iconControl => _touch ? 22 : 16;
 
@@ -566,9 +572,12 @@ class AppTypeScale {
 class KapyTheme {
   const KapyTheme._();
 
-  static const brand = Color(0xFFD25C38);
-  static const _darkAccent = Color(0xFF6CC4EE);
-  static const _lightAccent = Color(0xFFA94A35);
+  /// A restrained copper accent, used sparingly for focus and active state.
+  /// It echoes the warm caret in the visual reference without tinting every
+  /// calculator token or control.
+  static const brand = Color(0xFFC97849);
+  static const _darkAccent = Color(0xFFE0A06B);
+  static const _lightAccent = Color(0xFFA85F38);
 
   static ThemeData light({
     bool transparency = false,
@@ -585,74 +594,74 @@ class KapyTheme {
     transparency ? glassPalette(Brightness.dark, amount) : darkPalette,
   );
 
-  /// The dark palette follows Numi's quiet hierarchy: charcoal surfaces,
-  /// neutral writing, one cyan calculation accent, and one green result accent.
-  /// Categories remain semantic in the model without turning the page into a
-  /// collection of unrelated colours.
+  /// Dark charcoal surfaces with a single warm accent and muted result ink.
+  /// The close values make the chrome recede so the note remains the clearest
+  /// layer in the window.
   static const CalcPalette darkPalette = CalcPalette(
-    number: Color(0xFFE3E7E9),
-    keyword: Color(0xFF6CC4EE),
-    unit: Color(0xFFE3E7E9),
-    currency: Color(0xFFE3E7E9),
-    function: Color(0xFF6CC4EE),
-    variable: Color(0xFF6CC4EE),
-    operator: Color(0xFFB1B5BC),
-    comment: Color(0xFF8B8F96),
-    chipNumber: Color(0xFF8DD32D),
-    chipCurrency: Color(0xFF8DD32D),
-    chipUnit: Color(0xFF8DD32D),
-    chipBoolean: Color(0xFF8DD32D),
-    chipOther: Color(0xFF8DD32D),
-    textPrimary: Color(0xFFE7E9EC),
-    textSecondary: Color(0xFFB1B4BA),
-    textTertiary: Color(0xFF8B8F96),
-    separator: Color(0x6636383D),
-    sidebarBackground: Color(0xFF1B1C1F),
-    editorBackground: Color(0xFF202125),
-    gutterBackground: Color(0xFF202125),
-    surfaceBackground: Color(0xFF191A1D),
-    controlBackground: Color(0xFF25262A),
-    controlBorder: Color(0xFF393B40),
-    selectedBackground: Color(0xFF2D2F34),
-    selectedBorder: Color(0xFF6CC4EE),
-    selection: Color(0x456CC4EE),
+    number: Color(0xFFE5E4E1),
+    keyword: Color(0xFFD6A071),
+    unit: Color(0xFFC9CBC8),
+    currency: Color(0xFFC9CBC8),
+    function: Color(0xFFD6A071),
+    variable: Color(0xFFD6A071),
+    operator: Color(0xFF9C9DA2),
+    comment: Color(0xFF777980),
+    chipNumber: Color(0xFFB5C28D),
+    chipCurrency: Color(0xFFB5C28D),
+    chipUnit: Color(0xFFB5C28D),
+    chipBoolean: Color(0xFFB5C28D),
+    chipOther: Color(0xFFB5C28D),
+    textPrimary: Color(0xFFE8E7E4),
+    textSecondary: Color(0xFFA8A8AC),
+    textTertiary: Color(0xFF74767D),
+    separator: Color(0x16FFFFFF),
+    sidebarBackground: Color(0xFF191A1E),
+    editorBackground: Color(0xFF202126),
+    gutterBackground: Color(0xFF202126),
+    surfaceBackground: Color(0xFF1B1C20),
+    controlBackground: Color(0xFF24252A),
+    controlBorder: Color(0xFF303137),
+    selectedBackground: Color(0xFF2A2B30),
+    selectedBorder: Color(0xFFB77B55),
+    selection: Color(0x38E0A06B),
     hover: Color(0xFF27282D),
     paperFiber: Color(0x00000000),
-    paperRuling: Color(0x24FFFFFF),
+    paperRuling: Color(0x12FFFFFF),
   );
 
-  /// The same restraint as [darkPalette], pitched for paper: hues are held
-  /// back rather than lightened, because light backgrounds need the contrast.
+  /// A cool, clean paper palette rather than the previous warm stationery.
   static const CalcPalette lightPalette = CalcPalette(
-    number: Color(0xFF315F91),
-    keyword: Color(0xFF79547F),
-    unit: Color(0xFF477052),
-    currency: Color(0xFF477052),
-    function: Color(0xFF986332),
-    variable: Color(0xFF356C72),
-    operator: Color(0xFF776B5E),
-    comment: Color(0xFF7D7164),
-    chipNumber: Color(0xFF9B641F),
-    chipCurrency: Color(0xFF416D4B),
-    chipUnit: Color(0xFF4B688E),
-    chipBoolean: Color(0xFF9A5739),
-    chipOther: Color(0xFF70675B),
-    textPrimary: Color(0xFF243245),
-    textSecondary: Color(0xFF625B52),
-    textTertiary: Color(0xFF786F64),
-    separator: Color(0x24745F48),
-    sidebarBackground: Color(0xF5F0E8D9),
-    editorBackground: Color(0xFFF8F2E5),
-    gutterBackground: Color(0xF5F2E9D8),
-    surfaceBackground: Color(0xFCFCF8EF),
-    controlBackground: Color(0xCFFFFCF5),
-    controlBorder: Color(0x32765F45),
-    selectedBackground: Color(0x177A6046),
-    selectedBorder: Color(0x6CA94A35),
-    selection: Color(0x3DD25C38),
-    hover: Color(0x0F614A32),
-    paperFiber: Color(0x187D674E),
-    paperRuling: Color(0x2E7D674E),
+    number: Color(0xFF3F4248),
+    keyword: Color(0xFFA85F38),
+    unit: Color(0xFF5E6B62),
+    currency: Color(0xFF5E6B62),
+    function: Color(0xFFA85F38),
+    variable: Color(0xFFA85F38),
+    operator: Color(0xFF73757A),
+    comment: Color(0xFF919399),
+    chipNumber: Color(0xFF667254),
+    chipCurrency: Color(0xFF667254),
+    chipUnit: Color(0xFF667254),
+    chipBoolean: Color(0xFF667254),
+    chipOther: Color(0xFF667254),
+    textPrimary: Color(0xFF292B30),
+    textSecondary: Color(0xFF65686E),
+    textTertiary: Color(0xFF92949A),
+    separator: Color(0x16000000),
+    sidebarBackground: Color(0xFFF0EFEC),
+    editorBackground: Color(0xFFF8F7F4),
+    gutterBackground: Color(0xFFF4F3EF),
+    surfaceBackground: Color(0xFFF2F1ED),
+    controlBackground: Color(0xFFEAE9E5),
+    controlBorder: Color(0xFFD8D7D2),
+    selectedBackground: Color(0xFFE2E0DA),
+    selectedBorder: Color(0xFFA85F38),
+    selection: Color(0x30C97849),
+    hover: Color(0xFFE8E7E3),
+    // The optional notepad style keeps a barely visible fibre. Plain remains
+    // the default, and dark paper stays completely clean.
+    paperFiber: Color(0x085B5148),
+    paperRuling: Color(0x12000000),
   );
 
   /// Transparency mode.
@@ -714,7 +723,7 @@ class KapyTheme {
     final dark = brightness == Brightness.dark;
     final compactControls = AppPlatform.isDesktop;
     final accent = dark ? _darkAccent : _lightAccent;
-    final onAccent = dark ? const Color(0xFF15171A) : Colors.white;
+    final onAccent = dark ? const Color(0xFF211A15) : Colors.white;
     final buttonHeight = AppControlMetrics.buttonHeight;
     final iconButtonExtent = AppControlMetrics.iconButtonExtent;
     final tapTarget = compactControls
@@ -745,6 +754,64 @@ class KapyTheme {
       splashFactory: AppPlatform.isDesktop ? NoSplash.splashFactory : null,
     );
 
+    final textTheme = base.textTheme
+        .copyWith(
+          displayLarge: base.textTheme.displayLarge?.copyWith(
+            fontWeight: FontWeight.w300,
+            letterSpacing: -0.5,
+          ),
+          displayMedium: base.textTheme.displayMedium?.copyWith(
+            fontWeight: FontWeight.w300,
+            letterSpacing: -0.4,
+          ),
+          displaySmall: base.textTheme.displaySmall?.copyWith(
+            fontWeight: FontWeight.w300,
+            letterSpacing: -0.3,
+          ),
+          headlineLarge: base.textTheme.headlineLarge?.copyWith(
+            fontWeight: FontWeight.w400,
+            letterSpacing: -0.3,
+          ),
+          headlineMedium: base.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.w400,
+            letterSpacing: -0.2,
+          ),
+          headlineSmall: base.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w400,
+          ),
+          titleLarge: base.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w400,
+          ),
+          titleMedium: base.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w400,
+          ),
+          titleSmall: base.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w400,
+          ),
+          bodyLarge: base.textTheme.bodyLarge?.copyWith(
+            fontWeight: FontWeight.w300,
+          ),
+          bodyMedium: base.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w300,
+          ),
+          bodySmall: base.textTheme.bodySmall?.copyWith(
+            fontWeight: FontWeight.w300,
+          ),
+          labelLarge: base.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w400,
+          ),
+          labelMedium: base.textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w400,
+          ),
+          labelSmall: base.textTheme.labelSmall?.copyWith(
+            fontWeight: FontWeight.w400,
+          ),
+        )
+        .apply(
+          bodyColor: palette.textPrimary,
+          displayColor: palette.textPrimary,
+        );
+
     return base.copyWith(
       extensions: [palette],
       canvasColor: palette.surfaceBackground,
@@ -764,10 +831,7 @@ class KapyTheme {
         color: palette.textSecondary,
         size: AppControlMetrics.iconDefault,
       ),
-      textTheme: base.textTheme.apply(
-        bodyColor: palette.textPrimary,
-        displayColor: palette.textPrimary,
-      ),
+      textTheme: textTheme,
       appBarTheme: AppBarThemeData(
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -777,8 +841,8 @@ class KapyTheme {
         titleTextStyle: base.textTheme.titleMedium?.copyWith(
           color: palette.textPrimary,
           fontSize: AppTypeScale.title,
-          fontWeight: FontWeight.w500,
-          letterSpacing: -0.1,
+          fontWeight: FontWeight.w400,
+          letterSpacing: 0,
         ),
       ),
       drawerTheme: DrawerThemeData(
@@ -795,7 +859,7 @@ class KapyTheme {
         titleTextStyle: base.textTheme.titleMedium?.copyWith(
           color: palette.textPrimary,
           fontSize: AppTypeScale.heading,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w400,
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
@@ -859,10 +923,10 @@ class KapyTheme {
           foregroundColor: onAccent,
           disabledBackgroundColor: palette.controlBackground,
           disabledForegroundColor: palette.textTertiary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
           textStyle: base.textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w400,
           ),
         ),
       ),
@@ -877,7 +941,7 @@ class KapyTheme {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: base.textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w400,
           ),
         ),
       ),
@@ -890,7 +954,7 @@ class KapyTheme {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
           textStyle: base.textTheme.labelLarge?.copyWith(
             fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w400,
           ),
         ),
       ),

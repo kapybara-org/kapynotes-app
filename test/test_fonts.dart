@@ -21,7 +21,6 @@ Future<void> loadTestFonts() async {
   for (final family in ['Roboto', '.SF Pro Text', '.AppleSystemUIFont']) {
     await _load(family, ['/System/Library/Fonts/Supplemental/Arial.ttf']);
   }
-  await _load('OdinRounded', ['assets/fonts/OdinRounded-Bold.otf']);
   await _loadAll('Shantell Sans', [
     'assets/fonts/ShantellSans-Variable.ttf',
     'assets/fonts/ShantellSans-Italic-Variable.ttf',

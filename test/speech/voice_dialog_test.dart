@@ -65,14 +65,20 @@ NoteVoiceRef recording({String hash = 'a', VoiceTranscript? transcript}) =>
       transcript: transcript,
     );
 
-Widget harness(NoteVoiceRef ref, VoicePlayer player) => MaterialApp(
+Widget harness(
+  NoteVoiceRef ref,
+  VoicePlayer player, {
+  VoiceChipState state = VoiceChipState.done,
+  VoiceNoteActions actions = const VoiceNoteActions(),
+}) => MaterialApp(
   theme: KapyTheme.dark(),
   home: Scaffold(
     body: VoiceNoteView(
       ref: ref,
-      state: VoiceChipState.done,
+      state: state,
       blobs: store,
       player: player,
+      actions: actions,
     ),
   ),
 );
@@ -108,6 +114,57 @@ void main() {
 
     expect(find.text('0:21 / 1:00'), findsOneWidget);
 
+    player.dispose();
+  });
+
+  testWidgets('a local transcript remains readable while cloud summary waits', (
+    tester,
+  ) async {
+    final player = VoicePlayer(backend: _FakeBackend());
+    final ref = recording(
+      transcript: VoiceTranscript(
+        lang: 'en',
+        engine: 'local',
+        at: 1,
+        segments: [TranscriptSegment(s: 0, e: 900, t: 'Kept on this device.')],
+      ),
+    );
+
+    await tester.pumpWidget(
+      harness(ref, player, state: VoiceChipState.needsAccount),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Kept on this device.'), findsOneWidget);
+    expect(find.text('Sign in to get text and a summary.'), findsNothing);
+    player.dispose();
+  });
+
+  testWidgets('signed out points to the transcription choice, not sign in', (
+    tester,
+  ) async {
+    final player = VoicePlayer(backend: _FakeBackend());
+    var openedSettings = false;
+
+    await tester.pumpWidget(
+      harness(
+        recording(),
+        player,
+        state: VoiceChipState.needsAccount,
+        actions: VoiceNoteActions(
+          onTurnOnTranscription: () => openedSettings = true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Choose cloud or local transcription in Voice Settings.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Sign in'), findsNothing);
+    await tester.tap(find.text('Turn on transcription'));
+    expect(openedSettings, isTrue);
     player.dispose();
   });
 

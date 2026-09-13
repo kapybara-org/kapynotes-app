@@ -139,7 +139,7 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: AppTypeScale.control,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w400,
                           color: active
                               ? palette.textPrimary
                               : palette.textSecondary,
@@ -164,7 +164,7 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
                     style: TextStyle(
                       fontSize: AppTypeScale.control,
                       fontFeatures: const [FontFeature.tabularFigures()],
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w400,
                       color: palette.textPrimary,
                     ),
                   ),
@@ -297,7 +297,7 @@ class _LiveWaveform extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: AppTypeScale.caption,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w400,
                             color: palette.textSecondary,
                           ),
                         ),
@@ -334,8 +334,8 @@ class _RecordingActions extends StatelessWidget {
       _ActionSlot(
         child: CompactIconButton(
           extent: AppControlMetrics.footerButtonExtent,
-          icon: Icon(
-            paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+          icon: KapyIcon(
+            paused ? KapyIcons.playRounded : KapyIcons.pauseRounded,
             size: AppControlMetrics.footerIconAction,
           ),
           tooltip: paused ? 'Resume recording' : 'Pause recording',
@@ -346,8 +346,8 @@ class _RecordingActions extends StatelessWidget {
       _ActionSlot(
         child: CompactIconButton(
           extent: AppControlMetrics.footerButtonExtent,
-          icon: Icon(
-            Icons.delete_outline_rounded,
+          icon: KapyIcon(
+            KapyIcons.deleteOutlined,
             size: AppControlMetrics.footerIconAction,
           ),
           tooltip: 'Discard recording',
@@ -389,8 +389,8 @@ class _StopButton extends StatelessWidget {
         child: IconButton(
           key: const ValueKey('recording-stop'),
           onPressed: onPressed,
-          icon: Icon(
-            Icons.stop_rounded,
+          icon: KapyIcon(
+            KapyIcons.stopRounded,
             size: AppControlMetrics.footerIconAction,
           ),
           color: recording,

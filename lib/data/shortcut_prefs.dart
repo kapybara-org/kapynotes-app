@@ -11,7 +11,13 @@ enum ShortcutAction {
   findNotes,
   nextNote,
   previousNote,
+  splitEditor,
+  closePane,
+  focusFirstPane,
+  focusSecondPane,
+  focusThirdPane,
   toggleSidebar,
+  toggleHiddenFolder,
   toggleResults,
   toggleAlwaysOnTop,
   deleteNote,
@@ -30,10 +36,16 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.openApp => 'Open Kapy Notes',
     ShortcutAction.newNoteAnywhere => 'New note from anywhere',
     ShortcutAction.newNote => 'New note',
-    ShortcutAction.findNotes => 'Search notes',
+    ShortcutAction.findNotes => 'Global search',
     ShortcutAction.nextNote => 'Next note',
     ShortcutAction.previousNote => 'Previous note',
+    ShortcutAction.splitEditor => 'Split view',
+    ShortcutAction.closePane => 'Close pane',
+    ShortcutAction.focusFirstPane => 'Focus pane 1',
+    ShortcutAction.focusSecondPane => 'Focus pane 2',
+    ShortcutAction.focusThirdPane => 'Focus pane 3',
     ShortcutAction.toggleSidebar => 'Toggle notes list',
+    ShortcutAction.toggleHiddenFolder => 'Toggle Hidden Notes folder',
     ShortcutAction.toggleResults => 'Toggle results column',
     ShortcutAction.toggleAlwaysOnTop => 'Keep window on top',
     ShortcutAction.deleteNote => 'Archive current note',
@@ -52,15 +64,27 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.newNoteAnywhere =>
       'Come forward on a blank note, whatever you were in',
     ShortcutAction.newNote => 'Create and focus a blank note',
-    ShortcutAction.findNotes => 'Open the sidebar and search',
+    ShortcutAction.findNotes =>
+      'Search titles, nested content, and voice notes from the sidebar',
     ShortcutAction.nextNote => 'Open the next note down the list',
     ShortcutAction.previousNote => 'Open the note above it',
+    ShortcutAction.splitEditor =>
+      'Open a pane beside this note, for up to three side by side',
+    ShortcutAction.closePane =>
+      'Close the focused pane. Its note stays in the list',
+    ShortcutAction.focusFirstPane => 'Move the keyboard to the leftmost pane',
+    ShortcutAction.focusSecondPane => 'Move the keyboard to the second pane',
+    ShortcutAction.focusThirdPane => 'Move the keyboard to the third pane',
     ShortcutAction.toggleSidebar => 'Show or hide the notes list on the left',
+    ShortcutAction.toggleHiddenFolder =>
+      'Reveal or hide Hidden Notes in the notes list',
     ShortcutAction.toggleResults =>
       'Show or hide the results column on the right',
     ShortcutAction.toggleAlwaysOnTop =>
       'Float the window over other apps, or let it fall behind again',
-    ShortcutAction.deleteNote => 'Move the note you are editing to Archive',
+    ShortcutAction.deleteNote =>
+      'Move the note you are editing to Archived Notes, or delete it for good '
+          'if it is already there',
     ShortcutAction.openSettings => 'Open Settings',
     ShortcutAction.insertImage => 'Choose a picture or take a photo',
     ShortcutAction.cycleTextStyle =>
@@ -123,8 +147,15 @@ class ShortcutBinding {
   String get keyLabel {
     if (logicalKey == LogicalKeyboardKey.space) return 'Space';
     if (logicalKey == LogicalKeyboardKey.tab) return 'Tab';
-    if (logicalKey == LogicalKeyboardKey.backspace) return 'Backspace';
-    if (logicalKey == LogicalKeyboardKey.delete) return 'Delete';
+    // A Mac has one key with delete written on it, and it is the one every
+    // other keyboard calls Backspace. Naming it Backspace in a pane on a Mac
+    // sends the reader looking for a key that is not there.
+    if (logicalKey == LogicalKeyboardKey.backspace) {
+      return AppPlatform.isMacOS ? 'Delete' : 'Backspace';
+    }
+    if (logicalKey == LogicalKeyboardKey.delete) {
+      return AppPlatform.isMacOS ? 'Forward Delete' : 'Delete';
+    }
     if (logicalKey == LogicalKeyboardKey.backslash) return r'\';
     final label = logicalKey.keyLabel.trim();
     return label.isEmpty
@@ -224,18 +255,21 @@ class ShortcutPrefs extends ChangeNotifier {
     };
 
     // Changing the default alone would only reach new installs. Anyone still
-    // carrying the superseded binding never chose it — it was simply what
+    // carrying a superseded binding never chose it — it was simply what
     // shipped — so move them across and write it back once. A binding they
     // actually picked, even an unlucky one, is theirs to keep.
     var migrated = false;
-    if (_bindings[ShortcutAction.openApp] == _supersededOpenApp()) {
-      _bindings[ShortcutAction.openApp] = defaultFor(ShortcutAction.openApp);
-      migrated = true;
-    }
-    if (_bindings[ShortcutAction.toggleSidebar] == _supersededToggleSidebar()) {
-      _bindings[ShortcutAction.toggleSidebar] = defaultFor(
-        ShortcutAction.toggleSidebar,
-      );
+    for (final action in ShortcutAction.values) {
+      final current = _bindings[action];
+      if (current == null || !_supersededDefaults(action).contains(current)) {
+        continue;
+      }
+      final replacement = defaultFor(action);
+      // Unless something else already answers to the new default. An old
+      // default that still works beats two actions on one chord — and a
+      // system-wide one would swallow the other's key outright.
+      if (conflictFor(action, replacement) != null) continue;
+      _bindings[action] = replacement;
       migrated = true;
     }
     if (migrated) {
@@ -246,28 +280,77 @@ class ShortcutPrefs extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// The 1.0.0 default for [ShortcutAction.openApp]: Cmd/Ctrl+Shift+Space,
-  /// which is also 1Password's Quick Access. Registration went to whichever
-  /// app asked first, and it was rarely this one.
+  /// The defaults [action] has shipped with and since given up.
   ///
   /// A method rather than a constant because the answer depends on the host
   /// platform, which tests override.
-  static ShortcutBinding _supersededOpenApp() => ShortcutBinding(
-    logicalKey: LogicalKeyboardKey.space,
-    physicalKey: PhysicalKeyboardKey.space,
-    meta: AppPlatform.isMacOS,
-    control: !AppPlatform.isMacOS,
-    shift: true,
-  );
-
-  /// The previous notes-list default. Cmd/Ctrl+S is now a better fit because
-  /// every note saves itself and there is no manual Save command to displace.
-  static ShortcutBinding _supersededToggleSidebar() => ShortcutBinding(
-    logicalKey: LogicalKeyboardKey.backslash,
-    physicalKey: PhysicalKeyboardKey.backslash,
-    meta: AppPlatform.isMacOS,
-    control: !AppPlatform.isMacOS,
-  );
+  static List<ShortcutBinding> _supersededDefaults(ShortcutAction action) {
+    final useMeta = AppPlatform.isMacOS;
+    return switch (action) {
+      ShortcutAction.openApp => [
+        // 1.0.0: Cmd/Ctrl+Shift+Space, which is also 1Password's Quick
+        // Access. Registration went to whichever app asked first, and it was
+        // rarely this one.
+        ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.space,
+          physicalKey: PhysicalKeyboardKey.space,
+          meta: useMeta,
+          control: !useMeta,
+          shift: true,
+        ),
+        // Then Option+Cmd+X and Ctrl+Shift+X, which other apps spend on
+        // their own shortcuts. See [defaultFor].
+        ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyX,
+          physicalKey: PhysicalKeyboardKey.keyX,
+          meta: useMeta,
+          control: !useMeta,
+          alt: useMeta,
+          shift: !useMeta,
+        ),
+      ],
+      // Option+Cmd+N and Ctrl+Shift+N: Finder's New Smart Folder, Explorer's
+      // New folder, a browser's private window.
+      ShortcutAction.newNoteAnywhere => [
+        ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyN,
+          physicalKey: PhysicalKeyboardKey.keyN,
+          meta: useMeta,
+          control: !useMeta,
+          alt: useMeta,
+          shift: !useMeta,
+        ),
+      ],
+      // Cmd+Shift+Delete and Ctrl+Shift+Delete: a chord chosen to collide
+      // with nothing, which is also a chord nobody reaches for. Anyone who
+      // still carries it never picked it, so they are moved to the key their
+      // machine already uses for this. See [defaultFor].
+      ShortcutAction.deleteNote => [
+        ShortcutBinding(
+          logicalKey: useMeta
+              ? LogicalKeyboardKey.backspace
+              : LogicalKeyboardKey.delete,
+          physicalKey: useMeta
+              ? PhysicalKeyboardKey.backspace
+              : PhysicalKeyboardKey.delete,
+          meta: useMeta,
+          control: !useMeta,
+          shift: true,
+        ),
+      ],
+      // The first notes-list default. Cmd/Ctrl+S is a better fit because
+      // every note saves itself and there is no manual Save to displace.
+      ShortcutAction.toggleSidebar => [
+        ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.backslash,
+          physicalKey: PhysicalKeyboardKey.backslash,
+          meta: useMeta,
+          control: !useMeta,
+        ),
+      ],
+      _ => const [],
+    };
+  }
 
   /// The key [action] answers to, or null where the user has cleared it.
   ///
@@ -318,46 +401,57 @@ class ShortcutPrefs extends ChangeNotifier {
   static ShortcutBinding defaultFor(ShortcutAction action) {
     final useMeta = AppPlatform.isMacOS;
     return switch (action) {
-      // The only shortcut registered system-wide, so it has to dodge every
-      // other app rather than just this one. It used to be Cmd/Ctrl+Shift+
-      // Space, which is 1Password's Quick Access default — whoever asked
-      // first won, and it usually was not us.
+      // Registered system-wide, so for as long as this app runs, every other
+      // app loses the chord: its own shortcut there simply stops working. The
+      // bar is therefore "nothing else uses it", not "nothing here does".
       //
-      // Option+Cmd+X is clear of the macOS bindings that neighbour it:
-      // Option+Cmd+Space is Finder search, +D toggles the Dock, +T the
-      // toolbar, +W closes all windows, +C/+V are copy and paste style,
-      // +Esc is Force Quit.
+      // macOS: Shift+Option+Cmd, which nothing we checked binds to X — no
+      // system shortcut, no Services item, no app menu. Option+Cmd alone was
+      // the previous pair and is crowded: +X is Xcode's Pull, and +N is
+      // Finder's New Smart Folder, IntelliJ's Inline and Arc's Little Arc,
+      // which Arc also holds system-wide. Control stays out because
+      // Control+Option is VoiceOver's own modifier (VO-X opens its Activity
+      // Chooser, VO-N its notifications), and without Cmd, Option and
+      // Option+Shift type characters.
       //
-      // Windows deliberately differs. Ctrl+Alt is what AltGr sends on
-      // international layouts, so a global Ctrl+Alt+X would fire whenever a
-      // German or Nordic user typed a character in that layer. Ctrl+Shift+X
-      // has no such double life.
+      // Windows: Alt+Shift. Win chords are the OS's. Ctrl+Alt is what AltGr
+      // sends on international layouts, so a global Ctrl+Alt+X would fire
+      // whenever a Polish or German user typed a character in that layer.
+      // Ctrl+Shift is where apps keep their own shortcuts: Ctrl+Shift+X was
+      // VS Code's Extensions, Slack's strikethrough and Teams' compose box.
+      // What claims Alt+Shift+X is narrow — Word's Mark Index Entry,
+      // Photoshop's Exclusion blend mode, Eclipse's Run As.
+      //
+      // Untested: Left Alt+Shift on its own is Windows' switch-language chord,
+      // and fires on release. Whether a letter RegisterHotKey swallows still
+      // cancels it has not been tried on a machine with two input languages.
       //
       // X sits bottom-left, so the whole chord is one comfortable left hand.
       ShortcutAction.openApp => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyX,
         physicalKey: PhysicalKeyboardKey.keyX,
         meta: useMeta,
-        control: !useMeta,
-        alt: useMeta,
-        shift: !useMeta,
+        alt: true,
+        shift: true,
       ),
       // The summon shortcut's sibling, and the second and last one the OS
       // hears. It carries the same modifiers so that learning one teaches the
       // other, over N because that is the letter every app already spends on
       // "new".
       //
-      // Nothing in this range is unclaimed. Holding it system-wide takes
-      // Option+Cmd+N from Finder's New Smart Folder, and Ctrl+Shift+N from
-      // Explorer's New Folder and Chrome's private window — for as long as
-      // this app is running, and only until Settings hands it back.
+      // Which is also why N is the contested letter. Shift+Option+Cmd+N takes
+      // only menu items inside other apps — Photoshop's new layer without the
+      // dialog, a tab in Mail's viewer window, Xcode's new playground. Alt+
+      // Shift+N takes Word's Merge a Document, Photoshop's Normal blend mode
+      // and Eclipse's New menu. The pair it replaced took far more: Finder's
+      // New Smart Folder and Arc's Little Arc on the Mac, Explorer's New folder
+      // and Chrome's and Edge's private windows on Windows.
       ShortcutAction.newNoteAnywhere => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyN,
         physicalKey: PhysicalKeyboardKey.keyN,
         meta: useMeta,
-        control: !useMeta,
-        alt: useMeta,
-        shift: !useMeta,
+        alt: true,
+        shift: true,
       ),
       ShortcutAction.newNote => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyN,
@@ -387,9 +481,52 @@ class ShortcutPrefs extends ChangeNotifier {
         control: true,
         shift: true,
       ),
+      // The same split chord as VS Code. The notes-list toggle originally
+      // occupied it, but that default migrated to S and left this free.
+      ShortcutAction.splitEditor => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.backslash,
+        physicalKey: PhysicalKeyboardKey.backslash,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      // What closes a tab or a document everywhere. The macOS menu bar has no
+      // Close item to take it first, and with a single pane nothing answers
+      // it at all, so it can never close the window by surprise.
+      ShortcutAction.closePane => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyW,
+        physicalKey: PhysicalKeyboardKey.keyW,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      // Numbered the way a browser numbers its tabs: by position, from the
+      // left.
+      ShortcutAction.focusFirstPane => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.digit1,
+        physicalKey: PhysicalKeyboardKey.digit1,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      ShortcutAction.focusSecondPane => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.digit2,
+        physicalKey: PhysicalKeyboardKey.digit2,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      ShortcutAction.focusThirdPane => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.digit3,
+        physicalKey: PhysicalKeyboardKey.digit3,
+        meta: useMeta,
+        control: !useMeta,
+      ),
       ShortcutAction.toggleSidebar => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyS,
         physicalKey: PhysicalKeyboardKey.keyS,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      ShortcutAction.toggleHiddenFolder => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyH,
+        physicalKey: PhysicalKeyboardKey.keyH,
         meta: useMeta,
         control: !useMeta,
       ),
@@ -416,6 +553,13 @@ class ShortcutPrefs extends ChangeNotifier {
         control: !useMeta,
         shift: true,
       ),
+      // What the machine itself uses to take a row out of a list: Cmd+Delete
+      // in the Finder and in Apple's own Notes, Shift+Delete in Explorer.
+      // Neither is free — the editor would otherwise read Cmd+Delete as
+      // "delete to the start of the line" and Shift+Delete as Cut — and both
+      // are given up deliberately. A note is the thing on screen; a line
+      // start and a cut both have other keys, and no shortcut nobody can
+      // guess is worth more than the one everybody already knows.
       ShortcutAction.deleteNote => ShortcutBinding(
         logicalKey: useMeta
             ? LogicalKeyboardKey.backspace
@@ -424,8 +568,7 @@ class ShortcutPrefs extends ChangeNotifier {
             ? PhysicalKeyboardKey.backspace
             : PhysicalKeyboardKey.delete,
         meta: useMeta,
-        control: !useMeta,
-        shift: true,
+        shift: !useMeta,
       ),
       ShortcutAction.openSettings => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.comma,

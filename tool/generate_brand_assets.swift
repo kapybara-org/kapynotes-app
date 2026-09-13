@@ -42,6 +42,26 @@ private let charcoal = NSColor(
   alpha: 1
 )
 
+/// The tile colour sampled from the artwork itself. Opaque app icons use it
+/// outside the inset mark so a circular or squircle system mask never reveals
+/// a contrasting paper-coloured ring.
+private let sampledTileColor: NSColor = {
+  guard
+    let data = source.tiffRepresentation,
+    let rep = NSBitmapImageRep(data: data),
+    let corner = rep.colorAt(x: 3, y: 3)
+  else {
+    fatalError("Could not read the mark's tile colour")
+  }
+  return corner
+}()
+private let tileColor: NSColor = {
+  guard let color = sampledTileColor.usingColorSpace(.deviceRGB) else {
+    fatalError("Could not resolve the mark's tile colour")
+  }
+  return color
+}()
+
 private func png(
   width: Int,
   height: Int,
@@ -67,8 +87,21 @@ private func png(
   graphicsContext.imageInterpolation = .high
 
   let canvas = NSRect(x: 0, y: 0, width: width, height: height)
-  (hasAlpha ? NSColor.clear : ivory).setFill()
-  canvas.fill(using: .copy)
+  if hasAlpha {
+    NSColor.clear.setFill()
+    canvas.fill(using: .copy)
+  } else {
+    // Set the bitmap components directly. NSColor.setFill color-converts the
+    // sampled values a second time and makes this field visibly lighter than
+    // the source edge it is meant to continue.
+    context.setFillColor(
+      red: sampledTileColor.redComponent,
+      green: sampledTileColor.greenComponent,
+      blue: sampledTileColor.blueComponent,
+      alpha: 1
+    )
+    context.fill(canvas)
+  }
   draw()
   graphicsContext.flushGraphics()
   NSGraphicsContext.restoreGraphicsState()
@@ -167,7 +200,13 @@ private func lockupPNG(textColor: NSColor) -> Data {
 
 let softMark = markPNG(side: 1024, insetRatio: 0, opaque: false)
 write(softMark, to: branding.appendingPathComponent("kapynotes_mark_soft.png"))
-write(softMark, to: branding.appendingPathComponent("kapy_notes_logo.png"))
+// The mark the app ships and draws itself, at most a few dozen points across
+// on the densest screen. Half the side is still several times what it needs
+// and a fifth of the bytes in every install.
+write(
+  markPNG(side: 512, insetRatio: 0, opaque: false),
+  to: branding.appendingPathComponent("kapy_notes_logo.png")
+)
 write(
   markPNG(side: 1024, insetRatio: 0.072, opaque: true),
   to: branding.appendingPathComponent("kapynotes_app_icon.png")
@@ -245,39 +284,6 @@ for (name, side) in macIcons {
     to: macDirectory.appendingPathComponent(name)
   )
 }
-
-private let androidScales: [(String, Int, Int)] = [
-  ("mipmap-mdpi", 48, 108),
-  ("mipmap-hdpi", 72, 162),
-  ("mipmap-xhdpi", 96, 216),
-  ("mipmap-xxhdpi", 144, 324),
-  ("mipmap-xxxhdpi", 192, 432),
-]
-let androidDirectory = root.appendingPathComponent("android/app/src/main/res")
-for (directory, legacySide, foregroundSide) in androidScales {
-  let destination = androidDirectory.appendingPathComponent(directory)
-  write(
-    markPNG(side: legacySide, insetRatio: 0.072, opaque: true),
-    to: destination.appendingPathComponent("ic_launcher.png")
-  )
-  write(
-    markPNG(side: foregroundSide, insetRatio: 0.19, opaque: false),
-    to: destination.appendingPathComponent("ic_launcher_foreground.png")
-  )
-}
-
-/// The tile the mark sits on, read out of the artwork rather than written
-/// down a second time where the two could drift apart.
-private let tileColor: NSColor = {
-  guard
-    let data = source.tiffRepresentation,
-    let rep = NSBitmapImageRep(data: data),
-    let corner = rep.colorAt(x: 3, y: 3)?.usingColorSpace(.deviceRGB)
-  else {
-    fatalError("Could not read the mark's tile colour")
-  }
-  return corner
-}()
 
 /// The capybara and its page, lifted off the tile and cropped to their own
 /// edges, painted in [color].
@@ -398,6 +404,38 @@ private func drawFitted(_ shape: CGImage, in canvas: NSRect, fraction: CGFloat) 
       width: width * scale,
       height: height * scale
     )
+  )
+}
+
+// Android owns the outer shape of an adaptive icon. Give it a full-bleed
+// terracotta background and only the cream mark in front, instead of putting a
+// rounded square inside another system-provided circle. The longest edge is
+// 54dp in Android's 108dp layer, comfortably inside its documented 66dp safe
+// zone while staying close to the legacy icon's visual weight.
+private let androidScales: [(String, Int, Int)] = [
+  ("mipmap-mdpi", 48, 108),
+  ("mipmap-hdpi", 72, 162),
+  ("mipmap-xhdpi", 96, 216),
+  ("mipmap-xxhdpi", 144, 324),
+  ("mipmap-xxxhdpi", 192, 432),
+]
+let androidDirectory = root.appendingPathComponent("android/app/src/main/res")
+let androidForeground = markSilhouette(color: ivory)
+for (directory, legacySide, foregroundSide) in androidScales {
+  let destination = androidDirectory.appendingPathComponent(directory)
+  write(
+    markPNG(side: legacySide, insetRatio: 0.072, opaque: true),
+    to: destination.appendingPathComponent("ic_launcher.png")
+  )
+  write(
+    png(width: foregroundSide, height: foregroundSide, hasAlpha: true) {
+      drawFitted(
+        androidForeground,
+        in: NSRect(x: 0, y: 0, width: foregroundSide, height: foregroundSide),
+        fraction: 0.50
+      )
+    },
+    to: destination.appendingPathComponent("ic_launcher_foreground.png")
   )
 }
 

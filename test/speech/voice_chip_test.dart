@@ -9,6 +9,8 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
 
+import '../kapy_icon_finder.dart';
+
 NoteVoiceRef recording({
   int durationMs = 134000,
   Uint8List? peaks,
@@ -134,18 +136,18 @@ void main() {
         harness(recording(), state: VoiceChipState.needsConsent),
       );
       expect(find.text('Turn on transcription'), findsOneWidget);
-      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+      expect(findKapyIcon(KapyIcons.playRounded), findsOneWidget);
     });
   });
 
   group('what the chip says when it cannot transcribe', () {
-    testWidgets('signed out asks for a sign-in, not for patience', (
+    testWidgets('signed out offers transcription without assuming the engine', (
       tester,
     ) async {
       await tester.pumpWidget(
         harness(recording(), state: VoiceChipState.needsAccount),
       );
-      expect(find.text('Sign in to transcribe'), findsOneWidget);
+      expect(find.text('Turn on transcription'), findsOneWidget);
       expect(find.text('Transcribing…'), findsNothing);
     });
 
@@ -154,6 +156,29 @@ void main() {
         harness(recording(), state: VoiceChipState.needsConsent),
       );
       expect(find.text('Turn on transcription'), findsOneWidget);
+    });
+
+    testWidgets('a local transcript stays readable while its summary waits', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(
+          recording(
+            transcript: VoiceTranscript(
+              lang: 'en',
+              engine: 'local',
+              at: 1,
+              segments: const [
+                TranscriptSegment(s: 0, e: 900, t: 'Kept on this device.'),
+              ],
+            ),
+          ),
+          state: VoiceChipState.needsAccount,
+        ),
+      );
+
+      expect(find.text('Transcript ready'), findsOneWidget);
+      expect(find.text('Turn on transcription'), findsNothing);
     });
 
     testWidgets('a recording that was transcribed keeps its title', (
@@ -210,10 +235,10 @@ void main() {
   group('the play button', () {
     testWidgets('offers play, and pause while playing', (tester) async {
       await tester.pumpWidget(harness(recording()));
-      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+      expect(findKapyIcon(KapyIcons.playRounded), findsOneWidget);
 
       await tester.pumpWidget(harness(recording(), playing: true));
-      expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+      expect(findKapyIcon(KapyIcons.pauseRounded), findsOneWidget);
     });
   });
 
@@ -301,6 +326,21 @@ void main() {
       expect(find.text('Turn transcription on in Settings'), findsOneWidget);
     });
 
+    testWidgets('one without an account opens the engine choices', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(recording(), state: VoiceChipState.needsAccount, onOpen: () {}),
+      );
+      await tester.pumpAndSettle();
+
+      await hover(tester, find.text('Turn on transcription'));
+      expect(
+        find.text('Choose transcription in Voice Settings'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('the waveform says it seeks, not that it opens', (
       tester,
     ) async {
@@ -324,7 +364,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await hover(tester, find.byIcon(Icons.play_arrow_rounded));
+      await hover(tester, findKapyIcon(KapyIcons.playRounded));
       expect(find.text('Play'), findsOneWidget);
     });
   });

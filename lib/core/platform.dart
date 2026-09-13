@@ -37,6 +37,28 @@ class AppPlatform {
   /// is what decides hover affordances and menu shortcuts.
   static bool get hasPointer => isDesktop;
 
+  /// The native sans face used by the clean writing style.
+  ///
+  /// Keeping this explicit matters beyond appearance: the editor and its
+  /// results rail lay the same rich text out independently. Leaving the
+  /// family null lets a TextField inherit one face while a standalone
+  /// TextPainter falls back to another, which moves wrap points and results.
+  static String get uiFontFamily {
+    if (isWindows) return 'Segoe UI';
+    if (isAndroid) return 'Roboto';
+    if (isLinux) return 'Noto Sans';
+    return '.AppleSystemUIFont';
+  }
+
+  static const List<String> uiFontFallback = [
+    '.SF Pro Text',
+    'Segoe UI',
+    'Roboto',
+    'Noto Sans',
+    'Arial',
+    'sans-serif',
+  ];
+
   /// The monospace stack the editor and gutter share. Both layers must use
   /// exactly the same list or measured line positions drift.
   static const List<String> monoFontFallback = [

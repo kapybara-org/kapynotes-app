@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart' as platform_picker;
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
+import '../core/theme.dart';
 import '../data/note_attachment.dart';
 import 'camera_capture.dart' show ImageLibraryPicker;
 import 'image_codec.dart';
@@ -118,12 +119,12 @@ Future<_MobileImageSource?> _chooseMobileImageSource(BuildContext context) {
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            leading: const Icon(Icons.camera_alt_outlined),
+            leading: const KapyIcon(KapyIcons.cameraOutlined),
             title: const Text('Camera'),
             onTap: () => Navigator.pop(context, _MobileImageSource.camera),
           ),
           ListTile(
-            leading: const Icon(Icons.photo_library_outlined),
+            leading: const KapyIcon(KapyIcons.photoLibraryOutlined),
             title: const Text('Photo library'),
             onTap: () => Navigator.pop(context, _MobileImageSource.library),
           ),
@@ -158,6 +159,28 @@ Future<List<XFile>> pickExistingImageFiles() async {
   } catch (error) {
     debugPrint('KapyNotes: photo library failed: $error');
     return const [];
+  }
+}
+
+/// Reads one picker/drop result only far enough for the editor to display it.
+/// Compression and durable storage continue after this returns.
+Future<ImageStageResult> stageImageFile(XFile file) async {
+  final name = file.name;
+  final extension = name.contains('.')
+      ? name.split('.').last.toLowerCase()
+      : '';
+  if (extension.isNotEmpty && !supportedImageExtensions.contains(extension)) {
+    return const ImageStageResult.rejected(ImageRejection.unreadable);
+  }
+  try {
+    final bytes = await file.readAsBytes();
+    return await stageImage(
+      source: bytes,
+      sourceMime: file.mimeType ?? mimeForFilename(name),
+    );
+  } catch (error) {
+    debugPrint('KapyNotes: could not read $name: $error');
+    return const ImageStageResult.rejected(ImageRejection.unreadable);
   }
 }
 

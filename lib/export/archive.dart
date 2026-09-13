@@ -26,6 +26,8 @@ String archiveImageName(NoteAttachmentRef ref) =>
 String archiveVoiceName(NoteVoiceRef ref) =>
     '${ref.hash}${NoteVoiceRef.voiceExtension}';
 
+String archiveVideoName(NoteVideoRef ref) => '${ref.hash}${ref.extension}';
+
 String extensionForImageMime(String mime) => switch (mime) {
   'image/png' => '.png',
   'image/jpeg' => '.jpg',
@@ -58,11 +60,13 @@ String withImageLinks(String markdown, List<ExportedAttachment> images) {
     if (markdown.codeUnitAt(i) == 0xFFFC) {
       if (next < images.length) {
         final attachment = images[next++];
-        // A recording is a plain link, not an image link: `![]()` on an audio
-        // file renders as a broken picture in every markdown editor there is.
+        // Moving media is a plain link, not an image link: `![]()` on audio or
+        // video renders as a broken picture in ordinary markdown editors.
         buffer.write(
           attachment.isVoice
               ? '[${voiceLinkLabel(attachment)}](../${attachment.path})'
+              : attachment.isVideo
+              ? '[${videoLinkLabel(attachment)}](../${attachment.path})'
               : '![](../${attachment.path})',
         );
       }
@@ -84,6 +88,13 @@ String voiceLinkLabel(ExportedAttachment attachment) {
     return '${title.trim()} $stamp';
   }
   return 'Voice note $stamp';
+}
+
+String videoLinkLabel(ExportedAttachment attachment) {
+  final duration = Duration(milliseconds: attachment.durationMs ?? 0);
+  final seconds = duration.inSeconds;
+  final stamp = '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  return 'Video $stamp';
 }
 
 /// The inverse: turns image links back into the placeholder the note stores.
@@ -158,6 +169,7 @@ Uint8List buildExportArchive({
             mime: ref.mime,
             width: ref.width,
             height: ref.height,
+            widthFactor: ref.widthFactor,
           ),
         );
       } else if (ref is NoteVoiceRef) {
@@ -172,6 +184,19 @@ Uint8List buildExportArchive({
             // transcript that was paid for rather than transcribing it again.
             transcript: ref.transcript?.toJson(),
             summary: ref.summary?.toJson(),
+          ),
+        );
+      } else if (ref is NoteVideoRef) {
+        images.add(
+          ExportedAttachment(
+            kind: 'video',
+            hash: ref.hash,
+            path: '$exportAttachmentsDirectory/${archiveVideoName(ref)}',
+            mime: ref.mime,
+            width: ref.width,
+            height: ref.height,
+            widthFactor: ref.widthFactor,
+            durationMs: ref.durationMs,
           ),
         );
       }
@@ -195,6 +220,7 @@ Uint8List buildExportArchive({
         updatedAt: note.updatedAt,
         createdAt: note.createdAt.millisecondsSinceEpoch,
         archivedAt: note.archivedAt,
+        hiddenAt: note.hiddenAt,
         bodyHash: bodyHashOf(markdown),
         formats: note.formats,
         images: images,
@@ -443,6 +469,20 @@ ArchiveContents readExportArchiveFromBytes(List<int> bytes) =>
             summary: VoiceSummary.fromJson(image.summary),
           ),
         );
+      } else if (image.isVideo) {
+        attachments.add(
+          NoteVideoRef(
+            offset: anchor,
+            hash: image.hash,
+            key: randomKey(),
+            mime: image.mime,
+            bytes: 0,
+            width: image.width ?? 1,
+            height: image.height ?? 1,
+            durationMs: image.durationMs ?? 1,
+            widthFactor: image.widthFactor ?? 1,
+          ),
+        );
       } else {
         attachments.add(
           NoteImageRef(
@@ -453,6 +493,7 @@ ArchiveContents readExportArchiveFromBytes(List<int> bytes) =>
             width: image.width ?? 1,
             height: image.height ?? 1,
             bytes: 0,
+            widthFactor: image.widthFactor ?? 1,
           ),
         );
       }
@@ -470,6 +511,7 @@ ArchiveContents readExportArchiveFromBytes(List<int> bytes) =>
       createdAt: DateTime.fromMillisecondsSinceEpoch(entry.createdAt),
       updatedAt: entry.updatedAt,
       archivedAt: entry.archivedAt,
+      hiddenAt: entry.hiddenAt,
     ),
     handEdited: handEdited,
   );

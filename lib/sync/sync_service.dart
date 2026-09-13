@@ -13,6 +13,7 @@ import 'aead.dart';
 import 'doc_store.dart';
 import 'image_sync.dart';
 import 'key_wrap.dart';
+import 'presence.dart';
 import 'sealed_box.dart';
 import 'space_keyring.dart';
 import 'spaces.dart';
@@ -79,7 +80,7 @@ const String fugueEngine = 'fugue1';
 /// The keyring, the duties a space list reveals — grants, rotations, trips
 /// home — and the attachment uploads are unchanged from the blob protocol and
 /// run over HTTP as they did.
-class SyncService extends ChangeNotifier {
+class SyncService extends ChangeNotifier implements RemoteCaretSource {
   SyncService({
     required NotesStore notes,
     required SyncState state,
@@ -94,6 +95,9 @@ class SyncService extends ChangeNotifier {
     this.maxRetry = const Duration(minutes: 5),
     this.pollInterval = const Duration(seconds: 60),
     this.snapshotEvery = 150,
+    this.presenceThrottle = const Duration(milliseconds: 90),
+    this.typingIdle = const Duration(milliseconds: 1500),
+    this.presenceLinger = const Duration(milliseconds: 1500),
   }) : _notes = notes,
        _state = state,
        _api = api,
@@ -166,19 +170,43 @@ class SyncService extends ChangeNotifier {
   /// Pushes awaiting an acknowledgement, by request id.
   final Map<String, ({DocRecord record, OutboxEntry entry})> _awaiting = {};
 
-  /// Presence is deliberately bounded and ephemeral. One local frame is
-  /// refreshed while keys are arriving, and at most one remote frame per
-  /// device is kept until its short expiry.
-  static const _typingIdle = Duration(milliseconds: 1500);
+  /// Between frames while a caret moves: a dozen a second reads as live, and
+  /// a held arrow key does not become a stream of relayed frames.
+  final Duration presenceThrottle;
+
+  /// How long after the last keystroke somebody stops counting as typing.
+  final Duration typingIdle;
+
+  /// How long a caret stays after its device says it has gone. It covers the
+  /// stop-then-start a typist sends on pausing (see [_flushPresence]), so
+  /// that does not flicker, and reads as leaving rather than vanishing.
+  final Duration presenceLinger;
+
+  /// Presence is deliberately bounded and ephemeral. One local frame is kept
+  /// and refreshed while this device is in a shared note, and at most one
+  /// remote frame per device is kept until its short expiry.
   static const _presenceTtl = Duration(seconds: 30);
   static const _presenceRefresh = Duration(seconds: 10);
+
+  /// How long a note counts as open here with nothing happening in it. Long
+  /// enough to read a page; short enough that a window left open over lunch
+  /// does not keep a caret in somebody else's note all afternoon.
+  static const _presenceIdle = Duration(minutes: 3);
   static const _maxRemotePresence = 128;
   final Map<String, _RemotePresence> _remotePresence = {};
   final Map<String, int> _presenceMessageVersions = {};
   int _presenceMessageSerial = 0;
-  _OutgoingPresence? _outgoingPresence;
-  String? _requestedTypingNoteId;
-  int _outgoingPresenceVersion = 0;
+  final _Pulse _caretPulse = _Pulse();
+
+  /// What this device is doing in a shared note, as last reported.
+  _LocalPresence? _local;
+
+  /// The frame last written for it, which a stop has to repeat exactly.
+  _SentPresence? _sent;
+  int _presenceGeneration = 0;
+  Future<void> _presenceChain = Future<void>.value();
+  Timer? _typingTimer;
+  Timer? _presenceSendTimer;
   Timer? _presenceIdleTimer;
   Timer? _presenceRefreshTimer;
   Timer? _presenceExpiryTimer;
@@ -193,28 +221,129 @@ class SyncService extends ChangeNotifier {
   /// without being asked for.
   bool get isLive => _live;
 
-  /// Human-readable collaborators currently typing in [noteId], one label per
-  /// account even when the same person has the note open on two devices.
-  List<String> typingNamesFor(String noteId) {
+  /// Everyone else with [noteId] open, one entry per person however many of
+  /// their devices have it, in the order they arrived.
+  List<Collaborator> collaboratorsIn(String noteId) =>
+      _collaborators((presence) => presence.noteId == noteId);
+
+  /// Everyone else with any note of [spaceId] open.
+  List<Collaborator> collaboratorsInSpace(String spaceId) =>
+      _collaborators((presence) => presence.spaceId == spaceId);
+
+  /// Every note somebody else has open right now, for the note list.
+  Map<String, List<Collaborator>> get collaboratorsByNote {
+    final noteIds = {
+      for (final presence in _remotePresence.values) presence.noteId,
+    };
+    return {
+      for (final noteId in noteIds)
+        if (collaboratorsIn(noteId) case final people when people.isNotEmpty)
+          noteId: people,
+    };
+  }
+
+  /// Whoever is typing in [noteId] right now, alphabetically, so the footer
+  /// does not reshuffle its sentence as they take turns.
+  List<Collaborator> typistsIn(String noteId) => List.unmodifiable(
+    collaboratorsIn(noteId).where((person) => person.typing).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase())),
+  );
+
+  /// What to call each collaborator typing in [noteId], alphabetically.
+  List<String> typingNamesFor(String noteId) =>
+      List.unmodifiable([for (final person in typistsIn(noteId)) person.name]);
+
+  List<Collaborator> _collaborators(bool Function(_RemotePresence) where) {
     final now = DateTime.now();
     final byUser = <String, _RemotePresence>{};
     for (final presence in _remotePresence.values) {
+      if (!where(presence) || !presence.expiresAt.isAfter(now)) continue;
+      final seen = byUser[presence.userId];
+      if (seen == null || (presence.typing && !seen.typing)) {
+        byUser[presence.userId] = presence;
+      }
+    }
+    return [for (final presence in byUser.values) _collaborator(presence)];
+  }
+
+  Collaborator _collaborator(_RemotePresence presence) {
+    final space = _keyring.byId(presence.spaceId);
+    final member = space?.member(presence.userId);
+    return Collaborator(
+      userId: presence.userId,
+      name: space?.shortNameOf(presence.userId) ?? 'Someone',
+      fullName: member?.displayName ?? 'Someone',
+      image: member?.image,
+      typing: presence.typing,
+    );
+  }
+
+  @override
+  Listenable get caretChanges => _caretPulse;
+
+  /// Other people's carets in [noteId], resolved against the note's document.
+  ///
+  /// A caret whose characters have not arrived yet — the frame outran the ops
+  /// it points into — is drawn where that device's previous caret was, which
+  /// is exactly right for text that has not changed here yet either.
+  @override
+  RemoteCarets caretsFor(String noteId) {
+    if (_remotePresence.isEmpty || !_docs.isLoaded) return RemoteCarets.empty;
+    final record = _docs.get(noteId);
+    if (record == null) return RemoteCarets.empty;
+    final now = DateTime.now();
+    NoteDoc? doc;
+    final carets = <RemoteCaret>[];
+    for (final entry in _remotePresence.entries) {
+      final presence = entry.value;
       if (presence.noteId != noteId || !presence.expiresAt.isAfter(now)) {
         continue;
       }
-      byUser[presence.userId] = presence;
+      final wanted = presence.selection;
+      if (wanted == null) continue;
+      doc ??= record.doc;
+      final shown = _knows(doc, wanted)
+          ? wanted
+          : presence.fallback != null && _knows(doc, presence.fallback!)
+          ? presence.fallback!
+          : null;
+      if (shown == null) continue;
+      carets.add(
+        RemoteCaret(
+          id: entry.key,
+          userId: presence.userId,
+          name:
+              _keyring.byId(presence.spaceId)?.shortNameOf(presence.userId) ??
+              'Someone',
+          base: doc.offsetOf(shown.base),
+          extent: doc.offsetOf(shown.extent),
+          typing: presence.typing,
+          movedAt: presence.movedAt,
+          leaving: presence.leaving,
+        ),
+      );
     }
-    final names = [
-      for (final presence in byUser.values) _presenceLabel(presence),
-    ];
-    names.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return List.unmodifiable(names);
+    if (doc == null || carets.isEmpty) return RemoteCarets.empty;
+    return RemoteCarets(text: doc.text, carets: List.unmodifiable(carets));
   }
 
-  /// Records real editor activity. A sealed note id is sent once at the start
-  /// and then refreshed, rather than doing encryption and a socket write for
-  /// every key press.
-  void reportTyping(String noteId) {
+  static bool _knows(NoteDoc doc, AnchoredSelection selection) =>
+      doc.knows(selection.base) && doc.knows(selection.extent);
+
+  /// Records what this device is doing in [noteId]: where its caret is, as
+  /// offsets into [text], and whether that came with an edit.
+  ///
+  /// Cheap enough for every keystroke and every caret move. Nothing is sealed
+  /// or sent here: frames go out at most every [presenceThrottle], and only
+  /// when what they would say has changed. A note that is not shared, or not
+  /// this account's to edit, ends any presence instead.
+  void reportPresence(
+    String noteId, {
+    int? base,
+    int? extent,
+    String? text,
+    bool edited = false,
+  }) {
     if (_disposed || _vault == null) return;
     final note = _notes.byId(noteId);
     final spaceId = note?.spaceId;
@@ -225,32 +354,64 @@ class SyncService extends ChangeNotifier {
         !space.isTeam ||
         !space.canEdit ||
         key == null) {
-      stopTyping();
+      leaveNote();
       return;
     }
 
+    var local = _local;
+    if (local == null || local.noteId != noteId || local.spaceId != spaceId) {
+      leaveNote();
+      local = _local = _LocalPresence(
+        noteId: noteId,
+        spaceId: spaceId,
+        key: key,
+      );
+    } else {
+      // A rotation replaces the space key; later frames seal under the new one.
+      local.key = key;
+    }
+    if (base != null && extent != null && text != null) {
+      local
+        ..base = base
+        ..extent = extent
+        ..text = text;
+    }
+    if (edited) {
+      local.typing = true;
+      _typingTimer?.cancel();
+      final typist = local;
+      _typingTimer = Timer(typingIdle, () {
+        if (!identical(_local, typist)) return;
+        typist.typing = false;
+        _schedulePresenceSend();
+      });
+    }
     _presenceIdleTimer?.cancel();
-    _presenceIdleTimer = Timer(_typingIdle, () => stopTyping(noteId));
-    if (_requestedTypingNoteId == noteId) return;
-
-    _requestedTypingNoteId = noteId;
-    final version = ++_outgoingPresenceVersion;
-    unawaited(_beginPresence(noteId, spaceId, key, version));
+    _presenceIdleTimer = Timer(_presenceIdle, () => leaveNote(noteId));
+    _schedulePresenceSend();
   }
 
-  /// Clears activity only when [noteId] is still the active editor. That guard
-  /// prevents a disposed old editor from cancelling a newer note's presence.
-  void stopTyping([String? noteId]) {
-    if (noteId != null && _requestedTypingNoteId != noteId) return;
-    _requestedTypingNoteId = null;
-    _outgoingPresenceVersion++;
+  /// Records a keystroke in [noteId] without moving the reported caret.
+  void reportTyping(String noteId) => reportPresence(noteId, edited: true);
+
+  /// Ends this device's presence, or only if it is still in [noteId]: a
+  /// disposed editor must not end the presence of the note that replaced it.
+  void leaveNote([String? noteId]) {
+    final local = _local;
+    if (noteId != null && local?.noteId != noteId) return;
+    _presenceGeneration++;
+    _local = null;
+    _typingTimer?.cancel();
+    _typingTimer = null;
+    _presenceSendTimer?.cancel();
+    _presenceSendTimer = null;
     _presenceIdleTimer?.cancel();
     _presenceIdleTimer = null;
     _presenceRefreshTimer?.cancel();
     _presenceRefreshTimer = null;
-    final previous = _outgoingPresence;
-    _outgoingPresence = null;
-    if (previous != null) _writePresence(previous, active: false);
+    final sent = _sent;
+    _sent = null;
+    if (sent != null) _writePresence(sent.spaceId, sent.box, active: false);
   }
 
   /// Changes the server has not acknowledged yet.
@@ -283,7 +444,7 @@ class SyncService extends ChangeNotifier {
   /// to spend. Everything unsent stays in the outbox.
   void pause() {
     _foreground = false;
-    stopTyping();
+    leaveNote();
     _disconnect();
     _stopPolling();
     unawaited(_docs.flush());
@@ -291,7 +452,7 @@ class SyncService extends ChangeNotifier {
 
   /// Signing out. Sync stops; the notes stay exactly where they are.
   void lock() {
-    stopTyping();
+    leaveNote();
     _vault = null;
     _sendTimer?.cancel();
     _sendTimer = null;
@@ -490,51 +651,115 @@ class SyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _beginPresence(
-    String noteId,
-    String spaceId,
-    Uint8List key,
-    int version,
-  ) async {
-    final payload = await sealBytes(_encode({'noteId': noteId}), key);
-    if (_disposed ||
-        version != _outgoingPresenceVersion ||
-        _requestedTypingNoteId != noteId) {
-      return;
-    }
-    final previous = _outgoingPresence;
-    if (previous != null) _writePresence(previous, active: false);
-    final current = _OutgoingPresence(
-      noteId: noteId,
-      spaceId: spaceId,
-      payload: payload,
-    );
-    _outgoingPresence = current;
-    _writePresence(current, active: true);
-    _presenceRefreshTimer?.cancel();
-    _presenceRefreshTimer = Timer.periodic(
-      _presenceRefresh,
-      (_) => _writePresence(current, active: true),
-    );
+  void _schedulePresenceSend() {
+    _presenceSendTimer ??= Timer(presenceThrottle, () {
+      _presenceSendTimer = null;
+      _flushPresence();
+    });
   }
 
-  void _writePresence(_OutgoingPresence presence, {required bool active}) {
-    final socket = _socket;
-    if (socket == null || !_live || !_subscribed.contains(presence.spaceId)) {
+  /// Seals and writes what this device is doing, if that has changed.
+  ///
+  /// The payload names the note under one of two keys, and the choice is the
+  /// whole of the compatibility story. Builds before carets read any frame
+  /// with a `noteId` as somebody typing, and hold it until a stop repeating
+  /// that exact frame arrives. So a typing frame says `noteId`, a quiet one
+  /// says `note` — which those builds pass over — and a typist who pauses
+  /// withdraws the typing frame before announcing the quiet one, or they
+  /// would be shown typing for as long as they sat in the note.
+  void _flushPresence() {
+    final local = _local;
+    if (local == null || _disposed) return;
+    final selection = _anchoredSelection(local);
+    final plain = <String, Object?>{
+      local.typing ? 'noteId' : 'note': local.noteId,
+      'v': 2,
+      if (selection != null) 'sel': selection.toJson(),
+    };
+    final json = jsonEncode(plain);
+    final sent = _sent;
+    if (sent != null && sent.json == json && sent.spaceId == local.spaceId) {
       return;
     }
+    final generation = _presenceGeneration;
+    final key = local.key;
+    final typing = local.typing;
+    // Padded to a fixed step, so the ciphertext's length says nothing about
+    // how far into a note a caret is. JSON ignores the trailing spaces.
+    final padded = json.padRight((json.length ~/ 64 + 1) * 64);
+    _presenceChain = _presenceChain
+        .then((_) async {
+          final box = await sealBytes(
+            Uint8List.fromList(utf8.encode(padded)),
+            key,
+          );
+          if (_disposed ||
+              generation != _presenceGeneration ||
+              !identical(_local, local)) {
+            return;
+          }
+          final previous = _sent;
+          if (previous != null && previous.typing && !typing) {
+            _writePresence(previous.spaceId, previous.box, active: false);
+          }
+          final next = _SentPresence(
+            spaceId: local.spaceId,
+            box: box,
+            json: json,
+            typing: typing,
+          );
+          _sent = next;
+          _writePresence(next.spaceId, next.box, active: true);
+          _presenceRefreshTimer ??= Timer.periodic(_presenceRefresh, (_) {
+            final current = _sent;
+            if (current != null) {
+              _writePresence(current.spaceId, current.box, active: true);
+            }
+          });
+        })
+        .catchError((Object error) {
+          debugPrint('KapyNotes: presence not sent: $error');
+        });
+  }
+
+  /// The reported caret as the characters it sits after, or null while the
+  /// note has no document to anchor into yet.
+  AnchoredSelection? _anchoredSelection(_LocalPresence local) {
+    final text = local.text;
+    if (text == null || !_docs.isLoaded) return null;
+    final record = _docs.get(local.noteId);
+    if (record == null) return null;
+    final doc = record.doc;
+    var base = local.base;
+    var extent = local.extent;
+    final current = doc.text;
+    if (text != current) {
+      // The editor can hold blank lines an append session has not committed,
+      // or be a keystroke past what the document has absorbed. Offsets are
+      // mapped across the difference rather than pinned to whatever
+      // character they happen to land beside.
+      final edit = diffTexts(text, current);
+      base = mapOffsetAcross(edit, base);
+      extent = mapOffsetAcross(edit, extent);
+    }
+    return AnchoredSelection(doc.anchorAt(base), doc.anchorAt(extent));
+  }
+
+  void _writePresence(String spaceId, SealedBox box, {required bool active}) {
+    final socket = _socket;
+    if (socket == null || !_live || !_subscribed.contains(spaceId)) return;
     socket.send({
       't': 'presence',
-      'spaceId': presence.spaceId,
+      'spaceId': spaceId,
       'active': active,
-      'payload': presence.payload.toJson(),
+      'payload': box.toJson(),
     });
   }
 
   void _resendPresence(String spaceId) {
-    final presence = _outgoingPresence;
-    if (presence?.spaceId == spaceId) {
-      _writePresence(presence!, active: true);
+    final sent = _sent;
+    if (sent != null && sent.spaceId == spaceId) {
+      _writePresence(spaceId, sent.box, active: true);
     }
   }
 
@@ -550,14 +775,12 @@ class SyncService extends ChangeNotifier {
         userId == _keyring.userId) {
       return;
     }
-    final id = '$userId\u0000$deviceId';
+    final id = '$userId|$deviceId';
     final version = ++_presenceMessageSerial;
     _presenceMessageVersions[id] = version;
     if (!active) {
-      final changed = _remotePresence.remove(id) != null;
       _presenceMessageVersions.remove(id);
-      _schedulePresenceExpiry();
-      if (changed && !_disposed) notifyListeners();
+      _beginLeaving(id);
       return;
     }
 
@@ -568,8 +791,19 @@ class SyncService extends ChangeNotifier {
       final clear = await openBytes(box, key);
       if (clear == null || _presenceMessageVersions[id] != version) return;
       final decoded = jsonDecode(utf8.decode(clear));
-      final noteId = decoded is Map ? decoded['noteId'] : null;
-      if (noteId is! String || noteId.length > 64) return;
+      if (decoded is! Map) return;
+      // `noteId` is a typist, from this build or an older one; `note` is
+      // somebody who is only there. See [_flushPresence].
+      final typingIn = decoded['noteId'];
+      final quietIn = decoded['note'];
+      final noteId = typingIn is String
+          ? typingIn
+          : quietIn is String
+          ? quietIn
+          : null;
+      if (noteId == null || noteId.isEmpty || noteId.length > 64) return;
+      final typing = typingIn is String;
+      final selection = AnchoredSelection.fromJson(decoded['sel']);
 
       final previous = _remotePresence[id];
       if (previous == null && _remotePresence.length >= _maxRemotePresence) {
@@ -578,18 +812,30 @@ class SyncService extends ChangeNotifier {
         );
         _remotePresence.remove(oldest.key);
       }
+      final now = DateTime.now();
+      final samePlace =
+          previous != null &&
+          previous.noteId == noteId &&
+          previous.spaceId == spaceId;
+      final moved = !samePlace || previous.selection != selection;
       _remotePresence[id] = _RemotePresence(
         userId: userId,
         spaceId: spaceId,
         noteId: noteId,
-        expiresAt: DateTime.now().add(_presenceTtl),
+        typing: typing,
+        selection: selection,
+        // Kept in case the new caret points at characters still on their way.
+        fallback: samePlace
+            ? (moved ? previous.selection : previous.fallback)
+            : null,
+        movedAt: moved || typing ? now : previous.movedAt,
+        expiresAt: now.add(_presenceTtl),
       );
       _schedulePresenceExpiry();
-      final changed =
-          previous == null ||
-          previous.noteId != noteId ||
-          previous.spaceId != spaceId;
-      if (changed && !_disposed) notifyListeners();
+      _caretPulse.pulse();
+      final rosterChanged =
+          !samePlace || previous.leaving || previous.typing != typing;
+      if (rosterChanged && !_disposed) notifyListeners();
     } on FormatException {
       // Opaque presence from a newer or corrupt client is safe to ignore.
     } finally {
@@ -599,19 +845,17 @@ class SyncService extends ChangeNotifier {
     }
   }
 
-  String _presenceLabel(_RemotePresence presence) {
-    final space = _keyring.byId(presence.spaceId);
-    final member = space?.member(presence.userId);
-    final email = member?.email;
-    if (email == null || email.isEmpty) return 'Someone';
-    final local = email.split('@').first;
-    if (local.isEmpty) return email;
-    final collision = space!.members.any(
-      (other) =>
-          other.userId != presence.userId &&
-          other.email.split('@').first.toLowerCase() == local.toLowerCase(),
+  /// A device said it has gone. Its typing ends at once; the rest lingers for
+  /// [presenceLinger], in case what follows is the same person carrying on.
+  void _beginLeaving(String id) {
+    final presence = _remotePresence[id];
+    if (presence == null || presence.leaving) return;
+    _remotePresence[id] = presence.leavingBy(
+      DateTime.now().add(presenceLinger),
     );
-    return collision ? email : local;
+    _schedulePresenceExpiry();
+    _caretPulse.pulse();
+    if (presence.typing && !_disposed) notifyListeners();
   }
 
   void _schedulePresenceExpiry() {
@@ -634,7 +878,10 @@ class SyncService extends ChangeNotifier {
     final before = _remotePresence.length;
     _remotePresence.removeWhere((_, value) => !value.expiresAt.isAfter(now));
     _schedulePresenceExpiry();
-    if (_remotePresence.length != before && !_disposed) notifyListeners();
+    if (_remotePresence.length != before && !_disposed) {
+      _caretPulse.pulse();
+      notifyListeners();
+    }
   }
 
   void _clearRemotePresence() {
@@ -644,7 +891,10 @@ class SyncService extends ChangeNotifier {
     _presenceMessageVersions.clear();
     if (_remotePresence.isEmpty) return;
     _remotePresence.clear();
-    if (!_disposed) notifyListeners();
+    if (!_disposed) {
+      _caretPulse.pulse();
+      notifyListeners();
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -771,7 +1021,7 @@ class SyncService extends ChangeNotifier {
               );
             }
             return current.copyWith(attachmentId: ref.attachmentId);
-          });
+          }, key: ref.key);
         }
       }
       if (uploaded.attachments.every((ref) => ref.isUploaded)) {
@@ -799,6 +1049,7 @@ class SyncService extends ChangeNotifier {
       attachments: note.attachments,
       createdAt: note.createdAt,
       archivedAt: note.archivedAt,
+      hiddenAt: note.hiddenAt,
       now: _now(),
     );
     record.outbox.add(
@@ -820,6 +1071,7 @@ class SyncService extends ChangeNotifier {
       attachments: note.attachments,
       createdAt: note.createdAt,
       archivedAt: note.archivedAt,
+      hiddenAt: note.hiddenAt,
       now: _now(),
     );
     var changed = false;
@@ -1386,6 +1638,7 @@ class SyncService extends ChangeNotifier {
       createdAt: view.createdAt ?? local?.createdAt ?? at,
       updatedAt: at,
       archivedAt: view.archivedAt,
+      hiddenAt: view.hiddenAt,
       syncedAt: at,
       spaceId: storedSpaceId,
       contentKey: contentKey,
@@ -1642,7 +1895,7 @@ class SyncService extends ChangeNotifier {
 
   @override
   void dispose() {
-    stopTyping();
+    leaveNote();
     _disposed = true;
     _notes.removeListener(_onNotesChanged);
     _sendTimer?.cancel();
@@ -1650,20 +1903,52 @@ class SyncService extends ChangeNotifier {
     _presenceExpiryTimer?.cancel();
     _stopPolling();
     _disconnect();
+    _caretPulse.dispose();
     super.dispose();
   }
 }
 
-class _OutgoingPresence {
-  const _OutgoingPresence({
+/// A [ChangeNotifier] anyone holding it may fire.
+class _Pulse extends ChangeNotifier {
+  void pulse() => notifyListeners();
+}
+
+/// What this device last reported doing in a shared note.
+class _LocalPresence {
+  _LocalPresence({
     required this.noteId,
     required this.spaceId,
-    required this.payload,
+    required this.key,
   });
 
   final String noteId;
   final String spaceId;
-  final SealedBox payload;
+  Uint8List key;
+
+  /// The caret, as offsets into [text] — the editor's text when it reported,
+  /// which the document may not have caught up with yet.
+  int base = 0;
+  int extent = 0;
+  String? text;
+  bool typing = false;
+}
+
+/// The frame last written, kept whole: the server only honours a stop that
+/// repeats the frame it is stopping.
+class _SentPresence {
+  const _SentPresence({
+    required this.spaceId,
+    required this.box,
+    required this.json,
+    required this.typing,
+  });
+
+  final String spaceId;
+  final SealedBox box;
+
+  /// The plaintext it sealed, so an unchanged caret is not sent again.
+  final String json;
+  final bool typing;
 }
 
 class _RemotePresence {
@@ -1671,13 +1956,42 @@ class _RemotePresence {
     required this.userId,
     required this.spaceId,
     required this.noteId,
+    required this.typing,
+    required this.selection,
+    required this.fallback,
+    required this.movedAt,
     required this.expiresAt,
+    this.leaving = false,
   });
 
   final String userId;
   final String spaceId;
   final String noteId;
+  final bool typing;
+
+  /// Where their caret is. Null from a build that sends no caret.
+  final AnchoredSelection? selection;
+
+  /// Where it was before, for as long as [selection] names characters that
+  /// have not arrived here yet.
+  final AnchoredSelection? fallback;
+  final DateTime movedAt;
   final DateTime expiresAt;
+
+  /// Their device has said it is going; this is the lingering remainder.
+  final bool leaving;
+
+  _RemotePresence leavingBy(DateTime until) => _RemotePresence(
+    userId: userId,
+    spaceId: spaceId,
+    noteId: noteId,
+    typing: false,
+    selection: selection,
+    fallback: fallback,
+    movedAt: movedAt,
+    expiresAt: until,
+    leaving: true,
+  );
 }
 
 /// One entry of a space's log, op or snapshot, in the order it was written.

@@ -623,7 +623,11 @@ abstract class SyncApi {
   ///
   /// Bytes never pass through the API container: a phone on a slow connection
   /// would otherwise hold one of its connections open for the whole transfer.
-  Future<void> putBlob(Uri url, Uint8List bytes);
+  Future<void> putBlob(
+    Uri url,
+    Uint8List bytes, {
+    void Function(double progress)? onProgress,
+  });
   Future<Uint8List?> getBlob(Uri url);
 }
 
@@ -1004,14 +1008,33 @@ class HttpSyncApi implements SyncApi {
   }
 
   @override
-  Future<void> putBlob(Uri url, Uint8List bytes) async {
+  Future<void> putBlob(
+    Uri url,
+    Uint8List bytes, {
+    void Function(double progress)? onProgress,
+  }) async {
     // No authorization header: the signature is in the URL, and sending a
     // session token to object storage would leak it there for no gain.
-    final http.Response response;
+    final http.StreamedResponse response;
     try {
-      response = await _client
-          .put(url, body: bytes, headers: {'content-type': attachmentMime})
-          .timeout(timeout);
+      final request = http.StreamedRequest('PUT', url)
+        ..headers['content-type'] = attachmentMime
+        ..contentLength = bytes.length;
+      onProgress?.call(0);
+      final responseFuture = _client.send(request).timeout(timeout);
+      const chunkSize = 64 * 1024;
+      var sent = 0;
+      await request.sink.addStream(() async* {
+        while (sent < bytes.length) {
+          final end = (sent + chunkSize).clamp(0, bytes.length);
+          yield Uint8List.sublistView(bytes, sent, end);
+          sent = end;
+          onProgress?.call(sent / bytes.length);
+        }
+      }());
+      await request.sink.close();
+      response = await responseFuture;
+      await response.stream.drain<void>();
     } on TimeoutException {
       throw const SyncTransientException('image upload timed out');
     } catch (error) {

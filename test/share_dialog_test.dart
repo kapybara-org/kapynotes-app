@@ -1,10 +1,11 @@
-import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/sync/presence.dart';
 import 'package:kapy_notes/sync/sharing.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
 import 'package:kapy_notes/sync/spaces.dart';
@@ -160,10 +161,11 @@ void main() {
 
     // Now a shared note: the sheet shows the space, the invitation, and the
     // ways out.
-    expect(find.textContaining('Shared in With user-2'), findsOneWidget);
+    // Called by who it is shared with, not by the space's placeholder name.
+    expect(find.text('Shared with user-2'), findsOneWidget);
     expect(find.textContaining('Invitation sent to'), findsOneWidget);
     expect(find.text(bob.email), findsOneWidget);
-    expect(find.text('View only · invited · not yet accepted'), findsOneWidget);
+    expect(find.text('View only · Invited, not joined yet'), findsOneWidget);
     expect(find.byKey(const ValueKey('unshare-note')), findsOneWidget);
     expect(find.byKey(const ValueKey('stop-sharing')), findsOneWidget);
     expect(alice.notes.byId(note.id)!.isShared, isTrue);
@@ -369,7 +371,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('My notes'), findsOneWidget);
-    expect(find.text('With user-2'), findsOneWidget);
+    expect(find.text('Shared with user-2'), findsOneWidget);
     expect(find.text('Private'), findsOneWidget);
     expect(find.text('Shared'), findsOneWidget);
 
@@ -377,59 +379,214 @@ void main() {
     // ordinary sections because they are the ones that change while you are
     // not looking; your own are where you left them.
     double top(String label) => tester.getTopLeft(find.text(label)).dy;
-    expect(top('Pinned'), lessThan(top('With user-2')));
-    expect(top('With user-2'), lessThan(top('My notes')));
+    expect(top('Pinned'), lessThan(top('Shared with user-2')));
+    expect(top('Shared with user-2'), lessThan(top('My notes')));
 
     // And a pinned note is lifted out of the section it came from rather
     // than repeated in it.
     expect(find.text('Kept at hand'), findsOneWidget);
-    expect(top('Kept at hand'), lessThan(top('With user-2')));
+    expect(top('Kept at hand'), lessThan(top('Shared with user-2')));
+
+    // "My notes" counts every note of their own, the pinned one included,
+    // and none of the space's.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('sidebar-note-count')),
+        matching: find.text('2'),
+      ),
+      findsOneWidget,
+    );
+
+    final inviteList = [
+      'People with access',
+      '${server.user(alice.userId).name} (you) · Owner',
+      '',
+      'Invited, not joined yet',
+      '${bob.email} · Editor',
+    ].join('\n');
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('Shared with user-2')));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(find.text(inviteList), findsOneWidget);
   });
 
-  testWidgets('a note row leaves sharing to the title bar, but keeps the menu', (
-    tester,
-  ) async {
+  testWidgets('a shared space is headed by its people and their faces, says '
+      'who is in a note, and opens from its heading', (tester) async {
     late Note shared;
+    late String spaceId;
     await tester.runAsync(() async {
       await alice.boot();
       await bob.boot();
       shared = alice.notes.create(body: 'Shared');
+      alice.notes.create(body: 'Private');
       await alice.sync.syncNow();
-      await alice.sharing.shareNoteWith(shared.id, email: bob.email);
+      final space = await alice.sharing.shareNoteWith(
+        shared.id,
+        email: bob.email,
+      );
+      spaceId = space.id;
+      await bob.sharing.acceptInvite(server.outbox.single.token);
+      await alice.sync.syncNow();
     });
 
+    String? opened;
     await tester.pumpWidget(
       harness(
         SizedBox(
-          width: 260,
+          width: 280,
           child: Sidebar(
             notes: alice.notes.notes,
-            selectedId: shared.id,
+            selectedId: null,
             query: '',
             displayTime: (t) => t,
             onQueryChanged: (_) {},
             onSelect: (_) {},
             onCreate: () {},
             onShare: (_) {},
-            onArchive: (_) {},
             sharing: alice.sharing,
+            collaborators: {
+              shared.id: [
+                Collaborator(
+                  userId: bob.userId,
+                  name: 'User',
+                  fullName: server.user(bob.userId).name,
+                ),
+              ],
+            },
+            onOpenSpace: (id) => opened = id,
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    // The hover strip is down to pin and archive: the people icon that used to
-    // sit beside them now lives in the title bar, where it acts on the note
-    // that is open rather than the one under the pointer.
-    expect(find.byKey(ValueKey('share-note-${shared.id}')), findsNothing);
-    expect(find.byKey(ValueKey('archive-note-${shared.id}')), findsOneWidget);
+    // Bob by his name, not by the address the space was first shared with.
+    expect(find.text('Shared with User'), findsOneWidget);
+    expect(find.textContaining('user-2'), findsNothing);
+    expect(
+      find.byKey(ValueKey('space-avatar-$spaceId-${bob.userId}')),
+      findsOneWidget,
+    );
+    // Only the other people: this account is not its own company.
+    expect(
+      find.byKey(ValueKey('space-avatar-$spaceId-${alice.userId}')),
+      findsNothing,
+    );
+    // The row with somebody in it says who, where its time would be.
+    expect(find.text('User is here'), findsOneWidget);
 
-    // Right-click still reaches it without opening the note first.
-    await tester.tap(find.text('Shared'), buttons: kSecondaryButton);
+    final accessList = [
+      'People with access',
+      '${server.user(alice.userId).name} (you) · Owner',
+      '${server.user(bob.userId).name} · Editor',
+    ].join('\n');
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('Shared with User')));
+    await tester.pump(const Duration(milliseconds: 600));
     await tester.pumpAndSettle();
-    expect(find.text('Sharing…'), findsOneWidget);
+    expect(find.text(accessList), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(
+        'Shared with User. People with access. '
+        '${server.user(alice.userId).name} (you) · Owner. '
+        '${server.user(bob.userId).name} · Editor',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Shared with User'));
+    expect(opened, spaceId);
   });
+
+  testWidgets('a recipient sees who shared the space', (tester) async {
+    await tester.runAsync(() async {
+      await alice.boot();
+      await bob.boot();
+      final note = alice.notes.create(body: 'Shared');
+      await alice.sync.syncNow();
+      await alice.sharing.shareNoteWith(note.id, email: bob.email);
+      await bob.sharing.acceptInvite(server.outbox.single.token);
+      await alice.sync.syncNow();
+      await bob.sync.syncNow();
+    });
+
+    await tester.pumpWidget(
+      harness(
+        SizedBox(
+          width: 280,
+          child: Sidebar(
+            notes: bob.notes.notes,
+            selectedId: null,
+            query: '',
+            displayTime: (t) => t,
+            onQueryChanged: (_) {},
+            onSelect: (_) {},
+            onCreate: () {},
+            onShare: (_) {},
+            sharing: bob.sharing,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Shared by ${server.user(alice.userId).name}'),
+      findsOneWidget,
+    );
+    expect(find.text('With ${server.user(alice.userId).name}'), findsNothing);
+  });
+
+  testWidgets(
+    'a note row leaves sharing to the title bar, but keeps the menu',
+    (tester) async {
+      late Note shared;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        shared = alice.notes.create(body: 'Shared');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(shared.id, email: bob.email);
+      });
+
+      await tester.pumpWidget(
+        harness(
+          SizedBox(
+            width: 260,
+            child: Sidebar(
+              notes: alice.notes.notes,
+              selectedId: shared.id,
+              query: '',
+              displayTime: (t) => t,
+              onQueryChanged: (_) {},
+              onSelect: (_) {},
+              onCreate: () {},
+              onShare: (_) {},
+              onArchive: (_) {},
+              sharing: alice.sharing,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The row keeps one menu affordance. Sharing itself still lives in the
+      // title bar, where it acts on the note that is open rather than whichever
+      // row happens to be under the pointer.
+      expect(find.byKey(ValueKey('share-note-${shared.id}')), findsNothing);
+      expect(find.byKey(ValueKey('note-actions-${shared.id}')), findsOneWidget);
+
+      // Right-click still reaches it without opening the note first.
+      await tester.tap(find.text('Shared'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Manage sharing'), findsOneWidget);
+    },
+  );
 
   testWidgets('without a shared note the sidebar shows no sections', (
     tester,

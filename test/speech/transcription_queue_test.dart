@@ -427,36 +427,42 @@ void main() {
     expect(api.transcribeRequestIds, isEmpty);
   });
 
-  test('a refused attempt is tried again by itself, when its time comes', () async {
-    // Nothing used to wake the queue for the retry it had scheduled, so a
-    // recording that failed three times in a minute then sat behind
-    // "Transcribing…" until the next launch or the next recording.
-    queue.backoff = const Duration(milliseconds: 40);
-    api.transcribeScript.add(
-      () => throw const SyncTransientException(
-        'server returned 500',
-        answered: true,
-      ),
-    );
-    queue.enqueue(noteId, 'v1');
-    await queue.drain();
-    expect(queue.entries.single.attempts, 1);
+  test(
+    'a refused attempt is tried again by itself, when its time comes',
+    () async {
+      // Nothing used to wake the queue for the retry it had scheduled, so a
+      // recording that failed three times in a minute then sat behind
+      // "Transcribing…" until the next launch or the next recording.
+      queue.backoff = const Duration(milliseconds: 40);
+      api.transcribeScript.add(
+        () => throw const SyncTransientException(
+          'server returned 500',
+          answered: true,
+        ),
+      );
+      queue.enqueue(noteId, 'v1');
+      await queue.drain();
+      expect(queue.entries.single.attempts, 1);
 
-    // No further drain from here: the queue has to come back on its own.
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    expect(current()!.transcript, isNotNull, reason: 'the retry never ran');
-    expect(queue.entries, isEmpty);
-  });
+      // No further drain from here: the queue has to come back on its own.
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(current()!.transcript, isNotNull, reason: 'the retry never ran');
+      expect(queue.entries, isEmpty);
+    },
+  );
 
-  test('the transcript keeps the job id, so it can be asked about later', () async {
-    // The queue entry is thrown away the moment both stages finish. Without
-    // this, asking for another summary — or a post — a week later has nothing
-    // to bill against and the server rightly refuses.
-    queue.enqueue(noteId, 'v1');
-    await queue.drain();
-    expect(current()!.transcript!.jobId, isNotNull);
-    expect(queue.entries, isEmpty);
-  });
+  test(
+    'the transcript keeps the job id, so it can be asked about later',
+    () async {
+      // The queue entry is thrown away the moment both stages finish. Without
+      // this, asking for another summary — or a post — a week later has nothing
+      // to bill against and the server rightly refuses.
+      queue.enqueue(noteId, 'v1');
+      await queue.drain();
+      expect(current()!.transcript!.jobId, isNotNull);
+      expect(queue.entries, isEmpty);
+    },
+  );
 
   test('the summary is written the way the user asked for', () async {
     prefs.summaryInstruction = 'Two bullet points only.';
@@ -568,14 +574,15 @@ void main() {
 
     /// A queue with no account and no network, which is exactly the situation
     /// the device engine exists for.
-    TranscriptionQueue build({SpeechApi? Function()? api}) => TranscriptionQueue(
-      store: queueStore,
-      notes: notes,
-      blobs: blobs,
-      prefs: prefs,
-      api: api ?? (() => null),
-      transcriber: () => local,
-    );
+    TranscriptionQueue build({SpeechApi? Function()? api}) =>
+        TranscriptionQueue(
+          store: queueStore,
+          notes: notes,
+          blobs: blobs,
+          prefs: prefs,
+          api: api ?? (() => null),
+          transcriber: () => local,
+        );
 
     setUp(() {
       local = _FakeLocalTranscriber();
@@ -709,6 +716,33 @@ void main() {
     expect(current()!.transcript, isNotNull);
     expect(current()!.summary, isNull);
   });
+
+  test(
+    'an exhausted AI allowance keeps the transcript and does not retry',
+    () async {
+      api.summarizeScript.add(
+        () => throw const SyncRefusedException(
+          409,
+          SpeechCodes.summariesExhausted,
+          {
+            'usedGenerations': 100,
+            'quotaGenerations': 100,
+            'resetsAt': '2026-10-01T00:00:00.000Z',
+          },
+        ),
+      );
+      queue.enqueue(noteId, 'v1');
+      await queue.drain();
+
+      expect(current()!.transcript, isNotNull);
+      expect(current()!.summary, isNull);
+      expect(queue.entries.single.attempts, 0);
+      expect(queue.stateFor(current()!), VoiceChipState.failed);
+
+      await queue.drain(now: DateTime.now().add(const Duration(days: 1)));
+      expect(api.summarizeCalls, 1);
+    },
+  );
 
   test('enqueueing the same recording twice does not queue it twice', () {
     queue.enqueue(noteId, 'v1');

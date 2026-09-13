@@ -146,7 +146,7 @@ class _ResultChipState extends State<ResultChip> {
       Toast.show(
         context,
         "Couldn't copy to clipboard",
-        icon: Icons.error_outline_rounded,
+        icon: KapyIcons.errorOutlined,
         isError: true,
       );
     }
@@ -171,8 +171,8 @@ class _ResultChipState extends State<ResultChip> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_justCopied) ...[
-            Icon(
-              Icons.check_rounded,
+            KapyIcon(
+              KapyIcons.checkRounded,
               size: AppControlMetrics.iconInline,
               color: color,
             ),
@@ -312,7 +312,7 @@ class _GutterDividerState extends State<GutterDivider> {
                       opacity: active ? 1 : 0,
                       child: _EdgeGrip(
                         key: const ValueKey('results-divider-grip'),
-                        icon: Icons.drag_indicator_rounded,
+                        icon: KapyIcons.dragRounded,
                       ),
                     ),
                   ),
@@ -415,7 +415,7 @@ class _ResultsRestoreHandleState extends State<ResultsRestoreHandle> {
                       opacity: active ? 1 : 0,
                       child: const _EdgeGrip(
                         key: ValueKey('results-restore-grip'),
-                        icon: Icons.chevron_left_rounded,
+                        icon: KapyIcons.chevronLeftRounded,
                       ),
                     ),
                   ),
@@ -435,7 +435,7 @@ class _ResultsRestoreHandleState extends State<ResultsRestoreHandle> {
 class _EdgeGrip extends StatelessWidget {
   const _EdgeGrip({super.key, required this.icon});
 
-  final IconData icon;
+  final KapyIconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -448,7 +448,7 @@ class _EdgeGrip extends StatelessWidget {
         border: Border.all(color: palette.controlBorder, width: 0.5),
         borderRadius: BorderRadius.circular(6.5),
       ),
-      child: Icon(
+      child: KapyIcon(
         icon,
         size: AppControlMetrics.iconInline,
         color: palette.textSecondary,

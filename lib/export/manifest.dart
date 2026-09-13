@@ -14,12 +14,12 @@ import '../data/note_format.dart';
 /// writes. A reader that meets a higher number stops rather than guesses; the
 /// golden archives under `test/goldens/archives/` are what stop this changing
 /// by accident.
-/// Bumped to 2 when recordings joined pictures in the archive.
+/// Bumped to 2 when recordings joined pictures in the archive, and to 3 when
+/// videos joined them.
 ///
-/// An archive written by this build still reads in an older one: version 2
-/// only *adds* attachment kinds, and an older reader that meets a `voice`
-/// entry skips it rather than failing. Import accepts 1 and 2.
-const int exportSchemaVersion = 2;
+/// Import accepts every earlier version; an older build refuses schema 3
+/// rather than mistaking a video for a still image.
+const int exportSchemaVersion = 3;
 
 const String exportManifestPath = 'manifest.json';
 const String exportNotesDirectory = 'notes';
@@ -47,7 +47,7 @@ String bodyHashOf(String markdown) =>
 /// One attachment in an archive: enough to rebuild the note's reference to it
 /// without opening the file.
 ///
-/// Pictures and recordings share this rather than having a class each, because
+/// Pictures, recordings, and videos share this rather than having a class each, because
 /// almost everything about them here is the same — a hash, a path, a MIME type
 /// — and the parts that differ are exactly the parts that are optional.
 class ExportedAttachment {
@@ -58,6 +58,7 @@ class ExportedAttachment {
     this.kind = 'image',
     this.width,
     this.height,
+    this.widthFactor,
     this.durationMs,
     this.transcript,
     this.summary,
@@ -71,20 +72,22 @@ class ExportedAttachment {
 
   final String mime;
 
-  /// `image` or `voice`. Defaulted, so an archive written before recordings
-  /// existed reads correctly without a migration.
+  /// `image`, `voice`, or `video`. Defaulted, so an archive written before
+  /// recordings existed reads correctly without a migration.
   final String kind;
 
-  /// Pictures only.
+  /// Visual media only.
   final int? width;
   final int? height;
+  final double? widthFactor;
 
-  /// Recordings only.
+  /// Timed media only.
   final int? durationMs;
   final Map<String, Object?>? transcript;
   final Map<String, Object?>? summary;
 
   bool get isVoice => kind == 'voice';
+  bool get isVideo => kind == 'video';
 
   Map<String, Object?> toJson() => {
     'hash': hash,
@@ -94,6 +97,7 @@ class ExportedAttachment {
     if (kind != 'image') 'kind': kind,
     if (width != null) 'width': width,
     if (height != null) 'height': height,
+    if (widthFactor != null && widthFactor! < 1) 'widthFactor': widthFactor,
     if (durationMs != null) 'durationMs': durationMs,
     if (transcript != null) 'transcript': transcript,
     if (summary != null) 'summary': summary,
@@ -111,12 +115,22 @@ class ExportedAttachment {
     final kind = raw['kind'] is String ? raw['kind']! as String : 'image';
     final width = raw['width'];
     final height = raw['height'];
+    final widthFactorRaw = raw['widthFactor'];
     final durationMs = raw['durationMs'];
 
     // A picture with no size cannot be laid out, and a recording with no
     // duration cannot be drawn; either way the entry is not usable.
     if (kind == 'image' && (width is! int || height is! int)) return null;
     if (kind == 'voice' && (durationMs is! int || durationMs <= 0)) return null;
+    if (kind == 'video' &&
+        (width is! int ||
+            width <= 0 ||
+            height is! int ||
+            height <= 0 ||
+            durationMs is! int ||
+            durationMs <= 0)) {
+      return null;
+    }
 
     return ExportedAttachment(
       hash: hash,
@@ -125,6 +139,10 @@ class ExportedAttachment {
       kind: kind,
       width: width is int ? width : null,
       height: height is int ? height : null,
+      widthFactor:
+          widthFactorRaw is num && widthFactorRaw >= 0.25 && widthFactorRaw <= 1
+          ? widthFactorRaw.toDouble()
+          : null,
       durationMs: durationMs is int ? durationMs : null,
       transcript: raw['transcript'] is Map
           ? (raw['transcript']! as Map).cast<String, Object?>()
@@ -144,6 +162,7 @@ class ExportedNote {
     required this.createdAt,
     required this.bodyHash,
     this.archivedAt,
+    this.hiddenAt,
     this.formats = const [],
     this.images = const [],
   });
@@ -160,11 +179,12 @@ class ExportedNote {
   /// Epoch milliseconds, matching `NotePayload` and the on-disk note.
   final int createdAt;
   final DateTime? archivedAt;
+  final DateTime? hiddenAt;
 
   final String bodyHash;
   final List<NoteFormatRange> formats;
 
-  /// The pictures this note holds, in the order they appear.
+  /// The attachments this note holds, in the order they appear.
   ///
   /// Recorded so an import can restore a note's images without decoding every
   /// file to rediscover its size. The file *key* is deliberately absent: an
@@ -179,6 +199,7 @@ class ExportedNote {
     'updatedAt': updatedAt.toUtc().toIso8601String(),
     'createdAt': createdAt,
     if (archivedAt != null) 'archivedAt': archivedAt!.toUtc().toIso8601String(),
+    if (hiddenAt != null) 'hiddenAt': hiddenAt!.toUtc().toIso8601String(),
     'bodyHash': bodyHash,
     if (formats.isNotEmpty)
       'formats': formats.map((format) => format.toJson()).toList(),
@@ -204,6 +225,9 @@ class ExportedNote {
     final archivedAt = raw['archivedAt'] == null
         ? null
         : DateTime.tryParse('${raw['archivedAt']}');
+    final hiddenAt = raw['hiddenAt'] == null
+        ? null
+        : DateTime.tryParse('${raw['hiddenAt']}');
 
     return ExportedNote(
       id: id,
@@ -211,6 +235,7 @@ class ExportedNote {
       updatedAt: updatedAt.toLocal(),
       createdAt: createdAt is int && createdAt >= 0 ? createdAt : 0,
       archivedAt: archivedAt?.toLocal(),
+      hiddenAt: hiddenAt?.toLocal(),
       bodyHash: bodyHash,
       images: raw['images'] is List
           ? (raw['images'] as List)

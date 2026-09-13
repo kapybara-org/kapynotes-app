@@ -130,6 +130,13 @@ class FakeServer {
   /// still converge — slower, on the poll.
   bool deliverLive = true;
 
+  /// Every presence frame a socket sent, in order, as the relay received it:
+  /// what a build that reads only part of the payload would have been shown.
+  final List<
+    ({String user, String device, bool active, Map<String, Object?> payload})
+  >
+  presenceFrames = [];
+
   /// How long a dropped socket waits before coming back. The real one backs
   /// off from a second; this just needs to be later than "now".
   Duration reconnectDelay = const Duration(milliseconds: 5);
@@ -886,6 +893,7 @@ class FakeServer {
               spaceId: space.id,
               spaceName: space.name ?? 'Shared notes',
               invitedBy: user(space.ownerId).email,
+              invitedByName: user(space.ownerId).name,
               role: entry.value.role,
               expiresAt: DateTime.utc(2027),
             ),
@@ -1501,7 +1509,23 @@ class FakeSocket implements SyncSocket {
       _send({'t': 'error', 'error': 'bad-message'});
       return;
     }
+    server.presenceFrames.add((
+      user: userId,
+      device: device,
+      active: active,
+      payload: Map<String, Object?>.of(payload.cast()),
+    ));
     if (!active) {
+      // As the real server does: only a stop that repeats the frame it is
+      // stopping ends it, so a late stop for an older frame cannot clear a
+      // newer one.
+      final current = _presence?['payload'];
+      if (current is Map &&
+          (current['ct'] != payload['ct'] ||
+              current['n'] != payload['n'] ||
+              current['v'] != payload['v'])) {
+        return;
+      }
       _clearPresence(spaceId);
       return;
     }
@@ -2014,9 +2038,15 @@ class FakeApi implements SyncApi {
   }
 
   @override
-  Future<void> putBlob(Uri url, Uint8List bytes) async {
+  Future<void> putBlob(
+    Uri url,
+    Uint8List bytes, {
+    void Function(double progress)? onProgress,
+  }) async {
+    onProgress?.call(0);
     final id = url.pathSegments.last;
     server.blobs[id] = bytes;
+    onProgress?.call(1);
   }
 
   @override

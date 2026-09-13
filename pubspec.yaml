@@ -17,6 +17,9 @@ dependencies:
   timezone: ^0.11.1
   # Desktop window chrome (macOS traffic-light inset, min size, title bar).
   window_manager: ^0.5.2
+  # Keeps a restored window reachable when the connected-display layout has
+  # changed since the last launch. Already used internally by window_manager.
+  screen_retriever: ^0.2.2
   # Editable system-wide summon shortcut on macOS and Windows.
   hotkey_manager: ^0.2.3
   # The tray icon that a window closing to the background needs, so there is
@@ -76,6 +79,9 @@ dependencies:
   # first unlock. This is what keeps Argon2id a once-per-device cost instead of
   # a once-per-launch one.
   flutter_secure_storage: ^11.0.0
+  # Uses the phone's ordinary screen-lock authentication when Hidden Notes is
+  # opened. Desktop deliberately stays on the app-specific four-digit PIN.
+  local_auth: ^3.0.0
   # Dropping image files onto the note. Desktop and web only by design; on a
   # phone the picker is the whole story, and the drop target simply is not
   # built there. The macOS sandbox already grants what this needs — a drop is
@@ -94,6 +100,13 @@ dependencies:
   # just_audio has no Windows implementation of its own; this is the WinRT
   # MediaPlayer one, and is a no-op everywhere else.
   just_audio_windows: ^0.2.3
+
+  # Video attachments use Flutter's platform players on Android, iOS and
+  # macOS. Windows supplies the same video_player interface through Media
+  # Foundation, keeping common H.264/AAC MP4 files hardware accelerated
+  # without bundling a second codec stack into the app.
+  video_player: ^2.14.0
+  video_player_win: ^3.2.2
 
   # Running a small language model on the device, so a voice note can be
   # summarised with no account, no minutes and nothing leaving the machine.
@@ -122,6 +135,17 @@ dependencies:
   # build machine; that is a change to the release pipeline this does not
   # justify. Covers all five platforms with plain native code.
   pasteboard: ^0.5.0
+
+  # Reading a note as markdown, for the "Markdown in notes" setting. The one
+  # Dart parser that reports where every node and every marker sits in the
+  # source, which is what styling an editable field needs: the official
+  # `markdown` package builds the same tree but throws the offsets away. It
+  # passes the CommonMark and GFM spec suites, and it is pure Dart, so it runs
+  # the same on every platform and inside a widget test.
+  dart_markdown: ^3.1.7
+  # One quiet, consistent line-icon language across every app surface.
+  # Hugeicons' free stroke-rounded set is MIT licensed and tree-shaken.
+  hugeicons: ^1.1.7
 # The Apple halves of sherpa_onnx carry a 26 MB (iOS) or 56 MB (macOS) native
 # library the app never uses there: Apple's own on-device recogniser does the
 # job. These stand-ins have no native code. See packages/apple_stubs/README.md.
@@ -176,7 +200,3 @@ flutter:
         - asset: assets/fonts/ShantellSans-Variable.ttf
         - asset: assets/fonts/ShantellSans-Italic-Variable.ttf
           style: italic
-    - family: OdinRounded
-      fonts:
-        - asset: assets/fonts/OdinRounded-Bold.otf
-          weight: 700

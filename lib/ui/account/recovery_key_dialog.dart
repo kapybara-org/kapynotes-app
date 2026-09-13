@@ -50,7 +50,7 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
             children: [
               Text(
                 'If you forget your passphrase, this is the only way back to '
-                'your notes. Nobody can reset it for you — not even us, '
+                'your notes. Nobody can reset it for you, not even us, '
                 'because we never had it.',
                 style: TextStyle(
                   fontSize: AppTypeScale.body,
@@ -82,8 +82,8 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
                   );
                   if (context.mounted) setState(() => _copied = true);
                 },
-                icon: Icon(
-                  _copied ? Icons.check_rounded : Icons.copy_rounded,
+                icon: KapyIcon(
+                  _copied ? KapyIcons.checkRounded : KapyIcons.copyRounded,
                   size: AppControlMetrics.iconControl,
                 ),
                 label: Text(_copied ? 'Copied' : 'Copy'),

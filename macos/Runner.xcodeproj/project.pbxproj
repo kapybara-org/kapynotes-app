@@ -31,16 +31,16 @@
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		A11C10F12044A3C60003C045 /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11C10F02044A3C60003C045 /* LoginItem.swift */; };
 		A11C10F12044A3C60003C046 /* WindowMaterial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11C10F02044A3C60003C046 /* WindowMaterial.swift */; };
-		C1A0B0090000000000000002 /* WindowPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0090000000000000001 /* WindowPin.swift */; };
-		C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00C0000000000000001 /* SystemRegion.swift */; };
 		AF27F60885C626B56BB7826B /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 95D26CE3424D889EB606C16A /* Pods_RunnerTests.framework */; };
 		C1A0B0020000000000000002 /* RichClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0020000000000000001 /* RichClipboard.swift */; };
 		C1A0B0030000000000000002 /* SpellCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0030000000000000001 /* SpellCheck.swift */; };
 		C1A0B0040000000000000002 /* Summaries.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0040000000000000001 /* Summaries.swift */; };
+		C1A0B0050000000000000002 /* AccessibilityTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0050000000000000001 /* AccessibilityTree.swift */; };
 		C1A0B0060000000000000002 /* Transcription.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0060000000000000001 /* Transcription.swift */; };
 		C1A0B0080000000000000002 /* AudioDecode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0080000000000000001 /* AudioDecode.swift */; };
-		C1A0B0050000000000000002 /* AccessibilityTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0050000000000000001 /* AccessibilityTree.swift */; };
+		C1A0B0090000000000000002 /* WindowPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0090000000000000001 /* WindowPin.swift */; };
 		C1A0B00B0000000000000002 /* AccessibilityText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00B0000000000000001 /* AccessibilityText.swift */; };
+		C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00C0000000000000001 /* SystemRegion.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -102,16 +102,16 @@
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		A11C10F02044A3C60003C045 /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
 		A11C10F02044A3C60003C046 /* WindowMaterial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMaterial.swift; sourceTree = "<group>"; };
-		C1A0B0090000000000000001 /* WindowPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPin.swift; sourceTree = "<group>"; };
-		C1A0B00C0000000000000001 /* SystemRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemRegion.swift; sourceTree = "<group>"; };
 		B5117A83E87A522312E4D0DB /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		C1A0B0020000000000000001 /* RichClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboard.swift; sourceTree = "<group>"; };
 		C1A0B0030000000000000001 /* SpellCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpellCheck.swift; sourceTree = "<group>"; };
 		C1A0B0040000000000000001 /* Summaries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Summaries.swift; sourceTree = "<group>"; };
+		C1A0B0050000000000000001 /* AccessibilityTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTree.swift; sourceTree = "<group>"; };
 		C1A0B0060000000000000001 /* Transcription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcription.swift; sourceTree = "<group>"; };
 		C1A0B0080000000000000001 /* AudioDecode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDecode.swift; sourceTree = "<group>"; };
-		C1A0B0050000000000000001 /* AccessibilityTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTree.swift; sourceTree = "<group>"; };
+		C1A0B0090000000000000001 /* WindowPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPin.swift; sourceTree = "<group>"; };
 		C1A0B00B0000000000000001 /* AccessibilityText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityText.swift; sourceTree = "<group>"; };
+		C1A0B00C0000000000000001 /* SystemRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemRegion.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -445,7 +445,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nSTAGER=\"${HOME}/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh\"\nif [ ! -f \"${STAGER}\" ]; then\n  echo \"[flutter_gemma] ERROR: ${STAGER} not found.\" >&2\n  echo \"  flutter_gemma_litertlm installs it from its build hook.\" >&2\n  echo \"  Try: flutter clean && flutter pub get\" >&2\n  exit 1\nfi\nFRAMEWORKS=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Frameworks\"\nsh \"${STAGER}\" \"${FRAMEWORKS}\"\n\n# The stager signs what it stages ad-hoc, which a Developer ID build\n# cannot load: library validation refuses a dylib signed by anyone but\n# the team that signed the app. The documented fix is to add\n# `com.apple.security.cs.disable-library-validation`, which turns that\n# check off for every library the app will ever load. Re-signing these\n# four with the app's own identity keeps the check on instead.\nif [ -n \"${EXPANDED_CODE_SIGN_IDENTITY}\" ] && [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" != \"-\" ]; then\n  for FW in GemmaModelConstraintProvider LiteRtMetalAccelerator LiteRtTopKMetalSampler LiteRtLm; do\n    BIN=\"${FRAMEWORKS}/${FW}.framework/Versions/A/${FW}\"\n    if [ -f \"${BIN}\" ]; then\n      codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\"         ${OTHER_CODE_SIGN_FLAGS} --timestamp=none \"${BIN}\"\n    fi\n  done\nfi\n\nmkdir -p \"$(dirname \"${SCRIPT_OUTPUT_FILE_0}\")\"\ntouch \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			shellScript = "set -e\nSTAGER=\"${HOME}/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh\"\nif [ ! -f \"${STAGER}\" ]; then\n  echo \"[flutter_gemma] ERROR: ${STAGER} not found.\" >&2\n  echo \"  flutter_gemma_litertlm installs it from its build hook.\" >&2\n  echo \"  Try: flutter clean && flutter pub get\" >&2\n  exit 1\nfi\nFRAMEWORKS=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Frameworks\"\nsh \"${STAGER}\" \"${FRAMEWORKS}\"\n\n# Google ships these with their local symbol tables in: tens of\n# thousands of names that only a debugger attached to the framework\n# itself would read, and that nothing loads them by. Out they go —\n# five megabytes of a hundred-megabyte app, measured — leaving the\n# exported symbols the runtime resolves and the unwind tables a crash\n# log needs. Invalidates the signature, so the re-signing below is\n# unconditional rather than only for a real identity.\nfor FW in GemmaModelConstraintProvider LiteRtMetalAccelerator LiteRtTopKMetalSampler LiteRtLm; do\n  BIN=\"${FRAMEWORKS}/${FW}.framework/Versions/A/${FW}\"\n  if [ -f \"${BIN}\" ]; then\n    strip -x -no_code_signature_warning \"${BIN}\"\n  fi\ndone\n\n# The stager signs what it stages ad-hoc, which a Developer ID build\n# cannot load: library validation refuses a dylib signed by anyone but\n# the team that signed the app. The documented fix is to add\n# `com.apple.security.cs.disable-library-validation`, which turns that\n# check off for every library the app will ever load. Re-signing these\n# four with the app's own identity keeps the check on instead; with no\n# identity, ad-hoc, which is what the stager did before the strip.\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor FW in GemmaModelConstraintProvider LiteRtMetalAccelerator LiteRtTopKMetalSampler LiteRtLm; do\n  BIN=\"${FRAMEWORKS}/${FW}.framework/Versions/A/${FW}\"\n  if [ -f \"${BIN}\" ]; then\n    codesign --force --sign \"${IDENTITY}\"       ${OTHER_CODE_SIGN_FLAGS} --timestamp=none \"${BIN}\"\n  fi\ndone\n\nmkdir -p \"$(dirname \"${SCRIPT_OUTPUT_FILE_0}\")\"\ntouch \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 		};
 		59DE74FB97409911300CFFFF /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/calc/engine.dart';
+import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
@@ -9,6 +10,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/empty_state.dart';
 import 'package:kapy_notes/ui/kapy_header_mascot.dart';
+import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_test.dart' show MemoryStore;
@@ -240,76 +242,47 @@ void main() {
     });
   });
 
-  group('finding it again', () {
-    testWidgets('settings opens it, even once the first one was rewritten', (
-      tester,
-    ) async {
-      await pumpLaunch(tester, MemoryStore());
-
-      // Made their own, which is exactly when somebody goes looking for the
-      // tour they typed over.
-      await tester.enterText(
-        find.descendant(
-          of: find.byType(NoteEditor),
-          matching: find.byType(TextField),
+  group('settings', () {
+    testWidgets('does not offer the welcome note on desktop', (tester) async {
+      final store = MemoryStore();
+      final notes = NotesStore(store);
+      await notes.load();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: SettingsDialog(
+              layoutPrefs: LayoutPrefs(store)..load(),
+              shortcuts: ShortcutPrefs(store)..load(),
+              rates: RatesRepository(store),
+              notes: notes,
+            ),
+          ),
         ),
-        'My own note',
       );
       await tester.pumpAndSettle();
 
-      // A new install keeps its notes list closed, and settings lives in that
-      // list — so getting there means opening it, which is the same trip
-      // somebody looking for the tour would make.
-      await tester.tap(find.byTooltip('Show notes'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('sidebar-settings')).first);
-      await tester.pumpAndSettle();
-      final row = find.byKey(const ValueKey('open-welcome-note'));
-      await tester.ensureVisible(row);
-      await tester.pumpAndSettle();
-      await tester.tap(row);
-      await tester.pumpAndSettle();
-
-      // Back on the note, from the top and without a cursor in it, exactly as
-      // a first launch shows it.
-      expect(_field(tester).controller!.text, welcomeNoteBody);
-      expect(_field(tester).focusNode!.hasFocus, isFalse);
+      expect(find.byType(SettingsDialog), findsOneWidget);
+      expect(find.byKey(const ValueKey('open-welcome-note')), findsNothing);
+      expect(find.text('Welcome note'), findsNothing);
     });
 
-    testWidgets('comes back through the notes drawer just as quietly', (
-      tester,
-    ) async {
+    testWidgets('does not offer the welcome note on a phone', (tester) async {
       await pumpLaunch(tester, MemoryStore(), size: const Size(390, 760));
-      await tester.enterText(
-        find.descendant(
-          of: find.byType(NoteEditor),
-          matching: find.byType(TextField),
-        ),
-        'My own note',
+      await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+      await tester.pumpAndSettle();
+      final settings = find.descendant(
+        of: find.byType(Drawer),
+        matching: find.byKey(const ValueKey('sidebar-settings')),
       );
+      await tester.ensureVisible(settings);
+      await tester.pumpAndSettle();
+      await tester.tap(settings);
       await tester.pumpAndSettle();
 
-      // The phone route: notes drawer, settings, welcome note. Closing the
-      // drawer is what normally puts the cursor back at the end of a note.
-      await tester.tap(find.byTooltip('Show notes'));
-      await tester.pumpAndSettle();
-      // The drawer's own settings row: the editor keeps a gear too, behind it.
-      await tester.tap(
-        find.descendant(
-          of: find.byType(Drawer),
-          matching: find.byKey(const ValueKey('sidebar-settings')),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final row = find.byKey(const ValueKey('open-welcome-note'));
-      await tester.ensureVisible(row);
-      await tester.pumpAndSettle();
-      await tester.tap(row);
-      await tester.pumpAndSettle();
-
-      expect(_field(tester).controller!.text, welcomeNoteBody);
-      expect(_field(tester).focusNode!.hasFocus, isFalse);
-      expect(tester.testTextInput.isVisible, isFalse);
+      expect(find.byType(SettingsDialog), findsOneWidget);
+      expect(find.byKey(const ValueKey('open-welcome-note')), findsNothing);
+      expect(find.text('Welcome note'), findsNothing);
     });
   });
 

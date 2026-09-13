@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
@@ -6,6 +9,7 @@ import 'package:kapy_notes/sync/aead.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/identity.dart';
 import 'package:kapy_notes/sync/key_bundle.dart';
+import 'package:kapy_notes/sync/sealed_box.dart';
 import 'package:kapy_notes/sync/sharing.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
 import 'package:kapy_notes/sync/spaces.dart';
@@ -58,6 +62,9 @@ class Person {
       vault: vault,
       now: () => now,
       sendDelay: const Duration(milliseconds: 1),
+      presenceThrottle: const Duration(milliseconds: 1),
+      typingIdle: const Duration(milliseconds: 300),
+      presenceLinger: const Duration(milliseconds: 60),
     );
     sharing = Sharing(
       api: api,
@@ -209,19 +216,161 @@ void main() {
   });
 
   group('sharing a note with a person', () {
-    test('shows who is typing and clears them when they stop', () async {
-      final note = await shareWithBob('Together');
+    test(
+      'a hidden note is refused before creating or inviting a space',
+      () async {
+        final note = alice.notes.create(body: 'Private', hidden: true);
+
+        await expectLater(
+          alice.sharing.shareNoteWith(note.id, email: bob.email),
+          throwsA(
+            isA<SyncRefusedException>().having(
+              (error) => error.code,
+              'code',
+              'hidden-note',
+            ),
+          ),
+        );
+
+        expect(alice.sharing.teams, isEmpty);
+        expect(server.outbox, isEmpty);
+        expect(alice.notes.byId(note.id)?.isHidden, isTrue);
+        expect(alice.notes.byId(note.id)?.spaceId, isNull);
+      },
+    );
+
+    test(
+      'shows who is typing by name and clears them when they stop',
+      () async {
+        final note = await shareWithBob('Together');
+        await alice.goLive();
+        await bob.goLive();
+
+        alice.sync.reportTyping(note.id);
+        await settle(server);
+        // Her name, never a piece of her address.
+        expect(bob.sync.typingNamesFor(note.id), ['Someone']);
+        expect(bob.sync.collaboratorsIn(note.id).single.typing, isTrue);
+
+        alice.sync.leaveNote(note.id);
+        await settle(server);
+        expect(bob.sync.typingNamesFor(note.id), isEmpty);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await settle(server);
+        expect(bob.sync.collaboratorsIn(note.id), isEmpty);
+      },
+    );
+
+    test('a caret travels anchored, and stays with its words as text lands '
+        'above it', () async {
+      const body = 'Line one\nLine two';
+      final note = await shareWithBob(body);
       await alice.goLive();
       await bob.goLive();
 
-      alice.sync.reportTyping(note.id);
+      // After "Line t", with nothing typed.
+      alice.sync.reportPresence(note.id, base: 15, extent: 15, text: body);
       await settle(server);
-      expect(bob.sync.typingNamesFor(note.id), ['someone']);
+      var carets = bob.sync.caretsFor(note.id);
+      expect(carets.text, body);
+      expect(carets.carets.single.name, 'Someone');
+      expect(carets.carets.single.extent, 15);
+      expect(carets.carets.single.typing, isFalse);
+      expect(bob.sync.collaboratorsIn(note.id).single.name, 'Someone');
+      expect(bob.sync.typingNamesFor(note.id), isEmpty);
 
-      alice.sync.stopTyping(note.id);
+      // Bob writes above her; her caret keeps its place in the words.
+      bob.tick();
+      bob.notes.updateBody(note.id, 'Intro\n$body');
+      await settle(server);
+      carets = bob.sync.caretsFor(note.id);
+      expect(carets.text, 'Intro\n$body');
+      expect(carets.carets.single.extent, 21);
+
+      // A selection travels as two anchors.
+      alice.sync.reportPresence(note.id, base: 5, extent: 8, text: body);
+      await settle(server);
+      final selection = bob.sync.caretsFor(note.id).carets.single;
+      expect(bob.sync.caretsFor(note.id).text, 'Intro\n$body');
+      expect(
+        (selection.base, selection.extent),
+        (11, 14),
+        reason: '"one" of the first line, now below the intro',
+      );
+    });
+
+    test('a pause in typing withdraws the typing frame before announcing a '
+        'quiet one, for builds that only read typing', () async {
+      final note = await shareWithBob('Together');
+      await alice.goLive();
+      await bob.goLive();
+      final spaceId = alice.notes.byId(note.id)!.spaceId!;
+      final key = alice.keyring.keyFor(spaceId)!;
+
+      alice.sync.reportPresence(
+        note.id,
+        base: 8,
+        extent: 8,
+        text: 'Together',
+        edited: true,
+      );
+      await settle(server);
+      expect(bob.sync.typingNamesFor(note.id), ['Someone']);
+
+      // Typing lapses; she is still in the note.
+      await Future<void>.delayed(const Duration(milliseconds: 400));
       await settle(server);
       expect(bob.sync.typingNamesFor(note.id), isEmpty);
+      expect(bob.sync.collaboratorsIn(note.id), hasLength(1));
+      expect(bob.sync.caretsFor(note.id).carets.single.extent, 8);
+
+      Future<Map<String, Object?>> open(Map<String, Object?> payload) async {
+        final clear = await openBytes(SealedBox.fromJson(payload)!, key);
+        return jsonDecode(utf8.decode(clear!)) as Map<String, Object?>;
+      }
+
+      final frames = server.presenceFrames
+          .where((frame) => frame.user == alice.userId)
+          .toList();
+      expect(frames, hasLength(3));
+      // A build before carets reads `noteId` as typing, and holds it until a
+      // stop repeating that very frame arrives — which it does, before the
+      // quiet frame it passes over.
+      expect(frames[0].active, isTrue);
+      expect((await open(frames[0].payload))['noteId'], note.id);
+      expect(frames[1].active, isFalse);
+      expect(frames[1].payload, frames[0].payload);
+      expect(frames[2].active, isTrue);
+      final quiet = await open(frames[2].payload);
+      expect(quiet['noteId'], isNull);
+      expect(quiet['note'], note.id);
+      expect(quiet['sel'], isA<List<Object?>>());
     });
+
+    test(
+      'a typing frame from a build without carets still reads as typing',
+      () async {
+        final note = await shareWithBob('Together');
+        await alice.goLive();
+        await bob.goLive();
+        final spaceId = alice.notes.byId(note.id)!.spaceId!;
+        final key = alice.keyring.keyFor(spaceId)!;
+        final box = await sealBytes(
+          Uint8List.fromList(utf8.encode(jsonEncode({'noteId': note.id}))),
+          key,
+        );
+
+        server.sockets[alice.state.deviceId]!.send({
+          't': 'presence',
+          'spaceId': spaceId,
+          'active': true,
+          'payload': box.toJson(),
+        });
+        await settle(server);
+        expect(bob.sync.typingNamesFor(note.id), ['Someone']);
+        expect(bob.sync.caretsFor(note.id).isEmpty, isTrue, reason: 'no caret');
+      },
+    );
 
     test(
       'invites them, grants the key on the next pass, and delivers the note',

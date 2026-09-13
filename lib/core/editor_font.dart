@@ -34,7 +34,7 @@ extension WritingFontDetails on WritingFont {
   String? get fontFamily => switch (this) {
     WritingFont.mixed => AppPlatform.monoFontFallback.first,
     WritingFont.handwritten => 'Shantell Sans',
-    WritingFont.clean => null,
+    WritingFont.clean => AppPlatform.uiFontFamily,
     WritingFont.monospace => AppPlatform.monoFontFallback.first,
   };
 
@@ -46,12 +46,17 @@ extension WritingFontDetails on WritingFont {
       '.AppleSystemUIFont',
       'sans-serif',
     ],
-    WritingFont.clean => null,
+    WritingFont.clean => AppPlatform.uiFontFallback,
     WritingFont.monospace => AppPlatform.monoFontFallback,
   };
 
   /// Shantell Sans is intentionally kept close to a clean sans: a hint of
   /// hand variation, with no artificial baseline bounce.
+  ///
+  /// The bundled font is an instance with exactly these three axes baked in
+  /// (see assets/fonts/README.md), which halves it; only the weight axis is
+  /// left variable. The values stay here so that the look is stated in one
+  /// place, and so that the full font, dropped in, would render the same.
   List<FontVariation>? get fontVariations => switch (this) {
     WritingFont.handwritten => const [
       FontVariation('INFM', 16),

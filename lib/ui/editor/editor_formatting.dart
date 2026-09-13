@@ -114,6 +114,47 @@ TextStyle paragraphTextStyle(
   );
 }
 
+/// The least room a markdown list marker takes, before scaling: a task's
+/// box, and a gap between it and the words. See
+/// `HighlightingController.markdownMarkerRoom`.
+const double markdownMarkerMinRoom = 23;
+
+/// A markdown heading at [level], 1 to 6.
+///
+/// Level one is the heading [paragraphTextStyle] draws, so a note reads the
+/// same whichever way its title was made. Below it the size steps down to
+/// body size by level four, and the last two step down in colour instead:
+/// there is no smaller size left that would still read as a heading. Every
+/// level keeps the row its line sits in, like the paragraph styles do.
+TextStyle markdownHeadingStyle(
+  TextStyle base,
+  int level, {
+  WritingFont? writingFont,
+  Color? primaryColor,
+  Color? secondaryColor,
+}) {
+  final headingBase = writingFont == WritingFont.mixed
+      ? _mixedHeadingBase(base)
+      : base;
+  final scale = switch (level) {
+    <= 1 => 1.28,
+    2 => 1.18,
+    3 => 1.08,
+    _ => 1.0,
+  };
+  return headingBase.copyWith(
+    color: level >= 5
+        ? secondaryColor ?? headingBase.color
+        : primaryColor ?? headingBase.color,
+    fontSize: headingBase.fontSize == null
+        ? null
+        : headingBase.fontSize! * scale,
+    height: headingBase.height == null ? null : headingBase.height! / scale,
+    fontWeight: FontWeight.w700,
+    fontStyle: FontStyle.normal,
+  );
+}
+
 /// Mixed notes use the compact monospace face for ordinary writing, then give
 /// headings the warmer handwritten face without changing the fixed row height
 /// that keeps calculated results aligned with their source lines.

@@ -137,6 +137,7 @@ class ImportPlan {
               createdAt: read.note.createdAt,
               updatedAt: now,
               archivedAt: read.note.archivedAt,
+              hiddenAt: read.note.hiddenAt,
             ),
           ),
         );
@@ -200,9 +201,9 @@ bool _isSameRevision(Note local, Note incoming) =>
 ///
 /// Returns how many notes were written. The store leaves them dirty, so the
 /// next sync pass pushes them like any other edit.
-/// Writes an archive's pictures into the local store.
+/// Writes an archive's attachment bytes into the local store.
 ///
-/// Every picture, not only the ones the plan applies: the store addresses by
+/// Every attachment, not only the ones the plan applies: the store addresses by
 /// content, so a byte already here costs nothing to write again, and anything
 /// no note ends up referring to is collected by the next sweep. Deciding
 /// which images a plan will need, and getting it wrong, would leave a note
@@ -215,8 +216,12 @@ Future<void> restoreImportedImages(
   BlobStore images,
   ArchiveContents archive,
 ) async {
-  for (final bytes in archive.images.values) {
-    await images.put(bytes);
+  for (final entry in archive.images.entries) {
+    final name = entry.key;
+    final slash = name.lastIndexOf('/');
+    final dot = name.lastIndexOf('.');
+    final extension = dot > slash ? name.substring(dot) : '';
+    await images.put(entry.value, extension: extension);
   }
 }
 

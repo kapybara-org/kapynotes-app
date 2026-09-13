@@ -5,6 +5,8 @@ import 'package:camera/camera.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/theme.dart';
+
 typedef CameraListLoader = Future<List<CameraDescription>> Function();
 typedef ImageLibraryPicker = Future<List<XFile>> Function();
 
@@ -348,64 +350,79 @@ class _CameraCapturePageState extends State<CameraCapturePage>
     );
   }
 
-  Widget _buildReview(XFile file) => Stack(
-    fit: StackFit.expand,
-    children: [
-      Image.file(
-        File(file.path),
-        fit: BoxFit.contain,
-        errorBuilder: (_, _, _) => const Center(
-          child: Icon(Icons.broken_image_outlined, color: Colors.white70),
-        ),
-      ),
-      const _CameraScrims(),
-      SafeArea(
-        child: Column(
-          children: [
-            _CameraTopBar(
-              title: 'Review photo',
-              onClose: () => Navigator.of(context).pop(),
+  Widget _buildReview(XFile file) {
+    // Decoded to fit the screen, which is the size it is shown at. The
+    // capture itself is a twelve-megapixel JPEG that would otherwise decode to
+    // some fifty megabytes of pixels for a review; the note gets the file,
+    // not this decode, so nothing downstream is any smaller.
+    final screen = View.of(context).physicalSize;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image(
+          image: ResizeImage(
+            FileImage(File(file.path)),
+            width: screen.width.ceil(),
+            height: screen.height.ceil(),
+            policy: ResizeImagePolicy.fit,
+          ),
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) => const Center(
+            child: KapyIcon(
+              KapyIcons.brokenImageOutlined,
+              color: Colors.white70,
             ),
-            const Spacer(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 18, 24, 22),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      key: const ValueKey('camera-retake'),
-                      onPressed: _retake,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white54),
-                        minimumSize: const Size(0, 52),
-                      ),
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Retake'),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: FilledButton.icon(
-                      key: const ValueKey('camera-use-photo'),
-                      onPressed: _usePhoto,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFFF5F2E9),
-                        foregroundColor: const Color(0xFF15171A),
-                        minimumSize: const Size(0, 52),
-                      ),
-                      icon: const Icon(Icons.check_rounded),
-                      label: const Text('Use photo'),
-                    ),
-                  ),
-                ],
+          ),
+        ),
+        const _CameraScrims(),
+        SafeArea(
+          child: Column(
+            children: [
+              _CameraTopBar(
+                title: 'Review photo',
+                onClose: () => Navigator.of(context).pop(),
               ),
-            ),
-          ],
+              const Spacer(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 18, 24, 22),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        key: const ValueKey('camera-retake'),
+                        onPressed: _retake,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white54),
+                          minimumSize: const Size(0, 52),
+                        ),
+                        icon: const KapyIcon(KapyIcons.refreshRounded),
+                        label: const Text('Retake'),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: FilledButton.icon(
+                        key: const ValueKey('camera-use-photo'),
+                        onPressed: _usePhoto,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFF5F2E9),
+                          foregroundColor: const Color(0xFF15171A),
+                          minimumSize: const Size(0, 52),
+                        ),
+                        icon: const KapyIcon(KapyIcons.checkRounded),
+                        label: const Text('Use photo'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 }
 
 class _CameraScrims extends StatelessWidget {
@@ -469,7 +486,7 @@ class _CameraTopBar extends StatelessWidget {
             child: _RoundCameraButton(
               key: const ValueKey('camera-close'),
               label: 'Close camera',
-              icon: Icons.close_rounded,
+              icon: KapyIcons.closeRounded,
               onPressed: onClose,
             ),
           ),
@@ -479,7 +496,7 @@ class _CameraTopBar extends StatelessWidget {
             style: const TextStyle(
               color: Colors.white,
               fontSize: 16,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w400,
             ),
           ),
           Align(
@@ -492,8 +509,8 @@ class _CameraTopBar extends StatelessWidget {
                     key: const ValueKey('camera-flash'),
                     label: flashAuto ? 'Turn flash off' : 'Set flash to auto',
                     icon: flashAuto
-                        ? Icons.flash_auto_rounded
-                        : Icons.flash_off,
+                        ? KapyIcons.flashAutoRounded
+                        : KapyIcons.flashOffRounded,
                     onPressed: onFlash!,
                   ),
                 if (onFlash != null && onSwitch != null)
@@ -502,7 +519,7 @@ class _CameraTopBar extends StatelessWidget {
                   _RoundCameraButton(
                     key: const ValueKey('camera-switch'),
                     label: 'Switch camera',
-                    icon: Icons.cameraswitch_rounded,
+                    icon: KapyIcons.cameraSwitchRounded,
                     onPressed: onSwitch!,
                   ),
               ],
@@ -563,8 +580,8 @@ class _CameraBottomBar extends StatelessWidget {
                           ),
                         )
                       else
-                        const Icon(
-                          Icons.photo_library_outlined,
+                        const KapyIcon(
+                          KapyIcons.photoLibraryOutlined,
                           color: Colors.white,
                           size: 26,
                         ),
@@ -630,7 +647,7 @@ class _RoundCameraButton extends StatelessWidget {
   });
 
   final String label;
-  final IconData icon;
+  final KapyIconData icon;
   final VoidCallback onPressed;
 
   @override
@@ -644,7 +661,7 @@ class _RoundCameraButton extends StatelessWidget {
         backgroundColor: Colors.black.withValues(alpha: 0.38),
         foregroundColor: Colors.white,
       ),
-      icon: Icon(icon),
+      icon: KapyIcon(icon),
     ),
   );
 }
@@ -662,8 +679,8 @@ class _CameraUnavailable extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.no_photography_outlined,
+          const KapyIcon(
+            KapyIcons.cameraOffOutlined,
             color: Colors.white70,
             size: 42,
           ),
@@ -682,7 +699,7 @@ class _CameraUnavailable extends StatelessWidget {
             key: const ValueKey('camera-retry'),
             onPressed: onRetry,
             style: TextButton.styleFrom(foregroundColor: Colors.white),
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const KapyIcon(KapyIcons.refreshRounded),
             label: const Text('Try again'),
           ),
         ],

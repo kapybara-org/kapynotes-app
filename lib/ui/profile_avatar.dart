@@ -23,6 +23,7 @@ class ProfileAvatar extends StatelessWidget {
     required this.extent,
     this.image,
     this.ring,
+    this.ringWidth = 1.5,
   });
 
   final String seed;
@@ -30,6 +31,7 @@ class ProfileAvatar extends StatelessWidget {
   final double extent;
   final String? image;
   final Color? ring;
+  final double ringWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -45,10 +47,12 @@ class ProfileAvatar extends StatelessWidget {
       height: extent,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: ring == null ? null : Border.all(color: ring!, width: 1.5),
+        border: ring == null
+            ? null
+            : Border.all(color: ring!, width: ringWidth),
         color: palette.controlBackground,
       ),
-      padding: ring == null ? EdgeInsets.zero : const EdgeInsets.all(1.5),
+      padding: ring == null ? EdgeInsets.zero : EdgeInsets.all(ringWidth),
       child: ClipOval(
         child: Image(
           image: provider,
@@ -71,7 +75,7 @@ class ProfileAvatar extends StatelessWidget {
           _initial(name),
           style: TextStyle(
             fontSize: extent * 0.42,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w400,
             color: palette.textPrimary,
             height: 1,
           ),

@@ -4,7 +4,12 @@ import 'dart:ui' show BoxHeightStyle, BoxWidthStyle, Locale;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart'
-    show kLongPressTimeout, kPrimaryButton, kSecondaryButton, kTouchSlop;
+    show
+        computeHitSlop,
+        kLongPressTimeout,
+        kPrimaryButton,
+        kSecondaryButton,
+        kTouchSlop;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -26,21 +31,28 @@ import '../../data/shortcut_prefs.dart';
 import '../notebook_paper.dart';
 import '../celebrate.dart';
 import '../kapy_cursor_peek.dart';
+import 'blank_line_highlight.dart';
 import 'editor_formatting.dart';
 import 'highlighting_controller.dart';
 import 'line_metrics.dart';
 import 'link_popover.dart';
 import 'keyword_tooltip.dart';
+import 'markdown_backdrop.dart';
+import 'markdown_editing.dart';
+import 'markdown_syntax.dart';
 import 'note_footer.dart';
 import '../../data/note_attachment.dart';
 import 'package:file_selector/file_selector.dart';
 
 import '../../images/image_clipboard.dart';
+import '../../images/image_codec.dart';
 import '../../images/image_ingest.dart';
 import '../../images/image_picker.dart';
 import '../../audio/voice_player.dart';
 import '../../data/blob_store.dart';
 import '../../images/note_image_provider.dart';
+import '../../video/video_ingest.dart';
+import '../../video/video_picker.dart';
 import 'image_drop_target.dart';
 import 'image_insertion.dart';
 import 'note_image_layout.dart';
@@ -49,9 +61,12 @@ import 'voice_chip.dart';
 import 'voice_recording_bar.dart';
 import 'voice_insertion.dart';
 import 'note_image_view.dart';
+import 'note_video_view.dart';
+import 'remote_carets.dart';
 import 'results_gutter.dart';
 import 'scroll_passthrough.dart';
 import 'selection_formatting_toolbar.dart';
+import '../../sync/presence.dart';
 
 typedef NoteDocumentChanged =
     void Function(
@@ -64,6 +79,15 @@ typedef NoteDocumentChanged =
 /// without asking a widget test to decode a photograph in a real isolate.
 typedef ImageBatchIngestor =
     Future<ImageBatch> Function(List<XFile> files, BlobStore store);
+
+typedef VideoBatchIngestor =
+    Future<VideoBatch> Function(List<XFile> files, BlobStore store);
+
+typedef ImagePrepared =
+    void Function(NoteImageRef staged, NoteImageRef prepared);
+
+typedef AttachmentUploadProgressFor =
+    ValueListenable<double?> Function(String hash);
 
 /// The note surface: one syntax-coloured text field with a live results
 /// column pinned to it.
@@ -90,8 +114,16 @@ class NoteEditor extends StatefulWidget {
     this.clipboard = const ImageClipboard(),
     this.imageAcquirer,
     this.imageIngestor,
+    this.imageFinalizer,
+    this.onImagePrepared,
     this.onImagesRejected,
-    this.typingNames = const [],
+    this.videoAcquirer,
+    this.videoIngestor,
+    this.uploadProgressFor,
+    this.typing = const [],
+    this.remoteCarets,
+    this.onActivity,
+    this.onFocus,
     this.readOnly = false,
     required this.engine,
     required this.highlighter,
@@ -105,6 +137,7 @@ class NoteEditor extends StatefulWidget {
     required this.writingFont,
     required this.shortcuts,
     this.spellCheckEnabled = true,
+    this.markdownEnabled = false,
     this.showDivider = true,
     this.hideEmptyResults = false,
     this.autofocus = false,
@@ -164,11 +197,48 @@ class NoteEditor extends StatefulWidget {
   /// boundary and still exercise the real footer and toast lifecycle.
   final ImageBatchIngestor? imageIngestor;
 
+  /// Finishes the storage copy behind an already-visible staged image.
+  /// Injectable so a widget test can hold the compression boundary open.
+  final Future<ImageIngestResult> Function(StagedImage staged, BlobStore store)?
+  imageFinalizer;
+
+  /// Writes a prepared ref against the note's latest attachment list. The
+  /// production page routes this through NotesStore's atomic transform so an
+  /// upload finishing beside a user edit cannot replace that edit.
+  final ImagePrepared? onImagePrepared;
+
   /// Called when at least one file in a batch could not be added.
   final ValueChanged<ImageBatch>? onImagesRejected;
 
-  /// Other members actively editing this shared note.
-  final List<String> typingNames;
+  final VideoFileAcquirer? videoAcquirer;
+  final VideoBatchIngestor? videoIngestor;
+
+  /// Null while signed out. Media is then fully local and should clear as
+  /// soon as preparation finishes rather than wait for a network that is not
+  /// part of that session.
+  final AttachmentUploadProgressFor? uploadProgressFor;
+
+  /// Other members typing in this shared note right now.
+  final List<Collaborator> typing;
+
+  /// Where other people's carets in this note come from. Null for a note
+  /// nobody else can open, which then draws no layer for them at all.
+  final RemoteCaretSource? remoteCarets;
+
+  /// This device's caret, and whether an edit moved it, for the people this
+  /// note is shared with. Fires on every local change to the text or the
+  /// selection, on focus and on scroll — never for text that came from them.
+  final void Function(
+    TextSelection selection,
+    String text, {
+    required bool edited,
+  })?
+  onActivity;
+
+  /// Tells the workspace which split pane owns the keyboard. Kept separate
+  /// from [onActivity], whose first post-frame report also runs for an editor
+  /// that is visible but not active.
+  final VoidCallback? onFocus;
 
   /// Keeps the note selectable and its links usable, while removing every
   /// local mutation path for a View only collaborator.
@@ -190,6 +260,11 @@ class NoteEditor extends StatefulWidget {
   final WritingFont writingFont;
   final ShortcutPrefs shortcuts;
   final bool spellCheckEnabled;
+
+  /// Whether the note is written in markdown: its syntax drawn as it is
+  /// typed, and the formatting controls writing markdown rather than styles
+  /// kept beside the text. Off, the editor is exactly what it always was.
+  final bool markdownEnabled;
   final bool showDivider;
   final bool hideEmptyResults;
   final bool autofocus;
@@ -262,6 +337,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Timer? _kapyPeekIdleTimer;
   VoidCallback? _kapyPeekDismiss;
 
+  /// The pointer over the note, so a collaborator's folded caret can raise
+  /// its name while it is pointed at. A notifier rather than state: it moves
+  /// with every mouse event, and only the caret layer needs to hear it.
+  final ValueNotifier<Offset?> _remoteHover = ValueNotifier<Offset?>(null);
+
   Map<int, LineResult> _results = const {};
   String? _totalText;
   String? _hoveredKeywordId;
@@ -271,8 +351,22 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   final Map<NoteFormat, bool> _typingOverrides = {};
   NoteParagraphStyle? _paragraphOverride;
   final Map<int, _PointerDownDetails> _pointerDownDetails = {};
+
+  /// A press still held where it landed, until just after it lifts. What the
+  /// field selects meanwhile was picked by the press itself — a double click,
+  /// a long press, a right click — not dragged out; see
+  /// [_collapseLineTerminatorSelection].
+  int? _stillPress;
+
+  /// What the blank-line highlight has to follow.
+  late final Listenable _selectionRepaint = Listenable.merge([
+    _controller,
+    _scrollController,
+    _focusNode,
+  ]);
   Set<NoteFormat>? _nextInsertedFormats;
   bool _imageActionBusy = false;
+  bool _videoActionBusy = false;
   bool _copyingRichSelection = false;
 
   /// The attachment list a programmatic edit has already worked out.
@@ -281,6 +375,25 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// land, so it says so rather than leaving the change handler to infer it
   /// from a diff that cannot tell one placeholder from another.
   List<NoteAttachmentRef>? _nextAttachments;
+
+  /// The style ranges a programmatic edit has already carried across itself.
+  ///
+  /// The same idea for the ranges kept beside the text: a markdown control
+  /// writes markers in several places at once, and the one-stretch diff the
+  /// change handler rebases by would read everything between them as retyped.
+  List<NoteFormatRange>? _nextFormats;
+
+  /// Bold switched on for the next word, and the like. See [MarkdownTyping].
+  final MarkdownTyping _markdownTyping = MarkdownTyping();
+
+  /// Whether inline markdown stays hidden even beside the caret: while the
+  /// writer is typing, so markers disappear as they are completed, and until
+  /// they next move the caret themselves.
+  bool _markdownQuiet = true;
+
+  /// Set around a caret move the editor makes itself, so it is not taken for
+  /// the writer moving it.
+  bool _ownSelectionChange = false;
 
   /// Attachments a recent edit took out, kept so Undo can put them back.
   ///
@@ -324,6 +437,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       palette: KapyTheme.darkPalette,
       writingFont: widget.writingFont,
       formats: _formats,
+      markdown: widget.markdownEnabled,
       text: initialText,
     );
     _dailySeparatorFormatter = _DailySeparatorFormatter(
@@ -355,6 +469,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _isEmpty = initialText.isEmpty;
     _evaluate();
     WidgetsBinding.instance.addObserver(this);
+    // Opening a shared note is being in it, before anything is typed.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _reportActivity(edited: false);
+    });
     if (!widget.readOnly && widget.autofocus && widget.startAtEnd) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => resumeAt == null ? focusAtEnd() : focusHere(),
@@ -380,6 +498,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
     if (oldWidget.writingFont != widget.writingFont) {
       _controller.writingFont = widget.writingFont;
+    }
+    if (oldWidget.markdownEnabled != widget.markdownEnabled) {
+      _controller.markdown = widget.markdownEnabled;
+      // A bold switched on for the next word, or a heading carried to the
+      // next line, belongs to the styles the editor has just stopped writing.
+      _typingOverrides.clear();
+      _paragraphOverride = null;
+      // Lists and code read differently to the calculator in markdown.
+      _evaluate();
+      unawaited(_requestSpellCheck());
     }
     if (oldWidget.spellCheckEnabled != widget.spellCheckEnabled ||
         oldWidget.readOnly != widget.readOnly) {
@@ -454,10 +582,32 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _keywordHoverTimer?.cancel();
     _kapyPeekIdleTimer?.cancel();
     _dismissKapyPeek();
+    _remoteHover.dispose();
     _controller.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Tells the people this note is shared with where the caret is now.
+  void _reportActivity({required bool edited}) {
+    final report = widget.onActivity;
+    if (report == null) return;
+    final value = _controller.value;
+    report(value.selection, value.text, edited: edited);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Presence ends when the app goes to the background; coming back to the
+    // same note is being in it again.
+    if (state == AppLifecycleState.resumed) _reportActivity(edited: false);
+  }
+
+  /// The field's render object, for drawing other people's carets over it.
+  RenderEditable? _fieldEditable() {
+    final root = _textFieldKey.currentContext?.findRenderObject();
+    return root == null ? null : _findRenderEditable(root);
   }
 
   void _onShortcutsChanged() {
@@ -468,6 +618,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     LinkPopover.hide();
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
+    // Reading counts as being here, even with the caret parked.
+    _reportActivity(edited: false);
   }
 
   bool _handleEditorScrollNotification(ScrollNotification notification) {
@@ -665,17 +817,30 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _applyRemoteBody();
       return;
     }
+    _reportActivity(edited: value.text != previous.text);
     if (value.text == previous.text) {
       final selectionChanged = value.selection != previous.selection;
       _lastValue = value;
       if (!selectionChanged) return;
       if (_collapseLineTerminatorSelection(value.selection)) return;
+      if (widget.markdownEnabled) {
+        if (_keepCaretOutOfMarkdown(previous.selection, value.selection)) {
+          return;
+        }
+        if (!_ownSelectionChange) {
+          // The writer moved the caret: anything waiting to be typed is
+          // off, and the syntax beside the caret may show again.
+          _markdownTyping.clear();
+          _markdownQuiet = false;
+        }
+      }
       _typingOverrides.clear();
       _paragraphOverride = null;
       _scheduleSelectionToolbar(value.selection);
       setState(() {});
       return;
     }
+    _markdownQuiet = true;
 
     // The text moved under the panel, so the rect it is pinned to no longer
     // describes the link.
@@ -723,13 +888,22 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         );
     _rememberDropped(previous.text, _attachments, updatedAttachments);
     updatedAttachments = _restoreUndone(value.text, updatedAttachments);
-    var updatedFormats = rebaseNoteFormats(
-      oldText: previous.text,
-      newText: value.text,
-      formats: _formats,
-      insertedFormats: insertedFormats,
-    );
-    if (insertedText.contains('\n') && value.selection.isValid) {
+    final forcedFormats = _nextFormats;
+    _nextFormats = null;
+    var updatedFormats =
+        forcedFormats ??
+        rebaseNoteFormats(
+          oldText: previous.text,
+          newText: value.text,
+          formats: _formats,
+          insertedFormats: insertedFormats,
+        );
+    // Not in markdown, where a style comes only from what is written: a
+    // heading applied before markdown was switched on still draws, but no
+    // longer hands a subtitle to the line after it.
+    if (!widget.markdownEnabled &&
+        insertedText.contains('\n') &&
+        value.selection.isValid) {
       // A heading naturally introduces a subtitle. That new style remains
       // active across later lines until the writer explicitly cycles it.
       final nextStyle = switch (previousParagraphStyle) {
@@ -783,19 +957,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       return;
     }
 
-    final links = _controller.linksFor(text);
     final filtered = suggestions
         .where((suggestion) {
           final range = suggestion.range;
-          final overlapsLink = links.any(
-            (link) => range.start < link.end && range.end > link.start,
-          );
+          final exempt = _controller.isSpellingExempt(text, range);
           final overlapsAttachment = _attachments.any(
             (attachment) =>
                 range.start <= attachment.offset &&
                 range.end > attachment.offset,
           );
-          return !overlapsLink && !overlapsAttachment;
+          return !exempt && !overlapsAttachment;
         })
         .toList(growable: false);
 
@@ -956,9 +1127,31 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return changed ? normalizeNoteAttachments(restored, text) : attachments;
   }
 
-  bool _formatActive(NoteFormat format) =>
-      _typingOverrides[format] ??
-      selectionHasFormat(_formats, _controller.selection, format);
+  bool _formatActive(NoteFormat format) {
+    if (widget.markdownEnabled) {
+      final strong = format == NoteFormat.bold;
+      final selection = _controller.selection;
+      if (selection.isValid &&
+          selection.isCollapsed &&
+          (_markdownTyping.isPending(strong: strong, caret: selection.start) ||
+              _markdownTyping.isHeld(
+                strong: strong,
+                caret: selection.start,
+                text: _controller.text,
+              ))) {
+        return true;
+      }
+      final markdown = _controller.markdownFor(_controller.text);
+      return markdown != null &&
+          markdownSelectionHas(
+            markdown,
+            selection,
+            strong ? MarkdownStyle.strong : MarkdownStyle.emphasis,
+          );
+    }
+    return _typingOverrides[format] ??
+        selectionHasFormat(_formats, _controller.selection, format);
+  }
 
   NoteParagraphStyle? get _activeParagraphStyle =>
       _paragraphOverride ??
@@ -968,8 +1161,79 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         _controller.selection,
       );
 
+  /// The heading level of the selected lines in a markdown note, 0 for body
+  /// text, null when they differ.
+  int? get _markdownHeadingLevel =>
+      markdownHeadingLevelForSelection(_controller.text, _controller.selection);
+
+  bool _lineStyleActive(NoteLineStyle style) => widget.markdownEnabled
+      ? markdownSelectionHasLineStyle(_controller.value, style)
+      : selectionHasLineStyle(_controller.value, style);
+
+  bool get _showIndentControls =>
+      selectionHasListLine(_controller.value) ||
+      (widget.markdownEnabled &&
+          markdownSelectionHasListLine(_controller.value));
+
+  /// Whether nesting goes by markdown's columns: in a markdown note, unless
+  /// the list is in the app's own bullets, which keep nesting their own way.
+  bool get _indentsAsMarkdown =>
+      widget.markdownEnabled &&
+      markdownSelectionHasListLine(_controller.value) &&
+      !markdownSelectionStartsWithGlyphItem(_controller.value);
+
+  bool _canIndent({required bool outdent}) => _indentsAsMarkdown
+      ? canIndentMarkdownSelection(_controller.value, outdent: outdent)
+      : canIndentSelection(_controller.value, outdent: outdent);
+
+  /// Puts a markdown control's edit into the note.
+  ///
+  /// The edit says where it moved everything, so attachments and any styles
+  /// the note already had are carried across it exactly rather than by the
+  /// one-stretch diff an ordinary keystroke is rebased with. Nothing is
+  /// inherited by the markers it wrote.
+  void _applyMarkdownEdit(MarkdownEdit edit) {
+    if (widget.readOnly) return;
+    ContextMenuController.removeAny();
+    _typingOverrides.clear();
+    final next = edit.value;
+    if (edit.changesText && next.text != _controller.text) {
+      _nextInsertedFormats = const {};
+      _nextFormats = normalizeNoteFormats([
+        for (final range in _formats)
+          NoteFormatRange(
+            start: edit.map(range.start),
+            end: edit.map(range.end, before: true),
+            format: range.format,
+          ),
+      ], next.text.length);
+      _nextAttachments = normalizeNoteAttachments([
+        for (final ref in _attachments)
+          ref.copyWith(offset: edit.map(ref.offset)),
+      ], next.text);
+      _controller.value = next;
+    } else if (next.selection != _controller.selection) {
+      _ownSelectionChange = true;
+      try {
+        _controller.selection = next.selection;
+      } finally {
+        _ownSelectionChange = false;
+      }
+    }
+    _focusNode.requestFocus();
+  }
+
   void _cycleParagraphStyle() {
     if (widget.readOnly) return;
+    if (widget.markdownEnabled) {
+      _applyMarkdownEdit(
+        applyMarkdownHeading(
+          _controller.value,
+          nextMarkdownHeadingLevel(_markdownHeadingLevel),
+        ),
+      );
+      return;
+    }
     _applyParagraphStyle(nextParagraphStyle(_activeParagraphStyle));
   }
 
@@ -989,6 +1253,52 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final selection = _controller.selection;
     if (!selection.isValid) return;
     ContextMenuController.removeAny();
+    if (widget.markdownEnabled) {
+      final markdown = _controller.markdownFor(_controller.text);
+      if (markdown == null) return;
+      final strong = format == NoteFormat.bold;
+      final caret = selection.start;
+      // Pressed again before anything was typed: switched back off.
+      if (selection.isCollapsed &&
+          _markdownTyping.isPending(strong: strong, caret: caret)) {
+        setState(
+          () => _markdownTyping.togglePending(strong: strong, caret: caret),
+        );
+        _focusNode.requestFocus();
+        return;
+      }
+      // Pressed after a space typed at the end of bold, which the next word
+      // would otherwise have joined: that word is plain instead.
+      if (selection.isCollapsed &&
+          _markdownTyping.isHeld(
+            strong: strong,
+            caret: caret,
+            text: _controller.text,
+          )) {
+        setState(
+          () => _markdownTyping.releaseHeld(
+            strong: strong,
+            text: _controller.text,
+          ),
+        );
+        _focusNode.requestFocus();
+        return;
+      }
+      final edit = toggleMarkdownEmphasis(
+        _controller.value,
+        markdown,
+        strong: strong,
+      );
+      if (edit.pending) {
+        setState(
+          () => _markdownTyping.togglePending(strong: strong, caret: caret),
+        );
+        _focusNode.requestFocus();
+        return;
+      }
+      _applyMarkdownEdit(edit);
+      return;
+    }
     if (selection.isCollapsed) {
       setState(() => _typingOverrides[format] = !_formatActive(format));
     } else {
@@ -1028,6 +1338,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
     _focusNode.requestFocus();
   }
+
+  /// Adds already-stored videos through the same block attachment insertion
+  /// rule as pictures. Kept as a named entry point for pickers and tests so a
+  /// caller never has to pretend a video is an image.
+  void insertVideos(List<NoteVideoRef> refs) => insertImages(refs);
 
   /// Adds a finished recording to the note at the caret.
   ///
@@ -1167,24 +1482,34 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       if (pasted != null && await _clipboardStillHolds(capturedText)) {
         if (!mounted) return;
         if (!_beginImageAction()) return;
-        final progress = Toast.showProgress(context, 'Adding image…');
         try {
-          final result = await ingestImage(
+          final staged = await stageImage(
             source: pasted.bytes,
             sourceMime: mimeForFilename(pasted.name),
-            store: store,
           );
-          if (!mounted) {
-            progress.dismiss();
+          if (!mounted) return;
+          if (staged.isOk) {
+            final image = staged.staged!;
+            // Keep the exact preview bytes under their temporary hash before
+            // the note points at them. If the app closes during compression,
+            // the persisted ref still opens instead of becoming a hole.
+            await store.put(image.source);
+            if (!mounted) return;
+            insertImages([image.ref]);
+            final result = await (widget.imageFinalizer ?? _finishStagedImage)(
+              image,
+              store,
+            );
+            final ready = result.isOk && result.image!.ref is NoteImageRef
+                ? result.image!.ref as NoteImageRef
+                : await storeStagedImageAsIs(image, store: store);
+            _publishPreparedImage(image.ref, ready);
             return;
           }
-          if (result.isOk) {
-            insertImages([result.image!.ref]);
-            progress.success('Image added');
-            return;
-          }
-          progress.error(
-            '${pasted.name} ${describeRejection(result.rejection!)}',
+          Toast.show(
+            context,
+            '${pasted.name} ${describeRejection(staged.rejection!)}',
+            icon: KapyIcons.errorOutlined,
           );
         } catch (error, stack) {
           FlutterError.reportError(
@@ -1195,7 +1520,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               context: ErrorDescription('while adding a pasted image'),
             ),
           );
-          progress.error('Could not add that image');
+          if (mounted) {
+            Toast.show(
+              context,
+              'Could not add that image',
+              icon: KapyIcons.errorOutlined,
+            );
+          }
         } finally {
           _endImageAction();
         }
@@ -1467,13 +1798,30 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> insertDroppedMedia(List<XFile> files) async {
+    final images = <XFile>[];
+    final videos = <XFile>[];
+    for (final file in files) {
+      final name = file.name;
+      final dot = name.lastIndexOf('.');
+      final extension = dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
+      if (supportedImageExtensions.contains(extension)) {
+        images.add(file);
+      } else if (supportedVideoExtensions.contains(extension)) {
+        videos.add(file);
+      }
+    }
+    if (images.isNotEmpty) await insertFiles(images);
+    if (videos.isNotEmpty) await insertVideoFiles(videos);
+  }
+
   bool _beginImageAction() {
     if (widget.readOnly) return false;
     if (_imageActionBusy) {
       Toast.show(
         context,
         'Another image is still being added',
-        icon: Icons.hourglass_top_rounded,
+        icon: KapyIcons.hourglassRounded,
       );
       return false;
     }
@@ -1487,17 +1835,113 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> pickAndInsertVideos() async {
+    final store = widget.images;
+    if (store == null || !_beginVideoAction()) return;
+    try {
+      final files = await (widget.videoAcquirer ?? acquireNoteVideos)();
+      if (files.isEmpty || !mounted) return;
+      await _ingestAndInsertVideos(files, store);
+    } finally {
+      _endVideoAction();
+    }
+  }
+
+  Future<void> insertVideoFiles(List<XFile> files) async {
+    final store = widget.images;
+    if (store == null || files.isEmpty || !_beginVideoAction()) return;
+    try {
+      await _ingestAndInsertVideos(files, store);
+    } finally {
+      _endVideoAction();
+    }
+  }
+
+  bool _beginVideoAction() {
+    if (widget.readOnly) return false;
+    if (_videoActionBusy) {
+      Toast.show(
+        context,
+        'Another video is still being added',
+        icon: KapyIcons.hourglassRounded,
+      );
+      return false;
+    }
+    setState(() => _videoActionBusy = true);
+    return true;
+  }
+
+  void _endVideoAction() {
+    if (mounted && _videoActionBusy) {
+      setState(() => _videoActionBusy = false);
+    }
+  }
+
+  Future<void> _ingestAndInsertVideos(
+    List<XFile> files,
+    BlobStore store,
+  ) async {
+    final count = files.length;
+    final progress = Toast.showProgress(
+      context,
+      count == 1 ? 'Adding video…' : 'Adding $count videos…',
+    );
+    try {
+      final batch = await (widget.videoIngestor ?? _ingestVideoFiles)(
+        files,
+        store,
+      );
+      if (!mounted) {
+        progress.dismiss();
+        return;
+      }
+      insertVideos(batch.videos);
+      final added = batch.videos.length;
+      final rejected = batch.rejections.length;
+      if (added == 0) {
+        final first = batch.rejections.firstOrNull;
+        progress.error(
+          first == null
+              ? 'Could not add that video'
+              : '${first.name} ${describeVideoRejection(first.reason)}',
+        );
+      } else if (rejected > 0) {
+        progress.success(
+          'Added $added ${added == 1 ? 'video' : 'videos'}; '
+          '$rejected could not be added',
+          icon: KapyIcons.warningRounded,
+        );
+      } else {
+        progress.success(added == 1 ? 'Video added' : '$added videos added');
+      }
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kapy Notes editor',
+          context: ErrorDescription('while adding video files'),
+        ),
+      );
+      progress.error(
+        count == 1 ? 'Could not add that video' : 'Could not add those videos',
+      );
+    }
+  }
+
   Future<void> _ingestAndInsertFiles(List<XFile> files, BlobStore store) async {
+    if (widget.imageIngestor == null) {
+      await _stageAndInsertFiles(files, store);
+      return;
+    }
+
     final count = files.length;
     final progress = Toast.showProgress(
       context,
       count == 1 ? 'Adding image…' : 'Adding $count images…',
     );
     try {
-      final batch = await (widget.imageIngestor ?? _ingestImageFiles)(
-        files,
-        store,
-      );
+      final batch = await widget.imageIngestor!(files, store);
       if (!mounted) {
         progress.dismiss();
         return;
@@ -1518,7 +1962,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         progress.success(
           'Added $added ${added == 1 ? 'image' : 'images'}; '
           '$rejected could not be added',
-          icon: Icons.warning_amber_rounded,
+          icon: KapyIcons.warningRounded,
         );
       } else {
         progress.success(added == 1 ? 'Image added' : '$added images added');
@@ -1538,6 +1982,91 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  /// Makes every selected image part of the editor before compression starts.
+  /// The encoded bytes themselves are the temporary image source, so the user
+  /// sees exactly what they picked while the durable copy is prepared.
+  Future<void> _stageAndInsertFiles(List<XFile> files, BlobStore store) async {
+    final staged = <({String name, StagedImage image})>[];
+    final rejections = <({String name, ImageRejection reason})>[];
+    for (final file in files.take(20)) {
+      final result = await stageImageFile(file);
+      if (!mounted) return;
+      if (result.isOk) {
+        final image = result.staged!;
+        // This is a fast local durability write, not the expensive image
+        // preparation. It makes the optimistic ref crash-safe while its
+        // compressed replacement is built in the background.
+        await store.put(image.source);
+        if (!mounted) return;
+        staged.add((name: file.name, image: image));
+        // Insert each image as soon as its own header has been read. A large
+        // multi-select should not make the first preview wait for the last.
+        insertImages([image.ref]);
+      } else {
+        rejections.add((name: file.name, reason: result.rejection!));
+      }
+    }
+    for (final file in files.skip(20)) {
+      rejections.add((name: file.name, reason: ImageRejection.tooLarge));
+    }
+
+    final prepared = <NoteAttachmentRef>[];
+    for (final item in staged) {
+      final result = await (widget.imageFinalizer ?? _finishStagedImage)(
+        item.image,
+        store,
+      );
+      final ready = result.isOk && result.image!.ref is NoteImageRef
+          ? result.image!.ref as NoteImageRef
+          : await storeStagedImageAsIs(item.image, store: store);
+      prepared.add(ready);
+      _publishPreparedImage(item.image.ref, ready);
+    }
+
+    if (rejections.isNotEmpty) {
+      final batch = ImageBatch(images: prepared, rejections: rejections);
+      if (widget.onImagesRejected case final report?) {
+        report(batch);
+      } else if (mounted) {
+        final first = rejections.first;
+        Toast.show(
+          context,
+          '${first.name} ${describeRejection(first.reason)}',
+          icon: KapyIcons.errorOutlined,
+        );
+      }
+    }
+  }
+
+  void _publishPreparedImage(NoteImageRef staged, NoteImageRef prepared) {
+    final publish = widget.onImagePrepared;
+    if (publish != null) {
+      publish(staged, prepared);
+      return;
+    }
+    if (!mounted) return;
+    var changed = false;
+    final updated = [
+      for (final current in _attachments)
+        if (!changed &&
+            current is NoteImageRef &&
+            current.hash == staged.hash &&
+            listEquals(current.key, staged.key))
+          (() {
+            changed = true;
+            return prepared.copyWith(
+              offset: current.offset,
+              widthFactor: current.widthFactor,
+            );
+          })()
+        else
+          current,
+    ];
+    if (!changed) return;
+    setState(() => _attachments = updated);
+    widget.onDocumentChanged(_controller.text, _formats, updated);
+  }
+
   void _commitFormats(List<NoteFormatRange> formats) {
     if (widget.readOnly) return;
     _formats = formats;
@@ -1548,6 +2077,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   void _toggleBullets() {
     if (widget.readOnly) return;
+    if (widget.markdownEnabled) {
+      _applyMarkdownEdit(
+        toggleMarkdownLineStyle(_controller.value, NoteLineStyle.bullet),
+      );
+      return;
+    }
     ContextMenuController.removeAny();
     _typingOverrides.clear();
     _nextInsertedFormats = const {};
@@ -1560,6 +2095,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   void _toggleChecklist() {
     if (widget.readOnly) return;
+    if (widget.markdownEnabled) {
+      _applyMarkdownEdit(
+        toggleMarkdownLineStyle(_controller.value, NoteLineStyle.checklist),
+      );
+      return;
+    }
     ContextMenuController.removeAny();
     _typingOverrides.clear();
     _nextInsertedFormats = const {};
@@ -1572,6 +2113,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   void _indentList({required bool outdent}) {
     if (widget.readOnly) return;
+    if (_indentsAsMarkdown) {
+      _applyMarkdownEdit(
+        indentMarkdownSelection(_controller.value, outdent: outdent),
+      );
+      return;
+    }
     ContextMenuController.removeAny();
     _nextInsertedFormats = const {};
     _controller.value = indentSelection(_controller.value, outdent: outdent);
@@ -1613,7 +2160,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         keyboard.isAltPressed) {
       return KeyEventResult.ignored;
     }
-    if (!_focusNode.hasFocus || !selectionHasListLine(_controller.value)) {
+    if (!_focusNode.hasFocus || !_showIndentControls) {
       return KeyEventResult.ignored;
     }
     final pressed = keyboard.logicalKeysPressed;
@@ -1622,7 +2169,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         pressed.contains(LogicalKeyboardKey.shiftRight);
     // Claim the key even at the ends of the range, or Tab would silently fall
     // through to focus traversal exactly when the list stops moving.
-    if (canIndentSelection(_controller.value, outdent: outdent)) {
+    if (_canIndent(outdent: outdent)) {
       _indentList(outdent: outdent);
     }
     return KeyEventResult.handled;
@@ -1640,6 +2187,33 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       timeStamp: event.timeStamp,
       wasPrimary: event.buttons & kPrimaryButton != 0,
     );
+    _stillPress = event.pointer;
+  }
+
+  /// A press that moves as far as the field's own drag threshold is a drag,
+  /// and whatever it selects was meant.
+  ///
+  /// This listener hears a move before the field's gesture recognizers do —
+  /// they are fed by the pointer router, after the hit-test path — so the
+  /// mark is gone before the drag's first selection lands.
+  void _handlePointerMove(PointerMoveEvent event) {
+    if (_stillPress != event.pointer) return;
+    final down = _pointerDownDetails[event.pointer];
+    if (down == null ||
+        (event.position - down.position).distance >
+            computeHitSlop(event.kind, null)) {
+      _stillPress = null;
+    }
+  }
+
+  void _releaseStillPress(int pointer) {
+    if (_stillPress != pointer) return;
+    // A quick double click is often only settled once the press is up, by
+    // the gesture arena sweeping after this listener has heard it lift — so
+    // the mark outlasts the event.
+    scheduleMicrotask(() {
+      if (_stillPress == pointer) _stillPress = null;
+    });
   }
 
   /// Puts the caret on the ruled row a click landed on, below everything the
@@ -1768,6 +2342,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   void _handlePointerCancel(PointerCancelEvent event) {
     _pointerDownDetails.remove(event.pointer);
+    if (_stillPress == event.pointer) _stillPress = null;
   }
 
   /// What the editor claims about itself under the pointer. An I-beam over
@@ -1777,6 +2352,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   void _handlePointerUp(PointerUpEvent event) {
     final down = _pointerDownDetails.remove(event.pointer);
+    _releaseStillPress(event.pointer);
     if (down == null ||
         !down.wasPrimary ||
         event.timeStamp - down.timeStamp >= kLongPressTimeout ||
@@ -1790,6 +2366,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (_caretToBlankRow(editable, event.position)) return;
 
     final offset = editable.getPositionForPoint(event.position).offset;
+    final task = _markdownTaskAt(editable, event.position, offset);
+    if (!widget.readOnly && task != null) {
+      _nextInsertedFormats = const {};
+      _controller.value = toggleMarkdownTask(_controller.value, task.box);
+      _focusNode.requestFocus();
+      if (!task.checked) _celebrateCheck(editable, event.position);
+      return;
+    }
     final checkboxStart = _checkboxAt(editable, event.position, offset);
     if (!widget.readOnly && checkboxStart >= 0) {
       _nextInsertedFormats = const {};
@@ -1828,11 +2412,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _celebrateCheck(RenderEditable editable, Offset tapPosition) {
     if (!mounted) return;
     final text = _controller.text;
-    final done = !text.contains(uncheckedPrefix);
-    final total =
+    // Markdown tasks count alongside the app's own boxes: a list is finished
+    // when neither kind has anything left open.
+    final tasks = _controller.markdownFor(text)?.tasks ?? const [];
+    final open =
         uncheckedPrefix.allMatches(text).length +
-        checkedPrefix.allMatches(text).length;
-    final finale = done && total >= 2;
+        tasks.where((task) => !task.checked).length;
+    final total =
+        open +
+        checkedPrefix.allMatches(text).length +
+        tasks.where((task) => task.checked).length;
+    final finale = open == 0 && total >= 2;
     Celebrate.at(context, tapPosition);
     if (!finale) return;
 
@@ -1853,8 +2443,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   void _handleFocusChanged() {
+    // A markdown note shows its syntax only while it is being edited, so
+    // what is drawn changes with focus.
+    if (widget.markdownEnabled && mounted) {
+      _markdownTyping.clear();
+      setState(() => _markdownQuiet = true);
+    }
     if (_focusNode.hasFocus) {
+      widget.onFocus?.call();
       _recordKapyPeekActivity();
+      _reportActivity(edited: false);
       return;
     }
     // Nothing left to raise a keyboard for. A retry still in flight would
@@ -1864,6 +2462,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _clearKeywordTooltip();
     _kapyPeekIdleTimer = null;
     _dismissKapyPeek();
+  }
+
+  /// Gives the footer a deliberate way out of editing on a phone. Cancelling
+  /// the startup retry matters on Android: otherwise a retry already waiting
+  /// in the timer could immediately raise the keyboard again.
+  void _dismissKeyboard() {
+    _keyboardRetryTimer?.cancel();
+    FocusManager.instance.primaryFocus?.unfocus();
+    unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
   }
 
   /// Lets the editor go when the soft keyboard is dismissed out from under it.
@@ -1885,8 +2492,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void didChangeMetrics() {
     final wasUp = _keyboardWasUp;
     final inset = _keyboardInset;
-    _keyboardWasUp = inset > 0;
-    if (inset > 0 || !wasUp) return;
+    final isUp = inset > 0;
+    _keyboardWasUp = isUp;
+    if (mounted && AppPlatform.isMobile && isUp != wasUp) setState(() {});
+    if (isUp || !wasUp) return;
     if (widget.readOnly || !_focusNode.hasFocus) return;
     // Backgrounding the app also takes the keyboard down, and focus should
     // survive that: it is the same note, still open, when the app comes back.
@@ -1959,6 +2568,34 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return rect.inflate(6).contains(globalPosition) ? start : -1;
   }
 
+  /// The markdown task whose `[ ]` is under [globalPosition], if any.
+  ///
+  /// The same question [_checkboxAt] answers for the app's own boxes, with
+  /// the same forgiving margin, for the same reason: the hover cursor and the
+  /// click ask it alike, so anything that shows a hand is something a click
+  /// will tick.
+  MarkdownTask? _markdownTaskAt(
+    RenderEditable editable,
+    Offset globalPosition,
+    int textOffset,
+  ) {
+    final markdown = _controller.markdownFor(_controller.text);
+    if (markdown == null) return null;
+    for (final task in markdown.tasks) {
+      if (task.box > textOffset + 1) break;
+      if (textOffset > task.box + 4) continue;
+      final boxes = editable.getBoxesForSelection(
+        TextSelection(baseOffset: task.box, extentOffset: task.box + 3),
+      );
+      for (final box in boxes) {
+        final origin = editable.localToGlobal(Offset(box.left, box.top));
+        final rect = origin & Size(box.right - box.left, box.bottom - box.top);
+        if (rect.inflate(6).contains(globalPosition)) return task;
+      }
+    }
+    return null;
+  }
+
   /// Turns the pointer into a hand over things a click acts on, a help cursor
   /// over explained calculator words, and leaves an I-beam everywhere else.
   ///
@@ -1967,6 +2604,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// editor claims the whole surface is text and offers no hint that any of
   /// it can be clicked.
   void _handleHover(PointerHoverEvent event) {
+    if (widget.remoteCarets != null) _remoteHover.value = event.position;
     final root = _textFieldKey.currentContext?.findRenderObject();
     final editable = root == null ? null : _findRenderEditable(root);
     var wanted = _textCursor;
@@ -1977,7 +2615,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       // Link scanning is cached against the text, so hovering re-uses the
       // spans the highlighter already built rather than re-scanning the note.
       if ((!widget.readOnly &&
-              _checkboxAt(editable, event.position, offset) >= 0) ||
+              (_checkboxAt(editable, event.position, offset) >= 0 ||
+                  _markdownTaskAt(editable, event.position, offset) != null)) ||
           _linkAtPoint(editable, event.position, offset) != null) {
         wanted = SystemMouseCursors.click;
       } else {
@@ -1991,6 +2630,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   void _handleHoverExit() {
+    _remoteHover.value = null;
     _clearKeywordTooltip();
     if (_hoverCursor != _textCursor) {
       setState(() => _hoverCursor = _textCursor);
@@ -2122,7 +2762,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     Toast.show(
       context,
       'Could not open ${link.uri.host}',
-      icon: Icons.error_outline_rounded,
+      icon: KapyIcons.errorOutlined,
       isError: true,
     );
   }
@@ -2152,11 +2792,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (link == null) return const [];
     return [
       ContextMenuButtonItem(
-        label: 'Open Link',
+        label: 'Open link',
         onPressed: () => unawaited(_openLink(link)),
       ),
       ContextMenuButtonItem(
-        label: 'Copy Link',
+        label: 'Copy link',
         onPressed: () => unawaited(_copyLink(link)),
       ),
     ];
@@ -2171,14 +2811,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final link = _linkForSelection(selection);
     final linkItems = _linkContextMenuItems(link);
     if (widget.readOnly) {
-      return AdaptiveTextSelectionToolbar.buttonItems(
+      return NoteEditorContextMenu(
         anchors: editableTextState.contextMenuAnchors,
         buttonItems: [
           ...linkItems,
           ..._withRichCopy(editableTextState.contextMenuButtonItems, selection),
           if (_controller.text.isNotEmpty)
             ContextMenuButtonItem(
-              label: 'Copy Plain Text',
+              label: 'Copy plain text',
               onPressed: () => unawaited(_copyPlainText(selection)),
             ),
         ],
@@ -2186,17 +2826,25 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
     if (selection.isCollapsed) {
       final spellingItems = _spellingContextMenuItems(selection);
-      return AdaptiveTextSelectionToolbar.buttonItems(
+      return NoteEditorContextMenu(
         anchors: editableTextState.contextMenuAnchors,
         buttonItems: [
           ...spellingItems,
           ...linkItems,
           if (widget.images != null && !AppPlatform.hasPointer)
             ContextMenuButtonItem(
-              label: 'Add Image',
+              label: 'Add image',
               onPressed: () {
                 ContextMenuController.removeAny();
                 unawaited(pickAndInsertImages());
+              },
+            ),
+          if (widget.images != null && !AppPlatform.hasPointer)
+            ContextMenuButtonItem(
+              label: 'Add video',
+              onPressed: () {
+                ContextMenuController.removeAny();
+                unawaited(pickAndInsertVideos());
               },
             ),
           // Touch only, beside Add Image: on a phone the footer
@@ -2204,7 +2852,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           // where every insert action already lives.
           if (widget.onRecordVoice != null && !AppPlatform.hasPointer)
             ContextMenuButtonItem(
-              label: 'Record Voice Note',
+              label: 'Record voice note',
               onPressed: () {
                 ContextMenuController.removeAny();
                 widget.onRecordVoice!();
@@ -2212,7 +2860,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             ),
           if (_controller.text.isNotEmpty)
             ContextMenuButtonItem(
-              label: 'Copy Plain Text',
+              label: 'Copy plain text',
               onPressed: () => unawaited(_copyPlainText(selection)),
             ),
           ..._withImagePaste(editableTextState.contextMenuButtonItems),
@@ -2223,16 +2871,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       editableTextState: editableTextState,
       corrections: _spellingContextMenuItems(selection),
       paragraphStyle: _activeParagraphStyle,
+      markdownHeadingLevel: widget.markdownEnabled
+          ? _markdownHeadingLevel
+          : null,
+      markdown: widget.markdownEnabled,
       boldActive: _formatActive(NoteFormat.bold),
       italicActive: _formatActive(NoteFormat.italic),
-      bulletsActive: selectionHasLineStyle(
-        _controller.value,
-        NoteLineStyle.bullet,
-      ),
-      checklistActive: selectionHasLineStyle(
-        _controller.value,
-        NoteLineStyle.checklist,
-      ),
+      bulletsActive: _lineStyleActive(NoteLineStyle.bullet),
+      checklistActive: _lineStyleActive(NoteLineStyle.checklist),
       onParagraphStylePressed: _cycleParagraphStyle,
       onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
       onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
@@ -2445,7 +3091,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           selectedImages.length > maxClipboardFragmentImages
               ? 'Copy up to $maxClipboardFragmentImages images at a time'
               : 'That image selection is too large to copy at once',
-          icon: Icons.error_outline_rounded,
+          icon: KapyIcons.errorOutlined,
           isError: true,
         );
       }
@@ -2460,7 +3106,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         Toast.show(
           context,
           'Could not copy that image',
-          icon: Icons.error_outline_rounded,
+          icon: KapyIcons.errorOutlined,
           isError: true,
         );
         return false;
@@ -2485,7 +3131,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         Toast.show(
           context,
           'Could not copy that image',
-          icon: Icons.error_outline_rounded,
+          icon: KapyIcons.errorOutlined,
           isError: true,
         );
       }
@@ -2550,28 +3196,75 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   /// Double-clicking a blank line has no word to take, so the platform
-  /// selects the line terminator instead. Nothing can be done with such a
-  /// selection — it holds no text to copy, format or replace — but it paints a
-  /// full-width highlight across the empty line and opens the formatting
-  /// toolbar over it.
+  /// selects the line terminator instead — and so does a long press on
+  /// Android, or a right click on a Mac. Nothing can be done with such a
+  /// selection but harm: it hides the caret, opens the formatting toolbar over
+  /// nothing, and a Paste from the menu would replace the line break instead
+  /// of going in at it.
   ///
   /// Collapsing to a caret is what every other editor leaves you with there.
-  /// Only a selection that is *entirely* newlines is caught, so dragging
-  /// across blank lines on the way to real text is untouched.
+  /// Only a selection made by a press still held where it landed is caught,
+  /// and only one of exactly one line break. Anything dragged out or reached
+  /// from the keyboard stands, however little it holds: dragging over blank
+  /// lines, Shift with the arrows or a click, and Select All in a note of
+  /// nothing else are how somebody deletes a run of them at once, which is
+  /// what collapsing every selection of bare line breaks used to prevent.
   ///
   /// Returns true when it took over, so the caller can leave the follow-up
   /// work to the change this triggers.
   bool _collapseLineTerminatorSelection(TextSelection selection) {
-    if (!selection.isValid || selection.isCollapsed) return false;
+    if (_stillPress == null || HardwareKeyboard.instance.isShiftPressed) {
+      return false;
+    }
+    if (!selection.isValid || selection.end - selection.start != 1) {
+      return false;
+    }
     final text = _controller.text;
-    if (selection.start < 0 || selection.end > text.length) return false;
-    final selected = text.substring(selection.start, selection.end);
-    if (selected.isEmpty || selected.replaceAll('\n', '').isNotEmpty) {
+    if (selection.start < 0 ||
+        selection.end > text.length ||
+        text[selection.start] != '\n') {
       return false;
     }
     // Re-enters this listener, where the now-collapsed selection falls
     // straight through the check above.
     _controller.selection = TextSelection.collapsed(offset: selection.start);
+    return true;
+  }
+
+  /// Keeps a caret out of the hidden structure at the start of a markdown
+  /// line — a heading's `#`, a quote's `>`, a list's marker — which has
+  /// nothing on screen to put a caret beside.
+  ///
+  /// A caret landing in it by a click, Home or an arrow up or down goes to
+  /// where the line's words begin, which is where it looks as though it is.
+  /// A caret stepped left out of the words by the arrow key goes on to the
+  /// end of the line above instead, or Left would seem to do nothing at all.
+  ///
+  /// Returns true when it moved the caret, leaving the rest to the change
+  /// that makes.
+  bool _keepCaretOutOfMarkdown(TextSelection previous, TextSelection now) {
+    if (!now.isValid || !now.isCollapsed) return false;
+    final composing = _controller.value.composing;
+    if (composing.isValid && !composing.isCollapsed) return false;
+    final markdown = _controller.markdownFor(_controller.text);
+    final prefix = markdown?.atomicPrefixAt(now.baseOffset);
+    if (prefix == null || now.baseOffset == prefix.end) return false;
+    // Only the arrow: Home, or ⌘← on a Mac, from the start of the words is
+    // asking for the start of this line, which is where the caret already
+    // is, and a click there is asking for the same.
+    final keyboard = HardwareKeyboard.instance;
+    final steppedLeft =
+        keyboard.logicalKeysPressed.contains(LogicalKeyboardKey.arrowLeft) &&
+        !keyboard.isMetaPressed &&
+        previous.isValid &&
+        previous.isCollapsed &&
+        previous.baseOffset == prefix.end &&
+        now.baseOffset < prefix.end;
+    final target = steppedLeft && prefix.start > 0
+        ? prefix.start - 1
+        : prefix.end;
+    // Re-enters this listener, where the caret is now somewhere allowed.
+    _controller.selection = TextSelection.collapsed(offset: target);
     return true;
   }
 
@@ -2617,8 +3310,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   void _evaluate() {
+    // In markdown, the calculator reads the note with its code blanked and
+    // its list markers made bullets; see MarkdownAnalysis.calculatorText.
     final evaluation = widget.engine.evaluateDocumentWithSummary(
-      _controller.text,
+      _controller.calculatorTextFor(_controller.text),
     );
     _results = evaluation.results;
     _totalText = evaluation.totalText;
@@ -2672,6 +3367,39 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         );
         continue;
       }
+      if (ref is NoteVideoRef) {
+        final box = imageBoxFor(
+          countOnLine: 1,
+          columnWidth: columnWidth,
+          aspectRatio: ref.aspectRatio,
+          maxHeight: maxHeight,
+          widthFactor: ref.widthFactor,
+        );
+        spans[ref.offset] = (
+          width: box.width,
+          height: box.height + noteImageGap,
+          child: NoteVideoView(
+            key: ValueKey('note-video-${ref.hash}-${ref.offset}'),
+            ref: ref,
+            box: box,
+            store: store,
+            fetch: widget.imageFetch,
+            uploadProgress: ref.isUploaded
+                ? null
+                : widget.uploadProgressFor?.call(ref.hash),
+            onOpen: () => NoteVideoViewer.open(
+              context,
+              ref: ref,
+              store: store,
+              fetch: widget.imageFetch,
+            ),
+            onRemove: widget.readOnly
+                ? null
+                : () => removeAttachment(ref.offset),
+          ),
+        );
+        continue;
+      }
       if (ref is! NoteImageRef) {
         spans[ref.offset] = (
           width: columnWidth,
@@ -2710,6 +3438,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           resizable: !widget.readOnly && onLine <= 1,
           selected: selected,
           fetch: widget.imageFetch,
+          uploadProgress: ref.isUploaded || ref.isPreparing
+              ? null
+              : widget.uploadProgressFor?.call(ref.hash),
           onSelect: () => _selectImage(ref),
           onOpen: () => NoteImageViewer.open(
             context,
@@ -2804,6 +3535,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   ),
                 );
 
+                final markdown = _controller.markdownFor(_controller.text);
+                // Markdown is shown as written only in a note being edited:
+                // blocks with the caret in them, inline markers with the
+                // caret against them — and those not while typing.
+                final editing = _focusNode.hasFocus && !widget.readOnly;
+                _controller.markdownReveal = (
+                  blocks: editing,
+                  edges: editing && !_markdownQuiet,
+                );
+                final concealment = _controller.markdownConcealment();
                 final offsets = _measurer.measure(
                   span: _controller.buildTextSpan(
                     context: context,
@@ -2814,7 +3555,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   maxWidth: contentWidth,
                   strut: strut,
                   textScaler: textScaler,
-                  layoutKey: (widget.writingFont, _formats),
+                  // What is hidden changes where lines wrap, so it is part of
+                  // what the measurement depends on.
+                  layoutKey: (
+                    widget.writingFont,
+                    _formats,
+                    widget.markdownEnabled,
+                    concealment.key,
+                  ),
                   placeholders: _controller.placeholderDimensions(),
                 );
 
@@ -2840,12 +3588,70 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                       strut: strut,
                                       writingFont: widget.writingFont,
                                     ),
+                                  if (markdown != null)
+                                    Positioned.fill(
+                                      child: IgnorePointer(
+                                        child: MarkdownBackdrop(
+                                          analysis: markdown,
+                                          concealment: concealment,
+                                          offsets: offsets,
+                                          scroll: _scrollController,
+                                          editable: _fieldEditable,
+                                          colors: MarkdownBackdropColors(
+                                            text: palette.textPrimary,
+                                            quiet: palette.textSecondary,
+                                            faint: palette.textTertiary
+                                                .withValues(alpha: 0.35),
+                                            panel: palette.controlBackground,
+                                            panelBorder: palette.controlBorder,
+                                            accent: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                            onAccent: Theme.of(
+                                              context,
+                                            ).colorScheme.onPrimary,
+                                          ),
+                                          runStyle: (base, styles) =>
+                                              _controller.markdownRunStyle(
+                                                base,
+                                                styles,
+                                                Theme.of(
+                                                  context,
+                                                ).colorScheme.primary,
+                                              ),
+                                          markerRoom: _controller
+                                              .markdownMarkerRoom(
+                                                textStyle,
+                                                textScaler,
+                                              ),
+                                        ),
+                                      ),
+                                    ),
+                                  // Under the field, as its own highlight is.
+                                  Positioned.fill(
+                                    child: BlankLineHighlight(
+                                      editable: () =>
+                                          _editableTextState()?.renderEditable,
+                                      repaint: _selectionRepaint,
+                                    ),
+                                  ),
                                   _buildField(
                                     padding,
                                     textStyle,
                                     strut,
                                     trailingGap,
                                   ),
+                                  if (widget.remoteCarets case final source?)
+                                    Positioned.fill(
+                                      child: RemoteCaretLayer(
+                                        noteId: widget.noteId,
+                                        source: source,
+                                        controller: _controller,
+                                        scroll: _scrollController,
+                                        editable: _fieldEditable,
+                                        hover: _remoteHover,
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
@@ -2908,7 +3714,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           else
             NoteFooter(
               total: AppPlatform.isMobile ? null : _totalText,
-              typingNames: widget.typingNames,
+              typing: widget.typing,
               readOnly: widget.readOnly,
               paragraphStyleShortcut: widget.shortcuts.bindingFor(
                 ShortcutAction.cycleTextStyle,
@@ -2939,6 +3745,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   ? null
                   : () => unawaited(pickAndInsertImages()),
               imageBusy: _imageActionBusy,
+              onInsertVideoPressed: widget.readOnly || widget.images == null
+                  ? null
+                  : () => unawaited(pickAndInsertVideos()),
+              videoBusy: _videoActionBusy,
               onRecordVoicePressed: widget.readOnly
                   ? null
                   : widget.onRecordVoice,
@@ -2946,20 +3756,22 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onChecklistPressed: _toggleChecklist,
               onIndentPressed: () => _indentList(outdent: false),
               onOutdentPressed: () => _indentList(outdent: true),
-              showIndentControls: selectionHasListLine(_controller.value),
-              canIndent: canIndentSelection(_controller.value, outdent: false),
-              canOutdent: canIndentSelection(_controller.value, outdent: true),
+              showIndentControls: _showIndentControls,
+              canIndent: _canIndent(outdent: false),
+              canOutdent: _canIndent(outdent: true),
               boldActive: _formatActive(NoteFormat.bold),
               italicActive: _formatActive(NoteFormat.italic),
-              bulletsActive: selectionHasLineStyle(
-                _controller.value,
-                NoteLineStyle.bullet,
-              ),
-              checklistActive: selectionHasLineStyle(
-                _controller.value,
-                NoteLineStyle.checklist,
-              ),
+              bulletsActive: _lineStyleActive(NoteLineStyle.bullet),
+              checklistActive: _lineStyleActive(NoteLineStyle.checklist),
               paragraphStyle: _activeParagraphStyle,
+              markdownHeadingLevel: widget.markdownEnabled
+                  ? _markdownHeadingLevel
+                  : null,
+              markdown: widget.markdownEnabled,
+              onDismissKeyboardPressed:
+                  AppPlatform.isMobile && _keyboardInset > 0
+                  ? _dismissKeyboard
+                  : null,
             ),
         ],
       ),
@@ -2967,7 +3779,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
     return ImageDropTarget(
       enabled: !widget.readOnly && widget.images != null,
-      onFiles: (files) => unawaited(insertFiles(files)),
+      onFiles: (files) => unawaited(insertDroppedMedia(files)),
       child: page,
     );
   }
@@ -3008,6 +3820,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         onExit: (_) => _handleHoverExit(),
         child: Listener(
           onPointerDown: _handlePointerDown,
+          onPointerMove: _handlePointerMove,
           onPointerUp: _handlePointerUp,
           onPointerCancel: _handlePointerCancel,
           // `EditableText` builds its paste action with `Action.overridable`,
@@ -3103,8 +3916,21 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     const SpellCheckConfiguration.disabled(),
                 inputFormatters: [
                   _dailySeparatorFormatter,
-                  const _ListContinuationFormatter(),
-                  const _ListShorthandFormatter(),
+                  if (widget.markdownEnabled) ...[
+                    _MarkdownTypingFormatter(
+                      _controller.markdownFor,
+                      _markdownTyping,
+                    ),
+                    _MarkdownStructureFormatter(_controller.markdownFor),
+                  ],
+                  _ListContinuationFormatter(
+                    markdown: widget.markdownEnabled
+                        ? _controller.markdownFor
+                        : null,
+                  ),
+                  // In markdown `- ` already is a list item, and turning it
+                  // into a bullet glyph would take the markdown away.
+                  if (!widget.markdownEnabled) const _ListShorthandFormatter(),
                   // Last, so it sees whatever the others made of the edit: a
                   // continuation or a shorthand landing on a picture's line
                   // has to be moved off it too.
@@ -3146,8 +3972,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 }
 
-Future<ImageBatch> _ingestImageFiles(List<XFile> files, BlobStore store) =>
-    ingestFiles(files, store: store);
+Future<ImageIngestResult> _finishStagedImage(
+  StagedImage staged,
+  BlobStore store,
+) => finishStagedImage(staged, store: store);
+
+Future<VideoBatch> _ingestVideoFiles(List<XFile> files, BlobStore store) =>
+    ingestVideoFiles(files, store: store);
 
 /// A link and where it was drawn, paired so the panel can be put against it.
 class _LinkHit {
@@ -3343,14 +4174,70 @@ class _ListShorthandFormatter extends TextInputFormatter {
   }
 }
 
-class _ListContinuationFormatter extends TextInputFormatter {
-  const _ListContinuationFormatter();
+/// Markdown that behaves like formatting rather than like characters: Bold
+/// switched on with nothing selected wraps what is typed next, a space or
+/// Return at the end of a styled word steps out of the style, and emptying a
+/// styled word takes its hidden markers with it.
+class _MarkdownTypingFormatter extends TextInputFormatter {
+  const _MarkdownTypingFormatter(this.markdown, this.typing);
+
+  final MarkdownAnalysis? Function(String text) markdown;
+  final MarkdownTyping typing;
 
   @override
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
+    final analysis = markdown(oldValue.text);
+    if (analysis == null) return newValue;
+    return markdownTypingEdit(oldValue, newValue, analysis, typing) ?? newValue;
+  }
+}
+
+/// Keystrokes that act on a line's hidden markdown as one piece: Backspace
+/// at the start of a heading or list item takes the whole `## ` or `- [ ] `
+/// away, and `[] ` at the start of a line becomes a checkbox.
+class _MarkdownStructureFormatter extends TextInputFormatter {
+  const _MarkdownStructureFormatter(this.markdown);
+
+  final MarkdownAnalysis? Function(String text) markdown;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final analysis = markdown(oldValue.text);
+    if (analysis == null) return newValue;
+    return markdownStructureEdit(oldValue, newValue, analysis) ?? newValue;
+  }
+}
+
+class _ListContinuationFormatter extends TextInputFormatter {
+  const _ListContinuationFormatter({this.markdown});
+
+  /// How the note reads as markdown, when it does: markdown lists and quotes
+  /// then continue too, and nothing continues inside a code block, where a
+  /// line that starts `- ` is code. The app's own bullets and boxes go on
+  /// continuing their own way everywhere else.
+  final MarkdownAnalysis? Function(String text)? markdown;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final analysis = markdown?.call(oldValue.text);
+    if (analysis != null) {
+      final caret = oldValue.selection.extentOffset;
+      final inCode = analysis.codeBlocks.any(
+        (block) => block.start <= caret && caret <= block.end,
+      );
+      if (inCode) return newValue;
+      final continued = continueMarkdownLine(oldValue, newValue);
+      if (continued != null) return continued;
+    }
     final selection = oldValue.selection;
     if (!selection.isValid || !selection.isCollapsed) return newValue;
     final caret = selection.extentOffset;

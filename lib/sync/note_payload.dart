@@ -14,6 +14,7 @@ class NotePayload {
   final List<NoteFormatRange> formats;
   final List<NoteAttachmentRef> attachments;
   final int? archivedAt;
+  final int? hiddenAt;
 
   /// Epoch milliseconds, matching the on-disk format of the Flutter model.
   final int createdAt;
@@ -23,6 +24,7 @@ class NotePayload {
     this.formats = const [],
     this.attachments = const [],
     this.archivedAt,
+    this.hiddenAt,
     required this.createdAt,
   });
 
@@ -31,6 +33,7 @@ class NotePayload {
     formats: note.formats,
     attachments: note.attachments,
     archivedAt: note.archivedAt?.millisecondsSinceEpoch,
+    hiddenAt: note.hiddenAt?.millisecondsSinceEpoch,
     createdAt: note.createdAt.millisecondsSinceEpoch,
   );
 
@@ -54,6 +57,9 @@ class NotePayload {
     archivedAt: archivedAt == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(archivedAt!),
+    hiddenAt: hiddenAt == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(hiddenAt!),
     spaceId: spaceId,
     contentKey: contentKey,
     contentKeyEpoch: contentKeyEpoch,
@@ -65,6 +71,7 @@ class NotePayload {
     'formats': formats.map((format) => format.toJson()).toList(),
     'attachments': attachments.map((ref) => ref.toJson()).toList(),
     if (archivedAt != null) 'archivedAt': archivedAt,
+    if (hiddenAt != null) 'hiddenAt': hiddenAt,
     'createdAt': createdAt,
   };
 
@@ -87,6 +94,7 @@ class NotePayload {
       formats: noteFormatsFromJson(raw['formats'], body.length),
       attachments: attachments,
       archivedAt: raw['archivedAt'] is int ? raw['archivedAt']! as int : null,
+      hiddenAt: raw['hiddenAt'] is int ? raw['hiddenAt']! as int : null,
       createdAt: createdAt is int && createdAt >= 0 ? createdAt : 0,
     );
   }

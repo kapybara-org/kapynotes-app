@@ -45,6 +45,7 @@ private let mascotCandidates = [
 /// Inno's image areas at 250% DPI. Anything smaller it scales this down to.
 private let banner = NSSize(width: 534, height: 1022)
 private let smallSide = 159
+private let smallMarkInsetRatio: CGFloat = 0.14
 
 private let cream = NSColor(srgbRed: 1.0, green: 0.973, blue: 0.933, alpha: 1)
 private let terracottaTop = NSColor(srgbRed: 0.945, green: 0.573, blue: 0.404, alpha: 1)
@@ -225,10 +226,19 @@ write(
 
 // Transparent, because it sits on the wizard's own header rather than on
 // anything this draws — the soft corners have to show what is behind them.
+// Inno anchors the whole image control at the window's top-right edge, so the
+// mark needs its own even inset or it looks jammed against that edge despite
+// being mathematically centred inside the control.
 write(
   png(width: smallSide, height: smallSide, opaque: false) {
+    let inset = CGFloat(smallSide) * smallMarkInsetRatio
     mark.draw(
-      in: NSRect(x: 0, y: 0, width: smallSide, height: smallSide),
+      in: NSRect(
+        x: inset,
+        y: inset,
+        width: CGFloat(smallSide) - (inset * 2),
+        height: CGFloat(smallSide) - (inset * 2)
+      ),
       from: NSRect(origin: .zero, size: mark.size),
       operation: .sourceOver,
       fraction: 1,

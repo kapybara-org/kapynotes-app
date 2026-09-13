@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
 import '../../data/note_attachment.dart';
+import '../context_menu.dart';
 import 'note_image_layout.dart';
 
 /// How tall a recording sits in the text.
@@ -102,12 +103,19 @@ class NoteVoiceChip extends StatelessWidget {
       VoiceChipState.summarising => 'Summarising…',
       VoiceChipState.waiting => 'Waiting for connection',
       VoiceChipState.retrying => 'Trying again soon',
+      VoiceChipState.failed when ref.transcript != null => "Couldn't summarise",
       VoiceChipState.failed => "Couldn't transcribe",
       VoiceChipState.outOfMinutes => 'Out of minutes',
+      // Local transcription may finish while a cloud summary is waiting for
+      // sign-in. Keep the words readable instead of asking to transcribe them
+      // a second time.
+      VoiceChipState.needsConsent || VoiceChipState.needsAccount
+          when ref.transcript != null =>
+        'Transcript ready',
       // Both say what to do rather than what is wrong, because both are one
       // tap from being fixed and the chip is where the person is looking.
       VoiceChipState.needsConsent => 'Turn on transcription',
-      VoiceChipState.needsAccount => 'Sign in to transcribe',
+      VoiceChipState.needsAccount => 'Turn on transcription',
       VoiceChipState.idle => summary?.title ?? 'Voice note',
     };
   }
@@ -121,7 +129,9 @@ class NoteVoiceChip extends StatelessWidget {
     if (ref.transcript != null) return 'Read the transcript';
     return switch (state) {
       VoiceChipState.needsConsent => 'Turn transcription on in Settings',
-      VoiceChipState.needsAccount => 'Sign in to transcribe recordings',
+      VoiceChipState.needsAccount => 'Choose transcription in Voice Settings',
+      VoiceChipState.failed when ref.transcript != null =>
+        'Read the transcript or try the summary again',
       VoiceChipState.failed => 'Try transcribing again',
       _ => 'Open this recording',
     };
@@ -270,8 +280,8 @@ class NoteVoiceChip extends StatelessWidget {
                             width: 28,
                             height: 28,
                           ),
-                          icon: Icon(
-                            Icons.close_rounded,
+                          icon: KapyIcon(
+                            KapyIcons.closeRounded,
                             size: 16,
                             color: palette.textSecondary,
                           ),
@@ -288,15 +298,9 @@ class NoteVoiceChip extends StatelessWidget {
   }
 
   Future<void> _showMenu(BuildContext context, Offset position) async {
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (overlay == null) return;
-    final choice = await showMenu<String>(
+    final choice = await showKapyContextMenu<String>(
       context: context,
-      position: RelativeRect.fromRect(
-        position & const Size(1, 1),
-        Offset.zero & overlay.size,
-      ),
+      globalPosition: position,
       items: const [
         PopupMenuItem(value: 'open', height: 36, child: Text('Open')),
         PopupMenuItem(value: 'remove', height: 36, child: Text('Remove')),
@@ -330,8 +334,8 @@ class _PlayButton extends StatelessWidget {
             child: InkWell(
               customBorder: const CircleBorder(),
               onTap: onPressed,
-              child: Icon(
-                playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              child: KapyIcon(
+                playing ? KapyIcons.pauseRounded : KapyIcons.playRounded,
                 size: 20,
                 color: palette.textPrimary,
               ),

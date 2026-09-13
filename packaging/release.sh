@@ -28,6 +28,13 @@
 #
 # Set SKIP_NOTARIZE=1 to build an unnotarised DMG for local testing. Such a
 # build will be blocked by Gatekeeper on any machine other than this one.
+#
+# Every Dart build here is obfuscated with its symbols split out, which takes
+# about a sixth off the compiled Dart on each platform (Android arm64: 10.1 MB
+# to 8.5 MB). The price is that a stack trace from a shipped build is
+# unreadable without the symbols, so they are kept per version under
+# build/release/symbols/<version>/<target>/ — keep that directory with the
+# release, and read a trace with `flutter symbolize -d <that dir> -i trace`.
 
 set -euo pipefail
 
@@ -62,7 +69,19 @@ DMG_TEMPLATE="$ROOT/packaging/dmg/DS_Store"
 VERSION="$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)"
 BUILD_NUMBER="$(grep -m1 '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f2)"
 
-mkdir -p "$OUT" "$ARCHIVES"
+SYMBOLS="$OUT/symbols/$VERSION"
+
+mkdir -p "$OUT" "$ARCHIVES" "$SYMBOLS"
+
+# The flags that take the symbols out of the Dart snapshot; one directory per
+# target so that a macOS and an Android build of the same version do not
+# overwrite each other's.
+dart_size_flags() {
+  local target="$1"
+  rm -rf "$SYMBOLS/$target"
+  mkdir -p "$SYMBOLS/$target"
+  echo "--obfuscate --split-debug-info=$SYMBOLS/$target"
+}
 
 info() { printf '\n\033[1;34m==>\033[0m \033[1m%s\033[0m\n' "$1"; }
 
@@ -85,7 +104,10 @@ notarize() {
 # Flutter has to run first so the ephemeral xcconfig, the plugin Swift package
 # and the compiled Dart kernel exist before xcodebuild archives the target.
 prepare_macos() {
-  "$FLUTTER" build macos --release
+  # The flags land in Flutter-Generated.xcconfig, which is how the archive
+  # below builds the same obfuscated, symbol-split snapshot.
+  # shellcheck disable=SC2046
+  "$FLUTTER" build macos --release $(dart_size_flags macos)
 }
 
 archive_macos() {
@@ -263,15 +285,20 @@ build_disk_image() {
   # Spotlight or a stray Finder window can still be holding the volume.
   hdiutil detach "$mounted" >/dev/null 2>&1 ||
     hdiutil detach "$mounted" -force >/dev/null
-  hdiutil convert "$temp_dmg" -format UDZO -imagekey zlib-level=9 -o "$dmg" >/dev/null
+  # LZMA rather than zlib: a sixth smaller for the same app (42 MB became
+  # 35 MB), which is what every download and every Sparkle update moves.
+  # Needs macOS 10.15 to mount, and the app needs 12.
+  hdiutil convert "$temp_dmg" -format ULMO -o "$dmg" >/dev/null
   rm -f "$temp_dmg"
 }
 
 build_ios() {
   info "iOS $VERSION ($BUILD_NUMBER) → App Store"
   "$ROOT/packaging/preflight_ios.sh" --archive
+  # shellcheck disable=SC2046
   "$FLUTTER" build ipa \
     --release \
+    $(dart_size_flags ios) \
     --export-options-plist="$ROOT/packaging/ExportOptions-ios-appstore.plist"
   cp "$ROOT/build/ios/ipa/"*.ipa "$OUT/kapy-ios.ipa"
   echo "  → $OUT/kapy-ios.ipa"
@@ -301,7 +328,8 @@ build_android() {
   # `flutter test` in this tree while this build is running, for the same
   # reason.
   rm -f "$ROOT/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java"
-  "$FLUTTER" build appbundle --release
+  # shellcheck disable=SC2046
+  "$FLUTTER" build appbundle --release $(dart_size_flags android)
   cp "$ROOT/build/app/outputs/bundle/release/app-release.aab" "$OUT/kapy-android.aab"
   # Re-check the copied artifact, so what ships is what was verified.
   "$ROOT/packaging/preflight_android.sh" --bundle "$OUT/kapy-android.aab"

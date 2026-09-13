@@ -3,7 +3,7 @@ package com.kapybara.kapynotes
 import android.content.Context
 import android.content.Intent
 import com.google.android.play.core.splitcompat.SplitCompat
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -18,7 +18,7 @@ import io.flutter.plugin.common.MethodChannel
  * widget, and so that a Capture the app has already acted on does not open
  * the picker again the next time Dart asks.
  */
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     private var pendingLaunch: String? = null
 
     /**

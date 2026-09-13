@@ -79,8 +79,8 @@ void main() {
       'notes/note-55555555.md',
     });
     // The golden above is a schema 1 archive and stays one: its whole job is
-    // proving that archives written before this build still open. This line is
-    // the reminder to add a golden for the *new* schema when it moves.
-    expect(exportSchemaVersion, 2, reason: 'add a golden when this moves');
+    // proving that archives written before this build still open. Current
+    // schema coverage lives beside each added attachment kind.
+    expect(exportSchemaVersion, 3);
   });
 }

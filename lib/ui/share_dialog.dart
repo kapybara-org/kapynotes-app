@@ -7,10 +7,14 @@ import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/note.dart';
 import '../sync/safety.dart';
+import '../sync/presence.dart';
 import '../sync/sharing.dart';
 import '../sync/sync_api.dart' show SyncRefusedException;
 import '../sync/spaces.dart';
 import '../sync/trust.dart';
+import 'collaborator_colors.dart';
+import 'member_avatars.dart';
+import 'profile_avatar.dart';
 import 'safety_dialogs.dart';
 
 /// The share sheet for one note.
@@ -63,6 +67,7 @@ class _ShareDialogState extends State<_ShareDialog> {
   void initState() {
     super.initState();
     widget.sharing.addListener(_changed);
+    widget.sharing.presenceChanges.addListener(_changed);
     // Whatever another device did since the list was last fetched.
     unawaited(_refreshQuietly());
   }
@@ -70,6 +75,7 @@ class _ShareDialogState extends State<_ShareDialog> {
   @override
   void dispose() {
     widget.sharing.removeListener(_changed);
+    widget.sharing.presenceChanges.removeListener(_changed);
     _email.dispose();
     super.dispose();
   }
@@ -260,8 +266,8 @@ class _ShareDialogState extends State<_ShareDialog> {
         space == null
             ? 'Share note'
             : widget.noteId == null
-            ? space.displayName
-            : 'Shared in ${space.displayName}',
+            ? space.titleFor(sharing.userId)
+            : 'Shared ${sharedPhrase(space, sharing.userId)}',
       ),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 440),
@@ -306,7 +312,8 @@ class _ShareDialogState extends State<_ShareDialog> {
                                   note.id,
                                   spaceId: team.id,
                                 ),
-                                done: 'Shared in ${team.displayName}.',
+                                done:
+                                    'Shared ${sharedPhrase(team, sharing.userId)}.',
                               ),
                       ),
                 ],
@@ -314,6 +321,7 @@ class _ShareDialogState extends State<_ShareDialog> {
                 _Members(
                   space: space,
                   sharing: sharing,
+                  present: sharing.presentIn(space.id),
                   busy: _busy,
                   onCopyLink: _copyLink,
                   onRemove: (member) => _confirm(
@@ -347,6 +355,7 @@ class _ShareDialogState extends State<_ShareDialog> {
                     target: ReportTarget.member(
                       spaceId: space.id,
                       email: member.email,
+                      name: member.displayName,
                     ),
                   ),
                   onRevoke: (invite) =>
@@ -360,8 +369,8 @@ class _ShareDialogState extends State<_ShareDialog> {
                     child: TextButton.icon(
                       key: const ValueKey('report-note'),
                       onPressed: _busy ? null : _reportNote,
-                      icon: Icon(
-                        Icons.flag_outlined,
+                      icon: KapyIcon(
+                        KapyIcons.flagOutlined,
                         size: AppControlMetrics.iconControl,
                       ),
                       label: const Text('Report this note'),
@@ -390,8 +399,8 @@ class _ShareDialogState extends State<_ShareDialog> {
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
                       onPressed: () => _copyLink(token),
-                      icon: Icon(
-                        Icons.link_rounded,
+                      icon: KapyIcon(
+                        KapyIcons.linkRounded,
                         size: AppControlMetrics.iconControl,
                       ),
                       label: const Text('Copy invitation link'),
@@ -420,7 +429,8 @@ class _ShareDialogState extends State<_ShareDialog> {
                 : () => _confirm(
                     title: 'Move back to My notes?',
                     body:
-                        'The note leaves ${space.displayName} and becomes '
+                        'The note stops being shared '
+                        '${sharedPhrase(space, sharing.userId)} and becomes '
                         'yours alone, under a new key. Others keep what they '
                         'already downloaded.',
                     action: 'Move it',
@@ -437,7 +447,13 @@ class _ShareDialogState extends State<_ShareDialog> {
             onPressed: _busy
                 ? null
                 : () => _confirm(
-                    title: 'Stop sharing ${space.displayName}?',
+                    title: switch (space.chosenName) {
+                      final name? => 'Stop sharing $name?',
+                      null => switch (space.peoplePhrase(sharing.userId)) {
+                        final people? => 'Stop sharing with $people?',
+                        null => 'Stop sharing?',
+                      },
+                    },
                     body:
                         'Every note in it comes back to your own notes and '
                         'the space ends for everyone. Nothing is deleted.',
@@ -459,7 +475,10 @@ class _ShareDialogState extends State<_ShareDialog> {
             onPressed: _busy
                 ? null
                 : () => _confirm(
-                    title: 'Leave ${space.displayName}?',
+                    title: switch (space.chosenName) {
+                      final name? => 'Leave $name?',
+                      null => 'Leave these shared notes?',
+                    },
                     body:
                         'You stop receiving changes. Notes you have not '
                         'synced yet stay with you as your own.',
@@ -488,11 +507,21 @@ extension on Sharing {
   bool canAddNotesTo_(Space space) => space.canEdit && holdsKey(space.id);
 }
 
+/// How a sentence refers to a space: "with Priya and 2 others", or "in
+/// Family" for one somebody named — never by the address it began with.
+String sharedPhrase(Space space, String userId) {
+  final chosen = space.chosenName;
+  if (chosen != null) return 'in $chosen';
+  final people = space.peoplePhrase(userId);
+  return people == null ? 'in a shared space' : 'with $people';
+}
+
 /// Who can read the notes in a space, and where each of them stands.
 class _Members extends StatelessWidget {
   const _Members({
     required this.space,
     required this.sharing,
+    required this.present,
     required this.busy,
     required this.onCopyLink,
     required this.onRemove,
@@ -504,6 +533,9 @@ class _Members extends StatelessWidget {
 
   final Space space;
   final Sharing sharing;
+
+  /// Whoever else is in one of the space's notes right now.
+  final List<Collaborator> present;
   final bool busy;
   final ValueChanged<String> onCopyLink;
   final ValueChanged<SpaceMember> onRemove;
@@ -514,82 +546,57 @@ class _Members extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
     final warnings = {
       for (final w in sharing.trust.warningsFor(space.id)) w.userId: w,
     };
     final waiting = !sharing.holdsKey(space.id);
+    final here = {for (final person in present) person.userId: person};
+    final me = sharing.userId;
+    // This account first, then whoever is in the notes now, then everyone
+    // else in the order the space lists them.
+    final members = [
+      ...space.members.where((m) => m.userId == me),
+      ...space.members.where(
+        (m) => m.userId != me && here.containsKey(m.userId),
+      ),
+      ...space.members.where(
+        (m) => m.userId != me && !here.containsKey(m.userId),
+      ),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (waiting)
           _Banner(
-            icon: Icons.hourglass_top_rounded,
+            icon: KapyIcons.hourglassRounded,
             text:
                 'Waiting for someone with access to let you in. The notes '
                 'arrive once they have.',
           ),
         for (final warning in warnings.values)
           _Banner(
-            icon: Icons.warning_amber_rounded,
+            icon: KapyIcons.warningRounded,
             isWarning: true,
             text:
-                "${warning.email}'s key changed. If they set up a new "
-                'account, compare this fingerprint with them before '
-                'trusting it: ${warning.current}',
+                "${space.member(warning.userId)?.displayName ?? warning.email}'s "
+                'key changed. If they set up a new account, compare this '
+                'fingerprint with them before trusting it: ${warning.current}',
             action: TextButton(
               onPressed: () => onTrust(warning),
               child: const Text('Trust the new key'),
             ),
           ),
-        _Label('People'),
-        for (final member in space.members)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Icon(
-                  member.isOwner
-                      ? Icons.person_rounded
-                      : Icons.person_outline_rounded,
-                  size: AppControlMetrics.iconControl,
-                  color: palette.textSecondary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        member.userId == sharing.userId
-                            ? '${member.displayName} (you)'
-                            : member.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: AppTypeScale.control,
-                          color: palette.textPrimary,
-                        ),
-                      ),
-                      Text(
-                        [
-                          member.role.accessLabel,
-                          if (!member.hasKey)
-                            member.x25519Public == null
-                                ? 'Has not unlocked yet'
-                                : 'Waiting for access',
-                        ].join(' · '),
-                        style: TextStyle(
-                          fontSize: AppTypeScale.caption,
-                          color: palette.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (member.userId != sharing.userId)
-                  _MemberMenu(
+        _Label('People with access'),
+        for (final member in members)
+          _MemberRow(
+            key: ValueKey('member-row-${member.userId}'),
+            member: member,
+            isSelf: member.userId == me,
+            presence: here[member.userId],
+            trailing: member.userId == me
+                ? null
+                : _MemberMenu(
                     key: ValueKey('member-menu-${member.userId}'),
                     canRemove: space.isOwner && !member.isOwner,
                     enabled: !busy,
@@ -597,60 +604,191 @@ class _Members extends StatelessWidget {
                     onBlock: () => onBlock(member),
                     onRemove: () => onRemove(member),
                   ),
-              ],
-            ),
           ),
         for (final invite in space.invites)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
+          _InviteeRow(
+            key: ValueKey('invite-row-${invite.token}'),
+            invite: invite,
+            canRevoke: space.isOwner,
+            busy: busy,
+            onCopyLink: () => onCopyLink(invite.token),
+            onRevoke: () => onRevoke(invite),
+          ),
+      ],
+    );
+  }
+}
+
+/// One person with access: their face, their name, what they may do and
+/// whether they are in the notes right now.
+///
+/// The address stays off the row. A name is what somebody chose to be called
+/// and the address is who they provably are, so it is kept one hover (or one
+/// long press) away, for the moment somebody needs to check.
+class _MemberRow extends StatelessWidget {
+  const _MemberRow({
+    super.key,
+    required this.member,
+    required this.isSelf,
+    this.presence,
+    this.trailing,
+  });
+
+  final SpaceMember member;
+  final bool isSelf;
+  final Collaborator? presence;
+  final Widget? trailing;
+
+  static const double _avatar = 30;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final presence = this.presence;
+    final status = [
+      member.role.accessLabel,
+      if (!member.hasKey)
+        member.x25519Public == null
+            ? 'Has not unlocked yet'
+            : 'Waiting for access',
+      if (presence != null) presence.typing ? 'Typing' : 'Here now',
+    ].join(' · ');
+    Widget name = Text(
+      isSelf ? '${member.displayName} (you)' : member.displayName,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: AppTypeScale.control,
+        color: palette.textPrimary,
+      ),
+    );
+    if (member.hasName) name = Tooltip(message: member.email, child: name);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          ProfileAvatar(
+            extent: _avatar,
+            seed: member.userId.isEmpty ? member.email : member.userId,
+            name: member.displayName,
+            image: member.image,
+            ring: presence == null
+                ? null
+                : collaboratorColor(member.userId, on: palette.brightness),
+            ringWidth: 2,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.mail_outline_rounded,
-                  size: AppControlMetrics.iconControl,
-                  color: palette.textTertiary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        invite.email,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: AppTypeScale.control,
-                          color: palette.textSecondary,
-                        ),
-                      ),
-                      Text(
-                        '${invite.role.accessLabel} · invited · not yet accepted',
-                        style: TextStyle(
-                          fontSize: AppTypeScale.caption,
-                          color: palette.textTertiary,
-                        ),
-                      ),
-                    ],
+                name,
+                Text(
+                  status,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: AppTypeScale.caption,
+                    fontWeight: presence == null
+                        ? FontWeight.w400
+                        : FontWeight.w400,
+                    color: presence == null
+                        ? palette.textSecondary
+                        : collaboratorColor(
+                            member.userId,
+                            on: palette.brightness,
+                          ),
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Copy invitation link',
-                  onPressed: () => onCopyLink(invite.token),
-                  icon: Icon(
-                    Icons.link_rounded,
-                    size: AppControlMetrics.iconControl,
-                  ),
-                ),
-                if (space.isOwner)
-                  TextButton(
-                    onPressed: busy ? null : () => onRevoke(invite),
-                    child: const Text('Cancel'),
-                  ),
               ],
             ),
           ),
-      ],
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+/// An invitation nobody has accepted yet: the address is all there is to
+/// show, since there is no profile behind it until they join.
+class _InviteeRow extends StatelessWidget {
+  const _InviteeRow({
+    super.key,
+    required this.invite,
+    required this.canRevoke,
+    required this.busy,
+    required this.onCopyLink,
+    required this.onRevoke,
+  });
+
+  final SpaceInvite invite;
+  final bool canRevoke;
+  final bool busy;
+  final VoidCallback onCopyLink;
+  final VoidCallback onRevoke;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Container(
+            width: _MemberRow._avatar,
+            height: _MemberRow._avatar,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: palette.controlBackground,
+              border: Border.all(color: palette.controlBorder, width: 0.5),
+            ),
+            child: KapyIcon(
+              KapyIcons.mailOutlined,
+              size: AppControlMetrics.iconAdornment,
+              color: palette.textTertiary,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  invite.email,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: AppTypeScale.control,
+                    color: palette.textSecondary,
+                  ),
+                ),
+                Text(
+                  '${invite.role.accessLabel} · Invited, not joined yet',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.caption,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Copy invitation link',
+            onPressed: onCopyLink,
+            icon: KapyIcon(
+              KapyIcons.linkRounded,
+              size: AppControlMetrics.iconControl,
+            ),
+          ),
+          if (canRevoke)
+            TextButton(
+              onPressed: busy ? null : onRevoke,
+              child: const Text('Cancel'),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -683,8 +821,8 @@ class _MemberMenu extends StatelessWidget {
     return PopupMenuButton<String>(
       enabled: enabled,
       tooltip: 'More',
-      icon: Icon(
-        Icons.more_horiz_rounded,
+      icon: KapyIcon(
+        KapyIcons.moreRounded,
         size: AppControlMetrics.iconControl,
         color: palette.textSecondary,
       ),
@@ -721,12 +859,13 @@ class _SpaceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final others = space.othersThan(userId);
-    final who = others.isEmpty
-        ? (space.invites.isEmpty
-              ? 'Nobody else yet'
-              : 'Waiting on ${space.invites.map((i) => i.email).join(', ')}')
-        : others.map((m) => m.displayName).join(', ');
+    final people = space.peopleExcept(userId);
+    final who = people.isEmpty
+        ? 'Nobody else yet'
+        : [
+            for (final person in people)
+              person.isInvited ? '${person.name} (invited)' : person.fullName,
+          ].join(', ');
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -734,8 +873,8 @@ class _SpaceRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
         child: Row(
           children: [
-            Icon(
-              Icons.people_outline_rounded,
+            KapyIcon(
+              KapyIcons.peopleOutlined,
               size: AppControlMetrics.iconControl,
               color: palette.textSecondary,
             ),
@@ -745,7 +884,9 @@ class _SpaceRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    space.displayName,
+                    space.titleFor(userId),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: AppTypeScale.control,
                       color: palette.textPrimary,
@@ -763,8 +904,15 @@ class _SpaceRow extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(
-              Icons.chevron_right_rounded,
+            const SizedBox(width: 8),
+            SpacePeopleAvatars(
+              space: space,
+              currentUserId: userId,
+              extent: 22,
+              maxAvatars: 3,
+            ),
+            KapyIcon(
+              KapyIcons.chevronRightRounded,
               size: AppControlMetrics.iconControl,
               color: palette.textTertiary,
             ),
@@ -792,12 +940,12 @@ class _RolePicker extends StatelessWidget {
     segments: const [
       ButtonSegment(
         value: SpaceRole.member,
-        icon: Icon(Icons.edit_outlined),
+        icon: KapyIcon(KapyIcons.editOutlined),
         label: Text('Editor'),
       ),
       ButtonSegment(
         value: SpaceRole.viewer,
-        icon: Icon(Icons.visibility_outlined),
+        icon: KapyIcon(KapyIcons.visibilityOutlined),
         label: Text('View only'),
       ),
     ],
@@ -881,7 +1029,7 @@ class _Banner extends StatelessWidget {
     this.action,
   });
 
-  final IconData icon;
+  final KapyIconData icon;
   final String text;
   final bool isWarning;
   final Widget? action;
@@ -913,7 +1061,7 @@ class _Banner extends StatelessWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.only(top: 1),
-                child: Icon(
+                child: KapyIcon(
                   icon,
                   size: AppControlMetrics.iconAdornment,
                   color: color,
@@ -966,7 +1114,7 @@ class _Label extends StatelessWidget {
       text,
       style: TextStyle(
         fontSize: AppTypeScale.caption,
-        fontWeight: FontWeight.w500,
+        fontWeight: FontWeight.w400,
         letterSpacing: 0.4,
         color: context.palette.textTertiary,
       ),

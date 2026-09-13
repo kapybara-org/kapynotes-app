@@ -80,6 +80,14 @@ void main() {
       ..answers['isVisible'] = true
       // show() asks before it restores.
       ..answers['isMinimized'] = false
+      ..answers['isMaximized'] = false
+      ..answers['isFullScreen'] = false
+      ..answers['getBounds'] = {
+        'x': 100.0,
+        'y': 80.0,
+        'width': 600.0,
+        'height': 720.0,
+      }
       ..install();
     tray = _NativeRecorder('tray_manager', sequence: sequence)..install();
     loginItem = _NativeRecorder('kapynotes/login_item', sequence: sequence)
@@ -104,6 +112,98 @@ void main() {
     window.calls.clear();
     tray.calls.clear();
   }
+
+  test('a modal borrows width and gives the squeezed window back', () async {
+    window.answers['getBounds'] = {
+      'x': 200.0,
+      'y': 80.0,
+      'width': 520.0,
+      'height': 720.0,
+    };
+
+    late final Map<Object?, Object?> expandedBounds;
+    late final Map<Object?, Object?> expandedMinimum;
+    final rememberedSize = prefs.windowSize;
+    final result = await integration.withMinimumWindowWidth(680, () async {
+      sequence.add('modal');
+      expandedBounds = Map<Object?, Object?>.from(
+        window.lastArguments['setBounds']! as Map,
+      );
+      expandedMinimum = Map<Object?, Object?>.from(
+        window.lastArguments['setMinimumSize']! as Map,
+      );
+      integration.onWindowResized();
+      await settle();
+      expect(
+        prefs.windowSize,
+        rememberedSize,
+        reason: 'the borrowed width is not the user\'s saved window size',
+      );
+      return 'closed';
+    });
+
+    expect(result, 'closed');
+    expect(expandedBounds, containsPair('x', 120.0));
+    expect(expandedBounds, containsPair('width', 680.0));
+    expect(expandedBounds, containsPair('height', 720.0));
+    expect(expandedMinimum, containsPair('width', 680.0));
+    expect(
+      sequence,
+      containsAllInOrder([
+        'window_manager.getBounds',
+        'window_manager.setMinimumSize',
+        'window_manager.setBounds',
+        'modal',
+        'window_manager.setMinimumSize',
+        'window_manager.setBounds',
+      ]),
+    );
+    expect(
+      window.lastArguments['setMinimumSize'],
+      containsPair('width', LayoutPrefs.minimumWindowSize.width),
+    );
+    expect(window.lastArguments['setBounds'], containsPair('x', 200.0));
+    expect(window.lastArguments['setBounds'], containsPair('width', 520.0));
+    expect(prefs.windowSize, const Size(520, 720));
+    expect(prefs.windowPosition, const Offset(200, 80));
+  });
+
+  test('a completed move remembers the full normal window bounds', () async {
+    window.answers['getBounds'] = {
+      'x': 914.0,
+      'y': 62.0,
+      'width': 600.0,
+      'height': 720.0,
+    };
+
+    integration.onWindowMoved();
+    await settle();
+
+    expect(prefs.windowPosition, const Offset(914, 62));
+    expect(prefs.windowSize, const Size(600, 720));
+    expect(prefs.windowBounds, const Rect.fromLTWH(914, 62, 600, 720));
+    expect(
+      window.calls,
+      containsAllInOrder(['isMaximized', 'isFullScreen', 'getBounds']),
+    );
+  });
+
+  test('maximized bounds do not replace the last normal placement', () async {
+    prefs.rememberWindowBounds(const Rect.fromLTWH(914, 62, 600, 720));
+    window.answers['isMaximized'] = true;
+    window.answers['getBounds'] = {
+      'x': 0.0,
+      'y': 0.0,
+      'width': 1440.0,
+      'height': 900.0,
+    };
+
+    integration.onWindowResized();
+    await settle();
+
+    expect(prefs.windowBounds, const Rect.fromLTWH(914, 62, 600, 720));
+    expect(window.calls, isNot(contains('getBounds')));
+  });
 
   test('the tray and the close button follow the preference', () async {
     await startWithoutTray();

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../billing/plan_usage.dart';
 import '../data/local_store.dart';
 import '../data/notes_store.dart';
 import 'auth_api.dart';
@@ -82,6 +83,11 @@ class Account extends ChangeNotifier {
   /// transcription in it — a test, or a server with none configured — in which
   /// case [speech] stays null and the queue never runs.
   SpeechApi Function(String token)? speechApiFor;
+
+  /// Server-authoritative plan and usage, attached by the production root.
+  /// Kept separate from sync because a signed-in, still-locked account can
+  /// already have a plan and cloud usage worth showing.
+  PlanUsage? planUsage;
   final KeyStore _keys;
   final NotesStore _notes;
   final SyncState _state;
@@ -133,6 +139,15 @@ class Account extends ChangeNotifier {
   /// inside the sealed note payload, so before the vault opens there is no way
   /// to decrypt a picture even if it downloaded.
   Future<Uint8List?> Function(String hash)? get imageFetch => _images?.fetch;
+
+  /// Per-attachment upload progress for the media tile currently painting it.
+  /// Null while signed out, where adding media is wholly local and therefore
+  /// has no network wait to represent.
+  ValueListenable<double?> Function(String hash)? get uploadProgressFor {
+    final images = _images;
+    return images?.progressFor;
+  }
+
   bool get isSyncing => _sync?.status == SyncStatus.syncing;
 
   /// Restores whatever the last run left behind. Called once, off the first
@@ -457,12 +472,14 @@ class Account extends ChangeNotifier {
   }
 
   void _teardownSync() {
+    final images = _images;
     _sharing?.dispose();
     _sharing = null;
     _images = null;
     _speech = null;
     _sync?.dispose();
     _sync = null;
+    images?.dispose();
     _keyring?.clear();
     _keyring = null;
   }
@@ -566,6 +583,7 @@ class Account extends ChangeNotifier {
   @override
   void dispose() {
     _teardownSync();
+    planUsage?.dispose();
     super.dispose();
   }
 }

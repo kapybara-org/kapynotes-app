@@ -8,6 +8,7 @@ import 'note.dart';
 import 'note_attachment.dart';
 import 'note_format.dart';
 import 'tombstone.dart';
+import 'writing_streak.dart';
 
 /// Owns the note list and its persistence.
 ///
@@ -31,14 +32,20 @@ class NotesStore extends ChangeNotifier {
   static const String _key = 'notes.v2';
   static const String _legacyKey = 'notes.v1';
   static const String _pinnedKey = 'pinnedNoteIds.v1';
+  static const String _writingDaysKey = 'writingDays.v1';
 
   final LocalStore _store;
   final DateTime Function() _now;
   List<Note> _notes = const [];
   List<Note> _activeNotes = const [];
   List<Note> _archivedNotes = const [];
+  List<Note> _hiddenNotes = const [];
   List<Tombstone> _tombstones = const [];
   Set<String> _pinnedNoteIds = const {};
+
+  /// The days something was written on, as [WritingStreak.dayOf] numbers.
+  Set<int> _writingDays = const {};
+
   bool _loaded = false;
   Future<void>? _loadFuture;
 
@@ -66,10 +73,18 @@ class NotesStore extends ChangeNotifier {
   /// Notes kept out of the main list until restored.
   List<Note> get archivedNotes => _archivedNotes;
 
+  /// Notes kept behind the device-local Hidden Notes credential.
+  List<Note> get hiddenNotes => _hiddenNotes;
+
   /// Every recoverable note, for sync, export, and attachment retention.
   List<Note> get allNotes => _notes;
   List<Tombstone> get tombstones => _tombstones;
   Set<String> get pinnedNoteIds => _pinnedNoteIds;
+
+  /// Days in a row, up to today, that something has been written.
+  WritingStreak get streak =>
+      WritingStreak.from(_writingDays, today: WritingStreak.dayOf(_now()));
+
   bool get isLoaded => _loaded;
   bool get isEmpty => _activeNotes.isEmpty;
 
@@ -123,6 +138,7 @@ class NotesStore extends ChangeNotifier {
     }
 
     _loadPinnedNoteIds();
+    _loadWritingDays();
     _refreshViews();
     _loaded = true;
     notifyListeners();
@@ -177,7 +193,7 @@ class NotesStore extends ChangeNotifier {
   /// collaborator sees in a shared note.
   bool? togglePinned(String id) {
     final note = byId(id);
-    if (note == null || note.isArchived) return null;
+    if (note == null || note.isArchived || note.isHidden) return null;
 
     final updated = Set<String>.of(_pinnedNoteIds);
     final pinned = updated.add(id);
@@ -193,11 +209,16 @@ class NotesStore extends ChangeNotifier {
   /// In the personal space unless [spaceId] says otherwise, in which case the
   /// caller brings the content key the note is to be sealed under, because
   /// minting one is the sync layer's job.
+  ///
+  /// A [body] counts towards the streak as writing unless [authored] is false,
+  /// which is for words the app put there rather than the person.
   Note create({
     String body = '',
     String? spaceId,
     Uint8List? contentKey,
     int keyGeneration = 1,
+    bool authored = true,
+    bool hidden = false,
   }) {
     assert((spaceId == null) == (contentKey == null));
     final now = _now();
@@ -206,11 +227,13 @@ class NotesStore extends ChangeNotifier {
       body: body,
       createdAt: now,
       updatedAt: now,
+      hiddenAt: hidden && spaceId == null ? now : null,
       spaceId: spaceId,
       contentKey: contentKey,
       contentKeyGeneration: keyGeneration,
     );
     _notes = [note, ..._notes];
+    if (authored && !note.isEmpty) _recordWriting([WritingStreak.dayOf(now)]);
     _persist();
     return note;
   }
@@ -244,12 +267,14 @@ class NotesStore extends ChangeNotifier {
       return;
     }
 
+    final at = _now();
     final updatedNote = existing.copyWith(
       body: body,
       formats: normalized,
       attachments: images,
-      updatedAt: _now(),
+      updatedAt: at,
     );
+    _recordWriting([WritingStreak.dayOf(at)]);
     _replace(index, updatedNote, toFront: true);
   }
 
@@ -334,7 +359,7 @@ class NotesStore extends ChangeNotifier {
   /// Moves a note out of the main list without creating a tombstone.
   void archive(String id) {
     final index = indexOf(id);
-    if (index < 0 || _notes[index].isArchived) return;
+    if (index < 0 || _notes[index].isArchived || _notes[index].isHidden) return;
     final at = _now();
     _replace(
       index,
@@ -346,10 +371,37 @@ class NotesStore extends ChangeNotifier {
   /// Returns an archived note to the main list as the most recent change.
   void restore(String id) {
     final index = indexOf(id);
-    if (index < 0 || !_notes[index].isArchived) return;
+    if (index < 0 || !_notes[index].isArchived || _notes[index].isHidden) {
+      return;
+    }
     _replace(
       index,
       _notes[index].copyWith(archivedAt: null, updatedAt: _now()),
+      toFront: true,
+    );
+  }
+
+  /// Moves a personal note behind Hidden Notes without creating a tombstone.
+  ///
+  /// Shared notes are deliberately refused. Hidden state syncs with the note,
+  /// so allowing one collaborator to set it would make the note disappear for
+  /// everybody in that space.
+  void hide(String id) {
+    final index = indexOf(id);
+    if (index < 0) return;
+    final note = _notes[index];
+    if (note.isHidden || note.isArchived || note.isShared) return;
+    final at = _now();
+    _replace(index, note.copyWith(hiddenAt: at, updatedAt: at), toFront: true);
+  }
+
+  /// Returns a hidden note to the ordinary notes list.
+  void unhide(String id) {
+    final index = indexOf(id);
+    if (index < 0 || !_notes[index].isHidden) return;
+    _replace(
+      index,
+      _notes[index].copyWith(hiddenAt: null, updatedAt: _now()),
       toFront: true,
     );
   }
@@ -382,6 +434,14 @@ class NotesStore extends ChangeNotifier {
         .toList(growable: false);
   }
 
+  List<Note> searchHidden(String query) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return _hiddenNotes;
+    return _hiddenNotes
+        .where((note) => note.matches(trimmed))
+        .toList(growable: false);
+  }
+
   // -------------------------------------------------------------------------
   // Spaces
   // -------------------------------------------------------------------------
@@ -403,6 +463,7 @@ class NotesStore extends ChangeNotifier {
     final index = indexOf(id);
     if (index < 0) return null;
     final existing = _notes[index];
+    if (existing.isHidden && spaceId != null) return null;
     if (existing.spaceId == spaceId) return existing;
 
     final at = _now();
@@ -470,6 +531,7 @@ class NotesStore extends ChangeNotifier {
     String hash,
     NoteAttachmentRef Function(NoteAttachmentRef current) transform, {
     bool touch = false,
+    List<int>? key,
   }) {
     final index = indexOf(id);
     if (index < 0) return false;
@@ -478,7 +540,9 @@ class NotesStore extends ChangeNotifier {
     var found = false;
     final updated = [
       for (final ref in existing.attachments)
-        if (!found && ref.hash == hash)
+        if (!found &&
+            ref.hash == hash &&
+            (key == null || listEquals(ref.key, key)))
           (() {
             found = true;
             return transform(ref);
@@ -559,6 +623,7 @@ class NotesStore extends ChangeNotifier {
                 createdAt: note.createdAt,
                 updatedAt: at,
                 archivedAt: note.archivedAt,
+                hiddenAt: note.hiddenAt,
               );
             }()
           else
@@ -649,6 +714,7 @@ class NotesStore extends ChangeNotifier {
     };
     final conflicted = <Note>[];
     final removed = <int>{};
+    final written = <int>[];
     final now = _now();
 
     for (final incoming in notes) {
@@ -666,6 +732,7 @@ class NotesStore extends ChangeNotifier {
 
       if (index == null) {
         live.add(incoming.markSynced(incoming.updatedAt));
+        written.addAll(_daysWrittenElsewhere(incoming));
         continue;
       }
 
@@ -685,10 +752,12 @@ class NotesStore extends ChangeNotifier {
             createdAt: local.createdAt,
             updatedAt: now,
             archivedAt: local.archivedAt,
+            hiddenAt: local.hiddenAt,
           ),
         );
       }
       live[index] = incoming.markSynced(incoming.updatedAt);
+      written.addAll(_daysWrittenElsewhere(incoming));
     }
 
     for (final incoming in tombstones) {
@@ -724,6 +793,7 @@ class NotesStore extends ChangeNotifier {
     _notes = List.unmodifiable(merged);
     _tombstones = List.unmodifiable(stones.values);
     _purgeExpiredTombstones();
+    _recordWriting(written);
     _persist();
 
     return conflicted.map((note) => note.id).toList(growable: false);
@@ -756,6 +826,7 @@ class NotesStore extends ChangeNotifier {
         _tombstones.where((s) => _stoneKey(s.spaceId, s.id) != key),
       );
     }
+    _recordWriting(_daysWrittenElsewhere(note));
     _persist();
   }
 
@@ -783,6 +854,7 @@ class NotesStore extends ChangeNotifier {
         createdAt: local.createdAt,
         updatedAt: _now(),
         archivedAt: local.archivedAt,
+        hiddenAt: local.hiddenAt,
       ),
       ..._notes,
     ]);
@@ -835,6 +907,9 @@ class NotesStore extends ChangeNotifier {
     _notes = const [];
     _tombstones = const [];
     _encoded.clear();
+    // Their streak goes with their notes.
+    _writingDays = const {};
+    _store.put(_writingDaysKey, const <int>[]);
     _persist();
   }
 
@@ -887,9 +962,43 @@ class NotesStore extends ChangeNotifier {
     _store.putNow(_pinnedKey, _pinnedNoteIds.toList(growable: false));
   }
 
+  /// The record of days written, or — the first time a build that keeps one
+  /// opens this store — a start on it from what the notes already show, so
+  /// that somebody who has been writing every day does not open the update to
+  /// a streak of nothing.
+  void _loadWritingDays() {
+    final raw = _store.data[_writingDaysKey];
+    if (raw is List) {
+      _writingDays = Set.unmodifiable(raw.whereType<int>());
+      return;
+    }
+    _recordWriting([for (final note in _notes) ..._daysWrittenElsewhere(note)]);
+  }
+
+  /// What a note that arrived from outside this device says about when it was
+  /// written. Only a personal note's: the personal space is written by this
+  /// person alone, where a shared note's timestamps may be somebody else's
+  /// work. Their own edits to a shared note still count on the device they
+  /// type them on.
+  static Iterable<int> _daysWrittenElsewhere(Note note) =>
+      note.spaceId == null ? WritingStreak.daysIn(note) : const <int>[];
+
+  /// Adds [days] to the record. Almost always a day already in it — this runs
+  /// on every keystroke — so that case costs a lookup and writes nothing.
+  void _recordWriting(Iterable<int> days) {
+    if (days.every(_writingDays.contains)) return;
+    _writingDays = Set.unmodifiable({..._writingDays, ...days});
+    _store.put(_writingDaysKey, _writingDays.toList()..sort());
+  }
+
   void _refreshViews() {
-    _activeNotes = List.unmodifiable(_notes.where((note) => !note.isArchived));
-    _archivedNotes = List.unmodifiable(_notes.where((note) => note.isArchived));
+    _activeNotes = List.unmodifiable(
+      _notes.where((note) => !note.isArchived && !note.isHidden),
+    );
+    _archivedNotes = List.unmodifiable(
+      _notes.where((note) => note.isArchived && !note.isHidden),
+    );
+    _hiddenNotes = List.unmodifiable(_notes.where((note) => note.isHidden));
   }
 
   List<Object?> _encodeNotes() {

@@ -263,8 +263,8 @@ class _MobilePageSwipeState extends State<MobilePageSwipe> {
                     ? 'New note created'
                     : 'Already a new note',
                 icon: _createdSomething
-                    ? Icons.note_add_rounded
-                    : Icons.edit_note_rounded,
+                    ? KapyIcons.noteAddRounded
+                    : KapyIcons.editNoteRounded,
                 progress: 1,
                 trailing: true,
                 complete: true,
@@ -281,8 +281,8 @@ class _MobilePageSwipeState extends State<MobilePageSwipe> {
                   (_PageSwipeAction.createNote, true) => 'Release for new note',
                 },
                 icon: _action == _PageSwipeAction.openNotes
-                    ? Icons.menu_open_rounded
-                    : Icons.note_add_outlined,
+                    ? KapyIcons.menuOpenRounded
+                    : KapyIcons.noteAddRounded,
                 progress: _progress,
                 trailing: _action == _PageSwipeAction.createNote,
                 complete: _armed,
@@ -384,7 +384,7 @@ class _PageSwipeCue extends StatelessWidget {
   });
 
   final String label;
-  final IconData icon;
+  final KapyIconData icon;
   final double progress;
   final bool trailing;
   final bool complete;
@@ -435,7 +435,7 @@ class _PageSwipeCue extends StatelessWidget {
                             color: accent,
                             backgroundColor: palette.controlBorder,
                           ),
-                          Icon(icon, size: 14, color: accent),
+                          KapyIcon(icon, size: 14, color: accent),
                         ],
                       ),
                     ),

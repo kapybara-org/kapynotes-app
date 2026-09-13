@@ -257,7 +257,9 @@ class _ImportDialogState extends State<_ImportDialog> {
 
     final newer = plan.countOf(ImportOutcome.keptNewer);
     if (newer > 0) {
-      lines.add('${count(newer, 'note')} kept — this device has a newer copy.');
+      lines.add(
+        '${count(newer, 'note')} kept because this device has a newer copy.',
+      );
     }
 
     final deleted = plan.countOf(ImportOutcome.deletedSince);
@@ -323,10 +325,10 @@ class _ModeChoice extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
+              KapyIcon(
                 selected
-                    ? Icons.radio_button_checked_rounded
-                    : Icons.radio_button_unchecked_rounded,
+                    ? KapyIcons.radioCheckedRounded
+                    : KapyIcons.radioUncheckedRounded,
                 size: AppControlMetrics.iconControl,
                 color: selected ? scheme.primary : palette.textTertiary,
               ),
@@ -339,7 +341,7 @@ class _ModeChoice extends StatelessWidget {
                       label,
                       style: TextStyle(
                         fontSize: AppTypeScale.body,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w400,
                         color: palette.textPrimary,
                       ),
                     ),

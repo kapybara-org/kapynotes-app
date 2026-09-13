@@ -92,6 +92,38 @@ void main() {
       expect(b.view.archivedAt, isNull);
     });
 
+    test('hidden and unhidden state converges between replicas', () {
+      final a = NoteDoc(replica: 'a');
+      final b = NoteDoc(replica: 'b');
+      b.apply(type(a, 'Private'));
+      final hiddenAt = DateTime.utc(2026, 9, 7, 15);
+
+      final hideOps = a.reconcile(
+        body: a.view.body,
+        formats: a.view.formats,
+        attachments: a.view.attachments,
+        createdAt: a.view.createdAt!,
+        hiddenAt: hiddenAt,
+        now: hiddenAt,
+      );
+      b.apply(hideOps);
+      expect(a.view.hiddenAt, hiddenAt);
+      expect(b.view.hiddenAt, hiddenAt);
+
+      final unhiddenAt = DateTime.utc(2026, 9, 7, 16);
+      final unhideOps = b.reconcile(
+        body: b.view.body,
+        formats: b.view.formats,
+        attachments: b.view.attachments,
+        createdAt: b.view.createdAt!,
+        hiddenAt: null,
+        now: unhiddenAt,
+      );
+      a.apply(unhideOps);
+      expect(a.view.hiddenAt, isNull);
+      expect(b.view.hiddenAt, isNull);
+    });
+
     test('deleting a typed word is one op', () {
       final doc = NoteDoc(replica: 'a');
       type(doc, 'x');
@@ -360,6 +392,37 @@ void main() {
       expect(doc.offsetOf(Anchor.start), 0);
       expect(doc.offsetOf(doc.anchorAt(99)), 3);
       expect(doc.offsetOf(const Anchor(NodeId('nobody', 7))), 0);
+    });
+
+    test(
+      'an anchor that outran its characters is known only once they land',
+      () {
+        final a = NoteDoc(replica: 'a');
+        final b = NoteDoc(replica: 'b');
+        final ops = type(a, 'abc');
+        // Somebody else's caret, sent before the ops that typed its character.
+        final caret = a.anchorAt(3);
+        expect(b.knows(caret), isFalse);
+        expect(b.knows(Anchor.start), isTrue);
+        b.apply(ops);
+        expect(b.knows(caret), isTrue);
+        expect(b.offsetOf(caret), 3);
+        // A deleted character is still known: the caret falls back beside it.
+        type(a, 'ab');
+        expect(a.knows(caret), isTrue);
+        expect(a.offsetOf(caret), 2);
+      },
+    );
+
+    test('offsets map across one contiguous edit', () {
+      final insert = diffTexts('hello world', 'hello big world');
+      expect(mapOffsetAcross(insert, 2), 2);
+      expect(mapOffsetAcross(insert, 6), 6, reason: 'at the edit, stays put');
+      expect(mapOffsetAcross(insert, 11), 15);
+      final delete = diffTexts('hello big world', 'hello world');
+      expect(mapOffsetAcross(delete, 8), 6, reason: 'inside what went');
+      expect(mapOffsetAcross(delete, 15), 11);
+      expect(mapOffsetAcross(diffTexts('abc', 'abc'), 2), 2);
     });
 
     test('anchors and formats survive a bulk delete', () {

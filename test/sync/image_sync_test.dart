@@ -47,7 +47,11 @@ class FailsSecondAttachmentOnce extends FakeApi {
     if (creates == 2) {
       throw const SyncTransientException('thumbnail upload interrupted');
     }
-    return super.createAttachment(noteId: noteId, spaceId: spaceId, bytes: bytes);
+    return super.createAttachment(
+      noteId: noteId,
+      spaceId: spaceId,
+      bytes: bytes,
+    );
   }
 }
 
@@ -120,7 +124,10 @@ class Device {
     await docs.load();
   }
 
-  void dispose() => sync.dispose();
+  void dispose() {
+    sync.dispose();
+    imageSync.dispose();
+  }
 }
 
 /// Bytes that compress badly, so a test asserting on sizes is not measuring
@@ -146,11 +153,7 @@ void main() {
 
   test('an image reaches the other device, and opens there', () async {
     final one = Device(server, name: 'one', dir: await dirFor('one'));
-    final two = Device(
-      server,
-      name: 'two',
-      dir: await dirFor('two'),
-    );
+    final two = Device(server, name: 'two', dir: await dirFor('two'));
     addTearDown(one.dispose);
     addTearDown(two.dispose);
     await one.boot();
@@ -200,6 +203,106 @@ void main() {
     // Cached on the way through, so opening the note again costs nothing.
     expect(await two.images.read(hash), bytes);
   });
+
+  test('a video uses the same encrypted quota and sync path', () async {
+    final one = Device(server, name: 'one', dir: await dirFor('one'));
+    final two = Device(server, name: 'two', dir: await dirFor('two'));
+    addTearDown(one.dispose);
+    addTearDown(two.dispose);
+    await one.boot();
+    await two.boot();
+
+    final bytes = picture(9);
+    final hash = await one.images.put(bytes, extension: '.mp4');
+    final note = one.notes.create();
+    one.notes.updateDocument(note.id, anchor, const [], [
+      NoteVideoRef(
+        offset: 0,
+        hash: hash,
+        key: randomKey(),
+        mime: 'video/mp4',
+        bytes: bytes.length,
+        width: 1920,
+        height: 1080,
+        durationMs: 95000,
+      ),
+    ]);
+
+    await one.sync.syncNow();
+    await settle(server);
+    await two.sync.syncNow();
+
+    final arrived = two.notes.notes.single.attachments.single as NoteVideoRef;
+    expect(arrived.attachmentId, isNotNull);
+    expect(server.storageUsed[one.api.userId], greaterThan(bytes.length));
+    expect(await two.imageSync.fetch(hash), bytes);
+    expect((await two.images.fileFor(hash))!.path, endsWith('.mp4'));
+  });
+
+  test('reports attachment upload progress to the media tile', () async {
+    final one = Device(server, name: 'one', dir: await dirFor('one'));
+    addTearDown(one.dispose);
+    await one.boot();
+
+    final bytes = picture(10);
+    final hash = await one.images.put(bytes);
+    final note = one.notes.create();
+    one.notes.updateDocument(note.id, anchor, const [], [
+      NoteImageRef(
+        offset: 0,
+        hash: hash,
+        key: randomKey(),
+        mime: 'image/png',
+        width: 64,
+        height: 64,
+        bytes: bytes.length,
+      ),
+    ]);
+    final progress = one.imageSync.progressFor(hash);
+    final values = <double?>[];
+    progress.addListener(() => values.add(progress.value));
+
+    final uploaded = await one.imageSync.upload(one.notes.byId(note.id)!);
+
+    expect(values, isNotEmpty);
+    expect(values.first, 0);
+    expect(values.last, 1);
+    expect(uploaded.attachments.single.isUploaded, isTrue);
+  });
+
+  test(
+    'a preparing image is never uploaded as the finished attachment',
+    () async {
+      final one = Device(server, name: 'one', dir: await dirFor('one'));
+      addTearDown(one.dispose);
+      await one.boot();
+
+      final bytes = picture(11);
+      final hash = await one.images.put(bytes);
+      final note = one.notes.create();
+      one.notes.updateDocument(note.id, anchor, const [], [
+        NoteImageRef(
+          offset: 0,
+          hash: hash,
+          key: randomKey(),
+          mime: 'image/png',
+          width: 64,
+          height: 64,
+          bytes: bytes.length,
+          isPreparing: true,
+          previewBytes: bytes,
+        ),
+      ]);
+
+      final pending = one.notes.byId(note.id)!;
+      final uploaded = await one.imageSync.upload(pending);
+
+      expect(identical(uploaded, pending), isTrue);
+      expect(server.blobs, isEmpty);
+      expect(server.attachments, isEmpty);
+      expect(one.imageSync.progressFor(hash).value, isNull);
+    },
+  );
 
   test('a note still syncs when its picture will not fit', () async {
     server.storageQuota = 8;
@@ -287,79 +390,87 @@ void main() {
     expect(server.blobs.length, before);
   });
 
-  test('a transient mobile download retries inside the same image load', () async {
-    final one = Device(server, name: 'one', dir: await dirFor('one'));
-    final two = Device(
-      server,
-      name: 'two',
-      dir: await dirFor('two'),
-      apiFor: (server, device) => FailsFirstDownloadOnce(server, device: device),
-    );
-    addTearDown(one.dispose);
-    addTearDown(two.dispose);
-    await one.boot();
-    await two.boot();
+  test(
+    'a transient mobile download retries inside the same image load',
+    () async {
+      final one = Device(server, name: 'one', dir: await dirFor('one'));
+      final two = Device(
+        server,
+        name: 'two',
+        dir: await dirFor('two'),
+        apiFor: (server, device) =>
+            FailsFirstDownloadOnce(server, device: device),
+      );
+      addTearDown(one.dispose);
+      addTearDown(two.dispose);
+      await one.boot();
+      await two.boot();
 
-    final bytes = picture(6);
-    final hash = await one.images.put(bytes);
-    final note = one.notes.create();
-    one.notes.updateDocument(note.id, anchor, const [], [
-      NoteImageRef(
-        offset: 0,
-        hash: hash,
-        key: randomKey(),
-        mime: 'image/png',
-        width: 900,
-        height: 600,
-        bytes: bytes.length,
-      ),
-    ]);
-    await one.sync.syncNow();
-    await settle(server);
-    await two.sync.syncNow();
+      final bytes = picture(6);
+      final hash = await one.images.put(bytes);
+      final note = one.notes.create();
+      one.notes.updateDocument(note.id, anchor, const [], [
+        NoteImageRef(
+          offset: 0,
+          hash: hash,
+          key: randomKey(),
+          mime: 'image/png',
+          width: 900,
+          height: 600,
+          bytes: bytes.length,
+        ),
+      ]);
+      await one.sync.syncNow();
+      await settle(server);
+      await two.sync.syncNow();
 
-    expect(await two.imageSync.fetch(hash), bytes);
-    expect((two.api as FailsFirstDownloadOnce).attempts, 2);
-  });
+      expect(await two.imageSync.fetch(hash), bytes);
+      expect((two.api as FailsFirstDownloadOnce).attempts, 2);
+    },
+  );
 
-  test('a failed thumbnail resumes without uploading the full image twice', () async {
-    final one = Device(
-      server,
-      name: 'one',
-      dir: await dirFor('one'),
-      apiFor: (server, device) => FailsSecondAttachmentOnce(server, device: device),
-    );
-    addTearDown(one.dispose);
-    await one.boot();
+  test(
+    'a failed thumbnail resumes without uploading the full image twice',
+    () async {
+      final one = Device(
+        server,
+        name: 'one',
+        dir: await dirFor('one'),
+        apiFor: (server, device) =>
+            FailsSecondAttachmentOnce(server, device: device),
+      );
+      addTearDown(one.dispose);
+      await one.boot();
 
-    final full = picture(4);
-    final thumbnail = picture(5);
-    final fullHash = await one.images.put(full);
-    final thumbHash = await one.images.put(thumbnail);
-    final note = one.notes.create();
-    one.notes.updateDocument(note.id, anchor, const [], [
-      NoteImageRef(
-        offset: 0,
-        hash: fullHash,
-        thumbHash: thumbHash,
-        key: randomKey(),
-        mime: 'image/png',
-        width: 1200,
-        height: 800,
-        bytes: full.length,
-      ),
-    ]);
+      final full = picture(4);
+      final thumbnail = picture(5);
+      final fullHash = await one.images.put(full);
+      final thumbHash = await one.images.put(thumbnail);
+      final note = one.notes.create();
+      one.notes.updateDocument(note.id, anchor, const [], [
+        NoteImageRef(
+          offset: 0,
+          hash: fullHash,
+          thumbHash: thumbHash,
+          key: randomKey(),
+          mime: 'image/png',
+          width: 1200,
+          height: 800,
+          bytes: full.length,
+        ),
+      ]);
 
-    final first = await one.imageSync.upload(one.notes.byId(note.id)!);
-    final partial = first.attachments.single as NoteImageRef;
-    expect(partial.attachmentId, isNotNull);
-    expect(partial.thumbId, isNull);
-    expect(server.attachments, hasLength(1));
+      final first = await one.imageSync.upload(one.notes.byId(note.id)!);
+      final partial = first.attachments.single as NoteImageRef;
+      expect(partial.attachmentId, isNotNull);
+      expect(partial.thumbId, isNull);
+      expect(server.attachments, hasLength(1));
 
-    final second = await one.imageSync.upload(first);
-    final complete = second.attachments.single as NoteImageRef;
-    expect(complete.attachmentId, partial.attachmentId);
-    expect(complete.thumbId, isNotNull);
-    expect(server.attachments, hasLength(2));
-  });
+      final second = await one.imageSync.upload(first);
+      final complete = second.attachments.single as NoteImageRef;
+      expect(complete.attachmentId, partial.attachmentId);
+      expect(complete.thumbId, isNotNull);
+      expect(server.attachments, hasLength(2));
+    },
+  );
 }

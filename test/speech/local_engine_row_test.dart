@@ -19,6 +19,8 @@ import 'package:kapy_notes/speech/local_models.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../kapy_icon_finder.dart';
+
 class MemoryStore extends LocalStore {
   MemoryStore() : super(fileName: 'local-engine-row-test.json');
   @override
@@ -171,7 +173,8 @@ void main() {
   testWidgets('a build with no models still shows the shelf', (tester) async {
     await _openVoicePane(tester);
 
-    expect(find.text('LOCAL'), findsOneWidget);
+    expect(find.text('RECORDINGS & SUMMARIES'), findsOneWidget);
+    expect(find.text('ON THIS DEVICE'), findsNothing);
     expect(find.byKey(const ValueKey('local-transcription-row')), findsOne);
     expect(find.byKey(const ValueKey('local-summary-row')), findsOne);
     expect(find.text('Parakeet TDT 0.6B v3'), findsNothing);
@@ -196,13 +199,13 @@ void main() {
     expect(find.text('CC-BY-4.0'), findsOneWidget);
     expect(find.textContaining('600M parameters'), findsOneWidget);
 
-    // Nothing downloaded yet, so there is one thing to do and no switch to
-    // move: an engine that is not here cannot be the one that runs.
+    // Nothing downloaded yet, so the local choice is disabled and the one
+    // available action is to download its engine.
     expect(find.text('Download'), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('local-transcription-row')),
-        matching: find.byKey(const ValueKey('compact-switch-indicator')),
+        matching: findKapyIcon(KapyIcons.radioCheckedRounded),
       ),
       findsNothing,
     );
@@ -226,7 +229,7 @@ void main() {
     expect(find.text('Download'), findsOneWidget);
   });
 
-  testWidgets('downloading one shows progress and ends in a switch', (
+  testWidgets('downloading one shows progress and enables its choice', (
     tester,
   ) async {
     final bodies = {
@@ -259,12 +262,12 @@ void main() {
       () => models.stateOf(model).status == LocalModelStatus.ready,
     );
 
-    // Downloaded turns the button into the choice: use it, or don't.
+    // Downloaded turns the button into a mutually exclusive engine choice.
     expect(find.text('Download'), findsNothing);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('local-transcription-row')),
-        matching: find.byKey(const ValueKey('compact-switch-indicator')),
+        matching: findKapyIcon(KapyIcons.radioUncheckedRounded),
       ),
       findsOneWidget,
     );

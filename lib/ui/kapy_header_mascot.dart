@@ -454,7 +454,28 @@ class KapyHeaderMascotState extends State<KapyHeaderMascot>
       _restingPose = pose;
       _segment = null;
     });
+    if (pose == KapyHeaderRestingPose.logo) _releaseAtlases();
     widget.controller._settledAt(pose);
+  }
+
+  /// Lets go of the decoded sprite sheets once Kapy is back behind the logo.
+  ///
+  /// The sheets decode to some five megabytes of pixels for a mark a few
+  /// dozen points across, and the image cache would otherwise keep them for
+  /// the life of the window. The emerge sheet stays: every animation out of
+  /// the logo begins with it, which gives the sheet that follows the whole
+  /// of that run to decode again.
+  void _releaseAtlases() {
+    const paths = [
+      KapyHeaderMascot.thinkAtlasAssetPath,
+      KapyHeaderMascot.sleepAtlasAssetPath,
+      KapyHeaderMascot.sleepLoopAtlasAssetPath,
+    ];
+    final configuration = createLocalImageConfiguration(context);
+    for (final path in paths) {
+      if (!_warmedAssets.remove(path)) continue;
+      unawaited(AssetImage(path).evict(configuration: configuration));
+    }
   }
 
   _KapyHeaderFrame get _currentFrame {

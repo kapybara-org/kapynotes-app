@@ -13,6 +13,7 @@ import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
 import 'recovery_key_dialog.dart';
 import '../profile_avatar.dart';
+import '../settings_rows.dart';
 
 /// Everything about the account, in one settings pane.
 ///
@@ -21,9 +22,14 @@ import '../profile_avatar.dart';
 /// offline, and each of those needs a different sentence and a different next
 /// step. Showing one form with disabled bits would hide which.
 class SyncPane extends StatelessWidget {
-  const SyncPane({super.key, required this.account});
+  const SyncPane({
+    super.key,
+    required this.account,
+    this.includeDeleteAccount = true,
+  });
 
   final Account account;
+  final bool includeDeleteAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -34,9 +40,15 @@ class SyncPane extends StatelessWidget {
         AccountState.signedOut => _SignInForm(account: account),
         AccountState.needsProfile => _ProfileSetup(account: account),
         AccountState.needsPassphrase => _PassphraseForm(account: account),
-        AccountState.locked => _UnlockForm(account: account),
+        AccountState.locked => _UnlockForm(
+          account: account,
+          includeDeleteAccount: includeDeleteAccount,
+        ),
         AccountState.needsAccountDecision => _AccountSwitch(account: account),
-        AccountState.ready => _Ready(account: account),
+        AccountState.ready => _Ready(
+          account: account,
+          includeDeleteAccount: includeDeleteAccount,
+        ),
       },
     );
   }
@@ -80,7 +92,7 @@ class _Panel extends StatelessWidget {
           title,
           style: TextStyle(
             fontSize: AppTypeScale.title,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w400,
             color: palette.textPrimary,
           ),
         ),
@@ -188,8 +200,8 @@ class _InfoNote extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(top: 1),
-            child: Icon(
-              Icons.lock_outline_rounded,
+            child: KapyIcon(
+              KapyIcons.lockRounded,
               size: AppControlMetrics.iconAdornment,
               color: palette.textSecondary,
             ),
@@ -348,12 +360,12 @@ class _SignInFormState extends State<_SignInForm> {
           'We sent a code to $_address. Enter it with the password you want '
               'from now on.',
         _SignInStep.resetRequest =>
-          'We will email you a code. This changes how you sign in — it does '
+          'We will email you a code. This changes how you sign in. It does '
               'not touch your encryption passphrase, and your notes stay '
               'locked with that.',
         _ =>
           'Sync your notes across your devices. Your notes are encrypted on '
-              'this device before they are sent — the server stores them '
+              'this device before they are sent. The server stores them '
               'sealed and cannot read them.',
       },
       children: [
@@ -512,10 +524,18 @@ class _ProfileSetup extends StatelessWidget {
 }
 
 class _ProfileEditor extends StatefulWidget {
-  const _ProfileEditor({required this.account, this.firstRun = false});
+  const _ProfileEditor({
+    required this.account,
+    this.firstRun = false,
+    this.onClose,
+  });
 
   final Account account;
   final bool firstRun;
+
+  /// Set when the editor was opened from the profile card: it then offers a
+  /// way back without saving, and closes itself once a save succeeds.
+  final VoidCallback? onClose;
 
   @override
   State<_ProfileEditor> createState() => _ProfileEditorState();
@@ -595,6 +615,7 @@ class _ProfileEditorState extends State<_ProfileEditor> {
     });
     if (ok) {
       progress.success(widget.firstRun ? 'Profile created' : 'Profile saved');
+      widget.onClose?.call();
     } else {
       progress.error(widget.account.lastError ?? 'Could not save profile');
     }
@@ -625,7 +646,7 @@ class _ProfileEditorState extends State<_ProfileEditor> {
                   OutlinedButton.icon(
                     key: const ValueKey('choose-profile-photo'),
                     onPressed: _busy ? null : _pickImage,
-                    icon: const Icon(Icons.add_a_photo_outlined, size: 17),
+                    icon: const KapyIcon(KapyIcons.addAPhotoOutlined, size: 17),
                     label: Text(_image == null ? 'Add photo' : 'Change photo'),
                   ),
                   if (_image != null)
@@ -665,11 +686,29 @@ class _ProfileEditorState extends State<_ProfileEditor> {
           onSubmitted: (_) => _save(),
         ),
         const SizedBox(height: 4),
-        FilledButton(
-          key: const ValueKey('save-profile'),
-          onPressed: _busy || !_valid ? null : _save,
-          child: Text(widget.firstRun ? 'Continue' : 'Save profile'),
-        ),
+        if (widget.onClose case final close?)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                key: const ValueKey('cancel-profile'),
+                onPressed: _busy ? null : close,
+                child: const Text('Cancel'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                key: const ValueKey('save-profile'),
+                onPressed: _busy || !_valid ? null : _save,
+                child: const Text('Save'),
+              ),
+            ],
+          )
+        else
+          FilledButton(
+            key: const ValueKey('save-profile'),
+            onPressed: _busy || !_valid ? null : _save,
+            child: Text(widget.firstRun ? 'Continue' : 'Save profile'),
+          ),
         if (widget.account.lastError case final error?) _Message(error),
       ],
     );
@@ -790,12 +829,12 @@ class _PassphraseFormState extends State<_PassphraseForm> {
       title: 'Choose an encryption passphrase',
       blurb:
           'This is what your notes are locked with. It never leaves this '
-          'device, so nobody — including us — can reset it or read your notes '
+          'device, so nobody, including us, can reset it or read your notes '
           'without it.',
       children: [
         const _InfoNote(
           'Your notes are sealed on this device before any of them are sent, '
-          'and this passphrase is the key. We never receive it — which is '
+          'and this passphrase is the key. We never receive it. That is '
           'what makes "we cannot read your notes" a fact about how sync works '
           'rather than a promise about how we behave.\n\n'
           'The same choice is why there is no reset link. Forget this and '
@@ -822,8 +861,8 @@ class _PassphraseFormState extends State<_PassphraseForm> {
             children: [
               OutlinedButton.icon(
                 onPressed: _copy,
-                icon: Icon(
-                  _copied ? Icons.check_rounded : Icons.copy_rounded,
+                icon: KapyIcon(
+                  _copied ? KapyIcons.checkRounded : KapyIcons.copyRounded,
                   size: AppControlMetrics.iconControl,
                 ),
                 label: Text(_copied ? 'Copied' : 'Copy'),
@@ -875,8 +914,12 @@ class _PassphraseFormState extends State<_PassphraseForm> {
 // ---------------------------------------------------------------------------
 
 class _UnlockForm extends StatefulWidget {
-  const _UnlockForm({required this.account});
+  const _UnlockForm({
+    required this.account,
+    required this.includeDeleteAccount,
+  });
   final Account account;
+  final bool includeDeleteAccount;
 
   @override
   State<_UnlockForm> createState() => _UnlockFormState();
@@ -983,7 +1026,8 @@ class _UnlockFormState extends State<_UnlockForm> {
       // and the recovery key can do nothing else with this account, and a
       // delete that first demanded the key would be withheld from precisely
       // the person with no other way out.
-      _DeleteAccount(account: widget.account, enabled: !_busy),
+      if (widget.includeDeleteAccount)
+        _DeleteAccount(account: widget.account, enabled: !_busy),
       if (_problem != null) _Message(_problem!),
     ],
   );
@@ -1035,14 +1079,30 @@ class _AccountSwitch extends StatelessWidget {
 
 // ---------------------------------------------------------------------------
 
-class _Ready extends StatelessWidget {
-  const _Ready({required this.account});
+/// Signed in and unlocked: who you are, and the account's few controls.
+///
+/// The profile is a card with an Edit button rather than a form left open.
+/// A name field waiting to be typed into, over a full-width Save, made the
+/// pane read as a page to fill in every time it was visited — when a name is
+/// set once and the pane is mostly opened to sync, share or sign out.
+class _Ready extends StatefulWidget {
+  const _Ready({required this.account, required this.includeDeleteAccount});
   final Account account;
+  final bool includeDeleteAccount;
+
+  @override
+  State<_Ready> createState() => _ReadyState();
+}
+
+class _ReadyState extends State<_Ready> {
+  bool _editing = false;
+
+  Account get account => widget.account;
 
   String get _status => switch (account.sync?.status) {
     SyncStatus.syncing => 'Syncing…',
-    SyncStatus.offline => 'Offline — will retry',
-    SyncStatus.signedOut => 'Session expired — sign in again',
+    SyncStatus.offline => 'Offline. Will retry',
+    SyncStatus.signedOut => 'Session expired. Sign in again',
     SyncStatus.failed => account.sync?.lastError ?? 'Sync failed',
     SyncStatus.locked => 'Locked',
     _ => _lastSynced,
@@ -1058,7 +1118,7 @@ class _Ready extends StatelessWidget {
     return 'Synced ${ago.inDays}d ago';
   }
 
-  Future<void> _syncNow(BuildContext context) async {
+  Future<void> _syncNow() async {
     final sync = account.sync;
     if (sync == null) return;
     final progress = Toast.showProgress(context, 'Syncing notes…');
@@ -1076,42 +1136,188 @@ class _Ready extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => _Panel(
-    title: account.user?.displayName ?? 'Signed in',
-    blurb: _status,
-    children: [
-      _ProfileEditor(account: account),
-      const SizedBox(height: 18),
-      Divider(height: 1, color: context.palette.separator),
-      const SizedBox(height: 18),
-      Row(
-        children: [
-          FilledButton(
-            onPressed: account.isSyncing
-                ? null
-                : () => unawaited(_syncNow(context)),
-            child: const Text('Sync now'),
+  Widget build(BuildContext context) {
+    final email = account.user?.email ?? '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_editing)
+          SettingsGroup(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: _ProfileEditor(
+                  account: account,
+                  onClose: () => setState(() => _editing = false),
+                ),
+              ),
+            ],
+          )
+        else
+          _ProfileCard(
+            account: account,
+            onEdit: () => setState(() => _editing = true),
           ),
-          const SizedBox(width: 8),
-          TextButton(
-            onPressed: () => unawaited(
-              _runAccountAction(
-                context,
-                waiting: 'Signing out…',
-                done: 'Signed out',
-                action: account.signOut,
+        const SizedBox(height: 18),
+        const SettingsLabel('ACCOUNT'),
+        SettingsGroup(
+          children: [
+            SettingsRow(
+              key: const ValueKey('sync-status'),
+              icon: KapyIcons.syncRounded,
+              title: 'Sync',
+              subtitle: _status,
+              trailing: SettingsRowButton(
+                key: const ValueKey('sync-now'),
+                label: 'Sync now',
+                onPressed: account.isSyncing
+                    ? null
+                    : () => unawaited(_syncNow()),
               ),
             ),
-            child: const Text('Sign out'),
+            // Who is signed in, beside the way out: the address is the thing
+            // somebody checks before they press it. The whole row is not the
+            // button, because signing out forgets the key, and a stray click
+            // should not cost a passphrase.
+            SettingsRow(
+              key: const ValueKey('sign-out-row'),
+              icon: KapyIcons.logoutRounded,
+              title: email.isEmpty ? 'Signed in' : email,
+              subtitle: 'Signing out keeps your notes on this device',
+              trailing: SettingsRowButton(
+                key: const ValueKey('sign-out'),
+                label: 'Sign out',
+                onPressed: () => unawaited(
+                  _runAccountAction(
+                    context,
+                    waiting: 'Signing out…',
+                    done: 'Signed out',
+                    action: account.signOut,
+                  ),
+                ),
+              ),
+            ),
+            if (widget.includeDeleteAccount)
+              SettingsRow(
+                key: const ValueKey('delete-account'),
+                icon: KapyIcons.deleteForeverOutlined,
+                title: 'Delete account',
+                subtitle: 'The synced copy of your notes goes for good',
+                destructive: true,
+                onTap: () => _confirm(context, account),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// The name people see, the picture beside it, and the way to change both.
+class _ProfileCard extends StatelessWidget {
+  const _ProfileCard({required this.account, required this.onEdit});
+
+  final Account account;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final user = account.user;
+    if (user == null) return const SizedBox.shrink();
+    final palette = context.palette;
+    return SettingsGroup(
+      key: const ValueKey('profile-card'),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 10, 12),
+          child: Row(
+            children: [
+              ProfileAvatar(
+                key: const ValueKey('profile-avatar'),
+                seed: user.id,
+                name: user.displayName,
+                image: user.image,
+                extent: 44,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: AppTypeScale.title,
+                        fontWeight: FontWeight.w400,
+                        color: palette.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Shown to people you share notes with',
+                      style: TextStyle(
+                        fontSize: SettingsMetrics.subtitleSize,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              SettingsRowButton(
+                key: const ValueKey('edit-profile'),
+                label: 'Edit',
+                onPressed: onEdit,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+/// Account deletion is deliberately the final group in Profile & sync.
+///
+/// [SyncPane] can still carry the action when it is mounted on its own. The
+/// combined settings category turns that copy off and places this after the
+/// sharing controls, where a destructive account-wide action belongs.
+class DeleteAccountSettings extends StatelessWidget {
+  const DeleteAccountSettings({super.key, required this.account});
+
+  final Account account;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: account,
+    builder: (context, _) {
+      if (account.state != AccountState.ready &&
+          account.state != AccountState.locked) {
+        return const SizedBox.shrink();
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SettingsLabel('ACCOUNT DELETION'),
+          SettingsGroup(
+            children: [
+              SettingsRow(
+                key: const ValueKey('delete-account'),
+                icon: KapyIcons.deleteForeverOutlined,
+                title: 'Delete account',
+                subtitle: 'The synced copy of your notes goes for good',
+                destructive: true,
+                onTap: () => _confirm(context, account),
+              ),
+            ],
           ),
         ],
-      ),
-      _Message(
-        'Signing out leaves your notes on this device. It only forgets the '
-        'key and the session.',
-      ),
-      _DeleteAccount(account: account),
-    ],
+      );
+    },
   );
 }
 
@@ -1253,7 +1459,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
             Text(
               // The honest version. Nobody can undo this, and saying so is
               // the same fact the passphrase design has been saying all along.
-              'Nobody can undo it, us included — without that key what is on '
+              'Nobody can undo it, us included. Without that key what is on '
               'our servers is unreadable to anyone. The notes on this device '
               'stay where they are.',
               style: TextStyle(

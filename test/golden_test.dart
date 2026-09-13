@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:image/image.dart' as img;
 
 import 'package:material_ui/material_ui.dart';
@@ -106,6 +106,30 @@ Future<void> pumpForGolden(
     store.data['updates.v1'] = {
       'available': null,
       'checkedAt': DateTime.now().toIso8601String(),
+    };
+    // The list of releases too, and fresh, so the image is of the pane with
+    // its changelog rather than of the pane failing to read one — and so the
+    // golden never depends on the network.
+    store.data['changelog.v1'] = {
+      'fetchedAt': DateTime.now().toIso8601String(),
+      'releases': [
+        {
+          'version': '1.1.0',
+          'date': '2026-09-03',
+          'summary': 'The first release that can update itself.',
+          'changes': [
+            'Kapy Notes checks for new releases once a day and offers them in '
+                'the corner. Nothing downloads until you ask.',
+            'Tab nests list items, and the footer buttons do it on touch.',
+          ],
+        },
+        {
+          'version': '1.0.0',
+          'date': '2026-09-02',
+          'summary': 'The first public build, for macOS and Windows.',
+          'changes': ['A notebook that does the math.'],
+        },
+      ],
     };
     updates = UpdateChecker(
       store,
@@ -230,8 +254,12 @@ Future<void> _warmNoteImage(
 /// settings in the notes drawer so the editor footer can stay focused on input.
 Future<void> tapSettings(WidgetTester tester) async {
   final sidebar = find.byKey(const ValueKey('sidebar-settings'));
-  if (find.byTooltip('Show notes').evaluate().isNotEmpty) {
-    await tester.tap(find.byTooltip('Show notes'));
+  final showNotes = find.byWidgetPredicate(
+    (widget) =>
+        widget is Tooltip && (widget.message ?? '').startsWith('Show notes'),
+  );
+  if (showNotes.evaluate().isNotEmpty) {
+    await tester.tap(showNotes);
     await tester.pumpAndSettle();
   }
   await tester.tap(sidebar.first);
@@ -326,6 +354,44 @@ void main() {
     );
   });
 
+  testWidgets('desktop dark note actions', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    final note = goldenNotes.notes.single;
+    await tester.tap(find.byKey(ValueKey('note-actions-${note.id}')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_note_actions.png'),
+    );
+  });
+
+  testWidgets('desktop dark editor context menu', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    final editor = find.descendant(
+      of: find.byType(NoteEditor),
+      matching: find.byType(TextField),
+    );
+    final bounds = tester.getRect(editor);
+    await tester.tapAt(
+      Offset(bounds.left + 36, bounds.bottom - 32),
+      buttons: kSecondaryButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_editor_context_menu.png'),
+    );
+  });
+
   testWidgets('desktop dark pinned on top', (tester) async {
     await pumpForGolden(
       tester,
@@ -414,9 +480,7 @@ void main() {
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
     await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(
-      tester.getCenter(find.byKey(const ValueKey('formatting-toggle'))),
-    );
+    await tester.tap(find.byKey(const ValueKey('formatting-toggle')));
     await tester.pumpAndSettle();
     await mouse.moveTo(
       tester.getCenter(find.byKey(const ValueKey('format-style'))),
@@ -503,7 +567,9 @@ void main() {
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
     await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(tester.getCenter(find.byTooltip('Hide notes')));
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('toolbar-notes-toggle'))),
+    );
     await tester.pumpAndSettle();
 
     await expectLater(
@@ -849,11 +915,29 @@ void main() {
       brightness: Brightness.dark,
       platform: TargetPlatform.iOS,
     );
-    await tester.tap(find.byTooltip('Show notes'));
+    await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/phone_drawer.png'),
+    );
+  });
+
+  testWidgets('phone note actions', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(390, 760),
+      brightness: Brightness.dark,
+      platform: TargetPlatform.iOS,
+    );
+    await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+    await tester.pumpAndSettle();
+    final note = goldenNotes.notes.single;
+    await tester.tap(find.byKey(ValueKey('note-actions-${note.id}')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/phone_note_actions.png'),
     );
   });
 

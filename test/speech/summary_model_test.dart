@@ -110,10 +110,9 @@ void main() {
         prefs: VoicePrefs(store)..load(),
       );
 
-      // One shelf now, shared with the recogniser: a language model and a
-      // recogniser are different things but the same decision.
-      expect(find.text('LOCAL'), findsOneWidget);
-      expect(find.text('SUMMARIES ON THIS DEVICE'), findsNothing);
+      // Local summaries now sit with the recording settings they affect.
+      expect(find.text('RECORDINGS & SUMMARIES'), findsOneWidget);
+      expect(find.text('ON THIS DEVICE'), findsNothing);
       expect(find.text('Gemma 4 E2B · 2.6 GB'), findsOneWidget);
       // The licence has to be named and reachable, not merely implied.
       expect(find.text('Apache-2.0'), findsOneWidget);
@@ -250,9 +249,7 @@ void main() {
     test('linux reads its own /proc, in kibibytes', () async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
       final file = File('${temp.path}/meminfo')
-        ..writeAsStringSync(
-          'MemTotal:        8129412 kB\nMemFree:  1000 kB\n',
-        );
+        ..writeAsStringSync('MemTotal:        8129412 kB\nMemFree:  1000 kB\n');
 
       final total = await DeviceMemory(procMeminfo: file).total();
 

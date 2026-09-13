@@ -36,6 +36,7 @@ import 'images/image_picker.dart';
 import 'sync/account.dart';
 import 'ui/app_logo.dart';
 import 'ui/home_page.dart';
+import 'ui/hidden_notes_gate.dart';
 import 'ui/instant_capture.dart';
 
 /// Root widget. Owns the app-wide singletons and the macOS menu bar.
@@ -53,6 +54,7 @@ class KapyNotesApp extends StatefulWidget {
     this.recording,
     this.imageAcquirer,
     this.lostImageRetriever,
+    this.hiddenNotesGate,
   });
 
   final LocalStore store;
@@ -77,6 +79,10 @@ class KapyNotesApp extends StatefulWidget {
   final ImageFileAcquirer? imageAcquirer;
   final LostImageRetriever? lostImageRetriever;
 
+  /// Injectable so UI tests can cross the authentication boundary without a
+  /// native credential prompt.
+  final HiddenNotesGate? hiddenNotesGate;
+
   @override
   State<KapyNotesApp> createState() => _KapyNotesAppState();
 }
@@ -91,6 +97,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   // Behind the rate refresh: neither is urgent, and launch belongs to the
   // first frame rather than to two background fetches racing it.
   static const _updateCheckDelay = Duration(seconds: 5);
+
+  /// The temp-directory sweep is disk work nobody is waiting on; last of all.
+  static const _tempSweepDelay = Duration(seconds: 6);
 
   final TextEditingController _launchController = TextEditingController();
 
@@ -141,6 +150,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   Timer? _rateRefreshTimer;
   Timer? _updateCheckTimer;
   Timer? _transcriptionTimer;
+  Timer? _tempSweepTimer;
   bool _ready = false;
 
   /// The welcome note, on the launch that seeded it. Null every other time.
@@ -156,10 +166,12 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// has, and wherever it cannot, the surfaces keep their opaque paint, since
   /// tints over an unblurred window show black through every gap.
   bool _glassBehindWindow = false;
+  late final HiddenNotesGate _hiddenNotesGate;
 
   @override
   void initState() {
     super.initState();
+    _hiddenNotesGate = widget.hiddenNotesGate ?? DefaultHiddenNotesGate();
     WidgetsBinding.instance.addObserver(this);
     widget.prefs.transparencyListenable.addListener(_applyWindowMaterial);
     widget.prefs.transparencyAmountListenable.addListener(_applyWindowMaterial);
@@ -292,18 +304,21 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       widget.notes.create();
     }
     widget.rates.loadCache();
-    widget.updates?.loadCache();
-    // After the editor exists, never before it: restoring reads the platform
-    // keystore and asks the server who we are, and neither belongs in front of
-    // the first frame.
-    final account = widget.account;
-    if (account != null) {
-      unawaited(account.restore());
-    }
     _engines = EngineProvider(widget.rates, widget.prefs);
     _ready = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scheduleBackgroundFetches();
+      if (!mounted) return;
+      // After the first frame, never in front of it. The update cache is a
+      // map read plus a platform call for the installed version; restoring
+      // the account reads the platform keystore and asks the server who we
+      // are. Nothing on screen at that moment needs either answer, and every
+      // platform message sent before the frame is one the frame waits behind.
+      widget.updates?.loadCache();
+      final account = widget.account;
+      if (account != null) {
+        unawaited(account.restore());
+      }
+      _scheduleBackgroundFetches();
     });
   }
 
@@ -327,8 +342,13 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     });
 
     // Stray `voice-*.m4a` from a force quit: unreadable, unrecoverable, and
-    // nothing else will ever clean them up.
-    unawaited(VoiceRecordingController.sweepTempFiles());
+    // nothing else will ever clean them up. A walk of the whole temp
+    // directory, so it waits its turn behind the frames that matter.
+    _tempSweepTimer?.cancel();
+    _tempSweepTimer = Timer(
+      _tempSweepDelay,
+      () => unawaited(VoiceRecordingController.sweepTempFiles()),
+    );
 
     final updates = widget.updates;
     if (updates == null) return;
@@ -380,6 +400,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _rateRefreshTimer?.cancel();
     _updateCheckTimer?.cancel();
     _transcriptionTimer?.cancel();
+    _tempSweepTimer?.cancel();
     _transcriptions?.dispose();
     _voicePrefs?.dispose();
     _localModels?.dispose();
@@ -508,6 +529,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           transcriber: _transcriber,
           imageAcquirer: widget.imageAcquirer,
           lostImageRetriever: widget.lostImageRetriever,
+          hiddenNotesGate: _hiddenNotesGate,
         ),
       ),
     );

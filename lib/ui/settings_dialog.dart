@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../billing/entitlements.dart';
+import '../billing/plan_usage.dart';
 import '../core/appearance.dart';
 import '../core/desktop_integration.dart';
 import '../core/device_memory.dart';
@@ -20,6 +23,9 @@ import '../speech/local_model_store.dart';
 import '../speech/summarizer.dart';
 import '../speech/transcriber.dart';
 import 'model_terms_sheet.dart';
+import 'settings_rows.dart';
+import 'settings_search.dart';
+import 'sidebar_timestamp.dart';
 import '../speech/local_models.dart';
 import '../speech/speech_errors.dart';
 import '../speech/speech_api.dart';
@@ -30,6 +36,7 @@ import 'account/sync_pane.dart';
 import 'export_import.dart';
 import '../data/rates.dart';
 import '../data/shortcut_prefs.dart';
+import '../data/release_history.dart';
 import '../data/update_checker.dart';
 import '../data/time_zones.dart';
 
@@ -38,61 +45,45 @@ import '../data/time_zones.dart';
 /// Adding a section is meant to be the whole job of adding a category of
 /// options: name it here, give it a pane in [_SettingsDialogState], and all
 /// three layouts pick it up.
-enum SettingsSection { general, sync, appearance, voice, shortcuts, updates }
+enum SettingsSection {
+  general,
+  sync,
+  plan,
+  appearance,
+  voice,
+  shortcuts,
+  updates,
+}
 
 const _sheetCorners = BorderRadius.vertical(top: Radius.circular(22));
 const _sheetIndexKey = ValueKey('settings-sheet-index');
 
+/// Wide enough for the full desktop dialog, its insets, and the Windows frame.
+const double _windowsSettingsWindowWidth = 680;
+
 const _settingsRegularWeight = FontWeight.w400;
-const _settingsMediumWeight = FontWeight.w500;
-const _settingsSemiboldWeight = FontWeight.w500;
-
-/// How big a settings row is allowed to be.
-///
-/// A pointer can hit an eight-pixel gap and read eleven-point type; a thumb
-/// can do neither. This is the same split [AppControlMetrics] already makes
-/// for icon buttons, applied to the rows those buttons sit beside.
-class _RowMetrics {
-  const _RowMetrics._();
-
-  static bool get _touch => !AppPlatform.hasPointer;
-
-  static EdgeInsets get padding => _touch
-      ? const EdgeInsets.fromLTRB(14, 12, 13, 12)
-      : const EdgeInsets.fromLTRB(11, 8, 10, 8);
-
-  /// A radio sits closer to its own edge than a switch does.
-  static EdgeInsets get choicePadding => _touch
-      ? const EdgeInsets.fromLTRB(14, 12, 14, 12)
-      : const EdgeInsets.fromLTRB(11, 8, 11, 8);
-  static double get iconSize => _touch ? 19 : 16;
-  static double get iconSlot => _touch ? 30 : 25;
-  static double get gap => _touch ? 11 : 9;
-  static double get titleSize => _touch ? 14.5 : 12.5;
-  static double get subtitleSize => _touch ? 12.25 : 10.75;
-  static double get chevronSize => _touch ? 21 : 18;
-
-  /// Lines the dividers up under the copy rather than under the icons.
-  static double get dividerIndent => _touch ? 58 : 48;
-}
+const _settingsMediumWeight = FontWeight.w400;
+const _settingsSemiboldWeight = FontWeight.w400;
 
 extension SettingsSectionCopy on SettingsSection {
   String get label => switch (this) {
     SettingsSection.general => 'General',
     SettingsSection.sync => 'Profile & sync',
+    SettingsSection.plan => 'Plan & usage',
     SettingsSection.voice => 'Voice notes',
     SettingsSection.appearance => 'Appearance',
     SettingsSection.shortcuts => 'Shortcuts',
     SettingsSection.updates => 'Updates',
   };
 
-  IconData get icon => switch (this) {
-    SettingsSection.general => Icons.tune_rounded,
-    SettingsSection.sync => Icons.account_circle_outlined,
-    SettingsSection.voice => Icons.mic_none_rounded,
-    SettingsSection.appearance => Icons.auto_stories_outlined,
-    SettingsSection.shortcuts => Icons.keyboard_outlined,
-    SettingsSection.updates => Icons.system_update_alt_rounded,
+  KapyIconData get icon => switch (this) {
+    SettingsSection.general => KapyIcons.tuneRounded,
+    SettingsSection.sync => KapyIcons.accountCircleOutlined,
+    SettingsSection.plan => KapyIcons.verifiedOutlined,
+    SettingsSection.voice => KapyIcons.micRounded,
+    SettingsSection.appearance => KapyIcons.storiesOutlined,
+    SettingsSection.shortcuts => KapyIcons.keyboardOutlined,
+    SettingsSection.updates => KapyIcons.systemUpdateRounded,
   };
 
   /// What is behind the label, for the layouts that show a list of categories
@@ -102,7 +93,9 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.general => 'Notes, spelling, export and import, time zone',
     SettingsSection.sync =>
       'Your name, picture, account, and the notes you sync and share',
-    SettingsSection.voice => 'Transcription, language, minutes',
+    SettingsSection.plan =>
+      'Current plan, transcription, AI summaries, and storage usage',
+    SettingsSection.voice => 'Cloud or local transcription, summaries',
     SettingsSection.appearance => 'Theme, writing font, paper, number format',
     SettingsSection.shortcuts => 'System-wide and in-app keys',
     SettingsSection.updates => 'This build, and whether a newer one exists',
@@ -113,7 +106,7 @@ extension SettingsSectionCopy on SettingsSection {
 ///
 /// A pointer gets the dialog: a rail beside a pane, everything one click
 /// away. A thumb gets a sheet that opens on a list of categories and pushes
-/// into one at a time, because six panes stacked into one phone-width column
+/// into one at a time, because every pane stacked into one phone-width column
 /// is a scroll with no map.
 Future<void> showSettings(
   BuildContext context, {
@@ -124,11 +117,12 @@ Future<void> showSettings(
   Account? account,
   UpdateChecker? updates,
   DesktopIntegration? desktopIntegration,
-  VoidCallback? onOpenWelcomeNote,
   VoicePrefs? voicePrefs,
   LocalModelStore? localModels,
   Summarizer? deviceSummarizer,
   Transcriber? deviceTranscriber,
+  VoidCallback? onTranscriptionReady,
+  Future<bool> Function(BuildContext context)? authorizeHiddenNotes,
   SettingsSection? section,
 }) {
   SettingsDialog build({required bool asSheet}) => SettingsDialog(
@@ -139,20 +133,32 @@ Future<void> showSettings(
     account: account,
     updates: updates,
     desktopIntegration: desktopIntegration,
-    onOpenWelcomeNote: onOpenWelcomeNote,
     voicePrefs: voicePrefs,
     localModels: localModels,
     deviceSummarizer: deviceSummarizer,
     deviceTranscriber: deviceTranscriber,
+    onTranscriptionReady: onTranscriptionReady,
+    authorizeHiddenNotes: authorizeHiddenNotes,
     section: section,
     asSheet: asSheet,
   );
 
   if (!AppPlatform.isMobile) {
-    return showDialog<void>(
-      context: context,
-      builder: (context) => build(asSheet: false),
-    );
+    Future<void> openDialog() {
+      if (!context.mounted) return Future<void>.value();
+      return showDialog<void>(
+        context: context,
+        builder: (context) => build(asSheet: false),
+      );
+    }
+
+    if (AppPlatform.isWindows && desktopIntegration != null) {
+      return desktopIntegration.withMinimumWindowWidth(
+        _windowsSettingsWindowWidth,
+        openDialog,
+      );
+    }
+    return openDialog();
   }
   return showModalBottomSheet<void>(
     context: context,
@@ -175,11 +181,12 @@ class SettingsDialog extends StatefulWidget {
     this.account,
     this.updates,
     this.desktopIntegration,
-    this.onOpenWelcomeNote,
     this.voicePrefs,
     this.localModels,
     this.deviceSummarizer,
     this.deviceTranscriber,
+    this.onTranscriptionReady,
+    this.authorizeHiddenNotes,
     this.section,
     this.asSheet = false,
   });
@@ -204,12 +211,16 @@ class SettingsDialog extends StatefulWidget {
   /// The device half of transcribing, so the pane can offer it and say what
   /// is in the way when this machine cannot.
   final Transcriber? deviceTranscriber;
+
+  /// Runs queued recordings as soon as a usable transcription route is
+  /// selected or cloud consent is accepted.
+  final VoidCallback? onTranscriptionReady;
+
+  /// Required before an export can include protected notes. Null is only for
+  /// isolated settings tests and still refuses an export containing them.
+  final Future<bool> Function(BuildContext context)? authorizeHiddenNotes;
   final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
-
-  /// Reopens the note a first launch starts on. Null where there is no note
-  /// list to open it into — the export tests mount this dialog on its own.
-  final VoidCallback? onOpenWelcomeNote;
 
   /// The pane to open on, when something outside sent the user here to do one
   /// thing. Null starts where settings always starts.
@@ -224,9 +235,11 @@ class SettingsDialog extends StatefulWidget {
   State<SettingsDialog> createState() => _SettingsDialogState();
 }
 
-class _SettingsDialogState extends State<SettingsDialog> {
-  /// Below this the rail costs more width than it earns, and every section
-  /// stacks into one scrolling column instead.
+class _SettingsDialogState extends State<SettingsDialog>
+    with SingleTickerProviderStateMixin {
+  /// Other desktop platforms may still stack at their narrowest. Windows
+  /// borrows enough host-window width before opening, and always keeps the
+  /// section rail visible while that resize reaches Flutter.
   static const double _railBreakpoint = 520;
   static const double _railWidth = 152;
   static const double _panedWidth = 544;
@@ -243,11 +256,35 @@ class _SettingsDialogState extends State<SettingsDialog> {
   final GlobalKey<NavigatorState> _sheetNavigator = GlobalKey<NavigatorState>();
   final ScrollController _scrollController = ScrollController();
 
+  final TextEditingController _search = TextEditingController();
+  final FocusNode _searchFocus = FocusNode(debugLabel: 'settings-search');
+
+  /// What the search field says, trimmed. Empty while not searching.
+  String _query = '';
+
+  /// The dialog's scrolling pane, searched for the row a result points at.
+  final GlobalKey _paneKey = GlobalKey();
+
+  /// The row a result has just led to, and the light that finds it for the
+  /// eye. See [SettingsFlashLayer].
+  final ValueNotifier<RenderBox?> _flashTarget = ValueNotifier<RenderBox?>(
+    null,
+  );
+  late final AnimationController _flash = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  );
+
+  bool get _searching => _query.isNotEmpty;
+
   @override
   void initState() {
     super.initState();
+    _search.addListener(_onSearchChanged);
+    if (!widget.asSheet) HardwareKeyboard.instance.addHandler(_onFindKey);
     _shortcutError = widget.desktopIntegration?.registrationError;
     _loadSpeechState();
+    unawaited(widget.account?.planUsage?.refresh());
     // The only disk read this dialog does, and only in a build that offers
     // models: a handful of `stat` calls to see which are already here.
     unawaited(widget.localModels?.refresh());
@@ -288,8 +325,75 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   @override
   void dispose() {
+    if (!widget.asSheet) HardwareKeyboard.instance.removeHandler(_onFindKey);
+    _search.dispose();
+    _searchFocus.dispose();
+    _flash.dispose();
+    _flashTarget.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _exportNotes() async {
+    if (widget.notes.hiddenNotes.isNotEmpty) {
+      final authorize = widget.authorizeHiddenNotes;
+      if (authorize == null) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Hidden Notes'),
+            content: const Text(
+              'Unlock Hidden Notes before exporting all notes.',
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+      if (!await authorize(context) || !mounted) return;
+    }
+    if (!mounted) return;
+    await runExport(context, widget.notes);
+  }
+
+  void _onSearchChanged() {
+    final query = _search.text.trim();
+    if (query == _query) return;
+    final wasSearching = _searching;
+    setState(() => _query = query);
+    // Results and a pane share the scroll; whichever takes over starts at
+    // the top rather than wherever the other was left.
+    if (wasSearching != _searching && _scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+  }
+
+  /// ⌘F or Ctrl+F, from anywhere in the dialog, goes to the search field —
+  /// the same chord that finds things everywhere else. Only while this is
+  /// the route on top: a dialog opened over settings keeps its own keys.
+  bool _onFindKey(KeyEvent event) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyF) {
+      return false;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    final chord = AppPlatform.isMacOS
+        ? keyboard.isMetaPressed && !keyboard.isControlPressed
+        : keyboard.isControlPressed && !keyboard.isMetaPressed;
+    if (!chord || keyboard.isAltPressed || keyboard.isShiftPressed) {
+      return false;
+    }
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return false;
+    _searchFocus.requestFocus();
+    _search.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _search.text.length,
+    );
+    return true;
   }
 
   /// A section appears only where its subject does: shortcuts are a
@@ -302,6 +406,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     // inside it: an account is the thing both halves need, and reading about
     // one straight after the other is how somebody actually meets them.
     SettingsSection.sync => widget.account != null,
+    SettingsSection.plan => widget.account != null,
     // Present even signed out, and even with no transcription configured:
     // recording works without an account, and the pane says so rather than
     // hiding and leaving the user to wonder where the setting went.
@@ -322,11 +427,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
   int? _deviceMemoryBytes;
 
   SpeechConsentStatus? _speechConsent;
-  SpeechUsage? _speechUsage;
   bool _speechBusy = false;
   String? _speechError;
 
-  /// Asks the server what this account agreed to and how much it has used.
+  /// Asks the server what this account agreed to.
   ///
   /// Consent lives on the server rather than in a local flag so that a second
   /// device shows the same answer, and so withdrawing it actually stops jobs
@@ -340,25 +444,19 @@ class _SettingsDialogState extends State<SettingsDialog> {
           if (mounted) setState(() => _speechConsent = value);
         })
         .catchError((Object _) {});
-    speech
-        .usage()
-        .then((value) {
-          if (mounted) setState(() => _speechUsage = value);
-        })
-        .catchError((Object _) {});
   }
 
-  Future<void> _setTranscription(bool on) async {
+  Future<bool> _setTranscription(bool on) async {
     final speech = widget.account?.speech;
-    if (speech == null || _speechBusy) return;
+    if (speech == null || _speechBusy) return false;
 
     if (on) {
       final accepted = await showSpeechConsentSheet(context);
       if (!accepted) {
         widget.voicePrefs?.transcriptionDeclinedVersion = speechConsentVersion;
-        return;
+        return false;
       }
-      if (!mounted) return;
+      if (!mounted) return false;
     }
     setState(() {
       _speechBusy = true;
@@ -368,10 +466,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
       context,
       on ? 'Turning on transcription…' : 'Turning off transcription…',
     );
+    var changed = false;
     try {
       // Version 0 withdraws.
       final status = await speech.acceptConsent(on ? speechConsentVersion : 0);
       if (on) widget.voicePrefs?.transcriptionDeclinedVersion = null;
+      changed = on ? status.isAccepted : !status.isAccepted;
       if (mounted) {
         setState(() => _speechConsent = status);
         progress.success(
@@ -391,6 +491,24 @@ class _SettingsDialogState extends State<SettingsDialog> {
     } finally {
       if (mounted) setState(() => _speechBusy = false);
     }
+    return changed;
+  }
+
+  Future<void> _selectCloudTranscription(VoicePrefs prefs) async {
+    if (_speechBusy || widget.account?.speech == null) return;
+    if (_speechConsent?.isAccepted ?? false) {
+      setState(() => prefs.transcriptEngine = TranscriptEngine.cloud);
+      widget.onTranscriptionReady?.call();
+      return;
+    }
+    if (await _setTranscription(true) && mounted) {
+      setState(() => prefs.transcriptEngine = TranscriptEngine.cloud);
+      widget.onTranscriptionReady?.call();
+    }
+  }
+
+  Future<void> _turnOffCloudTranscription() async {
+    await _setTranscription(false);
   }
 
   /// The languages worth offering: the ones a provider detects least reliably
@@ -427,106 +545,51 @@ class _SettingsDialogState extends State<SettingsDialog> {
     setState(() => prefs.language = chosen.isEmpty ? null : chosen);
   }
 
-  String _speechMinutesLine() {
-    final usage = _speechUsage;
-    if (usage == null) {
-      return widget.account?.speech == null
-          ? 'Sign in to see how much transcription you have used'
-          : 'Checking…';
-    }
-    final used = (usage.usedSeconds / 60).floor();
-    final quota = (usage.quotaSeconds / 60).round();
-    return '$used of $quota minutes used · resets ${_shortMonthDay(usage.resetsAt)}';
-  }
-
-  static String _shortMonthDay(DateTime at) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${at.day} ${months[at.month - 1]}';
-  }
-
   /// What happens to a recording, and where.
   ///
-  /// Two headings, not four. The engines that run here used to have a shelf
-  /// each — one for the recogniser, one for the language model — and a
-  /// "where is this done" picker apiece somewhere further up the pane, which
-  /// asked the same question in three places and answered it in none of them
-  /// visibly. A switch beside the download says it once.
+  /// Cloud and local transcription are one decision, so they sit together as
+  /// mutually exclusive choices. The shared recording options follow, then
+  /// the separate local summary engine.
   List<Widget> _voicePane() {
     final prefs = widget.voicePrefs;
+    if (prefs == null) return const [];
     final signedIn = widget.account?.speech != null;
+    final cloudSelected =
+        signedIn &&
+        (_speechConsent?.isAccepted ?? false) &&
+        prefs.transcriptEngine == TranscriptEngine.cloud;
     return [
-      const _SectionLabel('RECORDINGS'),
-      _SettingsGroup(
+      const SettingsLabel('TRANSCRIPTION'),
+      SettingsGroup(
         children: [
-          if (signedIn)
-            _ToggleRow(
-              key: const ValueKey('voice-transcription-toggle'),
-              icon: Icons.mic_none_rounded,
-              title: 'Transcription',
-              subtitle: 'Turn recordings into text and a summary',
-              value: _speechConsent?.isAccepted ?? false,
-              onChanged: _speechBusy
-                  ? (_) {}
-                  : (value) => unawaited(_setTranscription(value)),
-            )
-          else
-            _NavigationRow(
-              key: const ValueKey('voice-sign-in-row'),
-              icon: Icons.mic_none_rounded,
-              title: 'Transcription',
-              // Signing in stopped being the only way to get a transcript the
-              // day the device engine landed. Saying so only when this machine
-              // can actually do it keeps the row honest on the ones that
-              // cannot.
-              subtitle: _deviceTranscriptState == TranscriberReadiness.ready
-                  ? 'Sign in, or switch this device on below'
-                  : 'Sign in to turn recordings into text',
-              onTap: () => _goToSection(SettingsSection.sync),
-            ),
-          if (prefs != null)
-            _ToggleRow(
-              key: const ValueKey('voice-summary-toggle'),
-              icon: Icons.subject_rounded,
-              title: 'Make a summary',
-              subtitle: 'A title and a few points, after the transcript',
-              value: prefs.summarize,
-              onChanged: (value) => setState(() => prefs.summarize = value),
-            ),
-          if (prefs != null)
-            _NavigationRow(
-              key: const ValueKey('voice-language-row'),
-              icon: Icons.translate_rounded,
-              title: 'Language',
-              subtitle:
-                  _speechLanguages[prefs.language] ?? 'Detect automatically',
-              onTap: () => unawaited(_pickSpeechLanguage(prefs)),
-            ),
-          // Metering is the cloud's, so it sits under the switch that sends
-          // things there rather than under a heading of its own. Nothing to
-          // meter without an account, and the row said as much in a sentence
-          // that only ever pointed at the one above it.
-          if (signedIn)
-            _NavigationRow(
-              key: const ValueKey('voice-minutes-row'),
-              icon: Icons.schedule_rounded,
-              title: 'Minutes this month',
-              subtitle: _speechMinutesLine(),
-              onTap: _loadSpeechState,
-            ),
+          _EngineChoiceRow(
+            key: const ValueKey('cloud-transcription-row'),
+            icon: KapyIcons.micRounded,
+            title: 'Cloud transcription',
+            subtitle: signedIn
+                ? 'Uploads recordings for transcription and cloud summaries'
+                : 'Sign in first for cloud transcription and summaries',
+            selected: cloudSelected,
+            enabled: signedIn && !_speechBusy,
+            onSelect: cloudSelected
+                ? null
+                : () => unawaited(_selectCloudTranscription(prefs)),
+            action: cloudSelected
+                ? SettingsRowButton(
+                    key: const ValueKey('voice-transcription-off'),
+                    label: 'Turn off',
+                    onPressed: _speechBusy
+                        ? null
+                        : () => unawaited(_turnOffCloudTranscription()),
+                  )
+                : null,
+          ),
+          _localTranscriptionRow(prefs),
         ],
+      ),
+      const SettingsNote(
+        'Choose one. Local transcription needs no account or minutes, and '
+        'the recording never leaves this device.',
       ),
       if (_speechError != null)
         Padding(
@@ -540,97 +603,115 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ),
         ),
       const SizedBox(height: 18),
-      const _SectionLabel('LOCAL'),
-      ..._localPane(prefs),
+      const SettingsLabel('RECORDINGS & SUMMARIES'),
+      SettingsGroup(
+        children: [
+          SettingsToggleRow(
+            key: const ValueKey('voice-summary-toggle'),
+            icon: KapyIcons.subjectRounded,
+            title: 'Make a summary',
+            subtitle: !signedIn && prefs.summaryEngine == SummaryEngine.cloud
+                ? 'Use local summaries below, or sign in for cloud summaries'
+                : 'A title and a few points, after the transcript',
+            value: prefs.summarize,
+            onChanged: (value) => setState(() => prefs.summarize = value),
+          ),
+          SettingsNavigationRow(
+            key: const ValueKey('voice-language-row'),
+            icon: KapyIcons.translateRounded,
+            title: 'Language',
+            subtitle:
+                _speechLanguages[prefs.language] ?? 'Detect automatically',
+            onTap: () => unawaited(_pickSpeechLanguage(prefs)),
+          ),
+          _localSummaryRow(prefs),
+        ],
+      ),
+      const SettingsNote(
+        'Make summaries automatically with the selected engine. Local '
+        'summaries need no account or minutes, and the transcript stays on '
+        'this device.',
+      ),
+      if (_localModelCredits.isNotEmpty)
+        _ModelCredits(models: _localModelCredits),
     ];
   }
 
-  /// The engines that can run on this machine, and the whole of the choice
-  /// about them.
-  ///
-  /// A switch that is on is the engine that runs; everything else goes to the
-  /// cloud. That is the same decision the two engine pickers used to ask
-  /// separately, in a place where the answer could not be seen — and it only
-  /// ever has two answers, which is a switch.
-  List<Widget> _localPane(VoicePrefs? prefs) {
+  Widget _localTranscriptionRow(VoicePrefs prefs) {
     final store = widget.localModels;
     final speech = store?.catalogue.whereType<LocalSpeechModel>().firstOrNull;
-    final summary = store?.catalogue.whereType<LocalSummaryModel>().firstOrNull;
-    final credits = <DownloadableModel>[?speech, ?summary];
+    return _LocalEngineRow(
+      key: const ValueKey('local-transcription-row'),
+      icon: KapyIcons.audioWaveRounded,
+      title: 'Local transcription',
+      store: store,
+      model: speech,
+      // Ready without a download of ours: the platform's own recogniser,
+      // which is the ordinary case on Apple.
+      builtIn: _deviceTranscriptState == TranscriberReadiness.ready,
+      builtInNote: 'Built into this device, and never uploaded',
+      unavailableNote: switch (_deviceTranscriptState) {
+        TranscriberReadiness.preparing =>
+          'Still fetching the language it needs',
+        TranscriberReadiness.needsSystemFeature =>
+          'Allow speech recognition for Kapy Notes in Privacy settings',
+        _ => 'Not something this device can do yet',
+      },
+      blockedReason: speech == null ? null : _downloadBlockedReason(speech),
+      on: prefs.transcriptEngine == TranscriptEngine.device,
+      exclusive: true,
+      onChanged: (value) {
+        if (!value || prefs.transcriptEngine == TranscriptEngine.device) {
+          return;
+        }
+        setState(() => prefs.transcriptEngine = TranscriptEngine.device);
+        widget.onTranscriptionReady?.call();
+      },
+      onDownload: speech == null || store == null
+          ? null
+          : () => unawaited(_startDownload(store, speech)),
+    );
+  }
 
-    return [
-      _SettingsGroup(
-        children: [
-          _LocalEngineRow(
-            key: const ValueKey('local-transcription-row'),
-            icon: Icons.graphic_eq_rounded,
-            title: 'Transcription',
-            store: store,
-            model: speech,
-            // Ready without a download of ours: the platform's own
-            // recogniser, which is the ordinary case on Apple. A downloaded
-            // model is caught by the row itself, and says its own name.
-            builtIn: _deviceTranscriptState == TranscriberReadiness.ready,
-            builtInNote: 'Built into this device, and never uploaded',
-            unavailableNote: switch (_deviceTranscriptState) {
-              TranscriberReadiness.preparing =>
-                'Still fetching the language it needs',
-              TranscriberReadiness.needsSystemFeature =>
-                'Allow speech recognition for Kapy Notes in Privacy settings',
-              _ => 'Not something this device can do yet',
-            },
-            blockedReason: speech == null
-                ? null
-                : _downloadBlockedReason(speech),
-            on: prefs?.transcriptEngine == TranscriptEngine.device,
-            onChanged: prefs == null
-                ? null
-                : (value) => setState(() {
-                    prefs.transcriptEngine = value
-                        ? TranscriptEngine.device
-                        : TranscriptEngine.cloud;
-                  }),
-            onDownload: speech == null || store == null
-                ? null
-                : () => unawaited(_startDownload(store, speech)),
-          ),
-          _LocalEngineRow(
-            key: const ValueKey('local-summary-row'),
-            icon: Icons.auto_awesome_outlined,
-            title: 'Summaries',
-            store: store,
-            model: summary,
-            builtIn: _deviceSummaryState == SummarizerReadiness.ready,
-            builtInNote: 'Written here by Apple Intelligence, never uploaded',
-            unavailableNote: switch (_deviceSummaryState) {
-              SummarizerReadiness.needsSystemFeature =>
-                'Turn on Apple Intelligence in System Settings first',
-              SummarizerReadiness.preparing =>
-                'Apple Intelligence is still downloading its model',
-              _ => 'Not something this device can do yet',
-            },
-            blockedReason: summary == null
-                ? null
-                : _downloadBlockedReason(summary),
-            on: prefs?.summaryEngine == SummaryEngine.device,
-            onChanged: prefs == null
-                ? null
-                : (value) => setState(() {
-                    prefs.summaryEngine = value
-                        ? SummaryEngine.device
-                        : SummaryEngine.cloud;
-                  }),
-            onDownload: summary == null || store == null
-                ? null
-                : () => unawaited(_startDownload(store, summary)),
-          ),
-        ],
-      ),
-      const _PaneNote(
-        'Anything switched on here runs on this device: no account, no '
-        'minutes, and the recording never leaves.',
-      ),
-      if (credits.isNotEmpty) _ModelCredits(models: credits),
+  /// The local alternative sits with the recording choices it affects, so a
+  /// user can decide how a recording is handled without jumping sections.
+  Widget _localSummaryRow(VoicePrefs prefs) {
+    final store = widget.localModels;
+    final summary = store?.catalogue.whereType<LocalSummaryModel>().firstOrNull;
+    return _LocalEngineRow(
+      key: const ValueKey('local-summary-row'),
+      icon: KapyIcons.magicOutlined,
+      title: 'Local summaries',
+      store: store,
+      model: summary,
+      builtIn: _deviceSummaryState == SummarizerReadiness.ready,
+      builtInNote: 'Written here by Apple Intelligence, never uploaded',
+      unavailableNote: switch (_deviceSummaryState) {
+        SummarizerReadiness.needsSystemFeature =>
+          'Turn on Apple Intelligence in System Settings first',
+        SummarizerReadiness.preparing =>
+          'Apple Intelligence is still downloading its model',
+        _ => 'Not something this device can do yet',
+      },
+      blockedReason: summary == null ? null : _downloadBlockedReason(summary),
+      on: prefs.summaryEngine == SummaryEngine.device,
+      onChanged: (value) => setState(() {
+        prefs.summaryEngine = value
+            ? SummaryEngine.device
+            : SummaryEngine.cloud;
+      }),
+      onDownload: summary == null || store == null
+          ? null
+          : () => unawaited(_startDownload(store, summary)),
+    );
+  }
+
+  List<DownloadableModel> get _localModelCredits {
+    final catalogue = widget.localModels?.catalogue;
+    if (catalogue == null) return const [];
+    return <DownloadableModel>[
+      ?catalogue.whereType<LocalSpeechModel>().firstOrNull,
+      ?catalogue.whereType<LocalSummaryModel>().firstOrNull,
     ];
   }
 
@@ -693,19 +774,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
     unawaited(store.download(model));
   }
 
-  /// Sends the user to another category, from inside one.
-  ///
-  /// The two layouts move differently — the sheet pushes, the rail selects —
-  /// and a row that wants to hand over should not have to know which is up.
-  void _goToSection(SettingsSection section) {
-    if (!_isAvailable(section)) return;
-    if (widget.asSheet) {
-      _openSheetSection(section);
-    } else {
-      _showSection(section);
-    }
-  }
-
   void _openSheetSection(SettingsSection section) =>
       setState(() => _sheetSection = section);
 
@@ -722,6 +790,97 @@ class _SettingsDialogState extends State<SettingsDialog> {
     // previous one was scrolled to.
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
+
+  /// A category chosen from the rail while results are showing is a change
+  /// of mind about searching, so the search goes with it.
+  void _selectFromRail(SettingsSection section) {
+    _search.clear();
+    _showSection(section);
+  }
+
+  /// Where a search result goes: its category, scrolled to its row, with the
+  /// row lit for a moment so the eye does not have to hunt for it again.
+  ///
+  /// The dialog lets the search go, because the pane it led to is now the
+  /// thing on screen. The sheet keeps it: the results are the page under the
+  /// one it pushed, and going back should land on them.
+  void _openResult(SettingsSearchEntry<SettingsSection> entry) {
+    if (widget.asSheet) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      _openSheetSection(entry.section);
+    } else {
+      _search.clear();
+      _showSection(entry.section);
+    }
+    final target = entry.target;
+    if (target == null) return;
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => unawaited(_reveal(ValueKey<String>(target))),
+    );
+  }
+
+  void _openFirstResult() {
+    final results = searchSettings(_searchIndex(), _query);
+    if (results.isNotEmpty) _openResult(results.first);
+  }
+
+  Future<void> _reveal(Key target) async {
+    if (!mounted) return;
+    final root = widget.asSheet
+        ? _sheetNavigator.currentContext
+        : _paneKey.currentContext;
+    final row = _findKeyed(root, target);
+    // A row that only some states of a pane draw — an account row while
+    // signed out — leaves the category open at its top, which is the next
+    // best place to have been sent.
+    if (row == null) return;
+    await Scrollable.ensureVisible(
+      row,
+      alignment: 0.2,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+    if (!mounted || !row.mounted) return;
+    final box = row.renderObject;
+    if (box is! RenderBox || !box.attached) return;
+    _flashTarget.value = box;
+    unawaited(_flash.forward(from: 0));
+  }
+
+  /// The element under [root] whose widget carries [key]: the same search a
+  /// test's `find.byKey` does, done once, on a tap.
+  static Element? _findKeyed(BuildContext? root, Key key) {
+    if (root is! Element) return null;
+    Element? found;
+    void visit(Element element) {
+      if (found != null) return;
+      if (element.widget.key == key) {
+        found = element;
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+
+    root.visitChildElements(visit);
+    return found;
+  }
+
+  /// The search field, which heads settings in every shape it takes.
+  Widget _searchField({required bool autofocus}) => SettingsSearchField(
+    controller: _search,
+    focusNode: _searchFocus,
+    autofocus: autofocus,
+    // On a phone the keyboard's Search key only puts the keyboard away: the
+    // results are already there, and the thumb picks one.
+    onSubmitted: widget.asSheet ? _searchFocus.unfocus : _openFirstResult,
+  );
+
+  Widget _searchResults() => SettingsSearchResults<SettingsSection>(
+    key: const ValueKey('settings-search-results'),
+    query: _query,
+    results: searchSettings(_searchIndex(), _query),
+    onOpen: _openResult,
+  );
 
   Future<void> _recordShortcut(ShortcutAction action) async {
     final current = widget.shortcuts.bindingFor(action);
@@ -836,7 +995,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
       AppPlatform.isMacOS
           ? 'Kapy Notes now has a menu bar icon.'
           : 'Closing the window now keeps Kapy Notes in the tray.',
-      icon: Icons.check_rounded,
+      icon: KapyIcons.checkRounded,
     );
   }
 
@@ -863,8 +1022,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
   Future<void> _chooseTimeZone() async {
     final selected = await showDialog<String>(
       context: context,
-      builder: (context) =>
-          _TimeZonePickerDialog(selectedId: widget.layoutPrefs.timeZoneId),
+      builder: (context) => _TimeZonePickerDialog(
+        // Normalized here, where the table is parsed anyway to list the
+        // zones: an id it does not know reads as following the device.
+        selectedId: AppTimeZones.normalize(widget.layoutPrefs.timeZoneId),
+      ),
     );
     if (!mounted || selected == null) return;
     widget.layoutPrefs.timeZoneId = selected.isEmpty ? null : selected;
@@ -885,7 +1047,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
   String get _defaultNoteLabel {
     final id = widget.layoutPrefs.defaultNoteId;
     final note = id == null ? null : widget.notes.byId(id);
-    return note == null || note.isArchived ? 'Last opened note' : note.title;
+    return note == null || note.isArchived || note.isHidden
+        ? 'Last opened note'
+        : note.title;
   }
 
   @override
@@ -903,7 +1067,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   Widget _buildDialog(BuildContext context) {
     final media = MediaQuery.sizeOf(context);
     final available = media.width - 80;
-    final paned = available >= _railBreakpoint;
+    final paned = AppPlatform.isWindows || available >= _railBreakpoint;
     final width = math.min(paned ? _panedWidth : _stackedWidth, available);
     // A fixed height keeps the dialog from resizing under the pointer
     // as sections of different lengths are selected.
@@ -994,11 +1158,19 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                   ? 0
                                   : media.padding.bottom,
                               children: [
-                                _CategoryList(
-                                  sections: _sections,
-                                  account: widget.account,
-                                  onSelect: _openSheetSection,
-                                ),
+                                // No autofocus: a keyboard that rises the
+                                // moment settings opens would cover the very
+                                // list it is there to search.
+                                _searchField(autofocus: false),
+                                const SizedBox(height: 14),
+                                if (_searching)
+                                  _searchResults()
+                                else
+                                  _CategoryList(
+                                    sections: _sections,
+                                    account: widget.account,
+                                    onSelect: _openSheetSection,
+                                  ),
                               ],
                             ),
                           ),
@@ -1011,6 +1183,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
                                 bottomInset: keyboard > 0
                                     ? 0
                                     : media.padding.bottom,
+                                flashTarget: _flashTarget,
+                                flash: _flash,
                                 children: _paneFor(section),
                               ),
                             ),
@@ -1027,23 +1201,41 @@ class _SettingsDialogState extends State<SettingsDialog> {
     );
   }
 
+  /// The search sits over the rail, where a list of categories is looked
+  /// down for something and a field that finds it saves the looking. Its
+  /// results take the pane's place, so the rail stays a way back out.
   Widget _buildPaned(BuildContext context) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
           width: _railWidth,
-          child: _SettingsRail(
-            sections: _sections,
-            selected: _section,
-            onSelect: _showSection,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Settings opened on purpose, sent to one pane, leaves the
+              // keyboard to whatever that pane wanted it for.
+              _searchField(autofocus: widget.section == null),
+              const SizedBox(height: 8),
+              Expanded(
+                child: _SettingsRail(
+                  sections: _sections,
+                  // No category is the one on show while results are.
+                  selected: _searching ? null : _section,
+                  onSelect: _selectFromRail,
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(width: 14),
         Expanded(
           child: _ScrollingPane(
+            key: _paneKey,
             controller: _scrollController,
-            children: _paneFor(_section),
+            flashTarget: _flashTarget,
+            flash: _flash,
+            children: _searching ? [_searchResults()] : _paneFor(_section),
           ),
         ),
       ],
@@ -1051,13 +1243,28 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   Widget _buildStacked(BuildContext context) {
-    return _ScrollingPane(
-      controller: _scrollController,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final section in _sections) ...[
-          if (section != _sections.first) const SizedBox(height: 20),
-          ..._paneFor(section),
-        ],
+        _searchField(autofocus: widget.section == null),
+        const SizedBox(height: 12),
+        Expanded(
+          child: _ScrollingPane(
+            key: _paneKey,
+            controller: _scrollController,
+            flashTarget: _flashTarget,
+            flash: _flash,
+            children: _searching
+                ? [_searchResults()]
+                : [
+                    for (final section in _sections) ...[
+                      if (section != _sections.first)
+                        const SizedBox(height: 20),
+                      ..._paneFor(section),
+                    ],
+                  ],
+          ),
+        ),
       ],
     );
   }
@@ -1065,26 +1272,523 @@ class _SettingsDialogState extends State<SettingsDialog> {
   List<Widget> _paneFor(SettingsSection section) => switch (section) {
     SettingsSection.general => _generalPane(),
     SettingsSection.sync => [
-      SyncPane(account: widget.account!),
+      SyncPane(account: widget.account!, includeDeleteAccount: false),
       // The gap between two panes, borrowed from the stacked layout: the
       // panel titles do the separating, and a rule between them would only
       // put back the boundary this section exists to remove.
       const SizedBox(height: 20),
       SharingPane(account: widget.account!),
+      const SizedBox(height: 20),
+      DeleteAccountSettings(account: widget.account!),
     ],
+    SettingsSection.plan => [_PlanUsagePane(account: widget.account!)],
     SettingsSection.voice => _voicePane(),
     SettingsSection.appearance => _appearancePane(),
     SettingsSection.shortcuts => _shortcutsPane(),
     SettingsSection.updates => _updatesPane(),
   };
 
+  /// Everything a search can reach, written beside the panes that draw it.
+  ///
+  /// An entry finds its row by the key the row already carries, and names it
+  /// the way the row does, plus the other words people reach for — nobody
+  /// searching for "dark mode" should need to know it is filed under Theme.
+  /// Entries follow the same conditions as their rows, so a search never
+  /// offers what this build or this account does not have. A test opens
+  /// every entry and checks its row is there, so a row renamed or removed
+  /// without its entry fails there rather than in somebody's hands.
+  List<SettingsSearchEntry<SettingsSection>> _searchIndex() {
+    SettingsSearchEntry<SettingsSection> entry(
+      SettingsSection section,
+      String title, {
+      required KapyIconData icon,
+      String? target,
+      String? group,
+      List<String> keywords = const [],
+      String? description,
+    }) => SettingsSearchEntry(
+      section: section,
+      sectionLabel: section.label,
+      title: title,
+      icon: icon,
+      target: target,
+      group: group,
+      keywords: keywords,
+      description: description,
+    );
+
+    const general = SettingsSection.general;
+    const plan = SettingsSection.plan;
+    const appearance = SettingsSection.appearance;
+    const voice = SettingsSection.voice;
+    const shortcuts = SettingsSection.shortcuts;
+    const updates = SettingsSection.updates;
+    final prefs = widget.layoutPrefs;
+    final account = widget.account;
+
+    final entries = [
+      // The categories themselves, for somebody who types the name of one.
+      for (final section in _sections)
+        entry(
+          section,
+          section.label,
+          icon: section.icon,
+          description: section.summary,
+        ),
+
+      entry(
+        general,
+        'Note opened at launch',
+        group: 'Opening',
+        icon: KapyIcons.noteOutlined,
+        target: 'default-note-setting',
+        keywords: ['default note', 'startup', 'start'],
+      ),
+      entry(
+        general,
+        'Ready to type on open',
+        group: 'Opening',
+        icon: KapyIcons.keyboardOutlined,
+        target: 'ready-to-type-on-open-toggle',
+        keywords: ['cursor', 'caret', 'focus', 'keyboard', 'resume'],
+      ),
+      entry(
+        general,
+        'Daily separators',
+        group: 'Writing',
+        icon: KapyIcons.calendarOutlined,
+        target: 'daily-separators-toggle',
+        keywords: ['date', 'day', 'dated line', 'divider', 'session'],
+      ),
+      entry(
+        general,
+        'Time zone',
+        group: 'Writing',
+        icon: KapyIcons.publicRounded,
+        target: 'time-zone-setting',
+        keywords: ['timezone', 'clock', 'utc', 'gmt', 'offset'],
+      ),
+      entry(
+        general,
+        'Check spelling',
+        group: 'Writing',
+        icon: KapyIcons.spellcheckRounded,
+        target: 'spell-check-toggle',
+        keywords: ['spellcheck', 'spell check', 'typos', 'dictionary'],
+        description: 'Underline possible misspellings',
+      ),
+      entry(
+        general,
+        'Markdown in notes',
+        group: 'Writing',
+        icon: KapyIcons.tagRounded,
+        target: 'markdown-toggle',
+        keywords: [
+          'markdown',
+          'md',
+          'commonmark',
+          'syntax',
+          'headings',
+          'bold',
+          'code',
+          'formatting',
+          'lists',
+          'checkbox',
+          'tables',
+        ],
+        description: 'Type # for a heading, - for a list, [] for a checkbox',
+      ),
+      entry(
+        general,
+        'Export all notes',
+        group: 'Your notes',
+        icon: KapyIcons.shareRounded,
+        target: 'export-notes',
+        keywords: ['backup', 'download', 'save', 'zip', 'markdown'],
+      ),
+      entry(
+        general,
+        'Import from an export',
+        group: 'Your notes',
+        icon: KapyIcons.downloadRounded,
+        target: 'import-notes',
+        keywords: ['restore', 'upload', 'zip', 'markdown'],
+      ),
+      if (AppPlatform.isDesktop) ...[
+        entry(
+          general,
+          'Notes list',
+          group: 'Window',
+          icon: KapyIcons.viewSidebarOutlined,
+          target: 'sidebar-toggle',
+          keywords: ['sidebar', 'show', 'hide'],
+        ),
+        entry(
+          general,
+          'Hidden Notes',
+          group: 'Window',
+          icon: KapyIcons.lockRounded,
+          target: 'hidden-notes-sidebar-toggle',
+          keywords: [
+            'hidden',
+            'private',
+            'protected',
+            'sidebar',
+            'show',
+            'hide',
+            'cmd h',
+            'ctrl h',
+          ],
+          description: 'Show or hide the protected folder in the notes list',
+        ),
+        entry(
+          general,
+          AppPlatform.isMacOS
+              ? 'Keep running in the menu bar'
+              : 'Keep running in the tray',
+          group: 'Window',
+          icon: KapyIcons.closeFullscreenRounded,
+          target: 'keep-running-toggle',
+          keywords: ['background', 'menu bar', 'tray', 'close', 'quit'],
+        ),
+        if (widget.desktopIntegration?.loginItemSupported ?? false)
+          entry(
+            general,
+            'Open at login',
+            group: 'Window',
+            icon: KapyIcons.loginRounded,
+            target: 'login-item-toggle',
+            keywords: ['startup', 'launch at login', 'login item', 'boot'],
+          ),
+        entry(
+          general,
+          'Panel widths',
+          group: 'Window',
+          icon: KapyIcons.viewColumnOutlined,
+          target: 'panel-widths-setting',
+          keywords: ['reset', 'resize', 'sidebar width', 'results column'],
+        ),
+      ],
+
+      entry(
+        appearance,
+        'Theme',
+        group: 'Theme',
+        icon: KapyIcons.appearanceOutlined,
+        target: 'theme-setting',
+        keywords: ['dark mode', 'light mode', 'night', 'colour', 'color'],
+      ),
+      entry(
+        appearance,
+        'Paper',
+        group: 'Theme',
+        icon: KapyIcons.textureRounded,
+        target: 'paper-setting',
+        keywords: ['ruled', 'lined', 'notepad', 'plain', 'grain', 'texture'],
+      ),
+      if (LayoutPrefs.supportsTransparency) ...[
+        entry(
+          appearance,
+          'Transparency',
+          group: 'Theme',
+          icon: KapyIcons.blurRounded,
+          target: 'transparency-toggle',
+          keywords: ['blur', 'glass', 'translucent', 'see-through'],
+        ),
+        if (prefs.transparencyEnabled)
+          entry(
+            appearance,
+            'Transparency amount',
+            group: 'Theme',
+            icon: KapyIcons.opacityRounded,
+            target: 'transparency-amount',
+            keywords: ['blur', 'opacity'],
+          ),
+      ],
+      for (final font in WritingFont.values)
+        entry(
+          appearance,
+          font.label,
+          group: 'Writing font',
+          icon: KapyIcons.textFieldsRounded,
+          target: 'writing-font-${font.name}',
+          keywords: ['font', 'typeface', 'writing font'],
+          description: font.description,
+        ),
+      for (final system in NumberSystem.values)
+        entry(
+          appearance,
+          system.label,
+          group: 'Numbers',
+          icon: KapyIcons.numbersRounded,
+          target: 'number-system-${system.name}',
+          keywords: ['number format', 'digits', 'grouping', 'commas'],
+          description: system.description,
+        ),
+      entry(
+        appearance,
+        'Exchange rates',
+        group: 'Numbers',
+        icon: KapyIcons.currencyExchangeRounded,
+        target: 'rate-attribution',
+        keywords: ['currency', 'conversion', 'forex'],
+      ),
+
+      if (account != null) ...[
+        entry(
+          plan,
+          'Current plan',
+          group: 'Plan',
+          icon: KapyIcons.verifiedOutlined,
+          target: 'plan-current',
+          keywords: ['pro', 'free', 'subscription', 'account plan'],
+        ),
+        entry(
+          plan,
+          'Transcription minutes',
+          group: 'Usage',
+          icon: KapyIcons.scheduleRounded,
+          target: 'plan-transcription-usage',
+          keywords: ['voice', 'cloud', 'usage', 'quota', 'limit'],
+        ),
+        entry(
+          plan,
+          'AI summaries',
+          group: 'Usage',
+          icon: KapyIcons.magicOutlined,
+          target: 'plan-summary-usage',
+          keywords: ['rewrite', 'cloud', 'usage', 'quota', 'limit'],
+        ),
+        entry(
+          plan,
+          'Storage',
+          group: 'Usage',
+          icon: KapyIcons.backupRestoreRounded,
+          target: 'plan-storage-usage',
+          keywords: ['space', 'attachments', 'usage', 'quota', 'limit'],
+        ),
+      ],
+
+      if (widget.voicePrefs != null) ...[
+        entry(
+          voice,
+          'Cloud transcription',
+          group: 'Transcription',
+          icon: KapyIcons.micRounded,
+          target: 'cloud-transcription-row',
+          keywords: ['transcribe', 'transcript', 'speech to text', 'dictation'],
+        ),
+        entry(
+          voice,
+          'Local transcription',
+          group: 'Transcription',
+          icon: KapyIcons.audioWaveRounded,
+          target: 'local-transcription-row',
+          keywords: ['offline', 'local', 'private', 'model', 'download'],
+        ),
+        entry(
+          voice,
+          'Make a summary',
+          group: 'Recordings & summaries',
+          icon: KapyIcons.subjectRounded,
+          target: 'voice-summary-toggle',
+          keywords: ['summarise', 'summarize', 'recording', 'voice note'],
+        ),
+        entry(
+          voice,
+          'Language',
+          group: 'Recordings & summaries',
+          icon: KapyIcons.translateRounded,
+          target: 'voice-language-row',
+          keywords: ['speech', 'transcription language', 'detect'],
+        ),
+        entry(
+          voice,
+          'Local summaries',
+          group: 'Recordings & summaries',
+          icon: KapyIcons.magicOutlined,
+          target: 'local-summary-row',
+          keywords: ['offline', 'local', 'private', 'apple intelligence'],
+        ),
+      ],
+
+      for (final action in ShortcutAction.values)
+        entry(
+          shortcuts,
+          action.label,
+          group: switch (action.group) {
+            null => 'System-wide',
+            final group => group.title,
+          },
+          icon: KapyIcons.keyboardOutlined,
+          target: 'shortcut-row-${action.name}',
+          keywords: [
+            'shortcut',
+            'hotkey',
+            'keyboard',
+            ?widget.shortcuts.bindingFor(action)?.displayLabel,
+          ],
+          description: action.description,
+        ),
+      entry(
+        shortcuts,
+        'Restore shortcut defaults',
+        icon: KapyIcons.backupRestoreRounded,
+        target: 'restore-shortcut-defaults',
+        keywords: ['reset', 'shortcuts'],
+      ),
+
+      entry(
+        updates,
+        'Version',
+        icon: KapyIcons.infoOutlined,
+        target: 'app-version',
+        keywords: ['build', 'about', 'release'],
+      ),
+      entry(
+        updates,
+        'Check for updates',
+        icon: KapyIcons.systemUpdateRounded,
+        target: 'update-row',
+        keywords: ['update', 'upgrade', 'new version', 'release notes'],
+      ),
+      entry(
+        updates,
+        'Release notes',
+        icon: KapyIcons.historyRounded,
+        target: 'changelog',
+        keywords: ['changelog', "what's new", 'versions', 'history', 'changes'],
+      ),
+
+      if (account != null) ..._accountSearchEntries(account, entry),
+    ];
+    return [
+      for (final candidate in entries)
+        if (_isAvailable(candidate.section)) candidate,
+    ];
+  }
+
+  /// The account's rows change with where the account stands, so its
+  /// entries do too: a signed-out account has a form, not a Sign out button.
+  List<SettingsSearchEntry<SettingsSection>> _accountSearchEntries(
+    Account account,
+    SettingsSearchEntry<SettingsSection> Function(
+      SettingsSection section,
+      String title, {
+      required KapyIconData icon,
+      String? target,
+      String? group,
+      List<String> keywords,
+      String? description,
+    })
+    entry,
+  ) {
+    const sync = SettingsSection.sync;
+    final sharing = account.sharing;
+    return switch (account.state) {
+      AccountState.ready => [
+        entry(
+          sync,
+          'Your name and picture',
+          group: 'Profile',
+          icon: KapyIcons.accountCircleOutlined,
+          target: 'profile-card',
+          keywords: ['profile', 'display name', 'photo', 'avatar'],
+        ),
+        entry(
+          sync,
+          'Sync',
+          group: 'Account',
+          icon: KapyIcons.syncRounded,
+          target: 'sync-status',
+          keywords: ['sync now', 'status', 'devices', 'cloud'],
+        ),
+        entry(
+          sync,
+          'Sign out',
+          group: 'Account',
+          icon: KapyIcons.logoutRounded,
+          target: 'sign-out-row',
+          keywords: ['log out', 'logout', 'account', 'email'],
+        ),
+        entry(
+          sync,
+          'Delete account',
+          group: 'Account',
+          icon: KapyIcons.deleteForeverOutlined,
+          target: 'delete-account',
+          keywords: ['remove account', 'close account', 'erase'],
+        ),
+        if (sharing != null) ...[
+          entry(
+            sync,
+            'Shared spaces',
+            group: 'Sharing',
+            icon: KapyIcons.peopleOutlined,
+            target: 'sharing-group',
+            keywords: ['sharing', 'share', 'collaborate', 'invitations'],
+          ),
+          entry(
+            sync,
+            'Join with an invitation',
+            group: 'Sharing',
+            icon: KapyIcons.linkRounded,
+            target: 'join-code',
+            keywords: ['invite', 'invitation', 'link', 'code', 'join'],
+          ),
+          if (sharing.blocks.isNotEmpty)
+            entry(
+              sync,
+              'Blocked people',
+              group: 'Blocked',
+              icon: KapyIcons.blockedRounded,
+              target: 'block-${sharing.blocks.first.email}',
+              keywords: ['unblock', 'block'],
+            ),
+        ],
+      ],
+      // The form that signs in is the whole pane, so the pane is the place.
+      AccountState.signedOut => [
+        entry(
+          sync,
+          'Sign in',
+          icon: KapyIcons.loginRounded,
+          keywords: ['log in', 'login', 'create account', 'sign up', 'sync'],
+        ),
+      ],
+      _ => [
+        entry(
+          sync,
+          'Account',
+          icon: KapyIcons.accountCircleOutlined,
+          keywords: ['passphrase', 'unlock', 'profile', 'sync'],
+        ),
+      ],
+    };
+  }
+
+  /// Grouped by the question somebody comes here with: what happens when a
+  /// note opens, how writing behaves, what can be done with the notes, and —
+  /// on a desktop — how the window behaves.
+  ///
+  /// It used to be one "Notes" card holding five switches that had little to
+  /// do with each other, a time zone that went by its value instead of its
+  /// name, and a button loose under the last card. Now every row says what it
+  /// is, next to the rows it is read with.
   List<Widget> _generalPane() => [
-    const _SectionLabel('NOTES'),
-    _SettingsGroup(
+    const SettingsLabel('OPENING'),
+    SettingsGroup(
       children: [
-        _ToggleRow(
+        SettingsNavigationRow(
+          key: const ValueKey('default-note-setting'),
+          icon: KapyIcons.noteOutlined,
+          title: 'Note opened at launch',
+          subtitle: _defaultNoteLabel,
+          onTap: _chooseDefaultNote,
+        ),
+        SettingsToggleRow(
           key: const ValueKey('ready-to-type-on-open-toggle'),
-          icon: Icons.keyboard_alt_outlined,
+          icon: KapyIcons.keyboardOutlined,
           title: 'Ready to type on open',
           subtitle:
               'Put the cursor back where you left it, or on a new line on a '
@@ -1092,99 +1796,107 @@ class _SettingsDialogState extends State<SettingsDialog> {
           value: widget.layoutPrefs.readyToTypeOnOpen,
           onChanged: (value) => widget.layoutPrefs.readyToTypeOnOpen = value,
         ),
-        _NavigationRow(
-          key: const ValueKey('default-note-setting'),
-          icon: Icons.note_alt_outlined,
-          title: 'Note opened at launch',
-          subtitle: _defaultNoteLabel,
-          onTap: _chooseDefaultNote,
-        ),
-        _ToggleRow(
+      ],
+    ),
+    const SizedBox(height: 18),
+    // The time zone sits under the separators because they are what it
+    // dates: a row further down, under a heading of its own, read as a
+    // setting for the whole computer.
+    const SettingsLabel('WRITING'),
+    SettingsGroup(
+      children: [
+        SettingsToggleRow(
           key: const ValueKey('daily-separators-toggle'),
-          icon: Icons.calendar_today_outlined,
+          icon: KapyIcons.calendarOutlined,
           title: 'Daily separators',
           subtitle: 'Start each session and new day on a dated line',
           value: widget.layoutPrefs.dailySeparatorsEnabled,
           onChanged: (value) =>
               widget.layoutPrefs.dailySeparatorsEnabled = value,
         ),
-        _ToggleRow(
+        SettingsNavigationRow(
+          key: const ValueKey('time-zone-setting'),
+          icon: KapyIcons.publicRounded,
+          title: 'Time zone',
+          subtitle:
+              '${AppTimeZones.displayName(widget.layoutPrefs.timeZoneId)} · '
+              '${AppTimeZones.offsetLabel(widget.layoutPrefs.timeZoneId)}',
+          onTap: _chooseTimeZone,
+        ),
+        SettingsToggleRow(
           key: const ValueKey('spell-check-toggle'),
-          icon: Icons.spellcheck_rounded,
+          icon: KapyIcons.spellcheckRounded,
           title: 'Check spelling',
           subtitle: 'Underline possible misspellings without changing text',
           value: widget.layoutPrefs.spellCheckEnabled,
           onChanged: (value) => widget.layoutPrefs.spellCheckEnabled = value,
         ),
-        if (AppPlatform.isDesktop)
-          _ToggleRow(
-            key: const ValueKey('sidebar-toggle'),
-            icon: Icons.view_sidebar_outlined,
-            title: 'Desktop sidebar',
-            subtitle: 'Show notes beside wider editor windows',
-            value: widget.layoutPrefs.sidebarVisible,
-            onChanged: (_) => widget.layoutPrefs.toggleSidebar(),
-          ),
+        // Beside spelling because both are about how the words are read as
+        // they are typed. Nothing in a note is converted either way.
+        SettingsToggleRow(
+          key: const ValueKey('markdown-toggle'),
+          icon: KapyIcons.tagRounded,
+          title: 'Markdown in notes',
+          subtitle: 'Type # for a heading, - for a list, [] for a checkbox',
+          value: widget.layoutPrefs.markdownEnabled,
+          onChanged: (value) => widget.layoutPrefs.markdownEnabled = value,
+        ),
       ],
     ),
     const SizedBox(height: 18),
-    const _SectionLabel('YOUR NOTES'),
-    _SettingsGroup(
+    const SettingsLabel('YOUR NOTES'),
+    SettingsGroup(
       children: [
-        _NavigationRow(
+        SettingsNavigationRow(
           key: const ValueKey('export-notes'),
-          icon: Icons.ios_share_rounded,
+          icon: KapyIcons.shareRounded,
           title: 'Export all notes',
           // The one-line warning the plaintext deserves, at the moment it
           // matters. Not called a backup, because nothing here runs on its own.
           subtitle: 'Markdown in one .zip · not encrypted once it is saved',
-          onTap: () => unawaited(runExport(context, widget.notes)),
+          onTap: () => unawaited(_exportNotes()),
         ),
-        _NavigationRow(
+        SettingsNavigationRow(
           key: const ValueKey('import-notes'),
-          icon: Icons.download_rounded,
+          icon: KapyIcons.downloadRounded,
           title: 'Import from an export',
           subtitle: 'Read a .zip back in, and see what it changes first',
           onTap: () => unawaited(runImport(context, widget.notes)),
-        ),
-        if (widget.onOpenWelcomeNote case final openWelcome?)
-          _NavigationRow(
-            key: const ValueKey('open-welcome-note'),
-            icon: Icons.waving_hand_outlined,
-            title: 'Welcome note',
-            subtitle: 'Open the note a new install starts on',
-            onTap: () {
-              Navigator.of(context).pop();
-              openWelcome();
-            },
-          ),
-      ],
-    ),
-    const SizedBox(height: 18),
-    const _SectionLabel('TIME ZONE'),
-    _SettingsGroup(
-      children: [
-        _NavigationRow(
-          key: const ValueKey('time-zone-setting'),
-          icon: Icons.public_rounded,
-          title: AppTimeZones.displayName(widget.layoutPrefs.timeZoneId),
-          subtitle:
-              'New separators · ${AppTimeZones.offsetLabel(widget.layoutPrefs.timeZoneId)}',
-          onTap: _chooseTimeZone,
         ),
       ],
     ),
     if (AppPlatform.isDesktop) ...[
       const SizedBox(height: 18),
-      // One heading, because both switches answer the same question — how
-      // this behaves as an app rather than as a window — and a heading over
-      // a single row is a heading that earns nothing.
-      const _SectionLabel('WINDOW'),
-      _SettingsGroup(
+      // Everything about the window as a thing on the desktop: what is in it,
+      // whether it outlives being closed, and the one reset. The reset is a
+      // row like the others rather than a button under the card, which read
+      // as belonging to the whole pane.
+      const SettingsLabel('WINDOW'),
+      SettingsGroup(
         children: [
-          _ToggleRow(
+          SettingsToggleRow(
+            key: const ValueKey('sidebar-toggle'),
+            icon: KapyIcons.viewSidebarOutlined,
+            // Named the way the shortcut that toggles it is named.
+            title: 'Notes list',
+            subtitle: 'Show your notes beside the one you are writing',
+            value: widget.layoutPrefs.sidebarVisible,
+            onChanged: (_) => widget.layoutPrefs.toggleSidebar(),
+          ),
+          SettingsToggleRow(
+            key: const ValueKey('hidden-notes-sidebar-toggle'),
+            icon: KapyIcons.lockRounded,
+            title: 'Hidden Notes',
+            subtitle:
+                'Show the protected folder in the notes list · '
+                '${widget.shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)?.displayLabel ?? 'Settings only'}',
+            value: widget.layoutPrefs.hiddenFolderVisible,
+            onChanged: (value) =>
+                widget.layoutPrefs.hiddenFolderVisible = value,
+          ),
+          SettingsToggleRow(
             key: const ValueKey('keep-running-toggle'),
-            icon: Icons.close_fullscreen_rounded,
+            icon: KapyIcons.closeFullscreenRounded,
             title: AppPlatform.isMacOS
                 ? 'Keep running in the menu bar'
                 : 'Keep running in the tray',
@@ -1199,14 +1911,25 @@ class _SettingsDialogState extends State<SettingsDialog> {
           // app is allowed to use: macOS 12 predates the one the sandbox
           // permits.
           if (widget.desktopIntegration?.loginItemSupported ?? false)
-            _ToggleRow(
+            SettingsToggleRow(
               key: const ValueKey('login-item-toggle'),
-              icon: Icons.login_rounded,
+              icon: KapyIcons.loginRounded,
               title: 'Open at login',
               subtitle: 'Start Kapy Notes when you sign in to this computer',
               value: widget.desktopIntegration!.loginItemEnabled,
               onChanged: (value) => unawaited(_setLoginItem(value)),
             ),
+          SettingsRow(
+            key: const ValueKey('panel-widths-setting'),
+            icon: KapyIcons.viewColumnOutlined,
+            title: 'Panel widths',
+            subtitle: 'The notes list and the results column',
+            trailing: SettingsRowButton(
+              key: const ValueKey('reset-panel-widths'),
+              label: 'Reset',
+              onPressed: widget.layoutPrefs.resetPanelWidths,
+            ),
+          ),
         ],
       ),
       if (_loginItemError != null) ...[
@@ -1220,12 +1943,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ),
         ),
       ],
-      const SizedBox(height: 10),
-      _WideButton(
-        onPressed: widget.layoutPrefs.resetPanelWidths,
-        icon: Icons.restart_alt_rounded,
-        label: 'Reset panel widths',
-      ),
     ],
   ];
 
@@ -1235,31 +1952,72 @@ class _SettingsDialogState extends State<SettingsDialog> {
   /// attribution line. How a thousand is punctuated is a display choice like
   /// any other here, and a category somebody visits once is a category that
   /// costs a click every time they are looking for something else.
+  ///
+  /// Three groups: the look of the window and the page, the font written in,
+  /// and numbers. Theme and paper are a word each, so they are segmented rows
+  /// rather than a radio list apiece — six rows and six sentences that told
+  /// the reader nothing the word had not. The writing fonts keep their list,
+  /// because each one is shown in itself, and that is the point of it.
   List<Widget> _appearancePane() => [
-    const _SectionLabel('THEME'),
-    _SettingsGroup(
+    const SettingsLabel('THEME'),
+    SettingsGroup(
       children: [
-        for (final mode in AppearanceMode.values)
-          _ChoiceRow(
-            key: ValueKey('appearance-${mode.name}'),
-            title: mode.label,
-            subtitle: mode.description,
-            trailing: '',
-            selected: widget.layoutPrefs.appearance == mode,
-            onTap: () => widget.layoutPrefs.appearance = mode,
+        _SegmentedRow<AppearanceMode>(
+          key: const ValueKey('theme-setting'),
+          icon: KapyIcons.appearanceOutlined,
+          title: 'Theme',
+          subtitle: widget.layoutPrefs.appearance.description,
+          options: AppearanceMode.values,
+          selected: widget.layoutPrefs.appearance,
+          labelFor: (mode) => switch (mode) {
+            AppearanceMode.system => 'System',
+            AppearanceMode.light => 'Light',
+            AppearanceMode.dark => 'Dark',
+          },
+          keyFor: (mode) => ValueKey('appearance-${mode.name}'),
+          onSelected: (mode) => widget.layoutPrefs.appearance = mode,
+        ),
+        _SegmentedRow<PaperStyle>(
+          key: const ValueKey('paper-setting'),
+          icon: KapyIcons.textureRounded,
+          title: 'Paper',
+          subtitle: widget.layoutPrefs.paperStyle.description,
+          options: PaperStyle.values,
+          selected: widget.layoutPrefs.paperStyle,
+          labelFor: (paper) => paper.label,
+          keyFor: (paper) => ValueKey('paper-style-${paper.name}'),
+          onSelected: (paper) => widget.layoutPrefs.paperStyle = paper,
+        ),
+        if (LayoutPrefs.supportsTransparency) ...[
+          SettingsToggleRow(
+            key: const ValueKey('transparency-toggle'),
+            icon: KapyIcons.blurRounded,
+            title: 'Transparency',
+            subtitle:
+                'Let the desktop show through the window, blurred so the '
+                'notes stay easy to read.',
+            value: widget.layoutPrefs.transparencyEnabled,
+            onChanged: (value) =>
+                widget.layoutPrefs.transparencyEnabled = value,
           ),
+          if (widget.layoutPrefs.transparencyEnabled)
+            _SliderRow(
+              key: const ValueKey('transparency-amount'),
+              icon: KapyIcons.opacityRounded,
+              title: 'Amount',
+              subtitle: 'How much of the desktop shows through.',
+              minLabel: 'Subtle',
+              maxLabel: 'Clear',
+              value: widget.layoutPrefs.transparencyAmount,
+              onChanged: (value) =>
+                  widget.layoutPrefs.transparencyAmount = value,
+            ),
+        ],
       ],
     ),
     const SizedBox(height: 18),
-    const _SectionLabel('WRITING FONT'),
-    Padding(
-      padding: const EdgeInsets.only(left: 3, bottom: 8),
-      child: Text(
-        'Changes the note itself. Controls stay crisp and familiar.',
-        style: TextStyle(fontSize: 11.5, color: context.palette.textTertiary),
-      ),
-    ),
-    _SettingsGroup(
+    const SettingsLabel('WRITING FONT'),
+    SettingsGroup(
       children: [
         for (final font in WritingFont.values)
           _ChoiceRow(
@@ -1295,55 +2053,15 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ),
       ],
     ),
-    if (LayoutPrefs.supportsTransparency) ...[
-      const SizedBox(height: 18),
-      const _SectionLabel('WINDOW'),
-      _SettingsGroup(
-        children: [
-          _ToggleRow(
-            key: const ValueKey('transparency-toggle'),
-            icon: Icons.blur_on_rounded,
-            title: 'Transparency',
-            subtitle:
-                'Let the desktop show through the window, blurred so the '
-                'notes stay easy to read.',
-            value: widget.layoutPrefs.transparencyEnabled,
-            onChanged: (value) =>
-                widget.layoutPrefs.transparencyEnabled = value,
-          ),
-          if (widget.layoutPrefs.transparencyEnabled)
-            _SliderRow(
-              key: const ValueKey('transparency-amount'),
-              icon: Icons.opacity_rounded,
-              title: 'Amount',
-              subtitle: 'How much of the desktop shows through.',
-              minLabel: 'Subtle',
-              maxLabel: 'Clear',
-              value: widget.layoutPrefs.transparencyAmount,
-              onChanged: (value) =>
-                  widget.layoutPrefs.transparencyAmount = value,
-            ),
-        ],
-      ),
-    ],
-    const SizedBox(height: 18),
-    const _SectionLabel('PAPER'),
-    _SettingsGroup(
-      children: [
-        for (final paper in PaperStyle.values)
-          _ChoiceRow(
-            key: ValueKey('paper-style-${paper.name}'),
-            title: paper.label,
-            subtitle: paper.description,
-            trailing: '',
-            selected: widget.layoutPrefs.paperStyle == paper,
-            onTap: () => widget.layoutPrefs.paperStyle = paper,
-          ),
-      ],
+    const SettingsNote(
+      'Changes the note itself. Menus and controls keep the system font.',
     ),
     const SizedBox(height: 18),
-    const _SectionLabel('NUMBER FORMAT'),
-    _SettingsGroup(
+    // How numbers are written and where the currency rates behind them come
+    // from, together: the credit used to be a heading of its own over one row,
+    // which read as one more thing to set.
+    const SettingsLabel('NUMBERS'),
+    SettingsGroup(
       children: [
         for (final system in NumberSystem.values)
           _ChoiceRow(
@@ -1354,66 +2072,60 @@ class _SettingsDialogState extends State<SettingsDialog> {
             selected: widget.layoutPrefs.numberSystem == system,
             onTap: () => widget.layoutPrefs.numberSystem = system,
           ),
+        _RateAttributionRow(rates: widget.rates),
       ],
     ),
-    const SizedBox(height: 18),
-    const _SectionLabel('EXCHANGE RATES'),
-    _SettingsGroup(children: [_RateAttributionRow(rates: widget.rates)]),
   ];
 
   /// The system-wide pair leads: they are the ones that reach the app from
   /// outside it, they are the ones another app can refuse, and they are what
-  /// people come here to change. Then the in-app keys, then formatting, which
-  /// every footer button already spells out.
+  /// people come here to change. Then the in-app keys, grouped by what they
+  /// act on — the list of notes, the window, what goes into a note and how it
+  /// is formatted — where most of them used to be one long card of eleven.
+  ///
+  /// Only the system-wide pair keeps a line of explanation. An in-app row
+  /// that says "New note" over "Create and focus a blank note" says it twice.
   List<Widget> _shortcutsPane() => [
+    // The one thing to know before anything here is useful, so it leads.
     Padding(
-      padding: const EdgeInsets.only(left: 3, bottom: 9),
+      padding: const EdgeInsets.fromLTRB(3, 0, 3, 12),
       child: Text(
-        'Select a shortcut, then press a new combination. Menus and footer hints update immediately.',
+        'Click a shortcut, then press the keys you want instead.',
         style: TextStyle(fontSize: 11.5, color: context.palette.textTertiary),
       ),
     ),
-    const _SectionLabel('SYSTEM-WIDE'),
-    _SettingsGroup(
+    const SettingsLabel('SYSTEM-WIDE'),
+    SettingsGroup(
       children: [
         for (final action in ShortcutAction.values.where(
           (action) => action.isGlobal,
         ))
           _ShortcutRow(
+            key: ValueKey('shortcut-row-${action.name}'),
             action: action,
             binding: widget.shortcuts.bindingFor(action),
             onPressed: () => _recordShortcut(action),
+            detailed: true,
           ),
       ],
     ),
-    const SizedBox(height: 18),
-    const _SectionLabel('APP'),
-    _SettingsGroup(
-      children: [
-        for (final action in ShortcutAction.values.where(
-          (action) => !action.isFormatting && !action.isGlobal,
-        ))
-          _ShortcutRow(
-            action: action,
-            binding: widget.shortcuts.bindingFor(action),
-            onPressed: () => _recordShortcut(action),
-          ),
-      ],
-    ),
-    const SizedBox(height: 18),
-    const _SectionLabel('FORMATTING'),
-    _SettingsGroup(
-      children: [
-        for (final action in ShortcutAction.values.where(
-          (action) => action.isFormatting,
-        ))
-          _ShortcutRow(
-            action: action,
-            binding: widget.shortcuts.bindingFor(action),
-            onPressed: () => _recordShortcut(action),
-          ),
-      ],
-    ),
+    for (final group in _ShortcutGroup.values) ...[
+      const SizedBox(height: 18),
+      SettingsLabel(group.label),
+      SettingsGroup(
+        children: [
+          for (final action in ShortcutAction.values.where(
+            (action) => action.group == group,
+          ))
+            _ShortcutRow(
+              key: ValueKey('shortcut-row-${action.name}'),
+              action: action,
+              binding: widget.shortcuts.bindingFor(action),
+              onPressed: () => _recordShortcut(action),
+            ),
+        ],
+      ),
+    ],
     if (_shortcutError != null) ...[
       const SizedBox(height: 8),
       Text(
@@ -1425,38 +2137,92 @@ class _SettingsDialogState extends State<SettingsDialog> {
         ),
       ),
     ],
-    const SizedBox(height: 10),
+    const SizedBox(height: 12),
     _WideButton(
+      key: const ValueKey('restore-shortcut-defaults'),
       onPressed: _restoreShortcutDefaults,
-      icon: Icons.settings_backup_restore_rounded,
+      icon: KapyIcons.backupRestoreRounded,
       label: 'Restore shortcut defaults',
     ),
   ];
 
   /// Everything the app knows about its own release, in the one place a
   /// person would look for it: which build is running, whether a newer one
-  /// exists, and the button that goes and finds out.
+  /// exists, and the button that goes and finds out. One card: two headings
+  /// over one row each said less than the rows did.
   List<Widget> _updatesPane() {
     final updates = widget.updates!;
     return [
-      const _SectionLabel('VERSION'),
-      _SettingsGroup(children: [_VersionRow(updates: updates)]),
-      const SizedBox(height: 18),
-      const _SectionLabel('SOFTWARE UPDATE'),
-      Padding(
-        padding: const EdgeInsets.only(left: 3, bottom: 8),
-        child: Text(
-          'Kapy Notes looks for a new release once a day. Nothing is downloaded until you ask for it.',
-          style: TextStyle(fontSize: 11.5, color: context.palette.textTertiary),
-        ),
-      ),
-      _SettingsGroup(
+      const SettingsLabel('KAPY NOTES'),
+      SettingsGroup(
         children: [
-          _UpdateRow(updates: updates, desktop: widget.desktopIntegration),
+          _VersionRow(updates: updates),
+          _UpdateRow(
+            key: const ValueKey('update-row'),
+            updates: updates,
+            desktop: widget.desktopIntegration,
+          ),
         ],
       ),
+      const SettingsNote(
+        'Kapy Notes looks for a new release once a day. Nothing is downloaded '
+        'until you ask for it.',
+      ),
+      const SizedBox(height: 18),
+      // Keyed here rather than on the group below it: a search result scrolls
+      // to what it lands on and lights it, and the group is taller than the
+      // window by a dozen releases.
+      const SettingsLabel('RELEASE NOTES', key: ValueKey('changelog')),
+      _ChangelogGroup(updates: updates),
     ];
   }
+}
+
+/// The in-app shortcuts, by what they act on.
+enum _ShortcutGroup {
+  notes('NOTES'),
+  splitView('SPLIT VIEW'),
+  window('WINDOW'),
+  insert('INSERT'),
+  formatting('FORMATTING');
+
+  const _ShortcutGroup(this.label);
+
+  final String label;
+
+  /// The heading as a search result names it: in words, not small capitals.
+  String get title => label[0] + label.substring(1).toLowerCase();
+}
+
+extension on ShortcutAction {
+  /// Null for the system-wide pair, which have their own group at the top.
+  /// Exhaustive on purpose: a new action does not compile until it has been
+  /// given a place here.
+  _ShortcutGroup? get group => switch (this) {
+    ShortcutAction.openApp || ShortcutAction.newNoteAnywhere => null,
+    ShortcutAction.newNote ||
+    ShortcutAction.findNotes ||
+    ShortcutAction.nextNote ||
+    ShortcutAction.previousNote ||
+    ShortcutAction.deleteNote => _ShortcutGroup.notes,
+    ShortcutAction.splitEditor ||
+    ShortcutAction.closePane ||
+    ShortcutAction.focusFirstPane ||
+    ShortcutAction.focusSecondPane ||
+    ShortcutAction.focusThirdPane => _ShortcutGroup.splitView,
+    ShortcutAction.toggleSidebar ||
+    ShortcutAction.toggleHiddenFolder ||
+    ShortcutAction.toggleResults ||
+    ShortcutAction.toggleAlwaysOnTop ||
+    ShortcutAction.openSettings => _ShortcutGroup.window,
+    ShortcutAction.insertImage ||
+    ShortcutAction.recordVoiceNote => _ShortcutGroup.insert,
+    ShortcutAction.cycleTextStyle ||
+    ShortcutAction.formatBold ||
+    ShortcutAction.formatItalic ||
+    ShortcutAction.formatBullets ||
+    ShortcutAction.formatChecklist => _ShortcutGroup.formatting,
+  };
 }
 
 /// The handle that says the sheet can be pulled back down.
@@ -1485,6 +2251,8 @@ class _SheetPage extends StatelessWidget {
     required this.bottomInset,
     required this.children,
     this.onBack,
+    this.flashTarget,
+    this.flash,
   });
 
   final String title;
@@ -1496,6 +2264,11 @@ class _SheetPage extends StatelessWidget {
 
   /// Null on the list of categories, which has nothing to go back to.
   final VoidCallback? onBack;
+
+  /// The row a search result led to, lit over the page. Only a category's
+  /// page has one: the list of categories is never where a result lands.
+  final ValueListenable<RenderBox?>? flashTarget;
+  final Animation<double>? flash;
 
   @override
   Widget build(BuildContext context) {
@@ -1517,10 +2290,7 @@ class _SheetPage extends StatelessWidget {
                     onPressed: back,
                     tooltip: 'Back',
                     color: palette.textSecondary,
-                    icon: const Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      size: 17,
-                    ),
+                    icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 17),
                   ),
                 Expanded(
                   child: Text(
@@ -1548,15 +2318,279 @@ class _SheetPage extends StatelessWidget {
           ),
           Divider(height: 0.5, thickness: 0.5, color: palette.separator),
           Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: children,
+            child: _withFlash(
+              SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: children,
+                ),
               ),
+              flashTarget,
+              flash,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The account's plan and all server-metered usage in one place.
+///
+/// This listens to both the account and its usage controller. A sign-in made
+/// from the neighbouring pane therefore replaces the free-plan preview with
+/// the real account answer without settings needing to be reopened.
+class _PlanUsagePane extends StatelessWidget {
+  const _PlanUsagePane({required this.account});
+
+  final Account account;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: account,
+    builder: (context, _) {
+      final planUsage = account.planUsage;
+      if (planUsage == null) {
+        return _contents(context, null);
+      }
+      return ListenableBuilder(
+        listenable: planUsage,
+        builder: (context, _) => _contents(context, planUsage),
+      );
+    },
+  );
+
+  Widget _contents(BuildContext context, PlanUsage? planUsage) {
+    final signedIn = account.user != null;
+    final current = planUsage?.entitlements;
+    final shown = current ?? (!signedIn ? Entitlements.freePreview : null);
+    final initialLoad =
+        signedIn && current == null && !(planUsage?.refreshFailed ?? false);
+    final failed = signedIn && (planUsage?.refreshFailed ?? false);
+
+    final planTitle = switch ((signedIn, current)) {
+      (false, _) => 'Free plan',
+      (true, final Entitlements value) =>
+        value.isPro ? 'Pro plan' : 'Free plan',
+      _ when failed => 'Plan unavailable',
+      _ => 'Checking your plan',
+    };
+    final planSubtitle = switch ((signedIn, current)) {
+      (false, _) => 'Sign in to see your account and live usage',
+      (true, final Entitlements value) =>
+        value.isPro
+            ? 'Your current plan with expanded cloud allowances'
+            : 'Your current plan and included cloud allowances',
+      _ when failed =>
+        'Could not reach your account. Your plan has not changed.',
+      _ => 'Reading the latest limits and usage from your account',
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SettingsLabel('PLAN'),
+        SettingsGroup(
+          children: [
+            SettingsRow(
+              key: const ValueKey('plan-current'),
+              icon: KapyIcons.verifiedOutlined,
+              title: planTitle,
+              subtitle: planSubtitle,
+              trailing: signedIn && planUsage != null
+                  ? planUsage.refreshing
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 1.5),
+                          )
+                        : SettingsRowButton(
+                            key: const ValueKey('plan-refresh'),
+                            label: 'Refresh',
+                            onPressed: () => unawaited(planUsage.refresh()),
+                          )
+                  : null,
+            ),
+          ],
+        ),
+        if (failed && current != null)
+          const SettingsNote(
+            'These are the last saved totals. Refresh again when you are online.',
+            icon: KapyIcons.warningRounded,
+          ),
+        const SizedBox(height: 18),
+        SettingsLabel(signedIn ? 'USAGE' : 'FREE PLAN LIMITS'),
+        SettingsGroup(
+          children: [
+            _PlanUsageRow(
+              key: const ValueKey('plan-transcription-usage'),
+              icon: KapyIcons.scheduleRounded,
+              title: 'Transcription minutes',
+              subtitle: shown == null
+                  ? _unavailableLine(initialLoad)
+                  : '${_minutes(shown.speechSecondsUsedThisMonth)} of '
+                        '${_minutes(shown.speechSecondsPerMonth)} minutes used '
+                        'this month${_creditLine(shown.speechCreditSeconds)}',
+              progress: _progress(
+                shown?.speechSecondsUsedThisMonth,
+                shown?.speechSecondsPerMonth,
+              ),
+              loading: initialLoad,
+            ),
+            _PlanUsageRow(
+              key: const ValueKey('plan-summary-usage'),
+              icon: KapyIcons.magicOutlined,
+              title: 'AI summaries',
+              subtitle: shown == null
+                  ? _unavailableLine(initialLoad)
+                  : '${shown.summaryGenerationsUsedThisMonth} of '
+                        '${shown.summaryGenerationsPerMonth} AI summaries used '
+                        'this month',
+              progress: _progress(
+                shown?.summaryGenerationsUsedThisMonth,
+                shown?.summaryGenerationsPerMonth,
+              ),
+              loading: initialLoad,
+            ),
+            _PlanUsageRow(
+              key: const ValueKey('plan-storage-usage'),
+              icon: KapyIcons.backupRestoreRounded,
+              title: 'Storage',
+              subtitle: shown == null
+                  ? _unavailableLine(initialLoad)
+                  : '${_bytes(shown.storageUsedBytes)} of '
+                        '${_bytes(shown.storageBytes)} used',
+              progress: _progress(shown?.storageUsedBytes, shown?.storageBytes),
+              loading: initialLoad,
+            ),
+          ],
+        ),
+        SettingsNote(
+          signedIn && shown != null
+              ? 'Cloud transcription and AI summaries reset '
+                    '${_resetLine(shown.speechResetsAt)}. Cloud summaries and '
+                    'rewrites share the AI allowance. Local transcription and '
+                    'local summaries remain unlimited.'
+              : 'Sign in to use cloud transcription and cloud AI summaries. '
+                    'Local transcription and summaries remain unlimited and '
+                    'stay on this device.',
+        ),
+      ],
+    );
+  }
+
+  static String _unavailableLine(bool loading) =>
+      loading ? 'Checking usage…' : 'Usage is unavailable right now';
+
+  static double _progress(int? used, int? limit) {
+    if (used == null || limit == null || limit <= 0) return 0;
+    return (used / limit).clamp(0.0, 1.0);
+  }
+
+  static String _minutes(int seconds) {
+    final minutes = seconds / 60;
+    return minutes == minutes.roundToDouble()
+        ? '${minutes.round()}'
+        : minutes.toStringAsFixed(1);
+  }
+
+  static String _creditLine(int seconds) =>
+      seconds <= 0 ? '' : ' · ${_minutes(seconds)} extra minutes available';
+
+  static String _bytes(int bytes) {
+    const kb = 1024;
+    const mb = kb * 1024;
+    const gb = mb * 1024;
+    if (bytes < kb) return '$bytes B';
+    if (bytes < mb) return '${_compact(bytes / kb)} KB';
+    if (bytes < gb) return '${_compact(bytes / mb)} MB';
+    return '${_compact(bytes / gb)} GB';
+  }
+
+  static String _compact(double value) {
+    if (value >= 100 || value == value.roundToDouble()) {
+      return '${value.round()}';
+    }
+    return value.toStringAsFixed(1);
+  }
+
+  static String _resetLine(DateTime? at) {
+    if (at == null) return 'each month';
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return 'on ${at.day} ${months[at.month - 1]}';
+  }
+}
+
+/// One usage total, with the number and the proportion visible at a glance.
+class _PlanUsageRow extends StatelessWidget {
+  const _PlanUsageRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.progress,
+    required this.loading,
+  });
+
+  final KapyIconData icon;
+  final String title;
+  final String subtitle;
+  final double progress;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final accent = Theme.of(context).colorScheme.primary;
+    return Semantics(
+      label: '$title, $subtitle',
+      child: Padding(
+        padding: SettingsMetrics.padding,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: SettingsMetrics.iconSlot,
+              child: KapyIcon(
+                icon,
+                size: SettingsMetrics.iconSize,
+                color: palette.textSecondary,
+              ),
+            ),
+            SizedBox(width: SettingsMetrics.gap),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SettingsRowCopy(title: title, subtitle: subtitle),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(99),
+                    child: LinearProgressIndicator(
+                      minHeight: 3,
+                      value: loading ? null : progress,
+                      backgroundColor: palette.separator,
+                      color: accent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1593,7 +2627,7 @@ class _CategoryList extends StatelessWidget {
     };
   }
 
-  Widget _card() => _SettingsGroup(
+  Widget _card() => SettingsGroup(
     children: [
       for (final section in sections)
         _CategoryRow(
@@ -1651,16 +2685,16 @@ class _CategoryRow extends StatelessWidget {
                   color: accent.withValues(alpha: 0.13),
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(section.icon, size: 18, color: accent),
+                child: KapyIcon(section.icon, size: 18, color: accent),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _RowCopy(title: section.label, subtitle: summary),
+                child: SettingsRowCopy(title: section.label, subtitle: summary),
               ),
               const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: _RowMetrics.chevronSize,
+              KapyIcon(
+                KapyIcons.chevronRightRounded,
+                size: SettingsMetrics.chevronSize,
                 color: palette.textTertiary,
               ),
             ],
@@ -1673,25 +2707,58 @@ class _CategoryRow extends StatelessWidget {
 
 /// The scrolling half of the dialog, whichever layout is in use.
 class _ScrollingPane extends StatelessWidget {
-  const _ScrollingPane({required this.controller, required this.children});
+  const _ScrollingPane({
+    super.key,
+    required this.controller,
+    required this.children,
+    this.flashTarget,
+    this.flash,
+  });
 
   final ScrollController controller;
   final List<Widget> children;
 
+  /// The row a search result led to, lit over the pane. See
+  /// [SettingsFlashLayer].
+  final ValueListenable<RenderBox?>? flashTarget;
+  final Animation<double>? flash;
+
   @override
-  Widget build(BuildContext context) => Scrollbar(
-    controller: controller,
-    thumbVisibility: AppPlatform.hasPointer,
-    thickness: 3,
-    radius: const Radius.circular(999),
-    child: SingleChildScrollView(
+  Widget build(BuildContext context) {
+    final pane = Scrollbar(
       controller: controller,
-      padding: const EdgeInsets.only(right: 7),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: children,
+      thumbVisibility: AppPlatform.hasPointer,
+      thickness: 3,
+      radius: const Radius.circular(999),
+      child: SingleChildScrollView(
+        controller: controller,
+        padding: const EdgeInsets.only(right: 7),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
       ),
-    ),
+    );
+    return _withFlash(pane, flashTarget, flash);
+  }
+}
+
+/// [child] with the search's light laid over it, where there is one.
+Widget _withFlash(
+  Widget child,
+  ValueListenable<RenderBox?>? target,
+  Animation<double>? progress,
+) {
+  if (target == null || progress == null) return child;
+  return Stack(
+    children: [
+      Positioned.fill(child: child),
+      Positioned.fill(
+        child: IgnorePointer(
+          child: SettingsFlashLayer(target: target, progress: progress),
+        ),
+      ),
+    ],
   );
 }
 
@@ -1704,7 +2771,9 @@ class _SettingsRail extends StatelessWidget {
   });
 
   final List<SettingsSection> sections;
-  final SettingsSection selected;
+
+  /// Null while the pane is showing search results instead of a category.
+  final SettingsSection? selected;
   final ValueChanged<SettingsSection> onSelect;
 
   @override
@@ -1766,7 +2835,7 @@ class _RailItem extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(
+                KapyIcon(
                   section.icon,
                   size: 15,
                   color: selected ? accent : palette.textTertiary,
@@ -1796,87 +2865,17 @@ class _RailItem extends StatelessWidget {
   }
 }
 
-/// A sentence under a group, explaining what it is for.
-class _PaneNote extends StatelessWidget {
-  const _PaneNote(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(3, 2, 3, 0),
-    child: Text(
-      text,
-      style: TextStyle(fontSize: 11, color: context.palette.textTertiary),
-    ),
-  );
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(left: 3, bottom: 7),
-    child: Text(
-      text,
-      style: TextStyle(
-        fontSize: 10.5,
-        fontWeight: _settingsMediumWeight,
-        letterSpacing: 0.65,
-        color: context.palette.textTertiary,
-      ),
-    ),
-  );
-}
-
-class _SettingsGroup extends StatelessWidget {
-  const _SettingsGroup({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.controlBackground,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: palette.controlBorder, width: 0.5),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Column(
-          children: [
-            for (var index = 0; index < children.length; index++) ...[
-              if (index > 0)
-                Divider(
-                  height: 0.5,
-                  thickness: 0.5,
-                  indent: _RowMetrics.dividerIndent,
-                  color: palette.separator,
-                ),
-              children[index],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// A full-width, low-emphasis action at the foot of a pane.
 class _WideButton extends StatelessWidget {
   const _WideButton({
+    super.key,
     required this.onPressed,
     required this.icon,
     required this.label,
   });
 
   final VoidCallback onPressed;
-  final IconData icon;
+  final KapyIconData icon;
   final String label;
 
   @override
@@ -1886,7 +2885,7 @@ class _WideButton extends StatelessWidget {
       width: double.infinity,
       child: TextButton.icon(
         onPressed: onPressed,
-        icon: Icon(icon, size: 15),
+        icon: KapyIcon(icon, size: 15),
         label: Text(
           label,
           style: const TextStyle(
@@ -1907,64 +2906,84 @@ class _WideButton extends StatelessWidget {
   }
 }
 
-class _ToggleRow extends StatelessWidget {
-  const _ToggleRow({
+/// One of the two places that can transcribe a recording.
+class _EngineChoiceRow extends StatelessWidget {
+  const _EngineChoiceRow({
     super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
-    required this.value,
-    required this.onChanged,
+    required this.selected,
+    required this.enabled,
+    required this.onSelect,
+    this.action,
   });
 
-  final IconData icon;
+  final KapyIconData icon;
   final String title;
   final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback? onSelect;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Semantics(
-      toggled: value,
-      button: true,
-      child: InkWell(
-        onTap: () => onChanged(!value),
-        child: Padding(
-          padding: _RowMetrics.padding,
-          child: Row(
-            children: [
-              SizedBox(
-                width: _RowMetrics.iconSlot,
-                child: Icon(
-                  icon,
-                  size: _RowMetrics.iconSize,
-                  color: palette.textSecondary,
-                ),
-              ),
-              SizedBox(width: _RowMetrics.gap),
-              Expanded(
-                child: _RowCopy(title: title, subtitle: subtitle),
-              ),
-              const SizedBox(width: 10),
-              ExcludeSemantics(child: _CompactSwitchIndicator(value: value)),
-            ],
+    final action = this.action;
+    final row = Padding(
+      padding: SettingsMetrics.padding,
+      child: Row(
+        children: [
+          SizedBox(
+            width: SettingsMetrics.iconSlot,
+            child: KapyIcon(
+              icon,
+              size: SettingsMetrics.iconSize,
+              color: enabled
+                  ? context.palette.textSecondary
+                  : context.palette.textTertiary,
+            ),
           ),
-        ),
+          SizedBox(width: SettingsMetrics.gap),
+          Expanded(
+            child: SettingsRowCopy(title: title, subtitle: subtitle),
+          ),
+          if (action != null) ...[const SizedBox(width: 10), action],
+          const SizedBox(width: 10),
+          _EngineChoiceIndicator(selected: selected, enabled: enabled),
+        ],
       ),
+    );
+    final onSelect = enabled ? this.onSelect : null;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      child: onSelect == null ? row : InkWell(onTap: onSelect, child: row),
     );
   }
 }
 
-/// One engine that could run on this machine: not here yet, on its way, or
-/// here and switched on.
-///
-/// The switch is the whole of the choice. There is no separate "where is this
-/// done" question any more — an engine that is here and switched on is the
-/// one that runs, and anything else goes to the cloud. Two settings became
-/// one, and the one is visible without opening anything: a switch you can see
-/// is off is a question already answered.
+class _EngineChoiceIndicator extends StatelessWidget {
+  const _EngineChoiceIndicator({required this.selected, required this.enabled});
+
+  final bool selected;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) => KapyIcon(
+    selected ? KapyIcons.radioCheckedRounded : KapyIcons.radioUncheckedRounded,
+    key: const ValueKey('engine-choice-indicator'),
+    size: SettingsMetrics.iconSize,
+    color: selected
+        ? Theme.of(context).colorScheme.primary
+        : context.palette.textTertiary.withValues(alpha: enabled ? 1 : 0.45),
+  );
+}
+
+/// One local engine that could run on this machine: not here yet, on its way,
+/// or ready to choose.
 class _LocalEngineRow extends StatelessWidget {
   const _LocalEngineRow({
     super.key,
@@ -1979,9 +2998,10 @@ class _LocalEngineRow extends StatelessWidget {
     required this.on,
     required this.onChanged,
     required this.onDownload,
+    this.exclusive = false,
   });
 
-  final IconData icon;
+  final KapyIconData icon;
   final String title;
 
   /// Null in a build carrying nothing to download for this job — which on
@@ -2004,6 +3024,10 @@ class _LocalEngineRow extends StatelessWidget {
 
   /// The preference: whether this engine is the one that runs.
   final bool on;
+
+  /// Transcription is a choice between cloud and local, so its ready state is
+  /// a radio. Summary remains an independent on-device switch.
+  final bool exclusive;
 
   /// Null where there is nothing to remember the answer in.
   final ValueChanged<bool>? onChanged;
@@ -2028,23 +3052,23 @@ class _LocalEngineRow extends StatelessWidget {
     final shows = state != null && (state.isBusy || state.error != null);
 
     final row = Padding(
-      padding: _RowMetrics.padding,
+      padding: SettingsMetrics.padding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
               SizedBox(
-                width: _RowMetrics.iconSlot,
-                child: Icon(
+                width: SettingsMetrics.iconSlot,
+                child: KapyIcon(
                   icon,
-                  size: _RowMetrics.iconSize,
+                  size: SettingsMetrics.iconSize,
                   color: context.palette.textSecondary,
                 ),
               ),
-              SizedBox(width: _RowMetrics.gap),
+              SizedBox(width: SettingsMetrics.gap),
               Expanded(
-                child: _RowCopy(
+                child: SettingsRowCopy(
                   title: title,
                   subtitle: _subtitle(here: here),
                 ),
@@ -2066,7 +3090,27 @@ class _LocalEngineRow extends StatelessWidget {
       ),
     );
 
-    if (!usable || onChanged == null) return row;
+    if (!usable || onChanged == null) {
+      final offersDownload =
+          model != null && store != null && blockedReason == null;
+      if (!exclusive || offersDownload) return row;
+      return Semantics(
+        button: true,
+        enabled: false,
+        selected: false,
+        inMutuallyExclusiveGroup: true,
+        child: row,
+      );
+    }
+    if (exclusive) {
+      return Semantics(
+        button: true,
+        enabled: true,
+        selected: on,
+        inMutuallyExclusiveGroup: true,
+        child: InkWell(onTap: () => onChanged(true), child: row),
+      );
+    }
     return Semantics(
       toggled: on,
       button: true,
@@ -2096,22 +3140,30 @@ class _LocalEngineRow extends StatelessWidget {
         children: [
           // Six hundred megabytes deserves a way back that is not a menu.
           if (here && store != null) ...[
-            _RowButton(
+            SettingsRowButton(
               key: ValueKey('local-remove-${model!.id}'),
               label: 'Remove',
               onPressed: () => unawaited(store.remove(model)),
             ),
             const SizedBox(width: 8),
           ],
-          ExcludeSemantics(child: _CompactSwitchIndicator(value: on)),
+          ExcludeSemantics(
+            child: exclusive
+                ? _EngineChoiceIndicator(selected: on, enabled: true)
+                : SettingsSwitch(value: on),
+          ),
         ],
       );
     }
-    if (model == null || store == null || blockedReason != null) return null;
+    if (model == null || store == null || blockedReason != null) {
+      return exclusive
+          ? const _EngineChoiceIndicator(selected: false, enabled: false)
+          : null;
+    }
     final state = store.stateOf(model);
     return switch (state.status) {
       LocalModelStatus.fetchingRuntime ||
-      LocalModelStatus.downloading => _RowButton(
+      LocalModelStatus.downloading => SettingsRowButton(
         key: ValueKey('local-cancel-${model.id}'),
         label: 'Cancel',
         onPressed: () => store.cancel(model),
@@ -2119,58 +3171,19 @@ class _LocalEngineRow extends StatelessWidget {
       // Nothing to press while the hashes are checked: it takes seconds, and
       // stopping halfway would leave files nothing has vouched for.
       LocalModelStatus.verifying => null,
-      LocalModelStatus.failed => _RowButton(
+      LocalModelStatus.failed => SettingsRowButton(
         key: ValueKey('local-download-${model.id}'),
         label: 'Try again',
         prominent: true,
         onPressed: onDownload,
       ),
-      _ => _RowButton(
+      _ => SettingsRowButton(
         key: ValueKey('local-download-${model.id}'),
         label: state.receivedBytes > 0 ? 'Resume' : 'Download',
         prominent: true,
         onPressed: onDownload,
       ),
     };
-  }
-}
-
-/// The small button at the end of a row.
-class _RowButton extends StatelessWidget {
-  const _RowButton({
-    super.key,
-    required this.label,
-    required this.onPressed,
-    this.prominent = false,
-  });
-
-  final String label;
-  final VoidCallback? onPressed;
-  final bool prominent;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final scheme = Theme.of(context).colorScheme;
-    return TextButton(
-      onPressed: onPressed,
-      style: TextButton.styleFrom(
-        minimumSize: const Size(0, 30),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        backgroundColor: prominent ? scheme.primary : palette.controlBackground,
-        foregroundColor: prominent ? scheme.onPrimary : palette.textSecondary,
-        disabledForegroundColor: palette.textTertiary,
-        side: prominent
-            ? null
-            : BorderSide(color: palette.controlBorder, width: 0.5),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 12, fontWeight: _settingsMediumWeight),
-      ),
-    );
   }
 }
 
@@ -2237,8 +3250,155 @@ class _ModelCredits extends StatelessWidget {
     Toast.show(
       context,
       'Could not open ${url.host}',
-      icon: Icons.error_outline_rounded,
+      icon: KapyIcons.errorOutlined,
       isError: true,
+    );
+  }
+}
+
+/// A choice between a few options a word can name — Light or Dark, Plain or
+/// Ruled — set side by side under the row's copy.
+///
+/// A radio list spent a row and a sentence on each of these, which made the
+/// pane long without making the choice any clearer. The chosen option's
+/// sentence is kept: it is the row's subtitle, and changes with the choice.
+class _SegmentedRow<T> extends StatelessWidget {
+  const _SegmentedRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.options,
+    required this.selected,
+    required this.labelFor,
+    required this.keyFor,
+    required this.onSelected,
+  });
+
+  final KapyIconData icon;
+  final String title;
+  final String subtitle;
+  final List<T> options;
+  final T selected;
+  final String Function(T option) labelFor;
+
+  /// Each option gets a key of its own, so a test can pick one by name the
+  /// way it could pick the radio row it replaced.
+  final Key Function(T option) keyFor;
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final accent = Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: SettingsMetrics.padding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: SettingsMetrics.iconSlot,
+                child: KapyIcon(
+                  icon,
+                  size: SettingsMetrics.iconSize,
+                  color: palette.textSecondary,
+                ),
+              ),
+              SizedBox(width: SettingsMetrics.gap),
+              Expanded(
+                child: SettingsRowCopy(title: title, subtitle: subtitle),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: EdgeInsets.only(
+              left: SettingsMetrics.iconSlot + SettingsMetrics.gap,
+            ),
+            child: Container(
+              height: AppPlatform.hasPointer ? 26 : 34,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: palette.surfaceBackground,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: palette.controlBorder, width: 0.5),
+              ),
+              child: Row(
+                children: [
+                  for (final option in options)
+                    Expanded(
+                      child: _Segment(
+                        key: keyFor(option),
+                        label: labelFor(option),
+                        selected: option == selected,
+                        accent: accent,
+                        onTap: () => onSelected(option),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Segment extends StatelessWidget {
+  const _Segment({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Semantics(
+      button: true,
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            color: selected
+                ? Color.alphaBlend(
+                    accent.withValues(alpha: 0.16),
+                    palette.controlBackground,
+                  )
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: SettingsMetrics.titleSize - 1,
+              fontWeight: selected
+                  ? _settingsMediumWeight
+                  : _settingsRegularWeight,
+              color: selected ? accent : palette.textSecondary,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2258,7 +3418,7 @@ class _SliderRow extends StatelessWidget {
     required this.onChanged,
   });
 
-  final IconData icon;
+  final KapyIconData icon;
   final String title;
   final String subtitle;
   final String minLabel;
@@ -2275,29 +3435,29 @@ class _SliderRow extends StatelessWidget {
       color: palette.textTertiary,
     );
     return Padding(
-      padding: _RowMetrics.padding,
+      padding: SettingsMetrics.padding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
               SizedBox(
-                width: _RowMetrics.iconSlot,
-                child: Icon(
+                width: SettingsMetrics.iconSlot,
+                child: KapyIcon(
                   icon,
-                  size: _RowMetrics.iconSize,
+                  size: SettingsMetrics.iconSize,
                   color: palette.textSecondary,
                 ),
               ),
-              SizedBox(width: _RowMetrics.gap),
+              SizedBox(width: SettingsMetrics.gap),
               Expanded(
-                child: _RowCopy(title: title, subtitle: subtitle),
+                child: SettingsRowCopy(title: title, subtitle: subtitle),
               ),
             ],
           ),
           Padding(
             padding: EdgeInsets.only(
-              left: _RowMetrics.iconSlot + _RowMetrics.gap,
+              left: SettingsMetrics.iconSlot + SettingsMetrics.gap,
               top: 2,
             ),
             child: Row(
@@ -2330,97 +3490,6 @@ class _SliderRow extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _CompactSwitchIndicator extends StatelessWidget {
-  const _CompactSwitchIndicator({required this.value});
-
-  final bool value;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final scheme = Theme.of(context).colorScheme;
-    return AnimatedContainer(
-      key: const ValueKey('compact-switch-indicator'),
-      duration: const Duration(milliseconds: 140),
-      curve: Curves.easeOutCubic,
-      width: AppPlatform.hasPointer ? 34 : 44,
-      height: AppPlatform.hasPointer ? 18 : 25,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: value ? scheme.primary : palette.controlBackground,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: value ? Colors.transparent : palette.controlBorder,
-          width: 0.5,
-        ),
-      ),
-      child: AnimatedAlign(
-        duration: const Duration(milliseconds: 140),
-        curve: Curves.easeOutCubic,
-        alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: value ? scheme.onPrimary : palette.textTertiary,
-            shape: BoxShape.circle,
-          ),
-          child: SizedBox.square(dimension: AppPlatform.hasPointer ? 14 : 21),
-        ),
-      ),
-    );
-  }
-}
-
-class _NavigationRow extends StatelessWidget {
-  const _NavigationRow({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Semantics(
-      button: true,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: _RowMetrics.padding,
-          child: Row(
-            children: [
-              SizedBox(
-                width: _RowMetrics.iconSlot,
-                child: Icon(
-                  icon,
-                  size: _RowMetrics.iconSize,
-                  color: palette.textSecondary,
-                ),
-              ),
-              SizedBox(width: _RowMetrics.gap),
-              Expanded(
-                child: _RowCopy(title: title, subtitle: subtitle),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: _RowMetrics.chevronSize,
-                color: palette.textTertiary,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -2527,22 +3596,22 @@ class _ChoiceRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: _RowMetrics.choicePadding,
+          padding: SettingsMetrics.choicePadding,
           child: Row(
             children: [
               SizedBox(
-                width: _RowMetrics.iconSlot,
-                child: Icon(
+                width: SettingsMetrics.iconSlot,
+                child: KapyIcon(
                   selected
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  size: _RowMetrics.iconSize,
+                      ? KapyIcons.radioCheckedRounded
+                      : KapyIcons.radioUncheckedRounded,
+                  size: SettingsMetrics.iconSize,
                   color: selected ? accent : palette.textTertiary,
                 ),
               ),
-              SizedBox(width: _RowMetrics.gap),
+              SizedBox(width: SettingsMetrics.gap),
               Expanded(
-                child: _RowCopy(title: title, subtitle: subtitle),
+                child: SettingsRowCopy(title: title, subtitle: subtitle),
               ),
               const SizedBox(width: 10),
               Text.rich(
@@ -2594,7 +3663,7 @@ class _RateAttributionRow extends StatelessWidget {
     Toast.show(
       context,
       'Could not open ${url.host}',
-      icon: Icons.error_outline_rounded,
+      icon: KapyIcons.errorOutlined,
       isError: true,
     );
   }
@@ -2612,20 +3681,20 @@ class _RateAttributionRow extends StatelessWidget {
             key: const ValueKey('rate-attribution'),
             onTap: () => _open(context),
             child: Padding(
-              padding: _RowMetrics.padding,
+              padding: SettingsMetrics.padding,
               child: Row(
                 children: [
                   SizedBox(
-                    width: _RowMetrics.iconSlot,
-                    child: Icon(
-                      Icons.currency_exchange_rounded,
-                      size: _RowMetrics.iconSize,
+                    width: SettingsMetrics.iconSlot,
+                    child: KapyIcon(
+                      KapyIcons.currencyExchangeRounded,
+                      size: SettingsMetrics.iconSize,
                       color: palette.textSecondary,
                     ),
                   ),
-                  SizedBox(width: _RowMetrics.gap),
+                  SizedBox(width: SettingsMetrics.gap),
                   Expanded(
-                    child: _RowCopy(
+                    child: SettingsRowCopy(
                       title: rates.attributionLabel,
                       subtitle: date.isEmpty
                           ? 'Currency rates refresh automatically'
@@ -2633,8 +3702,8 @@ class _RateAttributionRow extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Icon(
-                    Icons.open_in_new_rounded,
+                  KapyIcon(
+                    KapyIcons.openExternalRounded,
                     size: 15,
                     color: palette.textTertiary,
                   ),
@@ -2667,20 +3736,20 @@ class _VersionRow extends StatelessWidget {
         final build = updates.currentBuild;
         return Padding(
           key: const ValueKey('app-version'),
-          padding: _RowMetrics.padding,
+          padding: SettingsMetrics.padding,
           child: Row(
             children: [
               SizedBox(
-                width: _RowMetrics.iconSlot,
-                child: Icon(
-                  Icons.info_outline_rounded,
-                  size: _RowMetrics.iconSize,
+                width: SettingsMetrics.iconSlot,
+                child: KapyIcon(
+                  KapyIcons.infoOutlined,
+                  size: SettingsMetrics.iconSize,
                   color: palette.textSecondary,
                 ),
               ),
-              SizedBox(width: _RowMetrics.gap),
+              SizedBox(width: SettingsMetrics.gap),
               Expanded(
-                child: _RowCopy(
+                child: SettingsRowCopy(
                   title: version.isEmpty ? 'Kapy Notes' : 'Kapy Notes $version',
                   subtitle: build.isEmpty
                       ? 'Reading the installed version'
@@ -2701,7 +3770,7 @@ class _VersionRow extends StatelessWidget {
 /// check found, and the button is the click that hands over to Sparkle or
 /// WinSparkle. Until it is pressed, no release has been fetched.
 class _UpdateRow extends StatelessWidget {
-  const _UpdateRow({required this.updates, this.desktop});
+  const _UpdateRow({super.key, required this.updates, this.desktop});
 
   final UpdateChecker updates;
 
@@ -2757,7 +3826,7 @@ class _UpdateRow extends StatelessWidget {
     Toast.show(
       context,
       'Could not open ${url.host}',
-      icon: Icons.error_outline_rounded,
+      icon: KapyIcons.errorOutlined,
       isError: true,
     );
   }
@@ -2811,31 +3880,31 @@ class _UpdateRow extends StatelessWidget {
         final available = updates.available;
         final busy = updates.isChecking || updates.isInstalling;
         return Padding(
-          padding: _RowMetrics.padding,
+          padding: SettingsMetrics.padding,
           child: Row(
             children: [
               SizedBox(
-                width: _RowMetrics.iconSlot,
-                child: Icon(
+                width: SettingsMetrics.iconSlot,
+                child: KapyIcon(
                   available != null
-                      ? Icons.system_update_alt_rounded
-                      : Icons.verified_outlined,
-                  size: _RowMetrics.iconSize,
+                      ? KapyIcons.systemUpdateRounded
+                      : KapyIcons.verifiedOutlined,
+                  size: SettingsMetrics.iconSize,
                   color: available != null
                       ? palette.chipCurrency
                       : palette.textSecondary,
                 ),
               ),
-              SizedBox(width: _RowMetrics.gap),
+              SizedBox(width: SettingsMetrics.gap),
               Expanded(
-                child: _RowCopy(title: _title(), subtitle: _subtitle()),
+                child: SettingsRowCopy(title: _title(), subtitle: _subtitle()),
               ),
               if (available != null && available.notesUrl.isNotEmpty) ...[
                 const SizedBox(width: 4),
                 IconButton(
                   key: const ValueKey('update-release-notes'),
                   onPressed: () => _openNotes(context),
-                  icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                  icon: const KapyIcon(KapyIcons.openExternalRounded, size: 15),
                   color: palette.textTertiary,
                   tooltip: "What's new",
                   visualDensity: VisualDensity.compact,
@@ -2877,11 +3946,300 @@ class _UpdateRow extends StatelessWidget {
   }
 }
 
+/// Every release, and what each one changed.
+///
+/// Read from the site rather than built in: see [ReleaseHistory]. Collapsed,
+/// so the list reads as an index of versions and the pane does not open onto
+/// a wall of prose — except the newest, which is open because it is the one
+/// somebody looking at an update wants to read.
+class _ChangelogGroup extends StatefulWidget {
+  const _ChangelogGroup({required this.updates});
+
+  final UpdateChecker updates;
+
+  @override
+  State<_ChangelogGroup> createState() => _ChangelogGroupState();
+}
+
+class _ChangelogGroupState extends State<_ChangelogGroup> {
+  /// Both, because the list marks the running build: the version comes from
+  /// the checker and the releases from its history.
+  late final Listenable _listenable = Listenable.merge([
+    widget.updates,
+    widget.updates.history,
+  ]);
+
+  /// The versions whose notes are open, or null until somebody has opened or
+  /// closed one — which is when the newest is showing on its own. Kept as a
+  /// nullable rather than seeded from the list, because the list arrives
+  /// after the first build and state must not be invented during one.
+  Set<String>? _open;
+
+  @override
+  void initState() {
+    super.initState();
+    // The one request this pane makes, and only for somebody looking at it.
+    unawaited(widget.updates.history.load());
+  }
+
+  Set<String> _openIn(List<ReleaseNote> releases) =>
+      _open ?? {if (releases.isNotEmpty) releases.first.version};
+
+  void _toggle(ReleaseNote release, Set<String> open) => setState(() {
+    _open = open.contains(release.version)
+        ? (Set.of(open)..remove(release.version))
+        : (Set.of(open)..add(release.version));
+  });
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _listenable,
+    builder: (context, _) {
+      final history = widget.updates.history;
+      final releases = history.releases;
+      final open = _openIn(releases);
+      return SettingsGroup(
+        children: [
+          if (releases.isEmpty)
+            _ChangelogStatusRow(history: history)
+          else
+            for (final release in releases)
+              _ReleaseRow(
+                release: release,
+                installed: release.version == widget.updates.currentVersion,
+                open: open.contains(release.version),
+                onToggle: () => _toggle(release, open),
+              ),
+          // The page the list is read from, which has the same notes with
+          // the formatting a browser can give them — and is the whole
+          // answer when the list itself could not be read.
+          const _ChangelogLinkRow(),
+        ],
+      );
+    },
+  );
+}
+
+/// What the pane says while it has no releases to show: that it is reading
+/// them, or that it could not.
+class _ChangelogStatusRow extends StatelessWidget {
+  const _ChangelogStatusRow({required this.history});
+
+  final ReleaseHistory history;
+
+  @override
+  Widget build(BuildContext context) => SettingsRow(
+    icon: history.hasFailed
+        ? KapyIcons.cloudOffRounded
+        : KapyIcons.historyOffRounded,
+    title: history.hasFailed
+        ? 'Could not read the changelog'
+        : 'Reading the release notes',
+    subtitle: history.hasFailed
+        ? 'Kapy Notes could not reach kapynotes.com'
+        : 'From kapynotes.com, once a day',
+    trailing: history.isLoading
+        ? null
+        : SettingsRowButton(
+            key: const ValueKey('changelog-retry'),
+            label: 'Try again',
+            onPressed: () => unawaited(history.refresh()),
+          ),
+  );
+}
+
+/// One release: its version and the day it published, over the notes it
+/// shipped with once the row is opened.
+class _ReleaseRow extends StatelessWidget {
+  const _ReleaseRow({
+    required this.release,
+    required this.installed,
+    required this.open,
+    required this.onToggle,
+  });
+
+  final ReleaseNote release;
+
+  /// Whether this is the build that is running, which is the one thing this
+  /// list can say that the website's copy of it cannot.
+  final bool installed;
+
+  final bool open;
+  final VoidCallback onToggle;
+
+  /// The day, as the rest of the app writes one. Borrowed from the note list
+  /// rather than counting out a ninth table of month names; a date the
+  /// changelog wrote in some other shape is simply left out.
+  static String? _day(String date) {
+    final parsed = DateTime.tryParse(date);
+    return parsed == null ? null : SidebarTimestamp.formatDay(parsed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final body = TextStyle(
+      fontSize: SettingsMetrics.subtitleSize,
+      height: 1.45,
+      color: palette.textSecondary,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          button: true,
+          expanded: open,
+          child: InkWell(
+            key: ValueKey('release-${release.version}'),
+            onTap: onToggle,
+            child: Padding(
+              padding: SettingsMetrics.padding,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: SettingsMetrics.iconSlot,
+                    child: AnimatedRotation(
+                      duration: const Duration(milliseconds: 140),
+                      curve: Curves.easeOutCubic,
+                      turns: open ? 0.25 : 0,
+                      child: KapyIcon(
+                        KapyIcons.chevronRightRounded,
+                        size: SettingsMetrics.chevronSize,
+                        color: palette.textTertiary,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: SettingsMetrics.gap),
+                  Expanded(
+                    child: SettingsRowCopy(
+                      title: release.version,
+                      subtitle: _day(release.date),
+                    ),
+                  ),
+                  if (installed) ...[
+                    const SizedBox(width: 10),
+                    Text(
+                      'Installed',
+                      style: TextStyle(
+                        fontSize: SettingsMetrics.subtitleSize,
+                        fontWeight: _settingsMediumWeight,
+                        color: palette.textTertiary,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (open)
+          Padding(
+            padding: EdgeInsets.only(
+              left: SettingsMetrics.iconSlot + SettingsMetrics.gap,
+              right: SettingsMetrics.padding.right,
+              bottom: 12,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (release.summary.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      release.summary,
+                      style: body.copyWith(color: palette.textPrimary),
+                    ),
+                  ),
+                for (final change in release.changes)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('•', style: body),
+                        const SizedBox(width: 7),
+                        Expanded(child: Text(change, style: body)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Opens the changelog page itself.
+class _ChangelogLinkRow extends StatelessWidget {
+  const _ChangelogLinkRow();
+
+  static final Uri _url = Uri.parse('https://kapynotes.com/changelog');
+
+  Future<void> _open(BuildContext context) async {
+    var opened = false;
+    try {
+      opened = await launchUrl(_url, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (opened || !context.mounted) return;
+    Toast.show(
+      context,
+      'Could not open ${_url.host}',
+      icon: KapyIcons.errorOutlined,
+      isError: true,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Semantics(
+      link: true,
+      child: InkWell(
+        key: const ValueKey('changelog-page'),
+        onTap: () => _open(context),
+        child: Padding(
+          padding: SettingsMetrics.padding,
+          child: Row(
+            children: [
+              SizedBox(
+                width: SettingsMetrics.iconSlot,
+                child: KapyIcon(
+                  KapyIcons.articleOutlined,
+                  size: SettingsMetrics.iconSize,
+                  color: palette.textSecondary,
+                ),
+              ),
+              SizedBox(width: SettingsMetrics.gap),
+              const Expanded(
+                child: SettingsRowCopy(
+                  title: 'Changelog',
+                  subtitle: 'Read every release on kapynotes.com',
+                ),
+              ),
+              const SizedBox(width: 8),
+              KapyIcon(
+                KapyIcons.openExternalRounded,
+                size: 15,
+                color: palette.textTertiary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ShortcutRow extends StatelessWidget {
   const _ShortcutRow({
+    super.key,
     required this.action,
     required this.binding,
     required this.onPressed,
+    this.detailed = false,
   });
 
   final ShortcutAction action;
@@ -2891,15 +4249,24 @@ class _ShortcutRow extends StatelessWidget {
   final ShortcutBinding? binding;
   final VoidCallback onPressed;
 
+  /// Whether the row carries its line of explanation. Only the system-wide
+  /// shortcuts need one; the rest are named for what they do.
+  final bool detailed;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(13, 8, 9, 8),
+      padding: detailed
+          ? const EdgeInsets.fromLTRB(13, 8, 9, 8)
+          : const EdgeInsets.fromLTRB(13, 5, 9, 5),
       child: Row(
         children: [
           Expanded(
-            child: _RowCopy(title: action.label, subtitle: action.description),
+            child: SettingsRowCopy(
+              title: action.label,
+              subtitle: detailed ? action.description : null,
+            ),
           ),
           const SizedBox(width: 12),
           TextButton(
@@ -2927,39 +4294,6 @@ class _ShortcutRow extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _RowCopy extends StatelessWidget {
-  const _RowCopy({required this.title, required this.subtitle});
-
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: _RowMetrics.titleSize,
-            fontWeight: _settingsMediumWeight,
-            color: palette.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          subtitle,
-          style: TextStyle(
-            fontSize: _RowMetrics.subtitleSize,
-            color: palette.textSecondary,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -3012,8 +4346,10 @@ class _DefaultNotePickerDialog extends StatelessWidget {
                 subtitle: note == null
                     ? const Text('Continue where you left off')
                     : null,
-                trailing: Icon(
-                  selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                trailing: KapyIcon(
+                  selected
+                      ? KapyIcons.checkCircleRounded
+                      : KapyIcons.circleOutlined,
                   size: 18,
                   color: selected
                       ? Theme.of(context).colorScheme.primary
@@ -3079,7 +4415,7 @@ class _TimeZonePickerDialogState extends State<_TimeZonePickerDialog> {
               style: const TextStyle(fontSize: 13),
               decoration: InputDecoration(
                 hintText: 'Search cities or regions',
-                prefixIcon: const Icon(Icons.search_rounded, size: 16),
+                prefixIcon: const KapyIcon(KapyIcons.searchRounded, size: 16),
                 prefixIconConstraints: const BoxConstraints(
                   minWidth: 34,
                   minHeight: 32,
@@ -3168,7 +4504,7 @@ class _TimeZoneOption extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: _RowCopy(
+                child: SettingsRowCopy(
                   title: AppTimeZones.displayName(locationId),
                   subtitle: locationId == null
                       ? 'Follow this device · ${AppTimeZones.offsetLabel(null)}'
@@ -3176,8 +4512,10 @@ class _TimeZoneOption extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Icon(
-                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+              KapyIcon(
+                selected
+                    ? KapyIcons.checkCircleRounded
+                    : KapyIcons.circleOutlined,
                 size: 17,
                 color: selected ? accent : palette.textTertiary,
               ),
@@ -3301,8 +4639,8 @@ class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
                 ),
                 child: Column(
                   children: [
-                    Icon(
-                      Icons.keyboard_rounded,
+                    KapyIcon(
+                      KapyIcons.keyboardOutlined,
                       size: 21,
                       color: palette.textSecondary,
                     ),
