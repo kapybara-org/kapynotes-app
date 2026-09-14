@@ -380,10 +380,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await hover(tester, find.text('Turn on transcription'));
-      expect(
-        find.text('Choose transcription in Voice Settings'),
-        findsOneWidget,
-      );
+      expect(find.text('Choose transcription in Settings'), findsOneWidget);
     });
 
     testWidgets('the waveform says it seeks, not that it opens', (

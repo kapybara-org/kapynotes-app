@@ -70,7 +70,7 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
         result == FileExportOutcome.unsupported) {
       Toast.show(
         context,
-        'Could not save the file. Try Copy instead.',
+        'Could not save the file. Copy it instead.',
         isError: true,
       );
     }
@@ -92,8 +92,8 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Keep this backup key with your passphrase. It can unlock '
-                'your notes if you lose it.',
+                'Keep this with your passphrase. It unlocks your notes if '
+                'you forget the passphrase.',
                 style: TextStyle(
                   fontSize: AppTypeScale.body,
                   color: palette.textSecondary,

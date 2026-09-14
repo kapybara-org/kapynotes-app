@@ -57,6 +57,7 @@ class NoteFooter extends StatelessWidget {
     required this.onItalicPressed,
     required this.onBulletsPressed,
     required this.onChecklistPressed,
+    this.onInsertMenuPressed,
     this.onInsertImagePressed,
     this.imageBusy = false,
     this.onInsertVideoPressed,
@@ -103,6 +104,10 @@ class NoteFooter extends StatelessWidget {
   final VoidCallback onItalicPressed;
   final VoidCallback onBulletsPressed;
   final VoidCallback onChecklistPressed;
+
+  /// The compact touch entry point for every insert command. Desktop keeps
+  /// its direct media buttons and uses `/` from the keyboard.
+  final VoidCallback? onInsertMenuPressed;
 
   /// Null where the editor has no image store to put a picture in, which is
   /// only ever a test. The button is hidden rather than disabled: a control
@@ -230,8 +235,12 @@ class NoteFooter extends StatelessWidget {
                 // Bold would leave from under the finger that just pressed it.
                 // The formatting revealer plus its five tools, and the insert
                 // buttons when there is somewhere to put their attachments.
+                final compactInsert =
+                    AppPlatform.isMobile && onInsertMenuPressed != null;
                 final insertButtonCount = readOnly
                     ? 0
+                    : compactInsert
+                    ? 1
                     : (onInsertImagePressed == null ? 0 : 1) +
                           (onInsertVideoPressed == null ? 0 : 1) +
                           (onRecordVoicePressed == null ? 0 : 1);
@@ -299,11 +308,19 @@ class NoteFooter extends StatelessWidget {
                               key: const ValueKey('note-formatting-controls'),
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                // Adding a picture is not a style, and it leads the
-                                // row rather than trailing it: on a narrow phone the
-                                // row scrolls, and the first slot is the only one
-                                // guaranteed to be on screen.
-                                if (onInsertImagePressed != null) ...[
+                                // Touch has one stable doorway to the complete
+                                // insert menu. A pointer keeps the direct media
+                                // actions beside the keyboard's slash command.
+                                if (compactInsert)
+                                  _FormatButton(
+                                    key: const ValueKey('insert-menu'),
+                                    icon: KapyIcons.addRounded,
+                                    tooltip: 'Insert',
+                                    active: false,
+                                    onPressed: onInsertMenuPressed,
+                                  ),
+                                if (!compactInsert &&
+                                    onInsertImagePressed != null) ...[
                                   _FormatButton(
                                     key: const ValueKey('insert-image'),
                                     icon: AppPlatform.isMobile
@@ -327,7 +344,8 @@ class NoteFooter extends StatelessWidget {
                                         : onInsertImagePressed,
                                   ),
                                 ],
-                                if (onInsertVideoPressed != null)
+                                if (!compactInsert &&
+                                    onInsertVideoPressed != null)
                                   _FormatButton(
                                     key: const ValueKey('insert-video'),
                                     icon: KapyIcons.videoOutlined,
@@ -343,7 +361,8 @@ class NoteFooter extends StatelessWidget {
                                         ? null
                                         : onInsertVideoPressed,
                                   ),
-                                if (onRecordVoicePressed != null)
+                                if (!compactInsert &&
+                                    onRecordVoicePressed != null)
                                   _FormatButton(
                                     key: const ValueKey('record-voice'),
                                     icon: KapyIcons.micRounded,
@@ -362,9 +381,7 @@ class NoteFooter extends StatelessWidget {
                                         ? null
                                         : onRecordVoicePressed,
                                   ),
-                                if (onInsertImagePressed != null ||
-                                    onInsertVideoPressed != null ||
-                                    onRecordVoicePressed != null)
+                                if (insertButtonCount > 0)
                                   SizedBox(width: _formatGroupGap),
                                 _ExpandableFormattingControls(
                                   paragraphStyle: paragraphStyle,

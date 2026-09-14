@@ -30,7 +30,6 @@ import 'package:kapy_notes/video/video_ingest.dart';
 import 'package:kapy_notes/video/video_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../kapy_icon_finder.dart';
 import '../test_fonts.dart';
 
 const anchor = NoteAttachmentRef.placeholder;
@@ -691,7 +690,7 @@ void main() {
     expect(find.byType(NoteVideoViewer), findsOneWidget);
   });
 
-  testWidgets('the mobile footer opens capture and inserts its result', (
+  testWidgets('the mobile insert menu opens capture and inserts its result', (
     tester,
   ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
@@ -711,11 +710,20 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('insert-image')));
+    await tester.tap(find.byKey(const ValueKey('insert-menu')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('slash-command-list')),
+      const Offset(0, -180),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('slash-command-image')));
     await tester.pumpAndSettle();
 
     expect(opened, 1);
-    expect(findKapyIcon(KapyIcons.cameraOutlined), findsOneWidget);
+    expect(find.byKey(const ValueKey('insert-menu')), findsOneWidget);
     expect(find.byType(NoteImageView), findsOneWidget);
   });
 

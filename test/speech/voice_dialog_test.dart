@@ -162,7 +162,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Choose cloud or local transcription in Voice Settings.'),
+      find.text('Choose cloud or local transcription in Settings.'),
       findsOneWidget,
     );
     expect(find.textContaining('Sign in'), findsNothing);

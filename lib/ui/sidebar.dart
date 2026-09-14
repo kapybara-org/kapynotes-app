@@ -1392,7 +1392,12 @@ class _SearchFieldState extends State<_SearchField> {
     final palette = context.palette;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+      // On a desktop the field keeps the sidebar's 12pt gutter, the edge the
+      // footer and archive actions hold, and the same room under the title
+      // bar. The list's own top padding makes up the gap beneath it.
+      padding: AppPlatform.hasPointer
+          ? const EdgeInsets.fromLTRB(12, 12, 12, 8)
+          : const EdgeInsets.fromLTRB(10, 9, 10, 9),
       child: Row(
         children: [
           Expanded(

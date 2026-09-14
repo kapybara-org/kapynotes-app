@@ -37,27 +37,20 @@ class _SpeechConsentSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'To turn a recording into text, Kapy Notes sends the audio to '
-              'our server, which passes it to Cloudflare Workers AI. It is '
-              'transcribed, summarised, and kept by nobody: not by Cloudflare, '
-              'and not by us.',
+              'To transcribe a recording, Kapy Notes sends its audio through '
+              'our server to Cloudflare Workers AI. Neither Cloudflare nor '
+              'Kapy Notes keeps it after processing.',
               style: TextStyle(color: palette.textPrimary, height: 1.45),
             ),
             const SizedBox(height: 12),
             _Point(
               text:
-                  'Recordings you made before turning this on stay as voice '
-                  'memos until you ask for them.',
+                  'Existing recordings stay as voice memos until you choose '
+                  'to transcribe them.',
             ),
+            _Point(text: 'All other note content stays end-to-end encrypted.'),
             _Point(
-              text:
-                  'Everything else in your notes stays end-to-end encrypted. '
-                  'This is the one thing that leaves readable.',
-            ),
-            _Point(
-              text:
-                  'You can turn it off again in Settings › Voice notes at '
-                  'any time.',
+              text: 'Turn transcription off anytime in Settings › Voice notes.',
             ),
             const SizedBox(height: 12),
             Text(

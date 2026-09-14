@@ -188,7 +188,7 @@ class _ReportDialogState extends State<_ReportDialog> {
         return;
       }
       Navigator.of(context).pop(true);
-      progress.success('Reported. We will look at it.');
+      progress.success('Report sent. We will review it.');
     } catch (error) {
       final message = describeSharingError(error);
       if (mounted) {
@@ -218,8 +218,8 @@ class _ReportDialogState extends State<_ReportDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'One person reads every report, usually within '
-                '$reportResponseDays working days.',
+                'A person reviews every report, usually within '
+                '$reportResponseDays business days.',
                 style: TextStyle(
                   fontSize: AppTypeScale.body,
                   color: palette.textSecondary,
@@ -302,10 +302,8 @@ class _ReportDialogState extends State<_ReportDialog> {
                     ),
                   ),
                   subtitle: Text(
-                    'We cannot read your notes, so we can only judge this one '
-                    'if you send it. Ticking this sends its text to us, '
-                    'unencrypted, for this report alone. Leave it unticked and '
-                    'we will still act on who did it.',
+                    'Notes are normally unreadable to us. Selecting this sends '
+                    'an unencrypted copy of the text for this report only.',
                     style: TextStyle(
                       fontSize: AppTypeScale.small,
                       color: palette.textSecondary,
@@ -375,9 +373,9 @@ String describeSharingError(Object error) => switch (error) {
     proRequiredCode => 'Sharing is part of Pro.',
     'view-only' => 'You have View only access to this space.',
     'already a member' => 'They are already in this space.',
-    'too many pending invitations' => 'Too many people are still to accept.',
-    'too many invitations today' => 'That is enough invitations for today.',
-    'too many reports today' => 'That is enough reports for today.',
+    'too many pending invitations' => 'Too many invitations are still pending.',
+    'too many invitations today' => 'Daily invitation limit reached.',
+    'too many reports today' => 'Daily report limit reached.',
     'the space is full' => 'This space is full.',
     'quota exceeded' => 'Not enough storage for this.',
     'the new owner does not hold the key yet' =>
@@ -386,11 +384,11 @@ String describeSharingError(Object error) => switch (error) {
       'That invitation is not for this account, or has expired.',
     'owned-spaces' => 'Hand over or stop sharing your spaces first.',
     'you cannot block yourself' => 'That is your own address.',
-    'no such link' => 'That link has expired, or been turned off.',
+    'no such link' => 'That link expired or was disabled.',
     'too many requests' =>
       'Too many people are waiting to join. Ask the owner to let some in.',
     'confirm your email address first' => 'Confirm your email address first.',
-    _ => 'The server did not allow that.',
+    _ => 'That action is not available.',
   },
   SyncTransientException() =>
     'Could not reach the server. Try again in a moment.',

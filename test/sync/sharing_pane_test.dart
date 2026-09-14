@@ -118,10 +118,7 @@ void main() {
         find.text('${server.user('user-1').email} · View only access'),
         findsOneWidget,
       );
-      expect(
-        find.text('None yet. Share a note with someone to start one.'),
-        findsOneWidget,
-      );
+      expect(find.text('Share a note to start a space'), findsOneWidget);
 
       // Alice's device is open beside him: her socket hears the acceptance,
       // she grants the key at once, and his socket brings the note. Nobody

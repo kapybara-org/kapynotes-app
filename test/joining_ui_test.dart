@@ -237,17 +237,17 @@ void main() {
       await open(tester, send);
 
       expect(
-        find.textContaining('Priya (priya@example.com) shares “Family”'),
+        find.textContaining('Priya (priya@example.com) shared “Family”'),
         findsOneWidget,
       );
-      expect(find.textContaining('read and edit its notes'), findsOneWidget);
+      expect(find.textContaining('view and edit notes'), findsOneWidget);
       expect(send.sawPath('POST', 'links/$token/request'), isFalse);
 
       await tester.tap(find.byKey(const ValueKey('join-link-ask')));
       await tester.pumpAndSettle();
       expect(send.sawPath('POST', 'links/$token/request'), isTrue);
       expect(
-        find.textContaining('You have asked to join “Family”'),
+        find.textContaining('request to join “Family” is pending'),
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('join-link-ask')), findsNothing);
@@ -261,10 +261,7 @@ void main() {
           {'error': 'no such link'},
         );
       await open(tester, send);
-      expect(
-        find.text('That link has expired, or been turned off.'),
-        findsOneWidget,
-      );
+      expect(find.text('That link expired or was disabled.'), findsOneWidget);
       expect(find.byKey(const ValueKey('join-link-ask')), findsNothing);
     });
 
@@ -332,14 +329,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('space-link-create')), findsOneWidget);
       expect(
-        find.textContaining('Nobody gets in until you let them'),
+        find.textContaining('You approve each person before they join'),
         findsOneWidget,
       );
 
       await tester.tap(find.byKey(const ValueKey('space-link-create')));
       await tester.pumpAndSettle();
       expect(find.text('https://kapynotes.com/space/$token'), findsOneWidget);
-      expect(find.textContaining('Works until'), findsOneWidget);
+      expect(find.textContaining('Expires'), findsOneWidget);
       expect(find.textContaining('read and edit its notes'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('space-link-off')));
@@ -439,10 +436,7 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('join-request-decline-u1')));
       await tester.pumpAndSettle();
-      expect(
-        find.textContaining('will not be able to ask again'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('cannot use this link again'), findsOneWidget);
       expect(send.sawPath('DELETE', 'spaces/s1/requests/u1'), isFalse);
 
       await tester.tap(

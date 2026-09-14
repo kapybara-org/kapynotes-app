@@ -136,8 +136,8 @@ class _JoinLinkSheetState extends State<_JoinLinkSheet> {
     setState(() {
       _preview = preview.withStatus(JoinStatus.member);
       _notice =
-          'You are in. The notes arrive the next time '
-          '${preview.ownerShort} or another member syncs.';
+          'Joined. Notes appear after ${preview.ownerShort} or another member '
+          'syncs.';
     });
   });
 
@@ -178,27 +178,25 @@ class _JoinLinkSheetState extends State<_JoinLinkSheet> {
   List<Widget> _describePreview(JoinLinkPreview p) {
     final name = '“${p.spaceName}”';
     final access = p.role == SpaceRole.viewer
-        ? 'You would be able to read its notes, not change them.'
-        : 'You would be able to read and edit its notes.';
+        ? 'You can view notes but cannot edit them.'
+        : 'You can view and edit notes.';
     final lines = switch (p.status) {
       JoinStatus.none => [
-        '${p.ownerLabel} shares $name, and this link lets you ask to join it.',
+        '${p.ownerLabel} shared $name with this link.',
         access,
-        'They let you in. Until they do, nothing in it can be read.',
+        'Request access and wait for approval.',
       ],
       JoinStatus.pending => [
-        'You have asked to join $name.',
-        '${p.ownerShort} lets you in, and its notes appear in your list when '
-            'they do. You can close this.',
+        'Your request to join $name is pending.',
+        'Notes appear after ${p.ownerShort} approves it.',
       ],
       JoinStatus.declined => [
-        '${p.ownerShort} did not let you into $name.',
-        'If that is a mistake, ask them to invite you by email instead.',
+        '${p.ownerShort} declined your request to join $name.',
+        'Ask them for an email invitation if needed.',
       ],
       JoinStatus.member => ['You are in $name.'],
       JoinStatus.invited => [
-        '${p.ownerShort} has already invited you to $name by email, so there '
-            'is nobody to wait for.',
+        '${p.ownerShort} already invited you to $name by email.',
         access,
       ],
     };

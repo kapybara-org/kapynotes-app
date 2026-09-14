@@ -193,7 +193,7 @@ void main() {
     await pumpPane(tester);
 
     expect(account.sync!.personalNeedsPro, isTrue);
-    expect(find.textContaining('Sync is part of Pro'), findsOneWidget);
+    expect(find.textContaining('Sync paused'), findsOneWidget);
     expect(find.byKey(const ValueKey('sync-get-pro')), findsOneWidget);
   });
 

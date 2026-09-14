@@ -85,7 +85,10 @@ void main() {
     await tester.tap(find.text('Email me a code'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('six-digit code'), findsOneWidget);
+    expect(
+      find.textContaining('Enter the 6-digit code sent to someone@example.com'),
+      findsOneWidget,
+    );
     expect(find.text('Send another'), findsOneWidget);
 
     // "Sign in" is also the panel's title, so aim at the button.
@@ -123,7 +126,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Reset your password'), findsOneWidget);
     // The one thing a reset must not be mistaken for.
-    expect(find.textContaining('encryption passphrase'), findsOneWidget);
+    expect(
+      find.textContaining('passphrase and notes will not change'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.widgetWithText(FilledButton, 'Email me a code'));
     await tester.pumpAndSettle();

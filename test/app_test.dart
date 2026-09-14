@@ -331,7 +331,7 @@ void main() {
     expect(find.byKey(const ValueKey('toolbar-app-wordmark')), findsOneWidget);
     expect(find.text('No notes yet'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
 
     expect(find.byType(EmptyState), findsNothing);
@@ -745,7 +745,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -784,7 +784,7 @@ void main() {
     store.data['resultsVisible.v1'] = false;
     store.data['sidebar.v1'] = 360.0;
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
 
     await openSettings(tester);
@@ -829,7 +829,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
 
     expect(prefs.spellCheckEnabled, isTrue);
@@ -864,7 +864,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
     await openSettings(tester);
 
@@ -905,7 +905,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
     await openSettings(tester);
 
@@ -939,7 +939,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.descendant(
@@ -1013,7 +1013,7 @@ void main() {
     ).toJson();
 
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
     await openSettings(tester, section: SettingsSection.appearance);
 
@@ -1030,7 +1030,7 @@ void main() {
 
   testWidgets('switches the number system and reformats live', (tester) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(EditableText).last, 'rev = 7000000');
     await tester.pumpAndSettle();
@@ -1071,7 +1071,7 @@ void main() {
 
   testWidgets('changes the writing font live and persists it', (tester) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
 
     TextField editor() => tester.widget<TextField>(
@@ -1131,7 +1131,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
 
     CalcPalette palette() => Theme.of(
@@ -1278,7 +1278,7 @@ void main() {
     windowGlassAvailable = false;
     store.data['transparencyEnabled.v1'] = true;
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
 
     final palette = Theme.of(
@@ -1293,7 +1293,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
 
     // Dictation apps and text expanders do not type: they write into whatever
@@ -1404,7 +1404,7 @@ void main() {
     final integration = DesktopIntegration(layoutPrefs: prefs);
     await pumpApp(tester, desktopIntegration: integration);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.descendant(
@@ -1435,7 +1435,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New Note'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
     await tester.pumpAndSettle();
     await openSettings(tester, section: SettingsSection.shortcuts);
 
@@ -2211,7 +2211,7 @@ void main() {
     expect(notes.notes, hasLength(before + 1));
   });
 
-  testWidgets('leaves breathing room above the sidebar search row', (
+  testWidgets('leaves breathing room around the sidebar search row', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -2222,7 +2222,9 @@ void main() {
     );
     final add = tester.getRect(find.byKey(const ValueKey('sidebar-new-note')));
 
-    expect(search.top - sidebar.top, greaterThanOrEqualTo(8));
+    expect(search.top - sidebar.top, greaterThanOrEqualTo(12));
+    expect(search.left - sidebar.left, greaterThanOrEqualTo(12));
+    expect(sidebar.right - add.right, greaterThanOrEqualTo(12));
     expect(add.center.dy, closeTo(search.center.dy, 0.5));
   });
 
@@ -2472,9 +2474,7 @@ void main() {
       expect(notes.hiddenNotes.single.id, private.id);
       expect(notes.search('Private'), isEmpty);
       expect(
-        find.text(
-          'Note moved to Hidden Notes. Open Hidden Notes from the sidebar.',
-        ),
+        find.text('Moved to Hidden Notes. Open Hidden Notes from the sidebar.'),
         findsOneWidget,
       );
       expect(
@@ -2792,9 +2792,7 @@ void main() {
     expect(notes.notes.map((note) => note.id), isNot(contains(private.id)));
     expect(notes.hiddenNotes.single.id, private.id);
     expect(
-      find.text(
-        'Note moved to Hidden Notes. Pull down below Search to find it.',
-      ),
+      find.text('Moved to Hidden Notes. Pull down below Search to find it.'),
       findsOneWidget,
     );
 
@@ -3480,7 +3478,7 @@ void main() {
       expect(find.byKey(const ValueKey('note-total')), findsNothing);
     });
 
-    testWidgets('puts image and mic in a scrollable phone footer', (
+    testWidgets('puts the insert menu in a scrollable phone footer', (
       tester,
     ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
@@ -3496,8 +3494,9 @@ void main() {
 
       await pumpApp(tester, size: const Size(320, 720));
 
-      expect(find.byKey(const ValueKey('insert-image')), findsOneWidget);
-      expect(find.byKey(const ValueKey('record-voice')), findsOneWidget);
+      expect(find.byKey(const ValueKey('insert-menu')), findsOneWidget);
+      expect(find.byKey(const ValueKey('insert-image')), findsNothing);
+      expect(find.byKey(const ValueKey('record-voice')), findsNothing);
       // Settings is in the notes drawer, not under the thumb that is writing.
       expect(find.byKey(const ValueKey('note-settings')), findsNothing);
       expect(find.byKey(const ValueKey('note-total')), findsNothing);
@@ -3510,6 +3509,21 @@ void main() {
       expect(
         tester.widget<SingleChildScrollView>(scroller).scrollDirection,
         Axis.horizontal,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('insert-menu')));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('slash-command-table')), findsOneWidget);
+      await tester.drag(
+        find.byKey(const ValueKey('slash-command-list')),
+        const Offset(0, -260),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('slash-command-image')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('slash-command-voiceNote')),
+        findsOneWidget,
       );
     });
 
@@ -3544,7 +3558,7 @@ void main() {
       // takes first.
       expect(footer.height, closeTo(56 + 34, 0.01));
       expect(
-        tester.getRect(find.byKey(const ValueKey('insert-image'))).bottom,
+        tester.getRect(find.byKey(const ValueKey('insert-menu'))).bottom,
         lessThanOrEqualTo(844 - 34),
       );
     });

@@ -376,8 +376,9 @@ class _CreatePinDialogState extends State<_CreatePinDialog> {
         children: [
           Text(
             AppPlatform.isMobile
-                ? 'This device has no system authentication set up, so Hidden Notes will use a four-digit PIN here.'
-                : 'Hidden Notes uses a four-digit PIN on this device.',
+                ? 'System authentication is not set up, so Hidden Notes will '
+                      'use a 4-digit PIN on this device.'
+                : 'Use a 4-digit PIN to protect Hidden Notes on this device.',
             style: TextStyle(
               fontSize: AppTypeScale.control,
               color: context.palette.textSecondary,

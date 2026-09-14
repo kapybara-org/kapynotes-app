@@ -107,10 +107,7 @@ void main() {
       findsNothing,
     );
     // Each category says what is behind it before it is opened.
-    expect(
-      find.text('Theme, writing font, paper, number format'),
-      findsOneWidget,
-    );
+    expect(find.text('Theme, paper, fonts, and numbers'), findsOneWidget);
 
     // Shortcuts belong to a keyboard, and phones are updated by their store.
     expect(
@@ -346,6 +343,28 @@ void main() {
     );
   });
 
+  testWidgets('settings subtitles stay on one line', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: const SizedBox(
+          width: 180,
+          child: SettingsRowCopy(
+            title: 'Ready to type on open',
+            subtitle: 'Restore your cursor position when you return to the app',
+          ),
+        ),
+      ),
+    );
+
+    final subtitle = tester.widget<Text>(
+      find.text('Restore your cursor position when you return to the app'),
+    );
+    expect(subtitle.maxLines, 1);
+    expect(subtitle.softWrap, isFalse);
+    expect(subtitle.overflow, TextOverflow.ellipsis);
+  });
+
   testWidgets('voice notes groups recording and summary choices together', (
     tester,
   ) async {
@@ -426,7 +445,7 @@ void main() {
         reason: 'the cloud choice is disabled, not a detour out of Voice',
       );
       expect(
-        find.text('Sign in first for cloud transcription and summaries'),
+        find.text('Sign in for cloud transcription and summaries'),
         findsOneWidget,
       );
       expect(find.text('Local transcription'), findsOneWidget);

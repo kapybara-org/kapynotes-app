@@ -170,7 +170,7 @@ void main() {
 
     expect(find.text('Free plan'), findsOneWidget);
     expect(find.textContaining('15 minutes'), findsOneWidget);
-    expect(find.textContaining('100 AI summaries'), findsOneWidget);
+    expect(find.textContaining('0 of 100 used'), findsOneWidget);
     expect(find.textContaining('100 MB'), findsWidgets);
     expect(find.textContaining('Sign in'), findsWidgets);
   });
@@ -235,8 +235,8 @@ void main() {
 
     expect(find.text('Pro plan'), findsOneWidget);
     expect(find.textContaining('7.5 of 120 minutes'), findsOneWidget);
-    expect(find.textContaining('10 extra minutes'), findsOneWidget);
-    expect(find.textContaining('34 of 1000 AI summaries'), findsOneWidget);
+    expect(find.textContaining('10 extra'), findsOneWidget);
+    expect(find.textContaining('34 of 1000 used'), findsOneWidget);
     expect(find.textContaining('256 MB of 1 GB'), findsOneWidget);
     expect(find.textContaining('reset on 1 Oct'), findsOneWidget);
   });

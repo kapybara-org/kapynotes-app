@@ -387,6 +387,15 @@ formatting buttons and shortcuts write markdown rather than styles kept beside
 the text. Nothing in a note is converted either way, and off, the editor is
 exactly what it was.
 
+Typing `/` at the beginning of a line opens the searchable insert menu. It can
+make headings, lists, quotes, dividers and code blocks, or enter the existing
+image, video and voice-note flows. Table opens a compact grid picker and writes
+a plain GFM table in one undoable edit, with its first header ready to replace.
+Markdown-only commands say so and ask before enabling Markdown for every note;
+they never change that preference silently. On touch devices the footer's `+`
+opens the same menu. A slash anywhere else stays ordinary text, so division and
+web addresses never compete with commands.
+
 Hidden markers are laid out at a size too small to take room or be seen, which
 the editor's fixed line height keeps from moving the line they sit on; bullets,
 boxes and table grids are painted behind the field

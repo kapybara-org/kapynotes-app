@@ -314,7 +314,7 @@ void main() {
         find.byKey(const ValueKey('settings-search-empty')),
         findsOneWidget,
       );
-      expect(find.textContaining('No settings match'), findsOneWidget);
+      expect(find.textContaining('No results for'), findsOneWidget);
     });
 
     testWidgets('a category from the rail takes over from the results', (

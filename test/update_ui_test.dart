@@ -182,7 +182,7 @@ void main() {
     await _openUpdates(tester);
 
     expect(find.text('Version 1.0.1 available'), findsOneWidget);
-    expect(find.text('Ready to install · you have 1.0.0'), findsOneWidget);
+    expect(find.text('Ready to install · Current 1.0.0'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Update'), findsOneWidget);
     expect(find.byKey(const ValueKey('update-release-notes')), findsOneWidget);
   });
@@ -322,7 +322,7 @@ void main() {
     // that would otherwise show it is behind the settings sheet.
     expect(desktop.layoutPrefs.alwaysOnTop, isFalse);
     expect(
-      find.text('Updater opened · window no longer on top'),
+      find.text('Updater opened · Always on top turned off'),
       findsOneWidget,
     );
   });

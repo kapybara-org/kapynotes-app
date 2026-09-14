@@ -291,7 +291,7 @@ void main() {
 
       // The reason takes the subtitle, where the model's name and size would
       // otherwise be: what matters is why this will not happen here.
-      expect(find.textContaining('this device has 2.0 GB'), findsOneWidget);
+      expect(find.textContaining('This device has 2.0 GB'), findsOneWidget);
       // Nothing to press: the point is that the download never starts.
       expect(find.text('Download'), findsNothing);
     });

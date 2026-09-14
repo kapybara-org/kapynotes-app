@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/calc/highlight.dart';
 import 'package:kapy_notes/core/editor_font.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_format.dart';
@@ -37,6 +39,7 @@ Widget harness(
   List<NoteFormatRange> initialFormats = const [],
   ValueChanged<String>? onBodyChanged,
   ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
+  ValueChanged<bool>? onMarkdownEnabledChanged,
 }) {
   return MaterialApp(
     theme: KapyTheme.dark(),
@@ -51,6 +54,7 @@ Widget harness(
         gutterWidth: 200,
         resultsVisible: true,
         markdownEnabled: markdown,
+        onMarkdownEnabledChanged: onMarkdownEnabledChanged,
         autofocus: autofocus,
         onDocumentChanged: (body, formats, attachments) {
           onBodyChanged?.call(body);
@@ -444,6 +448,276 @@ void main() {
       expect(formats.last, const [
         NoteFormatRange(start: 12, end: 17, format: NoteFormat.italic),
       ]);
+    });
+  });
+
+  group('slash commands', () {
+    testWidgets('opens only for a slash-led line, never division or a URL', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '/');
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
+      expect(controllerOf(tester).text, '/');
+
+      await tester.enterText(find.byType(TextField), '/table');
+      await tester.pump();
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('slash-command-menu')),
+        findsNothing,
+        reason: 'Escape leaves this slash literal until it is removed',
+      );
+
+      await tester.enterText(find.byType(TextField), '10 / 2');
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
+
+      await tester.enterText(find.byType(TextField), 'https://example.com');
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
+    });
+
+    testWidgets('filters commands and inserts the keyboard-picked table size', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '/table');
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('slash-command-table')), findsOneWidget);
+      expect(find.text('Checklist'), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(find.byKey(const ValueKey('table-size-grid')), findsOneWidget);
+      expect(find.text('2 × 2'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(find.text('3 × 3'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        controllerOf(tester).text,
+        '| Column 1 | Column 2 | Column 3 |\n'
+        '| --- | --- | --- |\n'
+        '|  |  |  |\n'
+        '|  |  |  |',
+      );
+      expect(
+        controllerOf(tester).selection,
+        const TextSelection(baseOffset: 2, extentOffset: 10),
+      );
+      expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
+    });
+
+    testWidgets('inserts every structural text command from search', (
+      tester,
+    ) async {
+      const cases = <(String, String)>[
+        ('heading', '# '),
+        ('todo', '- [ ] '),
+        ('bullet', '- '),
+        ('number', '1. '),
+        ('quote', '> '),
+        ('divider', '---\n'),
+        ('code', '```\n\n```'),
+      ];
+
+      for (final (query, expected) in cases) {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(harness('', autofocus: true));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), '/$query');
+        await tester.pump();
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+
+        expect(controllerOf(tester).text, expected, reason: query);
+        expect(
+          find.byKey(const ValueKey('slash-command-menu')),
+          findsNothing,
+          reason: query,
+        );
+      }
+    });
+
+    testWidgets('asks before enabling Markdown for a table', (tester) async {
+      bool? enabled;
+      await tester.pumpWidget(
+        harness(
+          '',
+          markdown: false,
+          autofocus: true,
+          onMarkdownEnabledChanged: (value) => enabled = value,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '/table');
+      await tester.pump();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Turn on Markdown?'), findsOneWidget);
+      expect(controllerOf(tester).text, '/table');
+      await tester.tap(find.byKey(const ValueKey('enable-markdown-command')));
+      await tester.pumpAndSettle();
+
+      expect(enabled, isTrue);
+      expect(
+        controllerOf(tester).text,
+        '| Column 1 | Column 2 |\n'
+        '| --- | --- |\n'
+        '|  |  |',
+      );
+    });
+
+    testWidgets('rich-text commands stay rich without enabling Markdown', (
+      tester,
+    ) async {
+      bool? enabled;
+      final formats = <List<NoteFormatRange>>[];
+      await tester.pumpWidget(
+        harness(
+          '',
+          markdown: false,
+          autofocus: true,
+          onFormatsChanged: formats.add,
+          onMarkdownEnabledChanged: (value) => enabled = value,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '/heading');
+      await tester.pump();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await typeAtCaret(tester, 'Title');
+
+      expect(find.text('Turn on Markdown?'), findsNothing);
+      expect(enabled, isNull);
+      expect(controllerOf(tester).text, 'Title');
+      expect(formats.last, const [
+        NoteFormatRange(start: 0, end: 5, format: NoteFormat.heading),
+      ]);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        harness(
+          '',
+          markdown: false,
+          autofocus: true,
+          onMarkdownEnabledChanged: (value) => enabled = value,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '/todo');
+      await tester.pump();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Turn on Markdown?'), findsNothing);
+      expect(enabled, isNull);
+      expect(controllerOf(tester).text, '☐ ');
+    });
+
+    testWidgets('table insertion is one undoable editor change', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() {
+        AppPlatform.debugTargetPlatformOverride = null;
+        debugDefaultTargetPlatformOverride = null;
+      });
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '/table');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.pump();
+      expect(controllerOf(tester).text, startsWith('| Column 1'));
+
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ, platform: 'windows');
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.pump();
+      debugDefaultTargetPlatformOverride = null;
+
+      expect(controllerOf(tester).text, '/table');
+    });
+
+    testWidgets('the mobile footer opens the same insert menu', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('insert-menu')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('insert-menu')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
+      expect(find.byKey(const ValueKey('slash-command-table')), findsOneWidget);
+    });
+
+    testWidgets('the table picker fits above a compact software keyboard', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '/table');
+      await tester.pump();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      final menu = find.byKey(const ValueKey('slash-command-menu'));
+      expect(find.byKey(const ValueKey('table-size-grid')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(tester.getRect(menu).bottom, lessThanOrEqualTo(268));
     });
   });
 

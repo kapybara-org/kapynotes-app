@@ -18,10 +18,10 @@ extension WritingFontDetails on WritingFont {
   };
 
   String get description => switch (this) {
-    WritingFont.mixed => 'Handwritten headings with tidy monospaced text',
-    WritingFont.handwritten => 'Subtle pen strokes with a calm baseline',
-    WritingFont.clean => 'Simple and calm for longer notes',
-    WritingFont.monospace => 'Fixed-width characters for dense calculations',
+    WritingFont.mixed => 'Handwritten headings with monospaced text',
+    WritingFont.handwritten => 'Relaxed strokes with a steady baseline',
+    WritingFont.clean => 'Comfortable text for longer notes',
+    WritingFont.monospace => 'Fixed-width text for notes and calculations',
   };
 
   String get preview => switch (this) {

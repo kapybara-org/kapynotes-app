@@ -271,7 +271,7 @@ class SettingsSearchResults<S> extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              'No settings match “${query.trim()}”',
+              'No results for “${query.trim()}”',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: SettingsMetrics.titleSize,
@@ -281,8 +281,11 @@ class SettingsSearchResults<S> extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Try another word for it, like “dark”, “font” or “export”.',
+              'Try “dark”, “font”, or “export”',
               textAlign: TextAlign.center,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: SettingsMetrics.subtitleSize,
                 color: palette.textTertiary,

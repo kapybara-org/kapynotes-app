@@ -67,22 +67,20 @@ class _JoinRequestsPanelState extends State<JoinRequestsPanel> {
         for (final r in people) r.userId,
       ]);
     },
-    waiting: people.length == 1 ? 'Letting them in…' : 'Letting everyone in…',
+    waiting: people.length == 1 ? 'Approving request…' : 'Approving requests…',
     done: people.length == 1
-        ? '${_who(people.single)} is in. Their notes arrive as soon as this '
-              'device hands them the key, which is now.'
-        : '${people.length} people are in. Their notes arrive as soon as this '
-              'device hands them the key, which is now.',
+        ? '${_who(people.single)} now has access.'
+        : '${people.length} people now have access.',
   );
 
   Future<void> _decline(JoinRequest r) async {
     final sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Do not let them in?'),
+        title: const Text('Decline this request?'),
         content: Text(
-          '${r.email} will not be able to ask again through this link. You '
-          'can still invite them by email later.',
+          '${r.email} cannot use this link again. You can still invite them '
+          'by email.',
         ),
         actions: [
           TextButton(
@@ -92,7 +90,7 @@ class _JoinRequestsPanelState extends State<JoinRequestsPanel> {
           FilledButton(
             key: const ValueKey('join-request-decline-confirm'),
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Do not let in'),
+            child: const Text('Decline'),
           ),
         ],
       ),
@@ -100,8 +98,8 @@ class _JoinRequestsPanelState extends State<JoinRequestsPanel> {
     if (sure != true) return;
     await widget.run(
       () => widget.joining.decline(widget.spaceId, r.userId),
-      waiting: 'Updating…',
-      done: '${r.email} was not let in.',
+      waiting: 'Declining request…',
+      done: 'Request declined',
     );
   }
 
@@ -161,13 +159,13 @@ class _JoinRequestsPanelState extends State<JoinRequestsPanel> {
                           onPressed: enabled
                               ? () => _letIn([waiting[index]])
                               : null,
-                          child: const Text('Let in'),
+                          child: const Text('Approve'),
                         ),
                         IconButton(
                           key: ValueKey(
                             'join-request-decline-${waiting[index].userId}',
                           ),
-                          tooltip: 'Do not let in',
+                          tooltip: 'Decline request',
                           onPressed: enabled
                               ? () => _decline(waiting[index])
                               : null,
@@ -187,7 +185,7 @@ class _JoinRequestsPanelState extends State<JoinRequestsPanel> {
                     child: FilledButton.tonal(
                       key: const ValueKey('join-requests-approve-all'),
                       onPressed: enabled ? () => _letIn(waiting) : null,
-                      child: Text('Let all ${waiting.length} in'),
+                      child: Text('Approve all ${waiting.length}'),
                     ),
                   ),
                 ],

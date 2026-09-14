@@ -358,10 +358,10 @@ class _ShareDialogState extends State<_ShareDialog> {
         ? space.titleFor(sharing.userId)
         : 'Shared ${sharedPhrase(space, sharing.userId)}';
     final subtitle = space == null
-        ? 'Invite someone to collaborate securely.'
+        ? 'Invite people to collaborate securely'
         : widget.noteId == null
-        ? 'Manage people and access for this space.'
-        : 'Manage people and access for this note.';
+        ? 'Manage access to this space'
+        : 'Manage access to this note';
 
     return AlertDialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -381,9 +381,8 @@ class _ShareDialogState extends State<_ShareDialog> {
             children: [
               if (space == null) ...[
                 _Blurb(
-                  'Share this note with someone as an Editor or View only. '
-                  'It stays encrypted on the way, so only the people you '
-                  'share it with can read it.',
+                  'Choose access, then add one or more email addresses. Only '
+                  'invited people can read the note.',
                 ),
                 const SizedBox(height: 18),
                 _Label('Invite someone'),
@@ -400,7 +399,7 @@ class _ShareDialogState extends State<_ShareDialog> {
                 ),
                 if (sharing.teams.where(sharing.canAddNotesTo_).isNotEmpty) ...[
                   const SizedBox(height: 18),
-                  _Label('Or add it to a space you are already in'),
+                  _Label('Or add to an existing space'),
                   KapyControlSurface(
                     child: Column(
                       children: [
@@ -435,8 +434,8 @@ class _ShareDialogState extends State<_ShareDialog> {
                   onRemove: (member) => _confirm(
                     title: 'Remove ${member.displayName}?',
                     body:
-                        'They stop receiving changes right away. What they '
-                        'already downloaded stays on their devices.',
+                        'They stop receiving updates immediately. Downloaded '
+                        'copies stay on their devices.',
                     action: 'Remove',
                     destructive: true,
                     run: () => sharing.removeMember(space.id, member.userId),
@@ -444,9 +443,8 @@ class _ShareDialogState extends State<_ShareDialog> {
                   onBlock: (member) => _confirm(
                     title: 'Block ${member.displayName}?',
                     body:
-                        'They stop being able to invite you anywhere, and you '
-                        'leave this space. What they already downloaded stays '
-                        'on their devices.',
+                        'They can no longer invite you, and you leave this '
+                        'space. Downloaded copies stay on their devices.',
                     action: 'Block',
                     destructive: true,
                     run: () async {
@@ -532,13 +530,11 @@ class _ShareDialogState extends State<_ShareDialog> {
                   enabled: !_busy,
                   onMoveToMine: note != null && space.canEdit
                       ? () => _confirm(
-                          title: 'Move back to My notes?',
+                          title: 'Move to my notes?',
                           body:
-                              'The note stops being shared '
-                              '${sharedPhrase(space, sharing.userId)} and '
-                              'becomes yours alone, under a new key. Others '
-                              'keep what they already downloaded.',
-                          action: 'Move it',
+                              'This note leaves the shared space and becomes '
+                              'private. Others keep downloaded copies.',
+                          action: 'Move note',
                           run: () async {
                             await sharing.unshareNote(note.id);
                             if (context.mounted) Navigator.of(context).pop();
@@ -557,9 +553,8 @@ class _ShareDialogState extends State<_ShareDialog> {
                             },
                           },
                           body:
-                              'Every note in it comes back to your own notes '
-                              'and the space ends for everyone. Nothing is '
-                              'deleted.',
+                              'All notes return to my notes and sharing ends. '
+                              'Nothing is deleted.',
                           action: 'Stop sharing',
                           destructive: true,
                           run: () async {
@@ -575,8 +570,8 @@ class _ShareDialogState extends State<_ShareDialog> {
                             null => 'Leave these shared notes?',
                           },
                           body:
-                              'You stop receiving changes. Notes you have not '
-                              'synced yet stay with you as your own.',
+                              'You stop receiving updates. Unsynced notes '
+                              'remain in my notes.',
                           action: 'Leave',
                           destructive: true,
                           run: () async {
@@ -659,6 +654,9 @@ class _ShareHeader extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   subtitle,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: AppTypeScale.small,
                     fontWeight: FontWeight.w400,
@@ -719,7 +717,7 @@ class _ManagementActions extends StatelessWidget {
                 KapyIcons.restoreRounded,
                 size: AppControlMetrics.iconControl,
               ),
-              label: const Text('Move to My notes'),
+              label: const Text('Move to my notes'),
             ),
           if (stop != null)
             TextButton.icon(
@@ -846,9 +844,7 @@ class _Members extends StatelessWidget {
         if (waiting)
           _Banner(
             icon: KapyIcons.hourglassRounded,
-            text:
-                'Waiting for someone with access to let you in. The notes '
-                'arrive once they have.',
+            text: 'Waiting for a member to approve access.',
           ),
         for (final warning in warnings.values)
           _Banner(
@@ -1061,7 +1057,7 @@ class _InviteeRow extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${invite.role.accessLabel} · Invited, not joined yet',
+                  '${invite.role.accessLabel} · Invite pending',
                   style: TextStyle(
                     fontSize: AppTypeScale.caption,
                     color: palette.textTertiary,
@@ -1344,7 +1340,7 @@ class _EmailRow extends StatelessWidget {
       ),
       decoration: kapyFieldDecoration(
         context,
-        hintText: 'Email address or paste a list',
+        hintText: 'Email addresses',
         fillColor: palette.surfaceBackground,
         prefixIcon: Center(
           widthFactor: 1,

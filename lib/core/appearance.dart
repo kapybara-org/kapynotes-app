@@ -11,10 +11,9 @@ extension AppearanceModeDetails on AppearanceMode {
   };
 
   String get description => switch (this) {
-    AppearanceMode.system =>
-      'Follows your appearance setting, and changes with it',
-    AppearanceMode.light => 'Always the paper-coloured theme',
-    AppearanceMode.dark => 'Always the dark theme',
+    AppearanceMode.system => 'Follow your device setting',
+    AppearanceMode.light => 'Always use the light theme',
+    AppearanceMode.dark => 'Always use the dark theme',
   };
 
   ThemeMode get themeMode => switch (this) {
@@ -40,8 +39,8 @@ extension PaperStyleDetails on PaperStyle {
   };
 
   String get description => switch (this) {
-    PaperStyle.plain => 'A clean sheet, with nothing behind the writing',
-    PaperStyle.notepad => 'Warm paper grain with a quiet ink-like palette',
-    PaperStyle.ruled => 'A faint line under every row, like a writing pad',
+    PaperStyle.plain => 'Clean background with no texture',
+    PaperStyle.notepad => 'Warm paper texture with softer colors',
+    PaperStyle.ruled => 'Faint guide lines under your writing',
   };
 }

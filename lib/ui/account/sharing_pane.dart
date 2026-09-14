@@ -238,9 +238,8 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
                 onAccept: () => _run(
                   () => sharing.acceptInvite(invite.token),
                   done:
-                      'You are in. The notes arrive once '
-                      '${invite.inviterDisplayName} or another member lets '
-                      'you in.',
+                      'Joined. Notes appear after '
+                      '${invite.inviterDisplayName} or another member syncs.',
                 ),
                 onDecline: () =>
                     _run(() => sharing.declineInvite(invite.token)),
@@ -263,7 +262,7 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
               const SettingsRow(
                 icon: KapyIcons.peopleOutlined,
                 title: 'No shared spaces',
-                subtitle: 'None yet. Share a note with someone to start one.',
+                subtitle: 'Share a note to start a space',
               ),
             for (final team in teams)
               _TeamRow(
@@ -295,10 +294,8 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
           ),
         SettingsNote(
           AppPlatform.hasPointer
-              ? 'To share a note, open it and use the people button at the '
-                    'top, or right-click it in the list.'
-              : 'To share a note, open it and use the people button at the '
-                    'top, or long-press it in the list.',
+              ? 'Share from the people button, or right-click a note.'
+              : 'Share from the people button, or long-press a note.',
         ),
         if (sharing.blocks.isNotEmpty) ...[
           const SizedBox(height: 18),

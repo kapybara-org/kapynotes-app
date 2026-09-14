@@ -147,7 +147,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('local-transcription-row')),
-          matching: find.text('Not something this device can do yet'),
+          matching: find.text('Unavailable on this device'),
         ),
         findsOneWidget,
       );
@@ -167,7 +167,7 @@ void main() {
       expect(find.text('Cloud transcription'), findsOneWidget);
       expect(find.text('Local transcription'), findsOneWidget);
       expect(
-        find.text('Built into this device, and never uploaded'),
+        find.text('Built in and processed only on this device'),
         findsOneWidget,
       );
       expect(_choiceIn(tester, 'cloud-transcription-row'), isFalse);
@@ -216,7 +216,7 @@ void main() {
         deviceTranscriber: _Fake(TranscriberReadiness.preparing),
       );
 
-      expect(find.text('Still fetching the language it needs'), findsOneWidget);
+      expect(find.text('Preparing language support'), findsOneWidget);
       expect(_choiceIn(tester, 'local-transcription-row'), isFalse);
     });
 
@@ -230,9 +230,7 @@ void main() {
       );
 
       expect(
-        find.text(
-          'Allow speech recognition for Kapy Notes in Privacy settings',
-        ),
+        find.text('Allow Speech Recognition in system settings'),
         findsOneWidget,
       );
     });
@@ -245,7 +243,7 @@ void main() {
       );
 
       expect(
-        find.text('Sign in first for cloud transcription and summaries'),
+        find.text('Sign in for cloud transcription and summaries'),
         findsOneWidget,
       );
       expect(find.text('Local transcription'), findsOneWidget);

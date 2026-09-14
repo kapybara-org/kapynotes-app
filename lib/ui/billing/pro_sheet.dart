@@ -92,7 +92,7 @@ class _ProSheetState extends State<ProSheet> {
     if (!mounted) return;
     switch (result) {
       case RestoreResult.restored:
-        Toast.show(context, 'Pro Lifetime is on this account.');
+        Toast.show(context, 'Pro Lifetime restored');
       case RestoreResult.nothingFound:
         Toast.show(
           context,
@@ -218,14 +218,14 @@ class _ProSheetState extends State<ProSheet> {
     if (now == null) {
       return 'Keep every note on every device, and invite others in.';
     }
-    if (now.isPro) return 'Yours for good, on every device you sign in on.';
+    if (now.isPro) return 'Available on every signed-in device.';
     if (_billing.trialRunning) {
-      return 'Yours while you try Pro. Pro Lifetime keeps them after it ends.';
+      return 'Included during your trial. Pro keeps it active.';
     }
     if (now.sync) {
-      return 'Included for everyone for now. Pro keeps them for good.';
+      return 'Included for now. Pro keeps it active.';
     }
-    return 'Write past five notes, keep them in sync, and invite others in.';
+    return 'Write unlimited notes, sync them, and share with others.';
   }
 
   /// Buying with no account, which is allowed because one part of Pro works
@@ -244,15 +244,12 @@ class _ProSheetState extends State<ProSheet> {
         const SizedBox(height: 10),
         Text(
           web
-              ? 'Sign in first so Pro Lifetime belongs to the same account on '
-                    'every device. Payment opens in your browser.'
+              ? 'Sign in to use Pro on every device. Payment opens in your '
+                    'browser.'
               : owned
-              ? 'Sign in to use it on your other devices, and to turn on sync, '
-                    'sharing, storage and transcription.'
-              : 'Unlimited notes unlock on this device straight away. Sync, '
-                    'sharing, storage and transcription belong to an account, '
-                    'so sign in whenever you like and this purchase comes '
-                    'with you.',
+              ? 'Sign in to use Pro on other devices and enable cloud features.'
+              : 'Unlimited notes unlock on this device immediately. Sign in '
+                    'to use Pro and cloud features everywhere.',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: AppTypeScale.caption,
@@ -440,8 +437,8 @@ class _ProSheetState extends State<ProSheet> {
                 sku: Sku.storage5gb,
                 title: '5 GB more storage',
                 detail: billing.canAddStorage
-                    ? 'Added to what you have, for good.'
-                    : 'Your account holds the most extra storage it can.',
+                    ? 'Added permanently to your storage.'
+                    : 'Your account has reached its storage limit.',
                 offer: billing.offerFor(Sku.storage5gb),
                 enabled:
                     billing.canAddStorage &&
@@ -453,7 +450,7 @@ class _ProSheetState extends State<ProSheet> {
               _Pack(
                 sku: Sku.voice1000,
                 title: '1,000 transcription minutes',
-                detail: 'Used after the monthly two hours. They never expire.',
+                detail: 'Used after your monthly allowance. Never expire.',
                 offer: billing.offerFor(Sku.voice1000),
                 enabled: billing.activity == BillingActivity.idle,
                 busy: billing.activeSku == Sku.voice1000,
@@ -669,10 +666,8 @@ class _Hero extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 340),
           child: Text(
             isPro
-                ? 'Your complete notebook is available on every device you '
-                      'sign in on.'
-                : 'One purchase unlocks the complete notebook on every '
-                      'device.',
+                ? 'Every Pro feature is available on your signed-in devices.'
+                : 'One purchase unlocks every Pro feature on all your devices.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: AppTypeScale.body,
@@ -791,9 +786,9 @@ class _Trying extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'On ${endsAt.day} ${_months[endsAt.month - 1]} this account '
-                  'moves to Free by itself. Nothing is charged, and nothing '
-                  'is deleted.',
+                  'On ${endsAt.day} ${_months[endsAt.month - 1]}, your account '
+                  'switches to Free. You will not be charged, and nothing is '
+                  'deleted.',
                   style: TextStyle(
                     fontSize: AppTypeScale.caption,
                     height: 1.4,
@@ -1145,7 +1140,7 @@ class _Pack extends StatelessWidget {
                     height: 14,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(price ?? '—'),
+                : Text(price ?? 'Unavailable'),
           ),
         ],
       ),

@@ -91,15 +91,13 @@ extension SettingsSectionCopy on SettingsSection {
   /// instead of the categories themselves. Names the contents rather than
   /// selling them: this line is read while looking for something.
   String get summary => switch (this) {
-    SettingsSection.general => 'Notes, spelling, export and import, time zone',
-    SettingsSection.sync =>
-      'Your name, picture, account, and the notes you sync and share',
-    SettingsSection.plan =>
-      'Current plan, transcription, AI summaries, and storage usage',
-    SettingsSection.voice => 'Cloud or local transcription, summaries',
-    SettingsSection.appearance => 'Theme, writing font, paper, number format',
-    SettingsSection.shortcuts => 'System-wide and in-app keys',
-    SettingsSection.updates => 'This build, and whether a newer one exists',
+    SettingsSection.general => 'Writing, notes, imports, and window',
+    SettingsSection.sync => 'Profile, sync, and sharing',
+    SettingsSection.plan => 'Plan, cloud usage, and storage',
+    SettingsSection.voice => 'Transcription and summaries',
+    SettingsSection.appearance => 'Theme, paper, fonts, and numbers',
+    SettingsSection.shortcuts => 'Global and in-app shortcuts',
+    SettingsSection.updates => 'Version and release notes',
   };
 }
 
@@ -568,8 +566,8 @@ class _SettingsDialogState extends State<SettingsDialog>
             icon: KapyIcons.micRounded,
             title: 'Cloud transcription',
             subtitle: signedIn
-                ? 'Uploads recordings for transcription and cloud summaries'
-                : 'Sign in first for cloud transcription and summaries',
+                ? 'Send audio for transcription and summaries'
+                : 'Sign in for cloud transcription and summaries',
             selected: cloudSelected,
             enabled: signedIn && !_speechBusy,
             onSelect: cloudSelected
@@ -589,8 +587,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         ],
       ),
       const SettingsNote(
-        'Choose one. Local transcription needs no account or minutes, and '
-        'the recording never leaves this device.',
+        'Local transcription is free, unlimited, and stays on this device.',
       ),
       if (_speechError != null)
         Padding(
@@ -612,8 +609,8 @@ class _SettingsDialogState extends State<SettingsDialog>
             icon: KapyIcons.subjectRounded,
             title: 'Make a summary',
             subtitle: !signedIn && prefs.summaryEngine == SummaryEngine.cloud
-                ? 'Use local summaries below, or sign in for cloud summaries'
-                : 'A title and a few points, after the transcript',
+                ? 'Choose local summaries or sign in for cloud'
+                : 'Add a title and key points after transcription',
             value: prefs.summarize,
             onChanged: (value) => setState(() => prefs.summarize = value),
           ),
@@ -629,9 +626,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         ],
       ),
       const SettingsNote(
-        'Make summaries automatically with the selected engine. Local '
-        'summaries need no account or minutes, and the transcript stays on '
-        'this device.',
+        'Summaries run automatically with the selected engine. Local '
+        'summaries stay on this device.',
       ),
       if (_localModelCredits.isNotEmpty)
         _ModelCredits(models: _localModelCredits),
@@ -650,13 +646,12 @@ class _SettingsDialogState extends State<SettingsDialog>
       // Ready without a download of ours: the platform's own recogniser,
       // which is the ordinary case on Apple.
       builtIn: _deviceTranscriptState == TranscriberReadiness.ready,
-      builtInNote: 'Built into this device, and never uploaded',
+      builtInNote: 'Built in and processed only on this device',
       unavailableNote: switch (_deviceTranscriptState) {
-        TranscriberReadiness.preparing =>
-          'Still fetching the language it needs',
+        TranscriberReadiness.preparing => 'Preparing language support',
         TranscriberReadiness.needsSystemFeature =>
-          'Allow speech recognition for Kapy Notes in Privacy settings',
-        _ => 'Not something this device can do yet',
+          'Allow Speech Recognition in system settings',
+        _ => 'Unavailable on this device',
       },
       blockedReason: speech == null ? null : _downloadBlockedReason(speech),
       on: prefs.transcriptEngine == TranscriptEngine.device,
@@ -686,13 +681,13 @@ class _SettingsDialogState extends State<SettingsDialog>
       store: store,
       model: summary,
       builtIn: _deviceSummaryState == SummarizerReadiness.ready,
-      builtInNote: 'Written here by Apple Intelligence, never uploaded',
+      builtInNote: 'Processed here with Apple Intelligence',
       unavailableNote: switch (_deviceSummaryState) {
         SummarizerReadiness.needsSystemFeature =>
-          'Turn on Apple Intelligence in System Settings first',
+          'Turn on Apple Intelligence in System Settings',
         SummarizerReadiness.preparing =>
-          'Apple Intelligence is still downloading its model',
-        _ => 'Not something this device can do yet',
+          'Apple Intelligence is still preparing',
+        _ => 'Unavailable on this device',
       },
       blockedReason: summary == null ? null : _downloadBlockedReason(summary),
       on: prefs.summaryEngine == SummaryEngine.device,
@@ -753,8 +748,8 @@ class _SettingsDialogState extends State<SettingsDialog>
     if (model is! LocalSummaryModel) return null;
     final total = _deviceMemoryBytes;
     if (total == null || total >= model.minimumMemoryBytes) return null;
-    return 'Needs about ${fileSize(model.minimumMemoryBytes)} of memory; '
-        'this device has ${fileSize(total)}.';
+    return 'Needs ${fileSize(model.minimumMemoryBytes)} memory · '
+        'This device has ${fileSize(total)}';
   }
 
   /// Starts a download, asking for agreement first where the model's licence
@@ -1793,9 +1788,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           key: const ValueKey('ready-to-type-on-open-toggle'),
           icon: KapyIcons.keyboardOutlined,
           title: 'Ready to type on open',
-          subtitle:
-              'Put the cursor back where you left it, or on a new line on a '
-              'new day',
+          subtitle: 'Restore your cursor or start a new dated line',
           value: widget.layoutPrefs.readyToTypeOnOpen,
           onChanged: (value) => widget.layoutPrefs.readyToTypeOnOpen = value,
         ),
@@ -1812,7 +1805,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           key: const ValueKey('daily-separators-toggle'),
           icon: KapyIcons.calendarOutlined,
           title: 'Daily separators',
-          subtitle: 'Start each session and new day on a dated line',
+          subtitle: 'Add a dated line when a new day begins',
           value: widget.layoutPrefs.dailySeparatorsEnabled,
           onChanged: (value) =>
               widget.layoutPrefs.dailySeparatorsEnabled = value,
@@ -1830,7 +1823,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           key: const ValueKey('spell-check-toggle'),
           icon: KapyIcons.spellcheckRounded,
           title: 'Check spelling',
-          subtitle: 'Underline possible misspellings without changing text',
+          subtitle: 'Underline possible misspellings',
           value: widget.layoutPrefs.spellCheckEnabled,
           onChanged: (value) => widget.layoutPrefs.spellCheckEnabled = value,
         ),
@@ -1840,7 +1833,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           key: const ValueKey('markdown-toggle'),
           icon: KapyIcons.tagRounded,
           title: 'Markdown in notes',
-          subtitle: 'Type # for a heading, - for a list, [] for a checkbox',
+          subtitle: 'Use # headings, - lists, and [] checkboxes',
           value: widget.layoutPrefs.markdownEnabled,
           onChanged: (value) => widget.layoutPrefs.markdownEnabled = value,
         ),
@@ -1856,14 +1849,14 @@ class _SettingsDialogState extends State<SettingsDialog>
           title: 'Export all notes',
           // The one-line warning the plaintext deserves, at the moment it
           // matters. Not called a backup, because nothing here runs on its own.
-          subtitle: 'Markdown in one .zip · not encrypted once it is saved',
+          subtitle: 'One Markdown .zip · Unencrypted after export',
           onTap: () => unawaited(_exportNotes()),
         ),
         SettingsNavigationRow(
           key: const ValueKey('import-notes'),
           icon: KapyIcons.downloadRounded,
           title: 'Import from an export',
-          subtitle: 'Read a .zip back in, and see what it changes first',
+          subtitle: 'Preview changes before importing a .zip',
           onTap: () => unawaited(runImport(context, widget.notes)),
         ),
       ],
@@ -1882,7 +1875,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             icon: KapyIcons.viewSidebarOutlined,
             // Named the way the shortcut that toggles it is named.
             title: 'Notes list',
-            subtitle: 'Show your notes beside the one you are writing',
+            subtitle: 'Show the notes list beside your editor',
             value: widget.layoutPrefs.sidebarVisible,
             onChanged: (_) => widget.layoutPrefs.toggleSidebar(),
           ),
@@ -1891,7 +1884,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             icon: KapyIcons.lockRounded,
             title: 'Hidden Notes',
             subtitle:
-                'Show the protected folder in the notes list · '
+                'Show the protected folder · '
                 '${widget.shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)?.displayLabel ?? 'Settings only'}',
             value: widget.layoutPrefs.hiddenFolderVisible,
             onChanged: (value) =>
@@ -1904,9 +1897,8 @@ class _SettingsDialogState extends State<SettingsDialog>
                 ? 'Keep running in the menu bar'
                 : 'Keep running in the tray',
             subtitle: AppPlatform.isMacOS
-                ? 'Adds a menu bar icon to open, write and quit from'
-                : 'Closing the window hides it there instead of quitting, so '
-                      'your shortcuts keep working',
+                ? 'Open, write, or quit from the menu bar'
+                : 'Keep shortcuts active after closing the window',
             value: widget.layoutPrefs.keepRunningInBackground,
             onChanged: _setKeepRunning,
           ),
@@ -1918,7 +1910,7 @@ class _SettingsDialogState extends State<SettingsDialog>
               key: const ValueKey('login-item-toggle'),
               icon: KapyIcons.loginRounded,
               title: 'Open at login',
-              subtitle: 'Start Kapy Notes when you sign in to this computer',
+              subtitle: 'Launch when you sign in to this computer',
               value: widget.desktopIntegration!.loginItemEnabled,
               onChanged: (value) => unawaited(_setLoginItem(value)),
             ),
@@ -1926,7 +1918,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             key: const ValueKey('panel-widths-setting'),
             icon: KapyIcons.viewColumnOutlined,
             title: 'Panel widths',
-            subtitle: 'The notes list and the results column',
+            subtitle: 'Reset the notes and results columns',
             trailing: SettingsRowButton(
               key: const ValueKey('reset-panel-widths'),
               label: 'Reset',
@@ -1996,9 +1988,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             key: const ValueKey('transparency-toggle'),
             icon: KapyIcons.blurRounded,
             title: 'Transparency',
-            subtitle:
-                'Let the desktop show through the window, blurred so the '
-                'notes stay easy to read.',
+            subtitle: 'Blur the desktop behind your notes',
             value: widget.layoutPrefs.transparencyEnabled,
             onChanged: (value) =>
                 widget.layoutPrefs.transparencyEnabled = value,
@@ -2008,7 +1998,7 @@ class _SettingsDialogState extends State<SettingsDialog>
               key: const ValueKey('transparency-amount'),
               icon: KapyIcons.opacityRounded,
               title: 'Amount',
-              subtitle: 'How much of the desktop shows through.',
+              subtitle: 'Choose how much desktop shows through',
               minLabel: 'Subtle',
               maxLabel: 'Clear',
               value: widget.layoutPrefs.transparencyAmount,
@@ -2057,7 +2047,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       ],
     ),
     const SettingsNote(
-      'Changes the note itself. Menus and controls keep the system font.',
+      'Applies only to notes. Menus and controls use the system font.',
     ),
     const SizedBox(height: 18),
     // How numbers are written and where the currency rates behind them come
@@ -2174,8 +2164,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         ],
       ),
       const SettingsNote(
-        'Kapy Notes looks for a new release once a day. Nothing is downloaded '
-        'until you ask for it.',
+        'Checks for updates daily. Downloads start only when you choose Update.',
       ),
       const SizedBox(height: 18),
       // Keyed here rather than on the group below it: a search result scrolls
@@ -2393,16 +2382,15 @@ class _PlanUsagePane extends StatelessWidget {
       _ => 'Checking your plan',
     };
     final planSubtitle = switch ((signedIn, current, billing?.trialDaysLeft)) {
-      (false, _, _) => 'Sign in to see your account and live usage',
-      (true, _, 1) => 'Your Pro trial is on its last day',
-      (true, _, final int days) => 'Your Pro trial has $days days left',
+      (false, _, _) => 'Sign in to see your plan and usage',
+      (true, _, 1) => 'Pro trial ends today',
+      (true, _, final int days) => 'Pro trial ends in $days days',
       (true, final Entitlements value, _) =>
         value.isPro
-            ? 'Pro Lifetime with expanded cloud allowances'
-            : 'Your current plan and included cloud allowances',
-      _ when failed =>
-        'Could not reach your account. Your plan has not changed.',
-      _ => 'Reading the latest limits and usage from your account',
+            ? 'Lifetime access with expanded cloud limits'
+            : 'Your plan and included cloud limits',
+      _ when failed => 'Showing your last saved plan',
+      _ => 'Loading plan and usage',
     };
 
     return Column(
@@ -2436,7 +2424,7 @@ class _PlanUsagePane extends StatelessWidget {
         ),
         if (failed && current != null)
           const SettingsNote(
-            'These are the last saved totals. Refresh again when you are online.',
+            'Showing last saved totals. Refresh when you are online.',
             icon: KapyIcons.warningRounded,
           ),
         const SizedBox(height: 18),
@@ -2450,8 +2438,8 @@ class _PlanUsagePane extends StatelessWidget {
               subtitle: shown == null
                   ? _unavailableLine(initialLoad)
                   : '${_minutes(shown.speechSecondsUsedThisMonth)} of '
-                        '${_minutes(shown.speechSecondsPerMonth)} minutes used '
-                        'this month${_creditLine(shown.speechCreditSeconds)}',
+                        '${_minutes(shown.speechSecondsPerMonth)} minutes used'
+                        '${_creditLine(shown.speechCreditSeconds)}',
               progress: _progress(
                 shown?.speechSecondsUsedThisMonth,
                 shown?.speechSecondsPerMonth,
@@ -2465,8 +2453,7 @@ class _PlanUsagePane extends StatelessWidget {
               subtitle: shown == null
                   ? _unavailableLine(initialLoad)
                   : '${shown.summaryGenerationsUsedThisMonth} of '
-                        '${shown.summaryGenerationsPerMonth} AI summaries used '
-                        'this month',
+                        '${shown.summaryGenerationsPerMonth} used',
               progress: _progress(
                 shown?.summaryGenerationsUsedThisMonth,
                 shown?.summaryGenerationsPerMonth,
@@ -2488,20 +2475,18 @@ class _PlanUsagePane extends StatelessWidget {
         ),
         SettingsNote(
           signedIn && shown != null
-              ? 'Cloud transcription and AI summaries reset '
-                    '${_resetLine(shown.speechResetsAt)}. Cloud summaries and '
-                    'rewrites share the AI allowance. Local transcription and '
-                    'local summaries remain unlimited.'
-              : 'Sign in to use cloud transcription and cloud AI summaries. '
-                    'Local transcription and summaries remain unlimited and '
-                    'stay on this device.',
+              ? 'Cloud limits reset ${_resetLine(shown.speechResetsAt)}. '
+                    'Summaries and rewrites share one limit. Local processing '
+                    'is unlimited.'
+              : 'Sign in for cloud transcription and summaries. Local '
+                    'processing is unlimited and stays on this device.',
         ),
       ],
     );
   }
 
   static String _unavailableLine(bool loading) =>
-      loading ? 'Checking usage…' : 'Usage is unavailable right now';
+      loading ? 'Loading usage…' : 'Usage unavailable';
 
   static double _progress(int? used, int? limit) {
     if (used == null || limit == null || limit <= 0) return 0;
@@ -2516,7 +2501,7 @@ class _PlanUsagePane extends StatelessWidget {
   }
 
   static String _creditLine(int seconds) =>
-      seconds <= 0 ? '' : ' · ${_minutes(seconds)} extra minutes available';
+      seconds <= 0 ? '' : ' · ${_minutes(seconds)} extra';
 
   static String _bytes(int bytes) {
     const kb = 1024;
@@ -2641,9 +2626,9 @@ class _CategoryList extends StatelessWidget {
       AccountState.restoring => 'Checking your account',
       AccountState.signedOut => 'Sign in to sync and share notes',
       AccountState.needsProfile => 'Choose the name people will see',
-      AccountState.needsPassphrase => 'Choose a passphrase to start syncing',
+      AccountState.needsPassphrase => 'Save your passphrase to start syncing',
       AccountState.locked => 'Unlock to read these notes here',
-      AccountState.needsAccountDecision => 'Waiting on what this device does',
+      AccountState.needsAccountDecision => 'Choose what happens to local notes',
       AccountState.ready => account.user?.displayName ?? 'Signed in',
     };
   }
@@ -3825,7 +3810,7 @@ class _UpdateRow extends StatelessWidget {
       final current = updates.currentVersion;
       return current.isEmpty
           ? 'Ready to install'
-          : 'Ready to install · you have $current';
+          : 'Ready to install · Current $current';
     }
     final checked = updates.lastChecked;
     if (checked == null) return 'Checks once a day';
@@ -3894,7 +3879,7 @@ class _UpdateRow extends StatelessWidget {
     progress.success(
       installing
           ? unpinned
-                ? 'Updater opened · window no longer on top'
+                ? 'Updater opened · Always on top turned off'
                 : 'Updater opened'
           : updates.hasUpdate
           ? 'Update available'
@@ -4103,8 +4088,8 @@ class _ChangelogStatusRow extends StatelessWidget {
         ? 'Could not read the changelog'
         : 'Reading the release notes',
     subtitle: history.hasFailed
-        ? 'Kapy Notes could not reach kapynotes.com'
-        : 'From kapynotes.com, once a day',
+        ? 'Could not reach kapynotes.com'
+        : 'Updated daily from kapynotes.com',
     trailing: history.isLoading
         ? null
         : SettingsRowButton(
@@ -4289,7 +4274,7 @@ class _ChangelogLinkRow extends StatelessWidget {
               const Expanded(
                 child: SettingsRowCopy(
                   title: 'Changelog',
-                  subtitle: 'Read every release on kapynotes.com',
+                  subtitle: 'View every release on kapynotes.com',
                 ),
               ),
               const SizedBox(width: 8),

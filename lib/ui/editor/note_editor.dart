@@ -69,6 +69,8 @@ import 'remote_carets.dart';
 import 'results_gutter.dart';
 import 'scroll_passthrough.dart';
 import 'selection_formatting_toolbar.dart';
+import 'slash_command_menu.dart';
+import 'slash_commands.dart';
 import '../../sync/presence.dart';
 
 typedef NoteDocumentChanged =
@@ -145,6 +147,7 @@ class NoteEditor extends StatefulWidget {
     required this.shortcuts,
     this.spellCheckEnabled = true,
     this.markdownEnabled = false,
+    this.onMarkdownEnabledChanged,
     this.showDivider = true,
     this.hideEmptyResults = false,
     this.autofocus = false,
@@ -283,6 +286,11 @@ class NoteEditor extends StatefulWidget {
   /// typed, and the formatting controls writing markdown rather than styles
   /// kept beside the text. Off, the editor is exactly what it always was.
   final bool markdownEnabled;
+
+  /// Lets a Markdown-only slash command ask before turning Markdown on.
+  /// Optional for small editor harnesses; production supplies the persisted
+  /// preference setter.
+  final ValueChanged<bool>? onMarkdownEnabledChanged;
   final bool showDivider;
   final bool hideEmptyResults;
   final bool autofocus;
@@ -391,6 +399,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   bool _imageActionBusy = false;
   bool _videoActionBusy = false;
   bool _copyingRichSelection = false;
+
+  final SlashCommandMenuController _slashCommandMenu =
+      SlashCommandMenuController();
+  TextRange? _slashCommandRange;
+  bool _slashCommandWasTyped = false;
+  TextEditingValue? _manualSlashMenuValue;
+  int? _dismissedSlashStart;
+  bool _slashMenuSyncScheduled = false;
 
   /// The attachment list a programmatic edit has already worked out.
   ///
@@ -531,6 +547,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       // Lists and code read differently to the calculator in markdown.
       _evaluate();
       unawaited(_requestSpellCheck());
+      _scheduleSlashCommandMenuSync();
     }
     if (oldWidget.spellCheckEnabled != widget.spellCheckEnabled ||
         oldWidget.readOnly != widget.readOnly) {
@@ -593,6 +610,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     LinkPopover.hide();
     KeywordTooltip.hide();
+    _slashCommandMenu.dispose();
     _controller.removeListener(_onControllerChanged);
     _focusNode.removeListener(_handleFocusChanged);
     _scrollController.removeListener(_handleEditorScroll);
@@ -640,6 +658,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   void _handleEditorScroll() {
     LinkPopover.hide();
+    _slashCommandMenu.hide();
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
     // Reading counts as being here, even with the caret parked.
@@ -827,6 +846,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _onControllerChanged() {
     _recordKapyPeekActivity();
     final value = _controller.value;
+    _scheduleSlashCommandMenuSync();
     _reportCaret(value.selection);
     final previous = _lastValue;
     if (_applyingRemote) {
@@ -2150,10 +2170,420 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _focusNode.requestFocus();
   }
 
+  Set<SlashCommandType> get _availableSlashCommands => {
+    SlashCommandType.table,
+    SlashCommandType.heading,
+    SlashCommandType.checklist,
+    SlashCommandType.bulletedList,
+    SlashCommandType.numberedList,
+    SlashCommandType.quote,
+    SlashCommandType.divider,
+    SlashCommandType.codeBlock,
+    if (widget.images != null && !_imageActionBusy) SlashCommandType.image,
+    if (widget.images != null && !_videoActionBusy) SlashCommandType.video,
+    if (widget.onRecordVoice != null && !widget.voiceActionBusy)
+      SlashCommandType.voiceNote,
+  };
+
+  void _scheduleSlashCommandMenuSync() {
+    if (_slashMenuSyncScheduled) return;
+    _slashMenuSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _slashMenuSyncScheduled = false;
+      if (mounted) _syncSlashCommandMenu();
+    });
+  }
+
+  void _syncSlashCommandMenu() {
+    if (widget.readOnly || !_focusNode.hasFocus) {
+      _manualSlashMenuValue = null;
+      _slashCommandMenu.hide();
+      return;
+    }
+
+    // Requesting focus for the mobile `+` schedules the same synchronization
+    // as typing. Keep that manual menu only while the editor value is exactly
+    // where it opened; the first typed character or caret move dismisses it.
+    if (_slashCommandMenu.isVisible &&
+        !_slashCommandWasTyped &&
+        _manualSlashMenuValue == _controller.value) {
+      return;
+    }
+    _manualSlashMenuValue = null;
+
+    final invocation = slashCommandInvocation(_controller.value);
+    final dismissed = _dismissedSlashStart;
+    if (dismissed != null &&
+        (dismissed >= _controller.text.length ||
+            _controller.text.codeUnitAt(dismissed) != 0x2F ||
+            invocation?.range.start != dismissed)) {
+      _dismissedSlashStart = null;
+    }
+    if (invocation == null || invocation.range.start == dismissed) {
+      _slashCommandMenu.hide();
+      return;
+    }
+
+    final anchor = _slashAnchorAt(invocation.range.end);
+    if (anchor == null) {
+      _slashCommandMenu.hide();
+      return;
+    }
+    _slashCommandRange = invocation.range;
+    _slashCommandWasTyped = true;
+    _manualSlashMenuValue = null;
+    _showSlashCommandMenu(anchor: anchor, query: invocation.query);
+  }
+
+  Rect? _slashAnchorAt(int offset) {
+    final editable = _fieldEditable();
+    if (editable == null || !editable.hasSize) return null;
+    final caret = editable.getLocalRectForCaret(
+      TextPosition(offset: offset.clamp(0, _controller.text.length)),
+    );
+    return Rect.fromPoints(
+      editable.localToGlobal(caret.topLeft),
+      editable.localToGlobal(caret.bottomRight),
+    );
+  }
+
+  void _showSlashCommandMenu({required Rect anchor, required String query}) {
+    ContextMenuController.removeAny();
+    LinkPopover.hide();
+    _clearKeywordTooltip();
+    _slashCommandMenu.show(
+      context,
+      anchor: anchor,
+      query: query,
+      available: _availableSlashCommands,
+      markdownEnabled: widget.markdownEnabled,
+      onSelected: (choice) => unawaited(_runSlashCommand(choice)),
+      onDismissed: _slashCommandMenuDismissed,
+    );
+  }
+
+  /// The touch footer's `+` opens the same menu without putting a slash in
+  /// the note. Focus remains in the field, so the software keyboard and the
+  /// caret stay exactly where the writer left them.
+  void _showInsertMenu() {
+    if (widget.readOnly) return;
+    _dismissedSlashStart = null;
+    _manualSlashMenuValue = null;
+    if (!_focusNode.hasFocus) _focusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.readOnly || !_focusNode.hasFocus) return;
+      final selection = _controller.selection;
+      final caret = selection.isValid
+          ? selection.extentOffset
+          : _controller.text.length;
+      final anchor = _slashAnchorAt(caret);
+      if (anchor == null) return;
+      _slashCommandRange = TextRange.collapsed(caret);
+      _slashCommandWasTyped = false;
+      _manualSlashMenuValue = _controller.value;
+      _showSlashCommandMenu(anchor: anchor, query: '');
+    });
+  }
+
+  void _slashCommandMenuDismissed(bool userInitiated) {
+    if (userInitiated && _slashCommandWasTyped) {
+      _dismissedSlashStart = _slashCommandRange?.start;
+    }
+    _slashCommandRange = null;
+    _slashCommandWasTyped = false;
+    _manualSlashMenuValue = null;
+  }
+
+  static bool _requiresMarkdown(SlashCommandType command) => switch (command) {
+    SlashCommandType.table ||
+    SlashCommandType.numberedList ||
+    SlashCommandType.quote ||
+    SlashCommandType.divider ||
+    SlashCommandType.codeBlock => true,
+    _ => false,
+  };
+
+  static String _markdownFeatureName(SlashCommandType command) =>
+      switch (command) {
+        SlashCommandType.table => 'Tables',
+        SlashCommandType.numberedList => 'Numbered lists',
+        SlashCommandType.quote => 'Quotes',
+        SlashCommandType.divider => 'Dividers',
+        SlashCommandType.codeBlock => 'Code blocks',
+        _ => 'This command',
+      };
+
+  Future<bool> _confirmMarkdownFor(SlashCommandType command) async {
+    final canEnable = widget.onMarkdownEnabledChanged != null;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Turn on Markdown?'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 390),
+          child: Text(
+            '${_markdownFeatureName(command)} use Markdown. Turning it on '
+            'changes how Markdown syntax is displayed in every note. Your '
+            'text stays unchanged.',
+            style: TextStyle(
+              fontSize: AppTypeScale.control,
+              color: context.palette.textPrimary,
+              height: 1.4,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('enable-markdown-command'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(canEnable ? 'Turn on and continue' : 'Open Settings'),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return false;
+    if (!canEnable) {
+      widget.onSettingsPressed();
+      return false;
+    }
+    widget.onMarkdownEnabledChanged!(true);
+    return true;
+  }
+
+  Future<void> _runSlashCommand(SlashCommandChoice choice) async {
+    final range = _slashCommandRange;
+    final typed = _slashCommandWasTyped;
+    final source = _controller.text;
+    _slashCommandRange = null;
+    _slashCommandWasTyped = false;
+    _manualSlashMenuValue = null;
+    if (range == null ||
+        !range.isValid ||
+        range.start < 0 ||
+        range.end > source.length) {
+      return;
+    }
+
+    var markdown = widget.markdownEnabled;
+    if (_requiresMarkdown(choice.type) && !markdown) {
+      markdown = await _confirmMarkdownFor(choice.type);
+      if (!markdown || !mounted) {
+        if (typed) _dismissedSlashStart = range.start;
+        return;
+      }
+    }
+    // A modal confirmation temporarily releases focus, but it cannot reserve
+    // offsets against a concurrent remote edit. Refuse to write into a source
+    // that moved while the question was open.
+    if (_controller.text != source || range.end > _controller.text.length) {
+      return;
+    }
+    if (typed &&
+        !_controller.text.substring(range.start, range.end).startsWith('/')) {
+      return;
+    }
+
+    switch (choice.type) {
+      case SlashCommandType.table:
+        final table = markdownTableTemplate(
+          rows: choice.tableRows ?? 2,
+          columns: choice.tableColumns ?? 2,
+        );
+        final firstHeader = table.indexOf('Column 1');
+        _replaceCommandValue(
+          replaceWithSlashCommandBlock(
+            _controller.value,
+            range,
+            table,
+            selectionInBlock: TextSelection(
+              baseOffset: firstHeader,
+              extentOffset: firstHeader + 'Column 1'.length,
+            ),
+          ),
+        );
+        break;
+      case SlashCommandType.heading:
+        if (typed) {
+          _replaceCommandValue(
+            replaceSlashCommandRange(
+              _controller.value,
+              range,
+              markdown ? '# ' : '',
+            ),
+          );
+          if (!markdown) _applyParagraphStyle(NoteParagraphStyle.heading);
+        } else if (markdown) {
+          _applyMarkdownEdit(applyMarkdownHeading(_controller.value, 1));
+        } else {
+          _applyParagraphStyle(NoteParagraphStyle.heading);
+        }
+        break;
+      case SlashCommandType.checklist:
+        if (typed) {
+          _replaceCommandValue(
+            replaceSlashCommandRange(
+              _controller.value,
+              range,
+              markdown ? '- [ ] ' : uncheckedPrefix,
+            ),
+          );
+        } else if (!_lineStyleActive(NoteLineStyle.checklist)) {
+          _toggleChecklist();
+        }
+        break;
+      case SlashCommandType.bulletedList:
+        if (typed) {
+          _replaceCommandValue(
+            replaceSlashCommandRange(
+              _controller.value,
+              range,
+              markdown ? '- ' : bulletPrefix,
+            ),
+          );
+        } else if (!_lineStyleActive(NoteLineStyle.bullet)) {
+          _toggleBullets();
+        }
+        break;
+      case SlashCommandType.numberedList:
+        if (typed) {
+          _replaceCommandValue(
+            replaceSlashCommandRange(_controller.value, range, '1. '),
+          );
+        } else {
+          _applyOrderedListAtCaret();
+        }
+        break;
+      case SlashCommandType.quote:
+        if (typed) {
+          _replaceCommandValue(
+            replaceSlashCommandRange(_controller.value, range, '> '),
+          );
+        } else {
+          _applyQuoteAtCaret();
+        }
+        break;
+      case SlashCommandType.divider:
+        _replaceCommandValue(
+          replaceWithSlashCommandBlock(_controller.value, range, '---\n'),
+        );
+        break;
+      case SlashCommandType.codeBlock:
+        _replaceCommandValue(
+          replaceWithSlashCommandBlock(
+            _controller.value,
+            range,
+            '```\n\n```',
+            selectionInBlock: const TextSelection.collapsed(offset: 4),
+          ),
+        );
+        break;
+      case SlashCommandType.image:
+        if (typed) _consumeSlashCommand(range);
+        await pickAndInsertImages();
+        break;
+      case SlashCommandType.video:
+        if (typed) _consumeSlashCommand(range);
+        await pickAndInsertVideos();
+        break;
+      case SlashCommandType.voiceNote:
+        if (typed) _consumeSlashCommand(range);
+        widget.onRecordVoice?.call();
+        break;
+    }
+  }
+
+  void _consumeSlashCommand(TextRange range) {
+    _replaceCommandValue(
+      replaceSlashCommandRange(_controller.value, range, ''),
+    );
+  }
+
+  void _replaceCommandValue(TextEditingValue value) {
+    if (widget.readOnly || value == _controller.value) return;
+    _nextInsertedFormats = const {};
+    final editable = _editableTextState();
+    if (editable == null) {
+      _controller.value = value;
+    } else {
+      editable.userUpdateTextEditingValue(value, SelectionChangedCause.toolbar);
+    }
+    _focusNode.requestFocus();
+  }
+
+  TextSelection _selectionAfterReplacement(
+    TextSelection selection,
+    TextRange range,
+    int replacementLength,
+  ) {
+    int map(int offset) {
+      if (offset <= range.start) return offset;
+      if (offset <= range.end) return range.start + replacementLength;
+      return offset + replacementLength - (range.end - range.start);
+    }
+
+    return TextSelection(
+      baseOffset: map(selection.baseOffset),
+      extentOffset: map(selection.extentOffset),
+      affinity: selection.affinity,
+      isDirectional: selection.isDirectional,
+    );
+  }
+
+  void _applyOrderedListAtCaret() {
+    final value = _controller.value;
+    if (!value.selection.isValid) return;
+    final line = markdownLinePrefix(value.text, value.selection.extentOffset);
+    if (line.isOrdered) return;
+    final range = line.isListItem
+        ? TextRange(start: line.markerStart, end: line.contentStart)
+        : TextRange.collapsed(line.contentStart);
+    const marker = '1. ';
+    _replaceCommandValue(
+      replaceSlashCommandRange(
+        value,
+        range,
+        marker,
+        selection: _selectionAfterReplacement(
+          value.selection,
+          range,
+          marker.length,
+        ),
+      ),
+    );
+  }
+
+  void _applyQuoteAtCaret() {
+    final value = _controller.value;
+    if (!value.selection.isValid) return;
+    final line = markdownLinePrefix(value.text, value.selection.extentOffset);
+    if (line.isQuoted) return;
+    final range = TextRange.collapsed(line.indentEnd);
+    const marker = '> ';
+    _replaceCommandValue(
+      replaceSlashCommandRange(
+        value,
+        range,
+        marker,
+        selection: _selectionAfterReplacement(
+          value.selection,
+          range,
+          marker.length,
+        ),
+      ),
+    );
+  }
+
   /// Any key at all dismisses the link panel first. Escape is the one people
   /// reach for, but a panel that outlives the caret it was raised next to is
   /// wrong whichever key moved it.
   KeyEventResult _handleEditorKey(FocusNode node, KeyEvent event) {
+    if (_slashCommandMenu.handleKeyEvent(event)) {
+      return KeyEventResult.handled;
+    }
     if (event is KeyDownEvent) {
       LinkPopover.hide();
       _clearKeywordTooltip();
@@ -2544,11 +2974,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       widget.onFocus?.call();
       _recordKapyPeekActivity();
       _reportActivity(edited: false);
+      _scheduleSlashCommandMenuSync();
       return;
     }
     // Nothing left to raise a keyboard for. A retry still in flight would
     // otherwise put one up over a note nobody is writing in.
     _keyboardRetryTimer?.cancel();
+    _slashCommandMenu.hide();
     _kapyPeekIdleTimer?.cancel();
     _clearKeywordTooltip();
     _kapyPeekIdleTimer = null;
@@ -3966,6 +4398,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   : widget.onRecordVoice,
               voiceBusy: widget.voiceActionBusy,
               onChecklistPressed: _toggleChecklist,
+              onInsertMenuPressed: _showInsertMenu,
               onIndentPressed: () => _indentList(outdent: false),
               onOutdentPressed: () => _indentList(outdent: true),
               showIndentControls: _showIndentControls,

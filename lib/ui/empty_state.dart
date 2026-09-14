@@ -43,7 +43,7 @@ class EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 7),
           Text(
-            'Write freely. Calculations resolve as you type.',
+            'Start writing. Calculations resolve as you type.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: AppTypeScale.body,
@@ -58,7 +58,7 @@ class EmptyState extends StatelessWidget {
               KapyIcons.addRounded,
               size: AppControlMetrics.iconAction,
             ),
-            label: const Text('New Note'),
+            label: const Text('New note'),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(

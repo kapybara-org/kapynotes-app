@@ -24,9 +24,9 @@ extension NumberSystemCopy on NumberSystem {
   };
 
   String get description => switch (this) {
-    NumberSystem.auto => 'Follow the country your device is set to',
-    NumberSystem.international => 'Thousands, millions, billions',
-    NumberSystem.indian => 'Thousands, lakh, crore',
+    NumberSystem.auto => 'Use your device region',
+    NumberSystem.international => 'Thousands, millions, and billions',
+    NumberSystem.indian => 'Thousands, lakhs, and crores',
   };
 
   /// The grouping this choice means for a device set to [region], falling

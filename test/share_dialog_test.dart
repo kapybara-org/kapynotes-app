@@ -144,8 +144,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Share note'), findsOneWidget);
-    // The promise, in the sheet: it stays encrypted.
-    expect(find.textContaining('stays encrypted'), findsOneWidget);
+    // The promise, in the sheet: access stays limited to invited people.
+    expect(find.textContaining('Only invited people can read'), findsOneWidget);
     expect(find.byKey(const ValueKey('share-email')), findsOneWidget);
     expect(find.text('Editor'), findsOneWidget);
     expect(find.text('View only'), findsOneWidget);
@@ -172,7 +172,7 @@ void main() {
     expect(find.text('Shared with user-2'), findsOneWidget);
     expect(find.textContaining('Invitation sent to'), findsOneWidget);
     expect(find.text(bob.email), findsOneWidget);
-    expect(find.text('View only · Invited, not joined yet'), findsOneWidget);
+    expect(find.text('View only · Invite pending'), findsOneWidget);
     expect(find.byKey(const ValueKey('share-dialog-close')), findsOneWidget);
     expect(find.byKey(const ValueKey('share-access-card')), findsOneWidget);
     expect(find.byKey(const ValueKey('share-invite-card')), findsOneWidget);
@@ -242,13 +242,13 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('unshare-note')));
     await tester.pumpAndSettle();
-    expect(find.text('Move back to My notes?'), findsOneWidget);
+    expect(find.text('Move to my notes?'), findsOneWidget);
     // The pass this starts awaits the document store's load, a future made
     // in the real zone during boot: pump the tap here so it runs alongside
     // rather than waiting on a turn of the real loop the fake zone never
     // takes.
     await tester.runAsync(() async {
-      await tester.tap(find.text('Move it'));
+      await tester.tap(find.text('Move note'));
       await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await tester.pump();
@@ -316,7 +316,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('leave-space')));
     await tester.pumpAndSettle();
     // Honest about what leaving does not do.
-    expect(find.textContaining('stay with you'), findsOneWidget);
+    expect(find.textContaining('Unsynced notes remain'), findsOneWidget);
     await tester.runAsync(() async {
       await tester.tap(find.widgetWithText(FilledButton, 'Leave'));
       await Future<void>.delayed(const Duration(milliseconds: 300));

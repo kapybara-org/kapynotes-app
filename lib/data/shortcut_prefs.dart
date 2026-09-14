@@ -60,9 +60,8 @@ extension ShortcutActionCopy on ShortcutAction {
   };
 
   String get description => switch (this) {
-    ShortcutAction.openApp => 'Show the app from anywhere, or hide it again',
-    ShortcutAction.newNoteAnywhere =>
-      'Come forward on a blank note, whatever you were in',
+    ShortcutAction.openApp => 'Show or hide Kapy Notes from anywhere',
+    ShortcutAction.newNoteAnywhere => 'Open a blank note from anywhere',
     ShortcutAction.newNote => 'Create and focus a blank note',
     ShortcutAction.findNotes =>
       'Search titles, nested content, and voice notes from the sidebar',

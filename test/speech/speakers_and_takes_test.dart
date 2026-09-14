@@ -270,10 +270,7 @@ void main() {
       await tester.tap(find.text('Post for X'));
       await tester.pumpAndSettle();
 
-      expect(
-        find.textContaining("used this month's cloud AI summaries"),
-        findsOneWidget,
-      );
+      expect(find.textContaining('Cloud summaries reset on'), findsOneWidget);
       expect(find.textContaining('1 Oct'), findsOneWidget);
     });
 
@@ -306,7 +303,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Change how'));
+      await tester.tap(find.text('Instructions'));
       await tester.pumpAndSettle();
 
       // Not a description of the instruction: the instruction itself, so
@@ -328,7 +325,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Change how'));
+      await tester.tap(find.text('Instructions'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'Two bullet points only.');
       await tester.tap(find.text('Save'));
@@ -380,7 +377,7 @@ void main() {
 
         // The summary tab, with everything on it.
         expect(find.text('Post for X'), findsNWidgets(2));
-        expect(find.text('Change how'), findsOneWidget);
+        expect(find.text('Instructions'), findsOneWidget);
         expect(tester.takeException(), isNull);
 
         await tester.tap(find.text('Transcript'));

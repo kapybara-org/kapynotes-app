@@ -139,7 +139,7 @@ class NoteVoiceChip extends StatelessWidget {
     if (ref.transcript != null) return 'Read the transcript';
     return switch (state) {
       VoiceChipState.needsConsent => 'Turn transcription on in Settings',
-      VoiceChipState.needsAccount => 'Choose transcription in Voice Settings',
+      VoiceChipState.needsAccount => 'Choose transcription in Settings',
       VoiceChipState.failed when ref.transcript != null =>
         'Read the transcript or try the summary again',
       VoiceChipState.failed => 'Try transcribing again',

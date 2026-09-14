@@ -78,20 +78,20 @@ class _SpaceLinkPanelState extends State<SpaceLinkPanel> {
 
   Future<void> _create() => widget.run(
     () => widget.joining.makeLink(widget.spaceId, role: widget.role),
-    waiting: 'Making a link…',
-    done: 'Link ready. Anyone who opens it can ask to join.',
+    waiting: 'Creating link…',
+    done: 'Link ready. Anyone with it can request access.',
   );
 
   Future<void> _replace() => widget.run(
     () => widget.joining.makeLink(widget.spaceId, role: widget.role),
-    waiting: 'Making a new link…',
-    done: 'New link ready. The old one no longer works.',
+    waiting: 'Creating a new link…',
+    done: 'New link ready. The old link no longer works.',
   );
 
   Future<void> _turnOff() => widget.run(
     () => widget.joining.turnOffLink(widget.spaceId),
     waiting: 'Turning the link off…',
-    done: 'The link is off. Anyone already waiting is still on the list.',
+    done: 'Link disabled. Pending requests remain.',
   );
 
   Future<void> _copy(JoinLink link) async {
@@ -117,8 +117,8 @@ class _SpaceLinkPanelState extends State<SpaceLinkPanel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const JoinMessage(
-                  'Anyone with the link can ask to join. Nobody gets in '
-                  'until you let them.',
+                  'Anyone with the link can request access. You approve each '
+                  'person before they join.',
                 ),
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
@@ -144,7 +144,7 @@ class _SpaceLinkPanelState extends State<SpaceLinkPanel> {
       key: const ValueKey('space-link-panel'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const JoinLabel('Link to ask to join'),
+        const JoinLabel('Invitation link'),
         KapyControlSurface(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -184,8 +184,7 @@ class _SpaceLinkPanelState extends State<SpaceLinkPanel> {
               ),
               const SizedBox(height: 8),
               JoinMessage(
-                'Works until $until. People you let in can '
-                '${_access(link.role)}.',
+                'Expires $until. Approved people can ${_access(link.role)}.',
               ),
               const SizedBox(height: 6),
               Wrap(

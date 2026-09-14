@@ -167,8 +167,8 @@ class _ImportDialogState extends State<_ImportDialog> {
                   key: const ValueKey('import-mode-restore'),
                   label: 'Restore',
                   detail:
-                      'Puts notes back under their own ids. A note this '
-                      'device has edited since is left alone.',
+                      'Restores notes to their original place. Newer local '
+                      'edits stay unchanged.',
                   selected: _mode == ImportMode.restore,
                   onTap: () => setState(() => _mode = ImportMode.restore),
                 ),
@@ -177,8 +177,8 @@ class _ImportDialogState extends State<_ImportDialog> {
                   key: const ValueKey('import-mode-copies'),
                   label: 'Add as copies',
                   detail:
-                      'Adds every note again as a new one. Nothing already '
-                      'here is touched.',
+                      'Imports every note as a new copy. Existing notes stay '
+                      'unchanged.',
                   selected: _mode == ImportMode.copies,
                   onTap: () => setState(() => _mode = ImportMode.copies),
                 ),

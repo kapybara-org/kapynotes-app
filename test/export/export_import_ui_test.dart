@@ -297,6 +297,6 @@ void main() {
       );
     }
     // The plaintext warning is where the action is, not buried in a help page.
-    expect(find.textContaining('not encrypted'), findsOneWidget);
+    expect(find.textContaining('Unencrypted after export'), findsOneWidget);
   });
 }

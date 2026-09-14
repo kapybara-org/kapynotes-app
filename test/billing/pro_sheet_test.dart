@@ -70,7 +70,9 @@ void main() {
         theme: brightness == Brightness.dark
             ? KapyTheme.dark()
             : KapyTheme.light(),
-        home: Scaffold(body: ProSheet(billing: billing, asSheet: asSheet)),
+        home: Scaffold(
+          body: ProSheet(billing: billing, asSheet: asSheet),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -92,7 +94,7 @@ void main() {
       find.textContaining('Unlimited notes unlock on this device'),
       findsOneWidget,
     );
-    expect(find.textContaining('belong to an account'), findsOneWidget);
+    expect(find.textContaining('cloud features everywhere'), findsOneWidget);
     // Restoring is offered too: a wiped device unlocks its notes again.
     expect(find.byKey(const ValueKey('pro-restore')), findsOneWidget);
     expect(find.byKey(const ValueKey('pro-sign-in')), findsOneWidget);
@@ -110,7 +112,7 @@ void main() {
     expect(find.byKey(const ValueKey('pro-owned-here')), findsOneWidget);
     expect(find.textContaining('on this device'), findsWidgets);
     expect(
-      find.textContaining('Sign in to use it on your other devices'),
+      find.textContaining('Sign in to use Pro on other devices'),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('pro-buy')), findsNothing);
@@ -133,7 +135,10 @@ void main() {
 
     expect(store.log, contains('buy pro_lifetime as user-1'));
     expect(find.text('Pro Lifetime is yours. Thank you.'), findsOneWidget);
-    expect(find.textContaining('Pro Lifetime is on this account'), findsOneWidget);
+    expect(
+      find.textContaining('Pro Lifetime is on this account'),
+      findsOneWidget,
+    );
     // Bought, so the buy button gives way to the packs.
     expect(find.byKey(const ValueKey('pro-buy')), findsNothing);
     expect(find.byKey(const ValueKey('pro-pack-voice_1000')), findsOneWidget);
@@ -141,7 +146,9 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('desktop opens web checkout and never offers mobile packs', (tester) async {
+  testWidgets('desktop opens web checkout and never offers mobile packs', (
+    tester,
+  ) async {
     store.supported = false;
     session.signIn('user-1');
     await pumpSheet(tester, platform: TargetPlatform.macOS);
@@ -154,7 +161,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(openedCheckouts, [api.checkoutUrl]);
-    expect(find.textContaining('Finish the purchase in your browser'), findsOneWidget);
+    expect(
+      find.textContaining('Finish the purchase in your browser'),
+      findsOneWidget,
+    );
 
     api.answer = () => entitlementsFor(pro: true);
     await billing.refresh();
@@ -170,8 +180,14 @@ void main() {
     await pumpSheet(tester, platform: TargetPlatform.windows);
 
     expect(find.text('Sign in to buy on the web'), findsOneWidget);
-    expect(find.textContaining('Sign in first so Pro Lifetime belongs'), findsOneWidget);
-    expect(find.textContaining('Unlimited notes unlock on this device'), findsNothing);
+    expect(
+      find.textContaining('Sign in to use Pro on every device'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Unlimited notes unlock on this device'),
+      findsNothing,
+    );
     expect(find.byKey(const ValueKey('pro-restore')), findsNothing);
   });
 
@@ -187,14 +203,15 @@ void main() {
     expect(find.byKey(const ValueKey('pro-offers-retry')), findsOneWidget);
   });
 
-  testWidgets('while the limits are off it says sync and sharing are everyone’s', (
-    tester,
-  ) async {
-    session.signIn('user-1');
-    await pumpSheet(tester);
+  testWidgets(
+    'while the limits are off it says sync and sharing are everyone’s',
+    (tester) async {
+      session.signIn('user-1');
+      await pumpSheet(tester);
 
-    expect(find.textContaining('everyone for now'), findsOneWidget);
-  });
+      expect(find.textContaining('Included for now'), findsOneWidget);
+    },
+  );
 
   testWidgets('a trial says what is left of it, and that it ends by itself', (
     tester,
@@ -205,10 +222,10 @@ void main() {
 
     expect(find.byKey(const ValueKey('pro-trial')), findsOneWidget);
     expect(find.textContaining('6 days left'), findsOneWidget);
-    expect(find.textContaining('Nothing is charged'), findsOneWidget);
+    expect(find.textContaining('will not be charged'), findsOneWidget);
     // Not the everyone line: during a trial, sync is on because of the trial.
-    expect(find.textContaining('everyone for now'), findsNothing);
-    expect(find.textContaining('while you try Pro'), findsOneWidget);
+    expect(find.textContaining('Included for now'), findsNothing);
+    expect(find.textContaining('Included during your trial'), findsOneWidget);
     // Pro Lifetime is still the thing to buy, and no pack is: one bought
     // during a trial would be stranded on Free when the trial ended.
     expect(find.byKey(const ValueKey('pro-buy')), findsOneWidget);
@@ -226,7 +243,7 @@ void main() {
     await pumpSheet(tester);
 
     expect(find.byKey(const ValueKey('pro-trial')), findsNothing);
-    expect(find.textContaining('Write past five notes'), findsOneWidget);
+    expect(find.textContaining('Write unlimited notes'), findsOneWidget);
   });
 
   testWidgets('a Pro account at the storage cap cannot buy more storage', (
@@ -248,7 +265,7 @@ void main() {
     expect(storage.onPressed, isNull);
     expect(voice.onPressed, isNotNull);
     expect(
-      find.text('Your account holds the most extra storage it can.'),
+      find.text('Your account has reached its storage limit.'),
       findsOneWidget,
     );
   });
@@ -305,7 +322,10 @@ void main() {
       matchesGoldenFile('goldens/pro_sheet_phone_light.png'),
     );
 
-    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -430));
+    await tester.drag(
+      find.byType(SingleChildScrollView),
+      const Offset(0, -430),
+    );
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(ProSheet),

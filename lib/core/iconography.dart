@@ -459,4 +459,21 @@ class KapyIcons {
     0xE06B,
     HugeIcons.strokeRoundedVideo01,
   );
+  static const tableRounded = KapyIconData(
+    0xE06C,
+    HugeIcons.strokeRoundedGridTable,
+  );
+  static const numberedListRounded = KapyIconData(
+    0xE06D,
+    HugeIcons.strokeRoundedLeftToRightListNumber,
+  );
+  static const quoteRounded = KapyIconData(
+    0xE06E,
+    HugeIcons.strokeRoundedQuoteDown,
+  );
+  static const dividerRounded = KapyIconData(
+    0xE06F,
+    HugeIcons.strokeRoundedMinusSign,
+  );
+  static const codeRounded = KapyIconData(0xE070, HugeIcons.strokeRoundedCode);
 }

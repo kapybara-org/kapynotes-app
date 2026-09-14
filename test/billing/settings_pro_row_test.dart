@@ -106,10 +106,7 @@ void main() {
     expect(find.text('Plan & usage'), findsOneWidget);
     expect(find.byKey(const ValueKey('plan-current')), findsOneWidget);
     expect(find.text('Free plan'), findsOneWidget);
-    expect(
-      find.text('Your current plan and included cloud allowances'),
-      findsOneWidget,
-    );
+    expect(find.text('Your plan and included cloud limits'), findsOneWidget);
     // The store was told whose purchases these will be as soon as the
     // account signed in, not at the moment of buying.
     expect(purchases.log, contains('logIn user-1'));
@@ -130,7 +127,7 @@ void main() {
     );
 
     expect(find.text('Pro trial'), findsOneWidget);
-    expect(find.text('Your Pro trial has 9 days left'), findsOneWidget);
+    expect(find.text('Pro trial ends in 9 days'), findsOneWidget);
 
     // Cancel the real trial-end timer before Flutter checks for leaked timers.
     final billing = account.billing;

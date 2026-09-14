@@ -263,19 +263,19 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
     final actions = widget.actions;
     return switch (widget.state) {
       VoiceChipState.needsConsent when _ref.transcript == null => _Empty(
-        message: 'Turn on transcription to get text and a summary.',
+        message: 'Turn on transcription to create text and a summary.',
         actionLabel: 'Turn on',
         onAction: actions.onTurnOnTranscription,
       ),
       VoiceChipState.needsAccount when _ref.transcript == null => _Empty(
-        message: 'Choose cloud or local transcription in Voice Settings.',
+        message: 'Choose cloud or local transcription in Settings.',
         actionLabel: actions.onTurnOnTranscription != null
             ? 'Turn on transcription'
             : null,
         onAction: actions.onTurnOnTranscription,
       ),
       VoiceChipState.outOfMinutes => const _Empty(
-        message: "You've used this month's minutes.",
+        message: 'Monthly transcription limit reached.',
       ),
       VoiceChipState.transcribing => const _Empty(
         message: 'Transcribing…',
@@ -286,10 +286,10 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
         busy: true,
       ),
       VoiceChipState.waiting => const _Empty(
-        message: 'Waiting for connection.',
+        message: 'Waiting for connection…',
       ),
       VoiceChipState.retrying => const _Empty(
-        message: "Transcription didn't go through. Trying again soon.",
+        message: 'Transcription failed. Retrying soon…',
       ),
       VoiceChipState.failed => _Empty(
         message: _ref.transcript == null
@@ -353,7 +353,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
             ),
             if (widget.actions.onSaveSummaryInstruction != null)
               _QuietButton(
-                label: 'Change how',
+                label: 'Instructions',
                 onPressed: () => unawaited(_editSummaryInstruction()),
               ),
           ],
@@ -487,11 +487,11 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
   Future<String?> _askForInstruction({required String initial}) =>
       showInstructionSheet(
         context,
-        title: 'What should it write?',
+        title: 'What should it create?',
         help:
-            'Ask for anything the transcript can answer: a message, a to-do '
-            'list, a shorter version. It only uses what you said.',
-        hint: 'Write a short message to my team about this.',
+            'Create a message, task list, or shorter version using only the '
+            'transcript.',
+        hint: 'Write a short message for my team',
         initial: initial,
         confirmLabel: 'Write it',
       );
@@ -502,15 +502,14 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
     if (save == null) return;
     final asked = await showInstructionSheet(
       context,
-      title: 'How summaries are written',
+      title: 'Summary instructions',
       help:
-          'This is what the model is told. It applies to every recording you '
-          'summarise. Whatever you write, it will only use what you actually '
-          'said.',
+          'These instructions apply to every recording. Summaries only use '
+          'the transcript.',
       hint: defaultSummaryInstruction,
       initial: widget.actions.summaryInstruction ?? defaultSummaryInstruction,
       confirmLabel: 'Save',
-      resetLabel: 'Use the standard one',
+      resetLabel: 'Restore default',
       resetTo: defaultSummaryInstruction,
     );
     if (asked == null || !mounted) return;
@@ -530,19 +529,19 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
       await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Write this one again?'),
+          title: const Text('Regenerate this summary?'),
           content: const Text(
-            'The new instructions are saved either way. This rewrites the '
-            'summary of this recording with them.',
+            'Your new instructions are already saved. Regenerate this summary '
+            'to apply them now.',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Not now'),
+              child: const Text('Later'),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Write it again'),
+              child: const Text('Regenerate'),
             ),
           ],
         ),
@@ -722,9 +721,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete this voice note?'),
-        content: const Text(
-          'The recording, transcript and summary are removed from the note.',
-        ),
+        content: const Text('Removes the audio, transcript, and summary.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -1375,7 +1372,7 @@ class _TakeCard extends StatelessWidget {
                 IconButton(
                   onPressed: onAgain,
                   visualDensity: VisualDensity.compact,
-                  tooltip: 'Write it again',
+                  tooltip: 'Regenerate',
                   icon: KapyIcon(
                     KapyIcons.refreshRounded,
                     size: 16,

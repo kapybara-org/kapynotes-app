@@ -519,7 +519,7 @@ void main() {
       describeSpeechError(
         SyncRefusedException(400, queue.entries.single.lastError!, const {}),
       ),
-      'Transcription is unavailable right now. It will try again.',
+      'Transcription is temporarily unavailable. Retrying soon.',
     );
   });
 

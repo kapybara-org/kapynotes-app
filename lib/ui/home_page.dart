@@ -1260,11 +1260,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         : shortcut == null
         ? 'Show it from Settings to find it.'
         : 'Show it from Settings or press $shortcut.';
-    Toast.show(
-      context,
-      'Note moved to Hidden Notes. $discovery',
-      icon: hiddenIcon,
-    );
+    Toast.show(context, 'Moved to Hidden Notes. $discovery', icon: hiddenIcon);
     if (!hidingSelected) return;
     if (closesPane) {
       widget.prefs.lastOpenedNoteId = _selectedId;
@@ -1285,7 +1281,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final unhiddenSelected = id == _selectedId;
     final index = _visibleNotes.indexWhere((item) => item.id == id);
     widget.notes.unhide(id);
-    Toast.show(context, 'Note returned to All notes', icon: unhideIcon);
+    Toast.show(context, 'Moved to Notes', icon: unhideIcon);
     if (!unhiddenSelected) return;
 
     final remaining = _visibleNotes;
@@ -1319,10 +1315,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final confirmed = await _confirmDelete(
       title: 'Delete note?',
       body: title.isEmpty
-          ? 'This note will be gone from every device you sync with. It '
-                'cannot be undone.'
-          : '"$title" will be gone from every device you sync with. It '
-                'cannot be undone.',
+          ? 'Permanently deletes this note from every synced device.'
+          : 'Permanently deletes "$title" from every synced device.',
       action: 'Delete',
     );
     if (!confirmed || !mounted) return;
@@ -1341,8 +1335,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final confirmed = await _confirmDelete(
       title: 'Empty Archived Notes?',
       body:
-          '${_noteCount(ids.length)} will be gone from every device you sync '
-          'with. It cannot be undone.',
+          'Permanently deletes ${_noteCount(ids.length).toLowerCase()} from '
+          'every synced device.',
       action: 'Delete all',
     );
     if (!confirmed || !mounted) return;
@@ -1357,8 +1351,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final confirmed = await _confirmDelete(
       title: ids.length == 1 ? 'Delete note?' : 'Delete ${ids.length} notes?',
       body:
-          '${_noteCount(ids.length)} will be gone from every device you sync '
-          'with. It cannot be undone.',
+          'Permanently deletes ${_noteCount(ids.length).toLowerCase()} from '
+          'every synced device.',
       action: 'Delete',
     );
     if (!confirmed || !mounted) return;
@@ -2390,6 +2384,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           shortcuts: widget.shortcuts,
           spellCheckEnabled: widget.prefs.spellCheckEnabled,
           markdownEnabled: widget.prefs.markdownEnabled,
+          onMarkdownEnabledChanged: (enabled) =>
+              widget.prefs.markdownEnabled = enabled,
           initialAttachments: note.attachments,
           images: widget.notes.blobs,
           imageFetch: widget.account?.imageFetch,
@@ -2478,6 +2474,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           shortcuts: widget.shortcuts,
           spellCheckEnabled: widget.prefs.spellCheckEnabled,
           markdownEnabled: widget.prefs.markdownEnabled,
+          onMarkdownEnabledChanged: (enabled) =>
+              widget.prefs.markdownEnabled = enabled,
           initialAttachments: note.attachments,
           images: widget.notes.blobs,
           imageFetch: widget.account?.imageFetch,

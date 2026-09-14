@@ -361,16 +361,12 @@ class _SignInFormState extends State<_SignInForm> {
           : 'Sign in',
       blurb: switch (_step) {
         _SignInStep.code =>
-          'We sent a six-digit code to $_address. It works once and expires '
-              'in ten minutes.',
+          'Enter the 6-digit code sent to $_address. It expires in 10 minutes.',
         _SignInStep.resetCode =>
-          'We sent a code to $_address. Enter it with the password you want '
-              'from now on.',
+          'Enter the code sent to $_address and choose a new password.',
         _SignInStep.resetRequest =>
-          'We will email you a code. This changes how you sign in. It does '
-              'not touch your encryption passphrase, and your notes stay '
-              'locked with that.',
-        _ => 'Sync your notes across devices. They stay private and encrypted.',
+          'We will email a reset code. Your passphrase and notes will not change.',
+        _ => 'Sync encrypted notes across your devices.',
       },
       children: [
         ..._fields(),
@@ -521,7 +517,7 @@ class _ProfileSetup extends StatelessWidget {
   @override
   Widget build(BuildContext context) => _Panel(
     title: 'What should people call you?',
-    blurb: 'This is the name people will see when you share a note.',
+    blurb: 'This name appears when you share notes.',
     children: [_ProfileEditor(account: account, firstRun: true)],
   );
 }
@@ -764,7 +760,7 @@ class _PassphraseFormState extends State<_PassphraseForm> {
       if (result == FileExportOutcome.saved) _savedFile = true;
       if (result == FileExportOutcome.failed ||
           result == FileExportOutcome.unsupported) {
-        _problem = 'Could not save the file. Try Copy instead.';
+        _problem = 'Could not save the file. Copy it instead.';
       }
     });
   }
@@ -802,7 +798,7 @@ class _PassphraseFormState extends State<_PassphraseForm> {
     return _Panel(
       key: const ValueKey('passphrase-setup'),
       title: 'Save your passphrase',
-      blurb: "You'll use this to unlock your notes on another device.",
+      blurb: 'Use it to unlock your notes on other devices.',
       children: [
         KapyControlSurface(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -929,9 +925,8 @@ class _UnlockFormState extends State<_UnlockForm> {
   Widget build(BuildContext context) => _Panel(
     title: 'Unlock your notes',
     blurb: _usingRecoveryKey
-        ? 'Paste the recovery key you saved when you set up this account.'
-        : 'Your notes are on this device but sealed. Enter your passphrase to '
-              'open them.',
+        ? 'Paste the recovery key saved for this account.'
+        : 'Enter your passphrase to unlock notes on this device.',
     children: [
       _Field(
         key: ValueKey(_usingRecoveryKey),
@@ -998,11 +993,10 @@ class _AccountSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     final email = account.user?.email ?? 'this account';
     return _Panel(
-      title: 'These notes were written before you signed in',
+      title: 'Keep the notes already on this device?',
       blurb:
-          'They belong to this device, not to $email. Adding them uploads '
-          'them to that account. Discarding them removes them from here, and '
-          'they are not on any server to get back.',
+          'Add them to $email to sync them, or discard them from this device. '
+          'Discarded notes cannot be recovered.',
       children: [
         FilledButton(
           onPressed: () => unawaited(
@@ -1013,7 +1007,7 @@ class _AccountSwitch extends StatelessWidget {
               action: () => account.resolveAccountSwitch(keepLocalNotes: true),
             ),
           ),
-          child: Text('Add them to $email'),
+          child: const Text('Add and sync'),
         ),
         const SizedBox(height: 6),
         TextButton(
@@ -1025,7 +1019,7 @@ class _AccountSwitch extends StatelessWidget {
               action: () => account.resolveAccountSwitch(keepLocalNotes: false),
             ),
           ),
-          child: const Text('Discard them'),
+          child: const Text('Discard local notes'),
         ),
       ],
     );
@@ -1055,8 +1049,7 @@ class _ReadyState extends State<_Ready> {
   Account get account => widget.account;
 
   String get _status => account.sync?.personalNeedsPro ?? false
-      ? 'Sync is part of Pro. Your notes stay on this device, and nothing '
-            'already synced is deleted.'
+      ? 'Sync paused · Upgrade to Pro to resume'
       : _syncStatus;
 
   String get _syncStatus => switch (account.sync?.status) {
@@ -1112,8 +1105,8 @@ class _ReadyState extends State<_Ready> {
 
   static String _trialLine(int daysLeft) {
     final when = daysLeft == 1 ? 'today' : 'in $daysLeft days';
-    return 'Your Pro trial ends $when. Then this account moves to Free by '
-        'itself: sync and sharing stop, and notes past the first five become '
+    return 'Your Pro trial ends $when. Then your account switches to Free. '
+        'Sync and sharing stop, and notes after the first five become '
         'read-only. Nothing is deleted.';
   }
 
@@ -1156,10 +1149,10 @@ class _ReadyState extends State<_Ready> {
           SettingsNavigationRow(
             key: const ValueKey('sync-get-pro'),
             icon: KapyIcons.verifiedOutlined,
-            title: 'Get Pro Lifetime',
+            title: 'Get Pro',
             subtitle: needsPro
-                ? 'Restore sync and sharing with one purchase'
-                : 'Keep Pro after your trial with one purchase',
+                ? 'Restore sync and sharing'
+                : 'Keep Pro after your trial',
             onTap: () => unawaited(showProSheet(context, billing: billing)),
           ),
         ],
@@ -1188,7 +1181,7 @@ class _ReadyState extends State<_Ready> {
               key: const ValueKey('sign-out-row'),
               icon: KapyIcons.logoutRounded,
               title: email.isEmpty ? 'Signed in' : email,
-              subtitle: 'Signing out keeps your notes on this device',
+              subtitle: 'Your notes stay on this device',
               trailing: SettingsRowButton(
                 key: const ValueKey('sign-out'),
                 label: 'Sign out',
@@ -1207,7 +1200,7 @@ class _ReadyState extends State<_Ready> {
                 key: const ValueKey('delete-account'),
                 icon: KapyIcons.deleteForeverOutlined,
                 title: 'Delete account',
-                subtitle: 'The synced copy of your notes goes for good',
+                subtitle: 'Permanently delete synced notes',
                 destructive: true,
                 onTap: () => _confirm(context, account),
               ),
@@ -1261,7 +1254,10 @@ class _ProfileCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Shown to people you share notes with',
+                      'Visible to people you share with',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: SettingsMetrics.subtitleSize,
                         color: palette.textSecondary,
@@ -1314,7 +1310,7 @@ class DeleteAccountSettings extends StatelessWidget {
                 key: const ValueKey('delete-account'),
                 icon: KapyIcons.deleteForeverOutlined,
                 title: 'Delete account',
-                subtitle: 'The synced copy of your notes goes for good',
+                subtitle: 'Permanently delete synced notes',
                 destructive: true,
                 onTap: () => _confirm(context, account),
               ),
@@ -1451,9 +1447,8 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'This removes the account and everything stored for it: the '
-              'synced copy of your notes, their attachments, and the key your '
-              'passphrase unlocks.',
+              'This permanently deletes your account, synced notes, '
+              'attachments, and encryption key.',
               style: TextStyle(
                 fontSize: AppTypeScale.control,
                 color: palette.textPrimary,
@@ -1464,9 +1459,8 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
             Text(
               // The honest version. Nobody can undo this, and saying so is
               // the same fact the passphrase design has been saying all along.
-              'Nobody can undo it, us included. Without that key what is on '
-              'our servers is unreadable to anyone. The notes on this device '
-              'stay where they are.',
+              'Notes stored on this device stay here. Everything deleted '
+              'from the server cannot be recovered.',
               style: TextStyle(
                 fontSize: AppTypeScale.control,
                 color: palette.textSecondary,
