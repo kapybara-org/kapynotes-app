@@ -814,6 +814,7 @@ class FakeServer {
         ),
     ],
     liveNotes: _liveNotes(space.id).length,
+    hasLink: space.hasLink,
     createdAt: DateTime.utc(2026, 9, 1),
   );
 
@@ -1233,6 +1234,10 @@ class FakeSpace {
   String ownerId;
   int keyGeneration = 1;
   bool rotationPending = false;
+
+  /// Whether a live share link is keeping the space. The joining endpoints
+  /// live outside this fake, so a test that makes a link says so here.
+  bool hasLink = false;
   final Map<String, SpaceRole> members = {};
   final Map<String, SealedToPublicKey> keys = {};
   final Map<String, ({String email, SpaceRole role})> invites = {};

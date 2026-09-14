@@ -172,7 +172,7 @@ void main() {
     );
 
     test(
-      'a link is loaded, replaced and turned off, and the service remembers which',
+      'a link is loaded, made, changed and turned off, and the service remembers which',
       () async {
         expect(joining.knowsLinkOf('s1'), isFalse);
         send.answers['GET spaces/s1/link'] = {'link': null};
@@ -182,16 +182,45 @@ void main() {
         send.answers['PUT spaces/s1/link'] = {
           'token': token,
           'url': 'https://kapynotes.com/space/$token',
-          'role': 'viewer',
-          'expiresAt': '2030-01-01T00:00:00.000Z',
+          'role': 'member',
+          'approval': false,
+          'expiresAt': null,
         };
-        final link = await joining.makeLink('s1', role: SpaceRole.viewer);
-        expect(link.role, SpaceRole.viewer);
+        final link = await joining.makeLink('s1', approval: false);
+        expect(link.approval, isFalse);
+        expect(link.expiresAt, isNull);
         expect(joining.linkOf('s1')?.token, token);
+        expect(send.calls.last.$3, {'role': 'member', 'approval': false});
+
+        send.answers['PATCH spaces/s1/link'] = {
+          'token': token,
+          'url': 'https://kapynotes.com/space/$token',
+          'role': 'viewer',
+          'approval': false,
+          'expiresAt': null,
+        };
+        final changed = await joining.changeLink('s1', role: SpaceRole.viewer);
+        expect(changed.role, SpaceRole.viewer);
+        expect(joining.linkOf('s1')?.role, SpaceRole.viewer);
+        // Only what changes is sent: the address, and everything else, stays.
         expect(send.calls.last.$3, {'role': 'viewer'});
 
         await joining.turnOffLink('s1');
         expect(joining.linkOf('s1'), isNull);
+      },
+    );
+
+    test(
+      'a link from a server that predates open links asks, and says when it ends',
+      () {
+        final link = JoinLink.fromJson({
+          'token': token,
+          'url': 'https://kapynotes.com/space/$token',
+          'role': 'member',
+          'expiresAt': '2030-01-01T00:00:00.000Z',
+        })!;
+        expect(link.approval, isTrue);
+        expect(link.expiresAt, isNotNull);
       },
     );
 
@@ -258,7 +287,35 @@ void main() {
       final before = await joining.preview(token);
       expect(before.ownerLabel, 'Priya (priya@x.com)');
       expect(before.status, JoinStatus.none);
+      expect(before.approval, isTrue);
       expect((await joining.ask(token)).status, JoinStatus.pending);
+      // Asking changes nobody's spaces yet.
+      expect(refreshed, 0);
     });
+
+    test(
+      'joining through a link that needs no asking fetches the spaces again, and asks for the sync that brings the key',
+      () async {
+        final described = {
+          'spaceId': 's1',
+          'spaceName': 'Family',
+          'ownerEmail': 'priya@x.com',
+          'ownerName': 'Priya',
+          'role': 'member',
+          'approval': false,
+          'status': 'none',
+          'inviteToken': null,
+        };
+        send.answers['GET links/$token'] = described;
+        send.answers['POST links/$token/request'] = {
+          ...described,
+          'status': 'member',
+        };
+        expect((await joining.preview(token)).approval, isFalse);
+        expect((await joining.ask(token)).status, JoinStatus.member);
+        expect(refreshed, 1);
+        expect(synced, 1);
+      },
+    );
   });
 }

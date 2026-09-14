@@ -123,6 +123,7 @@ Future<void> showSettings(
   VoidCallback? onTranscriptionReady,
   Future<bool> Function(BuildContext context)? authorizeHiddenNotes,
   SettingsSection? section,
+  String? notice,
 }) {
   SettingsDialog build({required bool asSheet}) => SettingsDialog(
     layoutPrefs: layoutPrefs,
@@ -139,6 +140,7 @@ Future<void> showSettings(
     onTranscriptionReady: onTranscriptionReady,
     authorizeHiddenNotes: authorizeHiddenNotes,
     section: section,
+    notice: notice,
     asSheet: asSheet,
   );
 
@@ -187,6 +189,7 @@ class SettingsDialog extends StatefulWidget {
     this.onTranscriptionReady,
     this.authorizeHiddenNotes,
     this.section,
+    this.notice,
     this.asSheet = false,
   });
 
@@ -224,6 +227,12 @@ class SettingsDialog extends StatefulWidget {
   /// The pane to open on, when something outside sent the user here to do one
   /// thing. Null starts where settings always starts.
   final SettingsSection? section;
+
+  /// Why whatever sent the user here did so — "Sign in first to share this
+  /// note" — said as a toast once this is on screen. Raised here rather than
+  /// by the caller: on Windows this opens only after the window has widened,
+  /// and a toast shown before it would be drawn underneath.
+  final String? notice;
 
   /// Present as the phone sheet — a list of categories you push through —
   /// instead of the rail dialog. Set by [showSettings]. Both shapes are the
@@ -319,6 +328,13 @@ class _SettingsDialogState extends State<SettingsDialog>
     if (wanted != null && _isAvailable(wanted)) {
       _section = wanted;
       _sheetSection = wanted;
+    }
+    final notice = widget.notice;
+    if (notice != null) {
+      // After the first frame, so the toast goes above this, not under it.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Toast.show(context, notice, icon: KapyIcons.infoOutlined);
+      });
     }
   }
 

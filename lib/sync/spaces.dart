@@ -24,6 +24,13 @@ extension SpaceRoleAccess on SpaceRole {
   };
 }
 
+/// The name the app gives a space it makes to share a note by link.
+///
+/// Nobody is in it yet to name it after, and the note's own title would put
+/// its words on the server in plain text, so it is a placeholder, as "With
+/// priya" is, and the space goes by its people once it has some.
+const String kLinkSpaceName = 'Shared by link';
+
 SpaceRole _spaceRole(Object? raw) => switch (raw) {
   'owner' => SpaceRole.owner,
   'viewer' => SpaceRole.viewer,
@@ -179,12 +186,14 @@ class PendingInvite {
   /// Whether the space still carries the placeholder it was made with.
   ///
   /// To the invitee that placeholder is "With" and a piece of their *own*
-  /// address, so it tells them nothing and is better left unsaid. Judged by
-  /// shape alone — one word after "With" — because an invitation carries no
-  /// member list to check it against; a chosen name of that shape is merely
-  /// not repeated back.
-  bool get hasGeneratedSpaceName =>
-      RegExp(r'^With \S+$').hasMatch(spaceName.trim());
+  /// address, or the [kLinkSpaceName] of a note shared by link, so it tells
+  /// them nothing and is better left unsaid. Judged by shape alone — one word
+  /// after "With" — because an invitation carries no member list to check it
+  /// against; a chosen name of that shape is merely not repeated back.
+  bool get hasGeneratedSpaceName {
+    final name = spaceName.trim();
+    return name == kLinkSpaceName || RegExp(r'^With \S+$').hasMatch(name);
+  }
 
   static PendingInvite? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -274,6 +283,11 @@ class Space {
   final List<SpaceMember> members;
   final List<SpaceInvite> invites;
   final int liveNotes;
+
+  /// Whether the space has a live share link: a way in that is still open,
+  /// the way an unexpired invitation is. False from a server that predates
+  /// links which let people straight in.
+  final bool hasLink;
   final int? attachmentMaxBytes;
   final DateTime createdAt;
 
@@ -289,6 +303,7 @@ class Space {
     required this.members,
     required this.invites,
     required this.liveNotes,
+    this.hasLink = false,
     this.attachmentMaxBytes,
     required this.createdAt,
   });
@@ -314,14 +329,17 @@ class Space {
   List<SpaceMember> othersThan(String userId) =>
       members.where((m) => m.userId != userId).toList(growable: false);
 
-  /// Whether [name] is the placeholder this app gave the space when it made
-  /// it — "With" and a piece of the first invitee's address — rather than a
-  /// name somebody chose.
+  /// Whether [name] is a placeholder this app gave the space when it made
+  /// it — "With" and a piece of the first invitee's address, or
+  /// [kLinkSpaceName] for a note shared by link — rather than a name somebody
+  /// chose.
   ///
-  /// The placeholder is part of an email address, and to the invitee it
-  /// names themselves. Where it is one, the space goes by its people instead.
+  /// The first is part of an email address, and to the invitee it names
+  /// themselves; the second names nobody. Where it is one, the space goes by
+  /// its people instead.
   bool get hasGeneratedName {
     final raw = name?.trim();
+    if (raw == kLinkSpaceName) return true;
     if (raw == null || !raw.startsWith('With ')) return false;
     final rest = raw.substring(5).trim().toLowerCase();
     bool matches(String email) {
@@ -404,14 +422,23 @@ class Space {
     if (chosen != null) return chosen;
     if (ownerId != userId) return 'Shared by ${shortNameOf(ownerId)}';
     final phrase = peoplePhrase(userId);
-    return phrase == null ? 'Only you' : 'Shared with $phrase';
+    if (phrase != null) return 'Shared with $phrase';
+    return hasLink ? 'Anyone with the link' : 'Only you';
   }
 
-  /// A team space whose only member is its owner, with no unexpired invite
-  /// and live notes still in it, is owed a trip home: only the owner's client
-  /// can re-seal the notes, so it does so on its next sync.
+  /// A team space whose only member is its owner, with no unexpired invite,
+  /// no live link, and live notes still in it, is owed a trip home: only the
+  /// owner's client can re-seal the notes, so it does so on its next sync.
+  ///
+  /// An invitation or a link is somebody still on the way. Without the link
+  /// clause, a note shared by link would come straight home before anyone
+  /// had opened the link, and the space and its link would end with it.
   bool get owedTripHome =>
-      isTeam && members.length == 1 && invites.isEmpty && liveNotes > 0;
+      isTeam &&
+      members.length == 1 &&
+      invites.isEmpty &&
+      !hasLink &&
+      liveNotes > 0;
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -451,6 +478,7 @@ class Space {
         },
     ],
     'liveNotes': liveNotes,
+    'hasLink': hasLink,
     'attachmentMaxBytes': attachmentMaxBytes,
     'createdAt': createdAt.toUtc().toIso8601String(),
   };
@@ -481,6 +509,7 @@ class Space {
           ? invites.map(SpaceInvite.fromJson).whereType<SpaceInvite>().toList()
           : const [],
       liveNotes: liveNotes is int ? liveNotes : 0,
+      hasLink: raw['hasLink'] == true,
       attachmentMaxBytes: switch (raw['attachmentMaxBytes']) {
         final int value when value > 0 => value,
         _ => null,

@@ -7,11 +7,13 @@ import 'sync_api.dart' show SyncRefusedException;
 /// Two easier ways into a shared space than one email address at a time.
 ///
 /// Both keep the rule sharing rests on: the server never holds a space key,
-/// so somebody who holds it hands it over. An email invitation names one
-/// person, which is why the handover after it can be automatic. A space's
-/// link names nobody — it is meant for a family group chat — so it only lets
-/// people *ask*, and the owner letting them in is the moment the key moves.
-/// A link that escapes produces requests, never access.
+/// so somebody who holds it hands it over. What the server decides is who is
+/// a member, and every member's device that holds the key hands it to any
+/// member who has none. An email invitation names one person, so accepting
+/// it is enough. A space's link names nobody — it is meant for a group chat —
+/// so its owner decides what holding it does: whoever opens it joins straight
+/// away, as with a Craft or Google Docs link, or they ask and the owner lets
+/// each one in.
 
 /// The one door these calls go through: the same session, device and
 /// protocol headers every sync call carries. A function rather than
@@ -138,28 +140,37 @@ class JoinLink {
 
   /// What people let in through it can do.
   final SpaceRole role;
-  final DateTime expiresAt;
+
+  /// Whether the owner lets each person in. False: whoever opens it joins.
+  final bool approval;
+
+  /// When it stops working, or null for a link that works until it is turned
+  /// off. Only a link made by a build from before those existed has one.
+  final DateTime? expiresAt;
 
   const JoinLink({
     required this.token,
     required this.url,
     required this.role,
-    required this.expiresAt,
+    this.approval = true,
+    this.expiresAt,
   });
 
   static JoinLink? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final token = raw['token'];
     final url = raw['url'];
-    final expires = _time(raw['expiresAt']);
-    if (token is! String || url is! String || expires == null) return null;
+    if (token is! String || url is! String) return null;
     final parsed = Uri.tryParse(url);
     if (parsed == null) return null;
     return JoinLink(
       token: token,
       url: parsed,
       role: _role(raw['role']),
-      expiresAt: expires,
+      // A server from before links could let people straight in says
+      // nothing about it, and every link it made asked.
+      approval: raw['approval'] != false,
+      expiresAt: _time(raw['expiresAt']),
     );
   }
 }
@@ -205,6 +216,8 @@ class JoinRequest {
 ///
 /// [invited] means an email invitation to this very space is waiting for
 /// them: accepting it needs nobody's approval, so it is offered instead.
+/// [declined] is also what somebody the owner removed hears, since for both
+/// the owner has said no and no link says otherwise.
 enum JoinStatus { none, pending, declined, member, invited }
 
 class JoinLinkPreview {
@@ -213,6 +226,9 @@ class JoinLinkPreview {
   final String ownerEmail;
   final String? ownerName;
   final SpaceRole role;
+
+  /// Whether the owner lets each person in. False: joining is one tap.
+  final bool approval;
   final JoinStatus status;
   final String? inviteToken;
 
@@ -222,6 +238,7 @@ class JoinLinkPreview {
     required this.ownerEmail,
     this.ownerName,
     required this.role,
+    this.approval = true,
     required this.status,
     this.inviteToken,
   });
@@ -240,6 +257,7 @@ class JoinLinkPreview {
     ownerEmail: ownerEmail,
     ownerName: ownerName,
     role: role,
+    approval: approval,
     status: next,
     inviteToken: inviteToken,
   );
@@ -273,6 +291,7 @@ class JoinLinkPreview {
           ? ownerName.trim()
           : null,
       role: _role(raw['role']),
+      approval: raw['approval'] != false,
       status: status,
       inviteToken: invite is String ? invite : null,
     );
@@ -300,7 +319,7 @@ class InviteTarget extends JoinTarget {
   int get hashCode => Object.hash('invite', token);
 }
 
-/// `/space/<token>`: a space's link, which lets somebody ask to join.
+/// `/space/<token>`: a space's link, which lets somebody join, or ask to.
 class SpaceLinkTarget extends JoinTarget {
   const SpaceLinkTarget(super.token);
 
@@ -466,14 +485,18 @@ class Joining extends ChangeNotifier {
 
   /// Makes the link, or replaces it: always a new token, so the old one —
   /// wherever it went — stops working.
+  ///
+  /// [approval] false lets whoever opens it straight in. It is said every
+  /// time, because a server that is not told assumes the link should ask.
   Future<JoinLink> makeLink(
     String spaceId, {
     SpaceRole role = SpaceRole.member,
+    bool approval = true,
   }) async {
     final body = await _send(
       'PUT',
       'spaces/$spaceId/link',
-      payload: {'role': _roleWire(role)},
+      payload: {'role': _roleWire(role), 'approval': approval},
     );
     final link = JoinLink.fromJson(body);
     if (link == null) {
@@ -481,13 +504,48 @@ class Joining extends ChangeNotifier {
     }
     _links[spaceId] = link;
     _changed();
+    // A live link keeps the space, so this device learns it now rather than
+    // on some later pass, before a note is moved in behind it.
+    await _refreshSpaces();
     return link;
   }
 
+  /// Changes what the live link does and keeps its address, so everyone it
+  /// was already sent to still holds a working link. People already in keep
+  /// the access they came in with.
+  Future<JoinLink> changeLink(
+    String spaceId, {
+    SpaceRole? role,
+    bool? approval,
+  }) async {
+    final body = await _send(
+      'PATCH',
+      'spaces/$spaceId/link',
+      payload: {
+        if (role != null) 'role': _roleWire(role),
+        'approval': ?approval,
+      },
+    );
+    final link = JoinLink.fromJson(body);
+    if (link == null) {
+      throw StateError(
+        'the server answered a changed link with nothing usable',
+      );
+    }
+    _links[spaceId] = link;
+    _changed();
+    return link;
+  }
+
+  /// Turns the link off. A space that held only its owner and notes because
+  /// of it is owed a trip home again, so the spaces are fetched and a sync
+  /// asked for: that is what brings those notes back to the owner's own.
   Future<void> turnOffLink(String spaceId) async {
     await _send('DELETE', 'spaces/$spaceId/link');
     _links[spaceId] = null;
     _changed();
+    await _refreshSpaces();
+    _requestSync();
   }
 
   // --- who is waiting ------------------------------------------------------
@@ -555,14 +613,23 @@ class Joining extends ChangeNotifier {
     return preview;
   }
 
-  /// Asks to be let in. Asking twice is still one request; a member, or
-  /// somebody already invited by email, is just told where they stand.
+  /// Joins through the link, or asks to, whichever the link does. Doing it
+  /// twice is still one membership or one request; a member, or somebody
+  /// already invited by email, is just told where they stand.
+  ///
+  /// Joining makes this account a member at once, still without the key, so
+  /// the spaces are fetched again and a sync asked for: the key arrives from
+  /// whichever member's device holds it, on the pass after it is granted.
   Future<JoinLinkPreview> ask(String token) async {
     final preview = JoinLinkPreview.fromJson(
       await _send('POST', 'links/$token/request'),
     );
     if (preview == null) {
       throw StateError('the server answered the request with nothing usable');
+    }
+    if (preview.status == JoinStatus.member) {
+      await _refreshSpaces();
+      _requestSync();
     }
     return preview;
   }

@@ -20,6 +20,10 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/images/image_picker.dart';
+import 'package:kapy_notes/sync/account.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
@@ -35,6 +39,7 @@ import 'package:kapy_notes/ui/toolbar.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
 import 'kapy_icon_finder.dart';
+import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 
 /// A store that never touches the filesystem, so tests stay hermetic.
@@ -90,6 +95,7 @@ Future<void> pumpApp(
   bool firstRun = false,
   HiddenNotesGate? hiddenNotesGate,
   ImageFileAcquirer? imageAcquirer,
+  Account? account,
 }) async {
   // Almost everything here speaks for somebody who has opened the app before,
   // and they have already met the welcome note. The tests about a genuinely
@@ -118,6 +124,7 @@ Future<void> pumpApp(
       desktopIntegration: desktopIntegration,
       hiddenNotesGate: hiddenNotesGate,
       imageAcquirer: imageAcquirer,
+      account: account,
     ),
   );
   await tester.pumpAndSettle();
@@ -2634,6 +2641,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(NoteRow, 'Private note'), findsNothing);
   });
+
+  testWidgets(
+    'sharing before signing in opens Profile & sync on the sign-in form, and says why',
+    (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final account = Account(
+        auth: FakeAuth(),
+        syncApi: (_) =>
+            FakeApi(FakeServer(), device: 'device-1', userId: 'user-1'),
+        keys: KeyStore(InMemorySecureStore()),
+        notes: notes,
+        state: SyncState(store),
+        store: store,
+        docStorage: MemoryDocStorage(),
+      );
+      addTearDown(account.dispose);
+      await tester.runAsync(account.restore);
+      expect(account.state, AccountState.signedOut);
+      await notes.load();
+      notes.create(body: 'Trip plan');
+      await pumpApp(tester, account: account);
+
+      await tester.tap(find.byTooltip('Share note').first);
+      await tester.pumpAndSettle();
+
+      // Not the share sheet, which would have nothing to share with, and not
+      // General either: the pane that signs in, and the reason it opened.
+      expect(find.byType(SettingsDialog), findsOneWidget);
+      expect(find.text('Email me a code'), findsOneWidget);
+      expect(find.text('Sign in first to share this note'), findsOneWidget);
+    },
+  );
 
   testWidgets('settings does not name a hidden startup note', (tester) async {
     await notes.load();

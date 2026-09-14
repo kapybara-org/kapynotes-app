@@ -39,7 +39,19 @@ class PlatformSecureStore implements SecureStore {
   ///
   /// The file-based keychain has no such requirement and is what a Developer
   /// ID app without a provisioning profile can actually use.
-  static const _macOs = MacOsOptions(usesDataProtectionKeychain: false);
+  ///
+  /// That keychain is shared by every app of the user's, keyed by service and
+  /// account name, so a development build would read, and on sign-in
+  /// overwrite, the installed app's session and master key. A build that is
+  /// not the real app names its own service at build time:
+  /// `--dart-define=KAPYNOTES_KEYCHAIN=kapynotes-dev`.
+  static const _macOs = MacOsOptions(
+    usesDataProtectionKeychain: false,
+    accountName: String.fromEnvironment(
+      'KAPYNOTES_KEYCHAIN',
+      defaultValue: AppleOptions.defaultAccountName,
+    ),
+  );
 
   @override
   Future<String?> read(String key) => _storage.read(key: key, mOptions: _macOs);

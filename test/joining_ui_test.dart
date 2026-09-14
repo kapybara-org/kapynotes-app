@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/deep_links.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -152,7 +153,24 @@ Future<void> plainRun(
   Future<void> Function() action, {
   String waiting = '',
   String? done,
+  String? success,
 }) => action();
+
+/// Everything put on the clipboard for the rest of the test.
+List<String> captureClipboard(WidgetTester tester) {
+  final copied = <String>[];
+  final messenger = tester.binding.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+    if (call.method == 'Clipboard.setData') {
+      copied.add((call.arguments as Map)['text'] as String);
+    }
+    return null;
+  });
+  addTearDown(
+    () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+  );
+  return copied;
+}
 
 void main() {
   late FakeServer server;
@@ -301,49 +319,180 @@ void main() {
         );
       },
     );
+
+    testWidgets('a link that needs no asking says so, and joins in one tap', (
+      tester,
+    ) async {
+      final send = FakeSend()
+        ..answers['GET links/$token'] = {...preview(), 'approval': false}
+        ..answers['POST links/$token/request'] = {
+          ...preview(status: 'member'),
+          'approval': false,
+        };
+      await open(tester, send);
+
+      expect(
+        find.textContaining('shares “Family” with anyone who has this link'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('join-link-ask')), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('join-link-join')));
+      await tester.pumpAndSettle();
+      expect(send.sawPath('POST', 'links/$token/request'), isTrue);
+      expect(find.text('You are in “Family”.'), findsOneWidget);
+      expect(
+        find.text(
+          'The notes arrive the next time Priya or another member is online.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('join-link-join')), findsNothing);
+    });
+
+    testWidgets('a note shared by link is not called by its placeholder', (
+      tester,
+    ) async {
+      final send = FakeSend()
+        ..answers['GET links/$token'] = {
+          ...preview(),
+          'spaceName': kLinkSpaceName,
+          'approval': false,
+        };
+      await open(tester, send);
+      expect(find.textContaining(kLinkSpaceName), findsNothing);
+      expect(
+        find.textContaining('shares these notes with anyone who has this link'),
+        findsOneWidget,
+      );
+    });
   });
 
   // ---------------------------------------------------------------------------
   group("the owner's link", () {
-    testWidgets('is made, shown with how long it lasts, and turned off', (
-      tester,
-    ) async {
-      final send = FakeSend()
-        ..answers['PUT spaces/s1/link'] = {
-          'token': token,
-          'url': 'https://kapynotes.com/space/$token',
-          'role': 'member',
-          'expiresAt': '2030-01-08T00:00:00.000Z',
-        };
-      final joining = joiningOver(send);
-      await tester.pumpWidget(
-        app(
-          SpaceLinkPanel(
-            spaceId: 's1',
-            joining: joining,
-            run: plainRun,
-            role: SpaceRole.member,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('space-link-create')), findsOneWidget);
-      expect(
-        find.textContaining('You approve each person before they join'),
-        findsOneWidget,
-      );
+    Map<String, Object?> linkJson({
+      String role = 'member',
+      bool approval = false,
+      String? expiresAt,
+      String address = token,
+    }) => {
+      'token': address,
+      'url': 'https://kapynotes.com/space/$address',
+      'role': role,
+      'approval': approval,
+      'expiresAt': expiresAt,
+    };
 
-      await tester.tap(find.byKey(const ValueKey('space-link-create')));
+    Future<void> choose(WidgetTester tester, LinkAccess access) async {
+      await tester.tap(find.byKey(const ValueKey('link-access')));
       await tester.pumpAndSettle();
-      expect(find.text('https://kapynotes.com/space/$token'), findsOneWidget);
-      expect(find.textContaining('Expires'), findsOneWidget);
-      expect(find.textContaining('read and edit its notes'), findsOneWidget);
+      await tester.tap(find.byKey(ValueKey('link-access-${access.name}')));
+      await tester.pumpAndSettle();
+    }
 
-      await tester.tap(find.byKey(const ValueKey('space-link-off')));
-      await tester.pumpAndSettle();
-      expect(send.sawPath('DELETE', 'spaces/s1/link'), isTrue);
-      expect(find.byKey(const ValueKey('space-link-create')), findsOneWidget);
-    });
+    Widget panel(FakeSend send) => app(
+      SpaceLinkPanel(spaceId: 's1', joining: joiningOver(send), run: plainRun),
+    );
+
+    testWidgets(
+      'choosing who it lets in makes a link that needs no asking, and copies it',
+      (tester) async {
+        final copied = captureClipboard(tester);
+        final send = FakeSend()
+          ..answers['GET spaces/s1/link'] = {'link': null}
+          ..answers['PUT spaces/s1/link'] = linkJson();
+        await tester.pumpWidget(panel(send));
+        await tester.pumpAndSettle();
+        expect(find.text('Only people you invite'), findsOneWidget);
+
+        await choose(tester, LinkAccess.anyoneCanEdit);
+        expect(send.calls.last.$1, 'PUT');
+        expect(send.calls.last.$3, {'role': 'member', 'approval': false});
+        expect(copied, ['https://kapynotes.com/space/$token']);
+        expect(find.text('Anyone with the link can edit'), findsOneWidget);
+        expect(find.textContaining('can edit straight away'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'view and edit keep the address, approving first is a switch, and the first choice turns it off',
+      (tester) async {
+        var role = 'member';
+        var approval = false;
+        final send = FakeSend()
+          ..answers['GET spaces/s1/link'] = {'link': linkJson()}
+          ..fallback = (method, path, payload) {
+            if (method != 'PATCH') return null;
+            role = payload?['role'] as String? ?? role;
+            approval = payload?['approval'] as bool? ?? approval;
+            return linkJson(role: role, approval: approval);
+          };
+        await tester.pumpWidget(panel(send));
+        await tester.pumpAndSettle();
+        expect(find.text('Anyone with the link can edit'), findsOneWidget);
+
+        await choose(tester, LinkAccess.anyoneCanView);
+        expect(send.calls.last.$1, 'PATCH');
+        expect(send.calls.last.$3, {'role': 'viewer'});
+        expect(find.text('Anyone with the link can view'), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('link-approval')));
+        await tester.pumpAndSettle();
+        expect(send.calls.last.$3, {'approval': true});
+        expect(find.textContaining('you let each one in'), findsOneWidget);
+        expect(send.sawPath('PUT', 'spaces/s1/link'), isFalse);
+
+        await choose(tester, LinkAccess.invitedOnly);
+        expect(send.sawPath('DELETE', 'spaces/s1/link'), isTrue);
+        expect(find.text('Only people you invite'), findsOneWidget);
+        expect(find.byKey(const ValueKey('link-approval')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'with no link yet, Copy link asks which link to make instead of guessing',
+      (tester) async {
+        final send = FakeSend()..answers['GET spaces/s1/link'] = {'link': null};
+        await tester.pumpWidget(panel(send));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('link-copy')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('link-access-anyoneCanView')),
+          findsOneWidget,
+        );
+        expect(send.sawPath('PUT', 'spaces/s1/link'), isFalse);
+      },
+    );
+
+    testWidgets(
+      'a link made to end says when, and replacing it copies the new address',
+      (tester) async {
+        final copied = captureClipboard(tester);
+        const fresh = 'ZyXwVuTsRqPoNmLkJiHgFe';
+        final send = FakeSend()
+          ..answers['GET spaces/s1/link'] = {
+            'link': linkJson(
+              approval: true,
+              expiresAt: '2030-01-08T00:00:00.000Z',
+            ),
+          }
+          ..answers['PUT spaces/s1/link'] = linkJson(
+            approval: true,
+            address: fresh,
+          );
+        await tester.pumpWidget(panel(send));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('It works until'), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('link-replace')));
+        await tester.pumpAndSettle();
+        expect(send.calls.last.$3, {'role': 'member', 'approval': true});
+        expect(copied, ['https://kapynotes.com/space/$fresh']);
+        expect(find.textContaining('It works until'), findsNothing);
+      },
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -522,7 +671,7 @@ void main() {
       });
       expect(find.text('Invited 2 people.'), findsOneWidget);
       // The link and the waiting list sit under the field for the owner.
-      expect(find.byKey(const ValueKey('space-link-create')), findsOneWidget);
+      expect(find.byKey(const ValueKey('space-link-panel')), findsOneWidget);
     });
 
     testWidgets(
@@ -583,6 +732,160 @@ void main() {
         expect(moved.spaceId, used);
         expect(alice.notes.byId(first.id)!.spaceId, pair.id);
         expect(alice.sharing.spaceById(used)?.name, startsWith('With '));
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  group('the share sheet, by link', () {
+    /// What the real server does when a link is made: the space has one, and
+    /// its listing says so. That is what keeps the owner's own device from
+    /// ending a space that holds a note and nobody else yet.
+    Object? linkMade(
+      String method,
+      String path,
+      Map<String, Object?>? payload,
+    ) {
+      if (method != 'PUT' || !path.endsWith('/link')) return null;
+      server.spaces[path.split('/')[1]]!.hasLink = true;
+      return {
+        'token': token,
+        'url': 'https://kapynotes.com/space/$token',
+        'role': payload?['role'],
+        'approval': payload?['approval'],
+        'expiresAt': null,
+      };
+    }
+
+    Future<void> openFor(WidgetTester tester, Note note, FakeSend send) async {
+      await tester.pumpWidget(
+        app(
+          button(
+            'open',
+            (context) =>
+                showShareDialog(context, note: note, sharing: alice.sharing),
+          ),
+          joining: joiningOver(send, refresh: alice.sharing.refresh),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+    }
+
+    /// Opens the menu on the real clock, not the test's fake one: the menu
+    /// hands its answer back in the zone that opened it, and the sharing that
+    /// answer starts needs real time to get anywhere.
+    Future<void> choose(WidgetTester tester, LinkAccess access) async {
+      await tester.runAsync(
+        () => tester.tap(find.byKey(const ValueKey('link-access'))),
+      );
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(ValueKey('link-access-${access.name}')));
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      });
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'a private note gets a space of its own and a link that lets people straight in, copied',
+      (tester) async {
+        final copied = captureClipboard(tester);
+        late Note note;
+        await tester.runAsync(() async {
+          await alice.boot();
+          note = alice.notes.create(body: 'Trip plan');
+          await alice.sync.syncNow();
+        });
+        final send = FakeSend()..fallback = linkMade;
+        await openFor(tester, note, send);
+
+        await choose(tester, LinkAccess.anyoneCanEdit);
+
+        final made = send.calls.singleWhere((c) => c.$1 == 'PUT');
+        expect(made.$3, {'role': 'member', 'approval': false});
+        final spaceId = made.$2.split('/')[1];
+        expect(alice.sharing.spaceById(spaceId)?.name, kLinkSpaceName);
+        expect(alice.notes.byId(note.id)!.spaceId, spaceId);
+        expect(copied, ['https://kapynotes.com/space/$token']);
+        expect(
+          find.text('Shared with anyone who has the link'),
+          findsOneWidget,
+        );
+
+        // Another pass, and it stays shared: nobody has joined yet, and the
+        // link is what keeps the owner's device from bringing it home.
+        await tester.runAsync(() => alice.sync.syncNow());
+        await tester.pumpAndSettle();
+        expect(alice.notes.byId(note.id)!.spaceId, spaceId);
+        expect(server.calls, isNot(contains('stop')));
+        expect(find.text('Anyone with the link can edit'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a link the server will not make leaves the note private, and the space made for it ended',
+      (tester) async {
+        late Note note;
+        await tester.runAsync(() async {
+          await alice.boot();
+          note = alice.notes.create(body: 'Trip plan');
+        });
+        final send = FakeSend()
+          ..fallback = (method, path, payload) => method == 'PUT'
+              ? const SyncRefusedException(409, 'too many requests', {
+                  'error': 'too many requests',
+                })
+              : null;
+        await openFor(tester, note, send);
+
+        await choose(tester, LinkAccess.anyoneCanView);
+
+        expect(send.calls.where((c) => c.$1 == 'PUT'), hasLength(1));
+        expect(alice.notes.byId(note.id)!.spaceId, isNull);
+        expect(server.calls, contains('stop'));
+        expect(alice.sharing.teams, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'inside a note whose space holds others, the owner is told the link opens those too',
+      (tester) async {
+        final bob = Device(server, userId: 'user-2', device: 'b');
+        addTearDown(bob.dispose);
+        late Note first;
+        late String pair;
+        await tester.runAsync(() async {
+          await alice.boot();
+          await bob.boot();
+          first = alice.notes.create(body: 'One');
+          await alice.sharing.shareNoteWith(first.id, email: bob.email);
+          pair = alice.notes.byId(first.id)!.spaceId!;
+          // The space's notes as the server holds them. Only the count reaches
+          // the sheet, and this device's own note does not reach the fake
+          // server over its socket inside a widget test, so both are put
+          // there directly.
+          for (final id in ['shared-first', 'shared-second']) {
+            server.spaces[pair]!.notes[id] = FakeNoteRow(
+              id: id,
+              spaceId: pair,
+              userId: 'user-1',
+              updatedAt: DateTime.utc(2026, 9, 1),
+            );
+          }
+          await alice.sharing.refresh();
+        });
+        expect(alice.sharing.spaceById(pair)!.liveNotes, 2);
+
+        final send = FakeSend()
+          ..fallback = (method, path, payload) =>
+              path.endsWith('/link') ? {'link': null} : null;
+        await openFor(tester, first, send);
+
+        expect(
+          find.textContaining('It opens all 2 notes shared'),
+          findsOneWidget,
+        );
       },
     );
   });

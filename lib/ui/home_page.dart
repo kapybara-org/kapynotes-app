@@ -1713,9 +1713,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_totalAnimatedFor.add(id)) _kapyHeader.think();
   }
 
-  /// Opens the share sheet for a note. Before the account is unlocked there
-  /// is no key to share with, so settings opens instead, on the pane that
-  /// explains what is missing.
   /// Shares whatever note is open, for the title bar's own action. Null with
   /// nothing selected, which greys that action rather than removing it and
   /// shifting the ones beside it every time the selection changes.
@@ -1750,32 +1747,61 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return sync.collaboratorsIn(id);
   }
 
+  /// Opens the share sheet for a note. Before the account is unlocked there
+  /// is no key to share with, so Profile & sync opens instead, on whatever
+  /// step is missing, and says that step is why it opened.
   void _shareNote(String id) {
     _recordKapyActivity();
     final note = widget.notes.byId(id);
-    final sharing = widget.account?.sharing;
+    final account = widget.account;
+    final sharing = account?.sharing;
     if (note == null || note.isHidden || note.isArchived) return;
-    if (sharing == null) {
+    if (account == null) {
+      // A build with no sync at all has nobody to sign in as.
       _showSettings();
+      return;
+    }
+    if (sharing == null) {
+      _showSettings(
+        section: SettingsSection.sync,
+        notice: _stepBeforeSharing(account.state),
+      );
       return;
     }
     unawaited(showShareDialog(context, note: note, sharing: sharing));
   }
 
-  void _showSettings({SettingsSection? section}) {
+  /// What stands between this account and sharing, as the step Profile & sync
+  /// is about to show.
+  static String _stepBeforeSharing(AccountState state) => switch (state) {
+    AccountState.needsProfile => 'Choose your name first to share this note',
+    AccountState.needsPassphrase =>
+      'Choose a passphrase first to share this note',
+    AccountState.locked => 'Unlock first to share this note',
+    AccountState.needsAccountDecision =>
+      'Finish signing in first to share this note',
+    AccountState.restoring ||
+    AccountState.signedOut ||
+    AccountState.ready => 'Sign in first to share this note',
+  };
+
+  /// [notice] is said as a toast once settings is on screen, for whatever
+  /// sent the person there rather than their own tap on the gear.
+  void _showSettings({SettingsSection? section, String? notice}) {
     if (_settingsOpen) return;
     if (AppPlatform.isMobile) {
       FocusManager.instance.primaryFocus?.unfocus();
       setState(() => _settingsOpen = true);
     }
-    unawaited(_openSettings(section));
+    unawaited(_openSettings(section, notice));
   }
 
-  Future<void> _openSettings(SettingsSection? section) async {
+  Future<void> _openSettings(SettingsSection? section, String? notice) async {
     try {
       await showSettings(
         context,
         section: section,
+        notice: notice,
         account: widget.account,
         notes: widget.notes,
         layoutPrefs: widget.prefs,

@@ -121,7 +121,18 @@ class _JoinLinkSheetState extends State<_JoinLinkSheet> {
       widget.sharing,
       () => widget.joining.ask(widget.token),
     );
-    if (next != null && mounted) setState(() => _preview = next);
+    if (next == null || !mounted) return;
+    setState(() {
+      // A link that needs no asking lets them in at once, but the notes
+      // follow only when a device holding the key hands it over.
+      if (_preview?.status != JoinStatus.member &&
+          next.status == JoinStatus.member) {
+        _notice =
+            'The notes arrive the next time ${next.ownerShort} or another '
+            'member is online.';
+      }
+      _preview = next;
+    });
   });
 
   Future<void> _acceptInvite(JoinLinkPreview preview) => _act(() async {
@@ -176,11 +187,19 @@ class _JoinLinkSheetState extends State<_JoinLinkSheet> {
   }
 
   List<Widget> _describePreview(JoinLinkPreview p) {
-    final name = '“${p.spaceName}”';
+    // The placeholder a note shared by link is given names nothing worth
+    // quoting back.
+    final named = p.spaceName.trim() != kLinkSpaceName;
+    final name = named ? '“${p.spaceName}”' : 'these notes';
+    final them = named ? 'notes' : 'them';
     final access = p.role == SpaceRole.viewer
-        ? 'You can view notes but cannot edit them.'
-        : 'You can view and edit notes.';
+        ? 'You can view $them but cannot edit them.'
+        : 'You can view and edit $them.';
     final lines = switch (p.status) {
+      JoinStatus.none when !p.approval => [
+        '${p.ownerLabel} shares $name with anyone who has this link.',
+        access,
+      ],
       JoinStatus.none => [
         '${p.ownerLabel} shared $name with this link.',
         access,
@@ -191,10 +210,12 @@ class _JoinLinkSheetState extends State<_JoinLinkSheet> {
         'Notes appear after ${p.ownerShort} approves it.',
       ],
       JoinStatus.declined => [
-        '${p.ownerShort} declined your request to join $name.',
-        'Ask them for an email invitation if needed.',
+        // Also what someone the owner removed sees, who may never have asked,
+        // so this cannot say that a request was declined.
+        'This link does not let you into $name.',
+        'Ask ${p.ownerShort} for an email invitation if needed.',
       ],
-      JoinStatus.member => ['You are in $name.'],
+      JoinStatus.member => [named ? 'You are in $name.' : 'You are in.'],
       JoinStatus.invited => [
         '${p.ownerShort} already invited you to $name by email.',
         access,
@@ -218,11 +239,11 @@ class _JoinLinkSheetState extends State<_JoinLinkSheet> {
     );
     return [
       close,
-      if (p?.status == JoinStatus.none)
+      if (p != null && p.status == JoinStatus.none)
         FilledButton(
-          key: const ValueKey('join-link-ask'),
+          key: ValueKey(p.approval ? 'join-link-ask' : 'join-link-join'),
           onPressed: _busy ? null : _ask,
-          child: const Text('Ask to join'),
+          child: Text(p.approval ? 'Ask to join' : 'Join'),
         ),
       if (p?.status == JoinStatus.invited)
         FilledButton(

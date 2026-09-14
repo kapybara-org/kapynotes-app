@@ -30,6 +30,7 @@ Space space({
   required String? name,
   List<SpaceMember> members = const [],
   List<SpaceInvite> invites = const [],
+  bool hasLink = false,
 }) => Space(
   id: 'space-1',
   kind: SpaceKind.team,
@@ -42,6 +43,7 @@ Space space({
   members: members,
   invites: invites,
   liveNotes: 1,
+  hasLink: hasLink,
   createdAt: DateTime.utc(2026, 9, 1),
 );
 
@@ -145,6 +147,50 @@ void main() {
     });
 
     test(
+      'made for a link, goes by the link until it has people, then by them',
+      () {
+        final waiting = space(
+          name: kLinkSpaceName,
+          members: [me],
+          hasLink: true,
+        );
+        expect(waiting.hasGeneratedName, isTrue);
+        expect(waiting.chosenName, isNull);
+        expect(waiting.titleFor('me'), 'Anyone with the link');
+
+        final bob = member('bob', 'bob@example.com', name: 'Bob Stone');
+        final joined = space(
+          name: kLinkSpaceName,
+          members: [me, bob],
+          hasLink: true,
+        );
+        expect(joined.titleFor('me'), 'Shared with Bob');
+        expect(joined.titleFor('bob'), 'Shared by Sanjay');
+      },
+    );
+
+    test('is not owed a trip home while a link could still bring people', () {
+      // Its owner, a note, and nobody else yet.
+      expect(
+        space(name: kLinkSpaceName, members: [me], hasLink: true).owedTripHome,
+        isFalse,
+      );
+      // With the link off, that is a space everyone has left.
+      expect(space(name: kLinkSpaceName, members: [me]).owedTripHome, isTrue);
+    });
+
+    test('keeps knowing about its link through the cache', () {
+      final cached = Space.fromJson(
+        space(name: 'Family', hasLink: true).toJson(),
+      );
+      expect(cached?.hasLink, isTrue);
+      // A server from before links kept spaces says nothing: no link.
+      final old = space(name: 'Family', hasLink: true).toJson()
+        ..remove('hasLink');
+      expect(Space.fromJson(old)?.hasLink, isFalse);
+    });
+
+    test(
       'leads with its owner, and members join in order before invitations',
       () {
         final owner = member(
@@ -200,6 +246,7 @@ void main() {
 
     test('leaves out a placeholder space name, but not a chosen one', () {
       expect(pending().hasGeneratedSpaceName, isTrue);
+      expect(pending(spaceName: kLinkSpaceName).hasGeneratedSpaceName, isTrue);
       expect(pending(spaceName: 'Family').hasGeneratedSpaceName, isFalse);
     });
   });

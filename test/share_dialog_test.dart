@@ -144,8 +144,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Share note'), findsOneWidget);
-    // The promise, in the sheet: access stays limited to invited people.
-    expect(find.textContaining('Only invited people can read'), findsOneWidget);
+    // The promise, in the sheet: only the people it is shared with can read
+    // it, whether they were invited by email or given the link.
+    expect(
+      find.textContaining('Only people you share it with can read'),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('share-email')), findsOneWidget);
     expect(find.text('Editor'), findsOneWidget);
     expect(find.text('View only'), findsOneWidget);

@@ -113,6 +113,7 @@ class _ShareDialogState extends State<_ShareDialog> {
     Future<void> Function() action, {
     String waiting = 'Updating sharing…',
     String? done,
+    String? success,
   }) async {
     setState(() {
       _busy = true;
@@ -143,7 +144,7 @@ class _ShareDialogState extends State<_ShareDialog> {
       }
       if (mounted) {
         if (done != null) setState(() => _notice = done);
-        progress.success('Sharing updated');
+        progress.success(success ?? 'Sharing updated');
       } else {
         progress.dismiss();
       }
@@ -297,6 +298,36 @@ class _ShareDialogState extends State<_ShareDialog> {
     }
   }
 
+  /// A private note shared by link: a space of its own, then its link, then
+  /// the note, and the link handed back to be copied.
+  ///
+  /// A space of its own, so the link opens this note and nothing shared
+  /// before it, which is also why several addresses never reuse "With
+  /// priya". In that order, because the owner's device ends a space holding
+  /// only its owner and notes unless somebody is on the way, and the link is
+  /// who is. If the link or the move fails, the space goes before anything
+  /// else can find it.
+  Future<JoinLink> _shareByLink(Joining joining, SpaceRole role) async {
+    // Refused before anything exists, as sharing with a person is: a link,
+    // once copied, is out of the app's hands.
+    if (widget.sharing.noteById(widget.noteId!)?.isHidden ?? false) {
+      throw const SyncRefusedException(409, 'hidden-note', {});
+    }
+    final space = await widget.sharing.createSpace(kLinkSpaceName);
+    try {
+      final link = await joining.makeLink(
+        space.id,
+        role: role,
+        approval: false,
+      );
+      await widget.sharing.shareNote(widget.noteId!, spaceId: space.id);
+      return link;
+    } catch (_) {
+      await _endQuietly(space.id);
+      rethrow;
+    }
+  }
+
   Future<void> _copyLink(String token) async {
     await Clipboard.setData(
       ClipboardData(text: widget.sharing.inviteLink(token).toString()),
@@ -358,7 +389,7 @@ class _ShareDialogState extends State<_ShareDialog> {
         ? space.titleFor(sharing.userId)
         : 'Shared ${sharedPhrase(space, sharing.userId)}';
     final subtitle = space == null
-        ? 'Invite people to collaborate securely'
+        ? 'Invite by email or share a link'
         : widget.noteId == null
         ? 'Manage access to this space'
         : 'Manage access to this note';
@@ -382,7 +413,7 @@ class _ShareDialogState extends State<_ShareDialog> {
               if (space == null) ...[
                 _Blurb(
                   'Choose access, then add one or more email addresses. Only '
-                  'invited people can read the note.',
+                  'people you share it with can read the note.',
                 ),
                 const SizedBox(height: 18),
                 _Label('Invite someone'),
@@ -397,6 +428,16 @@ class _ShareDialogState extends State<_ShareDialog> {
                   onEmailChanged: _clearMessage,
                   onSubmit: _shareWithEmail,
                 ),
+                if (JoiningScope.of(context) case final joining?
+                    when note != null) ...[
+                  const SizedBox(height: 18),
+                  SpaceLinkPanel(
+                    joining: joining,
+                    run: _run,
+                    create: (role) => _shareByLink(joining, role),
+                    enabled: !_busy,
+                  ),
+                ],
                 if (sharing.teams.where(sharing.canAddNotesTo_).isNotEmpty) ...[
                   const SizedBox(height: 18),
                   _Label('Or add to an existing space'),
@@ -488,7 +529,13 @@ class _ShareDialogState extends State<_ShareDialog> {
                       spaceId: space.id,
                       joining: joining,
                       run: _run,
-                      role: _inviteRole,
+                      // A link is to the space, so from inside one note the
+                      // owner is told what else it opens before handing it out.
+                      scope: widget.noteId != null && space.liveNotes > 1
+                          ? 'It opens all ${space.liveNotes} notes shared '
+                                '${sharedPhrase(space, sharing.userId)}, not '
+                                'only this one.'
+                          : null,
                       enabled: !_busy && sharing.holdsKey(space.id),
                     ),
                     JoinRequestsPanel(
@@ -752,12 +799,14 @@ extension on Sharing {
 }
 
 /// How a sentence refers to a space: "with Priya and 2 others", or "in
-/// Family" for one somebody named — never by the address it began with.
+/// Family" for one somebody named — never by the address it began with, nor
+/// by the placeholder a note shared by link starts out with.
 String sharedPhrase(Space space, String userId) {
   final chosen = space.chosenName;
   if (chosen != null) return 'in $chosen';
   final people = space.peoplePhrase(userId);
-  return people == null ? 'in a shared space' : 'with $people';
+  if (people != null) return 'with $people';
+  return space.hasLink ? 'with anyone who has the link' : 'in a shared space';
 }
 
 /// Who can read the notes in a space, and where each of them stands.
