@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
+import '../core/popup_keyboard.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/note.dart';
@@ -32,20 +34,26 @@ Future<void> showShareDialog(
   BuildContext context, {
   required Note note,
   required Sharing sharing,
-}) => showDialog<void>(
-  context: context,
-  builder: (context) => _ShareDialog(noteId: note.id, sharing: sharing),
-);
+}) {
+  keepMobilePopupKeyboardClosed();
+  return showDialog<void>(
+    context: context,
+    builder: (context) => _ShareDialog(noteId: note.id, sharing: sharing),
+  );
+}
 
 /// Managing one shared space from settings, without a note in hand.
 Future<void> showSpaceDialog(
   BuildContext context, {
   required String spaceId,
   required Sharing sharing,
-}) => showDialog<void>(
-  context: context,
-  builder: (context) => _ShareDialog(spaceId: spaceId, sharing: sharing),
-);
+}) {
+  keepMobilePopupKeyboardClosed();
+  return showDialog<void>(
+    context: context,
+    builder: (context) => _ShareDialog(spaceId: spaceId, sharing: sharing),
+  );
+}
 
 class _ShareDialog extends StatefulWidget {
   const _ShareDialog({this.noteId, this.spaceId, required this.sharing});
@@ -423,7 +431,7 @@ class _ShareDialogState extends State<_ShareDialog> {
                   enabled: !_busy,
                   controller: _email,
                   action: 'Share',
-                  autofocus: true,
+                  autofocus: !AppPlatform.isMobile,
                   onRoleChanged: (role) => setState(() => _inviteRole = role),
                   onEmailChanged: _clearMessage,
                   onSubmit: _shareWithEmail,

@@ -314,7 +314,7 @@ class NoteFooter extends StatelessWidget {
                                 if (compactInsert)
                                   _FormatButton(
                                     key: const ValueKey('insert-menu'),
-                                    icon: KapyIcons.addRounded,
+                                    label: '/',
                                     tooltip: 'Insert',
                                     active: false,
                                     onPressed: onInsertMenuPressed,
@@ -765,15 +765,17 @@ class _StyleCycleButton extends StatelessWidget {
 class _FormatButton extends StatelessWidget {
   const _FormatButton({
     super.key,
-    required this.icon,
+    this.icon,
+    this.label,
     required this.tooltip,
     required this.active,
     required this.onPressed,
     this.busy = false,
     this.progressKey,
-  });
+  }) : assert((icon == null) != (label == null));
 
-  final KapyIconData icon;
+  final KapyIconData? icon;
+  final String? label;
   final String tooltip;
   final bool active;
   final bool busy;
@@ -807,7 +809,17 @@ class _FormatButton extends StatelessWidget {
                   color: foreground,
                 ),
               )
-            : KapyIcon(icon, size: AppControlMetrics.footerIconAction),
+            : icon != null
+            ? KapyIcon(icon!, size: AppControlMetrics.footerIconAction)
+            : Text(
+                label!,
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: AppControlMetrics.footerIconAction,
+                  fontWeight: FontWeight.w500,
+                  height: 1,
+                ),
+              ),
       ),
     );
   }

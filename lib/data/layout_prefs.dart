@@ -105,6 +105,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _markdownKey = 'markdownInNotes.v1';
   static const String _numberSystemKey = 'numberSystem.v1';
   static const String _writingFontKey = 'writingFont.v1';
+  static const String _editorTextScaleKey = 'editorTextScale.v1';
   static const String _transparencyKey = 'transparencyEnabled.v1';
   static const String _transparencyAmountKey = 'transparencyAmount.v1';
   static const String _timeZoneKey = 'timeZone.v1';
@@ -114,6 +115,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _lastOpenedNoteKey = 'selectedNote.v1';
   static const String _caretKey = 'caret.v1';
   static const String _appearanceKey = 'appearance.v1';
+  static const String _appTextSizeKey = 'appTextSize.v1';
   static const String _paperKey = 'paper.v1';
   static const String _defaultNoteKey = 'defaultNote.v1';
 
@@ -145,8 +147,12 @@ class LayoutPrefs extends ChangeNotifier {
   bool _markdownEnabled = false;
   NumberSystem _numberSystem = NumberSystem.auto;
   WritingFont _writingFont = WritingFont.clean;
+  double _editorTextScale = defaultEditorTextScale;
   final ValueNotifier<AppearanceMode> _appearance = ValueNotifier(
     AppearanceMode.system,
+  );
+  final ValueNotifier<AppTextSize> _appTextSize = ValueNotifier(
+    AppTextSize.standard,
   );
   PaperStyle _paperStyle = PaperStyle.plain;
   final ValueNotifier<bool> _transparencyEnabled = ValueNotifier(false);
@@ -197,6 +203,16 @@ class LayoutPrefs extends ChangeNotifier {
   bool get markdownEnabled => _markdownEnabled;
   WritingFont get writingFont => _writingFont;
 
+  /// An editor-only multiplier, controlled by the familiar zoom shortcuts.
+  /// The app-wide text preference and the device accessibility scale are
+  /// applied after this, so each choice keeps doing its own job.
+  double get editorTextScale => _editorTextScale;
+
+  static const double minEditorTextScale = 0.8;
+  static const double maxEditorTextScale = 1.8;
+  static const double defaultEditorTextScale = 1;
+  static const double editorTextScaleStep = 0.1;
+
   /// Light, dark, or whatever the machine is set to.
   ///
   /// The machine was the only answer until now, which is right until it is
@@ -208,6 +224,12 @@ class LayoutPrefs extends ChangeNotifier {
   /// [transparencyListenable]: the app root rebuilds its theme from this, and
   /// [LayoutPrefs] notifies for every dragged pixel of the sidebar.
   ValueListenable<AppearanceMode> get appearanceListenable => _appearance;
+
+  /// The text-size signal listened to by the app root. Keeping it narrower
+  /// than [LayoutPrefs] avoids rebuilding the Navigator for panel drags and
+  /// other unrelated preferences.
+  ValueListenable<AppTextSize> get appTextSizeListenable => _appTextSize;
+  AppTextSize get appTextSize => _appTextSize.value;
 
   /// What the sheet behind the writing looks like.
   PaperStyle get paperStyle => _paperStyle;
@@ -316,11 +338,19 @@ class LayoutPrefs extends ChangeNotifier {
     _markdownEnabled = _store.read<bool>(_markdownKey) ?? false;
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
+    _editorTextScale = _normalizeEditorTextScale(
+      _readDouble(_editorTextScaleKey) ?? defaultEditorTextScale,
+    );
     unawaited(_loadRegion());
     _appearance.value = _readEnum(
       _appearanceKey,
       AppearanceMode.values,
       AppearanceMode.system,
+    );
+    _appTextSize.value = _readEnum(
+      _appTextSizeKey,
+      AppTextSize.values,
+      AppTextSize.standard,
     );
     _paperStyle = _readEnum(_paperKey, PaperStyle.values, PaperStyle.plain);
     _transparencyEnabled.value =
@@ -460,6 +490,29 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _writingFont) return;
     _writingFont = value;
     _store.putNow(_writingFontKey, value.name);
+    notifyListeners();
+  }
+
+  set editorTextScale(double value) {
+    final normalized = _normalizeEditorTextScale(value);
+    if (normalized == _editorTextScale) return;
+    _editorTextScale = normalized;
+    _store.putNow(_editorTextScaleKey, normalized);
+    notifyListeners();
+  }
+
+  void increaseEditorTextSize() =>
+      editorTextScale = _editorTextScale + editorTextScaleStep;
+
+  void decreaseEditorTextSize() =>
+      editorTextScale = _editorTextScale - editorTextScaleStep;
+
+  void resetEditorTextSize() => editorTextScale = defaultEditorTextScale;
+
+  set appTextSize(AppTextSize value) {
+    if (value == _appTextSize.value) return;
+    _appTextSize.value = value;
+    _store.putNow(_appTextSizeKey, value.name);
     notifyListeners();
   }
 
@@ -722,6 +775,14 @@ class LayoutPrefs extends ChangeNotifier {
     if (value is num) return value.toDouble();
     if (value is String) return double.tryParse(value);
     return null;
+  }
+
+  static double _normalizeEditorTextScale(double value) {
+    if (!value.isFinite) return defaultEditorTextScale;
+    final clamped = value.clamp(minEditorTextScale, maxEditorTextScale);
+    // Divide the integral number of tenths rather than multiplying it by 0.1.
+    // That keeps repeated shortcut presses stable for equality and persistence.
+    return (clamped * 10).round() / 10;
   }
 
   Offset? _readWindowPosition() {

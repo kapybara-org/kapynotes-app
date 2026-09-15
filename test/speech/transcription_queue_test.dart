@@ -92,10 +92,11 @@ class FakeSpeechApi implements SpeechApi {
   String? lastInstruction;
   final List<String> rewriteInstructions = [];
   String? languageSent;
+  String? modelSent;
 
   @override
   Future<SpeechConsentStatus> consent() async =>
-      const SpeechConsentStatus(acceptedVersion: 1, currentVersion: 1);
+      const SpeechConsentStatus(acceptedVersion: 2, currentVersion: 2);
 
   @override
   Future<SpeechConsentStatus> acceptConsent(int version) async => consent();
@@ -109,9 +110,11 @@ class FakeSpeechApi implements SpeechApi {
     required Uint8List audio,
     required String requestId,
     String? language,
+    String? model,
   }) async {
     transcribeRequestIds.add(requestId);
     languageSent = language;
+    modelSent = model;
     if (transcribeScript.isNotEmpty) {
       final next = transcribeScript.removeAt(0);
       if (next is Function) return next() as TranscribeResult;
@@ -119,7 +122,7 @@ class FakeSpeechApi implements SpeechApi {
     return TranscribeResult(
       jobId: '11111111-1111-4111-8111-111111111111',
       lang: 'en',
-      engine: 'cf/deepgram-nova-3',
+      engine: 'soniox/stt-async-v5',
       segments: const [TranscriptSegment(s: 0, e: 900, t: 'hello there')],
       usage: SpeechUsage(
         usedSeconds: 12,
@@ -143,7 +146,7 @@ class FakeSpeechApi implements SpeechApi {
       if (next is Function) return next() as SummaryResult;
     }
     return const SummaryResult(
-      engine: 'cf/llama',
+      engine: 'deepseek/deepseek-v4-flash-0731',
       title: 'Standup',
       points: ['Said hello.'],
     );
@@ -157,7 +160,10 @@ class FakeSpeechApi implements SpeechApi {
     required String instruction,
   }) async {
     rewriteInstructions.add(instruction);
-    return RewriteResult(engine: 'cf/llama', text: 'a post about $instruction');
+    return RewriteResult(
+      engine: 'deepseek/deepseek-v4-flash-0731',
+      text: 'a post about $instruction',
+    );
   }
 }
 
@@ -417,6 +423,12 @@ void main() {
     queue.enqueue(noteId, 'v1');
     await queue.drain();
     expect(api.languageSent, 'de');
+  });
+
+  test('cloud transcription defaults to Soniox', () async {
+    queue.enqueue(noteId, 'v1');
+    await queue.drain();
+    expect(api.modelSent, CloudTranscriptionModel.soniox.id);
   });
 
   test('offline shows waiting, not transcribing', () async {

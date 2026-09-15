@@ -720,4 +720,55 @@ void main() {
     expect(submit.top, greaterThan(field.bottom));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('a private share dialog leaves the phone keyboard closed', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    late Note note;
+    await tester.runAsync(() async {
+      await alice.boot();
+      note = alice.notes.create(body: 'Holiday budget');
+      await alice.sync.syncNow();
+    });
+
+    await tester.pumpWidget(
+      harness(
+        Builder(
+          builder: (context) => Column(
+            children: [
+              const TextField(
+                key: ValueKey('focused-note-field'),
+                autofocus: true,
+              ),
+              TextButton(
+                onPressed: () => showShareDialog(
+                  context,
+                  note: note,
+                  sharing: alice.sharing,
+                ),
+                child: const Text('open'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.testTextInput.isVisible, isTrue);
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(
+      find.byKey(const ValueKey('share-email')),
+    );
+    expect(field.autofocus, isFalse);
+    expect(tester.testTextInput.isVisible, isFalse);
+  });
 }

@@ -95,7 +95,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.sync => 'Profile, sync, and sharing',
     SettingsSection.plan => 'Plan, cloud usage, and storage',
     SettingsSection.voice => 'Transcription and summaries',
-    SettingsSection.appearance => 'Theme, paper, fonts, and numbers',
+    SettingsSection.appearance => 'Theme, text size, paper, fonts, and numbers',
     SettingsSection.shortcuts => 'Global and in-app shortcuts',
     SettingsSection.updates => 'Version and release notes',
   };
@@ -599,11 +599,14 @@ class _SettingsDialogState extends State<SettingsDialog>
                   )
                 : null,
           ),
+          _cloudTranscriptionModelRow(prefs),
           _localTranscriptionRow(prefs),
         ],
       ),
       const SettingsNote(
-        'Local transcription is free, unlimited, and stays on this device.',
+        'The model choice applies only to cloud transcription. All three '
+        'cloud models support multilingual audio. Local transcription is '
+        'free, unlimited, and stays on this device.',
       ),
       if (_speechError != null)
         Padding(
@@ -648,6 +651,68 @@ class _SettingsDialogState extends State<SettingsDialog>
       if (_localModelCredits.isNotEmpty)
         _ModelCredits(models: _localModelCredits),
     ];
+  }
+
+  Widget _cloudTranscriptionModelRow(VoicePrefs prefs) {
+    final selected = prefs.cloudTranscriptionModel;
+    return SettingsRow(
+      key: const ValueKey('voice-transcription-model-row'),
+      icon: KapyIcons.magicOutlined,
+      title: 'Transcription model',
+      subtitle: '${selected.title} · ${selected.route}',
+      trailing: PopupMenuButton<CloudTranscriptionModel>(
+        key: const ValueKey('voice-transcription-model-dropdown'),
+        tooltip: 'Choose transcription model',
+        initialValue: selected,
+        onSelected: (model) => setState(() {
+          prefs.cloudTranscriptionModel = model;
+        }),
+        itemBuilder: (context) => [
+          for (final model in CloudTranscriptionModel.values)
+            PopupMenuItem<CloudTranscriptionModel>(
+              key: ValueKey('voice-transcription-model-${model.name}'),
+              value: model,
+              height: 58,
+              child: Row(
+                children: [
+                  KapyIcon(
+                    model == selected
+                        ? KapyIcons.radioCheckedRounded
+                        : KapyIcons.radioUncheckedRounded,
+                    size: 17,
+                    color: model == selected
+                        ? Theme.of(context).colorScheme.primary
+                        : context.palette.textTertiary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(model.title),
+                        const SizedBox(height: 2),
+                        Text(
+                          model.route,
+                          style: TextStyle(
+                            fontSize: AppTypeScale.caption,
+                            color: context.palette.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+        icon: KapyIcon(
+          KapyIcons.chevronDownRounded,
+          size: SettingsMetrics.chevronSize,
+          color: context.palette.textTertiary,
+        ),
+      ),
+    );
   }
 
   Widget _localTranscriptionRow(VoicePrefs prefs) {
@@ -1500,6 +1565,15 @@ class _SettingsDialogState extends State<SettingsDialog>
         target: 'paper-setting',
         keywords: ['ruled', 'lined', 'notepad', 'plain', 'grain', 'texture'],
       ),
+      entry(
+        appearance,
+        'App text size',
+        group: 'Theme',
+        icon: KapyIcons.textFieldsRounded,
+        target: 'app-text-size-setting',
+        keywords: ['font size', 'interface size', 'ui scale', 'zoom', 'larger'],
+        description: prefs.appTextSize.description,
+      ),
       if (LayoutPrefs.supportsTransparency) ...[
         entry(
           appearance,
@@ -1591,6 +1665,23 @@ class _SettingsDialogState extends State<SettingsDialog>
           icon: KapyIcons.micRounded,
           target: 'cloud-transcription-row',
           keywords: ['transcribe', 'transcript', 'speech to text', 'dictation'],
+        ),
+        entry(
+          voice,
+          'Transcription model',
+          group: 'Transcription',
+          icon: KapyIcons.magicOutlined,
+          target: 'voice-transcription-model-row',
+          keywords: [
+            'soniox',
+            'stt-async-v5',
+            'microsoft',
+            'mai transcribe',
+            'nvidia',
+            'nemotron',
+            'openrouter',
+          ],
+          description: widget.voicePrefs!.cloudTranscriptionModel.title,
         ),
         entry(
           voice,
@@ -1999,6 +2090,17 @@ class _SettingsDialogState extends State<SettingsDialog>
           keyFor: (paper) => ValueKey('paper-style-${paper.name}'),
           onSelected: (paper) => widget.layoutPrefs.paperStyle = paper,
         ),
+        _SegmentedRow<AppTextSize>(
+          key: const ValueKey('app-text-size-setting'),
+          icon: KapyIcons.textFieldsRounded,
+          title: 'App text size',
+          subtitle: widget.layoutPrefs.appTextSize.description,
+          options: AppTextSize.values,
+          selected: widget.layoutPrefs.appTextSize,
+          labelFor: (size) => size.label,
+          keyFor: (size) => ValueKey('app-text-size-${size.name}'),
+          onSelected: (size) => widget.layoutPrefs.appTextSize = size,
+        ),
         if (LayoutPrefs.supportsTransparency) ...[
           SettingsToggleRow(
             key: const ValueKey('transparency-toggle'),
@@ -2203,6 +2305,7 @@ enum _ShortcutGroup {
   notes('NOTES'),
   splitView('SPLIT VIEW'),
   window('WINDOW'),
+  editor('EDITOR'),
   insert('INSERT'),
   formatting('FORMATTING');
 
@@ -2235,6 +2338,9 @@ extension on ShortcutAction {
     ShortcutAction.toggleResults ||
     ShortcutAction.toggleAlwaysOnTop ||
     ShortcutAction.openSettings => _ShortcutGroup.window,
+    ShortcutAction.increaseEditorTextSize ||
+    ShortcutAction.decreaseEditorTextSize ||
+    ShortcutAction.resetEditorTextSize => _ShortcutGroup.editor,
     ShortcutAction.insertImage ||
     ShortcutAction.recordVoiceNote => _ShortcutGroup.insert,
     ShortcutAction.cycleTextStyle ||

@@ -140,7 +140,14 @@ check(va["appStoreState"] in ("PREPARE_FOR_SUBMISSION", "READY_FOR_REVIEW",
 check(va["releaseType"] in ("MANUAL", "SCHEDULED", "AFTER_APPROVAL"), "release type",
       va["releaseType"] + ("" if va["releaseType"] == "MANUAL" else "  (not manual)"))
 check(bool(va.get("copyright")), "copyright", va.get("copyright") or "BLANK")
-check(va.get("usesIdfa") is not None, "IDFA declared", f"usesIdfa={va.get('usesIdfa')}")
+uses_idfa = va.get("usesIdfa")
+# Apple returns null for this attribute after a version is released, even when
+# the submitted value was false. A true value is always wrong for Kapy Notes;
+# null remains a blocker only while the version is still editable and can be
+# corrected before submission.
+released_state = va["appStoreState"] in ("READY_FOR_SALE", "READY_FOR_DISTRIBUTION")
+check(uses_idfa is False or (uses_idfa is None and released_state),
+      "IDFA not enabled", f"usesIdfa={uses_idfa}")
 
 included = versions.get("included", [])
 check(bool(included), "build attached", included[0]["attributes"]["version"] if included else "NONE")
@@ -230,7 +237,7 @@ else:
 
 print("\n" + "=" * 64)
 print(f"{DIM}App Privacy is not in the public API. Check it against"
-      f" packaging/privacy.json — four types, app functionality, linked —"
+      f" packaging/privacy.json — all declared types, app functionality, linked —"
       f" with: asc web privacy pull --app {APP_ID}{RESET}")
 print(f"BLOCKERS: {len(blockers)}")
 for item in blockers:

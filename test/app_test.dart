@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/editor_font.dart';
@@ -1134,6 +1135,65 @@ void main() {
     expect(restored.writingFont, WritingFont.monospace);
   });
 
+  testWidgets('changes app text size live and persists it', (tester) async {
+    await pumpApp(tester);
+    notes.create(body: 'Readable everywhere');
+    await tester.pumpAndSettle();
+
+    final editor = find.byType(NoteEditor).first;
+    expect(MediaQuery.textScalerOf(tester.element(editor)).scale(10), 10);
+
+    await openSettings(tester, section: SettingsSection.appearance);
+    final large = find.byKey(const ValueKey('app-text-size-large'));
+    await tester.ensureVisible(large);
+    await tester.tap(large);
+    await tester.pumpAndSettle();
+
+    expect(prefs.appTextSize, AppTextSize.large);
+    expect(MediaQuery.textScalerOf(tester.element(editor)).scale(10), 12);
+    expect(MediaQuery.textScalerOf(tester.element(large)).scale(10), 12);
+    expect((LayoutPrefs(store)..load()).appTextSize, AppTextSize.large);
+  });
+
+  testWidgets('editor text shortcuts change, persist, and reset its size', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    notes.create(body: 'Zoom this note\n2 + 2');
+    await tester.pumpAndSettle();
+
+    double editorFontSize() => openNoteField(tester).style!.fontSize!;
+    expect(editorFontSize(), WritingFont.clean.editorSize);
+
+    await pressShortcut(
+      tester,
+      shortcuts.bindingFor(ShortcutAction.increaseEditorTextSize)!,
+    );
+    expect(prefs.editorTextScale, 1.1);
+    expect(
+      editorFontSize(),
+      closeTo(WritingFont.clean.editorSize * 1.1, 0.001),
+    );
+    expect((LayoutPrefs(store)..load()).editorTextScale, 1.1);
+
+    await pressShortcut(
+      tester,
+      shortcuts.bindingFor(ShortcutAction.decreaseEditorTextSize)!,
+    );
+    expect(prefs.editorTextScale, 1);
+
+    await pressShortcut(
+      tester,
+      shortcuts.bindingFor(ShortcutAction.increaseEditorTextSize)!,
+    );
+    await pressShortcut(
+      tester,
+      shortcuts.bindingFor(ShortcutAction.resetEditorTextSize)!,
+    );
+    expect(prefs.editorTextScale, 1);
+    expect(editorFontSize(), WritingFont.clean.editorSize);
+  });
+
   testWidgets('transparency thins the whole window, and persists', (
     tester,
   ) async {
@@ -1454,6 +1514,7 @@ void main() {
       'NOTES',
       'SPLIT VIEW',
       'WINDOW',
+      'EDITOR',
       'INSERT',
       'FORMATTING',
     ];
@@ -3537,6 +3598,18 @@ void main() {
       expect(find.byKey(const ValueKey('insert-menu')), findsOneWidget);
       expect(find.byKey(const ValueKey('insert-image')), findsNothing);
       expect(find.byKey(const ValueKey('record-voice')), findsNothing);
+      final insertMenu = find.byKey(const ValueKey('insert-menu'));
+      expect(
+        find.descendant(of: insertMenu, matching: find.text('/')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: insertMenu,
+          matching: findKapyIcon(KapyIcons.addRounded),
+        ),
+        findsNothing,
+      );
       // Settings is in the notes drawer, not under the thumb that is writing.
       expect(find.byKey(const ValueKey('note-settings')), findsNothing);
       expect(find.byKey(const ValueKey('note-total')), findsNothing);
@@ -3551,20 +3624,49 @@ void main() {
         Axis.horizontal,
       );
 
-      await tester.tap(find.byKey(const ValueKey('insert-menu')));
+      expect(openNoteField(tester).focusNode!.hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      await tester.tap(insertMenu);
       await tester.pump();
       await tester.pump();
-      expect(find.byKey(const ValueKey('slash-command-table')), findsOneWidget);
+      expect(openNoteField(tester).focusNode!.hasFocus, isFalse);
+      expect(tester.testTextInput.isVisible, isFalse);
+
+      const commandOrder = [
+        'checklist',
+        'bulletedList',
+        'image',
+        'voiceNote',
+        'table',
+        'divider',
+        'video',
+      ];
+      final commandTops = [
+        for (final command in commandOrder)
+          tester.getTopLeft(find.byKey(ValueKey('slash-command-$command'))).dy,
+      ];
+      for (var index = 1; index < commandTops.length; index++) {
+        expect(commandTops[index], greaterThan(commandTops[index - 1]));
+      }
+
       await tester.drag(
         find.byKey(const ValueKey('slash-command-list')),
         const Offset(0, -260),
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('slash-command-image')), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('slash-command-voiceNote')),
-        findsOneWidget,
-      );
+      const finalCommandOrder = ['video', 'numberedList', 'quote', 'codeBlock'];
+      final finalCommandTops = [
+        for (final command in finalCommandOrder)
+          tester.getTopLeft(find.byKey(ValueKey('slash-command-$command'))).dy,
+      ];
+      for (var index = 1; index < finalCommandTops.length; index++) {
+        expect(
+          finalCommandTops[index],
+          greaterThan(finalCommandTops[index - 1]),
+        );
+      }
+      expect(find.byKey(const ValueKey('slash-command-heading')), findsNothing);
     });
 
     testWidgets('sits the phone footer on the bottom edge of the screen', (

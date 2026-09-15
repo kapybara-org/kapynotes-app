@@ -30,21 +30,6 @@ class _SlashCommandDefinition {
 
 const _definitions = [
   _SlashCommandDefinition(
-    type: SlashCommandType.table,
-    label: 'Table',
-    description: 'Simple rows and columns',
-    icon: KapyIcons.tableRounded,
-    aliases: ['grid', 'rows', 'columns'],
-    requiresMarkdown: true,
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.heading,
-    label: 'Heading',
-    description: 'Large section heading',
-    icon: KapyIcons.textFieldsRounded,
-    aliases: ['title', 'h1'],
-  ),
-  _SlashCommandDefinition(
     type: SlashCommandType.checklist,
     label: 'Checklist',
     description: 'Tasks with checkboxes',
@@ -57,6 +42,43 @@ const _definitions = [
     description: 'Start an unordered list',
     icon: KapyIcons.bulletedListRounded,
     aliases: ['bullet', 'unordered'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.image,
+    label: 'Image',
+    description: 'Take or choose a picture',
+    icon: KapyIcons.imageOutlined,
+    aliases: ['photo', 'picture', 'camera'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.voiceNote,
+    label: 'Voice note',
+    description: 'Record audio here',
+    icon: KapyIcons.micRounded,
+    aliases: ['voice', 'audio', 'record'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.table,
+    label: 'Table',
+    description: 'Simple rows and columns',
+    icon: KapyIcons.tableRounded,
+    aliases: ['grid', 'rows', 'columns'],
+    requiresMarkdown: true,
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.divider,
+    label: 'Divider',
+    description: 'Separate sections with a line',
+    icon: KapyIcons.dividerRounded,
+    aliases: ['rule', 'separator', 'line'],
+    requiresMarkdown: true,
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.video,
+    label: 'Video',
+    description: 'Choose a video',
+    icon: KapyIcons.videoOutlined,
+    aliases: ['movie'],
   ),
   _SlashCommandDefinition(
     type: SlashCommandType.numberedList,
@@ -75,41 +97,12 @@ const _definitions = [
     requiresMarkdown: true,
   ),
   _SlashCommandDefinition(
-    type: SlashCommandType.divider,
-    label: 'Divider',
-    description: 'Separate sections with a line',
-    icon: KapyIcons.dividerRounded,
-    aliases: ['rule', 'separator', 'line'],
-    requiresMarkdown: true,
-  ),
-  _SlashCommandDefinition(
     type: SlashCommandType.codeBlock,
     label: 'Code block',
     description: 'A fenced block of code',
     icon: KapyIcons.codeRounded,
     aliases: ['code', 'snippet'],
     requiresMarkdown: true,
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.image,
-    label: 'Image',
-    description: 'Take or choose a picture',
-    icon: KapyIcons.imageOutlined,
-    aliases: ['photo', 'picture', 'camera'],
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.video,
-    label: 'Video',
-    description: 'Choose a video',
-    icon: KapyIcons.videoOutlined,
-    aliases: ['movie'],
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.voiceNote,
-    label: 'Voice note',
-    description: 'Record audio here',
-    icon: KapyIcons.micRounded,
-    aliases: ['voice', 'audio', 'record'],
   ),
 ];
 

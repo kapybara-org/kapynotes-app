@@ -13,11 +13,13 @@ import 'transcriber.dart';
 /// leaving the machine — which is exactly what the other two implementations
 /// are for.
 class CloudTranscriber implements Transcriber {
-  CloudTranscriber(this._api);
+  CloudTranscriber(this._api, {CloudTranscriptionModel Function()? model})
+    : _model = model ?? (() => CloudTranscriptionModel.soniox);
 
   /// Read on every call rather than held: signing in and out replaces it, and
   /// a captured null would outlive the sign-in that fixed it.
   final SpeechApi? Function() _api;
+  final CloudTranscriptionModel Function() _model;
 
   @override
   Future<TranscriberReadiness> readiness() async => _api() == null
@@ -44,6 +46,7 @@ class CloudTranscriber implements Transcriber {
       audio: bytes,
       requestId: requestId,
       language: language,
+      model: _model().id,
     );
     return TranscriptDraft(
       engine: result.engine,

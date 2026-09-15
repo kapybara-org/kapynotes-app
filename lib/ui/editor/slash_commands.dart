@@ -6,17 +6,16 @@ import 'package:flutter/services.dart';
 /// string; a command either changes the current line, inserts ordinary text,
 /// or enters an attachment through the editor's existing path.
 enum SlashCommandType {
-  table,
-  heading,
   checklist,
   bulletedList,
+  image,
+  voiceNote,
+  table,
+  divider,
+  video,
   numberedList,
   quote,
-  divider,
   codeBlock,
-  image,
-  video,
-  voiceNote,
 }
 
 /// A chosen command. Tables carry the size picked in the menu.

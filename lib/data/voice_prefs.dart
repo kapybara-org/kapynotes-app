@@ -21,6 +21,8 @@ class VoicePrefs extends ChangeNotifier {
       'voice.transcriptionDeclinedVersion.v1';
   static const String _summaryEngineKey = 'voice.summaryEngine.v1';
   static const String _transcriptEngineKey = 'voice.transcriptEngine.v1';
+  static const String _cloudTranscriptionModelKey =
+      'voice.cloudTranscriptionModel.v1';
   static const String _summaryInstructionKey = 'voice.summaryInstruction.v1';
   static const String _modelTermsKey = 'voice.modelTerms.v1';
 
@@ -30,6 +32,8 @@ class VoicePrefs extends ChangeNotifier {
   int? _declinedVersion;
   SummaryEngine _summaryEngine = SummaryEngine.cloud;
   TranscriptEngine _transcriptEngine = TranscriptEngine.cloud;
+  CloudTranscriptionModel _cloudTranscriptionModel =
+      CloudTranscriptionModel.soniox;
   String? _summaryInstruction;
   Map<String, int> _modelTerms = const {};
 
@@ -59,6 +63,14 @@ class VoicePrefs extends ChangeNotifier {
   /// download — and defaulting to it would mean a fresh install quietly not
   /// transcribing on hardware that cannot.
   TranscriptEngine get transcriptEngine => _transcriptEngine;
+
+  /// Which provider handles a cloud transcription.
+  ///
+  /// Soniox is the default for both new installs and unknown stored values.
+  /// A separate preference from [transcriptEngine], because choosing a local
+  /// engine should not forget which cloud model the user chose.
+  CloudTranscriptionModel get cloudTranscriptionModel =>
+      _cloudTranscriptionModel;
 
   /// How this user wants their summaries written, in their own words.
   ///
@@ -103,6 +115,12 @@ class VoicePrefs extends ChangeNotifier {
     _transcriptEngine = transcriptEngine == 'device'
         ? TranscriptEngine.device
         : TranscriptEngine.cloud;
+
+    _cloudTranscriptionModel =
+        CloudTranscriptionModel.fromId(
+          _store.data[_cloudTranscriptionModelKey],
+        ) ??
+        CloudTranscriptionModel.soniox;
 
     final instruction = _store.data[_summaryInstructionKey];
     _summaryInstruction = instruction is String && instruction.trim().isNotEmpty
@@ -166,6 +184,13 @@ class VoicePrefs extends ChangeNotifier {
     if (value == _transcriptEngine) return;
     _transcriptEngine = value;
     _store.putNow(_transcriptEngineKey, value.name);
+    notifyListeners();
+  }
+
+  set cloudTranscriptionModel(CloudTranscriptionModel value) {
+    if (value == _cloudTranscriptionModel) return;
+    _cloudTranscriptionModel = value;
+    _store.putNow(_cloudTranscriptionModelKey, value.id);
     notifyListeners();
   }
 

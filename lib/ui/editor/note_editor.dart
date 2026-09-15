@@ -144,6 +144,7 @@ class NoteEditor extends StatefulWidget {
     required this.onGutterWidthReset,
     required this.onSettingsPressed,
     required this.writingFont,
+    this.editorTextScale = 1,
     required this.shortcuts,
     this.spellCheckEnabled = true,
     this.markdownEnabled = false,
@@ -279,6 +280,10 @@ class NoteEditor extends StatefulWidget {
   /// from inside the note.
   final VoidCallback onSettingsPressed;
   final WritingFont writingFont;
+
+  /// An editor-only multiplier. App-wide and device text scaling still arrive
+  /// through MediaQuery, independently of this preference.
+  final double editorTextScale;
   final ShortcutPrefs shortcuts;
   final bool spellCheckEnabled;
 
@@ -2186,18 +2191,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   Set<SlashCommandType> get _availableSlashCommands => {
-    SlashCommandType.table,
-    SlashCommandType.heading,
     SlashCommandType.checklist,
     SlashCommandType.bulletedList,
-    SlashCommandType.numberedList,
-    SlashCommandType.quote,
-    SlashCommandType.divider,
-    SlashCommandType.codeBlock,
     if (widget.images != null && !_imageActionBusy) SlashCommandType.image,
-    if (widget.images != null && !_videoActionBusy) SlashCommandType.video,
     if (widget.onRecordVoice != null && !widget.voiceActionBusy)
       SlashCommandType.voiceNote,
+    SlashCommandType.table,
+    SlashCommandType.divider,
+    if (widget.images != null && !_videoActionBusy) SlashCommandType.video,
+    SlashCommandType.numberedList,
+    SlashCommandType.quote,
+    SlashCommandType.codeBlock,
   };
 
   void _scheduleSlashCommandMenuSync() {
@@ -2216,9 +2220,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       return;
     }
 
-    // Requesting focus for the mobile `+` schedules the same synchronization
-    // as typing. Keep that manual menu only while the editor value is exactly
-    // where it opened; the first typed character or caret move dismisses it.
+    // Keep a manually opened mobile menu only while the editor value is
+    // exactly where it opened; the first edit or caret move dismisses it.
     if (_slashCommandMenu.isVisible &&
         !_slashCommandWasTyped &&
         _manualSlashMenuValue == _controller.value) {
@@ -2277,20 +2280,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
-  /// The touch footer's `+` opens the same menu without putting a slash in
-  /// the note. Focus remains in the field, so the software keyboard and the
-  /// caret stay exactly where the writer left them.
+  /// The touch footer's `/` opens the same menu without putting a slash in
+  /// the note. A tap-opened popup gives the screen to its choices, so it puts
+  /// the software keyboard away until a choice returns to the editor.
   void _showInsertMenu() {
     if (widget.readOnly) return;
     _dismissedSlashStart = null;
     _manualSlashMenuValue = null;
-    if (!_focusNode.hasFocus) _focusNode.requestFocus();
+    final selection = _controller.selection;
+    final caret = selection.isValid
+        ? selection.extentOffset
+        : _controller.text.length;
+    _dismissKeyboard();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || widget.readOnly || !_focusNode.hasFocus) return;
-      final selection = _controller.selection;
-      final caret = selection.isValid
-          ? selection.extentOffset
-          : _controller.text.length;
+      if (!mounted || widget.readOnly) return;
       final anchor = _slashAnchorAt(caret);
       if (anchor == null) return;
       _slashCommandRange = TextRange.collapsed(caret);
@@ -2420,22 +2423,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             ),
           ),
         );
-        break;
-      case SlashCommandType.heading:
-        if (typed) {
-          _replaceCommandValue(
-            replaceSlashCommandRange(
-              _controller.value,
-              range,
-              markdown ? '# ' : '',
-            ),
-          );
-          if (!markdown) _applyParagraphStyle(NoteParagraphStyle.heading);
-        } else if (markdown) {
-          _applyMarkdownEdit(applyMarkdownHeading(_controller.value, 1));
-        } else {
-          _applyParagraphStyle(NoteParagraphStyle.heading);
-        }
         break;
       case SlashCommandType.checklist:
         if (typed) {
@@ -4144,11 +4131,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final textStyle = EditorMetrics.textStyle(
       palette.textPrimary,
       widget.writingFont,
+      editorScale: widget.editorTextScale,
     );
     // Only a note that actually holds a picture gives up the forced row.
     final strut = EditorMetrics.strut(
       widget.writingFont,
       allowTallRows: _attachments.isNotEmpty && widget.images != null,
+      editorScale: widget.editorTextScale,
     );
     final textScaler = MediaQuery.textScalerOf(context);
 
@@ -4231,6 +4220,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   // what the measurement depends on.
                   layoutKey: (
                     widget.writingFont,
+                    widget.editorTextScale,
                     _formats,
                     widget.markdownEnabled,
                     concealment.key,
@@ -4570,7 +4560,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 style: textStyle,
                 strutStyle: strut,
                 cursorWidth: EditorMetrics.cursorWidth,
-                cursorHeight: EditorMetrics.cursorHeight(widget.writingFont),
+                cursorHeight: EditorMetrics.cursorHeight(
+                  widget.writingFont,
+                  editorScale: widget.editorTextScale,
+                  textScaler: MediaQuery.textScalerOf(context),
+                ),
                 cursorRadius: const Radius.circular(1),
                 cursorColor: Theme.of(context).colorScheme.primary,
                 // Uniform selection rectangles: without this, a line whose glyphs

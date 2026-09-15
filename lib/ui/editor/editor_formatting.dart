@@ -163,13 +163,14 @@ TextStyle _mixedHeadingBase(TextStyle base) {
   final lineHeight = base.fontSize == null || base.height == null
       ? null
       : base.fontSize! * base.height!;
+  final headingSize = base.fontSize == null
+      ? headingFont.editorSize
+      : base.fontSize! * headingFont.editorSize / WritingFont.mixed.editorSize;
   return base.copyWith(
     fontFamily: headingFont.fontFamily,
     fontFamilyFallback: headingFont.fontFamilyFallback,
-    fontSize: headingFont.editorSize,
-    height: lineHeight == null
-        ? base.height
-        : lineHeight / headingFont.editorSize,
+    fontSize: headingSize,
+    height: lineHeight == null ? base.height : lineHeight / headingSize,
     fontVariations: headingFont.fontVariations,
   );
 }

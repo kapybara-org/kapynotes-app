@@ -530,7 +530,6 @@ void main() {
       tester,
     ) async {
       const cases = <(String, String)>[
-        ('heading', '# '),
         ('todo', '- [ ] '),
         ('bullet', '- '),
         ('number', '1. '),
@@ -594,37 +593,10 @@ void main() {
       );
     });
 
-    testWidgets('rich-text commands stay rich without enabling Markdown', (
+    testWidgets('rich-text list commands stay rich without enabling Markdown', (
       tester,
     ) async {
       bool? enabled;
-      final formats = <List<NoteFormatRange>>[];
-      await tester.pumpWidget(
-        harness(
-          '',
-          markdown: false,
-          autofocus: true,
-          onFormatsChanged: formats.add,
-          onMarkdownEnabledChanged: (value) => enabled = value,
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.enterText(find.byType(TextField), '/heading');
-      await tester.pump();
-      await tester.pump();
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await typeAtCaret(tester, 'Title');
-
-      expect(find.text('Turn on Markdown?'), findsNothing);
-      expect(enabled, isNull);
-      expect(controllerOf(tester).text, 'Title');
-      expect(formats.last, const [
-        NoteFormatRange(start: 0, end: 5, format: NoteFormat.heading),
-      ]);
-
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pumpAndSettle();
       await tester.pumpWidget(
         harness(
           '',
@@ -643,6 +615,19 @@ void main() {
       expect(find.text('Turn on Markdown?'), findsNothing);
       expect(enabled, isNull);
       expect(controllerOf(tester).text, '☐ ');
+    });
+
+    testWidgets('leaves headings to the text-style control', (tester) async {
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '/heading');
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('slash-command-heading')), findsNothing);
+      expect(find.byKey(const ValueKey('slash-command-empty')), findsOneWidget);
+      expect(controllerOf(tester).text, '/heading');
     });
 
     testWidgets('table insertion is one undoable editor change', (

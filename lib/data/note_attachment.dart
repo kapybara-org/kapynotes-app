@@ -530,7 +530,7 @@ class VoiceTranscript {
   /// lowercased. Not an enum: providers invent labels.
   final String lang;
 
-  /// e.g. `cf/deepgram-nova-3`, later `sherpa/...`.
+  /// e.g. `soniox/stt-async-v5`, or `sherpa/...` for a local model.
   final String engine;
 
   /// Epoch milliseconds.

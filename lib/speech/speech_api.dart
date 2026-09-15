@@ -29,7 +29,7 @@ class SpeechConsentStatus {
           : 0,
       currentVersion: raw['currentVersion'] is int
           ? raw['currentVersion']! as int
-          : 1,
+          : speechConsentVersion,
       acceptedAt: at is String ? DateTime.tryParse(at) : null,
     );
   }
@@ -106,6 +106,7 @@ abstract class SpeechApi {
     required Uint8List audio,
     required String requestId,
     String? language,
+    String? model,
   });
 
   Future<SummaryResult> summarize({
@@ -172,7 +173,7 @@ class SpeechCodes {
 
 /// The current consent version this build knows about. Kept in step with
 /// `SPEECH_CONSENT_VERSION` in the contract.
-const int speechConsentVersion = 1;
+const int speechConsentVersion = 2;
 
 /// Whole-request timeout, covering a slow upload as well as the providers.
 /// Longer than every timeout inside it, so a slow provider surfaces as a
@@ -213,6 +214,7 @@ class HttpSpeechApi implements SpeechApi {
     required Uint8List audio,
     required String requestId,
     String? language,
+    String? model,
   }) async {
     final body = await _json(
       'POST',
@@ -222,6 +224,7 @@ class HttpSpeechApi implements SpeechApi {
         'content-type': 'audio/mp4',
         'x-speech-request-id': requestId,
         if (language case final String value) 'x-speech-language': value,
+        if (model case final String value) 'x-speech-model': value,
       },
     );
     return TranscribeResult(

@@ -82,6 +82,7 @@ Widget harness(
   VoidCallback? onSettingsPressed,
   VoidCallback? onRecordVoice,
   WritingFont writingFont = WritingFont.handwritten,
+  double editorTextScale = 1,
   ShortcutPrefs? shortcuts,
 }) {
   return MaterialApp(
@@ -116,6 +117,7 @@ Widget harness(
         onSettingsPressed: onSettingsPressed ?? () {},
         onRecordVoice: onRecordVoice,
         writingFont: writingFont,
+        editorTextScale: editorTextScale,
         shortcuts: shortcuts ?? shortcutPrefs,
       ),
     ),
@@ -2003,6 +2005,7 @@ void main() {
     await tester.tapAt(_centerOf(tester, body, body));
     await tester.pumpAndSettle();
 
+    expect(tester.testTextInput.isVisible, isFalse);
     final panel = tester.getRect(find.byKey(const ValueKey('link-popover')));
     expect(panel.left, greaterThanOrEqualTo(0));
     expect(panel.right, lessThanOrEqualTo(320));
@@ -2864,7 +2867,7 @@ void main() {
     );
   });
 
-  testWidgets('mixed typeface gives headings a handwritten face', (
+  testWidgets('mixed typeface scales headings and keeps result alignment', (
     tester,
   ) async {
     const body = 'Nightly cost\nnightly = 128 eur\nnightly * 7';
@@ -2899,6 +2902,39 @@ void main() {
     );
     expect(heading.style?.fontSize, WritingFont.handwritten.editorSize * 1.28);
     expect(bodyText.style?.fontFamily, WritingFont.monospace.fontFamily);
+    expect(
+      tester.getRect(chipWithText('896.00 EUR')).center.dy,
+      closeTo(lineRect(tester, body, 2).center.dy, 1.5),
+    );
+
+    await tester.pumpWidget(
+      harness(
+        body,
+        initialFormats: formats,
+        writingFont: WritingFont.mixed,
+        editorTextScale: 1.4,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final scaledField = tester.widget<TextField>(find.byType(TextField));
+    expect(
+      scaledField.style?.fontSize,
+      closeTo(WritingFont.mixed.editorSize * 1.4, 0.001),
+    );
+    final scaledRendered =
+        tester
+                .state<EditableTextState>(find.byType(EditableText))
+                .renderEditable
+                .text!
+            as TextSpan;
+    final scaledHeading = scaledRendered.children!
+        .whereType<TextSpan>()
+        .firstWhere((span) => span.text == 'Nightly cost');
+    expect(
+      scaledHeading.style?.fontSize,
+      closeTo(WritingFont.handwritten.editorSize * 1.4 * 1.28, 0.001),
+    );
     expect(
       tester.getRect(chipWithText('896.00 EUR')).center.dy,
       closeTo(lineRect(tester, body, 2).center.dy, 1.5),

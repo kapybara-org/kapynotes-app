@@ -4,6 +4,7 @@ import 'dart:ui' show AppExitResponse;
 import 'package:material_ui/material_ui.dart';
 
 import 'core/platform.dart';
+import 'core/popup_keyboard.dart';
 import 'core/appearance.dart';
 import 'core/desktop_integration.dart';
 import 'audio/recording_file.dart';
@@ -112,6 +113,8 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   static const _tempSweepDelay = Duration(seconds: 6);
 
   final TextEditingController _launchController = TextEditingController();
+  final MobilePopupKeyboardObserver _popupKeyboardObserver =
+      MobilePopupKeyboardObserver();
 
   /// Owns the microphone, and lives here rather than on the page below so a
   /// recording survives the page rebuilding — and so every lifecycle hook in
@@ -244,7 +247,12 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     ]);
     _transcriber = RoutingTranscriber(
       engineOf: () => _voicePrefs?.transcriptEngine ?? TranscriptEngine.cloud,
-      cloud: CloudTranscriber(() => widget.account?.speech),
+      cloud: CloudTranscriber(
+        () => widget.account?.speech,
+        model: () =>
+            _voicePrefs?.cloudTranscriptionModel ??
+            CloudTranscriptionModel.soniox,
+      ),
       device: _deviceTranscriber!,
     );
     _transcriptions = TranscriptionQueue(
@@ -496,10 +504,12 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         widget.prefs.transparencyListenable,
         widget.prefs.transparencyAmountListenable,
         widget.prefs.appearanceListenable,
+        widget.prefs.appTextSizeListenable,
       ]),
       builder: (context, _) => MaterialApp(
         title: AppWordmark.name,
         debugShowCheckedModeBanner: false,
+        navigatorObservers: [_popupKeyboardObserver],
         theme: KapyTheme.light(
           transparency: widget.prefs.transparencyEnabled,
           amount: widget.prefs.transparencyAmount,
@@ -520,20 +530,24 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         builder: (context, child) {
           final solid =
               !_glassBehindWindow || MediaQuery.highContrastOf(context);
-          if (!widget.prefs.transparencyEnabled || !solid) {
-            return JoiningScope(
-              account: widget.account,
-              child: child ?? const SizedBox.shrink(),
+          Widget result = child ?? const SizedBox.shrink();
+          if (widget.prefs.transparencyEnabled && solid) {
+            final theme = Theme.of(context);
+            final palette = theme.extension<CalcPalette>()!;
+            result = Theme(
+              data: theme.copyWith(extensions: [palette.opaque]),
+              child: result,
             );
           }
-          final theme = Theme.of(context);
-          final palette = theme.extension<CalcPalette>()!;
-          return JoiningScope(
-            account: widget.account,
-            child: Theme(
-              data: theme.copyWith(extensions: [palette.opaque]),
-              child: child!,
+
+          result = JoiningScope(account: widget.account, child: result);
+
+          final media = MediaQuery.of(context);
+          return MediaQuery(
+            data: media.copyWith(
+              textScaler: widget.prefs.appTextSize.applyTo(media.textScaler),
             ),
+            child: result,
           );
         },
         // Prose autocorrection has no place in a calculator, and the app is

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/popup_keyboard.dart';
 import '../../core/theme.dart';
 import '../floating_surface.dart';
 
@@ -36,6 +37,7 @@ class LinkPopover {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
 
+    keepMobilePopupKeyboardClosed();
     hide();
     final entry = OverlayEntry(
       builder: (context) => _LinkPopoverBody(

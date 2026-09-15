@@ -6,7 +6,7 @@ import 'package:kapy_notes/calc/format.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/appearance.dart';
-import 'package:material_ui/material_ui.dart' show ThemeMode;
+import 'package:material_ui/material_ui.dart' show TextScaler, ThemeMode;
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/time_zones.dart';
@@ -52,6 +52,8 @@ void main() {
     expect(prefs.dailySeparatorsEnabled, isTrue);
     expect(prefs.spellCheckEnabled, isTrue);
     expect(prefs.writingFont, WritingFont.clean);
+    expect(prefs.editorTextScale, LayoutPrefs.defaultEditorTextScale);
+    expect(prefs.appTextSize, AppTextSize.standard);
     expect(prefs.transparencyEnabled, isFalse);
     expect(prefs.timeZoneId, isNull);
   });
@@ -68,6 +70,8 @@ void main() {
     prefs.dailySeparatorsEnabled = false;
     prefs.spellCheckEnabled = false;
     prefs.writingFont = WritingFont.handwritten;
+    prefs.editorTextScale = 1.4;
+    prefs.appTextSize = AppTextSize.large;
     prefs.transparencyEnabled = true;
 
     final restored = LayoutPrefs(store)..load();
@@ -81,6 +85,8 @@ void main() {
     expect(restored.dailySeparatorsEnabled, isFalse);
     expect(restored.spellCheckEnabled, isFalse);
     expect(restored.writingFont, WritingFont.handwritten);
+    expect(restored.editorTextScale, 1.4);
+    expect(restored.appTextSize, AppTextSize.large);
     expect(restored.transparencyEnabled, isTrue);
   });
 
@@ -126,12 +132,16 @@ void main() {
     final prefs = LayoutPrefs(store)..load();
 
     prefs.writingFont = WritingFont.handwritten;
+    prefs.editorTextScale = 1.2;
+    prefs.appTextSize = AppTextSize.large;
 
     expect(
       store.persisted['writingFont.v1'],
       'handwritten',
       reason: 'changing then quitting must not lose the choice',
     );
+    expect(store.persisted['editorTextScale.v1'], 1.2);
+    expect(store.persisted['appTextSize.v1'], 'large');
   });
 
   test('sidebar visibility resets on every launch', () {
@@ -269,6 +279,39 @@ void main() {
     final prefs = LayoutPrefs(store)..load();
 
     expect(prefs.writingFont, WritingFont.clean);
+  });
+
+  test('text sizes fall back safely and editor steps stay bounded', () {
+    final store = _MemoryStore()
+      ..put('appTextSize.v1', 'enormous')
+      ..put('editorTextScale.v1', double.nan);
+    final prefs = LayoutPrefs(store)..load();
+
+    expect(prefs.appTextSize, AppTextSize.standard);
+    expect(prefs.editorTextScale, LayoutPrefs.defaultEditorTextScale);
+
+    for (var i = 0; i < 20; i++) {
+      prefs.increaseEditorTextSize();
+    }
+    expect(prefs.editorTextScale, LayoutPrefs.maxEditorTextScale);
+
+    for (var i = 0; i < 30; i++) {
+      prefs.decreaseEditorTextSize();
+    }
+    expect(prefs.editorTextScale, LayoutPrefs.minEditorTextScale);
+
+    prefs.resetEditorTextSize();
+    expect(prefs.editorTextScale, LayoutPrefs.defaultEditorTextScale);
+  });
+
+  test('app text size keeps the device accessibility scale', () {
+    final scaler = AppTextSize.large.applyTo(const TextScaler.linear(1.5));
+
+    expect(scaler.scale(10), 18);
+    expect(
+      AppTextSize.standard.applyTo(const TextScaler.linear(1.5)).scale(10),
+      15,
+    );
   });
 
   test('markdown in notes starts off, and a yes survives reload', () {
@@ -852,6 +895,18 @@ void main() {
       LogicalKeyboardKey.keyC,
     );
     expect(prefs.bindingFor(ShortcutAction.formatChecklist)!.shift, isTrue);
+    expect(
+      prefs.bindingFor(ShortcutAction.increaseEditorTextSize)!.logicalKey,
+      LogicalKeyboardKey.equal,
+    );
+    expect(
+      prefs.bindingFor(ShortcutAction.decreaseEditorTextSize)!.logicalKey,
+      LogicalKeyboardKey.minus,
+    );
+    expect(
+      prefs.bindingFor(ShortcutAction.resetEditorTextSize)!.logicalKey,
+      LogicalKeyboardKey.digit0,
+    );
 
     final bold = prefs.bindingFor(ShortcutAction.formatBold)!;
     expect(bold.meta, AppPlatform.isMacOS);

@@ -125,6 +125,37 @@ void main() {
       );
     });
 
+    test('Soniox is the default cloud transcription model', () {
+      expect(
+        (VoicePrefs(_MemoryStore())..load()).cloudTranscriptionModel,
+        CloudTranscriptionModel.soniox,
+      );
+    });
+
+    test('the cloud model choice persists independently', () {
+      final store = _MemoryStore();
+      final prefs = VoicePrefs(store)..load();
+      prefs.cloudTranscriptionModel = CloudTranscriptionModel.microsoft;
+      prefs.transcriptEngine = TranscriptEngine.device;
+
+      final restored = VoicePrefs(store)..load();
+      expect(
+        restored.cloudTranscriptionModel,
+        CloudTranscriptionModel.microsoft,
+      );
+      expect(restored.transcriptEngine, TranscriptEngine.device);
+    });
+
+    test('an unknown cloud model falls back to Soniox', () {
+      final store = _MemoryStore();
+      store.data['voice.cloudTranscriptionModel.v1'] = 'some/future-model';
+
+      expect(
+        (VoicePrefs(store)..load()).cloudTranscriptionModel,
+        CloudTranscriptionModel.soniox,
+      );
+    });
+
     test('the two engines are chosen separately', () async {
       // Transcribing here and summarising in the cloud is an ordinary
       // setting, and so is the reverse.
@@ -247,6 +278,29 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Local transcription'), findsOneWidget);
+    });
+
+    testWidgets('the cloud model dropdown saves the selected model', (
+      tester,
+    ) async {
+      final prefs = VoicePrefs(store)..load();
+      await _openVoicePane(tester, prefs: prefs);
+
+      expect(find.textContaining('Soniox stt-async-v5'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('voice-transcription-model-dropdown')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('voice-transcription-model-nvidia')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(prefs.cloudTranscriptionModel, CloudTranscriptionModel.nvidia);
+      expect(
+        find.textContaining('NVIDIA Nemotron 3.5 ASR Streaming 0.6B'),
+        findsOneWidget,
+      );
     });
   });
 }

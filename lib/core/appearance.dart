@@ -23,6 +23,62 @@ extension AppearanceModeDetails on AppearanceMode {
   };
 }
 
+/// The reader's preferred size for text throughout the app.
+///
+/// This is deliberately a multiplier over the device's accessibility scale,
+/// not a replacement for it. A person who has already asked the operating
+/// system for larger text keeps that request, and can make Kapy Notes larger
+/// still if this is the app they spend the most time reading.
+enum AppTextSize { small, standard, large }
+
+extension AppTextSizeDetails on AppTextSize {
+  String get label => switch (this) {
+    AppTextSize.small => 'Small',
+    AppTextSize.standard => 'Default',
+    AppTextSize.large => 'Large',
+  };
+
+  String get description => switch (this) {
+    AppTextSize.small => 'Smaller text throughout Kapy Notes',
+    AppTextSize.standard => 'Use the standard Kapy Notes text size',
+    AppTextSize.large => 'Larger text throughout Kapy Notes',
+  };
+
+  double get scaleFactor => switch (this) {
+    AppTextSize.small => 0.9,
+    AppTextSize.standard => 1,
+    AppTextSize.large => 1.2,
+  };
+
+  /// Adds this preference to [device] without flattening a nonlinear system
+  /// text scale into one approximate number.
+  TextScaler applyTo(TextScaler device) => scaleFactor == 1
+      ? device
+      : _PreferredTextScaler(device: device, factor: scaleFactor);
+}
+
+final class _PreferredTextScaler extends TextScaler {
+  const _PreferredTextScaler({required this.device, required this.factor});
+
+  final TextScaler device;
+  final double factor;
+
+  @override
+  double scale(double fontSize) => device.scale(fontSize) * factor;
+
+  @override
+  double get textScaleFactor => scale(1);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _PreferredTextScaler &&
+      other.device == device &&
+      other.factor == factor;
+
+  @override
+  int get hashCode => Object.hash(device, factor);
+}
+
 /// The sheet behind the writing.
 ///
 /// Only the light theme has paper to speak of: the fibres are a warm tint

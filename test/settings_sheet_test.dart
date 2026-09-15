@@ -107,7 +107,10 @@ void main() {
       findsNothing,
     );
     // Each category says what is behind it before it is opened.
-    expect(find.text('Theme, paper, fonts, and numbers'), findsOneWidget);
+    expect(
+      find.text('Theme, text size, paper, fonts, and numbers'),
+      findsOneWidget,
+    );
 
     // Shortcuts belong to a keyboard, and phones are updated by their store.
     expect(

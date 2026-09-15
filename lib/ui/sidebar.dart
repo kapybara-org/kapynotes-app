@@ -326,10 +326,12 @@ extension on Sidebar {
   }
 
   Widget _buildUngrouped(BuildContext context) {
-    Widget rowBuilder(BuildContext context, int index) => SizedBox(
-      height: AppControlMetrics.sidebarNoteRowExtent,
-      child: _row(notes[index], shared: false),
+    final extent = AppControlMetrics.scaleBar(
+      context,
+      AppControlMetrics.sidebarNoteRowExtent,
     );
+    Widget rowBuilder(BuildContext context, int index) =>
+        SizedBox(height: extent, child: _row(notes[index], shared: false));
 
     if (!_showMobileHiddenEntry) {
       return ListView.builder(
@@ -491,7 +493,10 @@ extension on Sidebar {
         if (sharing == null || !sharing!.teams.any((space) => space.id == id))
           id,
     ];
-    final extent = AppControlMetrics.sidebarNoteRowExtent;
+    final extent = AppControlMetrics.scaleBar(
+      context,
+      AppControlMetrics.sidebarNoteRowExtent,
+    );
     // Pinned ones included: the number is how many notes are theirs, not how
     // many happen to sit under the heading.
     final ownCount = hasSharedSections

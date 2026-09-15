@@ -284,22 +284,30 @@ class EditorMetrics {
   /// and the field renders wider than anything measuring the same string with
   /// this style alone. That difference moves wrap points, and a moved wrap
   /// point puts every result below it on the wrong line.
-  static TextStyle textStyle(Color color, WritingFont font) => TextStyle(
-    fontFamily: font.fontFamily,
-    fontFamilyFallback: font.fontFamilyFallback,
-    fontSize: font.editorSize,
-    height: lineHeight / font.editorSize,
-    color: color,
-    letterSpacing: 0,
-    wordSpacing: 0,
-    fontWeight: FontWeight.w400,
-    fontStyle: FontStyle.normal,
-    fontVariations: font.fontVariations,
-    textBaseline: TextBaseline.alphabetic,
-    // A calculator column only lines up with tabular figures.
-    fontFeatures: const [FontFeature.tabularFigures()],
-    leadingDistribution: TextLeadingDistribution.even,
-  );
+  static TextStyle textStyle(
+    Color color,
+    WritingFont font, {
+    double editorScale = 1,
+  }) {
+    final fontSize = font.editorSize * editorScale;
+    final rowHeight = lineHeight * editorScale;
+    return TextStyle(
+      fontFamily: font.fontFamily,
+      fontFamilyFallback: font.fontFamilyFallback,
+      fontSize: fontSize,
+      height: rowHeight / fontSize,
+      color: color,
+      letterSpacing: 0,
+      wordSpacing: 0,
+      fontWeight: FontWeight.w400,
+      fontStyle: FontStyle.normal,
+      fontVariations: font.fontVariations,
+      textBaseline: TextBaseline.alphabetic,
+      // A calculator column only lines up with tabular figures.
+      fontFeatures: const [FontFeature.tabularFigures()],
+      leadingDistribution: TextLeadingDistribution.even,
+    );
+  }
 
   static const double cursorWidth = 1.7;
 
@@ -313,7 +321,11 @@ class EditorMetrics {
   ///
   /// Derived from the font so the three writing faces each get a caret in
   /// proportion to their own size rather than a number tuned for one of them.
-  static double cursorHeight(WritingFont font) => font.editorSize * 1.28;
+  static double cursorHeight(
+    WritingFont font, {
+    double editorScale = 1,
+    TextScaler textScaler = TextScaler.noScaling,
+  }) => textScaler.scale(font.editorSize * editorScale) * 1.28;
 
   /// Width `RenderEditable` reserves beside the text for the caret: a fixed
   /// 1px gap plus the cursor itself. Text wraps inside what is left, so
@@ -347,15 +359,22 @@ class EditorMetrics {
   /// once the strut stops overruling it. A note with pictures in it can afford
   /// that. Every other note in the app should not have to pay it, and this way
   /// none of them do.
-  static StrutStyle strut(WritingFont font, {bool allowTallRows = false}) =>
-      StrutStyle(
-        fontFamily: font.fontFamily,
-        fontFamilyFallback: font.fontFamilyFallback,
-        fontSize: font.editorSize,
-        height: lineHeight / font.editorSize,
-        forceStrutHeight: !allowTallRows,
-        leading: 0,
-      );
+  static StrutStyle strut(
+    WritingFont font, {
+    bool allowTallRows = false,
+    double editorScale = 1,
+  }) {
+    final fontSize = font.editorSize * editorScale;
+    final rowHeight = lineHeight * editorScale;
+    return StrutStyle(
+      fontFamily: font.fontFamily,
+      fontFamilyFallback: font.fontFamilyFallback,
+      fontSize: fontSize,
+      height: rowHeight / fontSize,
+      forceStrutHeight: !allowTallRows,
+      leading: 0,
+    );
+  }
 }
 
 /// The small radius system shared by controls and surfaces.

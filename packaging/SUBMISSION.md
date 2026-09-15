@@ -232,12 +232,13 @@ is a dependency.
   **Updated again on 2026-09-08, before the 1.14.0 submission**, to add a
   fifth type: **Audio Data**, App Functionality, Linked to You. Voice notes
   record audio and — only for accounts that turned transcription on — send it
-  to our server, which passes it to Cloudflare Workers AI. It is the one thing
-  in this app that leaves the device readable, so the same rule the four above
-  were corrected under applies to it: uploading it is collecting it. The
-  recording is not retained by Cloudflare (`mip_opt_out=true`,
-  `cf-aig-collect-log-payload: false`) or by us, but "kept by nobody" is not a
-  category Apple offers either.
+  to our server, which passes it to the selected transcription provider. It is
+  the one thing in this app that leaves the device readable, so the same rule
+  the four above were corrected under applies to it: uploading it is collecting
+  it. The server does not retain the uploaded recording. Soniox files and jobs
+  are deleted after processing, while OpenRouter requests require a
+  zero-data-retention endpoint, but "kept by nobody" is not a category Apple
+  offers either.
 
   `packaging/preflight_ios.sh` now derives the expected list from
   `packaging/privacy.json` instead of spelling it out, so an added type is one
@@ -290,8 +291,8 @@ is a dependency.
   version that actually carries the microphone.) A reviewer
   who taps the microphone gets a permission prompt and a recording, and that
   much needs no account. Transcription does: it is off until the account holder
-  turns it on, behind a sheet that names Cloudflare and says what is sent. Say
-  that plainly, because a reviewer who does not find the transcript will
+  turns it on, behind a sheet that names Soniox and OpenRouter and says what is
+  sent. Say that plainly, because a reviewer who does not find the transcript will
   otherwise report the feature as broken, and one who does find it will want to
   know where the audio went.
 - [ ] **App Privacy must be published before the build is submitted**, not
@@ -897,7 +898,7 @@ a takedown rather than a rejection:
      it has to be answered rather than skipped.
    - **This is the one to think about before answering "shared".** Everything
      else goes to R2, which is our own storage and not a recipient. A
-     recording goes to Cloudflare Workers AI, which is a different company
+     recording goes to Soniox or OpenRouter, which are different companies
      processing content on our behalf. Play's service-provider carve-out
      plausibly covers it, but that is a judgement rather than a fact, and it
      is the sort of judgement worth writing down with a date and a name
@@ -1022,12 +1023,14 @@ become false the moment it ships:
 >
 > Turning speech into text is a separate, opt-in step. It is off until the
 > account holder turns it on in Settings > Voice notes, behind a sheet that
-> names Cloudflare as the processor and says exactly what leaves the device.
+> names Soniox and OpenRouter as processors and says exactly what leaves the
+> device.
 > Nothing is transcribed before that consent is given, so a reviewer who
 > records and never opens Settings will correctly see a recording with no
 > transcript — that is the intended behaviour, not a failure. Audio sent for
-> transcription is not retained by Cloudflare or by us; it is used only to
-> produce the text that comes back.
+> transcription is not stored by our server; Soniox data is deleted after
+> processing and OpenRouter is restricted to zero-data-retention endpoints.
+> It is used only to produce the text that comes back.
 >
 > Note that the wide widget's "Dictate" button now starts this recorder, where
 > in 1.14.0 it only raised the keyboard for system dictation.
@@ -1246,8 +1249,10 @@ because the API replaces the declaration for the whole package.
   the declaration because the sync copies are end-to-end encrypted and cannot
   be read by Kapy Notes or an intermediary. Photos are still declared because
   the optional collaborator profile photo is intentionally readable.
-- Cloudflare and RevenueCat act as service providers. Transfers to them do not
-  count as sharing under Play's service-provider exception. A collaborator
+- Soniox and OpenRouter process opted-in cloud speech; Cloudflare stores only
+  end-to-end encrypted attachment objects in R2; RevenueCat handles purchases.
+  They act as service providers, so transfers to them do not count as sharing
+  under Play's service-provider exception. A collaborator
   receives content only through a specific user-initiated sharing action,
   which is also excluded from Play's sharing definition.
 - There is no advertising, analytics SDK, location inference, contacts access,
