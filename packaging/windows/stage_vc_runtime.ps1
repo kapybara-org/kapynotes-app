@@ -56,7 +56,10 @@ if (-not (Test-Path -LiteralPath $redistRoot -PathType Container)) {
 $runtimeDirectory = $null
 $redistVersions = @(
   Get-ChildItem -LiteralPath $redistRoot -Directory |
-    Sort-Object { [version] $_.Name } -Descending
+    # Visual Studio 2026 adds aliases such as `v145` beside numeric version
+    # directories. Try every directory instead of assuming every name can be
+    # parsed as System.Version; the completeness check below chooses a CRT.
+    Sort-Object Name -Descending
 )
 foreach ($redistVersion in $redistVersions) {
   $x64Directory = Join-Path $redistVersion.FullName 'x64'
