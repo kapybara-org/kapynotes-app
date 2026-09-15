@@ -22,6 +22,7 @@ import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
+import 'package:kapy_notes/ui/editor/selection_formatting_toolbar.dart';
 
 import 'test_fonts.dart';
 
@@ -72,6 +73,7 @@ Widget harness(
   bool autofocus = false,
   bool ensureKeyboardVisible = false,
   bool readOnly = false,
+  TargetPlatform? platform,
   ValueChanged<String>? onBodyChanged,
   ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
   ValueChanged<double>? onGutterWidthChanged,
@@ -83,7 +85,7 @@ Widget harness(
   ShortcutPrefs? shortcuts,
 }) {
   return MaterialApp(
-    theme: KapyTheme.dark(),
+    theme: KapyTheme.dark().copyWith(platform: platform),
     home: Scaffold(
       body: NoteEditor(
         // Keyed by body so re-pumping with different text remounts the
@@ -3814,38 +3816,44 @@ total to usd''';
       await tester.pumpAndSettle();
     }
 
-    testWidgets('a tap offers Paste, first, when there is something to paste', (
-      tester,
-    ) async {
-      clipboardHolds(tester, 'from elsewhere');
-      String? body;
-      await tester.pumpWidget(
-        harness(
-          'First line',
-          autofocus: true,
-          resultsVisible: false,
-          onBodyChanged: (value) => body = value,
-        ),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'a tap offers Paste and Paste Text when there is text to paste',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 720);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        clipboardHolds(tester, 'from elsewhere');
+        String? body;
+        await tester.pumpWidget(
+          harness(
+            'First line',
+            autofocus: true,
+            resultsVisible: false,
+            onBodyChanged: (value) => body = value,
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      await tapAndWait(tester, besideLine(tester, 'First line', 'line'));
+        await tapAndWait(tester, besideLine(tester, 'First line', 'line'));
 
-      final paste = find.text('Paste').hitTestable();
-      expect(paste, findsOneWidget);
-      expect(
-        find.descendant(
-          of: find.byType(TextSelectionToolbarTextButton).first,
-          matching: find.text('Paste'),
-        ),
-        findsOneWidget,
-        reason: 'Paste leads, where a phone always has room for it',
-      );
+        final paste = find.text('Paste').hitTestable();
+        final pastePlainText = find.text('Paste Text').hitTestable();
+        expect(paste, findsOneWidget);
+        expect(pastePlainText, findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(TextSelectionToolbarTextButton).first,
+            matching: find.text('Paste'),
+          ),
+          findsOneWidget,
+          reason: 'Paste leads, where a phone always has room for it',
+        );
 
-      await tester.tap(paste);
-      await tester.pumpAndSettle();
-      expect(body, 'First linefrom elsewhere');
-    });
+        await tester.tap(pastePlainText);
+        await tester.pumpAndSettle();
+        expect(body, 'First linefrom elsewhere');
+      },
+    );
 
     testWidgets('a tap with nothing to paste opens no menu', (tester) async {
       clipboardHolds(tester, null);
@@ -3897,6 +3905,9 @@ total to usd''';
     testWidgets('selected text shows Cut, Copy and Paste in the row', (
       tester,
     ) async {
+      tester.view.physicalSize = const Size(360, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       clipboardHolds(tester, 'from elsewhere');
       await tester.pumpWidget(
         harness('Select this text', autofocus: true, resultsVisible: false),
@@ -3912,10 +3923,74 @@ total to usd''';
       expect(find.text('Cut').hitTestable(), findsOneWidget);
       expect(find.text('Copy').hitTestable(), findsOneWidget);
       expect(find.text('Paste').hitTestable(), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(TextSelectionToolbarTextButton).first,
+          matching: find.text('Copy'),
+        ),
+        findsOneWidget,
+        reason: 'Copy is the first action offered for selected text',
+      );
 
       await tester.tap(find.text('Copy'));
       await tester.pumpAndSettle();
       expect(copied, ['Select']);
+    });
+
+    testWidgets('a narrow iPhone menu keeps Copy first and visible', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      clipboardHolds(tester, 'from elsewhere');
+      await tester.pumpWidget(
+        harness(
+          'Select this text',
+          autofocus: true,
+          resultsVisible: false,
+          platform: TargetPlatform.iOS,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await selectFirstWord(tester);
+
+      final menu = tester.widget<NoteEditorContextMenu>(
+        find.byType(NoteEditorContextMenu),
+      );
+      expect(menu.buttonItems.first.type, ContextMenuButtonType.copy);
+      expect(find.text('Copy').hitTestable(), findsOneWidget);
+    });
+
+    testWidgets('a compact iPhone menu shows both paste choices after a tap', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      tester.view.physicalSize = const Size(375, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      clipboardHolds(tester, 'from elsewhere');
+      await tester.pumpWidget(
+        harness(
+          'First line',
+          autofocus: true,
+          resultsVisible: false,
+          platform: TargetPlatform.iOS,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tapAndWait(tester, besideLine(tester, 'First line', 'line'));
+
+      final menu = tester.widget<NoteEditorContextMenu>(
+        find.byType(NoteEditorContextMenu),
+      );
+      expect(menu.buttonItems.first.type, ContextMenuButtonType.paste);
+      expect(menu.buttonItems[1].label, 'Paste Text');
+      expect(find.text('Paste').hitTestable(), findsOneWidget);
+      expect(find.text('Paste Text').hitTestable(), findsOneWidget);
     });
 
     testWidgets('formatting a selection is still there, behind More', (

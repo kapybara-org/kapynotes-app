@@ -4,7 +4,7 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout, kSecondaryButton;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1343,6 +1343,66 @@ void main() {
   });
 
   group('pasting', () {
+    testWidgets('Paste Text ignores a rich fragment and its image', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      const fragmentBody = 'text $anchor done';
+      final fragment = NoteClipboardFragment(
+        body: fragmentBody,
+        images: [
+          ClipboardFragmentImage(
+            offset: fragmentBody.indexOf(anchor),
+            bytes: pngOf(120, 90, seed: 6),
+            mime: 'image/png',
+            width: 120,
+            height: 90,
+            widthFactor: 0.6,
+          ),
+        ],
+      );
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        return switch (call.method) {
+          'Clipboard.hasStrings' => <String, Object?>{'value': true},
+          'Clipboard.getData' => <String, Object?>{'text': fragment.plainText},
+          _ => null,
+        };
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+      final editorKey = GlobalKey<NoteEditorState>();
+      await tester.pumpWidget(
+        harness(
+          'before ',
+          attachments: const [],
+          clipboard: FakeClipboard(fragment: fragment),
+          editorKey: editorKey,
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pump(kDoubleTapTimeout);
+      await tester.pumpAndSettle();
+      final editable = tester.state<EditableTextState>(
+        find.byType(EditableText),
+      );
+      final beforePaste = editable.textEditingValue;
+      expect(beforePaste.selection.isCollapsed, isTrue);
+      final expected = beforePaste.text.replaceRange(
+        beforePaste.selection.start,
+        beforePaste.selection.end,
+        fragment.plainText,
+      );
+
+      await tester.tap(find.text('Paste Text').hitTestable());
+      await tester.pumpAndSettle();
+
+      expect(editable.textEditingValue.text, expected);
+      expect(find.byType(NoteImageView), findsNothing);
+    });
+
     testWidgets(
       'a copied mixed fragment pastes text and every image in place',
       (tester) async {

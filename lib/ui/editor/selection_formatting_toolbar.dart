@@ -148,6 +148,7 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
     this.onCopyLink,
     this.onCopy,
     this.onPaste,
+    this.onPastePlainText,
     this.onCopyPlainText,
   });
 
@@ -181,6 +182,7 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
   /// Pastes through the editor, so a picture on the clipboard is not quietly
   /// dropped by the field's own text-only paste.
   final VoidCallback? onPaste;
+  final VoidCallback? onPastePlainText;
   final VoidCallback? onCopyPlainText;
 
   static const double _screenPadding = 8;
@@ -220,10 +222,14 @@ class NoteSelectionFormattingToolbar extends StatelessWidget {
           context,
           ContextMenuButtonItem(type: type, onPressed: null),
         );
-    // Sits with the other edit actions rather than out on the row: it is Copy
-    // with one difference, and the row is for writing, not clipboard
-    // housekeeping.
+    // Plain-text clipboard variants sit with the other edit actions rather
+    // than out on the row. The row is for the most common writing actions.
     final menuItems = [
+      if (canPaste && onPastePlainText != null)
+        ContextMenuButtonItem(
+          label: 'Paste Text',
+          onPressed: () => _run(onPastePlainText!),
+        ),
       if (onCopyPlainText != null)
         ContextMenuButtonItem(
           label: 'Copy plain text',

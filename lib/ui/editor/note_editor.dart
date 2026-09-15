@@ -328,6 +328,8 @@ class NoteEditor extends StatefulWidget {
 }
 
 class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
+  static const _pasteAsPlainTextLabel = 'Paste Text';
+
   static const List<Duration> _keyboardRetryDelays = [
     Duration(milliseconds: 100),
     Duration(milliseconds: 150),
@@ -1580,6 +1582,19 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
     if (!mounted || capturedText == null) return;
     _insertPastedText(capturedText, cause, startingValue: startingValue);
+  }
+
+  /// Pastes only the clipboard's plain-text representation.
+  ///
+  /// Normal Paste understands Kapy Notes fragments and images. This path
+  /// deliberately skips those richer representations so a mixed selection
+  /// becomes ordinary text and adopts the formatting at the insertion point.
+  Future<void> _pastePlainText(SelectionChangedCause cause) async {
+    if (widget.readOnly) return;
+    final startingValue = _editableTextState()?.textEditingValue;
+    final text = await _clipboardText();
+    if (!mounted || text == null) return;
+    _insertPastedText(text, cause, startingValue: startingValue);
   }
 
   /// The clipboard's plain text, or null when it holds none.
@@ -3360,15 +3375,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (selection.isCollapsed) {
       final spellingItems = _spellingContextMenuItems(selection);
       final editItems = _withImagePaste(_editItems(editableTextState));
-      bool isPaste(ContextMenuButtonItem item) =>
-          item.type == ContextMenuButtonType.paste;
       return NoteEditorContextMenu(
         anchors: editableTextState.contextMenuAnchors,
         buttonItems: [
-          if (touch) ...editItems.where(isPaste),
+          if (touch) ...editItems.where(_isPasteAction),
           ...spellingItems,
           ...linkItems,
-          if (touch) ...editItems.where((item) => !isPaste(item)),
+          if (touch) ...editItems.where((item) => !_isPasteAction(item)),
           if (widget.images != null && touch)
             ContextMenuButtonItem(
               label: 'Add image',
@@ -3443,9 +3456,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       onPaste: widget.images == null
           ? null
           : () => unawaited(handlePaste(SelectionChangedCause.toolbar)),
+      onPastePlainText: () =>
+          unawaited(_pastePlainText(SelectionChangedCause.toolbar)),
       onCopyPlainText: () => unawaited(_copyPlainText(selection)),
     );
   }
+
+  bool _isPasteAction(ContextMenuButtonItem item) =>
+      item.type == ContextMenuButtonType.paste ||
+      item.label == _pasteAsPlainTextLabel;
 
   /// The field's Cut, Copy, Paste and Select All, asked of the field itself,
   /// followed by whatever else the platform adds.
@@ -3480,6 +3499,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           onPressed: () =>
               unawaited(editable.pasteText(SelectionChangedCause.toolbar)),
         ),
+      if (editable.pasteEnabled)
+        ContextMenuButtonItem(
+          label: _pasteAsPlainTextLabel,
+          onPressed: () {
+            ContextMenuController.removeAny();
+            unawaited(_pastePlainText(SelectionChangedCause.toolbar));
+          },
+        ),
       if (editable.selectAllEnabled)
         ContextMenuButtonItem(
           type: ContextMenuButtonType.selectAll,
@@ -3492,12 +3519,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   /// A phone's toolbar for selected text.
   ///
-  /// The platform's Cut, Copy and Paste lead, because copying is what a
-  /// selection on a phone is usually for — the formatting row a pointer gets
-  /// had put Copy behind a More button. The rest follows in the order the
-  /// toolbar tucks it away: corrections, the platform's other actions, the
-  /// link, and the note's own formatting, which the footer's writing tools
-  /// also carry.
+  /// Copy leads, followed by the platform's Cut and paste actions, because
+  /// copying is what a selection on a phone is usually for. The formatting
+  /// row a pointer gets had put Copy behind a More button. The rest follows in
+  /// the order the toolbar tucks it away: corrections, the platform's other
+  /// actions, the link, and the note's own formatting, which the footer's
+  /// writing tools also carry.
   List<ContextMenuButtonItem> _touchSelectionItems(
     EditableTextState editableTextState,
     TextSelection selection,
@@ -3506,10 +3533,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final nativeItems = _withImagePaste(
       _withRichCopy(_editItems(editableTextState), selection),
     );
-    bool isEdit(ContextMenuButtonItem item) =>
-        item.type == ContextMenuButtonType.cut ||
-        item.type == ContextMenuButtonType.copy ||
-        item.type == ContextMenuButtonType.paste;
+    bool isCopy(ContextMenuButtonItem item) =>
+        item.type == ContextMenuButtonType.copy;
+    bool isCut(ContextMenuButtonItem item) =>
+        item.type == ContextMenuButtonType.cut;
+    bool isPrimaryEdit(ContextMenuButtonItem item) =>
+        isCopy(item) || isCut(item) || _isPasteAction(item);
     ContextMenuButtonItem action(String label, VoidCallback onPressed) =>
         ContextMenuButtonItem(
           label: label,
@@ -3519,9 +3548,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           },
         );
     return [
-      ...nativeItems.where(isEdit),
+      ...nativeItems.where(isCopy),
+      ...nativeItems.where(isCut),
+      ...nativeItems.where(_isPasteAction),
       ..._spellingContextMenuItems(selection),
-      ...nativeItems.where((item) => !isEdit(item)),
+      ...nativeItems.where((item) => !isPrimaryEdit(item)),
       ...linkItems,
       ContextMenuButtonItem(
         label: 'Copy plain text',

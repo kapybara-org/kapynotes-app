@@ -151,6 +151,12 @@ jobs:
       # artifact and publish attaches them to the release.
       - run: flutter build windows --release --obfuscate --split-debug-info=build/symbols/windows
 
+      # Flutter's native host uses the Visual C++ runtime. Put the matching
+      # app-local DLLs beside it so the installer also works on a clean PC,
+      # without a prerequisite download or an administrator prompt.
+      - name: Stage app-local Visual C++ runtime
+        run: .\packaging\windows\stage_vc_runtime.ps1
+
       - name: Bundle the Dart symbols
         shell: bash
         run: |

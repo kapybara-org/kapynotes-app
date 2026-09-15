@@ -5,6 +5,7 @@
 ; To build by hand on a Windows box, from the repository root:
 ;
 ;   flutter build windows --release
+;   powershell -NoProfile -ExecutionPolicy Bypass -File packaging\windows\stage_vc_runtime.ps1
 ;   iscc packaging\windows\kapynotes.iss
 ;
 ; Output: build\release\KapyNotes-<version>-setup.exe, matching the DMG's
@@ -15,7 +16,8 @@
   #define AppVersion "1.0.0"
 #endif
 
-; `flutter build windows --release` writes here. The exe alone is not runnable:
+; `flutter build windows --release` writes here, and stage_vc_runtime.ps1 adds
+; the app-local Visual C++ runtime. The exe alone is not runnable: those DLLs,
 ; flutter_windows.dll, the plugin DLLs and data\ all have to travel with it.
 #ifndef SourceDir
   #define SourceDir "..\..\build\windows\x64\runner\Release"
@@ -97,6 +99,16 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
+; Flutter's Windows host is dynamically linked to Microsoft's Visual C++
+; runtime. stage_vc_runtime.ps1 stages the matching app-local copies so a
+; clean PC can run Kapy Notes without a separate download or an administrator
+; prompt. Name Flutter's three required DLLs explicitly: ISCC will then refuse
+; to produce a broken installer if that staging ever regresses. Any companion
+; CRT DLLs selected by that script still travel through the wildcard below.
+Source: "{#SourceDir}\msvcp140.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\vcruntime140.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\vcruntime140_1.dll"; DestDir: "{app}"; Flags: ignoreversion
+
 ; Everything Flutter put in the build directory, minus the Intel NPU stack the
 ; on-device summariser's runtime carries for Lunar Lake and Panther Lake
 ; laptops: OpenVINO, its NPU plugin and compiler, TBB, and the LiteRT dispatch
@@ -106,7 +118,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; the whole runtime and Android does with Play Feature Delivery: nobody pays
 ; for on-device code they never turn on. Patterns without a path match on the
 ; file name wherever it is in the tree.
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "openvino*.dll,tbb*.dll,LiteRtDispatch.dll"
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "msvcp140.dll,vcruntime140.dll,vcruntime140_1.dll,openvino*.dll,tbb*.dll,LiteRtDispatch.dll"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
