@@ -308,26 +308,36 @@ void main() {
       expect(visible('[ref]: https://a.example\n\nnext|'), '\n\nnext');
     });
 
-    test('a table as a grid, and as written with the caret in it', () {
+    test('a table as a grid, wherever the caret is', () {
       const note = '| a | b |\n|---|---|\n| 1 | 2 |\n\nafter';
       final analysis = read(note);
-      final away = analysis.concealFor(
-        TextSelection.collapsed(offset: note.length),
+      MarkdownConcealment at(int offset) => analysis.concealFor(
+        TextSelection.collapsed(offset: offset),
         revealBlocks: true,
         revealEdges: true,
       );
-      expect(away.revealedTables, isEmpty);
-      expect(away.transparent, [
-        TextRange(start: 0, end: note.indexOf('\n\nafter')),
-      ]);
-      final inside = analysis.concealFor(
-        const TextSelection.collapsed(offset: 3),
-        revealBlocks: true,
-        revealEdges: true,
+      String hiddenIn(MarkdownConcealment concealment) => [
+        for (final range in concealment.hidden)
+          note.substring(range.start, range.end),
+      ].join('·');
+
+      final away = at(note.length);
+      final inside = at(3);
+
+      // Hidden, not merely undrawn, so a row takes one line of the note. The
+      // newlines between the rows are not hidden, or they would not be rows.
+      expect(hiddenIn(away), '| a | b |·|---|---|·| 1 | 2 |');
+      expect(
+        hiddenIn(inside),
+        hiddenIn(away),
+        reason: 'the caret being in a table used to show every pipe',
       );
-      expect(inside.revealedTables, {0});
       expect(inside.transparent, isEmpty);
-      expect(inside.key, isNot(away.key));
+      expect(
+        inside.key,
+        away.key,
+        reason: 'nothing changes, so nothing needs laying out again',
+      );
     });
 
     test('the room a bullet and a box take, for what is drawn there', () {
@@ -412,6 +422,22 @@ void main() {
     test('is the note itself when there is no markdown in it', () {
       const note = 'Rent 1200 usd\n2 * 3';
       expect(identical(read(note).calculatorText, note), isTrue);
+    });
+
+    test('does not read a table, line for line', () {
+      // The blank line matters: a table cannot interrupt a paragraph, and
+      // without it these would be three lines of prose rather than a grid.
+      const note = 'a = 1\n\n| 2+2 | 4 |\n| --- | --- |\n| 3*3 | 9 |\n\nc = 3';
+      expect(read(note).tables, hasLength(1), reason: 'it is a table');
+
+      final text = read(note).calculatorText;
+      expect(text.length, note.length, reason: 'results stay on their lines');
+      expect(identical(text, note), isFalse);
+      expect(text.contains('|'), isFalse, reason: 'a row is not a sum');
+      expect(text.contains('2+2'), isFalse);
+      final lines = text.split('\n');
+      expect(lines.first, 'a = 1');
+      expect(lines.last, 'c = 3');
     });
   });
 

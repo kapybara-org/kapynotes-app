@@ -443,8 +443,7 @@ class MarkdownTableRow {
   int get hashCode => Object.hash(start, end, header, Object.hashAll(cells));
 }
 
-/// A GFM table, drawn as a grid over its own text while the caret is out of
-/// it, and shown as written while the caret is in it.
+/// A GFM table, always drawn as a grid over its hidden source text.
 @immutable
 class MarkdownTable {
   const MarkdownTable(
@@ -505,14 +504,12 @@ class MarkdownConcealment {
   const MarkdownConcealment._({
     required this.hidden,
     required this.transparent,
-    required this.revealedTables,
     required this.key,
   });
 
   static const none = MarkdownConcealment._(
     hidden: [],
     transparent: [],
-    revealedTables: {},
     key: 0,
   );
 
@@ -522,9 +519,6 @@ class MarkdownConcealment {
   /// Laid out as usual but not drawn, because something is drawn in their
   /// place: a bullet, a checkbox, a table's grid. Sorted, never overlapping.
   final List<TextRange> transparent;
-
-  /// Indexes into [MarkdownAnalysis.tables] of the tables shown as written.
-  final Set<int> revealedTables;
 
   /// Changes whenever what is shown does, for anything that caches a layout.
   final int key;
@@ -607,7 +601,27 @@ class MarkdownAnalysis {
   ///   this far: the parser is not shown it as emphasis in the first place.
   /// * Struck-through text is blanked, words and all: crossed out is not
   ///   counted, and `Total ~~12~~ 14` is 14.
+  /// * A table's rows are blanked. `| 2+2 | 4 |` is a row of a grid rather than
+  ///   a sum, and a result chip beside a tall wrapped row reads as a mistake.
   late final String calculatorText = _neutralise();
+
+  /// The same note read for its tables and nothing else.
+  ///
+  /// A table is drawn as a grid on every device, whatever "Markdown in notes" is
+  /// set to. That setting is kept per device, so a table written on one would
+  /// otherwise be a wall of pipes on another — which is no way to read a note,
+  /// let alone edit one. Everything else markdown does stays behind the setting.
+  ///
+  /// Kept here are the tables, the inline styles inside their cells and the
+  /// markers those styles hide, which is all [runsIn] reads to draw a cell.
+  ///
+  /// Lazy and remembered, because both the concealment cache and the table
+  /// geometry ask whether they have been handed the very same analysis as last
+  /// time.
+  late final MarkdownAnalysis tablesOnly = MarkdownAnalysis._(
+    text,
+    _parts.tables.isEmpty ? _Parts.empty : _parts._tablesOnly(),
+  );
 
   /// The task whose `[` is at [box], if there is one.
   MarkdownTask? taskAt(int box) {
@@ -768,26 +782,32 @@ class MarkdownAnalysis {
       }
     }
 
-    final revealedTables = <int>{};
     final transparent = <TextRange>[
       for (final ornament in ornaments)
         if (ornament.kind != MarkdownOrnamentKind.codeSpan)
           TextRange(start: ornament.start, end: ornament.end),
     ];
-    for (var i = 0; i < tables.length; i++) {
-      final table = tables[i];
-      if (revealBlocks && touchesBlock(table.start, table.end)) {
-        revealedTables.add(i);
-        key = Object.hash(key, 'table', i);
-      } else {
-        transparent.add(TextRange(start: table.start, end: table.end));
+    // A table is drawn as a grid wherever the caret is. Showing the pipes as
+    // soon as somebody tried to edit one was the whole of what made a table
+    // unusable: a grid turned back into markdown under the hand that touched it.
+    //
+    // Its rows and the `|---|` line under them are hidden rather than left
+    // transparent, so a row collapses to nothing and takes exactly one line of
+    // the note whatever its words are — which is what lets the grid painted over
+    // it line up with one row. The newlines between the rows are left alone:
+    // they are what makes them separate lines at all.
+    for (final table in tables) {
+      for (final row in table.rows) {
+        hidden.add(TextRange(start: row.start, end: row.end));
       }
+      hidden.add(
+        TextRange(start: table.delimiterStart, end: table.delimiterEnd),
+      );
     }
 
     return MarkdownConcealment._(
       hidden: _merged(hidden),
       transparent: _merged(transparent),
-      revealedTables: revealedTables,
       key: key,
     );
   }
@@ -826,10 +846,21 @@ class MarkdownAnalysis {
       _overlaps(start, end, urls);
 
   String _neutralise() {
-    if (codeBlocks.isEmpty && unread.isEmpty && containerMarkers.isEmpty) {
+    if (codeBlocks.isEmpty &&
+        unread.isEmpty &&
+        containerMarkers.isEmpty &&
+        tables.isEmpty) {
       return text;
     }
     final units = List<int>.of(text.codeUnits);
+    // A table is not arithmetic. Its rows are blanked, the newlines between them
+    // kept and the length with them, so no result is ever drawn beside a grid.
+    for (final table in tables) {
+      for (var i = table.start; i < table.end && i < units.length; i++) {
+        final unit = units[i];
+        if (unit != 0x0A && unit != 0x0D) units[i] = 0x20;
+      }
+    }
     for (final range in [...codeBlocks, ...unread]) {
       for (var i = range.start; i < range.end && i < units.length; i++) {
         final unit = units[i];
@@ -1081,6 +1112,45 @@ class _Parts {
       addresses: all((p) => p.addresses, _shift),
       urls: all((p) => p.urls, _shift),
       containerMarkers: all((p) => p.containerMarkers, _shift),
+    );
+  }
+
+  /// Just the tables, and only what [MarkdownAnalysis.runsIn] needs to draw
+  /// their cells: the inline styles inside them, and the markers those hide.
+  ///
+  /// Everything else is dropped rather than emptied by its reader, so that one
+  /// answer covers every part of the editor at once — nothing can quietly read
+  /// a heading or a list out of a note whose device has markdown switched off.
+  _Parts _tablesOnly() {
+    bool inside(int start, int end) {
+      for (final table in tables) {
+        if (start >= table.start && end <= table.end) return true;
+      }
+      return false;
+    }
+
+    return _Parts(
+      spans: [
+        for (final span in spans)
+          if (inside(span.start, span.end)) span,
+      ],
+      links: const [],
+      tasks: const [],
+      blocks: const [],
+      conceals: [
+        for (final conceal in conceals)
+          if (inside(conceal.start, conceal.end)) conceal,
+      ],
+      ornaments: const [],
+      tables: tables,
+      listItems: const [],
+      atomicPrefixes: const [],
+      codeBlocks: const [],
+      unread: const [],
+      literals: const [],
+      addresses: const [],
+      urls: const [],
+      containerMarkers: const [],
     );
   }
 }

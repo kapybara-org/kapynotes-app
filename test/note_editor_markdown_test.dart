@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, PointerScrollEvent, kSecondaryButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
@@ -34,38 +36,53 @@ class _MemoryStore extends LocalStore {
 
 Widget harness(
   String body, {
+  Key? editorKey,
   bool markdown = true,
   bool autofocus = false,
+  bool readOnly = false,
+  double? width,
   List<NoteFormatRange> initialFormats = const [],
   ValueChanged<String>? onBodyChanged,
   ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
   ValueChanged<bool>? onMarkdownEnabledChanged,
 }) {
+  Widget bound(Widget editor) => width == null
+      ? editor
+      // Width in the tree, not on the view: changing tester.view.physicalSize
+      // between pumps does not reach the editor, and this does.
+      : Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(width: width, height: double.infinity, child: editor),
+        );
+
   return MaterialApp(
     theme: KapyTheme.dark(),
     home: Scaffold(
-      body: NoteEditor(
-        key: ValueKey(body),
-        noteId: 'markdown',
-        initialBody: body,
-        initialFormats: initialFormats,
-        engine: engine,
-        highlighter: Highlighter(engine.registry),
-        gutterWidth: 200,
-        resultsVisible: true,
-        markdownEnabled: markdown,
-        onMarkdownEnabledChanged: onMarkdownEnabledChanged,
-        autofocus: autofocus,
-        onDocumentChanged: (body, formats, attachments) {
-          onBodyChanged?.call(body);
-          onFormatsChanged?.call(formats);
-        },
-        onGutterWidthChanged: (_) {},
-        onResultsVisibilityChanged: (_) {},
-        onGutterWidthReset: () {},
-        onSettingsPressed: () {},
-        writingFont: WritingFont.handwritten,
-        shortcuts: shortcutPrefs,
+      body: bound(
+        NoteEditor(
+          key: editorKey ?? ValueKey(body),
+          noteId: 'markdown',
+          initialBody: body,
+          initialFormats: initialFormats,
+          engine: engine,
+          highlighter: Highlighter(engine.registry),
+          gutterWidth: 200,
+          resultsVisible: true,
+          markdownEnabled: markdown,
+          readOnly: readOnly,
+          onMarkdownEnabledChanged: onMarkdownEnabledChanged,
+          autofocus: autofocus,
+          onDocumentChanged: (body, formats, attachments) {
+            onBodyChanged?.call(body);
+            onFormatsChanged?.call(formats);
+          },
+          onGutterWidthChanged: (_) {},
+          onResultsVisibilityChanged: (_) {},
+          onGutterWidthReset: () {},
+          onSettingsPressed: () {},
+          writingFont: WritingFont.handwritten,
+          shortcuts: shortcutPrefs,
+        ),
       ),
     ),
   );
@@ -253,6 +270,24 @@ void main() {
 
       expect(styleOf(tester, 'bold').fontWeight, FontWeight.w400);
       expect(styleOf(tester, 'Title').fontWeight, FontWeight.w400);
+    });
+
+    testWidgets('off, a table is still drawn as a grid', (tester) async {
+      await tester.pumpWidget(
+        harness(
+          '# Title\n\n| a | b |\n| --- | --- |\n| Tea | 4 |',
+          markdown: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The setting is per device, so a table written on one has to be readable
+      // on another. This is the whole of why a phone showed walls of pipes.
+      expect(isHidden(tester, 'Tea'), isTrue);
+
+      // And nothing else markdown does comes along with it.
+      expect(styleOf(tester, 'Title').fontWeight, FontWeight.w400);
+      expect(isHidden(tester, '#'), isFalse);
     });
 
     testWidgets('switching markdown on redraws the open note', (tester) async {
@@ -559,7 +594,36 @@ void main() {
       }
     });
 
-    testWidgets('asks before enabling Markdown for a table', (tester) async {
+    testWidgets('asks before enabling Markdown for a divider', (tester) async {
+      bool? enabled;
+      await tester.pumpWidget(
+        harness(
+          '',
+          markdown: false,
+          autofocus: true,
+          onMarkdownEnabledChanged: (value) => enabled = value,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '/divider');
+      await tester.pump();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Turn on Markdown?'), findsOneWidget);
+      expect(controllerOf(tester).text, '/divider');
+      await tester.tap(find.byKey(const ValueKey('enable-markdown-command')));
+      await tester.pumpAndSettle();
+
+      expect(enabled, isTrue);
+      expect(controllerOf(tester).text, '---\n');
+    });
+
+    testWidgets('a table asks nothing: it needs no Markdown setting', (
+      tester,
+    ) async {
       bool? enabled;
       await tester.pumpWidget(
         harness(
@@ -579,12 +643,8 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
 
-      expect(find.text('Turn on Markdown?'), findsOneWidget);
-      expect(controllerOf(tester).text, '/table');
-      await tester.tap(find.byKey(const ValueKey('enable-markdown-command')));
-      await tester.pumpAndSettle();
-
-      expect(enabled, isTrue);
+      expect(find.text('Turn on Markdown?'), findsNothing);
+      expect(enabled, isNull, reason: 'nothing had to be switched on');
       expect(
         controllerOf(tester).text,
         '| Column 1 | Column 2 |\n'
@@ -832,7 +892,7 @@ void main() {
       expect(isHidden(tester, '```'), isFalse);
     });
 
-    testWidgets('a table is a grid until the caret is in it', (tester) async {
+    testWidgets('a table stays a grid with the caret in it', (tester) async {
       const body = '| a | b |\n|---|---|\n| Tea | 4 |\n\nafter';
       await tester.pumpWidget(harness(body, autofocus: true));
       await tester.pumpAndSettle();
@@ -841,12 +901,432 @@ void main() {
       );
       await tester.pump();
       expect(styleOf(tester, 'Tea').color!.a, 0);
+      expect(styleOf(tester, 'Tea').fontSize, lessThan(1));
 
+      // This is the bug: the caret landing in a table turned the grid back into
+      // `| Tea | 4 |` under the hand that touched it. Now nothing changes.
       controllerOf(tester).selection = TextSelection.collapsed(
         offset: body.indexOf('Tea') + 1,
       );
       await tester.pump();
-      expect(styleOf(tester, 'Tea').color!.a, greaterThan(0));
+      expect(styleOf(tester, 'Tea').color!.a, 0);
+      expect(styleOf(tester, 'Tea').fontSize, lessThan(1));
+    });
+
+    testWidgets('tapping a cell opens a field over it, and typing splices it', (
+      tester,
+    ) async {
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
+      String? latest;
+      await tester.pumpWidget(
+        harness(body, onBodyChanged: (value) => latest = value),
+      );
+      await tester.pumpAndSettle();
+
+      // Worked out before the editor opens: once it is, there are two
+      // TextFields in the tree and the helpers above cannot tell them apart.
+      // The row's spacer is the one box of a hidden row with real height, and it
+      // sits at the grid's left edge — so its centre is in the first column.
+      final rowStart = body.indexOf('| Tea');
+      final firstCell = centerOfRange(tester, rowStart, rowStart + 1);
+
+      await tester.tapAt(firstCell);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('table-cell-editor')), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('table-cell-editor')),
+        'Coffee',
+      );
+      await tester.pumpAndSettle();
+      expect(latest, '| a | b |\n| --- | --- |\n| Coffee | 4 |');
+
+      // A press anywhere else finishes editing.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('table-cell-editor')), findsNothing);
+    });
+
+    testWidgets('pasted pipes and line breaks stay inside one cell', (
+      tester,
+    ) async {
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
+      String? latest;
+      await tester.pumpWidget(
+        harness(body, onBodyChanged: (value) => latest = value),
+      );
+      await tester.pumpAndSettle();
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+
+      final field = find.byKey(const ValueKey('table-cell-editor'));
+      await tester.enterText(field, 'a | b\nc');
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<TextField>(field).controller!.text, r'a \| b c');
+      expect(latest, '| a | b |\n| --- | --- |\n| a \\| b c | 4 |');
+    });
+
+    testWidgets('Tab walks the cells, and past the last one adds a row', (
+      tester,
+    ) async {
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
+      String? latest;
+      await tester.pumpWidget(
+        harness(body, onBodyChanged: (value) => latest = value),
+      );
+      await tester.pumpAndSettle();
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+
+      // Scoped by key, so the note's own field is never mistaken for this one.
+      final cell = find.byKey(const ValueKey('table-cell-editor'));
+      String editing() => tester.widget<TextField>(cell).controller!.text;
+      expect(editing(), 'Tea');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(editing(), '4');
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+      expect(editing(), 'Tea', reason: 'Shift+Tab goes back');
+
+      // Tab off the end of the last row makes a new one and moves into it.
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(latest, '| a | b |\n| --- | --- |\n| Tea | 4 |\n|  |  |');
+      expect(editing(), isEmpty, reason: 'the new row\'s first cell');
+    });
+
+    testWidgets('Return moves down the column and appends at the bottom', (
+      tester,
+    ) async {
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
+      String? latest;
+      await tester.pumpWidget(
+        harness(body, onBodyChanged: (value) => latest = value),
+      );
+      await tester.pumpAndSettle();
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(latest, '$body\n|  |  |');
+      final cell = find.byKey(const ValueKey('table-cell-editor'));
+      expect(tester.widget<TextField>(cell).controller!.text, isEmpty);
+    });
+
+    testWidgets('the cell toolbar edits rows, columns and alignment', (
+      tester,
+    ) async {
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
+      String? latest;
+      await tester.pumpWidget(
+        harness(body, onBodyChanged: (value) => latest = value),
+      );
+      await tester.pumpAndSettle();
+
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('table-cell-toolbar')), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('table-align-column')));
+      await tester.pumpAndSettle();
+      expect(latest, '| a | b |\n| :---: | --- |\n| Tea | 4 |');
+
+      await tester.tap(find.byKey(const ValueKey('table-add-row')));
+      await tester.pumpAndSettle();
+      expect(latest, '| a | b |\n| :---: | --- |\n| Tea | 4 |\n|  |  |');
+
+      await tester.tap(find.byKey(const ValueKey('table-add-column')));
+      await tester.pumpAndSettle();
+      expect(
+        latest,
+        '| a |  | b |\n'
+        '| :---: | --- | --- |\n'
+        '| Tea |  | 4 |\n'
+        '|  |  |  |',
+      );
+
+      await tester.tap(find.byKey(const ValueKey('table-remove-column')));
+      await tester.pumpAndSettle();
+      expect(latest, '| a | b |\n| :---: | --- |\n| Tea | 4 |\n|  |  |');
+
+      await tester.tap(find.byKey(const ValueKey('table-remove-row')));
+      await tester.pumpAndSettle();
+      expect(latest, '| a | b |\n| :---: | --- |\n| Tea | 4 |');
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('table-cell-editor')))
+            .controller!
+            .text,
+        '4',
+        reason: 'removing the last row lands in the previous one',
+      );
+    });
+
+    testWidgets('a structural table action is one undo step', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() {
+        AppPlatform.debugTargetPlatformOverride = null;
+        debugDefaultTargetPlatformOverride = null;
+      });
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
+      String latest = body;
+      await tester.pumpWidget(
+        harness(body, onBodyChanged: (value) => latest = value),
+      );
+      await tester.pumpAndSettle();
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+      // The table tap gives the main field its first valid caret, which is when
+      // Flutter can put the note's initial value into UndoHistory. It throttles
+      // that entry for 500 ms, the same cadence used by the insertion test.
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.tap(find.byKey(const ValueKey('table-add-row')));
+      await tester.pumpAndSettle();
+      expect(latest, '$body\n|  |  |');
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('table-cell-editor')))
+            .focusNode!
+            .hasFocus,
+        isTrue,
+        reason: 'table actions keep keyboard ownership in the active cell',
+      );
+
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ, platform: 'windows');
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.pumpAndSettle();
+      debugDefaultTargetPlatformOverride = null;
+
+      expect(latest, body);
+    });
+
+    testWidgets('a secondary click opens the same cell controls', (
+      tester,
+    ) async {
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(
+        centerOfRange(tester, rowStart, rowStart + 1),
+        buttons: kSecondaryButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('table-cell-editor')), findsOneWidget);
+      expect(find.byKey(const ValueKey('table-cell-toolbar')), findsOneWidget);
+    });
+
+    testWidgets('a read-only table stays a grid without an editor', (
+      tester,
+    ) async {
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
+      await tester.pumpWidget(harness(body, readOnly: true));
+      await tester.pumpAndSettle();
+
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('table-cell-editor')), findsNothing);
+      expect(find.text('| Tea | 4 |'), findsNothing);
+    });
+
+    testWidgets('an active cell follows a remote edit before its table', (
+      tester,
+    ) async {
+      const body = 'before\n\n| a | b |\n| --- | --- |\n| Tea | 4 |';
+      const remote = 'remote\n$body';
+      final editorKey = GlobalKey<NoteEditorState>();
+      String? latest;
+      await tester.pumpWidget(harness(body, editorKey: editorKey));
+      await tester.pumpAndSettle();
+
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('table-cell-editor')))
+            .controller!
+            .text,
+        'Tea',
+      );
+
+      await tester.pumpWidget(
+        harness(
+          remote,
+          editorKey: editorKey,
+          onBodyChanged: (value) => latest = value,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('table-cell-editor')), findsOneWidget);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('table-cell-editor')))
+            .controller!
+            .text,
+        'Tea',
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('table-cell-editor')),
+        'Coffee',
+      );
+      await tester.pumpAndSettle();
+      expect(latest, remote.replaceFirst('Tea', 'Coffee'));
+    });
+
+    testWidgets('the cell editor follows pointer scrolling', (tester) async {
+      final body =
+          '| a | b |\n| --- | --- |\n| Tea | 4 |\n\n'
+          '${List.generate(50, (i) => 'line $i').join('\n')}';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+      final cell = find.byKey(const ValueKey('table-cell-editor'));
+      final before = tester.getRect(cell);
+      final mainField = find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(TextField),
+      );
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position:
+              tester.getRect(mainField).bottomCenter - const Offset(0, 20),
+          scrollDelta: const Offset(0, 140),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(cell, findsOneWidget);
+      expect(tester.getRect(cell).top, lessThan(before.top));
+    });
+
+    testWidgets(
+      'a phone keeps the cell and table controls above its keyboard',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(320, 568);
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        addTearDown(tester.view.reset);
+        const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
+        await tester.pumpWidget(harness(body));
+        await tester.pumpAndSettle();
+
+        final rowStart = body.indexOf('| Tea');
+        await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+        await tester.pumpAndSettle();
+
+        final cell = find.byKey(const ValueKey('table-cell-editor'));
+        expect(cell, findsOneWidget);
+        expect(tester.getRect(cell).bottom, lessThanOrEqualTo(268));
+        expect(
+          find.byKey(const ValueKey('footer-table-add-row')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('footer-table-align-column')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('the caret never rests inside a table', (tester) async {
+      const body = 'before\n\n| a | b |\n| --- | --- |\n| Tea | 4 |\n\nafter';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      final tableStart = body.indexOf('| a');
+      final tableEnd = body.indexOf('\n\nafter');
+
+      Future<int> caretAfterMovingTo(int park, int into) async {
+        controllerOf(tester).selection = TextSelection.collapsed(offset: park);
+        await tester.pump();
+        controllerOf(tester).selection = TextSelection.collapsed(offset: into);
+        await tester.pump();
+        return controllerOf(tester).selection.baseOffset;
+      }
+
+      // Into a cell from above — a click on the grid — steps out below it.
+      expect(await caretAfterMovingTo(0, body.indexOf('Tea')), tableEnd);
+
+      // The `|---|` row is not a place either: nothing of it is drawn.
+      expect(await caretAfterMovingTo(0, body.indexOf('---') + 1), tableEnd);
+
+      // Coming from below, it steps out above rather than falling back in.
+      expect(
+        await caretAfterMovingTo(body.length, body.indexOf('4')),
+        tableStart,
+      );
+
+      // The edges themselves stay usable, or there would be no way to write a
+      // line above a table that starts a note.
+      expect(await caretAfterMovingTo(0, tableEnd), tableEnd);
+    });
+
+    testWidgets('a table whose cells wrap pushes what follows it down', (
+      tester,
+    ) async {
+      // Both cells are long, so the table's natural width is far wider than a
+      // narrow column whether or not the results gutter collapses with it.
+      const body =
+          '| Notes | More notes |\n'
+          '| --- | --- |\n'
+          '| a sentence long enough that a narrow column must wrap it '
+          '| and another sentence quite as long as the first one is |\n'
+          '\n'
+          'after';
+
+      Future<double> afterAt(double width) async {
+        // A fresh editor: the harness keys itself on the body, so the same note
+        // would otherwise keep the state it had at the other width.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(harness(body, width: width));
+        await tester.pumpAndSettle();
+        return centerOf(tester, 'after').dy;
+      }
+
+      final wide = await afterAt(780);
+      final narrow = await afterAt(420);
+
+      expect(
+        narrow,
+        greaterThan(wide),
+        reason:
+            'the cells wrap in a narrow column, so the rows grow taller '
+            'and the line under the table is pushed down',
+      );
     });
 
     testWidgets('the caret steps over a line\'s hidden structure', (

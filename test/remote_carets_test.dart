@@ -225,4 +225,62 @@ void main() {
         ..rect(rect: bar(tester, 5), color: ink),
     );
   });
+
+  testWidgets('a table caret uses its painted cell instead of hidden source', (
+    tester,
+  ) async {
+    final source = FakeCaretSource();
+    final controller = TextEditingController(text: 'hidden source');
+    final scroll = ScrollController();
+    final hover = ValueNotifier<Offset?>(null);
+    addTearDown(controller.dispose);
+    addTearDown(scroll.dispose);
+    addTearDown(hover.dispose);
+    RenderEditable? editable;
+    const visibleCaret = Rect.fromLTWH(240, 8, 0, 18);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: Scaffold(
+          body: Stack(
+            children: [
+              TextField(controller: controller, scrollController: scroll),
+              Positioned.fill(
+                child: RemoteCaretLayer(
+                  noteId: 'note-1',
+                  source: source,
+                  controller: controller,
+                  scroll: scroll,
+                  editable: () => editable,
+                  hover: hover,
+                  tableCaretRect: (_) => visibleCaret,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    editable = tester.allRenderObjects.whereType<RenderEditable>().first;
+    source.show(
+      RemoteCarets(
+        text: controller.text,
+        carets: [caret(base: 3, typing: true)],
+      ),
+    );
+    await tester.pump();
+
+    final painted = Rect.fromPoints(
+      layer(tester).globalToLocal(visibleCaret.topLeft),
+      layer(tester).globalToLocal(visibleCaret.bottomRight),
+    );
+    expect(
+      layer(tester),
+      paints..rect(
+        rect: Rect.fromLTWH(painted.left - 1, painted.top, 2, painted.height),
+        color: ink,
+      ),
+    );
+  });
 }

@@ -20,6 +20,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../calc/engine.dart';
 import '../../calc/highlight.dart';
 import '../../calc/keyword_help.dart';
+import '../../crdt/text_diff.dart';
 import '../../core/editor_font.dart';
 import '../../core/note_link.dart';
 import '../../core/platform.dart';
@@ -43,6 +44,8 @@ import 'keyword_tooltip.dart';
 import 'markdown_backdrop.dart';
 import 'markdown_editing.dart';
 import 'markdown_syntax.dart';
+import 'table_cell_editor.dart';
+import 'table_geometry.dart';
 import 'note_footer.dart';
 import '../../data/note_attachment.dart';
 import 'package:file_selector/file_selector.dart';
@@ -363,6 +366,32 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     debugLabel: 'note-editor:${widget.noteId}',
   );
   final LineMeasurer _measurer = LineMeasurer();
+
+  /// The grid each table in this note is drawn as.
+  ///
+  /// Worked out once per build inside [build]'s `LayoutBuilder`, the one place
+  /// the writing column's width is known, and read by the three things that have
+  /// to agree about it: the room each row reserves, the grid the backdrop paints,
+  /// and — later — where a tap lands.
+  final TableGeometryCache _tableGeometry = TableGeometryCache();
+  Map<MarkdownTable, TableGeometry> _tableGrids = const {};
+
+  /// The field that opens over a cell, and which cell it is over.
+  ///
+  /// While it is open the note is still being edited, even though the main field
+  /// has given up focus — see [_editingNote], which is what keeps the rest of
+  /// the note's markdown from flipping to source the moment a cell is tapped.
+  final TableCellEditor _cellEditor = TableCellEditor();
+  ({int tableStart, int row, int column})? _editingCell;
+
+  /// How much taller than the height it is given a placeholder's line comes out,
+  /// measured during layout. A row's band starts that far above the spacer's own
+  /// box, which is how a cell editor is placed exactly over its painted cell.
+  double _rowOverhead = 0;
+
+  /// Whether this note is being written in: its own field has focus, or one of
+  /// its cells does.
+  bool get _editingNote => _focusNode.hasFocus || _editingCell != null;
   late final _DailySeparatorFormatter _dailySeparatorFormatter;
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
@@ -632,6 +661,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _kapyPeekIdleTimer?.cancel();
     _dismissKapyPeek();
     _remoteHover.dispose();
+    _cellEditor.dispose();
+    _tableGeometry.dispose();
     _controller.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -668,6 +699,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _slashCommandMenu.hide();
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
+    _syncTableCellEditorPosition();
     // Reading counts as being here, even with the caret parked.
     _reportActivity(edited: false);
   }
@@ -675,7 +707,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   bool _handleEditorScrollNotification(ScrollNotification notification) {
     if (!AppPlatform.isMobile ||
         notification.metrics.axis != Axis.vertical ||
-        !_focusNode.hasFocus) {
+        !_editingNote) {
       return false;
     }
     // A drag-backed start is a real reader gesture. Programmatic scrolling
@@ -686,7 +718,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (notification is ScrollStartNotification &&
         notification.dragDetails != null) {
       _keyboardRetryTimer?.cancel();
-      _focusNode.unfocus();
+      FocusManager.instance.primaryFocus?.unfocus();
     }
     return false;
   }
@@ -820,6 +852,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
     _remotePending = false;
     final newText = widget.initialBody;
+    final editingCell = _editingCell;
+    final mappedTableProbe = editingCell == null
+        ? null
+        : mapOffsetAcross(
+            diffTexts(value.text, newText),
+            math.min(editingCell.tableStart + 1, value.text.length),
+          );
     final selection = mapSelectionAcrossEdit(
       value.text,
       newText,
@@ -835,11 +874,35 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _applyingRemote = false;
     }
     _lastValue = _controller.value;
+    if (editingCell != null && mappedTableProbe != null) {
+      final table = markdownTableAt(
+        _controller.markdownFor(newText),
+        mappedTableProbe,
+      );
+      final columns = table == null ? 0 : markdownTableColumnCount(table);
+      if (table == null ||
+          editingCell.row >= table.rows.length ||
+          editingCell.column >= columns) {
+        _cellEditor.hide();
+        _editingCell = null;
+      } else {
+        _editingCell = (
+          tableStart: table.start,
+          row: editingCell.row,
+          column: editingCell.column,
+        );
+      }
+    }
     _dailySeparatorFormatter.syncLastUpdatedAt(widget.lastUpdatedAt);
     setState(() {
       _isEmpty = newText.isEmpty;
       _evaluate();
     });
+    if (_editingCell != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _restoreTableCellEditor();
+      });
+    }
     unawaited(_requestSpellCheck(newText));
   }
 
@@ -1188,13 +1251,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               ))) {
         return true;
       }
-      final markdown = _controller.markdownFor(_controller.text);
-      return markdown != null &&
-          markdownSelectionHas(
-            markdown,
-            selection,
-            strong ? MarkdownStyle.strong : MarkdownStyle.emphasis,
-          );
+      return markdownSelectionHas(
+        _controller.markdownFor(_controller.text),
+        selection,
+        strong ? MarkdownStyle.strong : MarkdownStyle.emphasis,
+      );
     }
     return _typingOverrides[format] ??
         selectionHasFormat(_formats, _controller.selection, format);
@@ -1302,7 +1363,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     ContextMenuController.removeAny();
     if (widget.markdownEnabled) {
       final markdown = _controller.markdownFor(_controller.text);
-      if (markdown == null) return;
       final strong = format == NoteFormat.bold;
       final caret = selection.start;
       // Pressed again before anything was typed: switched back off.
@@ -2312,8 +2372,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _manualSlashMenuValue = null;
   }
 
+  /// A table is not here: it draws as a grid whatever the setting says, so
+  /// inserting one has nothing to ask about.
   static bool _requiresMarkdown(SlashCommandType command) => switch (command) {
-    SlashCommandType.table ||
     SlashCommandType.numberedList ||
     SlashCommandType.quote ||
     SlashCommandType.divider ||
@@ -2636,6 +2697,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
     if (event.buttons & kSecondaryButton != 0) {
+      final editable = _fieldEditable();
+      if (editable != null) {
+        final offset = editable.getPositionForPoint(event.position).offset;
+        if (_openTableCellAt(editable, event.position, offset)) return;
+      }
       _caretForSecondaryTapOnMisspelling(event.position);
     }
     _prefetchCorrectionsAt(event.position);
@@ -2857,6 +2923,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       return;
     }
 
+    // Before links: a link inside a cell is reached by editing the cell, not
+    // instead of it.
+    if (_openTableCellAt(editable, event.position, offset)) return;
+
     final hit = _linkAtPoint(editable, event.position, offset);
     if (hit != null) {
       // The shortcut stays: someone who already knows it should not be made to
@@ -2937,7 +3007,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final text = _controller.text;
     // Markdown tasks count alongside the app's own boxes: a list is finished
     // when neither kind has anything left open.
-    final tasks = _controller.markdownFor(text)?.tasks ?? const [];
+    // With markdown off this is empty, the way the old null was: a table is all
+    // that view holds. See HighlightingController.markdownFor.
+    final tasks = _controller.markdownFor(text).tasks;
     final open =
         uncheckedPrefix.allMatches(text).length +
         tasks.where((task) => !task.checked).length;
@@ -3021,13 +3093,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _keyboardWasUp = isUp;
     if (mounted && AppPlatform.isMobile && isUp != wasUp) setState(() {});
     if (isUp || !wasUp) return;
-    if (widget.readOnly || !_focusNode.hasFocus) return;
+    if (widget.readOnly || !_editingNote) return;
     // Backgrounding the app also takes the keyboard down, and focus should
     // survive that: it is the same note, still open, when the app comes back.
     final lifecycle = WidgetsBinding.instance.lifecycleState;
     if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
     _keyboardRetryTimer?.cancel();
-    _focusNode.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
   }
 
   void _recordKapyPeekActivity() {
@@ -3105,7 +3177,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     int textOffset,
   ) {
     final markdown = _controller.markdownFor(_controller.text);
-    if (markdown == null) return null;
     for (final task in markdown.tasks) {
       if (task.box > textOffset + 1) break;
       if (textOffset > task.box + 4) continue;
@@ -3906,7 +3977,23 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final composing = _controller.value.composing;
     if (composing.isValid && !composing.isCollapsed) return false;
     final markdown = _controller.markdownFor(_controller.text);
-    final prefix = markdown?.atomicPrefixAt(now.baseOffset);
+    // A table is a grid and its pipes are hidden, so there is nowhere in the
+    // middle of one to put a caret — and the `|---|` row has nothing on screen
+    // at all. A caret landing inside steps out to the edge it came from, so
+    // arrowing up out of the text below a table arrives above it rather than
+    // disappearing into it. The two edges are left alone: standing at them is
+    // how a line is added above or below.
+    final table = markdownTableAt(markdown, now.baseOffset);
+    if (table != null &&
+        now.baseOffset > table.start &&
+        now.baseOffset < table.end) {
+      final fromBelow = previous.isValid && previous.baseOffset >= table.end;
+      _controller.selection = TextSelection.collapsed(
+        offset: fromBelow ? table.start : table.end,
+      );
+      return true;
+    }
+    final prefix = markdown.atomicPrefixAt(now.baseOffset);
     if (prefix == null || now.baseOffset == prefix.end) return false;
     // Only the arrow: Home, or ⌘← on a Mac, from the start of the words is
     // asking for the start of this line, which is where the caret already
@@ -3994,6 +4081,492 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// holding several becomes a gallery of equal tiles that wrap — which is
   /// what the text engine does with adjacent inline widgets anyway, so the
   /// grid costs no layout code of its own.
+  /// A zero-width, row-tall placeholder standing in for the first character of
+  /// each table row, which is what reserves the room the grid is painted in.
+  ///
+  /// It stands in for a character rather than being added beside one. A
+  /// `WidgetSpan` counts as exactly one character, and `EditableText` requires
+  /// the span it paints to hold precisely the text the controller does — so
+  /// adding one would shift every offset after it and put the caret in the wrong
+  /// place. The whole row is hidden anyway, so standing in for its first
+  /// character shows nothing that was not already invisible.
+  ///
+  /// The header keeps the `|---|` line underneath it, which is a line of the
+  /// note in its own right and already as tall as a row, so the header asks only
+  /// for whatever it needs beyond that.
+  /// Opens the cell editor over the cell under [globalPosition], and says
+  /// whether there was one.
+  ///
+  /// The row comes from the text offset and the column from where the press
+  /// landed: a table's own text is hidden, so every glyph of a row sits at the
+  /// left margin and only the vertical position means anything. The width is the
+  /// grid's, which is why the geometry has to be the same one the backdrop
+  /// painted from.
+  bool _openTableCellAt(
+    RenderEditable editable,
+    Offset globalPosition,
+    int textOffset,
+  ) {
+    if (widget.readOnly) return false;
+    final markdown = _controller.markdownFor(_controller.text);
+    final table = markdownTableAt(markdown, textOffset);
+    if (table == null) return false;
+    final geometry = _tableGrids[table];
+    if (geometry == null || geometry.columns.isEmpty) return false;
+    // Null on the `|---|` row, which is structure rather than a cell.
+    final where = markdownTableCellAt(table, textOffset);
+    if (where == null) return false;
+    final row = table.rows[where.row];
+
+    // The row's spacer is exactly as tall as the painted row, and the band
+    // starts one placeholder overhead above the spacer's own box.
+    final boxes = editable.getBoxesForSelection(
+      TextSelection(baseOffset: row.start, extentOffset: row.start + 1),
+    );
+    if (boxes.isEmpty) return false;
+    final box = boxes.first;
+    final origin = editable.localToGlobal(Offset(0, box.top));
+    final column = geometry.columnAt(globalPosition.dx - origin.dx);
+    if (column == null) return false;
+
+    final rect = _cellRect(editable, table, where.row, column);
+    if (rect == null) return false;
+    _showCellEditor(table, where.row, column, rect);
+    return true;
+  }
+
+  /// Where one cell is drawn, in global coordinates.
+  Rect? _cellRect(
+    RenderEditable editable,
+    MarkdownTable table,
+    int row,
+    int column,
+  ) {
+    final geometry = _tableGrids[table];
+    if (geometry == null || column >= geometry.columns.length) return null;
+    if (row < 0 || row >= table.rows.length) return null;
+    final boxes = editable.getBoxesForSelection(
+      TextSelection(
+        baseOffset: table.rows[row].start,
+        extentOffset: table.rows[row].start + 1,
+      ),
+    );
+    if (boxes.isEmpty) return null;
+    final box = boxes.first;
+    final origin = editable.localToGlobal(Offset(0, box.top));
+    return Rect.fromLTWH(
+      origin.dx + geometry.columnLeft(column),
+      origin.dy - _rowOverhead,
+      geometry.columns[column],
+      (box.bottom - box.top) + _rowOverhead,
+    );
+  }
+
+  /// Where a collaborator's caret sits inside the painted grid.
+  ///
+  /// The source characters under a table are deliberately hidden and occupy
+  /// almost no width, so RenderEditable cannot place a useful caret there.
+  /// Resolve the source offset to its cell and ask the same geometry that drew
+  /// the grid where the visible words are instead.
+  Rect? _remoteTableCaretRect(int offset) {
+    final editable = _fieldEditable();
+    if (editable == null) return null;
+    final table = markdownTableAt(
+      _controller.markdownFor(_controller.text),
+      offset,
+    );
+    if (table == null) return null;
+    final geometry = _tableGrids[table];
+    if (geometry == null || geometry.columns.isEmpty) return null;
+    // The delimiter has no editable cell. Keep an older client's caret
+    // visible at the start of the header instead of leaving it in hidden text.
+    final where = markdownTableCellAt(table, offset) ?? (row: 0, column: 0);
+    final row = table.rows[where.row];
+    final cellRect = _cellRect(editable, table, where.row, where.column);
+    final inCell = geometry.caretRectInCell(row, where.column, offset);
+    if (cellRect == null || inCell == null) return null;
+    return inCell.shift(cellRect.topLeft);
+  }
+
+  /// The visible cells crossed by somebody else's selection.
+  Iterable<Rect> _remoteTableSelectionRects(int start, int end) sync* {
+    final editable = _fieldEditable();
+    if (editable == null) return;
+    final low = math.min(start, end);
+    final high = math.max(start, end);
+    final markdown = _controller.markdownFor(_controller.text);
+    for (final table in markdown.tables) {
+      if (high < table.start || low > table.end) continue;
+      for (var row = 0; row < table.rows.length; row++) {
+        final fields = table.rows[row].cells;
+        for (var column = 0; column < fields.length; column++) {
+          final cell = fields[column];
+          if (high <= cell.start || low >= cell.end) continue;
+          final rect = _cellRect(editable, table, row, column);
+          if (rect != null) yield rect;
+        }
+      }
+    }
+  }
+
+  ({MarkdownTable table, int row, int column})? _activeTableCell() {
+    final cell = _editingCell;
+    if (cell == null) return null;
+    final table = markdownTableAt(
+      _controller.markdownFor(_controller.text),
+      cell.tableStart,
+    );
+    if (table == null || cell.row < 0 || cell.row >= table.rows.length) {
+      return null;
+    }
+    final columns = markdownTableColumnCount(table);
+    if (cell.column < 0 || cell.column >= columns) return null;
+    return (table: table, row: cell.row, column: cell.column);
+  }
+
+  void _scheduleTableCell(int tableStart, int row, int column) {
+    setState(() {
+      _editingCell = (tableStart: tableStart, row: row, column: column);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _restoreTableCellEditor();
+    });
+  }
+
+  void _restoreTableCellEditor() {
+    final active = _activeTableCell();
+    final editable = _fieldEditable();
+    if (active == null || editable == null) {
+      _closeCellEditor();
+      return;
+    }
+    final rect = _cellRect(editable, active.table, active.row, active.column);
+    if (rect == null) {
+      _closeCellEditor();
+      return;
+    }
+    _showCellEditor(active.table, active.row, active.column, rect);
+  }
+
+  void _syncTableCellEditorPosition() {
+    if (!_cellEditor.isVisible) return;
+    final active = _activeTableCell();
+    final editable = _fieldEditable();
+    if (active == null || editable == null) return;
+    final rect = _cellRect(editable, active.table, active.row, active.column);
+    if (rect != null) _cellEditor.moveTo(rect);
+  }
+
+  /// Tab: on to the next cell, or into a new row when there is no next one.
+  ///
+  /// The move waits for the next frame. Adding a row changes the note, and the
+  /// grid a cell is placed against is only measured during layout — so asking
+  /// before then would anchor the editor to a table that no longer exists.
+  void _moveToCell({required bool backwards}) {
+    final cell = _editingCell;
+    if (cell == null || widget.readOnly) return;
+    final table = markdownTableAt(
+      _controller.markdownFor(_controller.text),
+      cell.tableStart,
+    );
+    if (table == null) {
+      _closeCellEditor();
+      return;
+    }
+    var target = nextMarkdownTableCell(
+      table,
+      row: cell.row,
+      column: cell.column,
+      backwards: backwards,
+    );
+    var appended = false;
+    if (target == null) {
+      // Off the front finishes; off the end adds a row and carries on into it.
+      if (backwards) {
+        _closeCellEditor();
+        return;
+      }
+      _applyTableEdit(appendMarkdownTableRow(_controller.value, table));
+      target = (row: table.rows.length, column: 0);
+      appended = true;
+    }
+    final next = target;
+
+    // The table has not changed, so its current geometry is already the right
+    // one. Move now rather than waiting for a post-frame callback: registering
+    // one does not itself schedule a frame, and another Tab could otherwise
+    // still see the cell we just left and repeat the same move.
+    if (!appended) {
+      final editable = _fieldEditable();
+      final rect = editable == null
+          ? null
+          : _cellRect(editable, table, next.row, next.column);
+      if (rect != null) _showCellEditor(table, next.row, next.column, rect);
+      return;
+    }
+
+    // The appended row does not have geometry until the controller change has
+    // rebuilt and laid out the note. Record the destination immediately, both
+    // to schedule that frame and so key repeat cannot act on the old cell.
+    _scheduleTableCell(table.start, next.row, next.column);
+  }
+
+  /// Return moves down in the same column, adding a row at the bottom just as
+  /// Tab does. A cell is one source line no matter how many painted lines it
+  /// wraps onto, so Return is navigation rather than a newline.
+  void _moveDownTable() {
+    final active = _activeTableCell();
+    if (active == null || widget.readOnly) return;
+    final nextRow = active.row + 1;
+    if (nextRow < active.table.rows.length) {
+      final editable = _fieldEditable();
+      final rect = editable == null
+          ? null
+          : _cellRect(editable, active.table, nextRow, active.column);
+      if (rect != null) {
+        _showCellEditor(active.table, nextRow, active.column, rect);
+      }
+      return;
+    }
+    _applyTableEdit(appendMarkdownTableRow(_controller.value, active.table));
+    _scheduleTableCell(active.table.start, nextRow, active.column);
+  }
+
+  void _addTableRow() {
+    final active = _activeTableCell();
+    if (active == null || widget.readOnly) return;
+    final targetRow = active.row + 1;
+    _applyTableEdit(
+      insertMarkdownTableRow(
+        _controller.value,
+        active.table,
+        after: active.row,
+      ),
+    );
+    _scheduleTableCell(active.table.start, targetRow, active.column);
+  }
+
+  void _removeTableRow() {
+    final active = _activeTableCell();
+    if (active == null || active.row == 0 || widget.readOnly) return;
+    _applyTableEdit(
+      removeMarkdownTableRow(_controller.value, active.table, row: active.row),
+    );
+    final targetRow = math.min(active.row, active.table.rows.length - 2);
+    _scheduleTableCell(active.table.start, targetRow, active.column);
+  }
+
+  void _addTableColumn() {
+    final active = _activeTableCell();
+    if (active == null || widget.readOnly) return;
+    _applyTableEdit(
+      insertMarkdownTableColumn(
+        _controller.value,
+        active.table,
+        after: active.column,
+      ),
+    );
+    _scheduleTableCell(active.table.start, active.row, active.column + 1);
+  }
+
+  void _removeTableColumn() {
+    final active = _activeTableCell();
+    if (active == null || widget.readOnly) return;
+    final columns = markdownTableColumnCount(active.table);
+    if (columns <= 1) return;
+    _applyTableEdit(
+      removeMarkdownTableColumn(
+        _controller.value,
+        active.table,
+        column: active.column,
+      ),
+    );
+    _scheduleTableCell(
+      active.table.start,
+      active.row,
+      math.min(active.column, columns - 2),
+    );
+  }
+
+  MarkdownCellAlign _tableColumnAlignment(MarkdownTable table, int column) =>
+      table.aligns.elementAtOrNull(column) ?? MarkdownCellAlign.start;
+
+  void _cycleTableColumnAlignment() {
+    final active = _activeTableCell();
+    if (active == null || widget.readOnly) return;
+    final current = _tableColumnAlignment(active.table, active.column);
+    final next = switch (current) {
+      MarkdownCellAlign.start => MarkdownCellAlign.center,
+      MarkdownCellAlign.center => MarkdownCellAlign.end,
+      MarkdownCellAlign.end => MarkdownCellAlign.start,
+    };
+    _applyTableEdit(
+      setMarkdownTableColumnAlign(
+        _controller.value,
+        active.table,
+        column: active.column,
+        align: next,
+      ),
+    );
+    _scheduleTableCell(active.table.start, active.row, active.column);
+  }
+
+  void _undoTableEdit({required bool redo}) {
+    final actionContext = _focusNode.context;
+    if (actionContext == null) return;
+    Actions.invoke(
+      actionContext,
+      redo
+          ? const RedoTextIntent(SelectionChangedCause.keyboard)
+          : const UndoTextIntent(SelectionChangedCause.keyboard),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _editingCell != null) _restoreTableCellEditor();
+    });
+  }
+
+  String _tableAlignmentLabel(MarkdownCellAlign align) => switch (align) {
+    MarkdownCellAlign.start => 'L',
+    MarkdownCellAlign.center => 'C',
+    MarkdownCellAlign.end => 'R',
+  };
+
+  String _tableAlignmentTooltip(MarkdownCellAlign align) => switch (align) {
+    MarkdownCellAlign.start => 'Column aligned left; change to center',
+    MarkdownCellAlign.center => 'Column centered; change to right',
+    MarkdownCellAlign.end => 'Column aligned right; change to left',
+  };
+
+  void _showCellEditor(MarkdownTable table, int row, int column, Rect rect) {
+    final cells = table.rows[row].cells;
+    final source = column < cells.length
+        ? _controller.text.substring(cells[column].start, cells[column].end)
+        : '';
+    final target = (tableStart: table.start, row: row, column: column);
+    if (_editingCell != target) setState(() => _editingCell = target);
+    final palette = context.palette;
+    final accent = Theme.of(context).colorScheme.primary;
+    final columns = markdownTableColumnCount(table);
+    final alignment = _tableColumnAlignment(table, column);
+    _cellEditor.show(
+      context,
+      anchor: rect,
+      text: source,
+      style: EditorMetrics.textStyle(
+        palette.textPrimary,
+        widget.writingFont,
+        editorScale: widget.editorTextScale,
+      ),
+      cursorColor: accent,
+      background: palette.paperColor,
+      border: accent,
+      onChanged: _commitCellText,
+      onDone: _closeCellEditor,
+      onTab: (backwards) => _moveToCell(backwards: backwards),
+      onEnter: _moveDownTable,
+      onAddRow: _addTableRow,
+      onRemoveRow: row == 0 ? null : _removeTableRow,
+      onAddColumn: _addTableColumn,
+      onRemoveColumn: columns <= 1 ? null : _removeTableColumn,
+      onCycleAlignment: _cycleTableColumnAlignment,
+      onUndo: () => _undoTableEdit(redo: false),
+      onRedo: () => _undoTableEdit(redo: true),
+      alignmentLabel: _tableAlignmentLabel(alignment),
+      alignmentTooltip: _tableAlignmentTooltip(alignment),
+    );
+  }
+
+  /// Splices what the cell now says back into the one note string, per
+  /// keystroke, exactly as typing into the note does — so the CRDT, presence and
+  /// undo all behave as they always have.
+  void _commitCellText(String text) {
+    final cell = _editingCell;
+    if (cell == null || widget.readOnly) return;
+    final table = markdownTableAt(
+      _controller.markdownFor(_controller.text),
+      cell.tableStart,
+    );
+    if (table == null) {
+      _closeCellEditor();
+      return;
+    }
+    final edit = setMarkdownTableCell(
+      _controller.value,
+      table,
+      row: cell.row,
+      column: cell.column,
+      text: text,
+    );
+    if (edit.changesText) _applyTableEdit(edit);
+  }
+
+  void _closeCellEditor() {
+    if (_editingCell == null && !_cellEditor.isVisible) return;
+    _cellEditor.hide();
+    if (mounted) setState(() => _editingCell = null);
+    _focusNode.requestFocus();
+  }
+
+  /// One undoable change that also carries the note's own formats and
+  /// attachments across it.
+  ///
+  /// Stated rather than inferred, the way [removeAttachment] does it: a table
+  /// edit moves whole rows, and a diff would have to guess where everything
+  /// after them went.
+  void _applyTableEdit(MarkdownEdit edit) {
+    final next = edit.value;
+    _nextInsertedFormats = const {};
+    _nextFormats = normalizeNoteFormats([
+      for (final range in _formats)
+        NoteFormatRange(
+          start: edit.map(range.start),
+          end: edit.map(range.end, before: true),
+          format: range.format,
+        ),
+    ], next.text.length);
+    _nextAttachments = normalizeNoteAttachments([
+      for (final ref in _attachments)
+        ref.copyWith(offset: edit.map(ref.offset)),
+    ], next.text);
+    final editable = _editableTextState();
+    if (editable == null) {
+      _controller.value = next;
+    } else {
+      editable.userUpdateTextEditingValue(next, SelectionChangedCause.toolbar);
+    }
+  }
+
+  Map<int, NoteImageSpan> _tableRowSpacers({
+    required MarkdownAnalysis? markdown,
+    required double rowHeight,
+    required double overhead,
+  }) {
+    if (markdown == null || _tableGrids.isEmpty) return const {};
+    final spacers = <int, NoteImageSpan>{};
+    for (final table in markdown.tables) {
+      final geometry = _tableGrids[table];
+      if (geometry == null) continue;
+      for (final row in table.rows) {
+        final wanted =
+            geometry.rowHeight(row) - (row.header ? rowHeight : 0) - overhead;
+        // A row needing no more than the line it already has takes no spacer:
+        // the strut floor gives it that much for nothing.
+        if (wanted <= 0) continue;
+        // The child has to carry the height itself. `RenderEditable` lays a
+        // placeholder out by asking its widget, not from the dimensions handed
+        // to a `TextPainter` — those only answer for a painter measuring on its
+        // own, which is why a `SizedBox.shrink()` here reserved nothing at all.
+        spacers[row.start] = (
+          width: 0,
+          height: wanted,
+          child: SizedBox(width: 0, height: wanted),
+        );
+      }
+    }
+    return spacers;
+  }
+
   Map<int, NoteImageSpan> _buildAttachmentSpans(
     double columnWidth,
     double viewportHeight,
@@ -4133,13 +4706,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       widget.writingFont,
       editorScale: widget.editorTextScale,
     );
-    // Only a note that actually holds a picture gives up the forced row.
+    // Only a note that needs a row taller than one line gives up the forced
+    // one: a picture, or a table whose cells wrap onto more lines than that.
+    final holdsTable = _controller
+        .markdownFor(_controller.text)
+        .tables
+        .isNotEmpty;
     final strut = EditorMetrics.strut(
       widget.writingFont,
-      allowTallRows: _attachments.isNotEmpty && widget.images != null,
+      allowTallRows:
+          (_attachments.isNotEmpty && widget.images != null) || holdsTable,
       editorScale: widget.editorTextScale,
     );
     final textScaler = MediaQuery.textScalerOf(context);
+    final mobileTableCell = AppPlatform.isMobile ? _activeTableCell() : null;
 
     // A drop lands on the page as a whole, not on the text field: dragging a
     // picture over a note and having to aim at the caret would be worse than
@@ -4189,23 +4769,81 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 // Attachments are laid out into a slightly narrower column
                 // than the text; see noteAttachmentColumnSlack for the line
                 // that goes missing without it.
-                _controller.setImageSpansDuringLayout(
-                  _buildAttachmentSpans(
-                    math.max(1, contentWidth - noteAttachmentColumnSlack),
-                    constraints.maxHeight,
-                  ),
+                final attachmentWidth = math.max(
+                  1.0,
+                  contentWidth - noteAttachmentColumnSlack,
                 );
 
                 final markdown = _controller.markdownFor(_controller.text);
                 // Markdown is shown as written only in a note being edited:
                 // blocks with the caret in them, inline markers with the
-                // caret against them — and those not while typing.
-                final editing = _focusNode.hasFocus && !widget.readOnly;
+                // caret against them — and those not while typing. A table is
+                // never shown as written at all, wherever the caret is; see
+                // MarkdownAnalysis.concealFor.
+                final editing = _editingNote && !widget.readOnly;
                 _controller.markdownReveal = (
                   blocks: editing,
                   edges: editing && !_markdownQuiet,
                 );
                 final concealment = _controller.markdownConcealment();
+
+                // Every table's grid, fitted to the writing column so that a
+                // wide one shrinks and wraps rather than running off the side of
+                // a phone. Worked out here for the same reason images are sized
+                // here: it is the first point at which the width is known.
+                final rowHeight = textScaler.scale(
+                  EditorMetrics.lineHeight * widget.editorTextScale,
+                );
+                _tableGrids = {
+                  for (final table in markdown.tables)
+                    table: _tableGeometry.of(
+                      table: table,
+                      analysis: markdown,
+                      base: textStyle,
+                      scaler: textScaler,
+                      fitToWidth: attachmentWidth,
+                      minRowHeight: rowHeight,
+                      runStyle: (base, styles) {
+                        final drawn = _controller.markdownRunStyle(
+                          base,
+                          styles,
+                          Theme.of(context).colorScheme.primary,
+                        );
+                        // The pill inline code has in the text can be a plain
+                        // background in a grid painted behind it: there is no
+                        // selection to show over it there.
+                        return styles.contains(MarkdownStyle.code)
+                            ? drawn.copyWith(
+                                backgroundColor: palette.controlBackground,
+                              )
+                            : drawn;
+                      },
+                    ),
+                };
+
+                // A table's rows reserve their room the same way a picture
+                // does, through a placeholder apiece. A real attachment wins any
+                // offset they might share.
+                _controller.setImageSpansDuringLayout({
+                  ..._tableRowSpacers(
+                    markdown: markdown,
+                    rowHeight: rowHeight,
+                    overhead: _rowOverhead = placeholderLineOverhead(
+                      style: textStyle,
+                      strut: strut,
+                      scaler: textScaler,
+                    ),
+                  ),
+                  ..._buildAttachmentSpans(
+                    attachmentWidth,
+                    constraints.maxHeight,
+                  ),
+                });
+                if (_editingCell != null) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _syncTableCellEditorPosition();
+                  });
+                }
                 final offsets = _measurer.measure(
                   span: _controller.buildTextSpan(
                     context: context,
@@ -4250,17 +4888,21 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                       strut: strut,
                                       writingFont: widget.writingFont,
                                     ),
-                                  if (markdown != null)
+                                  // A note with a table always needs it, even on
+                                  // a device with markdown switched off. A plain
+                                  // note gains no layer it did not have before.
+                                  if (widget.markdownEnabled ||
+                                      markdown.tables.isNotEmpty)
                                     Positioned.fill(
                                       child: IgnorePointer(
                                         child: MarkdownBackdrop(
                                           analysis: markdown,
                                           concealment: concealment,
+                                          grids: _tableGrids,
                                           offsets: offsets,
                                           scroll: _scrollController,
                                           editable: _fieldEditable,
                                           colors: MarkdownBackdropColors(
-                                            text: palette.textPrimary,
                                             quiet: palette.textSecondary,
                                             faint: palette.textTertiary
                                                 .withValues(alpha: 0.35),
@@ -4273,14 +4915,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                               context,
                                             ).colorScheme.onPrimary,
                                           ),
-                                          runStyle: (base, styles) =>
-                                              _controller.markdownRunStyle(
-                                                base,
-                                                styles,
-                                                Theme.of(
-                                                  context,
-                                                ).colorScheme.primary,
-                                              ),
                                           markerRoom: _controller
                                               .markdownMarkerRoom(
                                                 textStyle,
@@ -4312,6 +4946,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                         scroll: _scrollController,
                                         editable: _fieldEditable,
                                         hover: _remoteHover,
+                                        tableCaretRect: _remoteTableCaretRect,
+                                        tableSelectionRects:
+                                            _remoteTableSelectionRects,
                                       ),
                                     ),
                                 ],
@@ -4425,6 +5062,30 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               showIndentControls: _showIndentControls,
               canIndent: _canIndent(outdent: false),
               canOutdent: _canIndent(outdent: true),
+              onAddTableRowPressed: mobileTableCell == null
+                  ? null
+                  : _addTableRow,
+              onRemoveTableRowPressed:
+                  mobileTableCell == null || mobileTableCell.row == 0
+                  ? null
+                  : _removeTableRow,
+              onAddTableColumnPressed: mobileTableCell == null
+                  ? null
+                  : _addTableColumn,
+              onRemoveTableColumnPressed:
+                  mobileTableCell == null ||
+                      markdownTableColumnCount(mobileTableCell.table) <= 1
+                  ? null
+                  : _removeTableColumn,
+              onCycleTableAlignmentPressed: mobileTableCell == null
+                  ? null
+                  : _cycleTableColumnAlignment,
+              tableAlignment: mobileTableCell == null
+                  ? null
+                  : _tableColumnAlignment(
+                      mobileTableCell.table,
+                      mobileTableCell.column,
+                    ),
               boldActive: _formatActive(NoteFormat.bold),
               italicActive: _formatActive(NoteFormat.italic),
               bulletsActive: _lineStyleActive(NoteLineStyle.bullet),

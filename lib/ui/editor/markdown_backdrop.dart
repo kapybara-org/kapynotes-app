@@ -5,13 +5,13 @@ import 'package:material_ui/material_ui.dart';
 
 import 'line_metrics.dart';
 import 'markdown_syntax.dart';
+import 'table_geometry.dart';
 
 /// The colours [MarkdownBackdrop] draws with, taken from the theme once per
 /// build rather than looked up while painting.
 @immutable
 class MarkdownBackdropColors {
   const MarkdownBackdropColors({
-    required this.text,
     required this.quiet,
     required this.faint,
     required this.panel,
@@ -19,9 +19,6 @@ class MarkdownBackdropColors {
     required this.accent,
     required this.onAccent,
   });
-
-  /// Words: a table's cells.
-  final Color text;
 
   /// Bullets, an unticked box, a quote's bar.
   final Color quiet;
@@ -40,7 +37,6 @@ class MarkdownBackdropColors {
   @override
   bool operator ==(Object other) =>
       other is MarkdownBackdropColors &&
-      other.text == text &&
       other.quiet == quiet &&
       other.faint == faint &&
       other.panel == panel &&
@@ -50,7 +46,7 @@ class MarkdownBackdropColors {
 
   @override
   int get hashCode =>
-      Object.hash(text, quiet, faint, panel, panelBorder, accent, onAccent);
+      Object.hash(quiet, faint, panel, panelBorder, accent, onAccent);
 }
 
 /// What a markdown note draws behind its text: the parts of markdown that
@@ -70,26 +66,28 @@ class MarkdownBackdrop extends LeafRenderObjectWidget {
     super.key,
     required this.analysis,
     required this.concealment,
+    required this.grids,
     required this.offsets,
     required this.scroll,
     required this.editable,
     required this.colors,
-    required this.runStyle,
     required this.markerRoom,
   });
 
   final MarkdownAnalysis analysis;
   final MarkdownConcealment concealment;
+
+  /// The grid each table is drawn as, measured by the editor, which is the only
+  /// place that knows how wide the writing column is. The same geometry decides
+  /// the room each row reserves, so the two cannot drift apart.
+  final Map<MarkdownTable, TableGeometry> grids;
+
   final LineOffsets offsets;
   final ScrollController scroll;
 
   /// The field whose text this draws behind.
   final RenderEditable? Function() editable;
   final MarkdownBackdropColors colors;
-
-  /// How words in a table cell are drawn, given the markdown over them and
-  /// the cell's own style: the way the field would draw them.
-  final TextStyle Function(TextStyle base, Set<MarkdownStyle> styles) runStyle;
 
   /// The room the field gives a list marker, which a bullet is drawn in. See
   /// `HighlightingController.markdownMarkerRoom`.
@@ -100,11 +98,11 @@ class MarkdownBackdrop extends LeafRenderObjectWidget {
       RenderMarkdownBackdrop(
         analysis: analysis,
         concealment: concealment,
+        grids: grids,
         offsets: offsets,
         scroll: scroll,
         editable: editable,
         colors: colors,
-        runStyle: runStyle,
         markerRoom: markerRoom,
       );
 
@@ -116,11 +114,11 @@ class MarkdownBackdrop extends LeafRenderObjectWidget {
     renderObject
       ..analysis = analysis
       ..concealment = concealment
+      ..grids = grids
       ..offsets = offsets
       ..scroll = scroll
       ..editable = editable
       ..colors = colors
-      ..runStyle = runStyle
       ..markerRoom = markerRoom
       // The field was rebuilt alongside this, and its layout can change with
       // nothing here changing — a wider window, a new writing font.
@@ -132,11 +130,11 @@ class RenderMarkdownBackdrop extends RenderBox {
   RenderMarkdownBackdrop({
     required MarkdownAnalysis analysis,
     required this.concealment,
+    required this.grids,
     required this.offsets,
     required ScrollController scroll,
     required this.editable,
     required this.colors,
-    required this.runStyle,
     required this.markerRoom,
   }) : _analysis = analysis,
        _scroll = scroll;
@@ -146,18 +144,13 @@ class RenderMarkdownBackdrop extends RenderBox {
     if (identical(value, _analysis)) return;
     _analysis = value;
     _lineStarts = null;
-    _forgetTables();
   }
 
   MarkdownConcealment concealment;
+  Map<MarkdownTable, TableGeometry> grids;
   LineOffsets offsets;
   RenderEditable? Function() editable;
   MarkdownBackdropColors colors;
-
-  /// A new function with every build, and so not part of what a laid-out
-  /// table is kept by: the colours and faces it gives only change with the
-  /// field's own style, which is.
-  TextStyle Function(TextStyle base, Set<MarkdownStyle> styles) runStyle;
   double markerRoom;
 
   ScrollController _scroll;
@@ -169,14 +162,6 @@ class RenderMarkdownBackdrop extends RenderBox {
   }
 
   List<int>? _lineStarts;
-  final Map<(int, TextStyle?, TextScaler), _TableLayout> _tableLayouts = {};
-
-  void _forgetTables() {
-    for (final layout in _tableLayouts.values) {
-      layout.dispose();
-    }
-    _tableLayouts.clear();
-  }
 
   @override
   bool get sizedByParent => true;
@@ -360,12 +345,9 @@ class RenderMarkdownBackdrop extends RenderBox {
       }
     }
 
-    final style = field.text?.style;
-    for (var i = 0; i < _analysis.tables.length; i++) {
-      final table = _analysis.tables[i];
-      if (concealment.revealedTables.contains(i)) continue;
+    for (final table in _analysis.tables) {
       if (!onScreen(table.start, table.end)) continue;
-      _paintTable(canvas, table, style, left, rowY, field.textScaler);
+      _paintTable(canvas, table, left, rowY);
     }
 
     canvas.restore();
@@ -452,31 +434,11 @@ class RenderMarkdownBackdrop extends RenderBox {
   void _paintTable(
     Canvas canvas,
     MarkdownTable table,
-    TextStyle? style,
     double left,
     double Function(double) rowY,
-    TextScaler scaler,
   ) {
-    // Keyed by where the table starts: a new analysis — any edit — clears
-    // them all, so within one analysis the start names one table.
-    final layout = _tableLayouts.putIfAbsent(
-      (table.start, style, scaler),
-      () => _TableLayout(
-        table,
-        _analysis,
-        (style ?? const TextStyle()).copyWith(color: colors.text),
-        scaler,
-        (base, styles) {
-          final drawn = runStyle(base, styles);
-          // The pill inline code has in the text, which a grid painted here
-          // can have as a plain background: no selection to show over it.
-          return styles.contains(MarkdownStyle.code)
-              ? drawn.copyWith(backgroundColor: colors.panel)
-              : drawn;
-        },
-      ),
-    );
-    if (layout.columns.isEmpty) return;
+    final geometry = grids[table];
+    if (geometry == null || geometry.columns.isEmpty) return;
 
     // The header takes its own line and the `|---|` line under it, so the
     // grid covers every row the table's text does.
@@ -492,7 +454,7 @@ class RenderMarkdownBackdrop extends RenderBox {
 
     final top = bands.first.top + 2;
     final bottom = bands.last.bottom - 2;
-    final width = layout.columns.fold<double>(0, (sum, w) => sum + w);
+    final width = geometry.width;
     final grid = Rect.fromLTRB(left, top, left + width, bottom);
     final outline = RRect.fromRectAndRadius(grid, const Radius.circular(6));
     final lines = Paint()
@@ -516,11 +478,11 @@ class RenderMarkdownBackdrop extends RenderBox {
         );
       }
       var x = grid.left;
-      for (var c = 0; c < layout.columns.length; c++) {
-        final cellWidth = layout.columns[c];
-        final painter = layout.cell(band.row, c);
+      for (var c = 0; c < geometry.columns.length; c++) {
+        final cellWidth = geometry.columns[c];
+        final painter = geometry.cell(band.row, c);
         if (painter != null) {
-          final inner = cellWidth - _TableLayout.padding * 2;
+          final inner = geometry.innerWidth(c);
           final dx = switch (table.aligns.elementAtOrNull(c)) {
             MarkdownCellAlign.center => (inner - painter.width) / 2,
             MarkdownCellAlign.end => inner - painter.width,
@@ -529,13 +491,13 @@ class RenderMarkdownBackdrop extends RenderBox {
           painter.paint(
             canvas,
             Offset(
-              x + _TableLayout.padding + math.max(0, dx),
+              x + TableGeometry.padding + math.max(0, dx),
               band.top + (band.bottom - band.top - painter.height) / 2,
             ),
           );
         }
         x += cellWidth;
-        if (c < layout.columns.length - 1) {
+        if (c < geometry.columns.length - 1) {
           canvas.drawLine(Offset(x, top), Offset(x, bottom), lines);
         }
       }
@@ -548,80 +510,5 @@ class RenderMarkdownBackdrop extends RenderBox {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
     );
-  }
-
-  @override
-  void dispose() {
-    _forgetTables();
-    super.dispose();
-  }
-}
-
-/// A table's cells laid out once, for as long as the table and the style it
-/// is drawn in stay the same.
-class _TableLayout {
-  _TableLayout(
-    this.table,
-    MarkdownAnalysis analysis,
-    TextStyle base,
-    TextScaler scaler,
-    TextStyle Function(TextStyle base, Set<MarkdownStyle> styles) runStyle,
-  ) {
-    final count = table.rows.fold<int>(
-      0,
-      (most, row) => math.max(most, row.cells.length),
-    );
-    final widths = List<double>.filled(count, 0);
-    for (final row in table.rows) {
-      final painters = <TextPainter>[];
-      for (var c = 0; c < row.cells.length; c++) {
-        final cell = row.cells[c];
-        final painter = TextPainter(
-          text: TextSpan(
-            style: base,
-            children: [
-              for (final run in analysis.runsIn(cell.start, cell.end))
-                TextSpan(
-                  text: run.text,
-                  style: runStyle(base, {
-                    ...run.styles,
-                    if (row.header) MarkdownStyle.tableHeader,
-                  }),
-                ),
-            ],
-          ),
-          textDirection: TextDirection.ltr,
-          textScaler: scaler,
-          maxLines: 1,
-          ellipsis: '…',
-        )..layout(maxWidth: _maxCellWidth);
-        widths[c] = math.max(widths[c], painter.width);
-        painters.add(painter);
-      }
-      _cells[row] = painters;
-    }
-    columns = [for (final width in widths) width + padding * 2];
-  }
-
-  static const double padding = 10;
-  static const double _maxCellWidth = 320;
-
-  final MarkdownTable table;
-  late final List<double> columns;
-  final Map<MarkdownTableRow, List<TextPainter>> _cells = {};
-
-  TextPainter? cell(MarkdownTableRow row, int column) {
-    final painters = _cells[row];
-    return painters == null || column >= painters.length
-        ? null
-        : painters[column];
-  }
-
-  void dispose() {
-    for (final painters in _cells.values) {
-      for (final painter in painters) {
-        painter.dispose();
-      }
-    }
   }
 }

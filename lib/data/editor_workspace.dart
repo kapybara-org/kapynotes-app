@@ -101,6 +101,15 @@ class EditorWorkspace {
   /// pane: a second blank next to the first is only another thing to close.
   bool get canSplit => _panes.length < maxPanes && selectedNoteId != null;
 
+  /// Freezes the current pane arrangement for a transient note preview.
+  ///
+  /// A note switcher may move across a note that is already visible and then
+  /// one that is not. Replaying every step against the last preview would
+  /// progressively replace different panes. This session instead evaluates
+  /// every preview against one baseline and one anchor pane.
+  EditorWorkspacePreviewSession beginPreviewSession() =>
+      EditorWorkspacePreviewSession._(this);
+
   /// Restores the panes that still name notes, then shows [openingNoteId].
   ///
   /// The startup preference stays in charge of which note comes up: it is
@@ -433,5 +442,97 @@ class EditorWorkspace {
       // caret writes by coalescing those pixels into one disk write.
       _store.put(storeKey, value);
     }
+  }
+}
+
+/// A reversible preview over one stable [EditorWorkspace] arrangement.
+///
+/// Notes already present in the baseline merely activate their pane. Any note
+/// that was not present temporarily replaces the pane that was active when the
+/// session began. Moving back through the sequence restores the baseline first,
+/// so previewing cannot accidentally walk replacements across several panes.
+class EditorWorkspacePreviewSession {
+  EditorWorkspacePreviewSession._(this._workspace)
+    : _panes = List.of(_workspace._panes),
+      _noteIds = [for (final pane in _workspace._panes) pane.noteId],
+      _weights = List.of(_workspace._weights),
+      _active = _workspace._active,
+      _anchor = _workspace._panes.isEmpty ? null : _workspace._active;
+
+  final EditorWorkspace _workspace;
+  final List<EditorPane> _panes;
+  final List<String?> _noteIds;
+  final List<double> _weights;
+  final int _active;
+  final int? _anchor;
+  bool _finished = false;
+
+  bool get isActive => !_finished;
+
+  /// Whether every note represented by the baseline and current preview still
+  /// belongs to the active collection.
+  bool canContinueWith(Iterable<String> noteIds) {
+    if (_finished) return false;
+    final available = noteIds.toSet();
+    return _noteIds.whereType<String>().every(available.contains) &&
+        _workspace.openNoteIds.every(available.contains);
+  }
+
+  /// The baseline note that [noteId] would temporarily displace, if any.
+  String? displacedBy(String noteId) {
+    if (_finished || _noteIds.contains(noteId)) return null;
+    final anchor = _anchor;
+    return anchor == null ? null : _noteIds[anchor];
+  }
+
+  /// Shows [noteId] relative to the frozen baseline without writing it yet.
+  bool preview(String noteId) {
+    if (_finished) return false;
+    _restore();
+
+    final existing = _noteIds.indexOf(noteId);
+    if (existing >= 0) {
+      _workspace._active = existing;
+      return true;
+    }
+
+    final anchor = _anchor;
+    if (anchor == null) {
+      _workspace._show(noteId);
+      return true;
+    }
+    _workspace._panes[anchor]._noteId = noteId;
+    _workspace._active = anchor;
+    return true;
+  }
+
+  /// Keeps the final preview and makes it the restorable workspace state.
+  bool commit() {
+    if (_finished) return false;
+    _finished = true;
+    _workspace._persist();
+    return true;
+  }
+
+  /// Puts every pane back exactly where the session found it.
+  bool cancel() {
+    if (_finished) return false;
+    _restore();
+    _finished = true;
+    _workspace._persist();
+    return true;
+  }
+
+  void _restore() {
+    _workspace._panes
+      ..clear()
+      ..addAll(_panes);
+    for (var index = 0; index < _panes.length; index++) {
+      _panes[index]._noteId = _noteIds[index];
+    }
+    _workspace._weights
+      ..clear()
+      ..addAll(_weights);
+    _workspace._active = _panes.isEmpty ? 0 : _active;
   }
 }

@@ -113,6 +113,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _alwaysOnTopKey = 'alwaysOnTop.v1';
   static const String _loginItemDefaultKey = 'loginItemDefaulted.v1';
   static const String _lastOpenedNoteKey = 'selectedNote.v1';
+  static const String _recentlyOpenedNotesKey = 'recentlyOpenedNotes.v1';
   static const String _caretKey = 'caret.v1';
   static const String _appearanceKey = 'appearance.v1';
   static const String _appTextSizeKey = 'appTextSize.v1';
@@ -164,6 +165,7 @@ class LayoutPrefs extends ChangeNotifier {
   bool _loginItemDefaultApplied = false;
   bool _alwaysOnTop = false;
   String? _lastOpenedNoteId;
+  List<String> _recentlyOpenedNoteIds = const [];
   String? _defaultNoteId;
   final Map<String, ({int offset, DateTime at})> _carets = {};
 
@@ -299,6 +301,9 @@ class LayoutPrefs extends ChangeNotifier {
   String? get defaultNoteId => _defaultNoteId;
   String? get lastOpenedNoteId => _lastOpenedNoteId;
 
+  /// Device-local MRU order used by the sidebar and note switcher.
+  List<String> get recentlyOpenedNoteIds => _recentlyOpenedNoteIds;
+
   /// Converts a stored instant to the zone selected for note timestamps.
   DateTime displayTime(DateTime instant) =>
       AppTimeZones.convert(instant, _timeZoneId);
@@ -368,6 +373,15 @@ class LayoutPrefs extends ChangeNotifier {
     _loginItemDefaultApplied = _store.read<bool>(_loginItemDefaultKey) ?? false;
     _alwaysOnTop = _store.read<bool>(_alwaysOnTopKey) ?? false;
     _lastOpenedNoteId = _readNoteId(_lastOpenedNoteKey);
+    _recentlyOpenedNoteIds = _readRecentlyOpenedNoteIds();
+    final lastOpened = _lastOpenedNoteId;
+    if (lastOpened != null &&
+        _recentlyOpenedNoteIds.firstOrNull != lastOpened) {
+      _recentlyOpenedNoteIds = List.unmodifiable([
+        lastOpened,
+        ..._recentlyOpenedNoteIds.where((id) => id != lastOpened),
+      ]);
+    }
     _defaultNoteId = _readNoteId(_defaultNoteKey);
     _readCarets();
     _pruneCarets();
@@ -647,9 +661,43 @@ class LayoutPrefs extends ChangeNotifier {
 
   set lastOpenedNoteId(String? value) {
     final normalized = _normalizeNoteId(value);
-    if (normalized == _lastOpenedNoteId) return;
-    _lastOpenedNoteId = normalized;
-    _store.putNow(_lastOpenedNoteKey, normalized ?? '');
+    var changed = false;
+    if (normalized != _lastOpenedNoteId) {
+      _lastOpenedNoteId = normalized;
+      _store.putNow(_lastOpenedNoteKey, normalized ?? '');
+      changed = true;
+    }
+    if (normalized != null &&
+        _recentlyOpenedNoteIds.firstOrNull != normalized) {
+      _recentlyOpenedNoteIds = List.unmodifiable([
+        normalized,
+        ..._recentlyOpenedNoteIds.where((id) => id != normalized),
+      ]);
+      _store.putNow(_recentlyOpenedNotesKey, _recentlyOpenedNoteIds);
+      changed = true;
+    }
+    if (!changed) return;
+    notifyListeners();
+  }
+
+  /// Removes notes that no longer exist without promoting any survivor.
+  void retainRecentlyOpenedNoteIds(Iterable<String> noteIds) {
+    final available = noteIds.toSet();
+    final retained = _recentlyOpenedNoteIds
+        .where(available.contains)
+        .toList(growable: false);
+    var changed = false;
+    if (!listEquals(retained, _recentlyOpenedNoteIds)) {
+      _recentlyOpenedNoteIds = List.unmodifiable(retained);
+      _store.putNow(_recentlyOpenedNotesKey, _recentlyOpenedNoteIds);
+      changed = true;
+    }
+    if (_lastOpenedNoteId case final last? when !available.contains(last)) {
+      _lastOpenedNoteId = null;
+      _store.putNow(_lastOpenedNoteKey, '');
+      changed = true;
+    }
+    if (!changed) return;
     notifyListeners();
   }
 
@@ -793,6 +841,18 @@ class LayoutPrefs extends ChangeNotifier {
   }
 
   String? _readNoteId(String key) => _normalizeNoteId(_store.read<String>(key));
+
+  List<String> _readRecentlyOpenedNoteIds() {
+    final stored = _store.data[_recentlyOpenedNotesKey];
+    if (stored is! List) return const [];
+    final seen = <String>{};
+    return List.unmodifiable([
+      for (final value in stored)
+        if (value is String)
+          if (_normalizeNoteId(value) case final id?)
+            if (seen.add(id)) id,
+    ]);
+  }
 
   static String? _normalizeNoteId(String? value) {
     final clean = value?.trim() ?? '';

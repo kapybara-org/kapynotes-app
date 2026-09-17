@@ -181,6 +181,23 @@ void main() {
     expect(restored.resolveOpeningNoteId(['note-1', 'note-2']), 'note-2');
   });
 
+  test('recently opened notes are promoted, persisted, and pruned', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+
+    prefs.lastOpenedNoteId = 'alpha';
+    prefs.lastOpenedNoteId = 'bravo';
+    prefs.lastOpenedNoteId = 'alpha';
+    expect(prefs.recentlyOpenedNoteIds, ['alpha', 'bravo']);
+
+    final restored = LayoutPrefs(store)..load();
+    expect(restored.recentlyOpenedNoteIds, ['alpha', 'bravo']);
+
+    restored.retainRecentlyOpenedNoteIds(const ['bravo', 'charlie']);
+    expect(restored.recentlyOpenedNoteIds, ['bravo']);
+    expect((LayoutPrefs(store)..load()).recentlyOpenedNoteIds, ['bravo']);
+  });
+
   test('a fixed startup note falls back when it is deleted', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();

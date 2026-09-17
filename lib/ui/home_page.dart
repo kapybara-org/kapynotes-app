@@ -1,7 +1,13 @@
 import 'dart:async';
 
 import 'package:file_selector/file_selector.dart' show XFile;
-import 'package:flutter/services.dart' show SystemUiOverlayStyle;
+import 'package:flutter/services.dart'
+    show
+        HardwareKeyboard,
+        KeyEvent,
+        KeyUpEvent,
+        LogicalKeyboardKey,
+        SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
 import '../audio/voice_availability.dart';
@@ -27,6 +33,7 @@ import '../data/local_store.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/note_format.dart';
+import '../data/note_switcher.dart';
 import '../data/notes_store.dart';
 import 'editor/voice_chip.dart';
 import 'editor/voice_insertion.dart';
@@ -167,8 +174,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static final _totalCue = RegExp(r'\btotal\b', caseSensitive: false);
 
   final FocusNode _searchFocus = FocusNode(debugLabel: 'sidebar-search');
+  final FocusNode _desktopShortcutFocus = FocusNode(
+    debugLabel: 'desktop-shortcuts',
+  );
   final KapyHeaderController _kapyHeader = KapyHeaderController();
   final Set<String> _totalAnimatedFor = {};
+  final NoteSwitcher _noteSwitcher = NoteSwitcher();
   GlobalKey<NoteEditorState> _compactEditorKey = GlobalKey<NoteEditorState>();
   GlobalKey<NoteEditorState> _archiveEditorKey = GlobalKey<NoteEditorState>();
 
@@ -190,6 +201,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _hiddenAuthBusy = false;
   int _hiddenSystemUiDepth = 0;
   bool _voiceActionBusy = false;
+  int _selectionRequest = 0;
+  _NoteSwitchModifier? _noteSwitchModifier;
+  EditorWorkspacePreviewSession? _noteSwitchWorkspace;
+  ({String id, bool focusEditor})? _committedSwitchAwaitingSelection;
+
+  /// True for a selection frame that only previews a note. The new editor is
+  /// prepared at its normal caret but cannot steal focus from either sidebar
+  /// scrubbing or an active Ctrl/Cmd switch session.
+  bool _selectionAutofocusSuppressed = false;
 
   /// Whether the archive is picking notes rather than opening them, and which
   /// ones have been picked. Both are cleared on the way out of the archive:
@@ -249,6 +269,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         openingNoteId: openingId,
       );
     _selectedId = _workspace.selectedNoteId;
+    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     widget.notes.addListener(_onNotesChanged);
     widget.account?.noteLimit?.addListener(_onNoteLimitChanged);
     // The system-wide new-note shortcut has already raised the window by the
@@ -263,6 +284,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Keep timers and mascot work behind the first editable frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      final selected = _selectedId;
+      if (selected != null) widget.prefs.lastOpenedNoteId = selected;
       _armKapyIdleTimer();
       _reactToSelectedTotal();
       // After the frame, because both paths act on the editor that frame just
@@ -276,6 +299,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void dispose() {
     widget.account?.sync?.leaveNote(_selectedId);
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
     widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
@@ -284,6 +308,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _kapyIdleTimer?.cancel();
     _kapyHeader.dispose();
     _searchFocus.dispose();
+    _desktopShortcutFocus.dispose();
     super.dispose();
   }
 
@@ -303,6 +328,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // an ordinary resume one unanswered question and nothing else.
       unawaited(QuickCapture.launchIntent().then(_runWidgetAction));
     } else {
+      // A window can lose the matching modifier-up event while focus moves to
+      // the operating system. Commit the last preview so the switcher cannot
+      // remain half-open when the app returns.
+      _commitNoteSwitch(focusEditor: false);
       _kapyIdleTimer?.cancel();
     }
   }
@@ -856,13 +885,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _onNotesChanged() {
+    final collectionIds =
+        (_archiveMode
+                ? widget.notes.archivedNotes
+                : _hiddenMode
+                ? widget.notes.hiddenNotes
+                : widget.notes.notes)
+            .map((note) => note.id);
+    final workspacePreview = _noteSwitchWorkspace;
+    if (workspacePreview != null &&
+        !workspacePreview.canContinueWith(collectionIds)) {
+      _cancelNoteSwitchPreview();
+    }
+    final previous = _selectedId;
+    widget.prefs.retainRecentlyOpenedNoteIds(
+      widget.notes.allNotes.map((note) => note.id),
+    );
     _reconcileSelection();
+    final selected = _selectedId;
+    if (selected != null && selected != previous) {
+      widget.prefs.lastOpenedNoteId = selected;
+    }
     _reactToSelectedTotal();
     if (mounted) setState(() {});
   }
 
   /// Keeps the selection pointing at a note that still exists.
   void _reconcileSelection() {
+    _noteSwitcher.retain(widget.notes.allNotes.map((note) => note.id));
+    if (!_noteSwitcher.isActive) _noteSwitchModifier = null;
     final available = _archiveMode
         ? widget.notes.archivedNotes
         : _hiddenMode
@@ -896,7 +947,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return view.physicalSize.width / view.devicePixelRatio < kTwoPaneBreakpoint;
   }
 
-  void _setSelectedId(String? id) {
+  void _setSelectedId(String? id, {bool selectionPreview = false}) {
+    if (!selectionPreview) _cancelNoteSwitchPreview();
     final previous = _selectedId;
     if (_specialMode) {
       if (previous != id) {
@@ -913,12 +965,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } else {
       _workspace.open(id);
     }
-    _adoptWorkspaceSelection(previous);
+    _adoptWorkspaceSelection(previous, selectionPreview: selectionPreview);
   }
 
   /// Takes up whatever the panes now have focused, after any change to them,
   /// and lets go of the editors of notes no longer on screen.
-  void _adoptWorkspaceSelection(String? previous) {
+  void _adoptWorkspaceSelection(
+    String? previous, {
+    bool selectionPreview = false,
+  }) {
     final next = _workspace.selectedNoteId;
     if (previous != next) {
       widget.account?.sync?.leaveNote(previous);
@@ -927,6 +982,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _selectedId = next;
     final open = _workspace.openNoteIds;
     _paneEditorKeys.removeWhere((id, _) => !open.contains(id));
+  }
+
+  /// Abandons a held-key preview before another interaction takes ownership.
+  /// In split view that also restores the pane arrangement from the start of
+  /// the gesture, so a click or structural pane action never inherits a
+  /// half-previewed layout.
+  bool _cancelNoteSwitchPreview() {
+    _noteSwitchModifier = null;
+    _committedSwitchAwaitingSelection = null;
+    _noteSwitcher.cancel();
+    final preview = _noteSwitchWorkspace;
+    _noteSwitchWorkspace = null;
+    if (preview == null) return false;
+
+    final previous = _selectedId;
+    preview.cancel();
+    _selectedId = _workspace.selectedNoteId;
+    if (previous != _selectedId) {
+      widget.account?.sync?.leaveNote(previous);
+      _compactEditorKey = GlobalKey<NoteEditorState>();
+    }
+    final open = _workspace.openNoteIds;
+    _paneEditorKeys.removeWhere((id, _) => !open.contains(id));
+    return true;
   }
 
   void _scheduleInitialNote() {
@@ -963,25 +1042,89 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     change();
   }
 
-  void _select(String id) {
+  void _select(
+    String id, {
+    bool focusEditor = true,
+    bool selectionPreview = false,
+    EditorWorkspacePreviewSession? workspacePreview,
+  }) {
+    assert(workspacePreview == null || selectionPreview);
+    final request = ++_selectionRequest;
+    // Any explicit selection owns the interaction now, even when it lands on
+    // the note already being previewed. Otherwise releasing an old modifier
+    // could focus or re-promote a row after a sidebar click took over.
+    if (!selectionPreview && _cancelNoteSwitchPreview() && mounted) {
+      setState(() {});
+    }
     // Showing a note replaces the focused one, unless it is already open in a
     // pane of its own, which is then only focused.
-    final replaces =
-        id != _selectedId &&
-        (_usesCompactLayout || _specialMode || _workspace.paneOf(id) < 0);
-    _afterRecordingLeaves(replaces ? _selectedId : null, () => _selectNow(id));
+    final leaving = workspacePreview != null
+        ? workspacePreview.displacedBy(id)
+        : id != _selectedId &&
+              (_usesCompactLayout || _specialMode || _workspace.paneOf(id) < 0)
+        ? _selectedId
+        : null;
+    _afterRecordingLeaves(leaving, () {
+      if (!mounted || request != _selectionRequest) return;
+      _selectNow(
+        id,
+        focusEditor: focusEditor,
+        selectionPreview: selectionPreview,
+        workspacePreview: workspacePreview,
+      );
+    });
   }
 
-  void _selectNow(String id) {
+  void _selectFromSidebar(String id) => _select(id, focusEditor: false);
+
+  void _previewFromSidebar(String id) =>
+      _select(id, focusEditor: false, selectionPreview: true);
+
+  void _selectNow(
+    String id, {
+    required bool focusEditor,
+    bool selectionPreview = false,
+    EditorWorkspacePreviewSession? workspacePreview,
+  }) {
+    if (!focusEditor) {
+      _selectionAutofocusSuppressed = true;
+      // A preview may only activate an editor already mounted in another
+      // pane. Move focus to the shortcut scope so the active-pane marker and
+      // the real keyboard focus agree, while further Tabs still reach the
+      // same held-key session.
+      if (selectionPreview && _noteSwitcher.isActive) {
+        _desktopShortcutFocus.requestFocus();
+      }
+    }
     final paneBefore = _workspace.activePane;
-    setState(() => _setSelectedId(id));
-    widget.prefs.lastOpenedNoteId = id;
-    _recordKapyActivity();
-    _reactToSelectedTotal();
+    setState(() {
+      if (workspacePreview != null && workspacePreview.preview(id)) {
+        final previous = _selectedId;
+        _adoptWorkspaceSelection(previous, selectionPreview: true);
+      } else {
+        _setSelectedId(id, selectionPreview: selectionPreview);
+      }
+    });
+    if (!selectionPreview) {
+      widget.prefs.lastOpenedNoteId = id;
+      _recordKapyActivity();
+      _reactToSelectedTotal();
+    }
     // Already open in another pane, whose editor is not rebuilt, so it will
     // not take the keyboard by itself.
-    if (!_specialMode && _workspace.activePane != paneBefore) {
+    if (focusEditor && !_specialMode && _workspace.activePane != paneBefore) {
       _focusSelectedEditorHere();
+    }
+    if (!focusEditor) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _selectionAutofocusSuppressed = false;
+      });
+    }
+    final committed = _committedSwitchAwaitingSelection;
+    if (selectionPreview && committed?.id == id) {
+      _committedSwitchAwaitingSelection = null;
+      _commitWorkspacePreview();
+      if (committed!.focusEditor) _focusSelectedEditorHere();
     }
   }
 
@@ -1076,31 +1219,96 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Walks the selection [delta] notes along the list the sidebar is showing,
-  /// wrapping round at both ends.
-  ///
-  /// The visible list rather than every note, so a walk under an active search
-  /// stays inside the results the reader is looking at. Selecting does not
-  /// reorder anything — only editing moves a note to the top — so holding the
-  /// key down passes each note exactly once.
+  /// Previews another note in MRU order while the switching modifier is held.
+  /// The final preview is committed and focused by [_handleHardwareKey] when
+  /// that modifier is released.
   void _cycleNote(int delta) {
-    // Past the notes open in other panes: they are already on screen, and
-    // walking onto one would only move the focus sideways.
-    final panes = !_specialMode && !_usesCompactLayout;
-    final visible = [
-      for (final note in _visibleNotes)
-        if (!panes || note.id == _selectedId || _workspace.paneOf(note.id) < 0)
-          note,
-    ];
-    if (visible.length < 2) return;
-    final current = visible.indexWhere((note) => note.id == _selectedId);
-    // Nothing selected, or a selection the search has filtered out: start at
-    // whichever end the direction is coming from.
-    final next = current < 0
-        ? (delta > 0 ? 0 : visible.length - 1)
-        : (current + delta) % visible.length;
-    _select(visible[next].id);
-    _focusSelectedEditorAtEnd();
+    // Start with the exact order painted by the sidebar. Pins and shared
+    // spaces can lift rows out of the store's order, and "next" must always
+    // mean the row visibly below the active note.
+    final sidebarOrder = SidebarNoteGroups(
+      notes: _visibleNotes,
+      pinnedNoteIds: widget.notes.pinnedNoteIds,
+      sharing: widget.account?.sharing,
+      specialMode: _specialMode,
+    ).displayOrder;
+    final starting = !_noteSwitcher.isActive;
+    final next = _noteSwitcher.advance(
+      currentId: _selectedId,
+      // A note already visible in another pane is still a note the user can
+      // switch to. Selecting it activates that pane instead of duplicating it.
+      eligibleIds: sidebarOrder.map((note) => note.id),
+      delta: delta,
+    );
+    if (next == null) return;
+
+    if (starting &&
+        !_specialMode &&
+        !_usesCompactLayout &&
+        _workspace.isSplit) {
+      _noteSwitchWorkspace = _workspace.beginPreviewSession();
+    }
+
+    final action = delta < 0
+        ? ShortcutAction.previousNote
+        : ShortcutAction.nextNote;
+    _noteSwitchModifier ??= _NoteSwitchModifier.forBinding(
+      widget.shortcuts.bindingFor(action),
+    );
+    _select(
+      next,
+      focusEditor: false,
+      selectionPreview: true,
+      workspacePreview: _noteSwitchWorkspace,
+    );
+
+    // Settings requires a modifier today, but keeping this fallback makes the
+    // controller safe if that policy ever changes or a binding is migrated.
+    if (_noteSwitchModifier == null) _commitNoteSwitch();
+  }
+
+  /// Observes the modifier independently of whichever editor is mounted. A
+  /// preview replaces that editor, so tying key-up to its FocusNode would lose
+  /// the exact event that commits the switch.
+  bool _handleHardwareKey(KeyEvent event) {
+    final modifier = _noteSwitchModifier;
+    if (!_noteSwitcher.isActive ||
+        modifier == null ||
+        event is! KeyUpEvent ||
+        !modifier.matches(event.logicalKey) ||
+        modifier.isPressed(HardwareKeyboard.instance)) {
+      return false;
+    }
+    _commitNoteSwitch();
+    return false;
+  }
+
+  void _commitNoteSwitch({bool focusEditor = true}) {
+    final id = _noteSwitcher.commit();
+    _noteSwitchModifier = null;
+    if (id == null) {
+      _cancelNoteSwitchPreview();
+      return;
+    }
+
+    widget.prefs.lastOpenedNoteId = id;
+    _recordKapyActivity();
+    _reactToSelectedTotal();
+    if (_selectedId == id) {
+      _commitWorkspacePreview();
+      if (focusEditor) _focusSelectedEditorHere();
+    } else {
+      // A recording may still be flushing before the preview can replace its
+      // editor. Its guarded selection callback focuses this committed target
+      // when, and only when, that final request lands.
+      _committedSwitchAwaitingSelection = (id: id, focusEditor: focusEditor);
+    }
+  }
+
+  void _commitWorkspacePreview() {
+    final preview = _noteSwitchWorkspace;
+    _noteSwitchWorkspace = null;
+    preview?.commit();
   }
 
   /// Starts a new note, unless the one already open is a new note.
@@ -1836,6 +2044,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
+  /// Right Arrow comes after the sidebar's selection frame, so its editor is
+  /// already mounted and can take the caret immediately. Unlike the deferred
+  /// helper above, this does not depend on another frame being scheduled.
+  void _enterSelectedEditorFromSidebar() {
+    if (_editorFocusSuppressed ||
+        (_selectedId != null && _selectedId == _untouchedWelcomeId)) {
+      return;
+    }
+    final id = _selectedId;
+    if (id != null) {
+      _cancelNoteSwitchPreview();
+      widget.prefs.lastOpenedNoteId = id;
+      _recordKapyActivity();
+      _reactToSelectedTotal();
+    }
+    _selectedEditor?.focusHere();
+  }
+
   void _focusSelectedEditorHere() {
     if (_editorFocusSuppressed ||
         (_selectedId != null && _selectedId == _untouchedWelcomeId)) {
@@ -1874,11 +2100,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  List<Note> get _visibleNotes => _archiveMode
-      ? widget.notes.searchArchived(_query)
-      : _hiddenMode
-      ? widget.notes.searchHidden(_query)
-      : widget.notes.search(_query);
+  List<Note> get _visibleNotes {
+    final notes = _archiveMode
+        ? widget.notes.searchArchived(_query)
+        : _hiddenMode
+        ? widget.notes.searchHidden(_query)
+        : widget.notes.search(_query);
+    final recent = widget.prefs.recentlyOpenedNoteIds;
+    if (notes.length < 2 || recent.isEmpty) return notes;
+
+    final rank = <String, int>{
+      for (var index = 0; index < recent.length; index++) recent[index]: index,
+    };
+    final indexed = notes.indexed.toList();
+    indexed.sort((a, b) {
+      final aRank = rank[a.$2.id];
+      final bRank = rank[b.$2.id];
+      if (aRank != null && bRank != null) return aRank.compareTo(bRank);
+      if (aRank != null) return -1;
+      if (bRank != null) return 1;
+      return a.$1.compareTo(b.$1);
+    });
+    return List.unmodifiable(indexed.map((entry) => entry.$2));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1909,6 +2153,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         return ListenableBuilder(
           listenable: widget.shortcuts,
           builder: (context, _) => _DesktopShortcuts(
+            focusNode: _desktopShortcutFocus,
             shortcuts: widget.shortcuts,
             onNewNote: _createNote,
             onFindNotes: _focusGlobalSearch,
@@ -2024,7 +2269,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     displayTime: widget.prefs.displayTime,
                     searchFocusNode: _searchFocus,
                     onQueryChanged: (value) => setState(() => _query = value),
-                    onSelect: _select,
+                    onSelect: AppPlatform.isDesktop
+                        ? _selectFromSidebar
+                        : _select,
+                    onMoveSelect: AppPlatform.isDesktop
+                        ? _previewFromSidebar
+                        : null,
+                    onEnterSelected: AppPlatform.isDesktop
+                        ? _enterSelectedEditorFromSidebar
+                        : null,
                     onCreate: _createNote,
                     onOpenToSide: _specialMode ? null : _openNoteToSide,
                     openElsewhereIds: _specialMode
@@ -2487,7 +2740,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           highlighter: widget.engines.highlighter,
           gutterWidth: widget.prefs.gutterWidth,
           resultsVisible: widget.prefs.resultsVisible,
-          autofocus: active && _readyToTypeIn(note),
+          autofocus:
+              active && !_selectionAutofocusSuppressed && _readyToTypeIn(note),
           startAtEnd: active && _readyToTypeIn(note),
           initialCaret: _resumeCaretIn(note),
           onCaretChanged: (offset) =>
@@ -2542,10 +2796,52 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 }
 
+/// The modifier whose release commits a note-switch session.
+///
+/// Shift is normally only the direction reversal in Ctrl+Shift+Tab, so the
+/// first non-Shift modifier owns the session. A Shift-only custom binding
+/// still works and commits when Shift itself is released.
+enum _NoteSwitchModifier {
+  meta,
+  control,
+  alt,
+  shift;
+
+  static _NoteSwitchModifier? forBinding(ShortcutBinding? binding) {
+    if (binding == null) return null;
+    if (binding.meta) return meta;
+    if (binding.control) return control;
+    if (binding.alt) return alt;
+    if (binding.shift) return shift;
+    return null;
+  }
+
+  bool matches(LogicalKeyboardKey key) => switch (this) {
+    meta =>
+      key == LogicalKeyboardKey.metaLeft || key == LogicalKeyboardKey.metaRight,
+    control =>
+      key == LogicalKeyboardKey.controlLeft ||
+          key == LogicalKeyboardKey.controlRight,
+    alt =>
+      key == LogicalKeyboardKey.altLeft || key == LogicalKeyboardKey.altRight,
+    shift =>
+      key == LogicalKeyboardKey.shiftLeft ||
+          key == LogicalKeyboardKey.shiftRight,
+  };
+
+  bool isPressed(HardwareKeyboard keyboard) => switch (this) {
+    meta => keyboard.isMetaPressed,
+    control => keyboard.isControlPressed,
+    alt => keyboard.isAltPressed,
+    shift => keyboard.isShiftPressed,
+  };
+}
+
 /// Keyboard shortcuts that a desktop user expects to just work.
 class _DesktopShortcuts extends StatelessWidget {
   const _DesktopShortcuts({
     required this.child,
+    required this.focusNode,
     required this.onNewNote,
     required this.onFindNotes,
     required this.onNextNote,
@@ -2569,6 +2865,7 @@ class _DesktopShortcuts extends StatelessWidget {
   });
 
   final Widget child;
+  final FocusNode focusNode;
   final VoidCallback onNewNote;
   final VoidCallback onFindNotes;
   final VoidCallback onNextNote;
@@ -2636,7 +2933,7 @@ class _DesktopShortcuts extends StatelessWidget {
         ?shortcuts.bindingFor(ShortcutAction.deleteNote)?.activator:
             ?onDeleteNote,
       },
-      child: Focus(autofocus: autofocus, child: child),
+      child: Focus(focusNode: focusNode, autofocus: autofocus, child: child),
     );
   }
 }

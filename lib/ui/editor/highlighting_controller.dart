@@ -100,9 +100,16 @@ class HighlightingController extends TextEditingController {
     notifyListeners();
   }
 
-  /// The note read as markdown, or null when it is not being.
-  MarkdownAnalysis? markdownFor(String source) =>
-      _markdown ? _markdownAnalyzer.analyze(source) : null;
+  /// The note read as markdown.
+  ///
+  /// Never null. A table is drawn as a grid whether or not this device has
+  /// markdown switched on, so with the setting off this holds the note's tables
+  /// and nothing else — see [MarkdownAnalysis.tablesOnly]. Headings, lists,
+  /// code, links and spelling therefore behave exactly as they did before.
+  MarkdownAnalysis markdownFor(String source) {
+    final analysis = _markdownAnalyzer.analyze(source);
+    return _markdown ? analysis : analysis.tablesOnly;
+  }
 
   /// When hidden markdown is shown as written: blocks while the note is being
   /// edited, inline markers only then and not while the writer is typing.
@@ -121,7 +128,6 @@ class HighlightingController extends TextEditingController {
   /// What of the note's markdown is hidden right now, given the caret.
   MarkdownConcealment markdownConcealment() {
     final analysis = markdownFor(text);
-    if (analysis == null) return MarkdownConcealment.none;
     final cached = _concealment;
     if (cached != null &&
         identical(_concealedFor, analysis) &&
@@ -144,8 +150,7 @@ class HighlightingController extends TextEditingController {
   /// What the calculator reads: [source] itself, or in markdown the same
   /// text with its code blanked and its list markers made into bullets. See
   /// [MarkdownAnalysis.calculatorText].
-  String calculatorTextFor(String source) =>
-      markdownFor(source)?.calculatorText ?? source;
+  String calculatorTextFor(String source) => markdownFor(source).calculatorText;
 
   Map<int, NoteImageSpan> get imageSpans => _imageSpans;
 
@@ -184,9 +189,9 @@ class HighlightingController extends TextEditingController {
     // In markdown the calculator reads its own view of the note, and so does
     // the highlighter: colouring and evaluation have to agree on which lines
     // are calculations, and a bullet or a line of code is not one.
-    final view = markdown?.calculatorText ?? source;
+    final view = markdown.calculatorText;
     _cachedWebLinks = findNoteLinks(view);
-    _cachedLinks = markdown?.linksWith(_cachedWebLinks) ?? _cachedWebLinks;
+    _cachedLinks = markdown.linksWith(_cachedWebLinks);
     _cachedSpans = _highlighter.spans(view, links: _cachedWebLinks);
     _cachedText = source;
     return _cachedSpans;
@@ -209,7 +214,7 @@ class HighlightingController extends TextEditingController {
     for (final link in _cachedWebLinks) {
       if (range.start < link.end && range.end > link.start) return true;
     }
-    return markdownFor(source)?.isLiteral(range.start, range.end) ?? false;
+    return markdownFor(source).isLiteral(range.start, range.end);
   }
 
   @override
@@ -226,17 +231,15 @@ class HighlightingController extends TextEditingController {
     final links = linksFor(source);
     final checkedRanges = _checkedTextRanges(source);
     final analysis = markdownFor(source);
-    final markdownSpans = analysis?.spans ?? const <MarkdownSpan>[];
+    final markdownSpans = analysis.spans;
     final concealment = markdownConcealment();
     final hidden = concealment.hidden;
     final transparent = concealment.transparent;
-    final stretches = analysis == null
-        ? const <_Stretch>[]
-        : _listStretches(
-            analysis,
-            base,
-            MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling,
-          );
+    final stretches = _listStretches(
+      analysis,
+      base,
+      MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling,
+    );
     final composing = withComposing && value.isComposingRangeValid
         ? value.composing
         : null;

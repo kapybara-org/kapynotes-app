@@ -12,6 +12,7 @@ import '../glass_surface.dart';
 import '../mobile_page_swipe.dart';
 import 'editor_formatting.dart';
 import 'markdown_editing.dart';
+import 'markdown_syntax.dart';
 
 /// What a button is called, with the key that does it after a separator.
 ///
@@ -69,6 +70,12 @@ class NoteFooter extends StatelessWidget {
     required this.showIndentControls,
     required this.canIndent,
     required this.canOutdent,
+    this.onAddTableRowPressed,
+    this.onRemoveTableRowPressed,
+    this.onAddTableColumnPressed,
+    this.onRemoveTableColumnPressed,
+    this.onCycleTableAlignmentPressed,
+    this.tableAlignment,
     required this.boldActive,
     required this.italicActive,
     required this.bulletsActive,
@@ -130,6 +137,16 @@ class NoteFooter extends StatelessWidget {
   final bool showIndentControls;
   final bool canIndent;
   final bool canOutdent;
+
+  /// Present only while a cell is being edited on a phone. The ordinary text
+  /// controls stay where they are; these join the same horizontal scroller so
+  /// a narrow screen never compresses either group into untappable slivers.
+  final VoidCallback? onAddTableRowPressed;
+  final VoidCallback? onRemoveTableRowPressed;
+  final VoidCallback? onAddTableColumnPressed;
+  final VoidCallback? onRemoveTableColumnPressed;
+  final VoidCallback? onCycleTableAlignmentPressed;
+  final MarkdownCellAlign? tableAlignment;
   final bool boldActive;
   final bool italicActive;
   final bool bulletsActive;
@@ -244,15 +261,21 @@ class NoteFooter extends StatelessWidget {
                     : (onInsertImagePressed == null ? 0 : 1) +
                           (onInsertVideoPressed == null ? 0 : 1) +
                           (onRecordVoicePressed == null ? 0 : 1);
+                final showTableControls = onAddTableRowPressed != null;
                 final buttonCount = readOnly
                     ? 0
-                    : 6 + insertButtonCount + (showIndentControls ? 2 : 0);
+                    : 6 +
+                          insertButtonCount +
+                          (showIndentControls ? 2 : 0) +
+                          (showTableControls ? 5 : 0);
                 final insertFormatGap = insertButtonCount == 0
                     ? 0.0
                     : _formatGroupGap;
+                final tableGroupGap = showTableControls ? _formatGroupGap : 0.0;
                 final rowWidth =
                     buttonCount * AppControlMetrics.footerButtonSlotExtent +
-                    insertFormatGap;
+                    insertFormatGap +
+                    tableGroupGap;
                 final dismissKeyboard = AppPlatform.isMobile
                     ? onDismissKeyboardPressed
                     : null;
@@ -409,6 +432,20 @@ class NoteFooter extends StatelessWidget {
                                   bulletsActive: bulletsActive,
                                   checklistActive: checklistActive,
                                 ),
+                                if (showTableControls) ...[
+                                  SizedBox(width: _formatGroupGap),
+                                  _TableFooterControls(
+                                    onAddRow: onAddTableRowPressed!,
+                                    onRemoveRow: onRemoveTableRowPressed,
+                                    onAddColumn: onAddTableColumnPressed!,
+                                    onRemoveColumn: onRemoveTableColumnPressed,
+                                    onCycleAlignment:
+                                        onCycleTableAlignmentPressed!,
+                                    alignment:
+                                        tableAlignment ??
+                                        MarkdownCellAlign.start,
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -527,7 +564,78 @@ class NoteFooter extends StatelessWidget {
 }
 
 /// Keeps writing tools out of the way until the user reaches for them.
-///
+class _TableFooterControls extends StatelessWidget {
+  const _TableFooterControls({
+    required this.onAddRow,
+    required this.onRemoveRow,
+    required this.onAddColumn,
+    required this.onRemoveColumn,
+    required this.onCycleAlignment,
+    required this.alignment,
+  });
+
+  final VoidCallback onAddRow;
+  final VoidCallback? onRemoveRow;
+  final VoidCallback onAddColumn;
+  final VoidCallback? onRemoveColumn;
+  final VoidCallback onCycleAlignment;
+  final MarkdownCellAlign alignment;
+
+  String get _alignmentLabel => switch (alignment) {
+    MarkdownCellAlign.start => 'L',
+    MarkdownCellAlign.center => 'C',
+    MarkdownCellAlign.end => 'R',
+  };
+
+  String get _alignmentTooltip => switch (alignment) {
+    MarkdownCellAlign.start => 'Column aligned left; change to center',
+    MarkdownCellAlign.center => 'Column centered; change to right',
+    MarkdownCellAlign.end => 'Column aligned right; change to left',
+  };
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      _FormatButton(
+        key: const ValueKey('footer-table-add-row'),
+        label: 'R+',
+        tooltip: 'Add row below',
+        active: false,
+        onPressed: onAddRow,
+      ),
+      _FormatButton(
+        key: const ValueKey('footer-table-remove-row'),
+        label: 'R−',
+        tooltip: 'Remove row',
+        active: false,
+        onPressed: onRemoveRow,
+      ),
+      _FormatButton(
+        key: const ValueKey('footer-table-add-column'),
+        label: 'C+',
+        tooltip: 'Add column after',
+        active: false,
+        onPressed: onAddColumn,
+      ),
+      _FormatButton(
+        key: const ValueKey('footer-table-remove-column'),
+        label: 'C−',
+        tooltip: 'Remove column',
+        active: false,
+        onPressed: onRemoveColumn,
+      ),
+      _FormatButton(
+        key: const ValueKey('footer-table-align-column'),
+        label: _alignmentLabel,
+        tooltip: _alignmentTooltip,
+        active: alignment != MarkdownCellAlign.start,
+        onPressed: onCycleAlignment,
+      ),
+    ],
+  );
+}
+
 /// The leading button is an explicit toggle on every platform. Once opened,
 /// the tools stay put while the pointer returns to the note, matching the
 /// dependable tap-to-open behavior on touch devices.

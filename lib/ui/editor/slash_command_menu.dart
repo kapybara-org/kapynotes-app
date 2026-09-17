@@ -63,7 +63,6 @@ const _definitions = [
     description: 'Simple rows and columns',
     icon: KapyIcons.tableRounded,
     aliases: ['grid', 'rows', 'columns'],
-    requiresMarkdown: true,
   ),
   _SlashCommandDefinition(
     type: SlashCommandType.divider,

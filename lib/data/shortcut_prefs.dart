@@ -71,8 +71,9 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.newNote => 'Create and focus a blank note',
     ShortcutAction.findNotes =>
       'Search titles, nested content, and voice notes from the sidebar',
-    ShortcutAction.nextNote => 'Open the next note down the list',
-    ShortcutAction.previousNote => 'Open the note above it',
+    ShortcutAction.nextNote => 'Switch forward through recently used notes',
+    ShortcutAction.previousNote =>
+      'Switch backward through recently used notes',
     ShortcutAction.splitEditor =>
       'Open a pane beside this note, for up to three side by side',
     ShortcutAction.closePane =>

@@ -1700,37 +1700,146 @@ void main() {
     expect(find.text('Press your new shortcut'), findsNothing);
   });
 
-  testWidgets('Ctrl+Tab walks the notes list, and Shift walks it back', (
+  testWidgets(
+    'Ctrl+Tab previews, commits on Ctrl-up, and toggles recent notes',
+    (tester) async {
+      await pumpApp(tester);
+      final alpha = notes.create(body: 'alpha');
+      final bravo = notes.create(body: 'bravo');
+      final charlie = notes.create(body: 'charlie');
+      await tester.pumpAndSettle();
+
+      // Switching is its own recency order. It must not forge an edit merely to
+      // move a note to the front of that order.
+      expect(notes.notes.map((note) => note.body), [
+        'charlie',
+        'bravo',
+        'alpha',
+      ]);
+      final updatedAt = {
+        for (final note in notes.notes) note.id: note.updatedAt,
+      };
+      final openedBeforeSwitch = prefs.lastOpenedNoteId;
+
+      Future<void> tabWhileControlIsDown({bool shift = false}) async {
+        if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
+        if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pumpAndSettle();
+      }
+
+      List<String> sidebarOrder() => tester
+          .widgetList<NoteRow>(find.byType(NoteRow))
+          .map((row) => row.note.body)
+          .toList();
+
+      expect(openNoteBody(tester), 'alpha');
+      expect(openNoteField(tester).focusNode?.hasFocus, isTrue);
+      expect(sidebarOrder(), ['alpha', 'charlie', 'bravo']);
+
+      // The first session has no usage history yet, so it falls back to the
+      // visible list after the note already open. Further Tabs preview against
+      // one frozen order while Control remains down.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tabWhileControlIsDown();
+      expect(openNoteBody(tester), 'charlie');
+      expect(openNoteField(tester).focusNode?.hasFocus, isFalse);
+      expect(sidebarOrder(), ['alpha', 'charlie', 'bravo']);
+      await tabWhileControlIsDown();
+      expect(openNoteBody(tester), 'bravo');
+      expect(openNoteField(tester).focusNode?.hasFocus, isFalse);
+      expect(prefs.lastOpenedNoteId, openedBeforeSwitch);
+      expect(sidebarOrder(), ['alpha', 'charlie', 'bravo']);
+
+      // Releasing the switching modifier is the commit: the previewed editor
+      // gets focus, and this note becomes the most recently used one without
+      // disturbing the content store's newest-edited ordering.
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(openNoteField(tester).focusNode?.hasFocus, isTrue);
+      expect(prefs.lastOpenedNoteId, bravo.id);
+      expect(notes.notes.map((note) => note.id), [
+        charlie.id,
+        bravo.id,
+        alpha.id,
+      ]);
+      expect({
+        for (final note in notes.notes) note.id: note.updatedAt,
+      }, updatedAt);
+      expect(sidebarOrder(), ['bravo', 'alpha', 'charlie']);
+
+      // The note just left is now second in MRU order, so one more Ctrl+Tab is
+      // a true two-note toggle rather than another step through the sidebar.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tabWhileControlIsDown();
+      expect(openNoteBody(tester), 'alpha');
+      expect(openNoteField(tester).focusNode?.hasFocus, isFalse);
+      expect(sidebarOrder(), ['bravo', 'alpha', 'charlie']);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'alpha');
+      expect(openNoteField(tester).focusNode?.hasFocus, isTrue);
+      expect(prefs.lastOpenedNoteId, alpha.id);
+      expect(sidebarOrder(), ['alpha', 'bravo', 'charlie']);
+
+      // Shift only reverses direction. Letting go of it must not accidentally
+      // commit a Ctrl+Shift+Tab session while Control is still held.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'charlie');
+      expect(openNoteField(tester).focusNode?.hasFocus, isFalse);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+      expect(openNoteField(tester).focusNode?.hasFocus, isFalse);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(openNoteField(tester).focusNode?.hasFocus, isTrue);
+      expect(sidebarOrder(), ['charlie', 'alpha', 'bravo']);
+    },
+  );
+
+  testWidgets('Ctrl+Tab follows the visible row below a pinned note', (
     tester,
   ) async {
     await pumpApp(tester);
-    notes.create(body: 'alpha');
+    final alpha = notes.create(body: 'alpha');
     notes.create(body: 'bravo');
-    notes.create(body: 'charlie');
+    final charlie = notes.create(body: 'charlie');
     await tester.pumpAndSettle();
 
-    // Newest first. Selecting a note never reorders the list — only editing
-    // one does — so a walk passes each note exactly once.
-    expect(notes.notes.map((note) => note.body), ['charlie', 'bravo', 'alpha']);
+    await openNoteActions(tester, alpha.id);
+    await tester.tap(find.byKey(ValueKey('pin-note-${alpha.id}')));
+    await tester.pumpAndSettle();
 
-    Future<void> tab({bool shift = false}) async {
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
-      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-      await tester.pumpAndSettle();
-    }
-
+    // Opening Charlie makes the underlying MRU order Charlie, Alpha, Bravo,
+    // while the pinned section visibly paints Alpha, Charlie, Bravo. Scrubbing
+    // back to Alpha preserves that disagreement until the switch commits.
+    await tester.tap(find.widgetWithText(NoteRow, 'charlie'));
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
     expect(openNoteBody(tester), 'alpha');
-    // Off the bottom of the list and round to the top.
-    await tab();
+    expect(
+      tester
+          .widgetList<NoteRow>(find.byType(NoteRow))
+          .map((row) => row.note.body)
+          .toList(),
+      ['alpha', 'charlie', 'bravo'],
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+
     expect(openNoteBody(tester), 'charlie');
-    await tab();
-    expect(openNoteBody(tester), 'bravo');
-    await tab(shift: true);
-    expect(openNoteBody(tester), 'charlie');
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(prefs.lastOpenedNoteId, charlie.id);
   });
 
   testWidgets('Ctrl+Tab leaves a list line alone on its way past', (
@@ -1765,7 +1874,7 @@ void main() {
     await tab();
     expect(openNoteBody(tester), '  \u25e6 bravo');
 
-    // The same key carrying Ctrl belongs to the walk between notes. It has to
+    // The same key carrying Ctrl belongs to switching between notes. It has to
     // pass straight through the editor: nesting the item a second time on the
     // way out would be a keystroke nobody asked for.
     await caretOnTheListLine();
@@ -1775,6 +1884,120 @@ void main() {
       notes.notes.map((note) => note.body.trimRight()),
       contains('  \u25e6 bravo'),
     );
+  });
+
+  testWidgets('a Command-based custom note switch commits on Command-up', (
+    tester,
+  ) async {
+    shortcuts.load();
+    shortcuts.update(
+      ShortcutAction.nextNote,
+      const ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyJ,
+        physicalKey: PhysicalKeyboardKey.keyJ,
+        meta: true,
+      ),
+    );
+    await pumpApp(tester);
+    notes.create(body: 'alpha');
+    notes.create(body: 'bravo');
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyJ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyJ);
+    await tester.pumpAndSettle();
+    expect(openNoteBody(tester), 'bravo');
+    expect(openNoteField(tester).focusNode?.hasFocus, isFalse);
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+    expect(openNoteField(tester).focusNode?.hasFocus, isTrue);
+  });
+
+  testWidgets('Ctrl+Tab keeps split panes stable while switching every note', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    final alpha = notes.create(body: 'Alpha');
+    final bravo = notes.create(body: 'Bravo');
+    final charlie = notes.create(body: 'Charlie');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(NoteRow, 'Alpha'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('toolbar-split-view')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NoteRow, 'Bravo'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pane-title-0')));
+    await tester.pumpAndSettle();
+
+    List<String> panes() => [
+      for (var index = 0; index < 2; index++) bodyInPane(tester, index),
+    ];
+    String selectedRow() => tester
+        .widgetList<NoteRow>(find.byType(NoteRow))
+        .singleWhere((row) => row.selected)
+        .note
+        .body;
+    Future<void> tab() async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+    }
+
+    expect(panes(), ['Alpha', 'Bravo']);
+    expect(selectedRow(), 'Alpha');
+    expect(fieldInPane(tester, 0).focusNode!.hasFocus, isTrue);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tab();
+
+    // An already-visible note participates normally. Preview only activates
+    // its pane; it does not duplicate it or leave the caret in the old pane.
+    expect(panes(), ['Alpha', 'Bravo']);
+    expect(selectedRow(), 'Bravo');
+    expect(fieldInPane(tester, 0).focusNode!.hasFocus, isFalse);
+    expect(fieldInPane(tester, 1).focusNode!.hasFocus, isFalse);
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(prefs.lastOpenedNoteId, bravo.id);
+    expect(fieldInPane(tester, 1).focusNode!.hasFocus, isTrue);
+    expect(panes(), ['Alpha', 'Bravo']);
+
+    // Begin again in the left pane to exercise a longer held session.
+    await tester.tap(find.byKey(const ValueKey('pane-title-0')));
+    await tester.pumpAndSettle();
+    expect(prefs.lastOpenedNoteId, alpha.id);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tab();
+
+    await tab();
+
+    // Cycling onward previews an unopened note in the pane where the gesture
+    // began. The other pane remains Bravo instead of being progressively
+    // replaced as focus moves through the preview sequence.
+    expect(panes(), ['Charlie', 'Bravo']);
+    expect(selectedRow(), 'Charlie');
+    expect(fieldInPane(tester, 0).focusNode!.hasFocus, isFalse);
+    expect(fieldInPane(tester, 1).focusNode!.hasFocus, isFalse);
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(prefs.lastOpenedNoteId, charlie.id);
+    expect(fieldInPane(tester, 0).focusNode!.hasFocus, isTrue);
+    expect(panes(), ['Charlie', 'Bravo']);
+
+    // The next completed gesture returns to the note just replaced, while the
+    // neighbouring pane is still untouched.
+    await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.nextNote)!);
+    expect(prefs.lastOpenedNoteId, alpha.id);
+    expect(fieldInPane(tester, 0).focusNode!.hasFocus, isTrue);
+    expect(panes(), ['Alpha', 'Bravo']);
+    expect(notes.byId(bravo.id), isNotNull);
   });
 
   testWidgets('each pane holds one note, and a note is never open twice', (
@@ -1812,12 +2035,16 @@ void main() {
     expect(bodyInPane(tester, 0), 'Second note');
     expect(bodyInPane(tester, 1), 'Third note');
 
-    // A note already on screen is focused where it is, never opened again,
-    // and the list rings the one open beside it.
+    // A note already on screen is selected where it is, never opened again,
+    // and the list rings the one open beside it. The sidebar keeps the
+    // keyboard until Right hands it to that editor.
     await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
     await tester.pumpAndSettle();
     expect(find.byType(NoteEditor), findsNWidgets(2));
     expect(bodyInPane(tester, 1), 'Third note');
+    expect(fieldInPane(tester, 0).focusNode!.hasFocus, isFalse);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
     expect(fieldInPane(tester, 0).focusNode!.hasFocus, isTrue);
     NoteRow row(String title) =>
         tester.widget<NoteRow>(find.widgetWithText(NoteRow, title));
@@ -2479,7 +2706,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Pinned'), findsNothing);
-    expect(rowTitles(), ['Today', 'Reference']);
+    // Removing the section does not erase open recency: Reference is still
+    // the note the user most recently opened, so it remains first.
+    expect(rowTitles(), ['Reference', 'Today']);
     expect(notes.isPinned(reference.id), isFalse);
   });
 
@@ -2805,6 +3034,32 @@ void main() {
     await tester.tap(find.byKey(ValueKey('pin-note-${note.id}')));
     await tester.pumpAndSettle();
     expect(notes.isPinned(note.id), isTrue);
+  });
+
+  testWidgets('puts hiding above a red Archive note at the bottom', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    final note = notes.create(body: 'Menu order');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(NoteRow, 'Menu order'));
+    await tester.pumpAndSettle();
+    await openNoteActions(tester, note.id);
+
+    final hide = find.byKey(ValueKey('hide-note-${note.id}'));
+    final archive = find.byKey(ValueKey('archive-note-${note.id}'));
+    expect(tester.getCenter(hide).dy, lessThan(tester.getCenter(archive).dy));
+
+    final archiveLabel = find.descendant(
+      of: archive,
+      matching: find.text('Archive note'),
+    );
+    final archiveText = tester.widget<Text>(archiveLabel);
+    expect(
+      archiveText.style?.color,
+      Theme.of(tester.element(archiveLabel)).colorScheme.error,
+    );
   });
 
   testWidgets('a failed unlock leaves Hidden Notes closed', (tester) async {
@@ -3202,6 +3457,54 @@ void main() {
       );
       expect(notes.tombstones, hasLength(1));
     });
+  });
+
+  testWidgets('sidebar arrows scrub notes until Right enters the editor', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    for (final body in ['First', 'Second', 'Third']) {
+      notes.create(body: body);
+    }
+    await tester.pumpAndSettle();
+
+    String selectedTitle() => tester
+        .widgetList<NoteRow>(find.byType(NoteRow))
+        .singleWhere((row) => row.selected)
+        .note
+        .title;
+    List<String> rowTitles() => tester
+        .widgetList<NoteRow>(find.byType(NoteRow))
+        .map((row) => row.note.title)
+        .toList();
+
+    await tester.tap(find.widgetWithText(NoteRow, 'Second'));
+    await tester.pumpAndSettle();
+    expect(selectedTitle(), 'Second');
+    expect(rowTitles(), ['Second', 'First', 'Third']);
+    expect(openNoteField(tester).focusNode!.hasFocus, isFalse);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(selectedTitle(), 'Third');
+    expect(rowTitles(), ['Second', 'First', 'Third']);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(selectedTitle(), 'Second');
+
+    // The first arrow keeps the keyboard with the list, so another arrow can
+    // continue the walk without another click.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(selectedTitle(), 'Third');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    final editor = openNoteField(tester);
+    expect(editor.focusNode!.hasFocus, isTrue);
+    expect(editor.controller!.selection.isCollapsed, isTrue);
+    expect(rowTitles(), ['Third', 'Second', 'First']);
   });
 
   group('emptying the archive', () {

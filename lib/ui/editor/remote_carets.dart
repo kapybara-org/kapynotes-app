@@ -30,6 +30,8 @@ class RemoteCaretLayer extends StatefulWidget {
     required this.scroll,
     required this.editable,
     required this.hover,
+    this.tableCaretRect,
+    this.tableSelectionRects,
   });
 
   final String noteId;
@@ -42,6 +44,15 @@ class RemoteCaretLayer extends StatefulWidget {
   /// The field's render object, looked up when it is needed rather than held:
   /// the field rebuilds it whenever it likes.
   final RenderEditable? Function() editable;
+
+  /// A caret inside hidden table source has no useful rect in
+  /// [RenderEditable]. The editor supplies its painted cell rect instead, in
+  /// global coordinates.
+  final Rect? Function(int offset)? tableCaretRect;
+
+  /// Painted cell rectangles crossed by a remote selection, in global
+  /// coordinates. The field still supplies the ordinary prose rectangles.
+  final Iterable<Rect> Function(int start, int end)? tableSelectionRects;
 
   /// The pointer, in global coordinates, or null when it is not over the note.
   final ValueListenable<Offset?> hover;
@@ -152,6 +163,8 @@ class _RemoteCaretLayerState extends State<RemoteCaretLayer> {
         scroll: widget.scroll,
         hover: widget.hover,
         editable: widget.editable,
+        tableCaretRect: widget.tableCaretRect,
+        tableSelectionRects: widget.tableSelectionRects,
         brightness: Theme.of(context).brightness,
         labelStyle: DefaultTextStyle.of(context).style.merge(
           TextStyle(
@@ -177,6 +190,8 @@ class _RemoteCaretPaint extends LeafRenderObjectWidget {
     required this.scroll,
     required this.hover,
     required this.editable,
+    required this.tableCaretRect,
+    required this.tableSelectionRects,
     required this.brightness,
     required this.labelStyle,
     required this.textDirection,
@@ -188,6 +203,8 @@ class _RemoteCaretPaint extends LeafRenderObjectWidget {
   final ScrollController scroll;
   final ValueListenable<Offset?> hover;
   final RenderEditable? Function() editable;
+  final Rect? Function(int offset)? tableCaretRect;
+  final Iterable<Rect> Function(int start, int end)? tableSelectionRects;
   final Brightness brightness;
   final TextStyle labelStyle;
   final TextDirection textDirection;
@@ -200,6 +217,8 @@ class _RemoteCaretPaint extends LeafRenderObjectWidget {
     scroll: scroll,
     hover: hover,
     editable: editable,
+    tableCaretRect: tableCaretRect,
+    tableSelectionRects: tableSelectionRects,
     brightness: brightness,
     labelStyle: labelStyle,
     textDirection: textDirection,
@@ -217,6 +236,8 @@ class _RemoteCaretPaint extends LeafRenderObjectWidget {
       ..scroll = scroll
       ..hover = hover
       ..editable = editable
+      ..tableCaretRect = tableCaretRect
+      ..tableSelectionRects = tableSelectionRects
       ..brightness = brightness
       ..labelStyle = labelStyle
       ..textDirection = textDirection;
@@ -231,6 +252,8 @@ class _RenderRemoteCarets extends RenderBox {
     required ScrollController scroll,
     required ValueListenable<Offset?> hover,
     required this.editable,
+    required Rect? Function(int offset)? tableCaretRect,
+    required Iterable<Rect> Function(int start, int end)? tableSelectionRects,
     required Brightness brightness,
     required TextStyle labelStyle,
     required TextDirection textDirection,
@@ -239,11 +262,27 @@ class _RenderRemoteCarets extends RenderBox {
        _controller = controller,
        _scroll = scroll,
        _hover = hover,
+       _tableCaretRect = tableCaretRect,
+       _tableSelectionRects = tableSelectionRects,
        _brightness = brightness,
        _labelStyle = labelStyle,
        _textDirection = textDirection;
 
   RenderEditable? Function() editable;
+
+  Rect? Function(int offset)? _tableCaretRect;
+  set tableCaretRect(Rect? Function(int offset)? value) {
+    if (identical(value, _tableCaretRect)) return;
+    _tableCaretRect = value;
+    markNeedsPaint();
+  }
+
+  Iterable<Rect> Function(int start, int end)? _tableSelectionRects;
+  set tableSelectionRects(Iterable<Rect> Function(int start, int end)? value) {
+    if (identical(value, _tableSelectionRects)) return;
+    _tableSelectionRects = value;
+    markNeedsPaint();
+  }
 
   RemoteCarets _carets;
   set carets(RemoteCarets value) {
@@ -385,6 +424,10 @@ class _RenderRemoteCarets extends RenderBox {
     final visible = origin & field.size;
     final pointedAt = _hover.value;
     final pointer = pointedAt == null ? null : globalToLocal(pointedAt);
+    Rect localFromGlobal(Rect rect) => Rect.fromPoints(
+      globalToLocal(rect.topLeft),
+      globalToLocal(rect.bottomRight),
+    );
 
     final canvas = context.canvas
       ..save()
@@ -408,13 +451,19 @@ class _RenderRemoteCarets extends RenderBox {
       )) {
         canvas.drawRect(box.toRect().shift(origin), fill);
       }
+      for (final rect
+          in _tableSelectionRects?.call(start, end) ?? const <Rect>[]) {
+        canvas.drawRect(localFromGlobal(rect), fill);
+      }
     }
     canvas.restore();
 
     for (final caret in carets) {
-      final rect = field
-          .getLocalRectForCaret(TextPosition(offset: place(caret.extent)))
-          .shift(origin);
+      final at = place(caret.extent);
+      final tableRect = _tableCaretRect?.call(at);
+      final rect = tableRect == null
+          ? field.getLocalRectForCaret(TextPosition(offset: at)).shift(origin)
+          : localFromGlobal(tableRect);
       if (rect.bottom <= visible.top || rect.top >= visible.bottom) continue;
       final color = collaboratorColor(
         caret.userId,

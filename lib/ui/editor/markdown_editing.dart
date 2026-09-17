@@ -1374,3 +1374,313 @@ TextEditingValue? markdownStructureEdit(
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Tables
+//
+// Every operation here rewrites the pipes themselves, because the note is its
+// text and a table is lines of it. Offsets come from [MarkdownTable], where a
+// row runs from the start of its line to the end of it, and a cell covers only
+// its trimmed words — never the spaces padding it out. The delimiter row is not
+// one of [MarkdownTable.rows]; it is addressed on its own.
+// ---------------------------------------------------------------------------
+
+/// How many columns a table has.
+///
+/// Read from the widest row as well as the delimiter, which agree in a table
+/// this app wrote and need not in one somebody typed by hand.
+int markdownTableColumnCount(MarkdownTable table) {
+  var count = table.aligns.length;
+  for (final row in table.rows) {
+    if (row.cells.length > count) count = row.cells.length;
+  }
+  return count;
+}
+
+/// The table [offset] is in, if it is in one.
+MarkdownTable? markdownTableAt(MarkdownAnalysis analysis, int offset) {
+  for (final table in analysis.tables) {
+    if (offset >= table.start && offset <= table.end) return table;
+  }
+  return null;
+}
+
+/// Which cell [offset] is in, as a row and a column index.
+///
+/// Indexes rather than offsets, because a row with fewer fields than the table
+/// has columns is reported as several empty cells at the very same offset: a
+/// position cannot tell those apart and an index can. An offset on a divider or
+/// in a cell's padding belongs to the nearest cell to its left, so that a tap
+/// anywhere on the grid edits something. Returns null on the delimiter row,
+/// which has no cell to edit.
+({int row, int column})? markdownTableCellAt(MarkdownTable table, int offset) {
+  for (var r = 0; r < table.rows.length; r++) {
+    final row = table.rows[r];
+    if (offset < row.start || offset > row.end) continue;
+    for (var c = 0; c < row.cells.length; c++) {
+      final cell = row.cells[c];
+      if (offset >= cell.start && offset <= cell.end) {
+        return (row: r, column: c);
+      }
+    }
+    var column = 0;
+    for (var c = 0; c < row.cells.length; c++) {
+      if (row.cells[c].start <= offset) column = c;
+    }
+    return (row: r, column: column);
+  }
+  return null;
+}
+
+/// The cell Tab moves to, or null past the last one — where the caller adds a
+/// row rather than leaving the table.
+({int row, int column})? nextMarkdownTableCell(
+  MarkdownTable table, {
+  required int row,
+  required int column,
+  bool backwards = false,
+}) {
+  final columns = markdownTableColumnCount(table);
+  if (columns <= 0) return null;
+  var r = row;
+  var c = column + (backwards ? -1 : 1);
+  if (c < 0) {
+    r -= 1;
+    c = columns - 1;
+  } else if (c >= columns) {
+    r += 1;
+    c = 0;
+  }
+  if (r < 0 || r >= table.rows.length) return null;
+  return (row: r, column: c);
+}
+
+/// Replaces one cell's words.
+///
+/// A row that already has this column keeps every other character it has: the
+/// narrowest edit is the kindest to a shared note and to anyone else's caret.
+/// A short row is written out in full instead, since its missing cells all sit
+/// at one offset and an edit there would be guesswork.
+MarkdownEdit setMarkdownTableCell(
+  TextEditingValue value,
+  MarkdownTable table, {
+  required int row,
+  required int column,
+  required String text,
+}) {
+  if (row < 0 || row >= table.rows.length) {
+    return MarkdownEdit._unchanged(value);
+  }
+  final columns = markdownTableColumnCount(table);
+  if (column < 0 || column >= columns) return MarkdownEdit._unchanged(value);
+  final source = value.text;
+  final line = table.rows[row];
+  final words = _cellWords(text);
+  final fields = _rowFields(source.substring(line.start, line.end));
+  if (fields.length == columns) {
+    final cell = line.cells[column];
+    if (source.substring(cell.start, cell.end) == words) {
+      return MarkdownEdit._unchanged(value);
+    }
+    return _applyEdits(value, [_Edit(cell.start, cell.end, words)]);
+  }
+  final padded = _paddedFields(source, line, columns);
+  padded[column] = words;
+  return _applyEdits(value, [_Edit(line.start, line.end, _rowSource(padded))]);
+}
+
+/// Adds an empty row under row [after], or under the last one past the end.
+MarkdownEdit insertMarkdownTableRow(
+  TextEditingValue value,
+  MarkdownTable table, {
+  required int after,
+}) {
+  final columns = markdownTableColumnCount(table);
+  if (columns <= 0 || table.rows.isEmpty) {
+    return MarkdownEdit._unchanged(value);
+  }
+  final index = after < 0 || after >= table.rows.length
+      ? table.rows.length - 1
+      : after;
+  final at = _tableRowEnd(table, index);
+  return _applyEdits(value, [
+    _Edit(at, at, '\n${_rowSource(List.filled(columns, ''))}'),
+  ]);
+}
+
+/// Adds an empty row at the bottom, which is what Tab past the last cell does.
+MarkdownEdit appendMarkdownTableRow(
+  TextEditingValue value,
+  MarkdownTable table,
+) => insertMarkdownTableRow(value, table, after: table.rows.length - 1);
+
+/// Takes a body row out. The header stays: without one it is not a table.
+MarkdownEdit removeMarkdownTableRow(
+  TextEditingValue value,
+  MarkdownTable table, {
+  required int row,
+}) {
+  if (row <= 0 || row >= table.rows.length) {
+    return MarkdownEdit._unchanged(value);
+  }
+  final line = table.rows[row];
+  // The newline in front of it goes as well, or the table keeps a blank line
+  // where the row was and stops being one table.
+  final from = line.start > 0 ? line.start - 1 : line.start;
+  return _applyEdits(value, [_Edit(from, line.end, '')]);
+}
+
+/// Adds an empty column after column [after], or at the front past the start.
+MarkdownEdit insertMarkdownTableColumn(
+  TextEditingValue value,
+  MarkdownTable table, {
+  required int after,
+}) => _rewriteTableColumns(
+  value,
+  table,
+  insertAt: (after + 1).clamp(0, markdownTableColumnCount(table)),
+);
+
+/// Takes a column out. The last one stays.
+MarkdownEdit removeMarkdownTableColumn(
+  TextEditingValue value,
+  MarkdownTable table, {
+  required int column,
+}) {
+  final columns = markdownTableColumnCount(table);
+  if (columns <= 1 || column < 0 || column >= columns) {
+    return MarkdownEdit._unchanged(value);
+  }
+  return _rewriteTableColumns(value, table, removeAt: column);
+}
+
+/// Sets one column's alignment, which is written in the delimiter row.
+MarkdownEdit setMarkdownTableColumnAlign(
+  TextEditingValue value,
+  MarkdownTable table, {
+  required int column,
+  required MarkdownCellAlign align,
+}) {
+  final columns = markdownTableColumnCount(table);
+  if (column < 0 || column >= columns) return MarkdownEdit._unchanged(value);
+  final aligns = _paddedAligns(table, columns);
+  if (aligns[column] == align) return MarkdownEdit._unchanged(value);
+  aligns[column] = align;
+  return _applyEdits(value, [
+    _Edit(table.delimiterStart, table.delimiterEnd, _delimiterSource(aligns)),
+  ]);
+}
+
+/// Every row and the delimiter written out again, as one edit: a column belongs
+/// to all of them at once, and half a table is not one.
+MarkdownEdit _rewriteTableColumns(
+  TextEditingValue value,
+  MarkdownTable table, {
+  int? insertAt,
+  int? removeAt,
+}) {
+  final columns = markdownTableColumnCount(table);
+  if (columns <= 0) return MarkdownEdit._unchanged(value);
+  final source = value.text;
+  final edits = <_Edit>[];
+  for (final row in table.rows) {
+    final fields = _paddedFields(source, row, columns);
+    if (insertAt != null) fields.insert(insertAt, '');
+    if (removeAt != null) fields.removeAt(removeAt);
+    edits.add(_Edit(row.start, row.end, _rowSource(fields)));
+  }
+  final aligns = _paddedAligns(table, columns);
+  if (insertAt != null) aligns.insert(insertAt, MarkdownCellAlign.start);
+  if (removeAt != null) aligns.removeAt(removeAt);
+  edits.add(
+    _Edit(table.delimiterStart, table.delimiterEnd, _delimiterSource(aligns)),
+  );
+  return _applyEdits(value, edits);
+}
+
+/// Where a row ends for the purpose of putting another one after it. The header
+/// owns the delimiter under it, so a row added "after the header" goes below
+/// that and not between the two.
+int _tableRowEnd(MarkdownTable table, int index) {
+  final row = table.rows[index];
+  return row.header ? table.delimiterEnd : row.end;
+}
+
+/// The fields of one row's source, split on its unescaped pipes.
+///
+/// The outer pipes are the fence around the row rather than separators, and a
+/// `\|` is a pipe in the words and never a divider.
+List<String> _rowFields(String source) {
+  var from = 0;
+  var to = source.length;
+  while (from < to && _isSpace(source.codeUnitAt(from))) {
+    from++;
+  }
+  while (to > from && _isSpace(source.codeUnitAt(to - 1))) {
+    to--;
+  }
+  if (from < to && source.codeUnitAt(from) == 0x7C) from++;
+  if (to > from && source.codeUnitAt(to - 1) == 0x7C) to--;
+
+  final fields = <String>[];
+  final field = StringBuffer();
+  var escaped = false;
+  for (var i = from; i < to; i++) {
+    final unit = source.codeUnitAt(i);
+    if (escaped) {
+      field.writeCharCode(unit);
+      escaped = false;
+      continue;
+    }
+    if (unit == 0x5C) {
+      field.writeCharCode(unit);
+      escaped = true;
+      continue;
+    }
+    if (unit == 0x7C) {
+      fields.add(field.toString().trim());
+      field.clear();
+      continue;
+    }
+    field.writeCharCode(unit);
+  }
+  fields.add(field.toString().trim());
+  return fields;
+}
+
+/// [row]'s fields padded out to [columns], so a short row gains the empty cells
+/// it was missing and a long one is cut to fit.
+List<String> _paddedFields(String text, MarkdownTableRow row, int columns) {
+  final fields = _rowFields(text.substring(row.start, row.end));
+  if (fields.length >= columns) return fields.sublist(0, columns);
+  return [...fields, for (var i = fields.length; i < columns; i++) ''];
+}
+
+List<MarkdownCellAlign> _paddedAligns(MarkdownTable table, int columns) => [
+  for (var c = 0; c < columns; c++)
+    table.aligns.elementAtOrNull(c) ?? MarkdownCellAlign.start,
+];
+
+/// One row written out, in the shape [markdownTableTemplate] writes.
+String _rowSource(List<String> cells) => '| ${cells.join(' | ')} |';
+
+String _delimiterSource(List<MarkdownCellAlign> aligns) =>
+    '| ${aligns.map(_alignSource).join(' | ')} |';
+
+/// Left is written as the bare `---`, the way a table is written by hand and by
+/// [markdownTableTemplate]: it is the default, and `:---` says nothing more.
+String _alignSource(MarkdownCellAlign align) => switch (align) {
+  MarkdownCellAlign.start => '---',
+  MarkdownCellAlign.center => ':---:',
+  MarkdownCellAlign.end => '---:',
+};
+
+/// Words as they can live inside a cell: no line breaks, and a pipe escaped so
+/// it stays in the words instead of becoming another divider.
+///
+/// Deliberately not trimmed. This runs on every keystroke of a cell being
+/// edited, and dropping a trailing space would stop a second word being typed.
+String _cellWords(String text) => text
+    .replaceAll('\r\n', ' ')
+    .replaceAll('\n', ' ')
+    .replaceAll(RegExp(r'(?<!\\)\|'), r'\|');

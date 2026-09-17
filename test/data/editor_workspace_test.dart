@@ -205,6 +205,71 @@ void main() {
     );
   });
 
+  test('a preview session switches every note from one stable pane layout', () {
+    final store = _MemoryStore();
+    final workspace = _opened('alpha', store: store)
+      ..openToSide('bravo')
+      ..activate(0);
+    final preview = workspace.beginPreviewSession();
+
+    expect(preview.preview('bravo'), isTrue);
+    expect(_notesIn(workspace), ['alpha', 'bravo']);
+    expect(workspace.activePane, 1);
+
+    expect(preview.displacedBy('charlie'), 'alpha');
+    expect(preview.preview('charlie'), isTrue);
+    expect(_notesIn(workspace), ['charlie', 'bravo']);
+    expect(workspace.activePane, 0);
+    expect((store.data[EditorWorkspace.storeKey] as Map)['panes'], [
+      'alpha',
+      'bravo',
+    ], reason: 'a transient preview is not the restorable workspace yet');
+
+    expect(preview.preview('alpha'), isTrue);
+    expect(_notesIn(workspace), ['alpha', 'bravo']);
+    expect(workspace.activePane, 0);
+
+    expect(preview.preview('charlie'), isTrue);
+    expect(preview.commit(), isTrue);
+    expect(preview.isActive, isFalse);
+    expect(_notesIn(workspace), ['charlie', 'bravo']);
+    expect((store.data[EditorWorkspace.storeKey] as Map)['panes'], [
+      'charlie',
+      'bravo',
+    ]);
+  });
+
+  test('canceling a preview restores notes, focus, and widths', () {
+    final workspace = _opened('alpha')
+      ..openToSide('bravo')
+      ..weights = [0.6, 0.4]
+      ..activate(0);
+    final preview = workspace.beginPreviewSession();
+
+    preview.preview('charlie');
+    expect(_notesIn(workspace), ['charlie', 'bravo']);
+    expect(preview.cancel(), isTrue);
+
+    expect(_notesIn(workspace), ['alpha', 'bravo']);
+    expect(workspace.activePane, 0);
+    expect(workspace.weights, [0.6, 0.4]);
+    expect(preview.preview('delta'), isFalse);
+  });
+
+  test('a three-pane preview only replaces its original active pane', () {
+    final workspace = _threeOpen()..activate(1);
+    final preview = workspace.beginPreviewSession();
+
+    preview.preview('alpha');
+    expect(_notesIn(workspace), ['alpha', 'bravo', 'charlie']);
+    expect(workspace.activePane, 0);
+
+    preview.preview('delta');
+    expect(_notesIn(workspace), ['alpha', 'delta', 'charlie']);
+    expect(workspace.activePane, 1);
+    preview.commit();
+  });
+
   test(
     'a note that goes away closes its pane, and the last one falls back',
     () {

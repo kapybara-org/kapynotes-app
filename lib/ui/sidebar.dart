@@ -71,6 +71,8 @@ class Sidebar extends StatelessWidget {
     required this.onQueryChanged,
     required this.onSelect,
     required this.onCreate,
+    this.onMoveSelect,
+    this.onEnterSelected,
     this.onOpenToSide,
     this.openElsewhereIds = const {},
     this.onArchive,
@@ -122,6 +124,14 @@ class Sidebar extends StatelessWidget {
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<String> onSelect;
   final VoidCallback onCreate;
+
+  /// Selects a row reached by sidebar arrow keys without committing its MRU
+  /// position. Null uses [onSelect], as compact layouts do.
+  final ValueChanged<String>? onMoveSelect;
+
+  /// Hands the selected desktop note from the list to its editor. Null on
+  /// layouts where choosing a row already leaves the sidebar.
+  final VoidCallback? onEnterSelected;
 
   /// Puts a note in a pane beside the focused one, and is what lets rows be
   /// dragged onto the panes. Null in the compact and archive layouts, where
@@ -240,6 +250,8 @@ class Sidebar extends StatelessWidget {
               ),
             Expanded(
               child: _NoteListKeys(
+                onMoveSelected: _moveSelected,
+                onEnterSelected: onEnterSelected,
                 onArchiveSelected: _archiveSelected,
                 onDeleteSelected: _deleteSelected,
                 child: notes.isEmpty
@@ -413,6 +425,23 @@ extension on Sidebar {
     return () => onDelete!(note.id);
   }
 
+  /// Moves the highlight in the same order the rows are painted.
+  ///
+  /// This is deliberately owned by the sidebar rather than the window-wide
+  /// next-note shortcut: sections can lift pinned and shared notes out of the
+  /// store's order, and an arrow key must follow what is visibly above or
+  /// below the current row.
+  void _moveSelected(int delta) {
+    if (selecting) return;
+    final ordered = _grouped ? _noteGroups.displayOrder : notes;
+    if (ordered.length < 2) return;
+    final current = ordered.indexWhere((note) => note.id == selectedId);
+    final next = current < 0
+        ? (delta > 0 ? 0 : ordered.length - 1)
+        : (current + delta) % ordered.length;
+    (onMoveSelect ?? onSelect)(ordered[next].id);
+  }
+
   Widget _row(
     Note note, {
     required bool shared,
@@ -464,35 +493,20 @@ extension on Sidebar {
   ///
   /// A note appears once. Pinning lifts it out of whichever section it would
   /// otherwise have been in rather than repeating it there.
+  SidebarNoteGroups get _noteGroups => SidebarNoteGroups(
+    notes: notes,
+    pinnedNoteIds: pinnedNoteIds,
+    sharing: sharing,
+    specialMode: _specialMode,
+  );
+
   Widget _buildGrouped(BuildContext context) {
-    final pinned = archiveMode
-        ? const <Note>[]
-        : notes.where((note) => pinnedNoteIds.contains(note.id)).toList();
-    final pinnedIds = pinned.map((note) => note.id).toSet();
-    final remaining = notes
-        .where((note) => !pinnedIds.contains(note.id))
-        .toList();
-    final hasSharedSections =
-        sharing != null && notes.any((note) => note.isShared);
-    final mine = hasSharedSections
-        ? remaining.where((note) => !note.isShared).toList()
-        : remaining;
-    final bySpace = <String?, List<Note>>{};
-    if (hasSharedSections) {
-      for (final note in remaining) {
-        if (note.isShared) {
-          bySpace.putIfAbsent(note.spaceId, () => []).add(note);
-        }
-      }
-    }
-    final order = <String?>[
-      if (sharing != null)
-        for (final space in sharing!.teams)
-          if (bySpace.containsKey(space.id)) space.id,
-      for (final id in bySpace.keys)
-        if (sharing == null || !sharing!.teams.any((space) => space.id == id))
-          id,
-    ];
+    final groups = _noteGroups;
+    final pinned = groups.pinned;
+    final mine = groups.mine;
+    final bySpace = groups.bySpace;
+    final order = groups.spaceOrder;
+    final hasSharedSections = groups.hasSharedSections;
     final extent = AppControlMetrics.scaleBar(
       context,
       AppControlMetrics.sidebarNoteRowExtent,
@@ -603,10 +617,18 @@ extension on Sidebar {
 /// on-screen keyboard to this.
 class _NoteListKeys extends StatefulWidget {
   const _NoteListKeys({
+    required this.onMoveSelected,
+    required this.onEnterSelected,
     required this.onArchiveSelected,
     required this.onDeleteSelected,
     required this.child,
   });
+
+  /// Walks the highlight by one visible row. Negative is up, positive down.
+  final ValueChanged<int> onMoveSelected;
+
+  /// Moves focus from the selected row into its editor.
+  final VoidCallback? onEnterSelected;
 
   /// Files the highlighted note away, exactly as its own glyph does. Null
   /// where nothing in the list can be archived.
@@ -657,7 +679,60 @@ class _NoteListKeysState extends State<_NoteListKeys> {
         : !keyboard.isMetaPressed;
   }
 
+  /// Bare vertical arrows belong to the list while it holds the keyboard.
+  /// Repeats are welcome here: holding an arrow is how long lists are walked.
+  static int? _movement(KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return null;
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isMetaPressed ||
+        keyboard.isControlPressed ||
+        keyboard.isAltPressed ||
+        keyboard.isShiftPressed) {
+      return null;
+    }
+    return switch (event.logicalKey) {
+      LogicalKeyboardKey.arrowUp => -1,
+      LogicalKeyboardKey.arrowDown => 1,
+      _ => null,
+    };
+  }
+
+  static bool _entersEditor(KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.arrowRight) {
+      return false;
+    }
+    final keyboard = HardwareKeyboard.instance;
+    return !keyboard.isMetaPressed &&
+        !keyboard.isControlPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isShiftPressed;
+  }
+
+  void _keepFocus() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _node.requestFocus();
+    });
+  }
+
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (_entersEditor(event)) {
+      final enter = widget.onEnterSelected;
+      if (enter == null) return KeyEventResult.ignored;
+      enter();
+      return KeyEventResult.handled;
+    }
+
+    final movement = _movement(event);
+    if (movement != null) {
+      widget.onMoveSelected(movement);
+      // A newly mounted editor may ask for autofocus as the note changes.
+      // The arrow came from the list, so leave the keyboard here for the next
+      // press instead of turning it into caret movement halfway through.
+      _keepFocus();
+      return KeyEventResult.handled;
+    }
+
     if (!_removes(event)) return KeyEventResult.ignored;
 
     // The archive's delete puts a question on screen, and that dialog hands
@@ -677,9 +752,7 @@ class _NoteListKeysState extends State<_NoteListKeys> {
     // note instead of archiving it. Asking for the keyboard back afterwards
     // is answered after that, post-frame callbacks running in the order they
     // were asked for.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _node.requestFocus();
-    });
+    _keepFocus();
     return KeyEventResult.handled;
   }
 
@@ -719,6 +792,56 @@ class _GroupedNote extends _GroupedEntry {
   final Note note;
   final bool shared;
   final bool pinned;
+}
+
+/// The note-only shape of the grouped list, shared by painting and keyboard
+/// navigation so the row above on screen is also the row Arrow Up selects.
+class SidebarNoteGroups {
+  SidebarNoteGroups({
+    required List<Note> notes,
+    required Set<String> pinnedNoteIds,
+    required Sharing? sharing,
+    required bool specialMode,
+  }) : pinned = specialMode
+           ? const []
+           : notes.where((note) => pinnedNoteIds.contains(note.id)).toList(),
+       hasSharedSections =
+           sharing != null && notes.any((note) => note.isShared) {
+    final pinnedIds = pinned.map((note) => note.id).toSet();
+    final remaining = notes
+        .where((note) => !pinnedIds.contains(note.id))
+        .toList();
+    mine = hasSharedSections
+        ? remaining.where((note) => !note.isShared).toList()
+        : remaining;
+    if (hasSharedSections) {
+      for (final note in remaining) {
+        if (note.isShared) {
+          bySpace.putIfAbsent(note.spaceId, () => []).add(note);
+        }
+      }
+    }
+    spaceOrder = <String?>[
+      if (sharing != null)
+        for (final space in sharing.teams)
+          if (bySpace.containsKey(space.id)) space.id,
+      for (final id in bySpace.keys)
+        if (sharing == null || !sharing.teams.any((space) => space.id == id))
+          id,
+    ];
+  }
+
+  final List<Note> pinned;
+  late final List<Note> mine;
+  final Map<String?, List<Note>> bySpace = {};
+  late final List<String?> spaceOrder;
+  final bool hasSharedSections;
+
+  List<Note> get displayOrder => [
+    ...pinned,
+    for (final id in spaceOrder) ...bySpace[id]!,
+    ...mine,
+  ];
 }
 
 /// A heading over a group of notes. Small and quiet: the notes are the
@@ -1661,13 +1784,6 @@ class _NoteRowState extends State<NoteRow> {
           label: widget.shared ? 'Manage sharing' : 'Share note',
           icon: KapyIcons.peopleOutlined,
         ),
-      if (widget.onArchive != null)
-        _NoteActionChoice(
-          value: 'archive',
-          label: 'Archive note',
-          icon: archiveIcon,
-          hint: archiveShortcut?.displayLabel,
-        ),
       if (widget.onHide != null)
         const _NoteActionChoice(
           value: 'hide',
@@ -1693,6 +1809,17 @@ class _NoteRowState extends State<NoteRow> {
           value: 'unhide',
           label: 'Move to Notes',
           icon: unhideIcon,
+        ),
+      // Filing a note away is the destructive end of the ordinary note menu:
+      // keep it last, after the protected-folder alternative, and use the
+      // same warning colour as the permanent action in Archived Notes.
+      if (widget.onArchive != null)
+        _NoteActionChoice(
+          value: 'archive',
+          label: 'Archive note',
+          icon: archiveIcon,
+          hint: archiveShortcut?.displayLabel,
+          destructive: true,
         ),
     ];
   }
