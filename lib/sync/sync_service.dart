@@ -1111,6 +1111,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       body: note.body,
       formats: note.formats,
       attachments: note.attachments,
+      drawing: note.drawing,
       createdAt: note.createdAt,
       archivedAt: note.archivedAt,
       hiddenAt: note.hiddenAt,
@@ -1133,6 +1134,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       body: note.body,
       formats: note.formats,
       attachments: note.attachments,
+      drawing: note.drawing,
       createdAt: note.createdAt,
       archivedAt: note.archivedAt,
       hiddenAt: note.hiddenAt,
@@ -1744,6 +1746,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       body: view.body,
       formats: view.formats,
       attachments: view.attachments,
+      drawing: view.drawing,
       createdAt: view.createdAt ?? local?.createdAt ?? at,
       updatedAt: at,
       archivedAt: view.archivedAt,
@@ -1756,7 +1759,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     );
 
     final before = touch.localBefore;
-    if (touch.arrived && before != null && before.body != view.body) {
+    if (touch.arrived &&
+        before != null &&
+        (before.body != view.body || before.drawing != view.drawing)) {
       // The first time this note's history reaches a device that already
       // holds a copy of its own. Newer local words go onto the document as
       // ops; older ones are kept beside it rather than lost — once, here,

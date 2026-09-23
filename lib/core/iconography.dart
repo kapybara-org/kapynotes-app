@@ -476,4 +476,47 @@ class KapyIcons {
     HugeIcons.strokeRoundedMinusSign,
   );
   static const codeRounded = KapyIconData(0xE070, HugeIcons.strokeRoundedCode);
+
+  // The drawing canvas.
+  static const drawModeRounded = KapyIconData(
+    0xE071,
+    HugeIcons.strokeRoundedDrawingMode,
+  );
+  static const selectRounded = KapyIconData(
+    0xE072,
+    HugeIcons.strokeRoundedCursor02,
+  );
+  static const penRounded = KapyIconData(0xE073, HugeIcons.strokeRoundedPencil);
+  static const rectangleRounded = KapyIconData(
+    0xE074,
+    HugeIcons.strokeRoundedSquare,
+  );
+  static const arrowRounded = KapyIconData(
+    0xE075,
+    HugeIcons.strokeRoundedArrowUpRight01,
+  );
+  static const lineRounded = KapyIconData(
+    0xE076,
+    HugeIcons.strokeRoundedSolidLine01,
+  );
+  static const eraserRounded = KapyIconData(
+    0xE077,
+    HugeIcons.strokeRoundedEraser,
+  );
+  static const undoRounded = KapyIconData(
+    0xE078,
+    HugeIcons.strokeRoundedUndo02,
+  );
+  static const redoRounded = KapyIconData(
+    0xE079,
+    HugeIcons.strokeRoundedRedo02,
+  );
+  static const panRounded = KapyIconData(
+    0xE07A,
+    HugeIcons.strokeRoundedHandGrab,
+  );
+  static const fitRounded = KapyIconData(
+    0xE07B,
+    HugeIcons.strokeRoundedZoomInArea,
+  );
 }

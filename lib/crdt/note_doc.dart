@@ -1,4 +1,5 @@
 import '../data/note_attachment.dart';
+import '../data/note_drawing.dart';
 import '../data/note_format.dart';
 import 'anchor.dart';
 import 'fugue_text.dart';
@@ -16,6 +17,7 @@ class DocView {
     required this.body,
     required this.formats,
     required this.attachments,
+    this.drawing,
     required this.createdAt,
     required this.archivedAt,
     required this.hiddenAt,
@@ -24,6 +26,7 @@ class DocView {
   final String body;
   final List<NoteFormatRange> formats;
   final List<NoteAttachmentRef> attachments;
+  final NoteDrawing? drawing;
   final DateTime? createdAt;
   final DateTime? archivedAt;
   final DateTime? hiddenAt;
@@ -87,6 +90,12 @@ class _InsertRun {
 /// applied to when someone else types above it. The side tables themselves
 /// are whole-value LWW registers rather than per-range CRDTs: a formatting
 /// conflict is rare, cosmetic, and cheaper to lose than to model.
+///
+/// A drawing is a map of LWW registers, one per element under `e:<id>`, with
+/// null for an element that was erased, plus `draw` saying the note is a
+/// drawing at all. Per element, not one register for the canvas: two people
+/// drawing at once must both keep their strokes. Builds from before drawings
+/// hold unknown registers and snapshot them back out untouched.
 class NoteDoc {
   /// An empty document for [replica]. Replica ids must be unique per device
   /// (and per install — reusing one after a reinstall would reuse counters).
@@ -105,6 +114,8 @@ class NoteDoc {
   static const String _createdKey = 'created';
   static const String _archivedKey = 'archived';
   static const String _hiddenKey = 'hidden';
+  static const String _drawKey = 'draw';
+  static const String _elementPrefix = 'e:';
 
   final String replica;
 
@@ -145,6 +156,7 @@ class NoteDoc {
     body: text,
     formats: _renderFormats(),
     attachments: _renderAttachments(),
+    drawing: _renderDrawing(),
     createdAt: _createdAt(),
     archivedAt: _archivedAt(),
     hiddenAt: _hiddenAt(),
@@ -161,10 +173,15 @@ class NoteDoc {
   /// then an insert run. Formats and attachments are compared *as rendered*
   /// against what was passed in, so handing back `view.formats` unchanged
   /// costs nothing, and only a real change re-anchors and emits a register.
+  ///
+  /// [drawing] is the whole canvas, element by element; null means a written
+  /// note, and erases any canvas the document holds. A caller holding a
+  /// drawing note must therefore always pass its drawing along.
   List<Object?> reconcile({
     required String body,
     required List<NoteFormatRange> formats,
     required List<NoteAttachmentRef> attachments,
+    NoteDrawing? drawing,
     required DateTime createdAt,
     DateTime? archivedAt,
     DateTime? hiddenAt,
@@ -212,6 +229,26 @@ class NoteDoc {
         ops.add(
           _setLocal(_attKey, _anchorAttachments(wantedAttachments), nowMs),
         );
+      }
+    }
+
+    final isDrawing = drawing == null ? null : 1;
+    if ((isDrawing != null || _regs.containsKey(_drawKey)) &&
+        _regs[_drawKey]?.value != isDrawing) {
+      ops.add(_setLocal(_drawKey, isDrawing, nowMs));
+    }
+    if (drawing != null || _regs.containsKey(_drawKey)) {
+      final current = {for (final e in _drawingElements()) e.id: e};
+      for (final element in drawing?.elements ?? const <DrawElement>[]) {
+        if (current.remove(element.id) != element) {
+          ops.add(
+            _setLocal('$_elementPrefix${element.id}', element.toJson(), nowMs),
+          );
+        }
+      }
+      // What is left was erased.
+      for (final id in current.keys) {
+        ops.add(_setLocal('$_elementPrefix$id', null, nowMs));
       }
     }
 
@@ -580,6 +617,22 @@ class NoteDoc {
       if (ref != null) refs.add(ref);
     }
     return normalizeNoteAttachments(refs, body);
+  }
+
+  NoteDrawing? _renderDrawing() {
+    if (_regs[_drawKey]?.value != 1) return null;
+    return NoteDrawing(_drawingElements());
+  }
+
+  Iterable<DrawElement> _drawingElements() sync* {
+    for (final entry in _regs.entries) {
+      if (!entry.key.startsWith(_elementPrefix)) continue;
+      final element = DrawElement.fromJson(
+        entry.key.substring(_elementPrefix.length),
+        entry.value.value,
+      );
+      if (element != null) yield element;
+    }
   }
 
   DateTime? _createdAt() {

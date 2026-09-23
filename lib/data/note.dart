@@ -2,10 +2,12 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'note_attachment.dart';
+import 'note_drawing.dart';
 import 'note_format.dart';
 
 const Object _keepArchivedAt = Object();
 const Object _keepHiddenAt = Object();
+const Object _keepDrawing = Object();
 
 /// A single note. Its title is derived from [body] rather than stored, so it
 /// can never drift out of sync with the text.
@@ -20,6 +22,15 @@ class Note {
   /// the note's content: it has to move, sync, export and be thrown away with
   /// it, and every one of those paths already carries a [Note].
   final List<NoteAttachmentRef> attachments;
+
+  /// The canvas, when this is a drawing rather than written text; null for a
+  /// written note.
+  ///
+  /// A note is one or the other, chosen while it is still new. A drawing's
+  /// [body] is only its title, so a build from before drawings still lists it
+  /// by name — and syncs its canvas along untouched, because it lives in the
+  /// note's document rather than in this model.
+  final NoteDrawing? drawing;
 
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -77,6 +88,7 @@ class Note {
     required this.body,
     this.formats = const [],
     this.attachments = const [],
+    this.drawing,
     required this.createdAt,
     required this.updatedAt,
     this.archivedAt,
@@ -89,17 +101,20 @@ class Note {
   });
 
   static const String untitled = 'New Note';
+  static const String untitledDrawing = 'Drawing';
   static const int _titleLimit = 60;
 
   /// True when this note is in a shared space rather than the personal one.
   bool get isShared => spaceId != null;
   bool get isArchived => archivedAt != null;
   bool get isHidden => hiddenAt != null;
+  bool get isDrawing => drawing != null;
 
   Note copyWith({
     String? body,
     List<NoteFormatRange>? formats,
     List<NoteAttachmentRef>? attachments,
+    Object? drawing = _keepDrawing,
     DateTime? updatedAt,
     Object? archivedAt = _keepArchivedAt,
     Object? hiddenAt = _keepHiddenAt,
@@ -108,6 +123,9 @@ class Note {
     body: body ?? this.body,
     formats: formats ?? this.formats,
     attachments: attachments ?? this.attachments,
+    drawing: identical(drawing, _keepDrawing)
+        ? this.drawing
+        : drawing as NoteDrawing?,
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     archivedAt: identical(archivedAt, _keepArchivedAt)
@@ -130,6 +148,7 @@ class Note {
     body: body,
     formats: formats,
     attachments: attachments,
+    drawing: drawing,
     createdAt: createdAt,
     updatedAt: updatedAt,
     archivedAt: archivedAt,
@@ -155,6 +174,7 @@ class Note {
     body: body,
     formats: formats,
     attachments: attachments,
+    drawing: drawing,
     createdAt: createdAt,
     updatedAt: at,
     archivedAt: archivedAt,
@@ -177,6 +197,7 @@ class Note {
     body: body,
     formats: formats,
     attachments: attachments,
+    drawing: drawing,
     createdAt: createdAt,
     updatedAt: updatedAt,
     archivedAt: archivedAt,
@@ -210,8 +231,9 @@ class Note {
   /// transcribed yet, so those wait as [untitled] until there is something to
   /// go on.
   String get title {
+    final fallback = isDrawing ? untitledDrawing : untitled;
     final spoken = _firstNonEmptyLine() ?? _spokenTitle();
-    if (spoken == null) return untitled;
+    if (spoken == null) return fallback;
 
     var text = spoken.trimLeft();
     text = text.replaceFirst(RegExp(r'^#{1,6}\s*'), '');
@@ -219,14 +241,16 @@ class Note {
     if (text.endsWith(':')) {
       text = text.substring(0, text.length - 1).trimRight();
     }
-    if (text.isEmpty) return untitled;
+    if (text.isEmpty) return fallback;
 
     return text.length > _titleLimit
         ? '${text.substring(0, _titleLimit).trimRight()}…'
         : text;
   }
 
-  bool get isEmpty => body.trim().isEmpty;
+  /// No words, and no strokes if it is a drawing. A blank canvas is as empty
+  /// as a blank page.
+  bool get isEmpty => body.trim().isEmpty && (drawing?.isEmpty ?? true);
 
   /// Case-insensitive match across every piece of searchable note content.
   ///
@@ -396,6 +420,7 @@ class Note {
       'formats': formats.map((format) => format.toJson()).toList(),
     if (attachments.isNotEmpty)
       'attachments': attachments.map((ref) => ref.toJson()).toList(),
+    if (drawing != null) 'drawing': drawing!.toJson(),
     'createdAt': createdAt.millisecondsSinceEpoch,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
     if (archivedAt != null) 'archivedAt': archivedAt!.millisecondsSinceEpoch,
@@ -423,6 +448,7 @@ class Note {
       body: body,
       formats: noteFormatsFromJson(raw['formats'], body.length),
       attachments: noteAttachmentsFromJson(raw['attachments'], body),
+      drawing: NoteDrawing.fromJson(raw['drawing']),
       createdAt: _date(raw['createdAt']),
       updatedAt: _date(raw['updatedAt']),
       archivedAt: _optionalDate(raw['archivedAt']),
