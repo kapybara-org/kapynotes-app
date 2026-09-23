@@ -25,7 +25,10 @@ import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_image_view.dart';
+import 'package:kapy_notes/ui/editor/file_chip.dart';
 import 'package:kapy_notes/ui/editor/note_video_view.dart';
+import 'package:kapy_notes/files/file_ingest.dart';
+import 'package:kapy_notes/files/file_opener.dart';
 import 'package:kapy_notes/video/video_ingest.dart';
 import 'package:kapy_notes/video/video_picker.dart';
 import 'package:material_ui/material_ui.dart';
@@ -206,6 +209,7 @@ Widget harness(
   VideoFileAcquirer? videoAcquirer,
   VideoBatchIngestor? videoIngestor,
   int Function()? videoAttachmentMaxBytes,
+  FileBatchIngestor? fileIngestor,
   AttachmentUploadProgressFor? uploadProgressFor,
   bool startAtEnd = false,
   bool readOnly = false,
@@ -228,6 +232,7 @@ Widget harness(
       videoAcquirer: videoAcquirer,
       videoIngestor: videoIngestor,
       videoAttachmentMaxBytes: videoAttachmentMaxBytes,
+      fileIngestor: fileIngestor,
       uploadProgressFor: uploadProgressFor,
       startAtEnd: startAtEnd,
       readOnly: readOnly,
@@ -629,6 +634,199 @@ void main() {
     },
   );
 
+  NoteFileRef pdfAt(int offset, {String name = 'Q3 report.pdf'}) => NoteFileRef(
+    offset: offset,
+    hash: 'file-that-is-not-local',
+    key: Uint8List(32),
+    mime: 'application/pdf',
+    bytes: 2400000,
+    name: name,
+  );
+
+  testWidgets('a dropped document becomes a file chip on its own line', (
+    tester,
+  ) async {
+    final editorKey = GlobalKey<NoteEditorState>();
+    List<NoteAttachmentRef>? latest;
+    await tester.pumpWidget(
+      harness(
+        'Taxes',
+        attachments: const [],
+        editorKey: editorKey,
+        startAtEnd: true,
+        onAttachmentsChanged: (refs) => latest = refs,
+        fileIngestor: (files, _) async => FileBatch(
+          files: [pdfAt(0, name: files.single.name)],
+          rejections: const [],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    unawaited(
+      editorKey.currentState!.insertDroppedMedia([
+        // Drops arrive with a path; the name is read from it.
+        XFile('/Users/someone/Desktop/Q3 report.pdf'),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NoteFileChip), findsOneWidget);
+    expect(find.text('Q3 report.pdf'), findsOneWidget);
+    expect(find.text('2.3 MB'), findsOneWidget);
+    expect(latest!.single, isA<NoteFileRef>());
+    // After the writing, never beside it.
+    expect(latest!.single.offset, greaterThan('Taxes'.length));
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('a dropped folder is refused by name with what to do instead', (
+    tester,
+  ) async {
+    final editorKey = GlobalKey<NoteEditorState>();
+    await tester.pumpWidget(
+      harness(
+        'a note',
+        attachments: const [],
+        editorKey: editorKey,
+        fileIngestor: (_, _) async => const FileBatch(
+          files: [],
+          rejections: [(name: 'Photos', reason: FileRejection.directory)],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    unawaited(
+      editorKey.currentState!.insertDroppedMedia([
+        XFile.fromData(Uint8List(0), name: 'Photos'),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Photos is a folder'), findsOneWidget);
+    expect(find.byType(NoteFileChip), findsNothing);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('removing a file chip takes it out of the note', (tester) async {
+    List<NoteAttachmentRef>? latest;
+    await tester.pumpWidget(
+      harness(
+        '$anchor\n',
+        attachments: [pdfAt(0)],
+        onAttachmentsChanged: (refs) => latest = refs,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('remove-note-file')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NoteFileChip), findsNothing);
+    expect(latest, isEmpty);
+  });
+
+  group('NoteFileChip', () {
+    Widget chip({
+      required bool canOpen,
+      required FileHandoff open,
+      required FileHandoff save,
+      NoteFileRef? ref,
+    }) => MaterialApp(
+      theme: KapyTheme.dark(),
+      home: Scaffold(
+        body: NoteFileChip(
+          ref: ref ?? pdfAt(0),
+          store: store,
+          canOpen: canOpen,
+          open: open,
+          save: save,
+        ),
+      ),
+    );
+
+    testWidgets('opens on a desktop and saves on a phone', (tester) async {
+      final calls = <String>[];
+      Future<FileHandoffOutcome> record(String what) async {
+        calls.add(what);
+        return FileHandoffOutcome.done;
+      }
+
+      await tester.pumpWidget(
+        chip(
+          canOpen: true,
+          open: (ref, {required store, fetch}) => record('open'),
+          save: (ref, {required store, fetch}) => record('save'),
+        ),
+      );
+      await tester.tap(find.byType(NoteFileChip));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(
+        chip(
+          canOpen: false,
+          open: (ref, {required store, fetch}) => record('open'),
+          save: (ref, {required store, fetch}) => record('save'),
+        ),
+      );
+      await tester.tap(find.byType(NoteFileChip));
+      await tester.pumpAndSettle();
+
+      expect(calls, ['open', 'save']);
+    });
+
+    testWidgets('a program is saved, never opened', (tester) async {
+      final calls = <String>[];
+      await tester.pumpWidget(
+        chip(
+          canOpen: true,
+          ref: pdfAt(0, name: 'setup.exe'),
+          open: (ref, {required store, fetch}) async {
+            calls.add('open');
+            return FileHandoffOutcome.done;
+          },
+          save: (ref, {required store, fetch}) async {
+            calls.add('save');
+            return FileHandoffOutcome.cancelled;
+          },
+        ),
+      );
+      await tester.tap(find.byType(NoteFileChip));
+      await tester.pumpAndSettle();
+
+      expect(calls, ['save']);
+    });
+
+    testWidgets('a failed download says so on the chip and can be retried', (
+      tester,
+    ) async {
+      var attempts = 0;
+      await tester.pumpWidget(
+        chip(
+          canOpen: true,
+          open: (ref, {required store, fetch}) async {
+            attempts++;
+            return attempts == 1
+                ? FileHandoffOutcome.notDownloaded
+                : FileHandoffOutcome.done;
+          },
+          save: (ref, {required store, fetch}) async => FileHandoffOutcome.done,
+        ),
+      );
+      await tester.tap(find.byType(NoteFileChip));
+      await tester.pumpAndSettle();
+      expect(find.textContaining("Couldn't download"), findsWidgets);
+
+      await tester.pump(const Duration(seconds: 3));
+      await tester.tap(find.byType(NoteFileChip));
+      await tester.pumpAndSettle();
+      expect(attempts, 2);
+      expect(find.text('2.3 MB'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 3));
+    });
+  });
+
   testWidgets('the video footer action inserts a playable video block', (
     tester,
   ) async {
@@ -714,9 +912,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
 
-    await tester.drag(
-      find.byKey(const ValueKey('slash-command-list')),
-      const Offset(0, -180),
+    // Scrolled to rather than dragged a fixed distance: the list grows as
+    // attachment kinds are added.
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('slash-command-image')),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('slash-command-image')));

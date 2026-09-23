@@ -28,6 +28,10 @@ String archiveVoiceName(NoteVoiceRef ref) =>
 
 String archiveVideoName(NoteVideoRef ref) => '${ref.hash}${ref.extension}';
 
+/// A file keeps its own extension, so it opens from the unzipped folder.
+String archiveAttachedFileName(NoteFileRef ref) =>
+    '${ref.hash}${ref.extension}';
+
 String extensionForImageMime(String mime) => switch (mime) {
   'image/png' => '.png',
   'image/jpeg' => '.jpg',
@@ -52,19 +56,24 @@ String extensionForImageMime(String mime) => switch (mime) {
 /// downloaded — is dropped rather than written out. U+FFFC must never reach
 /// the file: it is invisible in every editor, so it would read as a stray
 /// character nobody can see, delete, or explain.
-String withImageLinks(String markdown, List<ExportedAttachment> images) {
+String withImageLinks(String markdown, List<ExportedAttachment?> images) {
   if (!markdown.contains(NoteAttachmentRef.placeholder)) return markdown;
   final buffer = StringBuffer();
   var next = 0;
   for (var i = 0; i < markdown.length; i++) {
     if (markdown.codeUnitAt(i) == 0xFFFC) {
       if (next < images.length) {
+        // Null holds the place of an attachment whose bytes are not on this
+        // device, so every later placeholder still gets its own link.
         final attachment = images[next++];
+        if (attachment == null) continue;
         // Moving media is a plain link, not an image link: `![]()` on audio or
         // video renders as a broken picture in ordinary markdown editors.
         buffer.write(
           attachment.isVoice
               ? '[${voiceLinkLabel(attachment)}](../${attachment.path})'
+              : attachment.isFile
+              ? '[${fileLinkLabel(attachment)}](../${attachment.path})'
               : attachment.isVideo
               ? '[${videoLinkLabel(attachment)}](../${attachment.path})'
               : '![](../${attachment.path})',
@@ -89,6 +98,11 @@ String voiceLinkLabel(ExportedAttachment attachment) {
   }
   return 'Voice note $stamp';
 }
+
+/// A file's link says its name. Brackets are swapped for parentheses, since
+/// the reader finds the link by its closing bracket.
+String fileLinkLabel(ExportedAttachment attachment) =>
+    (attachment.name ?? 'File').replaceAll('[', '(').replaceAll(']', ')');
 
 String videoLinkLabel(ExportedAttachment attachment) {
   final duration = Duration(milliseconds: attachment.durationMs ?? 0);
@@ -157,11 +171,29 @@ Uint8List buildExportArchive({
     // to think about how a placeholder interacts with formatting offsets: at
     // this point the ranges have already been turned into characters.
     final images = <ExportedAttachment>[];
+    // One entry per placeholder, in order, with a gap where nothing could be
+    // written; [images] is the same list without the gaps.
+    final linked = <ExportedAttachment?>[];
     for (final ref in note.attachments) {
+      final before = images.length;
       // Only what this device actually holds the bytes for. A placeholder with
       // nothing behind it is dropped rather than written out.
-      if (!imageBytes.containsKey(ref.hash)) continue;
-      if (ref is NoteImageRef) {
+      if (!imageBytes.containsKey(ref.hash)) {
+        linked.add(null);
+        continue;
+      }
+      if (ref is NoteFileRef) {
+        images.add(
+          ExportedAttachment(
+            kind: 'file',
+            hash: ref.hash,
+            path: '$exportAttachmentsDirectory/${archiveAttachedFileName(ref)}',
+            mime: ref.mime,
+            name: ref.name,
+            bytes: ref.bytes,
+          ),
+        );
+      } else if (ref is NoteImageRef) {
         images.add(
           ExportedAttachment(
             hash: ref.hash,
@@ -200,10 +232,11 @@ Uint8List buildExportArchive({
           ),
         );
       }
+      linked.add(images.length > before ? images.last : null);
     }
     final markdown = withImageLinks(
       renderNoteMarkdown(note.body, note.formats),
-      images,
+      linked,
     );
 
     files.add(ArchiveFile.string(path, markdown)..lastModTime = modified);
@@ -456,7 +489,18 @@ ArchiveContents readExportArchiveFromBytes(List<int> bytes) =>
     if (image != null && availableImages.contains(path)) {
       // A fresh key in both branches. The archive carried none, and this
       // device is the only place this copy has ever lived.
-      if (image.isVoice) {
+      if (image.isFile) {
+        attachments.add(
+          NoteFileRef(
+            offset: anchor,
+            hash: image.hash,
+            key: randomKey(),
+            mime: image.mime,
+            bytes: image.bytes ?? 0,
+            name: image.name ?? 'File',
+          ),
+        );
+      } else if (image.isVoice) {
         attachments.add(
           NoteVoiceRef(
             offset: anchor,

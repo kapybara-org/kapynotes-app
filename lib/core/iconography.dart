@@ -455,6 +455,14 @@ class KapyIcons {
     0xE068,
     HugeIcons.strokeRoundedWavingHand01,
   );
+  static const attachFileRounded = KapyIconData(
+    0xE071,
+    HugeIcons.strokeRoundedAttachment01,
+  );
+  static const fileOutlined = KapyIconData(
+    0xE072,
+    HugeIcons.strokeRoundedFile01,
+  );
   static const videoOutlined = KapyIconData(
     0xE06B,
     HugeIcons.strokeRoundedVideo01,

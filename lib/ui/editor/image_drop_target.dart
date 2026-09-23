@@ -4,10 +4,9 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
 import '../../core/theme.dart';
-import '../../images/image_codec.dart';
-import '../../video/video_ingest.dart';
 
-/// Lets images and videos be dropped straight onto the page.
+/// Lets files be dropped straight onto the page: pictures and videos as
+/// media, anything else as an attached file.
 ///
 /// Only built where there is a pointer to drop with. On a phone this is the
 /// identity widget, which keeps the plugin's channel out of the mobile app
@@ -44,12 +43,10 @@ class _ImageDropTargetState extends State<ImageDropTarget> {
       onDragExited: (_) => setState(() => _hovering = false),
       onDragDone: (details) {
         setState(() => _hovering = false);
-        final files = <XFile>[
-          for (final item in details.files)
-            // A dropped folder is not a mistake worth an error message; it is
-            // simply not an image, so it is passed over in silence.
-            if (item is! DropItemDirectory && _looksLikeMedia(item.name)) item,
-        ];
+        // Everything is passed on, folders included: pictures and videos
+        // become media, anything else is attached as a file, and a folder is
+        // refused by name with a hint to zip it rather than vanishing.
+        final files = <XFile>[...details.files];
         if (files.isNotEmpty) widget.onFiles(files);
       },
       child: Stack(
@@ -62,14 +59,6 @@ class _ImageDropTargetState extends State<ImageDropTarget> {
         ],
       ),
     );
-  }
-
-  static bool _looksLikeMedia(String name) {
-    final dot = name.lastIndexOf('.');
-    if (dot < 0) return false;
-    final extension = name.substring(dot + 1).toLowerCase();
-    return supportedImageExtensions.contains(extension) ||
-        supportedVideoExtensions.contains(extension);
   }
 }
 
@@ -100,10 +89,10 @@ class _DropHint extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                KapyIcon(KapyIcons.videoOutlined, size: 18, color: accent),
+                KapyIcon(KapyIcons.attachFileRounded, size: 18, color: accent),
                 const SizedBox(width: 8),
                 Text(
-                  'Drop media to add to this note',
+                  'Drop files to add to this note',
                   style: TextStyle(
                     fontSize: AppTypeScale.control,
                     fontWeight: FontWeight.w400,

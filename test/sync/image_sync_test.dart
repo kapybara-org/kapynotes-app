@@ -71,6 +71,103 @@ class FailsFirstDownloadOnce extends FakeApi {
   }
 }
 
+/// Loses the connection partway through the first PUT, as a phone leaving
+/// wifi does.
+class DropsFirstPut extends FakeApi {
+  DropsFirstPut(super.server, {required super.device});
+
+  var puts = 0;
+  var creates = 0;
+
+  @override
+  Future<AttachmentSlot> createAttachment({
+    required String noteId,
+    String? spaceId,
+    required int bytes,
+  }) {
+    creates++;
+    return super.createAttachment(
+      noteId: noteId,
+      spaceId: spaceId,
+      bytes: bytes,
+    );
+  }
+
+  @override
+  Future<void> putBlob(
+    Uri url,
+    Uint8List bytes, {
+    void Function(double progress)? onProgress,
+  }) {
+    puts++;
+    if (puts == 1) {
+      onProgress?.call(0.4);
+      throw const SyncTransientException('upload stalled');
+    }
+    return super.putBlob(url, bytes, onProgress: onProgress);
+  }
+}
+
+/// The bytes land, and the answer to the confirmation never comes back.
+class LosesFirstConfirmation extends FakeApi {
+  LosesFirstConfirmation(super.server, {required super.device});
+
+  var puts = 0;
+  var confirms = 0;
+
+  @override
+  Future<void> putBlob(
+    Uri url,
+    Uint8List bytes, {
+    void Function(double progress)? onProgress,
+  }) {
+    puts++;
+    return super.putBlob(url, bytes, onProgress: onProgress);
+  }
+
+  @override
+  Future<void> completeAttachment(String id) async {
+    confirms++;
+    if (confirms == 1) throw const SyncTransientException('timed out');
+    return super.completeAttachment(id);
+  }
+}
+
+/// Object storage refuses the PUT outright, as it does an expired URL.
+class RefusesPut extends FakeApi {
+  RefusesPut(super.server, {required super.device});
+
+  @override
+  Future<void> putBlob(
+    Uri url,
+    Uint8List bytes, {
+    void Function(double progress)? onProgress,
+  }) async => throw const SyncRefusedException(403, 'expired', {});
+}
+
+/// Hands out reservations whose URL is already about to expire.
+class ShortLivedSlots extends DropsFirstPut {
+  ShortLivedSlots(super.server, {required super.device});
+
+  @override
+  Future<AttachmentSlot> createAttachment({
+    required String noteId,
+    String? spaceId,
+    required int bytes,
+  }) async {
+    final slot = await super.createAttachment(
+      noteId: noteId,
+      spaceId: spaceId,
+      bytes: bytes,
+    );
+    return AttachmentSlot(
+      id: slot.id,
+      uploadUrl: slot.uploadUrl,
+      expiresAt: DateTime.now().add(const Duration(seconds: 30)),
+    );
+  }
+}
+
 /// One device, with its own disk for pictures.
 class Device {
   Device(
@@ -151,6 +248,172 @@ void main() {
 
   Future<Directory> dirFor(String name) =>
       Directory('${root.path}/$name').create(recursive: true);
+
+  NoteFileRef fileRef(
+    String hash,
+    int bytes, {
+    String name = 'Q3 report.pdf',
+  }) => NoteFileRef(
+    offset: 0,
+    hash: hash,
+    key: randomKey(),
+    mime: 'application/pdf',
+    bytes: bytes,
+    name: name,
+  );
+
+  group('files', () {
+    test(
+      'a file reaches the other device with its name and extension',
+      () async {
+        final one = Device(server, name: 'one', dir: await dirFor('one'));
+        final two = Device(server, name: 'two', dir: await dirFor('two'));
+        addTearDown(one.dispose);
+        addTearDown(two.dispose);
+        await one.boot();
+        await two.boot();
+
+        final bytes = picture(21);
+        final hash = await one.images.put(bytes, extension: '.pdf');
+        final note = one.notes.create();
+        one.notes.updateDocument(note.id, anchor, const [], [
+          fileRef(hash, bytes.length),
+        ]);
+
+        await one.sync.syncNow();
+        await settle(server);
+        await two.sync.syncNow();
+
+        final arrived =
+            two.notes.notes.single.attachments.single as NoteFileRef;
+        expect(arrived.name, 'Q3 report.pdf');
+        expect(arrived.bytes, bytes.length);
+        expect(arrived.attachmentId, isNotNull);
+        expect(server.pendingBlobs, isEmpty);
+        expect(await two.imageSync.fetch(hash), bytes);
+        expect((await two.images.fileFor(hash))!.path, endsWith('.pdf'));
+      },
+    );
+
+    test('an upload cut off mid-transfer resumes its reservation', () async {
+      late DropsFirstPut api;
+      final one = Device(
+        server,
+        name: 'one',
+        dir: await dirFor('one'),
+        apiFor: (server, device) => api = DropsFirstPut(server, device: device),
+      );
+      addTearDown(one.dispose);
+      await one.boot();
+
+      final bytes = picture(22);
+      final hash = await one.images.put(bytes, extension: '.pdf');
+      final note = one.notes.create();
+      one.notes.updateDocument(note.id, anchor, const [], [
+        fileRef(hash, bytes.length),
+      ]);
+
+      final first = await one.imageSync.upload(one.notes.byId(note.id)!);
+      expect(first.attachments.single.isUploaded, isFalse);
+      expect(server.attachments, hasLength(1));
+
+      final second = await one.imageSync.upload(one.notes.byId(note.id)!);
+      expect(second.attachments.single.isUploaded, isTrue);
+      // The same reservation, confirmed; not a second one beside a stray.
+      expect(api.creates, 1);
+      expect(server.attachments, hasLength(1));
+      expect(server.pendingBlobs, isEmpty);
+    });
+
+    test(
+      'a lost confirmation is finished without sending the bytes again',
+      () async {
+        late LosesFirstConfirmation api;
+        final one = Device(
+          server,
+          name: 'one',
+          dir: await dirFor('one'),
+          apiFor: (server, device) =>
+              api = LosesFirstConfirmation(server, device: device),
+        );
+        addTearDown(one.dispose);
+        await one.boot();
+
+        final bytes = picture(23);
+        final hash = await one.images.put(bytes, extension: '.pdf');
+        final note = one.notes.create();
+        one.notes.updateDocument(note.id, anchor, const [], [
+          fileRef(hash, bytes.length),
+        ]);
+
+        await one.imageSync.upload(one.notes.byId(note.id)!);
+        final done = await one.imageSync.upload(one.notes.byId(note.id)!);
+
+        expect(done.attachments.single.isUploaded, isTrue);
+        expect(api.puts, 1);
+        expect(server.attachments, hasLength(1));
+        expect(server.pendingBlobs, isEmpty);
+        expect(server.storageUsed[one.api.userId], greaterThan(bytes.length));
+      },
+    );
+
+    test('a refused upload gives its reservation straight back', () async {
+      final one = Device(
+        server,
+        name: 'one',
+        dir: await dirFor('one'),
+        apiFor: (server, device) => RefusesPut(server, device: device),
+      );
+      addTearDown(one.dispose);
+      await one.boot();
+
+      final bytes = picture(24);
+      final hash = await one.images.put(bytes, extension: '.pdf');
+      final note = one.notes.create();
+      one.notes.updateDocument(note.id, anchor, const [], [
+        fileRef(hash, bytes.length),
+      ]);
+
+      final result = await one.imageSync.upload(one.notes.byId(note.id)!);
+      await pumpEventQueue();
+
+      expect(result.attachments.single.isUploaded, isFalse);
+      expect(server.attachments, hasLength(1));
+      expect(server.attachments.values.single.deleted, isTrue);
+      expect(server.pendingBlobs, isEmpty);
+    });
+
+    test('a reservation whose URL expired is released and replaced', () async {
+      late ShortLivedSlots api;
+      final one = Device(
+        server,
+        name: 'one',
+        dir: await dirFor('one'),
+        apiFor: (server, device) =>
+            api = ShortLivedSlots(server, device: device),
+      );
+      addTearDown(one.dispose);
+      await one.boot();
+
+      final bytes = picture(25);
+      final hash = await one.images.put(bytes, extension: '.pdf');
+      final note = one.notes.create();
+      one.notes.updateDocument(note.id, anchor, const [], [
+        fileRef(hash, bytes.length),
+      ]);
+
+      await one.imageSync.upload(one.notes.byId(note.id)!);
+      final done = await one.imageSync.upload(one.notes.byId(note.id)!);
+      await pumpEventQueue();
+
+      expect(done.attachments.single.isUploaded, isTrue);
+      expect(api.creates, 2);
+      final rows = server.attachments.values.toList();
+      expect(rows.where((row) => row.deleted), hasLength(1));
+      expect(rows.where((row) => row.ready), hasLength(1));
+      expect(server.pendingBlobs, isEmpty);
+    });
+  });
 
   test('an image reaches the other device, and opens there', () async {
     final one = Device(server, name: 'one', dir: await dirFor('one'));

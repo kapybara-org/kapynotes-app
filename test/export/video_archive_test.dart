@@ -74,9 +74,9 @@ void main() {
     },
   );
 
-  test('records video as schema 3 rather than letting old readers guess', () {
+  test('records video at a schema old readers refuse rather than guess', () {
     final manifest = readExportArchive(buildVideoArchive()).manifest!;
-    expect(manifest.schema, 3);
+    expect(manifest.schema, greaterThanOrEqualTo(3));
     expect(manifest.notes.single.images.single.kind, 'video');
   });
 }

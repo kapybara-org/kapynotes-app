@@ -2039,16 +2039,37 @@ class FakeApi implements SyncApi {
     return AttachmentSlot(
       id: id,
       uploadUrl: Uri.parse('https://blobs.test/put/$id'),
+      expiresAt: DateTime.now().add(const Duration(minutes: 15)),
     );
+  }
+
+  @override
+  Future<void> deleteAttachment(String id) async {
+    _gate();
+    final row = server.attachments[id];
+    if (row == null || row.deleted) return;
+    row.deleted = true;
+    server.blobs.remove(id);
+    if (row.ready) {
+      server.storageUsed[row.owner] =
+          (server.storageUsed[row.owner] ?? 0) - row.bytes;
+    }
   }
 
   @override
   Future<void> completeAttachment(String id) async {
     _gate();
     final row = server.attachments[id];
-    if (row == null) return;
+    if (row == null || row.deleted) {
+      throw const SyncRefusedException(404, 'not found', {});
+    }
     server._editor(userId, row.spaceId);
     if (row.ready) return;
+    // As the real server does after its HEAD finds nothing: the PUT never
+    // landed, so there is nothing to confirm yet.
+    if (!server.blobs.containsKey(id)) {
+      throw const SyncRefusedException(409, 'object not uploaded', {});
+    }
     // Billed on what actually landed, never on what was claimed.
     row.bytes = server.blobs[id]?.length ?? 0;
     row.ready = true;

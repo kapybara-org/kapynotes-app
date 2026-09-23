@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../data/note.dart';
@@ -40,6 +43,24 @@ class ImageSync {
   /// Hashes currently being fetched, so ten images in one note that all point
   /// at the same picture cost one download rather than ten.
   final Map<String, Future<Uint8List?>> _inFlight = {};
+
+  /// Reservations made on the server and not yet confirmed, by the blob and
+  /// key they are for.
+  ///
+  /// An upload interrupted anywhere after its reservation — mid-PUT, or
+  /// after the PUT but before the confirmation — used to be retried with a
+  /// brand-new one, so a flaky connection left a trail of reservations and
+  /// sometimes whole objects that nothing would ever confirm. Now the retry
+  /// picks up the reservation it already has: it asks to confirm first, in
+  /// case the bytes did land, and uploads again only if they did not.
+  ///
+  /// Only for this session. After a restart the server's collector clears
+  /// what was left, a day later.
+  final Map<String, AttachmentSlot> _slots = {};
+
+  /// How long before its URL expires a reservation stops being worth
+  /// reusing. Room for a large PUT to start in time.
+  static const Duration _slotMargin = Duration(minutes: 2);
 
   /// One listenable per local blob that has appeared in the editor. A media
   /// tile listens only to its own hash, so upload chunks do not rebuild the
@@ -150,16 +171,82 @@ class ImageSync {
     final plaintext = await _store.read(hash);
     if (plaintext == null) return null;
 
+    final slotKey = '$hash:${base64.encode(key)}';
+    final previous = _slots[slotKey];
+    if (previous != null) {
+      final resumed = await _resume(slotKey, previous);
+      if (resumed) {
+        onProgress?.call(1);
+        return previous.id;
+      }
+    }
+
     final sealed = await sealBytes(plaintext, key);
     final body = sealed.toBytes();
-    final slot = await _api.createAttachment(
+    var slot = _slots[slotKey];
+    if (slot != null && !_stillUsable(slot)) {
+      _release(_slots.remove(slotKey)!);
+      slot = null;
+    }
+    slot ??= _slots[slotKey] = await _api.createAttachment(
       noteId: note.id,
       spaceId: note.spaceId,
       bytes: body.length,
     );
-    await _api.putBlob(slot.uploadUrl, body, onProgress: onProgress);
-    await _api.completeAttachment(slot.id);
+
+    try {
+      await _api.putBlob(slot.uploadUrl, body, onProgress: onProgress);
+      await _api.completeAttachment(slot.id);
+    } on SyncTransientException {
+      // Kept: the next pass resumes this reservation.
+      rethrow;
+    } on SyncRefusedException catch (error) {
+      // Refused for good — an expired URL, an object over the limit, a plan
+      // that lapsed. This reservation will never be confirmed, so it is given
+      // back now rather than left for the collector.
+      if (identical(_slots[slotKey], slot)) _slots.remove(slotKey);
+      _release(slot);
+      debugPrint('KapyNotes: upload refused: ${error.code}');
+      rethrow;
+    }
+    _slots.remove(slotKey);
     return slot.id;
+  }
+
+  /// Tries to finish an earlier attempt without sending the bytes again.
+  ///
+  /// True when the server confirmed it — the PUT had landed and only the
+  /// confirmation was lost. False when there is still uploading to do, with
+  /// the reservation kept if its URL is still good and given back if it is not.
+  Future<bool> _resume(String slotKey, AttachmentSlot slot) async {
+    try {
+      await _api.completeAttachment(slot.id);
+      _slots.remove(slotKey);
+      return true;
+    } on SyncRefusedException catch (error) {
+      // 409: the object is not there, so the PUT still has to happen.
+      if (error.status == 409 && _stillUsable(slot)) return false;
+      // Anything else — gone, too large, expired — ends this reservation.
+      _slots.remove(slotKey);
+      if (error.status != 404) _release(slot);
+      return false;
+    }
+  }
+
+  bool _stillUsable(AttachmentSlot slot) {
+    final expiresAt = slot.expiresAt;
+    if (expiresAt == null) return false;
+    return DateTime.now().add(_slotMargin).isBefore(expiresAt);
+  }
+
+  /// Best effort. A release that fails is not retried here: the server's
+  /// collector gives up unconfirmed reservations on its own.
+  void _release(AttachmentSlot slot) {
+    unawaited(
+      _api.deleteAttachment(slot.id).catchError((Object error) {
+        debugPrint('KapyNotes: could not release upload ${slot.id}: $error');
+      }),
+    );
   }
 
   /// Fetches the bytes behind [hash], decrypts them, and caches them on disk.
@@ -246,6 +333,9 @@ class ImageSync {
         if (ref.hash != hash) continue;
         if (ref is NoteVoiceRef) return NoteVoiceRef.voiceExtension;
         if (ref is NoteVideoRef) return ref.extension;
+        // Kept so the file opens on this device the way it did on the one it
+        // came from; the name itself is only ever used for copies handed out.
+        if (ref is NoteFileRef) return ref.extension;
         // Images keep the empty extension they have always had, so nothing
         // already on disk has to be migrated.
         return '';
