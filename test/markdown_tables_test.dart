@@ -453,10 +453,39 @@ void main() {
       );
     });
 
-    test('the line over a table keeps a blank line between them', () {
-      final value = typed(note, 'Trip\n'.length, 'x')!;
-      expect(shownAt(value), 'Trip\nx‸\n\n$simple\n\nafter');
-      expect(MarkdownAnalyzer.analyzeWhole(value.text).tables, hasLength(1));
+    test('the line over a table is left alone: a table may follow words', () {
+      // Adding a line there as well only broke redo, which replays the edit
+      // through the same formatters.
+      expect(typed(note, 'Trip\n'.length, 'x'), isNull);
+      expect(
+        MarkdownAnalyzer.analyzeWhole('Trip\nx\n$simple\n\nafter').tables,
+        hasLength(1),
+      );
+    });
+
+    test(
+      'words typed at the end of a table that ends the note go below it',
+      () {
+        // Where the caret is left on stepping out of such a table: the end of
+        // its last row, which the words would otherwise vanish into.
+        const ending = 'Trip\n\n$simple';
+        final value = typed(ending, ending.length, 'x')!;
+        expect(shownAt(value), 'Trip\n\n$simple\n\nx‸');
+        expect(
+          MarkdownAnalyzer.analyzeWhole(value.text).tables.single.rows,
+          hasLength(2),
+        );
+      },
+    );
+
+    test('words typed at the start of a table that opens the note go above '
+        'it', () {
+      final value = typed(simple, 0, 'x')!;
+      expect(shownAt(value), 'x‸\n$simple');
+      expect(
+        MarkdownAnalyzer.analyzeWhole(value.text).tables.single.rows,
+        hasLength(2),
+      );
     });
 
     test('leaves everything else alone', () {

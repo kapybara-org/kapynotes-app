@@ -3462,6 +3462,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final isUp = inset > 0;
     _keyboardWasUp = isUp;
     if (mounted && AppPlatform.isMobile && isUp != wasUp) setState(() {});
+    // A cell opened with the keyboard down was scrolled into view before the
+    // keyboard had a height; now that it has one, the cell may be under it.
+    if (isUp && _editingCell != null) _ensureCellVisible();
     if (isUp || !wasUp) return;
     if (widget.readOnly || !_editingNote) return;
     // Backgrounding the app also takes the keyboard down, and focus should
@@ -5955,8 +5958,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 inputFormatters: [
                   _StaleInputFormatter(_rebaseStaleInput),
                   _dailySeparatorFormatter,
-                  // Whatever the markdown setting: tables draw either way.
-                  _TableEdgeFormatter(_controller.markdownFor),
                   if (widget.markdownEnabled) ...[
                     _MarkdownTypingFormatter(
                       _controller.markdownFor,
@@ -5972,6 +5973,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   // In markdown `- ` already is a list item, and turning it
                   // into a bullet glyph would take the markdown away.
                   if (!widget.markdownEnabled) const _ListShorthandFormatter(),
+                  // Whatever the markdown setting: tables draw either way.
+                  // After the others, so the line it opens under a table
+                  // carries whatever they made of the edit (Bold's markers
+                  // included) rather than splitting it. Not for a staged
+                  // edit: those carry formats and pictures worked out for the
+                  // text as it was sent, and a line added here would shift
+                  // every one after it.
+                  _TableEdgeFormatter(
+                    _controller.markdownFor,
+                    staged: () =>
+                        _nextAttachments != null || _nextFormats != null,
+                  ),
                   // Last, so it sees whatever the others made of the edit: a
                   // continuation or a shorthand landing on a picture's line
                   // has to be moved off it too.
@@ -6272,25 +6285,34 @@ class _ListShorthandFormatter extends TextInputFormatter {
   }
 }
 
-/// Markdown that behaves like formatting rather than like characters: Bold
-/// switched on with nothing selected wraps what is typed next, a space or
-/// Return at the end of a styled word steps out of the style, and emptying a
-/// styled word takes its hidden markers with it.
 /// See [separateTypingFromTables].
 class _TableEdgeFormatter extends TextInputFormatter {
-  const _TableEdgeFormatter(this.markdown);
+  const _TableEdgeFormatter(this.markdown, {required this.staged});
 
   final MarkdownAnalysis Function(String text) markdown;
+
+  /// Whether the edit on its way carries formats or pictures of its own.
+  final bool Function() staged;
 
   @override
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,
     TextEditingValue newValue,
-  ) =>
-      separateTypingFromTables(oldValue, newValue, markdown(oldValue.text)) ??
-      newValue;
+  ) {
+    if (staged()) return newValue;
+    return separateTypingFromTables(
+          oldValue,
+          newValue,
+          markdown(oldValue.text),
+        ) ??
+        newValue;
+  }
 }
 
+/// Markdown that behaves like formatting rather than like characters: Bold
+/// switched on with nothing selected wraps what is typed next, a space or
+/// Return at the end of a styled word steps out of the style, and emptying a
+/// styled word takes its hidden markers with it.
 class _MarkdownTypingFormatter extends TextInputFormatter {
   const _MarkdownTypingFormatter(this.markdown, this.typing);
 

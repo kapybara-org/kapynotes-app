@@ -1208,6 +1208,35 @@ void main() {
       expect(latest, '$body\nx');
     });
 
+    testWidgets('words typed after a table that ends the note stay in sight', (
+      tester,
+    ) async {
+      // No line after the last row: stepping out leaves the caret at its end.
+      const body = 'Trip\n\n| a | b |\n| --- | --- |\n| Tea | 4 |';
+      String? latest;
+      await tester.pumpWidget(
+        harness(
+          body,
+          autofocus: true,
+          onBodyChanged: (value) => latest = value,
+        ),
+      );
+      await tester.pumpAndSettle();
+      controllerOf(tester).selection = TextSelection.collapsed(
+        offset: body.length,
+      );
+      await tester.pump();
+
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: '${body}x',
+          selection: TextSelection.collapsed(offset: body.length + 1),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(latest, '$body\n\nx');
+    });
+
     testWidgets('the cell toolbar edits rows, columns and alignment', (
       tester,
     ) async {
