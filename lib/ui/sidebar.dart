@@ -279,13 +279,6 @@ class Sidebar extends StatelessWidget {
               shortcut: searchShortcut,
               belowTabs: _tabbed,
             ),
-            if (!_specialMode && sharing != null && sharing!.invites.isNotEmpty)
-              _Invitations(
-                sharing: sharing!,
-                onJoined: onTabChanged == null
-                    ? null
-                    : () => onTabChanged!(SidebarTab.shared),
-              ),
             if (archiveMode && (notes.isNotEmpty || selecting))
               _ArchiveActions(
                 selecting: selecting,
@@ -299,16 +292,29 @@ class Sidebar extends StatelessWidget {
                 onRestoreChecked: onRestoreChecked,
               ),
             Expanded(
-              child: _NoteListKeys(
-                onMoveSelected: _moveSelected,
-                onEnterSelected: onEnterSelected,
-                onArchiveSelected: _archiveSelected,
-                onDeleteSelected: _deleteSelected,
-                child: notes.isEmpty
-                    ? _buildEmpty(context)
-                    : _grouped
-                    ? _buildGrouped(context)
-                    : _buildUngrouped(context),
+              child: _BelowInvitations(
+                invitations:
+                    !_specialMode &&
+                        sharing != null &&
+                        sharing!.invites.isNotEmpty
+                    ? _Invitations(
+                        sharing: sharing!,
+                        onJoined: onTabChanged == null
+                            ? null
+                            : () => onTabChanged!(SidebarTab.shared),
+                      )
+                    : null,
+                child: _NoteListKeys(
+                  onMoveSelected: _moveSelected,
+                  onEnterSelected: onEnterSelected,
+                  onArchiveSelected: _archiveSelected,
+                  onDeleteSelected: _deleteSelected,
+                  child: notes.isEmpty
+                      ? _buildEmpty(context)
+                      : _grouped
+                      ? _buildGrouped(context)
+                      : _buildUngrouped(context),
+                ),
               ),
             ),
             if (onSettingsPressed != null ||
@@ -1967,8 +1973,12 @@ class _InvitationCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            // Side by side where they fit, stacked where the sidebar is
+            // dragged too narrow for both.
+            OverflowBar(
+              alignment: MainAxisAlignment.end,
+              overflowAlignment: OverflowBarAlignment.end,
+              overflowSpacing: 4,
               children: [
                 TextButton(
                   key: ValueKey('sidebar-invite-decline-${invite.token}'),
@@ -1994,6 +2004,36 @@ class _InvitationCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The note list, under whatever invitations are waiting.
+///
+/// The cards scroll by themselves once they would take more than half the
+/// height, so a few invitations in a short window cannot push the list, and
+/// the footer under it, off the screen.
+class _BelowInvitations extends StatelessWidget {
+  const _BelowInvitations({required this.invitations, required this.child});
+
+  final Widget? invitations;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final invitations = this.invitations;
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (invitations != null)
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: constraints.maxHeight / 2),
+              child: SingleChildScrollView(child: invitations),
+            ),
+          Expanded(key: const ValueKey('sidebar-note-list'), child: child),
+        ],
       ),
     );
   }

@@ -197,7 +197,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String _query = '';
 
   /// Which half of the library the sidebar lists. Not remembered across
-  /// launches: the app always opens on the person's own notes.
+  /// launches: the app opens on the tab of the note it opens on, and on the
+  /// person's own notes when there is none.
   SidebarTab _sidebarTab = SidebarTab.mine;
 
   bool _initialNoteScheduled = false;
@@ -287,6 +288,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         openingNoteId: openingId,
       );
     _selectedId = _workspace.selectedNoteId;
+    // Opens on the tab that lists the note it opens on.
+    _showTabOf(_selectedId);
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     widget.notes.addListener(_onNotesChanged);
     widget.account?.noteLimit?.addListener(_onNoteLimitChanged);
@@ -1025,6 +1028,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (previous != next) {
       widget.account?.sync?.leaveNote(previous);
       _compactEditorKey = GlobalKey<NoteEditorState>();
+      _showTabOf(next);
     }
     _selectedId = next;
     final open = _workspace.openNoteIds;
@@ -1077,6 +1081,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // so the selection stays put, and a blank note owns no attachments to
     // sweep.
     widget.notes.deleteAll(abandoned);
+  }
+
+  /// Lists the tab [id] is in, when a note is opened from somewhere other
+  /// than the list: a link, a pane, the note put back after the archive. A
+  /// row the reader clicked is in the tab on screen already, and the reader
+  /// switching tabs moves no selection, so neither is overruled.
+  void _showTabOf(String? id) {
+    final sharing = widget.account?.sharing;
+    if (id == null || sharing == null || _specialMode) return;
+    final note = widget.notes.byId(id);
+    if (note == null) return;
+    _sidebarTab = sidebarTabOf(note, sharing);
   }
 
   /// Abandons a held-key preview before another interaction takes ownership.
@@ -1515,11 +1531,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return;
     }
 
-    final next = widget.notes.successorTo(index);
+    final next = _successorInList(index);
     setState(() => _setSelectedId(next));
     widget.prefs.lastOpenedNoteId = next;
     if (_usesCompactLayout && next == null) _scheduleInitialNote();
     _focusSelectedEditorAtEnd();
+  }
+
+  /// The note that takes the place of one that just left the list from
+  /// [removedIndex] of the store's notes: the next one down that the list on
+  /// screen still shows, else the nearest one above it.
+  ///
+  /// Only what the list shows — the tab, and any search. The store's order
+  /// mixes the reader's own notes with other people's, and opening one from
+  /// the other tab would put the caret in a note that is not theirs.
+  String? _successorInList(int removedIndex) {
+    final active = widget.notes.notes;
+    if (removedIndex < 0 || active.isEmpty) {
+      return widget.notes.successorTo(removedIndex);
+    }
+    final shown = {for (final note in _visibleNotes) note.id};
+    final start = removedIndex.clamp(0, active.length - 1);
+    for (var i = start; i < active.length; i++) {
+      if (shown.contains(active[i].id)) return active[i].id;
+    }
+    for (var i = start - 1; i >= 0; i--) {
+      if (shown.contains(active[i].id)) return active[i].id;
+    }
+    return null;
   }
 
   void _restoreNote(String id) {
@@ -1579,7 +1618,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _focusSelectedEditorHere();
       return;
     }
-    final next = widget.notes.successorTo(index);
+    final next = _successorInList(index);
     setState(() => _setSelectedId(next));
     widget.prefs.lastOpenedNoteId = next;
     if (_usesCompactLayout && next == null) _scheduleInitialNote();
