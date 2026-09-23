@@ -53,7 +53,8 @@ void main() {
       );
 
       expect(contents.isReadable, isTrue);
-      expect(contents.manifest!.schema, exportSchemaVersion);
+      // No files in it, so the schema before them: see buildExportArchive.
+      expect(contents.manifest!.schema, exportSchemaVersion - 1);
       expect(contents.manifest!.appVersion, '1.6.0');
       expect(contents.markdown.keys, {
         'notes/weekly-review.md',

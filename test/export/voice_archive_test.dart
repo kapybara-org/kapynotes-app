@@ -179,7 +179,12 @@ void main() {
     expect(read.note.attachments.map((r) => r.offset), [0, 2]);
   });
 
-  test('the archive uses the current schema', () {
-    expect(readExportArchive(build(recording())).manifest!.schema, exportSchemaVersion);
+  test('the archive uses the newest schema its contents need', () {
+    // A recording needs 2; with no files in it, a build from before files
+    // (schema 4) can still read it.
+    expect(
+      readExportArchive(build(recording())).manifest!.schema,
+      exportSchemaVersion - 1,
+    );
   });
 }

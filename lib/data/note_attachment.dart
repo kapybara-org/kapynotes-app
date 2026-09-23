@@ -126,15 +126,29 @@ sealed class NoteAttachmentRef {
           attachmentId: attachmentId,
         );
       case 'file':
+        // A file this build cannot name is still somebody's file: kept whole,
+        // as a kind it does not know would be, rather than dropped, which the
+        // next write would then drop for everyone.
         return NoteFileRef._fromJson(
-          raw,
-          offset: offset,
-          hash: hash,
-          key: key,
-          mime: mime,
-          bytes: bytes,
-          attachmentId: attachmentId,
-        );
+              raw,
+              offset: offset,
+              hash: hash,
+              key: key,
+              mime: mime,
+              bytes: bytes,
+              attachmentId: attachmentId,
+            ) ??
+            NoteUnknownRef(
+              offset: offset,
+              hash: hash,
+              key: key,
+              mime: mime,
+              bytes: bytes,
+              attachmentId: attachmentId,
+              raw: Map<String, Object?>.unmodifiable(
+                raw.map((k, v) => MapEntry('$k', v)),
+              ),
+            );
       case 'video':
         return NoteVideoRef._fromJson(
           raw,
@@ -571,6 +585,9 @@ String sanitizeFileName(String raw) {
   final slash = name.lastIndexOf('/');
   if (slash >= 0) name = name.substring(slash + 1);
   name = name
+      // Direction marks and overrides: `invoice\u202Efdp.exe` shows as
+      // `invoiceexe.pdf` while being a program.
+      .replaceAll(RegExp('[\u200E\u200F\u202A-\u202E\u2066-\u2069]'), '')
       .replaceAll(RegExp(r'[\x00-\x1f\x7f<>:"|?*]'), '_')
       .trim()
       .replaceFirst(RegExp(r'^\.+'), '')

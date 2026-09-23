@@ -68,10 +68,67 @@ const Set<String> _executableExtensions = {
   '.deb',
   '.rpm',
   '.run',
+  '.desktop',
+  // macOS: scripts, Terminal and installer documents, and links that open
+  // whatever they point at.
+  '.tool',
+  '.terminal',
+  '.scpt',
+  '.scptd',
+  '.applescript',
+  '.fileloc',
+  '.inetloc',
+  '.webloc',
+  '.mpkg',
+  '.prefpane',
+  // Windows: installers, help and shell files that run what they hold, disk
+  // images that mount with programs inside, and scripts a runtime may be
+  // associated with.
+  '.chm',
+  '.msix',
+  '.msixbundle',
+  '.appx',
+  '.appxbundle',
+  '.appinstaller',
+  '.application',
+  '.appref-ms',
+  '.settingcontent-ms',
+  '.library-ms',
+  '.search-ms',
+  '.diagcab',
+  '.gadget',
+  '.inf',
+  '.ins',
+  '.isp',
+  '.jnlp',
+  '.iso',
+  '.img',
+  '.vhd',
+  '.vhdx',
+  '.xll',
+  '.py',
+  '.pyw',
+  '.pl',
+  '.rb',
+  '.wsc',
+  '.sct',
+  '.scf',
+  '.psm1',
+  '.psd1',
+  '.ps1xml',
+  '.website',
 };
 
-bool isExecutableFile(NoteFileRef ref) =>
-    _executableExtensions.contains(ref.extension);
+/// Whether [ref] is a program, or something that runs one when opened.
+///
+/// Read off the name itself as well as [NoteFileRef.extension], which only
+/// admits plain letters and digits: `.appref-ms` has neither shape, and would
+/// otherwise open.
+bool isExecutableFile(NoteFileRef ref) {
+  if (_executableExtensions.contains(ref.extension)) return true;
+  final name = ref.name.toLowerCase();
+  return _executableExtensions.any(name.endsWith);
+}
 
 /// Whether "Open" means anything here. Phones have no "open with the default
 /// app" for an arbitrary file, so there the chip saves instead.
