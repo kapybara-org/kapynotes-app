@@ -837,6 +837,28 @@ void main() {
       expect(find.byKey(const ValueKey('link-popover')), findsOneWidget);
       expect(find.text('https://docs.example/start'), findsOneWidget);
     });
+
+    testWidgets('one written in a comment keeps the comment colour', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(
+          'Read [the docs](https://docs.example/start)\n'
+          '// or [the guide](https://docs.example/guide)',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final theme = Theme.of(tester.element(find.byType(TextField)));
+      expect(styleOf(tester, 'the docs').color, theme.colorScheme.primary);
+      expect(styleOf(tester, 'the guide').color, KapyTheme.darkPalette.comment);
+      expect(styleOf(tester, 'the guide').fontStyle, FontStyle.italic);
+
+      await tester.tapAt(centerOf(tester, 'the guide'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('https://docs.example/guide'), findsOneWidget);
+    });
   });
 
   group('live preview', () {

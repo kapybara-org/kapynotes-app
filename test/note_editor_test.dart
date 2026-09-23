@@ -1414,6 +1414,68 @@ void main() {
     );
   });
 
+  testWidgets('a link inside a comment keeps the comment colour', (
+    tester,
+  ) async {
+    // A slash comment, a hash after a sum and a quoted annotation, then
+    // prose, where the same kind of address still shows as a link.
+    const body =
+        '//buy from unipile (https://www.unipile.com/pricing-api/)\n'
+        '2 + 2 # rates at https://example.com/rates\n'
+        '3 * 4 "see example.com/tax"\n'
+        'Read https://example.com/docs';
+
+    await tester.pumpWidget(harness(body));
+    await tester.pumpAndSettle();
+
+    final rendered =
+        tester
+                .state<EditableTextState>(find.byType(EditableText))
+                .renderEditable
+                .text!
+            as TextSpan;
+    // Every run of [text], however the highlighter happened to cut it.
+    List<TextSpan> runsOf(String text) {
+      final start = body.indexOf(text);
+      final end = start + text.length;
+      final runs = <TextSpan>[];
+      var offset = 0;
+      for (final span in rendered.children!.whereType<TextSpan>()) {
+        final length = span.text?.length ?? 0;
+        if (length > 0 && offset >= start && offset + length <= end) {
+          runs.add(span);
+        }
+        offset += length;
+      }
+      expect(runs, isNotEmpty, reason: '"$text" was not drawn on its own');
+      return runs;
+    }
+
+    for (final link in [
+      'https://www.unipile.com/pricing-api/',
+      'https://example.com/rates',
+      'example.com/tax',
+    ]) {
+      for (final run in runsOf(link)) {
+        expect(run.style!.color, KapyTheme.darkPalette.comment, reason: link);
+        expect(run.style!.fontStyle, FontStyle.italic, reason: link);
+      }
+    }
+    for (final run in runsOf('https://example.com/docs')) {
+      expect(
+        run.style!.color,
+        Theme.of(tester.element(find.byType(TextField))).colorScheme.primary,
+      );
+    }
+
+    // Quiet, but still a link: a click on it offers to open it.
+    await tester.tapAt(
+      _centerOf(tester, body, 'https://www.unipile.com/pricing-api/'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('link-popover')), findsOneWidget);
+  });
+
   testWidgets('cycles paragraph presets directly from the footer', (
     tester,
   ) async {
