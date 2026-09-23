@@ -80,6 +80,13 @@ const _definitions = [
     aliases: ['movie'],
   ),
   _SlashCommandDefinition(
+    type: SlashCommandType.file,
+    label: 'File',
+    description: 'Attach any file to open on your other devices',
+    icon: KapyIcons.attachFileRounded,
+    aliases: ['attach', 'attachment', 'upload', 'document', 'pdf'],
+  ),
+  _SlashCommandDefinition(
     type: SlashCommandType.numberedList,
     label: 'Numbered list',
     description: 'Start an ordered list',

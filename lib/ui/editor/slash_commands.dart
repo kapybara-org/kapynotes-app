@@ -13,6 +13,7 @@ enum SlashCommandType {
   table,
   divider,
   video,
+  file,
   numberedList,
   quote,
   codeBlock,

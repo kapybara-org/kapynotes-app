@@ -125,6 +125,16 @@ sealed class NoteAttachmentRef {
           bytes: bytes,
           attachmentId: attachmentId,
         );
+      case 'file':
+        return NoteFileRef._fromJson(
+          raw,
+          offset: offset,
+          hash: hash,
+          key: key,
+          mime: mime,
+          bytes: bytes,
+          attachmentId: attachmentId,
+        );
       case 'video':
         return NoteVideoRef._fromJson(
           raw,
@@ -455,6 +465,134 @@ final class NoteVideoRef extends NoteAttachmentRef {
     widthFactor,
     attachmentId,
   );
+}
+
+/// A file of any kind, carried as-is: a PDF, a spreadsheet, an archive.
+///
+/// Nothing about it is interpreted. It is never decoded, previewed or
+/// re-encoded, so the bytes that come out on the other device are exactly the
+/// ones that went in — which is the whole promise of "send this to my other
+/// devices". The name is the user's own, kept inside the sealed payload like
+/// every other fact about the file; the server sees a byte count.
+final class NoteFileRef extends NoteAttachmentRef {
+  /// What the file was called where it came from. Shown on the chip and used
+  /// when the file is saved or opened again, so a document keeps its name.
+  final String name;
+
+  const NoteFileRef({
+    required super.offset,
+    required super.hash,
+    required super.key,
+    required super.mime,
+    required super.bytes,
+    required this.name,
+    super.attachmentId,
+  });
+
+  /// The longest name kept. Every file system this app runs on allows 255
+  /// UTF-16 units or bytes in a component; staying under both leaves room for
+  /// a " (2)" a save panel may add.
+  static const int maxNameLength = 200;
+
+  /// The extension the stored blob and any copy handed to another app carry,
+  /// with its dot, or empty. Lowercase letters and digits only: this becomes
+  /// part of a path on disk, and a name from another device is not trusted to
+  /// be a safe one.
+  String get extension => fileExtensionOf(name);
+
+  static NoteFileRef? _fromJson(
+    Map<Object?, Object?> raw, {
+    required int offset,
+    required String hash,
+    required Uint8List key,
+    required String mime,
+    required int bytes,
+    required String? attachmentId,
+  }) {
+    final name = raw['name'];
+    if (name is! String) return null;
+    return NoteFileRef(
+      offset: offset,
+      hash: hash,
+      key: key,
+      mime: mime,
+      bytes: bytes,
+      name: sanitizeFileName(name),
+      attachmentId: attachmentId,
+    );
+  }
+
+  @override
+  NoteFileRef copyWith({int? offset, String? attachmentId}) => NoteFileRef(
+    offset: offset ?? this.offset,
+    hash: hash,
+    key: key,
+    mime: mime,
+    bytes: bytes,
+    name: name,
+    attachmentId: attachmentId ?? this.attachmentId,
+  );
+
+  @override
+  Map<String, Object?> toJson() => {
+    'kind': 'file',
+    'offset': offset,
+    'hash': hash,
+    'key': base64.encode(key),
+    'mime': mime,
+    'bytes': bytes,
+    'name': name,
+    if (attachmentId != null) 'attachmentId': attachmentId,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is NoteFileRef &&
+      other.offset == offset &&
+      other.hash == hash &&
+      other.mime == mime &&
+      other.bytes == bytes &&
+      other.name == name &&
+      other.attachmentId == attachmentId;
+
+  @override
+  int get hashCode =>
+      Object.hash(offset, hash, mime, bytes, name, attachmentId);
+}
+
+/// A file name made safe to show and to write: no directory part, no control
+/// or path characters, no leading dots, trimmed to [NoteFileRef.maxNameLength].
+///
+/// Applied on the way in from a picker *and* on the way in from sync, because
+/// a name that arrives from another device ends up as a path on this one when
+/// the file is opened. `../../x` must not mean anything there.
+String sanitizeFileName(String raw) {
+  var name = raw.replaceAll('\\', '/');
+  final slash = name.lastIndexOf('/');
+  if (slash >= 0) name = name.substring(slash + 1);
+  name = name
+      .replaceAll(RegExp(r'[\x00-\x1f\x7f<>:"|?*]'), '_')
+      .trim()
+      .replaceFirst(RegExp(r'^\.+'), '')
+      // Windows refuses a name ending in a dot or a space.
+      .replaceFirst(RegExp(r'[. ]+$'), '');
+  if (name.length > NoteFileRef.maxNameLength) {
+    final extension = fileExtensionOf(name);
+    final keep = NoteFileRef.maxNameLength - extension.length;
+    name = '${name.substring(0, keep).trimRight()}$extension';
+  }
+  return name.isEmpty ? 'File' : name;
+}
+
+/// The lowercase extension of [name] with its dot, or empty when it has none
+/// that is safe to put on disk.
+String fileExtensionOf(String name) {
+  final dot = name.lastIndexOf('.');
+  if (dot <= 0 || dot == name.length - 1) return '';
+  final extension = name.substring(dot + 1).toLowerCase();
+  if (extension.length > 16) return '';
+  if (!RegExp(r'^[a-z0-9]+$').hasMatch(extension)) return '';
+  return '.$extension';
 }
 
 /// One span of transcribed speech.

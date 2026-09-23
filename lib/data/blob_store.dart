@@ -30,7 +30,23 @@ import 'package:path_provider/path_provider.dart';
 /// device that has never signed in; sync is a thing that happens to them
 /// afterwards.
 class BlobStore {
-  BlobStore({Directory? directory}) : _directory = directory;
+  BlobStore({
+    Directory? directory,
+    this.sweepGrace = const Duration(minutes: 10),
+    DateTime Function()? now,
+  }) : _directory = directory,
+       _now = now ?? DateTime.now;
+
+  /// How new a blob has to be for a sweep to leave it alone even though no
+  /// note refers to it.
+  ///
+  /// Adding an attachment is two steps — the bytes land here, then a ref is
+  /// put into a note — and a sweep can run between them, because deleting
+  /// notes starts one. Without this a file still being attached would be
+  /// deleted from under the note it was about to join. Anything genuinely
+  /// unreferenced is caught by the next sweep instead.
+  final Duration sweepGrace;
+  final DateTime Function() _now;
 
   Directory? _directory;
   Future<Directory>? _resolving;
@@ -173,6 +189,42 @@ class BlobStore {
     return hash;
   }
 
+  /// Copies bytes from somewhere else — a file the user picked, a download —
+  /// into the store, and returns their address.
+  ///
+  /// Streamed, so a hundred-megabyte file never sits in memory whole, and
+  /// copied rather than moved: the source is the user's own document, and
+  /// [adoptFile] would take it away from them. The copy lands under a `.tmp`
+  /// name first, so a crash or a full disk halfway through leaves debris the
+  /// next sweep removes, never a truncated file under a checksum name. Any
+  /// failure deletes the partial copy before it is reported.
+  Future<String> importStream(
+    Stream<List<int>> source, {
+    required String extension,
+  }) async {
+    final dir = await _dir();
+    await dir.create(recursive: true);
+    final temp = File(
+      '${dir.path}/incoming-${_now().microsecondsSinceEpoch}-'
+      '${_importCounter++}.tmp',
+    );
+    try {
+      final sink = temp.openWrite();
+      try {
+        await sink.addStream(source);
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
+      return await adoptFile(temp, extension: extension);
+    } catch (_) {
+      await _quietlyDelete(temp);
+      rethrow;
+    }
+  }
+
+  static int _importCounter = 0;
+
   Future<void> _quietlyDelete(File file) async {
     try {
       if (await file.exists()) await file.delete();
@@ -237,12 +289,16 @@ class BlobStore {
         if (entity is! File) continue;
         final name = entity.uri.pathSegments.last;
         if (name.endsWith('.tmp')) {
-          // Debris from a crash mid-write. Nothing refers to it by definition.
+          // Debris from a crash mid-write. Nothing refers to it by definition
+          // — unless it is a write still in progress, which is what the grace
+          // is for.
+          if (await _isFresh(entity)) continue;
           reclaimed += await _sizeThenDelete(entity);
           continue;
         }
         final hash = hashFromFileName(name);
         if (live.contains(hash)) continue;
+        if (await _isFresh(entity)) continue;
         reclaimed += await _sizeThenDelete(entity);
         (await _index()).remove(hash);
       }
@@ -250,6 +306,17 @@ class BlobStore {
       debugPrint('KapyNotes: attachment sweep failed: $error');
     }
     return reclaimed;
+  }
+
+  /// Written within [sweepGrace]. A file that cannot be read is not fresh:
+  /// the sweep then treats it as it always did.
+  Future<bool> _isFresh(File file) async {
+    try {
+      final modified = await file.lastModified();
+      return _now().difference(modified) < sweepGrace;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<int> _sizeThenDelete(File file) async {
@@ -273,7 +340,7 @@ class BlobStore {
         if (entity is File) total += await entity.length();
       }
     } catch (error) {
-      debugPrint('KapyNotes: could not size the attachment store: \$error');
+      debugPrint('KapyNotes: could not size the attachment store: $error');
     }
     return total;
   }

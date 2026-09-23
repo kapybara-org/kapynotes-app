@@ -616,6 +616,10 @@ abstract class SyncApi {
   /// bills that, so a client cannot understate what it stored.
   Future<void> completeAttachment(String id);
 
+  /// Gives up a reservation, or releases a stored attachment and its quota.
+  /// Idempotent: an id the server no longer has is already released.
+  Future<void> deleteAttachment(String id);
+
   /// Presigned reads, in one round trip for a whole note's worth of images.
   Future<Map<String, Uri>> attachmentUrls(List<String> ids);
 
@@ -633,10 +637,17 @@ abstract class SyncApi {
 
 /// Somewhere to put one attachment's bytes.
 class AttachmentSlot {
-  const AttachmentSlot({required this.id, required this.uploadUrl});
+  const AttachmentSlot({
+    required this.id,
+    required this.uploadUrl,
+    this.expiresAt,
+  });
 
   final String id;
   final Uri uploadUrl;
+
+  /// When [uploadUrl] stops being accepted, where the server said.
+  final DateTime? expiresAt;
 }
 
 /// What every attachment is stored as, whatever the picture actually is.
@@ -994,12 +1005,21 @@ class HttpSyncApi implements SyncApi {
     if (id is! String || url is! String) {
       throw const SyncProtocolException('attachment response was malformed');
     }
-    return AttachmentSlot(id: id, uploadUrl: Uri.parse(url));
+    final expiresAt = body['expiresAt'];
+    return AttachmentSlot(
+      id: id,
+      uploadUrl: Uri.parse(url),
+      expiresAt: expiresAt is String ? DateTime.tryParse(expiresAt) : null,
+    );
   }
 
   @override
   Future<void> completeAttachment(String id) =>
       _send('POST', _baseUrl.resolve('attachments/$id/complete'));
+
+  @override
+  Future<void> deleteAttachment(String id) =>
+      _send('DELETE', _baseUrl.resolve('attachments/$id'), absentIsNull: true);
 
   @override
   Future<Map<String, Uri>> attachmentUrls(List<String> ids) async {
@@ -1029,65 +1049,107 @@ class HttpSyncApi implements SyncApi {
   }) async {
     // No authorization header: the signature is in the URL, and sending a
     // session token to object storage would leak it there for no gain.
-    final http.StreamedResponse response;
+    //
+    // Timed by silence, not by length. A single deadline for the whole
+    // request failed every upload that took longer than it to send — a
+    // 100 MB file on an ordinary uplink never once finished — and each
+    // attempt reserved a slot nothing would confirm. Here the clock restarts
+    // whenever a chunk leaves, so a slow upload that is moving is left alone
+    // and a stalled one is aborted, socket and all, rather than left hanging.
+    final abort = Completer<void>();
+    final watchdog = _Watchdog(timeout, () {
+      if (!abort.isCompleted) abort.complete();
+    });
     try {
-      final request = http.StreamedRequest('PUT', url)
-        ..headers['content-type'] = attachmentMime
-        ..contentLength = bytes.length;
+      final request =
+          http.AbortableStreamedRequest('PUT', url, abortTrigger: abort.future)
+            ..headers['content-type'] = attachmentMime
+            ..contentLength = bytes.length;
       onProgress?.call(0);
-      final responseFuture = _client.send(request).timeout(timeout);
+      final responseFuture = _client.send(request);
       const chunkSize = 64 * 1024;
       var sent = 0;
-      await request.sink.addStream(() async* {
-        while (sent < bytes.length) {
-          final end = (sent + chunkSize).clamp(0, bytes.length);
-          yield Uint8List.sublistView(bytes, sent, end);
-          sent = end;
-          onProgress?.call(sent / bytes.length);
-        }
-      }());
-      await request.sink.close();
-      response = await responseFuture;
+      // Not awaited: an aborted request stops reading the body, and a stream
+      // nobody reads never finishes. The response is what fails on an abort,
+      // so the response is what is waited for.
+      unawaited(
+        request.sink
+            .addStream(() async* {
+              while (sent < bytes.length) {
+                final end = (sent + chunkSize).clamp(0, bytes.length);
+                yield Uint8List.sublistView(bytes, sent, end);
+                sent = end;
+                watchdog.kick();
+                onProgress?.call(sent / bytes.length);
+              }
+            }())
+            .then((_) => request.sink.close(), onError: (_) {}),
+      );
+      final response = await responseFuture;
+      watchdog.kick();
       await response.stream.drain<void>();
-    } on TimeoutException {
-      throw const SyncTransientException('image upload timed out');
+      _checkBlobStatus(response.statusCode, 'storing');
+    } on SyncException {
+      rethrow;
+    } on http.RequestAbortedException {
+      throw const SyncTransientException('upload stalled');
     } catch (error) {
       throw SyncTransientException('$error');
-    }
-    if (response.statusCode == 429 || response.statusCode >= 500) {
-      throw SyncTransientException(
-        'storing an image failed with ${response.statusCode}',
-      );
-    }
-    if (response.statusCode >= 400) {
-      throw SyncProtocolException(
-        'storing an image failed with ${response.statusCode}',
-      );
+    } finally {
+      watchdog.cancel();
     }
   }
 
   @override
   Future<Uint8List?> getBlob(Uri url) async {
-    final http.Response response;
+    // Silence-timed for the same reason as [putBlob]: a large file on a slow
+    // connection is a long download, not a failed one.
+    final abort = Completer<void>();
+    final watchdog = _Watchdog(timeout, () {
+      if (!abort.isCompleted) abort.complete();
+    });
     try {
-      response = await _client.get(url).timeout(timeout);
-    } on TimeoutException {
-      throw const SyncTransientException('image download timed out');
+      final response = await _client.send(
+        http.AbortableRequest('GET', url, abortTrigger: abort.future),
+      );
+      watchdog.kick();
+      if (response.statusCode == 404) {
+        await response.stream.drain<void>();
+        return null;
+      }
+      if (response.statusCode >= 400) {
+        await response.stream.drain<void>();
+        _checkBlobStatus(response.statusCode, 'reading');
+      }
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in response.stream) {
+        builder.add(chunk);
+        watchdog.kick();
+      }
+      return builder.takeBytes();
+    } on SyncException {
+      rethrow;
+    } on http.RequestAbortedException {
+      throw const SyncTransientException('download stalled');
     } catch (error) {
       throw SyncTransientException('$error');
+    } finally {
+      watchdog.cancel();
     }
-    if (response.statusCode == 404) return null;
-    if (response.statusCode == 429 || response.statusCode >= 500) {
-      throw SyncTransientException(
-        'reading an image failed with ${response.statusCode}',
+  }
+
+  /// Object storage's answer, sorted the way every other request's is.
+  void _checkBlobStatus(int status, String doing) {
+    if (status == 429 || status >= 500) {
+      throw SyncTransientException('$doing an attachment failed with $status');
+    }
+    if (status >= 400) {
+      throw SyncRefusedException(
+        status,
+        '$doing an attachment failed with $status',
+        const {},
       );
     }
-    if (response.statusCode >= 400) {
-      throw SyncProtocolException(
-        'reading an image failed with ${response.statusCode}',
-      );
-    }
-    return response.bodyBytes;
   }
 
   List<Space> _spaces(Object? raw) => raw is List
@@ -1189,4 +1251,22 @@ class HttpSyncApi implements SyncApi {
   }
 
   void close() => _client.close();
+}
+
+/// Fires [onTimeout] once nothing has called [kick] for [timeout].
+class _Watchdog {
+  _Watchdog(this.timeout, this.onTimeout) {
+    kick();
+  }
+
+  final Duration timeout;
+  final void Function() onTimeout;
+  Timer? _timer;
+
+  void kick() {
+    _timer?.cancel();
+    _timer = Timer(timeout, onTimeout);
+  }
+
+  void cancel() => _timer?.cancel();
 }

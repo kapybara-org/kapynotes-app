@@ -58,9 +58,13 @@ import '../../images/image_picker.dart';
 import '../../audio/voice_player.dart';
 import '../../data/blob_store.dart';
 import '../../images/note_image_provider.dart';
+import '../../files/file_ingest.dart';
+import '../../files/file_picker.dart';
 import '../../video/video_ingest.dart';
 import '../../video/video_picker.dart';
 import 'image_drop_target.dart';
+import 'file_chip.dart';
+import 'file_insertion.dart';
 import 'image_insertion.dart';
 import 'note_image_layout.dart';
 import '../../audio/voice_recording_controller.dart';
@@ -99,6 +103,9 @@ typedef ImageBatchIngestor =
 typedef VideoBatchIngestor =
     Future<VideoBatch> Function(List<XFile> files, BlobStore store);
 
+typedef FileBatchIngestor =
+    Future<FileBatch> Function(List<XFile> files, BlobStore store);
+
 typedef ImagePrepared =
     void Function(NoteImageRef staged, NoteImageRef prepared);
 
@@ -136,6 +143,8 @@ class NoteEditor extends StatefulWidget {
     this.videoAcquirer,
     this.videoIngestor,
     this.videoAttachmentMaxBytes,
+    this.fileAcquirer,
+    this.fileIngestor,
     this.uploadProgressFor,
     this.typing = const [],
     this.remoteCarets,
@@ -240,6 +249,13 @@ class NoteEditor extends StatefulWidget {
   /// an in-app upgrade or a refreshed shared-space owner limit applies without
   /// remounting the note.
   final int Function()? videoAttachmentMaxBytes;
+
+  /// Opens the system's file chooser. Replaced by tests.
+  final AttachmentFileAcquirer? fileAcquirer;
+
+  /// Defaults to [ingestFileAttachments], sized by [videoAttachmentMaxBytes] —
+  /// the per-file limit is one number for every kind.
+  final FileBatchIngestor? fileIngestor;
 
   /// Null while signed out. Media is then fully local and should clear as
   /// soon as preparation finishes rather than wait for a network that is not
@@ -450,6 +466,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Set<NoteFormat>? _nextInsertedFormats;
   bool _imageActionBusy = false;
   bool _videoActionBusy = false;
+  bool _fileActionBusy = false;
   bool _copyingRichSelection = false;
 
   final SlashCommandMenuController _slashCommandMenu =
@@ -1659,6 +1676,29 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// caller never has to pretend a video is an image.
   void insertVideos(List<NoteVideoRef> refs) => insertImages(refs);
 
+  /// Adds already-stored files at the caret, one to a line.
+  void insertFileRefs(List<NoteFileRef> refs) {
+    if (widget.readOnly || refs.isEmpty) return;
+    final base = _dailySeparatorFormatter.prepareProgrammaticAppend(
+      _controller.value,
+    );
+    final selection = base.selection;
+    final caret = selection.isValid ? selection.end : base.text.length;
+    final result = insertFilesIntoBody(
+      body: base.text,
+      existing: _attachments,
+      caret: caret,
+      incoming: refs,
+    );
+    _nextAttachments = result.attachments;
+    _nextInsertedFormats = const {};
+    _controller.value = TextEditingValue(
+      text: result.body,
+      selection: TextSelection.collapsed(offset: result.selection),
+    );
+    _focusNode.requestFocus();
+  }
+
   /// Adds a finished recording to the note at the caret.
   ///
   /// The same shape as [insertImages] and for the same reason: the recording
@@ -2126,9 +2166,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  /// Pictures and playable videos become media; anything else is attached
+  /// as a file, exactly as it is.
   Future<void> insertDroppedMedia(List<XFile> files) async {
     final images = <XFile>[];
     final videos = <XFile>[];
+    final others = <XFile>[];
     for (final file in files) {
       final name = file.name;
       final dot = name.lastIndexOf('.');
@@ -2137,10 +2180,116 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         images.add(file);
       } else if (supportedVideoExtensions.contains(extension)) {
         videos.add(file);
+      } else {
+        others.add(file);
       }
     }
     if (images.isNotEmpty) await insertFiles(images);
     if (videos.isNotEmpty) await insertVideoFiles(videos);
+    if (others.isNotEmpty) await insertAttachmentFiles(others);
+  }
+
+  /// Opens the file chooser and attaches whatever comes back, as-is.
+  Future<void> pickAndInsertFileAttachments() async {
+    final store = widget.images;
+    if (store == null || !_beginFileAction()) return;
+    try {
+      final files = await (widget.fileAcquirer ?? acquireAttachmentFiles)();
+      if (files.isEmpty || !mounted) return;
+      await _ingestAndInsertFileAttachments(files, store);
+    } finally {
+      _endFileAction();
+    }
+  }
+
+  /// Attaches files that arrived from anywhere — the chooser or a drop.
+  Future<void> insertAttachmentFiles(List<XFile> files) async {
+    final store = widget.images;
+    if (store == null || files.isEmpty || !_beginFileAction()) return;
+    try {
+      await _ingestAndInsertFileAttachments(files, store);
+    } finally {
+      _endFileAction();
+    }
+  }
+
+  bool _beginFileAction() {
+    if (widget.readOnly) return false;
+    if (_fileActionBusy) {
+      Toast.show(
+        context,
+        'Another file is still being added',
+        icon: KapyIcons.hourglassRounded,
+      );
+      return false;
+    }
+    setState(() => _fileActionBusy = true);
+    return true;
+  }
+
+  void _endFileAction() {
+    if (mounted && _fileActionBusy) {
+      setState(() => _fileActionBusy = false);
+    }
+  }
+
+  Future<void> _ingestAndInsertFileAttachments(
+    List<XFile> files,
+    BlobStore store,
+  ) async {
+    final count = files.length;
+    final progress = Toast.showProgress(
+      context,
+      count == 1 ? 'Adding file…' : 'Adding $count files…',
+    );
+    final attachmentMaxBytes =
+        widget.videoAttachmentMaxBytes?.call() ?? freeAttachmentMaxBytes;
+    try {
+      final batch = widget.fileIngestor == null
+          ? await ingestFileAttachments(
+              files,
+              store: store,
+              attachmentMaxBytes: attachmentMaxBytes,
+            )
+          : await widget.fileIngestor!(files, store);
+      if (!mounted) {
+        progress.dismiss();
+        return;
+      }
+      insertFileRefs(batch.files);
+      final added = batch.files.length;
+      final rejected = batch.rejections.length;
+      if (added == 0) {
+        final first = batch.rejections.firstOrNull;
+        progress.error(
+          first == null
+              ? 'Could not add that file'
+              : '${first.name} ${describeFileRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes)}',
+        );
+      } else if (rejected > 0) {
+        final first = batch.rejections.first;
+        progress.success(
+          'Added $added ${added == 1 ? 'file' : 'files'}; '
+          '${first.name} ${describeFileRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes)}'
+          '${rejected > 1 ? ' (and ${rejected - 1} more)' : ''}',
+          icon: KapyIcons.warningRounded,
+        );
+      } else {
+        progress.success(added == 1 ? 'File added' : '$added files added');
+      }
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Kapy Notes editor',
+          context: ErrorDescription('while adding files'),
+        ),
+      );
+      progress.error(
+        count == 1 ? 'Could not add that file' : 'Could not add those files',
+      );
+    }
   }
 
   bool _beginImageAction() {
@@ -2467,6 +2616,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     SlashCommandType.table,
     SlashCommandType.divider,
     if (widget.images != null && !_videoActionBusy) SlashCommandType.video,
+    if (widget.images != null && !_fileActionBusy) SlashCommandType.file,
     SlashCommandType.numberedList,
     SlashCommandType.quote,
     SlashCommandType.codeBlock,
@@ -2759,6 +2909,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       case SlashCommandType.video:
         if (typed) _consumeSlashCommand(range);
         await pickAndInsertVideos();
+        break;
+      case SlashCommandType.file:
+        if (typed) _consumeSlashCommand(range);
+        await pickAndInsertFileAttachments();
         break;
       case SlashCommandType.voiceNote:
         if (typed) _consumeSlashCommand(range);
@@ -3662,6 +3816,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onPressed: () {
                 ContextMenuController.removeAny();
                 unawaited(pickAndInsertVideos());
+              },
+            ),
+          if (widget.images != null && touch)
+            ContextMenuButtonItem(
+              label: 'Attach file',
+              onPressed: () {
+                ContextMenuController.removeAny();
+                unawaited(pickAndInsertFileAttachments());
               },
             ),
           // Touch only, beside Add Image: on a phone the footer
@@ -4804,6 +4966,28 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           width: columnWidth,
           height: noteVoiceChipHeight + noteImageGap,
           child: SizedBox(width: columnWidth, child: _voiceChip(ref)),
+        );
+        continue;
+      }
+      if (ref is NoteFileRef) {
+        spans[ref.offset] = (
+          width: columnWidth,
+          height: noteFileChipHeight + noteImageGap,
+          child: SizedBox(
+            width: columnWidth,
+            child: NoteFileChip(
+              key: ValueKey('note-file-${ref.hash}-${ref.offset}'),
+              ref: ref,
+              store: store,
+              fetch: widget.imageFetch,
+              uploadProgress: ref.isUploaded
+                  ? null
+                  : widget.uploadProgressFor?.call(ref.hash),
+              onRemove: widget.readOnly
+                  ? null
+                  : () => removeAttachment(ref.offset),
+            ),
+          ),
         );
         continue;
       }

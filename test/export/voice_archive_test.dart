@@ -180,6 +180,6 @@ void main() {
   });
 
   test('the archive uses the current schema', () {
-    expect(readExportArchive(build(recording())).manifest!.schema, 3);
+    expect(readExportArchive(build(recording())).manifest!.schema, exportSchemaVersion);
   });
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../data/note_attachment.dart';
 import '../data/note_format.dart';
 
 /// The archive's index, and the reason import can be lossless.
@@ -14,12 +15,12 @@ import '../data/note_format.dart';
 /// writes. A reader that meets a higher number stops rather than guesses; the
 /// golden archives under `test/goldens/archives/` are what stop this changing
 /// by accident.
-/// Bumped to 2 when recordings joined pictures in the archive, and to 3 when
-/// videos joined them.
+/// Bumped to 2 when recordings joined pictures in the archive, to 3 when
+/// videos joined them, and to 4 when attached files did.
 ///
-/// Import accepts every earlier version; an older build refuses schema 3
-/// rather than mistaking a video for a still image.
-const int exportSchemaVersion = 3;
+/// Import accepts every earlier version; an older build refuses schema 4
+/// rather than mistaking a file for a still image it cannot decode.
+const int exportSchemaVersion = 4;
 
 const String exportManifestPath = 'manifest.json';
 const String exportNotesDirectory = 'notes';
@@ -62,6 +63,8 @@ class ExportedAttachment {
     this.durationMs,
     this.transcript,
     this.summary,
+    this.name,
+    this.bytes,
   });
 
   /// sha256 of the bytes, which is also what the file is named.
@@ -72,9 +75,14 @@ class ExportedAttachment {
 
   final String mime;
 
-  /// `image`, `voice`, or `video`. Defaulted, so an archive written before
-  /// recordings existed reads correctly without a migration.
+  /// `image`, `voice`, `video` or `file`. Defaulted, so an archive written
+  /// before recordings existed reads correctly without a migration.
   final String kind;
+
+  /// Files only: the name to restore, and the size to show before the bytes
+  /// are looked at.
+  final String? name;
+  final int? bytes;
 
   /// Visual media only.
   final int? width;
@@ -88,6 +96,7 @@ class ExportedAttachment {
 
   bool get isVoice => kind == 'voice';
   bool get isVideo => kind == 'video';
+  bool get isFile => kind == 'file';
 
   Map<String, Object?> toJson() => {
     'hash': hash,
@@ -101,6 +110,8 @@ class ExportedAttachment {
     if (durationMs != null) 'durationMs': durationMs,
     if (transcript != null) 'transcript': transcript,
     if (summary != null) 'summary': summary,
+    if (name != null) 'name': name,
+    if (bytes != null) 'bytes': bytes,
   };
 
   static ExportedAttachment? fromJson(Object? raw) {
@@ -122,6 +133,9 @@ class ExportedAttachment {
     // duration cannot be drawn; either way the entry is not usable.
     if (kind == 'image' && (width is! int || height is! int)) return null;
     if (kind == 'voice' && (durationMs is! int || durationMs <= 0)) return null;
+    final name = raw['name'];
+    final bytes = raw['bytes'];
+    if (kind == 'file' && (name is! String || name.isEmpty)) return null;
     if (kind == 'video' &&
         (width is! int ||
             width <= 0 ||
@@ -150,6 +164,8 @@ class ExportedAttachment {
       summary: raw['summary'] is Map
           ? (raw['summary']! as Map).cast<String, Object?>()
           : null,
+      name: name is String ? sanitizeFileName(name) : null,
+      bytes: bytes is int && bytes >= 0 ? bytes : null,
     );
   }
 }

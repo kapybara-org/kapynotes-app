@@ -81,6 +81,6 @@ void main() {
     // The golden above is a schema 1 archive and stays one: its whole job is
     // proving that archives written before this build still open. Current
     // schema coverage lives beside each added attachment kind.
-    expect(exportSchemaVersion, 3);
+    expect(exportSchemaVersion, 4);
   });
 }
