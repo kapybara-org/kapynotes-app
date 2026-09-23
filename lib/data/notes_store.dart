@@ -931,7 +931,10 @@ class NotesStore extends ChangeNotifier {
 
     final merged = <Note>[
       for (final note in _notes)
-        if (incoming.containsKey(note.id)) incoming.remove(note.id)! else note,
+        if (incoming.containsKey(note.id))
+          _keepingDrawing(incoming.remove(note.id)!, note)
+        else
+          note,
       // Whatever is left had no counterpart here.
       ...incoming.values,
     ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -940,6 +943,15 @@ class NotesStore extends ChangeNotifier {
     _tombstones = List.unmodifiable(stones.values);
     _persist();
   }
+
+  /// [restored] in place of [existing], keeping [existing]'s canvas when
+  /// [restored] brings none. An archive holds no drawings yet, and a drawing
+  /// restored from one as a written note would have its canvas erased on
+  /// every device the next time it synced.
+  static Note _keepingDrawing(Note restored, Note existing) =>
+      restored.drawing == null && existing.drawing != null
+      ? restored.copyWith(drawing: existing.drawing)
+      : restored;
 
   /// Drops every note and tombstone this device holds.
   ///

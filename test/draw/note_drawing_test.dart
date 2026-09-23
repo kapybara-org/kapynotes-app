@@ -89,6 +89,28 @@ void main() {
       })!;
       expect(back.elements.map((e) => e.id), ['y']);
     });
+
+    test('drops an element with too few points to draw', () {
+      // A line from one point threw in the painter, and took everything
+      // stacked above it off the canvas.
+      final back = NoteDrawing.fromJson({
+        'elements': [
+          {
+            'id': 'a',
+            'k': 'line',
+            'p': [0, 0],
+            'z': 0,
+          },
+          {
+            'id': 'b',
+            'k': 'pen',
+            'p': [0, 0],
+            'z': 1,
+          },
+        ],
+      })!;
+      expect(back.elements.map((e) => e.id), ['b']);
+    });
   });
 
   group('Note', () {
@@ -196,6 +218,25 @@ void main() {
       a.apply(ops);
       expect(a.view.body, 'Floor plan');
       expect(a.view.drawing!.elements, hasLength(2));
+    });
+
+    test('a drawing a later build marks another way is still a drawing', () {
+      final doc = NoteDoc(replica: 'a');
+      draw(doc, NoteDrawing([box('r')]));
+      doc.apply([
+        [
+          'r',
+          'draw',
+          2,
+          created.add(const Duration(seconds: 1)).millisecondsSinceEpoch,
+          'later',
+        ],
+      ]);
+      expect(doc.view.drawing!.elements, hasLength(1));
+      // Its title edited here, the marker and the canvas both stay.
+      final ops = draw(doc, doc.view.drawing, at: 2000);
+      expect(ops.where((op) => op is List && op[1] == 'draw'), isEmpty);
+      expect(doc.view.drawing!.elements, hasLength(1));
     });
 
     test('switching back to writing clears the flag', () {

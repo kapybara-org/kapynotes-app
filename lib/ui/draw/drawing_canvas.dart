@@ -10,6 +10,8 @@ import '../../data/note_drawing.dart';
 import '../../data/notes_store.dart';
 import '../compact_icon_button.dart';
 import '../floating_surface.dart';
+import '../mobile_page_swipe.dart';
+import '../sidebar_swipe.dart';
 import 'drawing_geometry.dart';
 import 'drawing_painter.dart';
 import 'note_mode_switch.dart';
@@ -867,7 +869,13 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       color: palette.paperColor,
       child: Stack(
         children: [
-          Positioned.fill(child: canvas),
+          // Every stroke and pan belongs to the canvas: neither a phone's
+          // page swipe nor a desktop's sidebar swipe may take one.
+          Positioned.fill(
+            child: SidebarSwipeExclusion(
+              child: PageSwipeExclusion(child: canvas),
+            ),
+          ),
           if (_textId != null && _textAt != null) _buildTextField(context),
           Positioned(left: 0, right: 0, top: 0, child: _buildHeader(context)),
           if (!widget.readOnly && _drawing.isEmpty && _gesture == null)

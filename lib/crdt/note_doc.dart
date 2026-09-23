@@ -232,7 +232,9 @@ class NoteDoc {
       }
     }
 
-    final isDrawing = drawing == null ? null : 1;
+    // A drawing keeps whatever marker it already carries: a later build may
+    // say more with it than 1, and rewriting it would take that away.
+    final isDrawing = drawing == null ? null : (_regs[_drawKey]?.value ?? 1);
     if ((isDrawing != null || _regs.containsKey(_drawKey)) &&
         _regs[_drawKey]?.value != isDrawing) {
       ops.add(_setLocal(_drawKey, isDrawing, nowMs));
@@ -620,7 +622,10 @@ class NoteDoc {
   }
 
   NoteDrawing? _renderDrawing() {
-    if (_regs[_drawKey]?.value != 1) return null;
+    // Any marker at all, not only 1: a note a later build marks some other
+    // way is still a drawing, and read as a written one it would be wiped by
+    // the next edit to its title.
+    if (_regs[_drawKey]?.value == null) return null;
     return NoteDrawing(_drawingElements());
   }
 
