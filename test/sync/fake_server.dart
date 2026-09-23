@@ -153,6 +153,24 @@ class FakeServer {
   /// off from a second; this just needs to be later than "now".
   Duration reconnectDelay = const Duration(milliseconds: 5);
 
+  /// Devices whose incoming frames are held back instead of delivered, until
+  /// [releaseFrames]. Stands in for a slow or sleeping network: `dart:io`
+  /// hands every frame that arrived in one read to the client back to back,
+  /// a microtask apart, not one per turn of the event loop as this fake
+  /// otherwise does.
+  final Set<String> holdFramesFor = {};
+
+  /// Stops holding [device]'s frames and delivers every held one at once.
+  void releaseFrames(String device) {
+    holdFramesFor.remove(device);
+    sockets[device]?._releaseHeld();
+  }
+
+  /// Set to drop the socket of the next push that lands, after the server
+  /// has applied it and before its ack goes out: the answer a flaky network
+  /// loses.
+  bool dropBeforeAck = false;
+
   /// Frames scheduled and not yet delivered, plus pushes still in their
   /// chain. Zero means the server has nothing more to say until asked.
   int _busy = 0;
@@ -1416,8 +1434,27 @@ class FakeSocket implements SyncSocket {
   }
 
   void _emit(SocketEvent event) {
+    if (event.kind == SocketEventKind.message &&
+        server.holdFramesFor.contains(device)) {
+      _held.add(event);
+      return;
+    }
     _later(() {
       if (!_events.isClosed) _events.add(event);
+    });
+  }
+
+  final List<SocketEvent> _held = [];
+
+  /// Everything held, added in one go: the stream then hands the frames over
+  /// a microtask apart, as a real socket does with one read's worth.
+  void _releaseHeld() {
+    final frames = List.of(_held);
+    _held.clear();
+    _later(() {
+      for (final frame in frames) {
+        if (!_events.isClosed) _events.add(frame);
+      }
     });
   }
 
@@ -1631,6 +1668,12 @@ class FakeSocket implements SyncSocket {
     }
     try {
       final result = server.pushOps(userId, device, push);
+      if (server.dropBeforeAck) {
+        // Applied and announced; only the answer is lost with the socket.
+        server.dropBeforeAck = false;
+        _dropped();
+        return;
+      }
       _send({
         't': 'ack',
         'id': id,

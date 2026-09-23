@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
 import '../data/note_attachment.dart';
 import '../data/note_format.dart';
 import 'anchor.dart';
@@ -424,6 +427,73 @@ class NoteDoc {
     if (_waiting.isNotEmpty)
       'pending': [for (final ops in _waiting.values) ...ops],
   };
+
+  /// The whole document as ordinary ops, in batches of at most about
+  /// [maxBytes] of UTF-8 JSON: every run of characters, tombstones marked,
+  /// then the registers, then whatever is still waiting for a parent.
+  ///
+  /// Applying them anywhere unions this document into that one, as merging
+  /// [toSnapshot] would, but through the path every build since protocol 3
+  /// takes for an op. So a device can hand the server everything it holds
+  /// without the server treating it as a snapshot, which would prune the ops
+  /// it claims to cover — including any this device never had.
+  ///
+  /// A run too long for one batch is cut into consecutive pieces. Each piece
+  /// hangs off the last character of the piece before, which is exactly where
+  /// it already sits.
+  List<List<Object?>> stateOps({int maxBytes = 48 * 1024}) {
+    final ops = <List<Object?>>[];
+    // A code unit costs at most six bytes of JSON (an escaped surrogate),
+    // plus room for the ids around it.
+    final maxRun = math.max(1, (maxBytes - 256) ~/ 6);
+    for (final run in _tree.encodeRuns()) {
+      final text = run[5]! as String;
+      if (text.length <= maxRun) {
+        ops.add(['i', ...run]);
+        continue;
+      }
+      final replica = run[0]! as String;
+      final counter = run[1]! as int;
+      for (var start = 0; start < text.length; start += maxRun) {
+        final first = start == 0;
+        ops.add([
+          'i',
+          replica,
+          counter + start,
+          first ? run[2] : replica,
+          first ? run[3] : counter + start - 1,
+          first ? run[4] : 'R',
+          text.substring(start, math.min(start + maxRun, text.length)),
+          run[6],
+        ]);
+      }
+    }
+    for (final entry in _regs.entries) {
+      final register = entry.value;
+      ops.add(['r', entry.key, register.value, register.ts, register.replica]);
+    }
+    for (final waiting in _waiting.values) {
+      for (final op in waiting) {
+        if (op is List) ops.add(List<Object?>.of(op));
+      }
+    }
+
+    final batches = <List<Object?>>[];
+    var batch = <Object?>[];
+    var size = 2;
+    for (final op in ops) {
+      final cost = utf8.encode(jsonEncode(op)).length + 1;
+      if (batch.isNotEmpty && size + cost > maxBytes) {
+        batches.add(batch);
+        batch = <Object?>[];
+        size = 2;
+      }
+      batch.add(op);
+      size += cost;
+    }
+    if (batch.isNotEmpty) batches.add(batch);
+    return batches;
+  }
 
   /// Unions another replica's state into this one: nodes by id, tombstones
   /// OR'd, registers by LWW, clock by max. Returns whether anything visible

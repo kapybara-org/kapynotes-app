@@ -107,7 +107,13 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
        _vault = vault,
        _now = now ?? DateTime.now {
     _notes.addListener(_onNotesChanged);
+    _docs.beforeFlush = _state.cursorsToSave;
   }
+
+  /// Protocol 3 shipped on this day. A note nobody has touched since was
+  /// seeded whole by whichever device got there first, and holds nothing on
+  /// any device that the log does not.
+  static final DateTime _opLogLaunch = DateTime.utc(2026, 9, 7);
 
   final NotesStore _notes;
   final SyncState _state;
@@ -186,6 +192,17 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
 
   /// Pushes awaiting an acknowledgement, by request id.
   final Map<String, ({DocRecord record, OutboxEntry entry})> _awaiting = {};
+
+  /// Where the next page of any log joins the queue. Pages are applied one at
+  /// a time, in the order they arrived, never side by side.
+  ///
+  /// Applying one awaits — decryption, a content key — and frames that
+  /// arrived in one read are handed over a microtask apart, so without this a
+  /// one-op live batch finished first and moved the cursor past the page it
+  /// had overtaken. The rest of that page was then taken for seen and never
+  /// applied, and every later op that hung off those characters waited
+  /// forever: the device kept a different note from everyone else's.
+  Future<void> _logQueue = Future<void>.value();
 
   /// Between frames while a caret moves: a dozen a second reads as live, and
   /// a held arrow key does not become a stream of relayed frames.
@@ -483,6 +500,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     unawaited(_docs.flush());
   }
 
+  /// Writes the merge state to disk now, rather than when its timer comes
+  /// round. For the way out of the app and into the background: a record
+  /// left behind the note list on disk comes back after a relaunch as a
+  /// document missing words the note still shows.
+  Future<void> flush() => _docs.flush();
+
   /// Signing out. Sync stops; the notes stay exactly where they are.
   void lock() {
     leaveNote();
@@ -541,6 +564,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
 
     try {
       await _docs.load();
+      if (_state.beginLogRepair()) {
+        // Every log is read again from the start, and nothing goes up into a
+        // space until its reading is done; see [_republishIfOwed].
+        _subscribed.clear();
+        _caughtUp.clear();
+      }
       await _keyring.refresh(_api, vault);
       final personal = _keyring.personal;
       if (personal != null) _state.adoptPersonalSpace(personal.id);
@@ -681,11 +710,16 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       case 'synced':
         final spaceId = message['spaceId'];
         if (spaceId is String) {
-          _servedAgain(spaceId);
-          _caughtUp.add(spaceId);
-          _resendPresence(spaceId);
-          _reconcileDirty();
-          _scheduleSend();
+          // Behind the pages it follows: the space is not read to the end
+          // until they have been applied, only sent.
+          await _inLogOrder(() async {
+            _servedAgain(spaceId);
+            _caughtUp.add(spaceId);
+            _republishIfOwed(spaceId);
+            _resendPresence(spaceId);
+            _reconcileDirty();
+            _scheduleSend();
+          });
         }
       case 'ack':
         await _onAck(message);
@@ -1160,10 +1194,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     } else if (ops.isNotEmpty) {
       record.opsSinceSnapshot++;
       record.ownOpsSinceSnapshot++;
-      // Coalesce with an unsent batch: a burst of typing is one op.
+      // Coalesce with a batch never sent: a burst of typing is one op. Never
+      // with one that went out and was not answered — the server may have
+      // it, and would take it back as a retry and drop what was added.
       final last = record.outbox.isEmpty ? null : record.outbox.last;
       if (last != null &&
-          !last.inFlight &&
+          !last.sent &&
           last.ops != null &&
           last.spaceId == spaceId) {
         last.ops!.addAll(ops);
@@ -1209,16 +1245,36 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           (entry.from != null && _needsPro.contains(entry.from))) {
         continue;
       }
+      // Nothing goes into a space until its log has been read to the end
+      // since launch. A record read back after a crash can be behind what it
+      // last sent, and the reading is what hands it its own ops back and moves
+      // its numbering past them; see [_claimDeviceSeq].
+      if (!_caughtUp.contains(entry.spaceId)) continue;
       final note = _notes.byId(record.noteId);
-      final push = await _preparePush(vault, record, entry, note);
-      if (push == null) continue;
+      // Closed to typing before it is sealed, so a keystroke that lands while
+      // it is goes into the entry behind it, not into ops the seal has already
+      // read; and in flight, so a second drain does not seal it too.
+      final wasSent = entry.sent;
+      entry.sent = true;
       entry.inFlight = true;
+      OpsPush? push;
+      try {
+        push = await _preparePush(vault, record, entry, note);
+      } finally {
+        if (push == null) {
+          entry.sent = wasSent;
+          entry.inFlight = false;
+        }
+      }
+      if (push == null) continue;
       final socket = _socket;
       if (_live && socket != null) {
         _awaiting[entry.id] = (record: record, entry: entry);
         if (!socket.send({'t': 'push', 'id': entry.id, ...push.toJson()})) {
+          // Nothing left the device.
           _awaiting.remove(entry.id);
           entry.inFlight = false;
+          entry.sent = wasSent;
         }
       } else {
         try {
@@ -1546,7 +1602,71 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       }
       _servedAgain(space.id);
       _caughtUp.add(space.id);
+      _republishIfOwed(space.id);
     }
+  }
+
+  /// Queues, once, everything this device holds of each note in [spaceId]
+  /// for the server — the second half of the repair
+  /// [SyncState.beginLogRepair] starts, run once the space has been read
+  /// again from the start.
+  ///
+  /// It goes up as ordinary ops, a note's whole state in a few of them: the
+  /// words a build before this one lost on their way up reach everyone else,
+  /// and theirs come back the same way. An op somebody already has costs them
+  /// a decryption and changes nothing.
+  void _republishIfOwed(String spaceId) {
+    if (!_state.owesRepair(spaceId) || !_docs.isLoaded) return;
+    // Somebody who may only read holds nothing the others lack.
+    if (!(_keyring.byId(spaceId)?.canEdit ?? false)) {
+      _state.repairDone(spaceId);
+      return;
+    }
+    final personalId = _keyring.personal?.id;
+    for (final record in _docs.records.toList()) {
+      if (record.spaceId != spaceId || !record.seeded) continue;
+      final note = _notes.byId(record.noteId);
+      if (note == null || (note.spaceId ?? personalId) != spaceId) continue;
+      if (note.updatedAt.isBefore(_opLogLaunch)) continue;
+      for (final ops in record.doc.stateOps()) {
+        record.outbox.add(
+          OutboxEntry(
+            id: _nextRequestId(),
+            spaceId: spaceId,
+            ops: ops,
+            deviceSeq: ++record.deviceSeq,
+          ),
+        );
+      }
+      _docs.markDirty(record.noteId);
+    }
+    _state.repairDone(spaceId);
+    _scheduleSend();
+  }
+
+  /// The server holds [deviceSeq] of this device's pushes for [record]'s
+  /// note: its own op, handed back by the log.
+  ///
+  /// A record read back after a crash can be older than what this device
+  /// sent before it, and would number its next push with a number the server
+  /// already has — which the server takes for a retry and drops. So the
+  /// counter moves past it, and so does every entry not yet sent under it.
+  void _claimDeviceSeq(DocRecord record, int deviceSeq) {
+    if (deviceSeq <= 0) return;
+    if (record.deviceSeq < deviceSeq) record.deviceSeq = deviceSeq;
+    for (final entry in record.outbox) {
+      final numbered = entry.deviceSeq;
+      if (entry.sent || numbered == null || numbered > deviceSeq) continue;
+      entry.deviceSeq = ++record.deviceSeq;
+    }
+  }
+
+  /// Runs [body] once every page of the log that arrived before it has been
+  /// applied. See [_logQueue].
+  Future<void> _inLogOrder(Future<void> Function() body) {
+    final run = _logQueue.then((_) => body());
+    _logQueue = run.catchError((Object _) {});
+    return run;
   }
 
   /// The server refused [spaceId] for want of Pro. See [_needsPro].
@@ -1564,8 +1684,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   }
 
   /// Applies one page of one space's log, in seq order, and moves the
-  /// cursor past it.
-  Future<void> _applyBatch(Vault vault, OpsBatch batch) async {
+  /// cursor past it — after every page that arrived before it.
+  Future<void> _applyBatch(Vault vault, OpsBatch batch) =>
+      _inLogOrder(() => _applyPage(vault, batch));
+
+  Future<void> _applyPage(Vault vault, OpsBatch batch) async {
     await _docs.load();
     // Anything typed and not yet absorbed goes into the documents first, so
     // the render at the end of this cannot overwrite it.
@@ -1611,8 +1734,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       if (!item.isMarker && item.epoch > record.serverEpoch) {
         record.serverEpoch = item.epoch;
       }
-      if (record.spaceId != batch.spaceId) {
+      if (record.spaceId != batch.spaceId && !(item.isMarker && item.deleted)) {
         // The log says the note is here now, wherever the local copy sits.
+        // Not a tombstone marker, which says the opposite: the note left this
+        // space, and the record already points wherever it went. Taking the
+        // old space back would make the next edit a move the server refuses.
         record.spaceId = batch.spaceId;
       }
 
@@ -1620,10 +1746,13 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         _docs.markDirty(noteId);
         continue;
       }
-      if (item.deviceId == _state.deviceId && !fresh && !item.isSnapshot) {
-        // Our own op, echoed back: already applied when it was made.
-        record.opsSinceSnapshot++;
-        continue;
+      if (item.deviceId == _state.deviceId) {
+        // Our own op, echoed back. Applied again all the same: it costs a
+        // decryption and changes nothing if the document has it, and a record
+        // read back after a crash may not — this is how it catches up. Its
+        // number is claimed too, so nothing queued here goes up under it.
+        final deviceSeq = item.deviceSeq;
+        if (deviceSeq != null) _claimDeviceSeq(record, deviceSeq);
       }
       if (item.engine != fugueEngine) {
         debugPrint('KapyNotes: op in unknown engine ${item.engine}');
@@ -2120,6 +2249,7 @@ class _LogItem {
     : seq = op.seq,
       noteId = op.noteId,
       deviceId = op.deviceId,
+      deviceSeq = op.deviceSeq,
       epoch = op.epoch,
       engine = op.engine,
       payload = op.payload,
@@ -2132,6 +2262,7 @@ class _LogItem {
     : seq = snap.seq,
       noteId = snap.noteId,
       deviceId = snap.deviceId,
+      deviceSeq = null,
       epoch = snap.epoch,
       engine = snap.engine,
       payload = snap.payload,
@@ -2143,6 +2274,9 @@ class _LogItem {
   final int seq;
   final String noteId;
   final String deviceId;
+
+  /// The writer's own number for an op; snapshots carry none.
+  final int? deviceSeq;
   final int epoch;
   final String engine;
   final SealedBox payload;

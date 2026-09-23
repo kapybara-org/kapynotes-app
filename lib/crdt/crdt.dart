@@ -10,3 +10,4 @@ export 'fugue_text.dart' show FugueNode, FugueText, Placement, EncodedRun;
 export 'node_id.dart';
 export 'note_doc.dart';
 export 'text_diff.dart';
+export 'text_merge.dart';

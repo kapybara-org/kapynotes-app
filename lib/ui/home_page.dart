@@ -1835,6 +1835,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.notes.updateDocument(id, body, formats, attachments);
   }
 
+  /// The note as the store holds it this instant. An editor reads it on
+  /// every edit: another device's words reach the store before the page has
+  /// rebuilt around them, and an edit written without them would delete them.
+  StoredNoteDocument? _storedDocument(String id) {
+    final note = widget.notes.byId(id);
+    return note == null
+        ? null
+        : (
+            body: note.body,
+            formats: note.formats,
+            attachments: note.attachments,
+          );
+  }
+
   void _publishPreparedImage(
     String noteId,
     NoteImageRef staged,
@@ -2687,6 +2701,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               : null,
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
+          storedDocument: () => _storedDocument(note.id),
           onGutterWidthChanged: desktopResultsDivider
               ? (value) => widget.prefs.gutterWidth = value
               : (_) {},
@@ -2784,6 +2799,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               : null,
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
+          storedDocument: () => _storedDocument(note.id),
           onGutterWidthChanged: (value) => widget.prefs.gutterWidth = value,
           onResultsVisibilityChanged: (value) =>
               widget.prefs.resultsVisible = value,
