@@ -2630,6 +2630,65 @@ void main() {
     });
   });
 
+  group('leaving a new note without writing in it', () {
+    Finder plus() => find.byKey(const ValueKey('sidebar-new-note'));
+    Finder row(String title) =>
+        find.widgetWithText(NoteRow, title).hitTestable().first;
+
+    testWidgets('deletes it, so the list keeps only written notes', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.create(body: 'Something written');
+      await tester.pumpAndSettle();
+      final before = notes.notes.length;
+
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      final blank = notes.notes.first;
+      expect(blank.isEmpty, isTrue);
+      expect(notes.notes, hasLength(before + 1));
+
+      await tester.tap(row('Something written'));
+      await tester.pumpAndSettle();
+
+      expect(notes.byId(blank.id), isNull);
+      expect(notes.notes, hasLength(before));
+      // Gone everywhere, not only here.
+      expect(notes.tombstones.map((stone) => stone.id), contains(blank.id));
+    });
+
+    testWidgets('keeps it once anything is written', (tester) async {
+      await pumpApp(tester);
+      notes.create(body: 'Something written');
+      await tester.pumpAndSettle();
+
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      final started = notes.notes.first;
+      notes.updateBody(started.id, 'Now it says something');
+      await tester.pumpAndSettle();
+
+      await tester.tap(row('Something written'));
+      await tester.pumpAndSettle();
+      expect(notes.byId(started.id), isNotNull);
+    });
+
+    testWidgets('leaves alone a blank note it did not just make', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      // As though it arrived from another device, or was emptied by hand.
+      final arrived = notes.create();
+      notes.create(body: 'Something written');
+      await tester.pumpAndSettle();
+
+      await tester.tap(row('Something written'));
+      await tester.pumpAndSettle();
+      expect(notes.byId(arrived.id), isNotNull);
+    });
+  });
+
   testWidgets('shows updated times and keeps the latest note at the top', (
     tester,
   ) async {

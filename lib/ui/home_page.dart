@@ -253,6 +253,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// on it is one of their notes and behaves like one.
   String? _untouchedWelcomeId;
 
+  /// Notes made by "new note" on this device since the app started.
+  ///
+  /// One still blank when the reader moves on was never written, so it is
+  /// deleted rather than left in the list — see [_discardAbandonedBlanks].
+  /// Only these: a blank note that came from another device, or one the
+  /// reader emptied by hand, may be somebody's on purpose.
+  final Set<String> _freshNoteIds = {};
+  bool _discardScheduled = false;
+
   @override
   void initState() {
     super.initState();
@@ -955,6 +964,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _archiveEditorKey = GlobalKey<NoteEditorState>();
         _compactEditorKey = GlobalKey<NoteEditorState>();
         widget.account?.sync?.leaveNote(previous);
+        _scheduleDiscardAbandonedBlanks();
       }
       _selectedId = id;
       return;
@@ -982,6 +992,54 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _selectedId = next;
     final open = _workspace.openNoteIds;
     _paneEditorKeys.removeWhere((id, _) => !open.contains(id));
+    if (!selectionPreview) _scheduleDiscardAbandonedBlanks();
+  }
+
+  /// Runs [_discardAbandonedBlanks] once the change under way has settled.
+  ///
+  /// Selection moves inside `setState` and in the middle of pane changes, so
+  /// the delete waits for a microtask rather than rebuilding the list under
+  /// the code that is still rearranging it.
+  void _scheduleDiscardAbandonedBlanks() {
+    if (_freshNoteIds.isEmpty || _discardScheduled) return;
+    _discardScheduled = true;
+    scheduleMicrotask(() {
+      _discardScheduled = false;
+      if (mounted) _discardAbandonedBlanks();
+    });
+  }
+
+  /// Deletes the new notes the reader left without writing anything.
+  ///
+  /// A note still on screen — selected, or in another pane — is still being
+  /// looked at, and one mid-way through a held-key switch may be switched
+  /// back to. A note that got any writing, picture or recording is a real
+  /// note from then on, and stops being a candidate even if later emptied.
+  void _discardAbandonedBlanks() {
+    if (_noteSwitchWorkspace != null) return;
+    final open = _workspace.openNoteIds;
+    final recordingInto = widget.recording?.isRecording ?? false
+        ? widget.recording?.session?.noteId
+        : null;
+    final abandoned = <String>[];
+    for (final id in _freshNoteIds.toList()) {
+      if (id == _selectedId || open.contains(id) || id == recordingInto) {
+        continue;
+      }
+      _freshNoteIds.remove(id);
+      final note = widget.notes.byId(id);
+      // Filed away on purpose is not abandoned.
+      if (note == null || note.isShared || note.isArchived) continue;
+      if (note.isEmpty && note.attachments.isEmpty) abandoned.add(id);
+    }
+    if (abandoned.isEmpty) return;
+    for (final id in abandoned) {
+      _totalAnimatedFor.remove(id);
+    }
+    // Plain [NotesStore.deleteAll], not [_forget]: none of these is on screen,
+    // so the selection stays put, and a blank note owns no attachments to
+    // sweep.
+    widget.notes.deleteAll(abandoned);
   }
 
   /// Abandons a held-key preview before another interaction takes ownership.
@@ -1005,6 +1063,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     final open = _workspace.openNoteIds;
     _paneEditorKeys.removeWhere((id, _) => !open.contains(id));
+    _scheduleDiscardAbandonedBlanks();
     return true;
   }
 
@@ -1309,6 +1368,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final preview = _noteSwitchWorkspace;
     _noteSwitchWorkspace = null;
     preview?.commit();
+    _scheduleDiscardAbandonedBlanks();
   }
 
   /// Starts a new note, unless the one already open is a new note.
@@ -1339,6 +1399,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return false;
     }
     final note = blank ?? widget.notes.create(hidden: creatingHidden);
+    if (blank == null) _freshNoteIds.add(note.id);
     setState(() {
       _query = '';
       _archiveMode = false;
