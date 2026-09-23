@@ -76,6 +76,7 @@ class NoteFooter extends StatelessWidget {
     this.onRemoveTableColumnPressed,
     this.onCycleTableAlignmentPressed,
     this.tableAlignment,
+    this.tableTapGroup,
     required this.boldActive,
     required this.italicActive,
     required this.bulletsActive,
@@ -147,6 +148,11 @@ class NoteFooter extends StatelessWidget {
   final VoidCallback? onRemoveTableColumnPressed;
   final VoidCallback? onCycleTableAlignmentPressed;
   final MarkdownCellAlign? tableAlignment;
+
+  /// The tap group of the open table cell. A press on the table controls is
+  /// part of editing that cell, not a press somewhere else that finishes it —
+  /// without this, the first tap on "insert row" closed the cell instead.
+  final Object? tableTapGroup;
   final bool boldActive;
   final bool italicActive;
   final bool bulletsActive;
@@ -434,16 +440,24 @@ class NoteFooter extends StatelessWidget {
                                 ),
                                 if (showTableControls) ...[
                                   SizedBox(width: _formatGroupGap),
-                                  _TableFooterControls(
-                                    onAddRow: onAddTableRowPressed!,
-                                    onRemoveRow: onRemoveTableRowPressed,
-                                    onAddColumn: onAddTableColumnPressed!,
-                                    onRemoveColumn: onRemoveTableColumnPressed,
-                                    onCycleAlignment:
-                                        onCycleTableAlignmentPressed!,
-                                    alignment:
-                                        tableAlignment ??
-                                        MarkdownCellAlign.start,
+                                  TapRegion(
+                                    groupId: tableTapGroup,
+                                    // A tap must not take focus from the cell,
+                                    // or the keyboard goes down with it.
+                                    child: ExcludeFocus(
+                                      child: _TableFooterControls(
+                                        onAddRow: onAddTableRowPressed!,
+                                        onRemoveRow: onRemoveTableRowPressed,
+                                        onAddColumn: onAddTableColumnPressed!,
+                                        onRemoveColumn:
+                                            onRemoveTableColumnPressed,
+                                        onCycleAlignment:
+                                            onCycleTableAlignmentPressed!,
+                                        alignment:
+                                            tableAlignment ??
+                                            MarkdownCellAlign.start,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ],
@@ -581,10 +595,10 @@ class _TableFooterControls extends StatelessWidget {
   final VoidCallback onCycleAlignment;
   final MarkdownCellAlign alignment;
 
-  String get _alignmentLabel => switch (alignment) {
-    MarkdownCellAlign.start => 'L',
-    MarkdownCellAlign.center => 'C',
-    MarkdownCellAlign.end => 'R',
+  KapyIconData get _alignmentIcon => switch (alignment) {
+    MarkdownCellAlign.start => KapyIcons.alignLeft,
+    MarkdownCellAlign.center => KapyIcons.alignCenter,
+    MarkdownCellAlign.end => KapyIcons.alignRight,
   };
 
   String get _alignmentTooltip => switch (alignment) {
@@ -599,38 +613,38 @@ class _TableFooterControls extends StatelessWidget {
     children: [
       _FormatButton(
         key: const ValueKey('footer-table-add-row'),
-        label: 'R+',
-        tooltip: 'Add row below',
+        icon: KapyIcons.tableRowBelow,
+        tooltip: 'Insert row below',
         active: false,
         onPressed: onAddRow,
       ),
       _FormatButton(
-        key: const ValueKey('footer-table-remove-row'),
-        label: 'R−',
-        tooltip: 'Remove row',
-        active: false,
-        onPressed: onRemoveRow,
-      ),
-      _FormatButton(
         key: const ValueKey('footer-table-add-column'),
-        label: 'C+',
-        tooltip: 'Add column after',
+        icon: KapyIcons.tableColumnRight,
+        tooltip: 'Insert column right',
         active: false,
         onPressed: onAddColumn,
       ),
       _FormatButton(
-        key: const ValueKey('footer-table-remove-column'),
-        label: 'C−',
-        tooltip: 'Remove column',
-        active: false,
-        onPressed: onRemoveColumn,
-      ),
-      _FormatButton(
         key: const ValueKey('footer-table-align-column'),
-        label: _alignmentLabel,
+        icon: _alignmentIcon,
         tooltip: _alignmentTooltip,
         active: alignment != MarkdownCellAlign.start,
         onPressed: onCycleAlignment,
+      ),
+      _FormatButton(
+        key: const ValueKey('footer-table-remove-row'),
+        icon: KapyIcons.tableDeleteRow,
+        tooltip: 'Delete row',
+        active: false,
+        onPressed: onRemoveRow,
+      ),
+      _FormatButton(
+        key: const ValueKey('footer-table-remove-column'),
+        icon: KapyIcons.tableDeleteColumn,
+        tooltip: 'Delete column',
+        active: false,
+        onPressed: onRemoveColumn,
       ),
     ],
   );

@@ -476,4 +476,40 @@ class KapyIcons {
     HugeIcons.strokeRoundedMinusSign,
   );
   static const codeRounded = KapyIconData(0xE070, HugeIcons.strokeRoundedCode);
+  static const tableRowAbove = KapyIconData(
+    0xE071,
+    HugeIcons.strokeRoundedInsertRowUp,
+  );
+  static const tableRowBelow = KapyIconData(
+    0xE072,
+    HugeIcons.strokeRoundedInsertRowDown,
+  );
+  static const tableColumnLeft = KapyIconData(
+    0xE073,
+    HugeIcons.strokeRoundedInsertColumnLeft,
+  );
+  static const tableColumnRight = KapyIconData(
+    0xE074,
+    HugeIcons.strokeRoundedInsertColumnRight,
+  );
+  static const tableDeleteRow = KapyIconData(
+    0xE075,
+    HugeIcons.strokeRoundedDeleteRow,
+  );
+  static const tableDeleteColumn = KapyIconData(
+    0xE076,
+    HugeIcons.strokeRoundedDeleteColumn,
+  );
+  static const alignLeft = KapyIconData(
+    0xE077,
+    HugeIcons.strokeRoundedTextAlignLeft,
+  );
+  static const alignCenter = KapyIconData(
+    0xE078,
+    HugeIcons.strokeRoundedTextAlignCenter,
+  );
+  static const alignRight = KapyIconData(
+    0xE079,
+    HugeIcons.strokeRoundedTextAlignRight,
+  );
 }

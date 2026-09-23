@@ -1025,6 +1025,189 @@ void main() {
       expect(tester.widget<TextField>(cell).controller!.text, isEmpty);
     });
 
+    testWidgets('every keystroke stays in the cell, not only the first', (
+      tester,
+    ) async {
+      // The reported bug: each splice went back into the note with a toolbar
+      // cause, and for that cause the note's field asks for the keyboard. It
+      // took focus from the cell, so the next key landed among the table's
+      // hidden pipes. `enterText` by finder cannot see that — it writes to
+      // whichever field it is pointed at — so this types into whatever field
+      // holds the keyboard, as a person does.
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |\n| Cake | 5 |';
+      String? latest;
+      await tester.pumpWidget(
+        harness(body, onBodyChanged: (value) => latest = value),
+      );
+      await tester.pumpAndSettle();
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+      // Down a row, so the note's parked caret has somewhere new to go.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      for (final typed in ['Teas', 'Teas a', 'Teas an', 'Teas and']) {
+        tester.testTextInput.updateEditingValue(
+          TextEditingValue(
+            text: typed,
+            selection: TextSelection.collapsed(offset: typed.length),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          FocusManager.instance.primaryFocus?.debugLabel,
+          'table cell',
+          reason: 'after "$typed"',
+        );
+      }
+      expect(latest, '| a | b |\n| --- | --- |\n| Tea | 4 |\n| Teas and | 5 |');
+    });
+
+    testWidgets('arrow keys walk the grid and leave it at its edges', (
+      tester,
+    ) async {
+      const body = 'before\n\n| a | b |\n| --- | --- |\n| Tea | 4 |\n\nafter';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+
+      final cell = find.byKey(const ValueKey('table-cell-editor'));
+      TextEditingController field() =>
+          tester.widget<TextField>(cell).controller!;
+
+      // The caret is at the end of `Tea`, so Right has nowhere left to go.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(field().text, '4');
+      expect(field().selection.baseOffset, 0, reason: 'arrives at the start');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      expect(field().text, 'Tea');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      expect(field().text, 'a', reason: 'up to the header');
+
+      // Up out of the header leaves the table, onto the line above it —
+      // never into its hidden source.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      expect(cell, findsNothing);
+      expect(controllerOf(tester).selection.baseOffset, 'before\n'.length);
+      expect(
+        FocusManager.instance.primaryFocus?.debugLabel,
+        isNot('table cell'),
+      );
+
+      // And Down from the line above walks back in.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(field().text, 'a');
+    });
+
+    testWidgets('Escape leaves the caret on the line under the table', (
+      tester,
+    ) async {
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |\n\nafter';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('table-cell-editor')), findsNothing);
+      expect(
+        controllerOf(tester).selection.baseOffset,
+        body.indexOf('\n\nafter') + 1,
+      );
+    });
+
+    testWidgets('undo straight after typing in a cell takes the typing back', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() {
+        AppPlatform.debugTargetPlatformOverride = null;
+        debugDefaultTargetPlatformOverride = null;
+      });
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
+      String latest = body;
+      await tester.pumpWidget(
+        harness(body, onBodyChanged: (value) => latest = value),
+      );
+      await tester.pumpAndSettle();
+      final rowStart = body.indexOf('| Tea');
+      await tester.tapAt(centerOfRange(tester, rowStart, rowStart + 1));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 600));
+
+      await tester.enterText(
+        find.byKey(const ValueKey('table-cell-editor')),
+        'Coffee',
+      );
+      await tester.pump();
+      expect(latest, '| a | b |\n| --- | --- |\n| Coffee | 4 |');
+
+      // Well inside the half second the history waits before it records a
+      // change, which is when a controller's undo refuses to do anything.
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ, platform: 'windows');
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.pumpAndSettle();
+      debugDefaultTargetPlatformOverride = null;
+
+      expect(latest, body);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('table-cell-editor')))
+            .controller!
+            .text,
+        'Tea',
+      );
+    });
+
+    testWidgets('words typed under a table start a paragraph of their own', (
+      tester,
+    ) async {
+      const body = '| a | b |\n| --- | --- |\n| Tea | 4 |\n';
+      String? latest;
+      await tester.pumpWidget(
+        harness(
+          body,
+          autofocus: true,
+          onBodyChanged: (value) => latest = value,
+        ),
+      );
+      await tester.pumpAndSettle();
+      controllerOf(tester).selection = TextSelection.collapsed(
+        offset: body.length,
+      );
+      await tester.pump();
+
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: '${body}x',
+          selection: TextSelection.collapsed(offset: body.length + 1),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // Straight under the last row, `x` would have been a third row.
+      expect(latest, '$body\nx');
+    });
+
     testWidgets('the cell toolbar edits rows, columns and alignment', (
       tester,
     ) async {
@@ -1040,7 +1223,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('table-cell-toolbar')), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('table-align-column')));
+      await tester.tap(find.byKey(const ValueKey('table-align-center')));
       await tester.pumpAndSettle();
       expect(latest, '| a | b |\n| :---: | --- |\n| Tea | 4 |');
 
@@ -1241,7 +1424,10 @@ void main() {
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
         addTearDown(tester.view.reset);
         const body = '| a | b |\n| --- | --- |\n| Tea | 4 |';
-        await tester.pumpWidget(harness(body));
+        String? latest;
+        await tester.pumpWidget(
+          harness(body, onBodyChanged: (value) => latest = value),
+        );
         await tester.pumpAndSettle();
 
         final rowStart = body.indexOf('| Tea');
@@ -1259,6 +1445,15 @@ void main() {
           find.byKey(const ValueKey('footer-table-align-column')),
           findsOneWidget,
         );
+
+        // A press on them is part of editing the cell, not a press elsewhere
+        // that finishes it: the first one used to close the cell and do
+        // nothing else.
+        await tester.tap(find.byKey(const ValueKey('footer-table-add-row')));
+        await tester.pumpAndSettle();
+        expect(latest, '$body\n|  |  |');
+        expect(cell, findsOneWidget);
+        expect(FocusManager.instance.primaryFocus?.debugLabel, 'table cell');
       },
     );
 

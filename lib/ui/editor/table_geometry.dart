@@ -44,6 +44,9 @@ class TableGeometry {
       (most, row) => math.max(most, row.cells.length),
     );
     final natural = List<double>.filled(count, 0);
+    // The longest word in each column: narrower than that, a word has to be
+    // broken in the middle to fit.
+    final longestWord = List<double>.filled(count, 0);
 
     for (final row in table.rows) {
       final painters = <TextPainter>[];
@@ -69,6 +72,7 @@ class TableGeometry {
           ellipsis: fitting ? null : '…',
         )..layout(maxWidth: maxCellWidth);
         natural[c] = math.max(natural[c], painter.width);
+        longestWord[c] = math.max(longestWord[c], painter.minIntrinsicWidth);
         painters.add(painter);
       }
       _cells[row] = painters;
@@ -77,6 +81,7 @@ class TableGeometry {
     columns = fitting
         ? _fitted(
             [for (final width in natural) width + padding * 2],
+            [for (final width in longestWord) width + padding * 2],
             fitToWidth!,
             minColumnWidth,
           )
@@ -218,36 +223,54 @@ class TableGeometry {
   /// shared ceiling, found by halving, and anything already narrower than that
   /// ceiling keeps the width it asked for. A column of long prose beside a
   /// column of numbers therefore loses the room, which is the sharing a reader
-  /// would choose. When not even [floor] for every column fits, they share what
-  /// there is equally — a table that narrow is unreadable either way, and this
-  /// at least keeps it inside the writing column.
+  /// would choose.
+  ///
+  /// No column is capped below its longest word while every column's longest
+  /// word still fits: a phone-width table whose prose column broke `breakfast`
+  /// into `breakfa` and `st` while a column of short labels kept its whole
+  /// width was the wrong way round. Only when even that cannot fit are words
+  /// broken, and then every column gives up room in proportion to its longest
+  /// word — or all share it equally below [floor] each; a table that narrow is
+  /// hard to read either way, and this at least keeps it inside the writing
+  /// column.
   static List<double> _fitted(
     List<double> natural,
+    List<double> longestWord,
     double available,
     double floor,
   ) {
     if (natural.isEmpty) return natural;
-    final total = natural.fold<double>(0, (sum, width) => sum + width);
-    if (total <= available) return natural;
-    if (available <= floor * natural.length) {
-      final each = available / natural.length;
-      return [for (var i = 0; i < natural.length; i++) each];
+    double sum(Iterable<double> widths) =>
+        widths.fold<double>(0, (sum, width) => sum + width);
+    if (sum(natural) <= available) return natural;
+    final minimum = [
+      for (var i = 0; i < natural.length; i++)
+        math.min(natural[i], math.max(floor, longestWord[i])),
+    ];
+    final needed = sum(minimum);
+    if (needed > available) {
+      if (available <= floor * natural.length) {
+        final each = available / natural.length;
+        return [for (var i = 0; i < natural.length; i++) each];
+      }
+      final share = available / needed;
+      return [for (final width in minimum) width * share];
     }
-    var low = floor;
+    List<double> capped(double cap) => [
+      for (var i = 0; i < natural.length; i++)
+        math.max(minimum[i], math.min(natural[i], cap)),
+    ];
+    var low = 0.0;
     var high = natural.reduce(math.max);
     for (var i = 0; i < 40; i++) {
       final cap = (low + high) / 2;
-      final sum = natural.fold<double>(
-        0,
-        (sum, width) => sum + math.min(width, cap),
-      );
-      if (sum > available) {
+      if (sum(capped(cap)) > available) {
         high = cap;
       } else {
         low = cap;
       }
     }
-    return [for (final width in natural) math.min(width, low)];
+    return capped(low);
   }
 
   void dispose() {

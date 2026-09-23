@@ -1398,6 +1398,69 @@ int markdownTableColumnCount(MarkdownTable table) {
 }
 
 /// The table [offset] is in, if it is in one.
+/// Words typed onto the empty line touching a table, kept out of it.
+///
+/// In GFM a line straight after a table's last row is one more row of it, and
+/// a line straight before its header leaves no table at all, since a table
+/// cannot interrupt a paragraph. Either way the first letter typed there would
+/// reshape the grid under the writer's hands. So typing on that empty line
+/// gains a line break on the table's side, and the words start a paragraph of
+/// their own with a blank line between it and the table.
+///
+/// Only typing: a line break is a new line and harmless, and a row pasted
+/// under a table is asking to join it.
+TextEditingValue? separateTypingFromTables(
+  TextEditingValue oldValue,
+  TextEditingValue newValue,
+  MarkdownAnalysis analysis,
+) {
+  if (analysis.tables.isEmpty) return null;
+  final selection = oldValue.selection;
+  if (!selection.isValid || !selection.isCollapsed) return null;
+  final old = oldValue.text;
+  final now = newValue.text;
+  final at = selection.baseOffset;
+  final added = now.length - old.length;
+  if (added <= 0 || at > old.length) return null;
+  if (!now.startsWith(old.substring(0, at)) ||
+      !now.endsWith(old.substring(at))) {
+    return null;
+  }
+  final inserted = now.substring(at, at + added);
+  if (inserted.startsWith('\n') || inserted.startsWith('|')) return null;
+  final lineStart = at == 0 ? 0 : old.lastIndexOf('\n', at - 1) + 1;
+  final newline = old.indexOf('\n', at);
+  final lineEnd = newline < 0 ? old.length : newline;
+  if (lineStart != lineEnd) return null;
+
+  TextRange shifted(TextRange range, int by, int from) => !range.isValid
+      ? range
+      : TextRange(
+          start: range.start >= from ? range.start + by : range.start,
+          end: range.end >= from ? range.end + by : range.end,
+        );
+
+  for (final table in analysis.tables) {
+    if (lineStart == table.end + 1) {
+      return TextEditingValue(
+        text: '${old.substring(0, at)}\n$inserted${old.substring(at)}',
+        selection: TextSelection.collapsed(
+          offset: newValue.selection.baseOffset + 1,
+        ),
+        composing: shifted(newValue.composing, 1, at),
+      );
+    }
+    if (lineEnd + 1 == table.start) {
+      return TextEditingValue(
+        text: '${old.substring(0, at)}$inserted\n${old.substring(at)}',
+        selection: newValue.selection,
+        composing: newValue.composing,
+      );
+    }
+  }
+  return null;
+}
+
 MarkdownTable? markdownTableAt(MarkdownAnalysis analysis, int offset) {
   for (final table in analysis.tables) {
     if (offset >= table.start && offset <= table.end) return table;
@@ -1481,6 +1544,32 @@ MarkdownEdit setMarkdownTableCell(
     final cell = line.cells[column];
     if (source.substring(cell.start, cell.end) == words) {
       return MarkdownEdit._unchanged(value);
+    }
+    // An empty cell is a collapsed range just before its closing pipe, so a
+    // splice there would write `|  Taxi|`. Its padding is replaced as well,
+    // for the `| Taxi |` a person would have written.
+    if (cell.start == cell.end &&
+        cell.start < line.end &&
+        source.codeUnitAt(cell.start) == 0x7C) {
+      var open = cell.start;
+      while (open > line.start && _isSpace(source.codeUnitAt(open - 1))) {
+        open--;
+      }
+      if (open > line.start && source.codeUnitAt(open - 1) == 0x7C) {
+        return _applyEdits(value, [
+          _Edit(open, cell.start, words.isEmpty ? '  ' : ' $words '),
+        ]);
+      }
+    }
+    // The padding before the closing pipe goes too, and one space is written
+    // back: otherwise every space typed at the end of a cell stays behind in
+    // it, and `| Hi there  |` grows a space for each one.
+    var end = cell.end;
+    while (end < line.end && _isSpace(source.codeUnitAt(end))) {
+      end++;
+    }
+    if (end > cell.end && end < line.end && source.codeUnitAt(end) == 0x7C) {
+      return _applyEdits(value, [_Edit(cell.start, end, '$words ')]);
     }
     return _applyEdits(value, [_Edit(cell.start, cell.end, words)]);
   }

@@ -382,12 +382,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// has given up focus — see [_editingNote], which is what keeps the rest of
   /// the note's markdown from flipping to source the moment a cell is tapped.
   final TableCellEditor _cellEditor = TableCellEditor();
-  ({int tableStart, int row, int column})? _editingCell;
 
-  /// How much taller than the height it is given a placeholder's line comes out,
-  /// measured during layout. A row's band starts that far above the spacer's own
-  /// box, which is how a cell editor is placed exactly over its painted cell.
-  double _rowOverhead = 0;
+  /// Where each line of the note was last measured to start, which is what the
+  /// grid behind the text is painted from. A cell's editor is placed from the
+  /// same numbers, or it would sit a few pixels off the cell it edits.
+  LineOffsets? _lineOffsets;
+  List<int>? _lineStarts;
+  String? _lineStartsText;
+  ({int tableStart, int row, int column})? _editingCell;
 
   /// Whether this note is being written in: its own field has focus, or one of
   /// its cells does.
@@ -772,6 +774,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final report = widget.onCaretChanged;
     if (report == null || widget.readOnly || !selection.isValid) return;
     if (!selection.isCollapsed) return;
+    // Parked on a table row while one of its cells is open: not a place in the
+    // note anybody could come back to.
+    if (_editingCell != null) return;
     report(selection.baseOffset);
   }
 
@@ -937,6 +942,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _lastValue = value;
       if (!selectionChanged) return;
       if (_collapseLineTerminatorSelection(value.selection)) return;
+      // Tables draw as a grid with the setting off too, so this is not
+      // inside the markdown branch below.
+      if (_keepCaretOutOfTable(previous.selection, value.selection)) return;
       if (widget.markdownEnabled) {
         if (_keepCaretOutOfMarkdown(previous.selection, value.selection)) {
           return;
@@ -3977,22 +3985,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final composing = _controller.value.composing;
     if (composing.isValid && !composing.isCollapsed) return false;
     final markdown = _controller.markdownFor(_controller.text);
-    // A table is a grid and its pipes are hidden, so there is nowhere in the
-    // middle of one to put a caret — and the `|---|` row has nothing on screen
-    // at all. A caret landing inside steps out to the edge it came from, so
-    // arrowing up out of the text below a table arrives above it rather than
-    // disappearing into it. The two edges are left alone: standing at them is
-    // how a line is added above or below.
-    final table = markdownTableAt(markdown, now.baseOffset);
-    if (table != null &&
-        now.baseOffset > table.start &&
-        now.baseOffset < table.end) {
-      final fromBelow = previous.isValid && previous.baseOffset >= table.end;
-      _controller.selection = TextSelection.collapsed(
-        offset: fromBelow ? table.start : table.end,
-      );
-      return true;
-    }
     final prefix = markdown.atomicPrefixAt(now.baseOffset);
     if (prefix == null || now.baseOffset == prefix.end) return false;
     // Only the arrow: Home, or ⌘← on a Mac, from the start of the words is
@@ -4011,6 +4003,57 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         : prefix.end;
     // Re-enters this listener, where the caret is now somewhere allowed.
     _controller.selection = TextSelection.collapsed(offset: target);
+    return true;
+  }
+
+  /// Keeps the note's own caret out of a table.
+  ///
+  /// A table is a grid and its pipes are hidden, so there is nowhere in the
+  /// middle of one to put a caret — and the `|---|` row has nothing on screen
+  /// at all. Its cells are edited in the field that opens over them instead.
+  ///
+  /// An arrow key that carries the caret into a table goes on into the grid:
+  /// Down from the line above opens the first header cell, Up from below the
+  /// first cell of the last row, the way a caret walks into a table in any
+  /// word processor. Anything else that lands inside — a click on the gap
+  /// between rows, a drag's end — steps out to the edge it came from. The two
+  /// edges are left alone: standing at them is how a line is added above or
+  /// below.
+  ///
+  /// Not while a cell is open: the caret is parked on that row on purpose,
+  /// so that the field it belongs to has somewhere to keep it.
+  bool _keepCaretOutOfTable(TextSelection previous, TextSelection now) {
+    if (_editingCell != null) return false;
+    if (!now.isValid || !now.isCollapsed) return false;
+    final composing = _controller.value.composing;
+    if (composing.isValid && !composing.isCollapsed) return false;
+    final table = markdownTableAt(
+      _controller.markdownFor(_controller.text),
+      now.baseOffset,
+    );
+    if (table == null) return false;
+    final fromBelow = previous.isValid && previous.baseOffset >= table.end;
+    final keys = HardwareKeyboard.instance.logicalKeysPressed;
+    final arrowed =
+        keys.contains(LogicalKeyboardKey.arrowDown) ||
+        keys.contains(LogicalKeyboardKey.arrowUp);
+    final inside = now.baseOffset > table.start && now.baseOffset < table.end;
+    // Down from an empty line lands exactly on the table's first character,
+    // and Up from a long line under it on its last: an edge, but reached by
+    // walking into the table rather than by standing beside it.
+    final walkedOnto =
+        arrowed &&
+        previous.isValid &&
+        ((now.baseOffset == table.start && previous.baseOffset < table.start) ||
+            (now.baseOffset == table.end && previous.baseOffset > table.end));
+    if (!inside && !walkedOnto) return false;
+    if (arrowed && !widget.readOnly && _focusNode.hasFocus) {
+      _scheduleTableCell(table.start, fromBelow ? table.rows.length - 1 : 0, 0);
+      return true;
+    }
+    _controller.selection = TextSelection.collapsed(
+      offset: fromBelow ? table.start : table.end,
+    );
     return true;
   }
 
@@ -4132,6 +4175,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final rect = _cellRect(editable, table, where.row, column);
     if (rect == null) return false;
     _showCellEditor(table, where.row, column, rect);
+    // The note's own field handles the same tap after this does, and on a
+    // touch screen it asks for the keyboard as it does — taking focus from the
+    // cell that was just opened. Once the tap is over, the cell takes it back.
+    final opened = _editingCell;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _editingCell != opened || !_cellEditor.isVisible) return;
+      if (!_cellEditor.focus.hasFocus) _cellEditor.focus.requestFocus();
+    });
     return true;
   }
 
@@ -4144,22 +4195,70 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   ) {
     final geometry = _tableGrids[table];
     if (geometry == null || column >= geometry.columns.length) return null;
-    if (row < 0 || row >= table.rows.length) return null;
-    final boxes = editable.getBoxesForSelection(
-      TextSelection(
-        baseOffset: table.rows[row].start,
-        extentOffset: table.rows[row].start + 1,
-      ),
+    final band = _tableRowBand(editable, table, row);
+    if (band == null) return null;
+    final left = editable.localToGlobal(Offset.zero).dx;
+    return Rect.fromLTRB(
+      left + geometry.columnLeft(column),
+      band.top,
+      left + geometry.columnLeft(column) + geometry.columns[column],
+      band.bottom,
     );
-    if (boxes.isEmpty) return null;
-    final box = boxes.first;
-    final origin = editable.localToGlobal(Offset(0, box.top));
-    return Rect.fromLTWH(
-      origin.dx + geometry.columnLeft(column),
-      origin.dy - _rowOverhead,
-      geometry.columns[column],
-      (box.bottom - box.top) + _rowOverhead,
-    );
+  }
+
+  /// The band one row of a table is painted in, in global coordinates.
+  ///
+  /// Worked out exactly as [MarkdownBackdrop] works it out — from the top of the
+  /// row's line to the top of the line after it — so that the field opened over
+  /// a cell covers the painted cell to the pixel. The header's band takes in the
+  /// `|---|` line under it as well, which is how the grid draws it.
+  ({double top, double bottom})? _tableRowBand(
+    RenderEditable editable,
+    MarkdownTable table,
+    int row,
+  ) {
+    final offsets = _lineOffsets;
+    if (offsets == null || row < 0 || row >= table.rows.length) return null;
+    final tops = offsets.tops;
+    final line = table.rows[row];
+    final end = line.header ? table.delimiterEnd : line.end;
+    final first = _lineIndexOf(line.start);
+    final last = _lineIndexOf(math.max(line.start, end - 1));
+    if (first >= tops.length) return null;
+    final top = tops[first];
+    final bottom = last + 1 < tops.length
+        ? tops[last + 1]
+        : offsets.totalHeight;
+    if (bottom <= top) return null;
+    final scrolled = _scrollController.hasClients
+        ? _scrollController.offset
+        : 0.0;
+    final origin = editable.localToGlobal(Offset.zero).dy - scrolled;
+    return (top: origin + top, bottom: origin + bottom);
+  }
+
+  int _lineIndexOf(int offset) {
+    final text = _controller.text;
+    if (!identical(text, _lineStartsText)) {
+      _lineStartsText = text;
+      _lineStarts = [
+        0,
+        for (var i = 0; i < text.length; i++)
+          if (text.codeUnitAt(i) == 0x0A) i + 1,
+      ];
+    }
+    final starts = _lineStarts!;
+    var low = 0;
+    var high = starts.length - 1;
+    while (low < high) {
+      final middle = (low + high + 1) >> 1;
+      if (starts[middle] <= offset) {
+        low = middle;
+      } else {
+        high = middle - 1;
+      }
+    }
+    return low;
   }
 
   /// Where a collaborator's caret sits inside the painted grid.
@@ -4185,7 +4284,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final cellRect = _cellRect(editable, table, where.row, where.column);
     final inCell = geometry.caretRectInCell(row, where.column, offset);
     if (cellRect == null || inCell == null) return null;
-    return inCell.shift(cellRect.topLeft);
+    // Centred in the row's own height by the geometry; the painted band can be
+    // taller — a header's takes in the `|---|` line too — and the words are
+    // centred in that.
+    return inCell.shift(
+      cellRect.topLeft +
+          Offset(0, (cellRect.height - geometry.rowHeight(row)) / 2),
+    );
   }
 
   /// The visible cells crossed by somebody else's selection.
@@ -4255,7 +4360,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final editable = _fieldEditable();
     if (active == null || editable == null) return;
     final rect = _cellRect(editable, active.table, active.row, active.column);
-    if (rect != null) _cellEditor.moveTo(rect);
+    if (rect == null) return;
+    final geometry = _tableGrids[active.table];
+    _cellEditor.moveTo(
+      rect,
+      bounds: editable.localToGlobal(Offset.zero) & editable.size,
+      tableLeft: geometry == null
+          ? null
+          : rect.left - geometry.columnLeft(active.column),
+      tableTop: _tableRowBand(editable, active.table, 0)?.top,
+    );
   }
 
   /// Tab: on to the next cell, or into a new row when there is no next one.
@@ -4284,7 +4398,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (target == null) {
       // Off the front finishes; off the end adds a row and carries on into it.
       if (backwards) {
-        _closeCellEditor();
+        _closeCellEditor(before: true);
         return;
       }
       _applyTableEdit(appendMarkdownTableRow(_controller.value, table));
@@ -4333,15 +4447,65 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _scheduleTableCell(active.table.start, nextRow, active.column);
   }
 
-  void _addTableRow() {
+  /// The arrow keys at the edge of a cell's words: on to the neighbouring
+  /// cell, or out of the table altogether past its first or last one.
+  ///
+  /// Right and Left run through the cells in reading order, as Tab does, but
+  /// never add a row: walking off the end of a table with an arrow key is
+  /// leaving it.
+  void _moveByArrow(AxisDirection direction) {
+    final active = _activeTableCell();
+    final editable = _fieldEditable();
+    if (active == null || editable == null) return;
+    final table = active.table;
+    ({int row, int column})? target;
+    switch (direction) {
+      case AxisDirection.up:
+        target = active.row > 0
+            ? (row: active.row - 1, column: active.column)
+            : null;
+      case AxisDirection.down:
+        target = active.row + 1 < table.rows.length
+            ? (row: active.row + 1, column: active.column)
+            : null;
+      case AxisDirection.left:
+      case AxisDirection.right:
+        target = nextMarkdownTableCell(
+          table,
+          row: active.row,
+          column: active.column,
+          backwards: direction == AxisDirection.left,
+        );
+    }
+    if (target == null) {
+      _closeCellEditor(
+        before:
+            direction == AxisDirection.up || direction == AxisDirection.left,
+      );
+      return;
+    }
+    final rect = _cellRect(editable, table, target.row, target.column);
+    if (rect == null) return;
+    _showCellEditor(
+      table,
+      target.row,
+      target.column,
+      rect,
+      caretAtStart: direction == AxisDirection.right,
+    );
+  }
+
+  void _addTableRow({bool above = false}) {
     final active = _activeTableCell();
     if (active == null || widget.readOnly) return;
-    final targetRow = active.row + 1;
+    // Nothing goes above the header: the row under it would become the header.
+    if (above && active.row == 0) return;
+    final targetRow = above ? active.row : active.row + 1;
     _applyTableEdit(
       insertMarkdownTableRow(
         _controller.value,
         active.table,
-        after: active.row,
+        after: above ? active.row - 1 : active.row,
       ),
     );
     _scheduleTableCell(active.table.start, targetRow, active.column);
@@ -4357,17 +4521,21 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _scheduleTableCell(active.table.start, targetRow, active.column);
   }
 
-  void _addTableColumn() {
+  void _addTableColumn({bool before = false}) {
     final active = _activeTableCell();
     if (active == null || widget.readOnly) return;
     _applyTableEdit(
       insertMarkdownTableColumn(
         _controller.value,
         active.table,
-        after: active.column,
+        after: before ? active.column - 1 : active.column,
       ),
     );
-    _scheduleTableCell(active.table.start, active.row, active.column + 1);
+    _scheduleTableCell(
+      active.table.start,
+      active.row,
+      before ? active.column : active.column + 1,
+    );
   }
 
   void _removeTableColumn() {
@@ -4396,11 +4564,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final active = _activeTableCell();
     if (active == null || widget.readOnly) return;
     final current = _tableColumnAlignment(active.table, active.column);
-    final next = switch (current) {
+    _setTableColumnAlignment(switch (current) {
       MarkdownCellAlign.start => MarkdownCellAlign.center,
       MarkdownCellAlign.center => MarkdownCellAlign.end,
       MarkdownCellAlign.end => MarkdownCellAlign.start,
-    };
+    });
+  }
+
+  void _setTableColumnAlignment(MarkdownCellAlign next) {
+    final active = _activeTableCell();
+    if (active == null || widget.readOnly) return;
+    if (_tableColumnAlignment(active.table, active.column) == next) return;
     _applyTableEdit(
       setMarkdownTableColumnAlign(
         _controller.value,
@@ -4412,69 +4586,148 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _scheduleTableCell(active.table.start, active.row, active.column);
   }
 
+  /// The note field's own undo history, asked directly.
+  ///
+  /// Not through an [UndoHistoryController]: its `undo` refuses until the
+  /// latest change has been committed to the history, which happens half a
+  /// second after it is made — so ⌘Z straight after typing in a cell would do
+  /// nothing. The history itself folds that pending change in first.
+  UndoManagerClient? _noteUndoHistory() {
+    final root = _focusNode.context;
+    if (root == null) return null;
+    UndoManagerClient? found;
+    root.visitAncestorElements((element) {
+      if (element is StatefulElement &&
+          element.widget is UndoHistory<TextEditingValue> &&
+          element.state is UndoManagerClient) {
+        found = element.state as UndoManagerClient;
+        return false;
+      }
+      return true;
+    });
+    return found;
+  }
+
   void _undoTableEdit({required bool redo}) {
-    final actionContext = _focusNode.context;
-    if (actionContext == null) return;
-    Actions.invoke(
-      actionContext,
-      redo
-          ? const RedoTextIntent(SelectionChangedCause.keyboard)
-          : const UndoTextIntent(SelectionChangedCause.keyboard),
-    );
+    final history = _noteUndoHistory();
+    if (history == null) return;
+    redo ? history.redo() : history.undo();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _editingCell != null) _restoreTableCellEditor();
     });
   }
 
-  String _tableAlignmentLabel(MarkdownCellAlign align) => switch (align) {
-    MarkdownCellAlign.start => 'L',
-    MarkdownCellAlign.center => 'C',
-    MarkdownCellAlign.end => 'R',
-  };
-
-  String _tableAlignmentTooltip(MarkdownCellAlign align) => switch (align) {
-    MarkdownCellAlign.start => 'Column aligned left; change to center',
-    MarkdownCellAlign.center => 'Column centered; change to right',
-    MarkdownCellAlign.end => 'Column aligned right; change to left',
-  };
-
-  void _showCellEditor(MarkdownTable table, int row, int column, Rect rect) {
+  void _showCellEditor(
+    MarkdownTable table,
+    int row,
+    int column,
+    Rect rect, {
+    bool caretAtStart = false,
+  }) {
     final cells = table.rows[row].cells;
     final source = column < cells.length
         ? _controller.text.substring(cells[column].start, cells[column].end)
         : '';
     final target = (tableStart: table.start, row: row, column: column);
-    if (_editingCell != target) setState(() => _editingCell = target);
+    final moved = _editingCell != target;
+    if (moved) setState(() => _editingCell = target);
     final palette = context.palette;
     final accent = Theme.of(context).colorScheme.primary;
     final columns = markdownTableColumnCount(table);
     final alignment = _tableColumnAlignment(table, column);
+    final header = table.rows[row].header;
+    final base = EditorMetrics.textStyle(
+      palette.textPrimary,
+      widget.writingFont,
+      editorScale: widget.editorTextScale,
+    );
+    final editable = _fieldEditable();
+    final origin = editable?.localToGlobal(Offset.zero);
+    final geometry = _tableGrids[table];
     _cellEditor.show(
       context,
       anchor: rect,
+      bounds: editable == null || origin == null
+          ? null
+          : origin & editable.size,
+      tableLeft: geometry == null
+          ? rect.left
+          : rect.left - geometry.columnLeft(column),
+      tableTop: editable == null
+          ? rect.top
+          : _tableRowBand(editable, table, 0)?.top ?? rect.top,
       text: source,
-      style: EditorMetrics.textStyle(
-        palette.textPrimary,
-        widget.writingFont,
-        editorScale: widget.editorTextScale,
-      ),
+      caretAtStart: caretAtStart,
+      reset: moved,
+      style: header
+          ? _controller.markdownRunStyle(base, const {
+              MarkdownStyle.tableHeader,
+            }, accent)
+          : base,
+      textAlign: switch (alignment) {
+        MarkdownCellAlign.start => TextAlign.left,
+        MarkdownCellAlign.center => TextAlign.center,
+        MarkdownCellAlign.end => TextAlign.right,
+      },
+      padding: TableGeometry.padding,
+      showToolbar: !AppPlatform.isMobile,
       cursorColor: accent,
-      background: palette.paperColor,
+      background: header ? palette.controlBackground : palette.paperColor,
       border: accent,
+      toolbarBackground: palette.paperColor,
       onChanged: _commitCellText,
       onDone: _closeCellEditor,
+      onTapOutside: _cellTappedOutside,
       onTab: (backwards) => _moveToCell(backwards: backwards),
       onEnter: _moveDownTable,
+      onArrow: _moveByArrow,
+      onAddRowAbove: row == 0 ? null : () => _addTableRow(above: true),
       onAddRow: _addTableRow,
       onRemoveRow: row == 0 ? null : _removeTableRow,
+      onAddColumnBefore: () => _addTableColumn(before: true),
       onAddColumn: _addTableColumn,
       onRemoveColumn: columns <= 1 ? null : _removeTableColumn,
-      onCycleAlignment: _cycleTableColumnAlignment,
+      onAlign: _setTableColumnAlignment,
       onUndo: () => _undoTableEdit(redo: false),
       onRedo: () => _undoTableEdit(redo: true),
-      alignmentLabel: _tableAlignmentLabel(alignment),
-      alignmentTooltip: _tableAlignmentTooltip(alignment),
+      alignment: alignment,
     );
+    if (moved) _ensureCellVisible();
+  }
+
+  /// Scrolls the note just far enough for the open cell to be seen, clear of a
+  /// software keyboard and of the toolbar over it.
+  ///
+  /// The cell's field is in an overlay, outside the note's scroll view, so
+  /// nothing brings it into view the way a caret in the note is brought there.
+  void _ensureCellVisible() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final active = _activeTableCell();
+      final editable = _fieldEditable();
+      if (active == null || editable == null || !editable.hasSize) return;
+      final rect = _cellRect(editable, active.table, active.row, active.column);
+      if (rect == null) return;
+      final view = editable.localToGlobal(Offset.zero) & editable.size;
+      final window = View.of(context);
+      final keyboardTop =
+          (window.physicalSize.height - window.viewInsets.bottom) /
+          window.devicePixelRatio;
+      const margin = 12.0;
+      final top = view.top + margin;
+      final bottom = math.min(view.bottom, keyboardTop) - margin;
+      var delta = 0.0;
+      if (rect.bottom > bottom) delta = rect.bottom - bottom;
+      if (rect.top - delta < top) delta = rect.top - top;
+      if (delta.abs() < 1) return;
+      final position = _scrollController.position;
+      final to = (position.pixels + delta).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      _scrollController.jumpTo(to);
+      _syncTableCellEditorPosition();
+    });
   }
 
   /// Splices what the cell now says back into the one note string, per
@@ -4501,10 +4754,51 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (edit.changesText) _applyTableEdit(edit);
   }
 
-  void _closeCellEditor() {
+  /// A press outside the open cell finishes it — unless it is on the same
+  /// table, where it is choosing another cell. Closing first would hand the
+  /// note the keyboard only for the next cell to take it back, and on a phone
+  /// the keyboard went down in that exchange and stayed down.
+  void _cellTappedOutside(Offset position) {
+    final active = _activeTableCell();
+    final editable = _fieldEditable();
+    if (active != null && editable != null && !widget.readOnly) {
+      final table = active.table;
+      final geometry = _tableGrids[table];
+      final first = _tableRowBand(editable, table, 0);
+      final last = _tableRowBand(editable, table, table.rows.length - 1);
+      if (geometry != null && first != null && last != null) {
+        final left = editable.localToGlobal(Offset.zero).dx;
+        final grid = Rect.fromLTRB(
+          left,
+          first.top,
+          left + geometry.width,
+          last.bottom,
+        );
+        if (grid.contains(position)) return;
+      }
+    }
+    _closeCellEditor();
+  }
+
+  /// Finishes editing a cell and gives the note its caret back.
+  ///
+  /// The caret has been parked on the row, among the table's hidden text, and
+  /// cannot stay there: whatever was typed next would land between pipes. It
+  /// goes to the line after the table, or to the one before it when [before],
+  /// which is where Up out of the header or Left out of the first cell lead.
+  void _closeCellEditor({bool before = false}) {
     if (_editingCell == null && !_cellEditor.isVisible) return;
+    final active = _activeTableCell();
     _cellEditor.hide();
     if (mounted) setState(() => _editingCell = null);
+    if (active != null) {
+      final text = _controller.text;
+      final table = active.table;
+      final offset = before
+          ? math.max(0, table.start - 1)
+          : math.min(text.length, table.end + 1);
+      _controller.selection = TextSelection.collapsed(offset: offset);
+    }
     _focusNode.requestFocus();
   }
 
@@ -4529,11 +4823,30 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       for (final ref in _attachments)
         ref.copyWith(offset: edit.map(ref.offset)),
     ], next.text);
+    // While a cell is open the note's caret is parked at the start of that
+    // row. Not somewhere else in the note: the field scrolls its caret into
+    // view after every change, and one left above a long table would drag the
+    // note back up there on every keystroke.
+    final active = _activeTableCell();
+    final parked = active == null
+        ? next
+        : next.copyWith(
+            selection: TextSelection.collapsed(
+              offset: edit.map(active.table.rows[active.row].start),
+            ),
+            composing: TextRange.empty,
+          );
     final editable = _editableTextState();
     if (editable == null) {
-      _controller.value = next;
+      _controller.value = parked;
     } else {
-      editable.userUpdateTextEditingValue(next, SelectionChangedCause.toolbar);
+      // A keyboard cause, never the toolbar's. For any other cause the field
+      // asks for the keyboard, which takes focus from the open cell — and the
+      // next key typed lands in the table's hidden pipes instead.
+      editable.userUpdateTextEditingValue(
+        parked,
+        SelectionChangedCause.keyboard,
+      );
     }
   }
 
@@ -4828,7 +5141,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   ..._tableRowSpacers(
                     markdown: markdown,
                     rowHeight: rowHeight,
-                    overhead: _rowOverhead = placeholderLineOverhead(
+                    overhead: placeholderLineOverhead(
                       style: textStyle,
                       strut: strut,
                       scaler: textScaler,
@@ -4865,6 +5178,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   ),
                   placeholders: _controller.placeholderDimensions(),
                 );
+                _lineOffsets = offsets;
 
                 return Stack(
                   children: [
@@ -5080,6 +5394,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onCycleTableAlignmentPressed: mobileTableCell == null
                   ? null
                   : _cycleTableColumnAlignment,
+              tableTapGroup: _cellEditor,
               tableAlignment: mobileTableCell == null
                   ? null
                   : _tableColumnAlignment(
@@ -5247,6 +5562,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     const SpellCheckConfiguration.disabled(),
                 inputFormatters: [
                   _dailySeparatorFormatter,
+                  // Whatever the markdown setting: tables draw either way.
+                  _TableEdgeFormatter(_controller.markdownFor),
                   if (widget.markdownEnabled) ...[
                     _MarkdownTypingFormatter(
                       _controller.markdownFor,
@@ -5566,6 +5883,21 @@ class _ListShorthandFormatter extends TextInputFormatter {
 /// switched on with nothing selected wraps what is typed next, a space or
 /// Return at the end of a styled word steps out of the style, and emptying a
 /// styled word takes its hidden markers with it.
+/// See [separateTypingFromTables].
+class _TableEdgeFormatter extends TextInputFormatter {
+  const _TableEdgeFormatter(this.markdown);
+
+  final MarkdownAnalysis Function(String text) markdown;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      separateTypingFromTables(oldValue, newValue, markdown(oldValue.text)) ??
+      newValue;
+}
+
 class _MarkdownTypingFormatter extends TextInputFormatter {
   const _MarkdownTypingFormatter(this.markdown, this.typing);
 
