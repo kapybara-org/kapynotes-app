@@ -6,6 +6,7 @@ import 'local_store.dart';
 import 'blob_store.dart';
 import 'note.dart';
 import 'note_attachment.dart';
+import 'note_drawing.dart';
 import 'note_format.dart';
 import 'tombstone.dart';
 import 'writing_streak.dart';
@@ -276,6 +277,44 @@ class NotesStore extends ChangeNotifier {
     );
     _recordWriting([WritingStreak.dayOf(at)]);
     _replace(index, updatedNote, toFront: true);
+  }
+
+  /// Turns a new note into a drawing, or a blank drawing back into a note.
+  ///
+  /// Only while there is nothing in it to lose: no words, no attachments and
+  /// no strokes. Returns whether the note changed.
+  bool setDrawingMode(String id, {required bool drawing}) {
+    final index = indexOf(id);
+    if (index < 0) return false;
+    final existing = _notes[index];
+    if (existing.isDrawing == drawing) return false;
+    if (!existing.isEmpty || existing.attachments.isNotEmpty) return false;
+    _replace(
+      index,
+      existing.copyWith(
+        drawing: drawing ? NoteDrawing.empty : null,
+        updatedAt: _now(),
+      ),
+    );
+    return true;
+  }
+
+  /// Writes a drawing's canvas and title. A no-op for a written note: a
+  /// canvas cannot appear on a note that already has words in it.
+  void updateDrawing(String id, NoteDrawing drawing, {String? title}) {
+    final index = indexOf(id);
+    if (index < 0) return;
+    final existing = _notes[index];
+    if (!existing.isDrawing) return;
+    final body = title ?? existing.body;
+    if (existing.drawing == drawing && existing.body == body) return;
+    final at = _now();
+    _recordWriting([WritingStreak.dayOf(at)]);
+    _replace(
+      index,
+      existing.copyWith(drawing: drawing, body: body, updatedAt: at),
+      toFront: true,
+    );
   }
 
   /// Every blob hash any live note refers to — images, previews, recordings,
@@ -620,6 +659,7 @@ class NotesStore extends ChangeNotifier {
                 body: note.body,
                 formats: note.formats,
                 attachments: note.attachments,
+                drawing: note.drawing,
                 createdAt: note.createdAt,
                 updatedAt: at,
                 archivedAt: note.archivedAt,
@@ -742,13 +782,15 @@ class NotesStore extends ChangeNotifier {
         continue;
       }
 
-      if (local.isDirty && local.body != incoming.body) {
+      if (local.isDirty &&
+          (local.body != incoming.body || local.drawing != incoming.drawing)) {
         conflicted.add(
           Note(
             id: newId(),
             body: local.body,
             formats: local.formats,
             attachments: local.attachments,
+            drawing: local.drawing,
             createdAt: local.createdAt,
             updatedAt: now,
             archivedAt: local.archivedAt,
@@ -851,6 +893,7 @@ class NotesStore extends ChangeNotifier {
         body: local.body,
         formats: local.formats,
         attachments: local.attachments,
+        drawing: local.drawing,
         createdAt: local.createdAt,
         updatedAt: _now(),
         archivedAt: local.archivedAt,

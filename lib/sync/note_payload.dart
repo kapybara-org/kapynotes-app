@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../data/note.dart';
 import '../data/note_attachment.dart';
+import '../data/note_drawing.dart';
 import '../data/note_format.dart';
 
 /// The plaintext sealed into a note's `SealedBox`.
@@ -13,6 +14,7 @@ class NotePayload {
   final String body;
   final List<NoteFormatRange> formats;
   final List<NoteAttachmentRef> attachments;
+  final NoteDrawing? drawing;
   final int? archivedAt;
   final int? hiddenAt;
 
@@ -23,6 +25,7 @@ class NotePayload {
     required this.body,
     this.formats = const [],
     this.attachments = const [],
+    this.drawing,
     this.archivedAt,
     this.hiddenAt,
     required this.createdAt,
@@ -32,6 +35,7 @@ class NotePayload {
     body: note.body,
     formats: note.formats,
     attachments: note.attachments,
+    drawing: note.drawing,
     archivedAt: note.archivedAt?.millisecondsSinceEpoch,
     hiddenAt: note.hiddenAt?.millisecondsSinceEpoch,
     createdAt: note.createdAt.millisecondsSinceEpoch,
@@ -52,6 +56,7 @@ class NotePayload {
     body: body,
     formats: normalizeNoteFormats(formats, body.length),
     attachments: normalizeNoteAttachments(attachments, body),
+    drawing: drawing,
     createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt),
     updatedAt: updatedAt,
     archivedAt: archivedAt == null
@@ -70,6 +75,7 @@ class NotePayload {
     'body': body,
     'formats': formats.map((format) => format.toJson()).toList(),
     'attachments': attachments.map((ref) => ref.toJson()).toList(),
+    if (drawing != null) 'drawing': drawing!.toJson(),
     if (archivedAt != null) 'archivedAt': archivedAt,
     if (hiddenAt != null) 'hiddenAt': hiddenAt,
     'createdAt': createdAt,
@@ -93,6 +99,7 @@ class NotePayload {
       body: body,
       formats: noteFormatsFromJson(raw['formats'], body.length),
       attachments: attachments,
+      drawing: NoteDrawing.fromJson(raw['drawing']),
       archivedAt: raw['archivedAt'] is int ? raw['archivedAt']! as int : null,
       hiddenAt: raw['hiddenAt'] is int ? raw['hiddenAt']! as int : null,
       createdAt: createdAt is int && createdAt >= 0 ? createdAt : 0,

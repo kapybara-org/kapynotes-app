@@ -26,6 +26,7 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
+import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
@@ -2521,6 +2522,83 @@ void main() {
     expect(search.left - sidebar.left, greaterThanOrEqualTo(12));
     expect(sidebar.right - add.right, greaterThanOrEqualTo(12));
     expect(add.center.dy, closeTo(search.center.dy, 0.5));
+  });
+
+  group('draw mode', () {
+    Finder plus() => find.byKey(const ValueKey('sidebar-new-note'));
+    Finder draw() => find.byKey(const ValueKey('note-mode-draw'));
+
+    testWidgets('a new note can become a drawing, and back while blank', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      final id = notes.notes.first.id;
+      expect(draw(), findsOneWidget);
+
+      await tester.tap(draw());
+      await tester.pumpAndSettle();
+      expect(notes.byId(id)!.isDrawing, isTrue);
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+      expect(find.byType(NoteEditor), findsNothing);
+      expect(notes.byId(id)!.title, 'Drawing');
+
+      await tester.tap(find.byKey(const ValueKey('note-mode-write')));
+      await tester.pumpAndSettle();
+      expect(notes.byId(id)!.isDrawing, isFalse);
+      expect(find.byType(NoteEditor), findsOneWidget);
+    });
+
+    testWidgets('strokes and a title are saved to the note', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      final id = notes.notes.first.id;
+      await tester.tap(draw());
+      await tester.pumpAndSettle();
+
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('drawing-surface')),
+      );
+      final gesture = await tester.startGesture(
+        surface.center,
+        kind: PointerDeviceKind.mouse,
+      );
+      await gesture.moveBy(const Offset(40, 30));
+      await gesture.moveBy(const Offset(40, -10));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(notes.byId(id)!.drawing!.elements, hasLength(1));
+      // Something is in it now, so the choice has been made.
+      expect(find.byKey(const ValueKey('note-mode-switch')), findsNothing);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('drawing-title')),
+        'Garden plan',
+      );
+      await tester.pumpAndSettle();
+      expect(notes.byId(id)!.title, 'Garden plan');
+      expect(notes.byId(id)!.drawing!.elements, hasLength(1));
+    });
+
+    testWidgets('a note with words in it offers no switch', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      expect(draw(), findsOneWidget);
+
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(NoteEditor),
+          matching: find.byType(TextField),
+        ),
+        'Groceries',
+      );
+      await tester.pumpAndSettle();
+      expect(draw(), findsNothing);
+      expect(notes.notes.first.isDrawing, isFalse);
+    });
   });
 
   group('asking for a new note while already in one', () {

@@ -485,39 +485,82 @@ class KapyIcons {
   );
   static const codeRounded = KapyIconData(0xE070, HugeIcons.strokeRoundedCode);
   static const tableRowAbove = KapyIconData(
-    0xE071,
+    0xE073,
     HugeIcons.strokeRoundedInsertRowUp,
   );
   static const tableRowBelow = KapyIconData(
-    0xE072,
+    0xE074,
     HugeIcons.strokeRoundedInsertRowDown,
   );
   static const tableColumnLeft = KapyIconData(
-    0xE073,
+    0xE075,
     HugeIcons.strokeRoundedInsertColumnLeft,
   );
   static const tableColumnRight = KapyIconData(
-    0xE074,
+    0xE076,
     HugeIcons.strokeRoundedInsertColumnRight,
   );
   static const tableDeleteRow = KapyIconData(
-    0xE075,
+    0xE077,
     HugeIcons.strokeRoundedDeleteRow,
   );
   static const tableDeleteColumn = KapyIconData(
-    0xE076,
+    0xE078,
     HugeIcons.strokeRoundedDeleteColumn,
   );
   static const alignLeft = KapyIconData(
-    0xE077,
+    0xE079,
     HugeIcons.strokeRoundedTextAlignLeft,
   );
   static const alignCenter = KapyIconData(
-    0xE078,
+    0xE07A,
     HugeIcons.strokeRoundedTextAlignCenter,
   );
   static const alignRight = KapyIconData(
-    0xE079,
+    0xE07B,
     HugeIcons.strokeRoundedTextAlignRight,
+  );
+
+  // The drawing canvas.
+  static const drawModeRounded = KapyIconData(
+    0xE07C,
+    HugeIcons.strokeRoundedDrawingMode,
+  );
+  static const selectRounded = KapyIconData(
+    0xE07D,
+    HugeIcons.strokeRoundedCursor02,
+  );
+  static const penRounded = KapyIconData(0xE07E, HugeIcons.strokeRoundedPencil);
+  static const rectangleRounded = KapyIconData(
+    0xE07F,
+    HugeIcons.strokeRoundedSquare,
+  );
+  static const arrowRounded = KapyIconData(
+    0xE080,
+    HugeIcons.strokeRoundedArrowUpRight01,
+  );
+  static const lineRounded = KapyIconData(
+    0xE081,
+    HugeIcons.strokeRoundedSolidLine01,
+  );
+  static const eraserRounded = KapyIconData(
+    0xE082,
+    HugeIcons.strokeRoundedEraser,
+  );
+  static const undoRounded = KapyIconData(
+    0xE083,
+    HugeIcons.strokeRoundedUndo02,
+  );
+  static const redoRounded = KapyIconData(
+    0xE084,
+    HugeIcons.strokeRoundedRedo02,
+  );
+  static const panRounded = KapyIconData(
+    0xE085,
+    HugeIcons.strokeRoundedHandGrab,
+  );
+  static const fitRounded = KapyIconData(
+    0xE086,
+    HugeIcons.strokeRoundedZoomInArea,
   );
 }

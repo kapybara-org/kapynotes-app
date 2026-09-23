@@ -15,6 +15,7 @@ class CompactIconButton extends StatelessWidget {
     this.selected = false,
     this.foregroundColor,
     this.extent,
+    this.tapTargetSize,
   });
 
   final Widget icon;
@@ -23,6 +24,10 @@ class CompactIconButton extends StatelessWidget {
   final bool selected;
   final Color? foregroundColor;
   final double? extent;
+
+  /// Overrides the platform's tap target, for a row that has measured its
+  /// buttons edge to edge and cannot afford padding around each one.
+  final MaterialTapTargetSize? tapTargetSize;
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +50,8 @@ class CompactIconButton extends StatelessWidget {
           style: ButtonStyle(
             minimumSize: WidgetStatePropertyAll(Size.square(extent)),
             maximumSize: WidgetStatePropertyAll(Size.square(extent)),
-            tapTargetSize: AppControlMetrics.iconButtonTapTargetSize,
+            tapTargetSize:
+                tapTargetSize ?? AppControlMetrics.iconButtonTapTargetSize,
             backgroundColor: WidgetStateProperty.resolveWith((states) {
               if (states.contains(WidgetState.disabled)) {
                 return Colors.transparent;

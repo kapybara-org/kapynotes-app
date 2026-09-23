@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -411,6 +412,43 @@ void main() {
       one.dispose();
       two.dispose();
       three.dispose();
+    });
+
+    test('two devices drawing on one canvas keep both strokes', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+
+      final note = one.notes.create();
+      one.notes.setDrawingMode(note.id, drawing: true);
+      await until(() => two.notes.byId(note.id)?.isDrawing ?? false);
+
+      DrawElement line(String id, double y) => DrawElement(
+        id: id,
+        kind: DrawKind.line,
+        points: [0, y, 100, y],
+        z: 0,
+      );
+      one.notes.updateDrawing(
+        note.id,
+        NoteDrawing([line('from-one', 10)]),
+        title: 'Plan',
+      );
+      two.notes.updateDrawing(note.id, NoteDrawing([line('from-two', 20)]));
+      await settle(server);
+
+      Set<String?> ids(Device device) => {
+        for (final e in device.notes.byId(note.id)!.drawing!.elements) e.id,
+      };
+      expect(ids(one), {'from-one', 'from-two'});
+      expect(ids(two), {'from-one', 'from-two'});
+      expect(two.notes.byId(note.id)!.title, 'Plan');
+      expect(server.ciphertextIn(one.personalId), isNot(contains('from-one')));
+      one.dispose();
+      two.dispose();
     });
 
     test('a delete on one device removes it on the other', () async {

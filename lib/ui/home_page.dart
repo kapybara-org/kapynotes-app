@@ -31,6 +31,7 @@ import '../data/editor_workspace.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
 import '../data/note.dart';
+import '../data/note_drawing.dart';
 import '../data/note_attachment.dart';
 import '../data/note_format.dart';
 import '../data/note_switcher.dart';
@@ -66,6 +67,8 @@ import 'settings_dialog.dart';
 import 'sidebar_swipe.dart';
 import 'split_view.dart';
 import 'toolbar.dart';
+import 'draw/drawing_canvas.dart';
+import 'draw/note_mode_switch.dart';
 
 /// Width at which the two-pane desktop layout gives way to the compact editor
 /// with a notes drawer. Mobile platforms always use the compact layout.
@@ -1371,6 +1374,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (note == null || note.isArchived || note.isShared) return null;
     if (note.isHidden != _hiddenMode) return null;
     if (!note.isEmpty || note.attachments.isNotEmpty) return null;
+    // A blank canvas was chosen as one: "new note" means a page to write on.
+    if (note.isDrawing) return null;
     // Nobody can type into it, so it is not the new note either.
     if (_limitHolds(note)) return null;
     return note;
@@ -2633,7 +2638,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final compactWidth = MediaQuery.sizeOf(context).width;
     final desktopResultsDivider = AppPlatform.isDesktop;
     final mobileGutterWidth = compactWidth >= 400 ? 152.0 : 132.0;
-    return ListenableBuilder(
+    if (note.isDrawing) return _buildDrawing(note);
+    final editor = ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
         listenable: _toolbarSources,
@@ -2715,6 +2721,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       ),
     );
+    return _withModeSwitch(note, editor);
   }
 
   Widget _buildEditor(
@@ -2723,7 +2730,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     required bool active,
     VoidCallback? onFocus,
   }) {
-    return ListenableBuilder(
+    if (note.isDrawing) return _buildDrawing(note, onFocus: onFocus);
+    final editor = ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
         // The wide layout already listens to the account around this body.
@@ -2809,6 +2817,74 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       ),
     );
+    return _withModeSwitch(note, editor);
+  }
+
+  /// Whether [note] can still become a drawing, or go back to being a page:
+  /// only while it is blank, and only for somebody who may write in it.
+  bool _canChooseMode(Note note) =>
+      _canWriteNote(note) &&
+      !note.isArchived &&
+      note.isEmpty &&
+      note.attachments.isEmpty;
+
+  /// The editor, with "Write | Draw" over its corner while the note is new.
+  ///
+  /// Always the same Stack, with or without the switch: the first keystroke
+  /// takes the switch away, and a tree that changed shape under the editor
+  /// at that moment would rebuild it out from under the caret.
+  Widget _withModeSwitch(Note note, Widget editor) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        editor,
+        if (_canChooseMode(note))
+          Positioned(
+            top: 10,
+            right: 14,
+            child: NoteModeSwitch(
+              drawing: false,
+              onChanged: (drawing) {
+                if (drawing) _setDrawingMode(note.id, drawing: true);
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _setDrawingMode(String id, {required bool drawing}) {
+    final note = widget.notes.byId(id);
+    if (note == null || !_canChooseMode(note)) return;
+    // The caret was in the page this note is no longer going to be.
+    if (drawing) FocusManager.instance.primaryFocus?.unfocus();
+    if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
+    widget.notes.setDrawingMode(id, drawing: drawing);
+  }
+
+  Widget _buildDrawing(Note note, {VoidCallback? onFocus}) {
+    final canWrite = _canWriteNote(note);
+    return DrawingCanvas(
+      key: ValueKey('drawing-${note.id}'),
+      drawing: note.drawing ?? NoteDrawing.empty,
+      title: note.body,
+      readOnly: !canWrite,
+      onFocus: onFocus,
+      onSwitchToWrite: _canChooseMode(note)
+          ? () => _setDrawingMode(note.id, drawing: false)
+          : null,
+      onChanged: (drawing) => _updateDrawing(note.id, drawing: drawing),
+      onTitleChanged: (title) => _updateDrawing(note.id, title: title),
+    );
+  }
+
+  void _updateDrawing(String id, {NoteDrawing? drawing, String? title}) {
+    final note = widget.notes.byId(id);
+    if (note == null || !note.isDrawing || !_canWriteNote(note)) return;
+    _recordKapyActivity();
+    widget.account?.sync?.reportTyping(id);
+    if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
+    widget.notes.updateDrawing(id, drawing ?? note.drawing!, title: title);
   }
 }
 
