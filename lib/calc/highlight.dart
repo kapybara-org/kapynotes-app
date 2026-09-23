@@ -272,8 +272,7 @@ class Highlighter {
       final second = tokens[1];
       if (first.type == TokenType.identifier &&
           second.type == TokenType.operator &&
-          (second.text == '=' || second.text == ':') &&
-          !calcKeywords.contains(first.text.toLowerCase()) &&
+          isAssignableName(first.text, second.text) &&
           !unitConfigurationNames.contains(first.text.toLowerCase())) {
         names.add(first.text);
       }
