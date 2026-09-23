@@ -32,6 +32,7 @@ import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
 import '../data/note.dart';
 import '../data/note_drawing.dart';
+import '../files/file_picker.dart';
 import '../data/note_attachment.dart';
 import '../data/note_format.dart';
 import '../data/note_switcher.dart';
@@ -458,6 +459,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (protectsHiddenSession) _hiddenSystemUiDepth++;
     try {
       return await acquireNoteVideos();
+    } finally {
+      if (protectsHiddenSession) _hiddenSystemUiDepth--;
+    }
+  }
+
+  /// The file picker, which leaves the app as the photo pickers do: a hidden
+  /// note's session outlasts it, or the picked files would land nowhere.
+  Future<List<XFile>> _acquireFiles(String noteId) async {
+    final protectsHiddenSession =
+        _hiddenMode && (widget.notes.byId(noteId)?.isHidden ?? false);
+    if (protectsHiddenSession) _hiddenSystemUiDepth++;
+    try {
+      return await acquireAttachmentFiles();
     } finally {
       if (protectsHiddenSession) _hiddenSystemUiDepth--;
     }
@@ -2748,6 +2762,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
+          fileAcquirer: () => _acquireFiles(note.id),
           videoAttachmentMaxBytes: () => _videoAttachmentMaxBytes(note),
           onImagePrepared: (staged, prepared) =>
               _publishPreparedImage(note.id, staged, prepared),
@@ -2849,6 +2864,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
+          fileAcquirer: () => _acquireFiles(note.id),
           videoAttachmentMaxBytes: () => _videoAttachmentMaxBytes(note),
           onImagePrepared: (staged, prepared) =>
               _publishPreparedImage(note.id, staged, prepared),

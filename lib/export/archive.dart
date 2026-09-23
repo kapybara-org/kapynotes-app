@@ -265,6 +265,12 @@ Uint8List buildExportArchive({
     appVersion: appVersion,
     exportedAt: exportedAt,
     notes: entries,
+    // Files are what an older build could not read, so an archive with none
+    // stays at the schema before them, and a build from before files can
+    // still restore it.
+    schema: entries.any((note) => note.images.any((image) => image.isFile))
+        ? exportSchemaVersion
+        : exportSchemaVersion - 1,
   );
   // The manifest goes in first so a reader can know what it is holding before
   // it walks the rest. It does not rescue a truncated archive — a zip is

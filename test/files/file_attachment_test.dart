@@ -7,6 +7,8 @@ import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/export/archive.dart';
+import 'package:kapy_notes/export/manifest.dart';
+import 'package:kapy_notes/files/file_opener.dart';
 import 'package:kapy_notes/files/file_ingest.dart';
 import 'package:kapy_notes/ui/editor/file_insertion.dart';
 
@@ -35,9 +37,27 @@ void main() {
       expect(NoteAttachmentRef.fromJson(json), ref);
     });
 
-    test('a record without a name is not a file', () {
+    test('a record without a name is kept whole, not dropped', () {
+      // Dropped, the next write would have taken it out of the note for
+      // everyone; kept as a kind this build cannot read, it goes back out
+      // exactly as it came.
       final json = file().toJson()..remove('name');
-      expect(NoteAttachmentRef.fromJson(json), isNull);
+      final ref = NoteAttachmentRef.fromJson(json);
+      expect(ref, isA<NoteUnknownRef>());
+      expect(ref!.toJson(), json);
+    });
+
+    test('a name cannot hide a program behind a direction override', () {
+      final ref = file(name: sanitizeFileName('invoice\u202Efdp.exe'));
+      expect(ref.name, 'invoicefdp.exe');
+      expect(isExecutableFile(ref), isTrue);
+    });
+
+    test('programs and what runs them are never opened', () {
+      for (final name in ['x.appref-ms', 'x.scpt', 'x.webloc', 'x.chm']) {
+        expect(isExecutableFile(file(name: name)), isTrue, reason: name);
+      }
+      expect(isExecutableFile(file(name: 'Invoice.pdf')), isFalse);
     });
 
     test('a name from another device cannot become a path here', () {
@@ -278,6 +298,15 @@ void main() {
       expect(restored.name, 'Invoice.pdf');
       expect(restored.bytes, 300);
       expect(restored.offset, 6);
+    });
+
+    test('only an archive with a file in it needs the files schema', () {
+      final withFile = readExportArchive(
+        build([file(offset: 6, hash: hash)], 'Taxes\n$anchor\n'),
+      );
+      expect(withFile.manifest!.schema, exportSchemaVersion);
+      final without = readExportArchive(build(const [], 'Taxes\n'));
+      expect(without.manifest!.schema, exportSchemaVersion - 1);
     });
 
     test('a file this device never downloaded does not shift later links', () {
