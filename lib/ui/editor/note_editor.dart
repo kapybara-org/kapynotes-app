@@ -1104,6 +1104,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   ) {
     final take = _lastTake;
     if (take == null) return newValue;
+    // Only the platform's own input can be built on text it has not heard
+    // of yet. A table cell's edits, and its undo, are this editor's, made on
+    // the text as it stands; taken for stale, deleting in a cell what just
+    // arrived would be put back, and the note would stop matching the cell.
+    if (!_focusNode.hasFocus || _editingCell != null) {
+      _lastTake = null;
+      return newValue;
+    }
     if (oldValue.text != take.to ||
         DateTime.now().difference(take.at) > _staleInputWindow) {
       _lastTake = null;
