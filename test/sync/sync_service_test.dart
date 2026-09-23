@@ -621,6 +621,11 @@ void main() {
   });
 
   group('the one-off repair', () {
+    // Held back in the app until its two known faults are fixed; these
+    // cases still pin down what it does once it is let go.
+    setUp(() => SyncService.logRepairEnabled = true);
+    tearDown(() => SyncService.logRepairEnabled = false);
+
     /// Makes [device]'s saved sync state look like a build before the repair
     /// wrote it, so its next launch runs it.
     void unrepaired(Device device, {Map<String, int>? cursors}) {

@@ -405,6 +405,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     // after typing kept the note's words on disk and not the document's, and
     // the next launch numbered its edits with numbers the server already had.
     await widget.account?.sync?.flush();
+    // The cursors go into the store only once their records are written,
+    // which that flush has just done, so the store is written again.
+    await widget.store.flush();
   }
 
   /// Tells the window which material to put behind the Flutter view, and

@@ -81,6 +81,24 @@ const String fugueEngine = 'fugue1';
 /// home — and the attachment uploads are unchanged from the blob protocol and
 /// run over HTTP as they did.
 class SyncService extends ChangeNotifier implements RemoteCaretSource {
+  /// Whether a launch may start the one-off repair; see
+  /// [SyncState.beginLogRepair].
+  ///
+  /// Held back for now. Reading every log again from the start can make a
+  /// note arrive at the first page that holds any of it, partial, while this
+  /// device holds it whole: reconciled onto that part, the later pages then
+  /// apply its edits a second time, and the words come out doubled on every
+  /// device. A deleted note can come back, too, until the page holding its
+  /// tombstone arrives. Until both are fixed nothing starts a repair, and a
+  /// device that never ran one keeps it owed.
+  static bool logRepairEnabled = false;
+
+  /// How much plaintext one entry may gather from typing before the next
+  /// keystroke starts another. Well under the server's limit on one sealed
+  /// op, `OP_MAX_BYTES` (64 KB): an hour typed offline, or a drawing moved
+  /// wholesale, used to grow one entry past it, which the server refused.
+  static const int coalesceLimit = 48 * 1024;
+
   SyncService({
     required NotesStore notes,
     required SyncState state,
@@ -564,7 +582,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
 
     try {
       await _docs.load();
-      if (_state.beginLogRepair()) {
+      if (logRepairEnabled && _state.beginLogRepair()) {
         // Every log is read again from the start, and nothing goes up into a
         // space until its reading is done; see [_republishIfOwed].
         _subscribed.clear();
@@ -735,9 +753,18 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           // Not a pass: asking again would be refused again. It waits for
           // something that could change the answer; see [_askAboutPro].
           _holdForPro(spaceId);
-        } else {
+        } else if (spaceId is String) {
           debugPrint('KapyNotes: socket error: ${message['error']}');
           unawaited(syncNow());
+        } else {
+          // About no one space, so about the subscription as a whole. Every
+          // space asks again: until each is read to the end nothing is sent
+          // into it, and left subscribed, none would be until the socket
+          // reconnected. After a pause, since a server that failed once may
+          // well fail again at once.
+          debugPrint('KapyNotes: socket error: ${message['error']}');
+          _subscribed.clear();
+          _scheduleRetry();
         }
       case 'pong':
         break;
@@ -1200,11 +1227,14 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       // with one that went out and was not answered — the server may have
       // it, and would take it back as a retry and drop what was added.
       final last = record.outbox.isEmpty ? null : record.outbox.last;
+      final bytes = utf8.encode(jsonEncode(ops)).length;
       if (last != null &&
           !last.sent &&
           last.ops != null &&
-          last.spaceId == spaceId) {
+          last.spaceId == spaceId &&
+          last.plainBytes + bytes <= coalesceLimit) {
         last.ops!.addAll(ops);
+        last.plainBytes += bytes;
       } else {
         record.outbox.add(
           OutboxEntry(
@@ -1212,7 +1242,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
             spaceId: spaceId,
             ops: List<Object?>.of(ops),
             deviceSeq: ++record.deviceSeq,
-          ),
+          )..plainBytes = bytes,
         );
       }
       changed = true;
@@ -1597,9 +1627,14 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           if (!batch.hasMore) break;
         }
       } on SyncRefusedException catch (error) {
-        if (error.code != proRequiredCode) rethrow;
-        // One space refused is not the pass refused: the rest still come.
-        _holdForPro(space.id);
+        // One space refused is not the pass refused: the rest still come,
+        // and are read to the end, which is what lets anything be sent into
+        // them. This one is asked about again on the next pass.
+        if (error.code == proRequiredCode) {
+          _holdForPro(space.id);
+        } else {
+          debugPrint('KapyNotes: pull refused: ${error.code}');
+        }
         continue;
       }
       _servedAgain(space.id);
@@ -2145,6 +2180,14 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     if (_status == status) return;
     _status = status;
     if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void notifyListeners() {
+    // Work already under way when the service goes, an answer from the
+    // server or a page being applied, finishes without anyone to tell.
+    if (_disposed) return;
+    super.notifyListeners();
   }
 
   @override
