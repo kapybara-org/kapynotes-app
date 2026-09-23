@@ -1397,15 +1397,20 @@ int markdownTableColumnCount(MarkdownTable table) {
   return count;
 }
 
-/// The table [offset] is in, if it is in one.
-/// Words typed onto the empty line touching a table, kept out of it.
+/// Words typed against a table, kept out of it.
 ///
-/// In GFM a line straight after a table's last row is one more row of it, and
-/// a line straight before its header leaves no table at all, since a table
-/// cannot interrupt a paragraph. Either way the first letter typed there would
-/// reshape the grid under the writer's hands. So typing on that empty line
-/// gains a line break on the table's side, and the words start a paragraph of
-/// their own with a blank line between it and the table.
+/// In GFM a line straight after a table's last row is one more row of it, so
+/// the first letter typed on the empty line under a table would reshape the
+/// grid under the writer's hands. Typing there gains a line break on the
+/// table's side, and the words start a paragraph of their own with a blank
+/// line between it and the table.
+///
+/// The table's own edges are the same place as far as the writer can tell,
+/// since its source never shows: the caret is left at the end of the last row
+/// when the table ends the note, and at the start of the header when it opens
+/// it. Words typed at the end get a line of their own below, and words typed
+/// at the start one above, instead of vanishing into a hidden row or breaking
+/// the header.
 ///
 /// Only typing: a line break is a new line and harmless, and a row pasted
 /// under a table is asking to join it.
@@ -1431,7 +1436,6 @@ TextEditingValue? separateTypingFromTables(
   final lineStart = at == 0 ? 0 : old.lastIndexOf('\n', at - 1) + 1;
   final newline = old.indexOf('\n', at);
   final lineEnd = newline < 0 ? old.length : newline;
-  if (lineStart != lineEnd) return null;
 
   TextRange shifted(TextRange range, int by, int from) => !range.isValid
       ? range
@@ -1441,16 +1445,20 @@ TextEditingValue? separateTypingFromTables(
         );
 
   for (final table in analysis.tables) {
-    if (lineStart == table.end + 1) {
+    final underTable = lineStart == lineEnd && lineStart == table.end + 1;
+    if (underTable || at == table.end) {
+      // A blank line between them either way: words straight under the last
+      // row would be one more row of it.
+      final gap = underTable ? '\n' : '\n\n';
       return TextEditingValue(
-        text: '${old.substring(0, at)}\n$inserted${old.substring(at)}',
+        text: '${old.substring(0, at)}$gap$inserted${old.substring(at)}',
         selection: TextSelection.collapsed(
-          offset: newValue.selection.baseOffset + 1,
+          offset: newValue.selection.baseOffset + gap.length,
         ),
-        composing: shifted(newValue.composing, 1, at),
+        composing: shifted(newValue.composing, gap.length, at),
       );
     }
-    if (lineEnd + 1 == table.start) {
+    if (at == table.start) {
       return TextEditingValue(
         text: '${old.substring(0, at)}$inserted\n${old.substring(at)}',
         selection: newValue.selection,
@@ -1461,6 +1469,7 @@ TextEditingValue? separateTypingFromTables(
   return null;
 }
 
+/// The table [offset] is in, if it is in one.
 MarkdownTable? markdownTableAt(MarkdownAnalysis analysis, int offset) {
   for (final table in analysis.tables) {
     if (offset >= table.start && offset <= table.end) return table;
