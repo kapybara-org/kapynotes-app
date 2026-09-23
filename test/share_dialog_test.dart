@@ -615,6 +615,161 @@ void main() {
     },
   );
 
+  group('sidebar tabs', () {
+    Widget tabbed(
+      Device device, {
+      required SidebarTab tab,
+      ValueChanged<SidebarTab>? onTabChanged,
+    }) => harness(
+      // The app rebuilds the sidebar whenever the account changes, sharing
+      // included; this stands in for that.
+      ListenableBuilder(
+        listenable: device.sharing,
+        builder: (context, _) => SizedBox(
+          width: 280,
+          child: Sidebar(
+            notes: [
+              for (final note in device.notes.notes)
+                if (sidebarTabOf(note, device.sharing) == tab) note,
+            ],
+            selectedId: null,
+            query: '',
+            displayTime: (t) => t,
+            onQueryChanged: (_) {},
+            onSelect: (_) {},
+            onCreate: () {},
+            onShare: (_) {},
+            sharing: device.sharing,
+            tab: tab,
+            onTabChanged: onTabChanged ?? (_) {},
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('your own shared note stays in My Notes, with faces', (
+      tester,
+    ) async {
+      late Note shared;
+      late Space space;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        alice.notes.create(body: 'Private');
+        shared = alice.notes.create(body: 'Ours');
+        await alice.sync.syncNow();
+        space = await alice.sharing.shareNoteWith(shared.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.single.token);
+        await alice.sync.syncNow();
+        await bob.sync.syncNow();
+        await alice.sharing.refresh();
+      });
+
+      await tester.pumpWidget(tabbed(alice, tab: SidebarTab.mine));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('sidebar-tabs')), findsOneWidget);
+      expect(find.text('My Notes'), findsOneWidget);
+      expect(find.text('Shared with Me'), findsOneWidget);
+      expect(find.text('Private'), findsOneWidget);
+      expect(find.text('Ours'), findsOneWidget);
+      // An ordinary row, not a section of its own: no space heading, and the
+      // people it is open to drawn after its timestamp instead.
+      expect(find.byKey(ValueKey('space-header-${space.id}')), findsNothing);
+      expect(find.byKey(const ValueKey('note-row-people')), findsOneWidget);
+      expect(
+        find.byKey(ValueKey('space-avatar-${space.id}-${bob.userId}')),
+        findsOneWidget,
+      );
+
+      // Nobody else has shared anything with Alice.
+      await tester.pumpWidget(tabbed(alice, tab: SidebarTab.shared));
+      await tester.pumpAndSettle();
+      expect(find.text('Nothing shared with you yet'), findsOneWidget);
+    });
+
+    testWidgets("someone else's note is under Shared with Me only", (
+      tester,
+    ) async {
+      late Space space;
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        final note = alice.notes.create(body: 'From Alice');
+        await alice.sync.syncNow();
+        space = await alice.sharing.shareNoteWith(note.id, email: bob.email);
+        await bob.sharing.acceptInvite(server.outbox.single.token);
+        await alice.sync.syncNow();
+        await bob.sync.syncNow();
+        bob.notes.create(body: 'Bob own');
+      });
+
+      await tester.pumpWidget(tabbed(bob, tab: SidebarTab.mine));
+      await tester.pumpAndSettle();
+      expect(find.text('Bob own'), findsOneWidget);
+      expect(find.text('From Alice'), findsNothing);
+
+      await tester.pumpWidget(tabbed(bob, tab: SidebarTab.shared));
+      await tester.pumpAndSettle();
+      expect(find.text('From Alice'), findsOneWidget);
+      expect(find.text('Bob own'), findsNothing);
+      // Grouped under who shared it, whose faces that heading already shows,
+      // so the row does not repeat them.
+      expect(find.byKey(ValueKey('space-header-${space.id}')), findsOneWidget);
+      expect(find.byKey(const ValueKey('note-row-people')), findsNothing);
+    });
+
+    testWidgets('an invitation waits under the search field until answered', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        await alice.boot();
+        await bob.boot();
+        final note = alice.notes.create(body: 'Plans');
+        await alice.sync.syncNow();
+        await alice.sharing.shareNoteWith(note.id, email: bob.email);
+        await bob.sharing.refresh();
+      });
+      final token = server.outbox.single.token;
+      SidebarTab? switchedTo;
+
+      await tester.pumpWidget(
+        tabbed(bob, tab: SidebarTab.mine, onTabChanged: (t) => switchedTo = t),
+      );
+      await tester.pumpAndSettle();
+
+      final card = find.byKey(ValueKey('sidebar-invite-$token'));
+      expect(card, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('sidebar-tab-invitation-dot')),
+        findsOneWidget,
+      );
+      double top(Finder finder) => tester.getTopLeft(finder).dy;
+      expect(
+        top(card),
+        greaterThan(top(find.byKey(const ValueKey('sidebar-search-field')))),
+      );
+
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(ValueKey('sidebar-invite-accept-$token')));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await tester.pumpAndSettle();
+
+      expect(bob.sharing.invites, isEmpty);
+      expect(bob.sharing.teams, hasLength(1));
+      expect(switchedTo, SidebarTab.shared);
+      expect(card, findsNothing);
+      expect(
+        find.byKey(const ValueKey('sidebar-tab-invitation-dot')),
+        findsNothing,
+      );
+      // Joining asks for a sync soon; the timer must not outlive the test.
+      bob.dispose();
+      await tester.pump(const Duration(seconds: 3));
+    });
+  });
+
   testWidgets('without a shared note the sidebar shows no sections', (
     tester,
   ) async {
