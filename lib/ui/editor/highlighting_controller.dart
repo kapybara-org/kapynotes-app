@@ -390,6 +390,12 @@ class HighlightingController extends TextEditingController {
       var segmentStyle = active == null || literal
           ? base
           : base.merge(_styleFor(active.kind));
+      // A comment is muted as a whole, so a link written in one keeps the
+      // comment's colour rather than lighting up in the middle of it. It is
+      // still a link: it opens, and spelling leaves it alone.
+      final segmentLinkColor = active?.kind == HighlightKind.comment
+          ? _palette.comment
+          : linkColor;
       if (markdown != 0) {
         segmentStyle = _markdownBlockStyle(segmentStyle, base, marked);
       }
@@ -421,7 +427,11 @@ class HighlightingController extends TextEditingController {
         };
       }
       if (markdown != 0) {
-        segmentStyle = _markdownInlineStyle(segmentStyle, marked, linkColor);
+        segmentStyle = _markdownInlineStyle(
+          segmentStyle,
+          marked,
+          segmentLinkColor,
+        );
       }
       final done = checked || marked(MarkdownStyle.doneTask);
       // A spelling mark must not replace KapyNotes' syntax, rich formatting,
@@ -441,7 +451,7 @@ class HighlightingController extends TextEditingController {
       }
       if (activeLink != null) {
         segmentStyle = segmentStyle.copyWith(
-          color: linkColor,
+          color: segmentLinkColor,
           decoration: TextDecoration.none,
         );
       }
