@@ -21,6 +21,7 @@ import '../../calc/engine.dart';
 import '../../calc/highlight.dart';
 import '../../calc/keyword_help.dart';
 import '../../crdt/text_diff.dart';
+import '../../crdt/text_merge.dart';
 import '../../core/editor_font.dart';
 import '../../core/note_link.dart';
 import '../../core/platform.dart';
@@ -83,6 +84,13 @@ typedef NoteDocumentChanged =
       List<NoteAttachmentRef> attachments,
     );
 
+/// A note as the store holds it, for [NoteEditor.storedDocument].
+typedef StoredNoteDocument = ({
+  String body,
+  List<NoteFormatRange> formats,
+  List<NoteAttachmentRef> attachments,
+});
+
 /// Swappable at the slow boundary so the editor can prove its waiting state
 /// without asking a widget test to decode a photograph in a real isolate.
 typedef ImageBatchIngestor =
@@ -142,6 +150,7 @@ class NoteEditor extends StatefulWidget {
     required this.gutterWidth,
     required this.resultsVisible,
     required this.onDocumentChanged,
+    this.storedDocument,
     required this.onGutterWidthChanged,
     required this.onResultsVisibilityChanged,
     required this.onGutterWidthReset,
@@ -274,6 +283,13 @@ class NoteEditor extends StatefulWidget {
   final double gutterWidth;
   final bool resultsVisible;
   final NoteDocumentChanged onDocumentChanged;
+
+  /// The note as the store holds it this instant, which can be a frame ahead
+  /// of [initialBody]: another device's words land in the store at once and
+  /// reach this widget on the next build. Read on every edit, so an edit is
+  /// never written over words the editor has not shown yet. Null reads this
+  /// widget's own fields.
+  final StoredNoteDocument? Function()? storedDocument;
   final ValueChanged<double> onGutterWidthChanged;
   final ValueChanged<bool> onResultsVisibilityChanged;
   final VoidCallback onGutterWidthReset;
@@ -502,6 +518,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final pendingSeparatorLine = appendSession
         ? DailySeparator.trailingEmptySectionLine(widget.initialBody)
         : null;
+    _storeBase = widget.initialBody;
+    _storeShadow = widget.initialBody;
     _formats = normalizeNoteFormats(widget.initialFormats, initialText.length);
     _attachments = normalizeNoteAttachments(
       widget.initialAttachments,
@@ -603,9 +621,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // and the text on screen is now behind the store. Take the new text and
     // keep the caret where the user left it, relative to the words around
     // it; only a store change that the editor did not itself send counts.
-    if (widget.initialBody != oldWidget.initialBody &&
-        widget.initialBody != _controller.text) {
-      _applyRemoteBody();
+    if (widget.initialBody != oldWidget.initialBody) {
+      _storeShadow = widget.initialBody;
+      if (widget.initialBody != _storeBase) _takeStoreText();
     }
     if (widget.initialBody == _controller.text &&
         !listEquals(widget.initialFormats, _formats)) {
@@ -837,39 +855,168 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     });
   }
 
-  /// Puts the store's text into the controller without treating it as an
-  /// edit, mapping the selection across the change so the caret stays with
-  /// the words it was between.
+  /// The store's text this editor's own is built on: what it last wrote, or
+  /// last took from the store. The text on screen is this plus whatever only
+  /// the editor holds — a blank line opened for typing, a keystroke made while
+  /// somebody else's words were on their way. Anything else the store holds is
+  /// such words, not shown yet, and an edit is merged onto them rather than
+  /// written over them.
+  late String _storeBase;
+
+  /// What the store holds as far as this widget alone can tell, for a page
+  /// that cannot say: whatever the editor last wrote, or the page last built
+  /// it with, whichever came later.
+  late String _storeShadow;
+
+  /// The note as the store holds it now, from the page if it can say.
+  StoredNoteDocument get _stored =>
+      widget.storedDocument?.call() ??
+      (
+        body: _storeShadow,
+        formats: widget.initialFormats,
+        attachments: widget.initialAttachments,
+      );
+
+  static bool _composingOpen(TextEditingValue value) =>
+      value.composing.isValid && !value.composing.isCollapsed;
+
+  /// Writes the editor's document to the store.
   ///
-  /// Deferred while the IME is composing: replacing the text under an open
-  /// composition confuses every soft keyboard, and a composition ends at the
-  /// next word boundary at the latest.
-  void _applyRemoteBody() {
-    final value = _controller.value;
-    if (value.composing.isValid && !value.composing.isCollapsed) {
-      _remotePending = true;
+  /// As it stands, normally. When the store has moved on from [_storeBase] —
+  /// another device's words that arrived while a composition held them back,
+  /// or in the frame before the page rebuilt — writing the editor's text
+  /// would delete them, and the sync layer would send those deletions to
+  /// every device. The edit is merged onto the store's text instead, and the
+  /// editor takes the result as soon as the keyboard allows.
+  void _commit(
+    String text,
+    List<NoteFormatRange> formats,
+    List<NoteAttachmentRef> attachments,
+  ) {
+    final stored = _stored.body;
+    if (stored == _storeBase) {
+      _storeBase = text;
+      _storeShadow = text;
+      widget.onDocumentChanged(text, formats, attachments);
       return;
     }
+    final merge = mergeTexts(base: _storeBase, local: text, remote: stored);
+    // The store is now this text with the other words in it, which is what
+    // the next edit is merged onto until the editor takes them.
+    _storeBase = text;
+    _storeShadow = merge.text;
+    widget.onDocumentChanged(
+      merge.text,
+      [
+        for (final range in formats)
+          NoteFormatRange(
+            start: merge.mapLocalStart(range.start),
+            end: merge.mapLocal(range.end),
+            format: range.format,
+          ),
+      ],
+      [
+        for (final ref in attachments)
+          ref.copyWith(offset: merge.mapLocalStart(ref.offset)),
+      ],
+    );
+    _remotePending = true;
+    _scheduleTake();
+  }
+
+  bool _takeScheduled = false;
+
+  /// Takes the store's text once the change in hand has run its course: the
+  /// keystroke that brought this on is written first, and the keyboard hears
+  /// of the result after it.
+  void _scheduleTake() {
+    if (_takeScheduled) return;
+    _takeScheduled = true;
+    scheduleMicrotask(() {
+      _takeScheduled = false;
+      if (mounted && _remotePending) _takeStoreText();
+    });
+  }
+
+  /// Puts the store's text into the controller without treating it as an
+  /// edit, keeping whatever only the editor holds and the caret with the
+  /// words it was between.
+  ///
+  /// Held while the IME is composing, unless everything up to the end of the
+  /// composing word and the caret stays exactly where it is: moving text
+  /// under an open composition confuses every soft keyboard, while words
+  /// landing after it are nothing a keyboard can see. A composition ends at
+  /// the next word boundary at the latest, and edits made meanwhile are
+  /// merged, not written over; see [_commit].
+  void _takeStoreText() {
+    final stored = _stored;
+    if (stored.body == _storeBase) {
+      _remotePending = false;
+      return;
+    }
+    final value = _controller.value;
+    final merge = mergeTexts(
+      base: _storeBase,
+      local: value.text,
+      remote: stored.body,
+    );
+    final newText = merge.text;
+    final selection = value.selection.isValid
+        ? value.selection.copyWith(
+            baseOffset: merge.mapLocal(value.selection.baseOffset),
+            extentOffset: merge.mapLocal(value.selection.extentOffset),
+          )
+        : TextSelection.collapsed(offset: newText.length);
+    final composing = _composingOpen(value)
+        ? TextRange(
+            start: merge.mapLocal(value.composing.start),
+            end: merge.mapLocal(value.composing.end),
+          )
+        : TextRange.empty;
+    if (_composingOpen(value)) {
+      final reach = math.max(value.selection.end, value.composing.end);
+      final untouched =
+          selection == value.selection &&
+          composing == value.composing &&
+          newText.length >= reach &&
+          newText.startsWith(value.text.substring(0, reach));
+      if (!untouched) {
+        _remotePending = true;
+        return;
+      }
+    }
     _remotePending = false;
-    final newText = widget.initialBody;
     final editingCell = _editingCell;
     final mappedTableProbe = editingCell == null
         ? null
-        : mapOffsetAcross(
-            diffTexts(value.text, newText),
+        : merge.mapLocal(
             math.min(editingCell.tableStart + 1, value.text.length),
           );
-    final selection = mapSelectionAcrossEdit(
-      value.text,
-      newText,
-      value.selection,
-    );
-    _formats = normalizeNoteFormats(widget.initialFormats, newText.length);
-    _attachments = normalizeNoteAttachments(widget.initialAttachments, newText);
+    _formats = normalizeNoteFormats([
+      for (final range in stored.formats)
+        NoteFormatRange(
+          start: merge.mapRemoteStart(range.start),
+          end: merge.mapRemoteEnd(range.end),
+          format: range.format,
+        ),
+    ], newText.length);
+    _attachments = normalizeNoteAttachments([
+      for (final ref in stored.attachments)
+        ref.copyWith(offset: merge.mapRemoteStart(ref.offset)),
+    ], newText);
+    _storeBase = stored.body;
+    // The keyboard may already be applying a keystroke to the text as it was.
+    _lastTake = newText == value.text || !_focusNode.hasFocus
+        ? null
+        : (from: value.text, to: newText, at: DateTime.now());
     _applyingRemote = true;
     try {
       _controller.formats = _formats;
-      _controller.value = TextEditingValue(text: newText, selection: selection);
+      _controller.value = TextEditingValue(
+        text: newText,
+        selection: selection,
+        composing: composing,
+      );
     } finally {
       _applyingRemote = false;
     }
@@ -907,7 +1054,72 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   bool _applyingRemote = false;
+
+  /// The store holds words the editor has not taken yet.
   bool _remotePending = false;
+
+  /// What the last text taken from the store replaced, and when. See
+  /// [_rebaseStaleInput].
+  ({String from, String to, DateTime at})? _lastTake;
+
+  /// How long after taking the store's text an edit from the keyboard is
+  /// checked for having been built on the text before. The keyboard catches
+  /// up within a round trip to the platform; this is generous for a slow one.
+  static const _staleInputWindow = Duration(seconds: 2);
+
+  /// The first input formatter: an edit from the keyboard built on the text
+  /// the editor showed before it last took the store's.
+  ///
+  /// The platform keeps its own copy of the text. A keystroke it applied to
+  /// that copy before hearing of the new text arrives built on the old one,
+  /// and read against what is on screen it looks like the keystroke plus the
+  /// deletion of every word that just arrived. Whichever reading is the
+  /// smaller edit is the one the keyboard meant: the stale one is carried
+  /// across the take, and the others pass untouched.
+  TextEditingValue _rebaseStaleInput(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final take = _lastTake;
+    if (take == null) return newValue;
+    if (oldValue.text != take.to ||
+        DateTime.now().difference(take.at) > _staleInputWindow) {
+      _lastTake = null;
+      return newValue;
+    }
+    int size(TextEdit edit) =>
+        edit.oldEnd - edit.start + edit.newEnd - edit.start;
+    final asShown = size(diffTexts(oldValue.text, newValue.text));
+    final asBefore = size(diffTexts(take.from, newValue.text));
+    if (asBefore >= asShown) {
+      // Built on what is shown: the keyboard has caught up.
+      _lastTake = null;
+      return newValue;
+    }
+    final merge = mergeTexts(
+      base: take.from,
+      local: newValue.text,
+      remote: take.to,
+    );
+    TextRange mapRange(TextRange range) => range.isValid
+        ? TextRange(
+            start: merge.mapLocal(range.start),
+            end: merge.mapLocal(range.end),
+          )
+        : range;
+    // A second keystroke may be on its way built on this one.
+    _lastTake = (from: newValue.text, to: merge.text, at: take.at);
+    return TextEditingValue(
+      text: merge.text,
+      selection: newValue.selection.isValid
+          ? newValue.selection.copyWith(
+              baseOffset: merge.mapLocal(newValue.selection.baseOffset),
+              extentOffset: merge.mapLocal(newValue.selection.extentOffset),
+            )
+          : newValue.selection,
+      composing: mapRange(newValue.composing),
+    );
+  }
 
   /// The style ranges the editor is currently drawing.
   @visibleForTesting
@@ -923,14 +1135,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _lastValue = value;
       return;
     }
-    if (_remotePending &&
-        !(value.composing.isValid && !value.composing.isCollapsed) &&
-        widget.initialBody != value.text) {
-      // The composition that held the remote text back has ended.
-      _lastValue = value;
-      _applyRemoteBody();
-      return;
-    }
+    // The composition that held the store's text back has ended, with a
+    // keystroke or without one. The keystroke is written below; the store's
+    // text is taken after it.
+    if (_remotePending && !_composingOpen(value)) _scheduleTake();
     _reportActivity(edited: value.text != previous.text);
     if (value.text == previous.text) {
       final selectionChanged = value.selection != previous.selection;
@@ -1046,7 +1254,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _evaluate();
     });
     unawaited(_requestSpellCheck(value.text));
-    widget.onDocumentChanged(value.text, updatedFormats, updatedAttachments);
+    _commit(value.text, updatedFormats, updatedAttachments);
   }
 
   Future<void> _requestSpellCheck([String? requestedText]) async {
@@ -1852,7 +2060,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   void _commitAttachments() {
     if (widget.readOnly) return;
-    widget.onDocumentChanged(_controller.text, _formats, _attachments);
+    _commit(_controller.text, _formats, _attachments);
   }
 
   /// Removes the image anchored at [offset], placeholder and all.
@@ -2189,7 +2397,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     ];
     if (!changed) return;
     setState(() => _attachments = updated);
-    widget.onDocumentChanged(_controller.text, _formats, updated);
+    _commit(_controller.text, _formats, updated);
   }
 
   void _commitFormats(List<NoteFormatRange> formats) {
@@ -2197,7 +2405,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _formats = formats;
     _controller.formats = formats;
     setState(() {});
-    widget.onDocumentChanged(_controller.text, formats, _attachments);
+    _commit(_controller.text, formats, _attachments);
   }
 
   void _toggleBullets() {
@@ -5246,6 +5454,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 spellCheckConfiguration:
                     const SpellCheckConfiguration.disabled(),
                 inputFormatters: [
+                  _StaleInputFormatter(_rebaseStaleInput),
                   _dailySeparatorFormatter,
                   if (widget.markdownEnabled) ...[
                     _MarkdownTypingFormatter(
@@ -5600,6 +5809,22 @@ class _MarkdownStructureFormatter extends TextInputFormatter {
     if (analysis == null) return newValue;
     return markdownStructureEdit(oldValue, newValue, analysis) ?? newValue;
   }
+}
+
+/// Carries a keystroke the platform built on text the editor has since
+/// replaced across to the text it shows. First in line, so the formatters
+/// after it see the edit the writer made. See
+/// [NoteEditorState._rebaseStaleInput].
+class _StaleInputFormatter extends TextInputFormatter {
+  const _StaleInputFormatter(this.rebase);
+
+  final TextEditingValue Function(TextEditingValue, TextEditingValue) rebase;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) => rebase(oldValue, newValue);
 }
 
 class _ListContinuationFormatter extends TextInputFormatter {

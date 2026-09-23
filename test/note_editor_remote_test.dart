@@ -36,6 +36,19 @@ class _MemoryStore extends LocalStore {
 late CalcEngine engine;
 late ShortcutPrefs shortcutPrefs;
 
+/// The note store as the page sees it: written by the editor's edits and by
+/// other devices, and read by the editor on every edit. A test changes
+/// [body] to land somebody else's words, then pumps the harness with it when
+/// the page would rebuild — a frame later.
+class StoreStandIn {
+  StoreStandIn(this.body);
+
+  String body;
+
+  StoredNoteDocument read() =>
+      (body: body, formats: const [], attachments: const []);
+}
+
 /// Same key across pumps, so a new body reaches `didUpdateWidget` rather
 /// than remounting the editor — which is what happens in the app when the
 /// store changes and the page rebuilds with the note still selected.
@@ -43,6 +56,7 @@ Widget harness(
   String body, {
   List<NoteFormatRange> formats = const [],
   void Function(String body)? onBodyChanged,
+  StoreStandIn? store,
 }) {
   return MaterialApp(
     theme: KapyTheme.dark(),
@@ -56,8 +70,11 @@ Widget harness(
         highlighter: Highlighter(engine.registry),
         gutterWidth: 200,
         resultsVisible: true,
-        onDocumentChanged: (body, formats, attachments) =>
-            onBodyChanged?.call(body),
+        onDocumentChanged: (body, formats, attachments) {
+          store?.body = body;
+          onBodyChanged?.call(body);
+        },
+        storedDocument: store?.read,
         onGutterWidthChanged: (_) {},
         onResultsVisibilityChanged: (_) {},
         onGutterWidthReset: () {},
@@ -72,6 +89,22 @@ Widget harness(
 
 EditableTextState _editable(WidgetTester tester) =>
     tester.state<EditableTextState>(find.byType(EditableText));
+
+/// What the keyboard hands the field: the text, the caret, and the word it
+/// is still composing, if any.
+void _type(
+  WidgetTester tester,
+  String text, {
+  required int caret,
+  TextRange composing = TextRange.empty,
+}) => _editable(tester).userUpdateTextEditingValue(
+  TextEditingValue(
+    text: text,
+    selection: TextSelection.collapsed(offset: caret),
+    composing: composing,
+  ),
+  SelectionChangedCause.keyboard,
+);
 
 void main() {
   setUpAll(loadTestFonts);
@@ -251,5 +284,120 @@ void main() {
     );
     await tester.pump();
     expect(_editable(tester).textEditingValue.text, 'REMOTE\nhel');
+  });
+
+  group('an edit made before the editor has shown what arrived', () {
+    /// A note with a word being composed at its end, and another device's
+    /// line landed above it while it is.
+    Future<StoreStandIn> composingUnderRemote(WidgetTester tester) async {
+      final store = StoreStandIn('hel');
+      await tester.pumpWidget(harness(store.body, store: store));
+      await tester.pumpAndSettle();
+      _type(tester, 'hel', caret: 3, composing: const TextRange(start: 0, end: 3));
+      await tester.pump();
+      store.body = 'REMOTE\nhel';
+      await tester.pumpWidget(harness(store.body, store: store));
+      await tester.pump();
+      expect(
+        _editable(tester).textEditingValue.text,
+        'hel',
+        reason: 'held back while the word is composed',
+      );
+      return store;
+    }
+
+    testWidgets('typing on under a composition keeps the words that arrived', (
+      tester,
+    ) async {
+      final store = await composingUnderRemote(tester);
+
+      _type(tester, 'hell', caret: 4, composing: const TextRange(start: 0, end: 4));
+      await tester.pump();
+
+      expect(store.body, 'REMOTE\nhell');
+    });
+
+    testWidgets('the keystroke that ends a composition is kept', (
+      tester,
+    ) async {
+      final store = await composingUnderRemote(tester);
+
+      // A space ends the word.
+      _type(tester, 'hel ', caret: 4);
+      await tester.pump();
+
+      expect(store.body, 'REMOTE\nhel ');
+      final value = _editable(tester).textEditingValue;
+      expect(value.text, 'REMOTE\nhel ');
+      expect(value.selection.baseOffset, 11);
+    });
+
+    testWidgets('a page that cannot say what the store holds still gets '
+        'merged edits', (tester) async {
+      final sent = <String>[];
+      await tester.pumpWidget(harness('hel', onBodyChanged: sent.add));
+      await tester.pumpAndSettle();
+      _type(tester, 'hel', caret: 3, composing: const TextRange(start: 0, end: 3));
+      await tester.pump();
+      await tester.pumpWidget(harness('REMOTE\nhel', onBodyChanged: sent.add));
+      await tester.pump();
+
+      _type(tester, 'hell', caret: 4, composing: const TextRange(start: 0, end: 4));
+      await tester.pump();
+      expect(sent.last, 'REMOTE\nhell');
+
+      // The word ends before the page has rebuilt with what was written.
+      _type(tester, 'hell ', caret: 5);
+      await tester.pump();
+      expect(sent.last, 'REMOTE\nhell ');
+      expect(_editable(tester).textEditingValue.text, 'REMOTE\nhell ');
+    });
+
+    testWidgets('a keystroke in the frame before the page rebuilds is '
+        'carried onto the store', (tester) async {
+      final store = StoreStandIn('a\nb');
+      await tester.pumpWidget(harness(store.body, store: store));
+      await tester.pumpAndSettle();
+      _type(tester, 'a\nb', caret: 3);
+      await tester.pump();
+
+      // Another device's line reaches the store; the page has not rebuilt.
+      store.body = 'X\na\nb';
+      _type(tester, 'a\nbc', caret: 4);
+      await tester.pump();
+      expect(store.body, 'X\na\nbc');
+
+      await tester.pumpWidget(harness(store.body, store: store));
+      await tester.pump();
+      final value = _editable(tester).textEditingValue;
+      expect(value.text, 'X\na\nbc');
+      expect(value.selection.baseOffset, 6);
+    });
+
+    testWidgets('an edit the keyboard built on the text before a remote '
+        'change does not undo it', (tester) async {
+      final store = StoreStandIn('a\nb');
+      await tester.pumpWidget(harness(store.body, store: store));
+      await tester.pumpAndSettle();
+      _type(tester, 'a\nb', caret: 3);
+      await tester.pump();
+      store.body = 'X\na\nb';
+      await tester.pumpWidget(harness(store.body, store: store));
+      await tester.pump();
+      expect(_editable(tester).textEditingValue.text, 'X\na\nb');
+
+      // A keystroke the platform applied to its own copy of the text before
+      // the new text reached it: built on "a\nb", not on what is shown.
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'a\nbc',
+          selection: TextSelection.collapsed(offset: 4),
+        ),
+      );
+      await tester.pump();
+
+      expect(_editable(tester).textEditingValue.text, 'X\na\nbc');
+      expect(store.body, 'X\na\nbc');
+    });
   });
 }

@@ -34,7 +34,9 @@ class Device {
     DateTime? startAt,
     Duration pollInterval = const Duration(seconds: 60),
     int snapshotEvery = 150,
-  }) : clock = startAt ?? DateTime.utc(2026, 9, 1) {
+  }) : clock = startAt ?? DateTime.utc(2026, 9, 1),
+       _pollInterval = pollInterval,
+       _snapshotEvery = snapshotEvery {
     store = MemoryStore();
     store.data['sync.v1'] = {'deviceId': deviceIdFor(name)};
     notes = NotesStore(store, now: tick);
@@ -48,23 +50,45 @@ class Device {
       store: store,
       trust: TrustStore(store),
     );
-    docs = DocStore(MemoryDocStorage(), replica: name);
-    sync = SyncService(
-      notes: notes,
-      state: state,
-      api: api,
-      keyring: keyring,
-      docs: docs,
-      vault: sharedVault(),
-      now: tick,
-      sendDelay: const Duration(milliseconds: 1),
-      pollInterval: pollInterval,
-      snapshotEvery: snapshotEvery,
-    );
+    docs = DocStore(docStorage, replica: name);
+    sync = _service();
   }
 
   final FakeServer server;
   final String name;
+  final Duration _pollInterval;
+  final int _snapshotEvery;
+
+  SyncService _service() => SyncService(
+    notes: notes,
+    state: state,
+    api: api,
+    keyring: keyring,
+    docs: docs,
+    vault: sharedVault(),
+    now: tick,
+    sendDelay: const Duration(milliseconds: 1),
+    pollInterval: _pollInterval,
+    snapshotEvery: _snapshotEvery,
+  );
+
+  /// Where the documents are written, which outlives a [relaunch].
+  final MemoryDocStorage docStorage = MemoryDocStorage();
+
+  /// Quits and starts again over what this device had written down: the
+  /// sync state as saved, and the documents read back from [docStorage].
+  /// [whileDown] runs once nothing of the old run can write any more, for a
+  /// test that wants the disk to say something else.
+  Future<void> relaunch({void Function()? whileDown}) async {
+    sync.dispose();
+    docs.dispose();
+    await settle(server);
+    whileDown?.call();
+    state.load();
+    docs = DocStore(docStorage, replica: name);
+    sync = _service();
+    await docs.load();
+  }
 
   /// Moved by hand so a test can put two devices minutes or days apart, and
   /// forward a millisecond on every read so two edits never share an
@@ -79,8 +103,8 @@ class Device {
   late final SyncState state;
   late final FakeApi api;
   late final SpaceKeyring keyring;
-  late final DocStore docs;
-  late final SyncService sync;
+  late DocStore docs;
+  late SyncService sync;
 
   String get personalId => server.personal(api.userId).id;
 
@@ -439,6 +463,216 @@ void main() {
 
       expect(two.notes.notes, isEmpty);
       expect(one.notes.notes, isEmpty);
+      one.dispose();
+      two.dispose();
+    });
+  });
+
+  group('no edit is lost', () {
+    test('typing after a lost ack is not folded into the resent push', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+      final note = one.notes.create(body: 'Start');
+      await until(() => two.bodyOf(note.id) == 'Start');
+
+      // One's push lands and its answer is lost with the socket, which stays
+      // down; the pass the drop starts finds no network either.
+      server.socketsAllowed = false;
+      server.dropBeforeAck = true;
+      server.failNext = const SyncTransientException('no route to host');
+      one.notes.updateBody(note.id, 'Start, sent');
+      await until(() => two.bodyOf(note.id) == 'Start, sent');
+      await until(() => one.sync.status == SyncStatus.offline);
+
+      // Typed while the first push is still unanswered. The server already
+      // holds that push, so what follows has to travel as a push of its own.
+      one.notes.updateBody(note.id, 'Start, sent, then more');
+      await settle(server);
+      server.socketsAllowed = true;
+      await until(() => one.sync.isLive);
+      await settle(server);
+
+      await until(
+        () => two.bodyOf(note.id) == 'Start, sent, then more',
+        reason: 'the words typed after the lost ack never reached two',
+      );
+      expect(one.sync.pendingCount, 0);
+      one.dispose();
+      two.dispose();
+    });
+
+    test('a catch-up page is not overtaken by a live batch behind it', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+      final note = one.notes.create(body: 'Start');
+      await until(() => two.bodyOf(note.id) == 'Start');
+
+      // Two's network sleeps while one keeps writing.
+      server.socketsAllowed = false;
+      two.socket.drop();
+      await settle(server);
+      for (final word in [' one', ' two', ' three']) {
+        one.notes.updateBody(note.id, '${one.bodyOf(note.id)}$word');
+        await settle(server);
+      }
+
+      // It wakes: the catch-up page, and a word one typed meanwhile, reach it
+      // in a single read.
+      server.holdFramesFor.add(two.api.device);
+      server.socketsAllowed = true;
+      await until(() => two.isConnected);
+      await settle(server);
+      one.notes.updateBody(note.id, '${one.bodyOf(note.id)} four');
+      await settle(server);
+      server.releaseFrames(two.api.device);
+      await settle(server);
+
+      expect(one.bodyOf(note.id), 'Start one two three four');
+      expect(two.bodyOf(note.id), one.bodyOf(note.id));
+      one.dispose();
+      two.dispose();
+    });
+
+    test('a record read back behind what it sent does not lose the next '
+        'edit', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+      final note = one.notes.create(body: 'Start');
+      await until(() => two.bodyOf(note.id) == 'Start');
+      await one.docs.flush();
+      final records = Map.of(one.docStorage.files);
+      final saved = Map<String, Object?>.of(
+        one.store.data['sync.v1']! as Map<String, Object?>,
+      );
+
+      one.notes.updateBody(note.id, 'Start, sent');
+      await until(() => two.bodyOf(note.id) == 'Start, sent');
+      // The app dies before the record is written again: it comes back
+      // with the note's words, and a document and numbering from before.
+      await one.relaunch(
+        whileDown: () {
+          one.docStorage.files
+            ..clear()
+            ..addAll(records);
+          one.store.data['sync.v1'] = saved;
+        },
+      );
+      await one.goLive();
+
+      one.notes.updateBody(note.id, 'Start, sent, then this');
+      await until(
+        () => two.bodyOf(note.id) == 'Start, sent, then this',
+        reason: 'the edit after the relaunch was dropped as a retry',
+      );
+      expect(one.bodyOf(note.id), two.bodyOf(note.id));
+      one.dispose();
+      two.dispose();
+    });
+  });
+
+  group('the one-off repair', () {
+    /// Makes [device]'s saved sync state look like a build before the repair
+    /// wrote it, so its next launch runs it.
+    void unrepaired(Device device, {Map<String, int>? cursors}) {
+      final saved = Map<String, Object?>.of(
+        device.store.data['sync.v1']! as Map<String, Object?>,
+      )..remove('repairVersion');
+      if (cursors != null) saved['opCursors'] = cursors;
+      device.store.data['sync.v1'] = saved;
+    }
+
+    test('a device whose cursor ran past ops it never applied reads the log '
+        'again and has them', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+      final note = one.notes.create(body: 'Start');
+      await until(() => two.bodyOf(note.id) == 'Start');
+
+      // An overtaken page under an older build: two's cursor went past words
+      // it never applied, and was saved like that.
+      server.socketsAllowed = false;
+      two.socket.drop();
+      await settle(server);
+      one.notes.updateBody(note.id, 'Start, and more');
+      await settle(server);
+      final seen = server.opSeqOf(two.personalId);
+      server.socketsAllowed = true;
+      await two.relaunch(
+        whileDown: () => unrepaired(two, cursors: {two.personalId: seen}),
+      );
+      await two.goLive();
+
+      await until(
+        () => two.bodyOf(note.id) == 'Start, and more',
+        reason: 'the log was never read again',
+      );
+      one.dispose();
+      two.dispose();
+    });
+
+    test('words that never reached the server are handed over by the device '
+        'that has them', () async {
+      final one = Device(
+        server,
+        name: 'one',
+        startAt: DateTime.utc(2026, 9, 20),
+      );
+      final two = Device(
+        server,
+        name: 'two',
+        startAt: DateTime.utc(2026, 9, 20),
+      );
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+      final note = one.notes.create(body: 'Start');
+      await until(() => two.bodyOf(note.id) == 'Start');
+
+      // Under an older build, words typed on one rode on a push the server
+      // already had, and were dropped there: one's document holds them, and
+      // no op anywhere does.
+      final record = one.docs.get(note.id)!;
+      final local = one.notes.byId(note.id)!;
+      record.doc.reconcile(
+        body: 'Start, lost',
+        formats: local.formats,
+        attachments: local.attachments,
+        createdAt: local.createdAt,
+        now: one.tick(),
+      );
+      final at = one.tick();
+      one.notes.applyDoc(
+        local.copyWith(body: 'Start, lost', updatedAt: at).markSynced(at),
+      );
+      await one.docs.flush();
+      await settle(server);
+      expect(two.bodyOf(note.id), 'Start');
+
+      await one.relaunch(whileDown: () => unrepaired(one));
+      await one.goLive();
+
+      await until(
+        () => two.bodyOf(note.id) == 'Start, lost',
+        reason: 'one never republished what it held',
+      );
+      expect(one.bodyOf(note.id), 'Start, lost');
       one.dispose();
       two.dispose();
     });
@@ -953,9 +1187,14 @@ void main() {
       await device.boot();
       await device.goLive();
 
+      // Down for a few milliseconds only, so watched for rather than polled.
+      var wentDown = false;
+      void watch() => wentDown |= !device.sync.isLive;
+      device.sync.addListener(watch);
       server.dropSockets();
-      await until(() => !device.sync.isLive);
+      await until(() => wentDown, reason: 'never noticed the drop');
       await until(() => device.sync.isLive, reason: 'never reconnected');
+      device.sync.removeListener(watch);
       expect(device.isConnected, isTrue);
       device.dispose();
     });

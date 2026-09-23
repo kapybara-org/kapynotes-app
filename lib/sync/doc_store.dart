@@ -132,6 +132,7 @@ class OutboxEntry {
     this.deleted,
     this.from,
     this.seed = false,
+    this.sent = false,
   });
 
   final String id;
@@ -140,8 +141,9 @@ class OutboxEntry {
   /// Plaintext atomic ops, as the engine emitted them.
   final List<Object?>? ops;
 
-  /// The per-device counter this batch of ops takes.
-  final int? deviceSeq;
+  /// The per-device counter this batch of ops takes. Moves only while the
+  /// entry is unsent, when the server turns out to hold this number already.
+  int? deviceSeq;
 
   /// A plaintext snapshot of the whole document.
   final Map<String, Object?>? snapshot;
@@ -154,6 +156,12 @@ class OutboxEntry {
 
   /// Sent and not yet answered. Cleared on disconnect so it goes again.
   bool inFlight = false;
+
+  /// Handed to the network at least once. The server may hold it from then
+  /// on, and it recognises a retry by [deviceSeq] alone, so a sent entry is
+  /// never added to: whatever was typed afterwards would ride on a retry the
+  /// server discards as one it already has.
+  bool sent;
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -186,6 +194,9 @@ class OutboxEntry {
       deleted: raw['deleted'] is bool ? raw['deleted'] as bool : null,
       from: raw['from'] is String ? raw['from'] as String : null,
       seed: raw['seed'] == true,
+      // Written before the last run ended, which may have sent it: whether it
+      // reached the server is not known, so it takes nothing more.
+      sent: true,
     );
   }
 }
@@ -449,12 +460,31 @@ class DocStore {
     _timer ??= Timer(writeDelay, () => unawaited(flush()));
   }
 
-  Future<void> flush() async {
+  /// Asked as each flush begins, for what to run once everything that flush
+  /// took is on disk. For state that must never reach disk ahead of the
+  /// records: how far into each log they have been brought, above all. A
+  /// cursor saved ahead of its records tells the next launch that ops were
+  /// applied which the records on disk never saw, and nothing fetches them
+  /// again.
+  void Function() Function()? beforeFlush;
+
+  Future<void> _flushing = Future<void>.value();
+
+  /// Writes every changed record. One flush at a time, so that what a
+  /// [beforeFlush] callback is told has been written really has been.
+  Future<void> flush() {
+    final next = _flushing.then((_) => _flushNow());
+    _flushing = next.catchError((Object _) {});
+    return next;
+  }
+
+  Future<void> _flushNow() async {
     _timer?.cancel();
     _timer = null;
-    if (_dirty.isEmpty) return;
+    final written = beforeFlush?.call();
     final ids = _dirty.toList();
     _dirty.clear();
+    var complete = true;
     for (final id in ids) {
       final record = _records[id];
       if (record == null) continue;
@@ -463,9 +493,11 @@ class DocStore {
       } catch (error) {
         debugPrint('KapyNotes: doc record for $id not written: $error');
         _dirty.add(id);
+        complete = false;
       }
     }
-    _trimHotRecords();
+    if (ids.isNotEmpty) _trimHotRecords();
+    if (complete) written?.call();
   }
 
   void _recordAccessed(DocRecord record) {
