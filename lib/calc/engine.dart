@@ -136,9 +136,16 @@ class CalcEngine {
 
   /// True when the parsed expression only reads an aggregate, optionally
   /// converting it to another unit or currency for display.
-  static bool _isAggregateReadout(Node node) => switch (node) {
-    IdentifierNode() => aggregateNames.contains(node.name.toLowerCase()),
-    ConvertNode() => _isAggregateReadout(node.value),
+  /// A variable the note named `sum` or `total` is its own value, not a
+  /// readout, which is why [variables] is asked first.
+  static bool _isAggregateReadout(
+    Node node,
+    Map<String, CalcValue> variables,
+  ) => switch (node) {
+    IdentifierNode() =>
+      !variables.containsKey(node.name) &&
+          aggregateNames.contains(node.name.toLowerCase()),
+    ConvertNode() => _isAggregateReadout(node.value, variables),
     _ => false,
   };
 
@@ -152,9 +159,45 @@ class CalcEngine {
     if (source == null) return null;
 
     return _evaluateExpression(source, index, evaluator, scope) ??
+        _labelledAssignment(source, index, evaluator, scope) ??
         _explicitLabel(source, index, evaluator, scope) ??
         _labelledArithmetic(source, index, evaluator, scope) ??
         _labelledAmount(source, index, evaluator, scope);
+  }
+
+  /// Reads `mailboxes = domains * 5 mail boxes` or `fee: $2/mailbox`: an
+  /// assignment whose value carries the same words [_labelledArithmetic] and
+  /// [_labelledAmount] already read on a line of their own.
+  ///
+  /// Those readings only ever saw whole lines, so a value that was fine alone
+  /// failed as soon as it was given a name, and then so did every later line
+  /// that used the name. Here the name stays put, the words are read out of
+  /// the value alone, and the result is bound exactly as a plain assignment
+  /// would be.
+  _EvaluatedLine? _labelledAssignment(
+    String source,
+    int index,
+    Evaluator evaluator,
+    CalcScope scope,
+  ) {
+    final tokens = Lexer(source)
+        .tokenize()
+        .where((t) => t.isSignificant && t.type != TokenType.eof)
+        .toList();
+    if (tokens.length < 3) return null;
+    final name = tokens[0];
+    final assign = tokens[1];
+    // The same heads the parser takes as an assignment.
+    if (name.type != TokenType.identifier ||
+        assign.type != TokenType.operator ||
+        !isAssignableName(name.text, assign.text)) {
+      return null;
+    }
+
+    final head = source.substring(0, assign.end);
+    final value = source.substring(assign.end);
+    return _labelledArithmetic(value, index, evaluator, scope, head: head) ??
+        _labelledAmount(value, index, evaluator, scope, head: head);
   }
 
   /// Reads the value to the right of an explicit label boundary.
@@ -265,7 +308,7 @@ class CalcEngine {
           copyText: ResultFormatter.copy(value),
           grouping: grouping,
         ),
-        isAggregateReadout: _isAggregateReadout(node),
+        isAggregateReadout: _isAggregateReadout(node, scope.variables),
       );
     } on CalcError {
       return null;
@@ -288,12 +331,16 @@ class CalcEngine {
   /// names and capacities routinely contain them. Operators are not: that
   /// keeps an invalid `2 + + 3 usd` from being rescued as `3 usd`. The other
   /// order, `12 mangoes`, is handled by [_labelledArithmetic].
+  ///
+  /// [head] is an assignment the amount is given to, `name =`, kept in front
+  /// of whatever is evaluated.
   _EvaluatedLine? _labelledAmount(
     String source,
     int index,
     Evaluator evaluator,
-    CalcScope scope,
-  ) {
+    CalcScope scope, {
+    String head = '',
+  }) {
     final tokens = Lexer(source)
         .tokenize()
         .where((t) => t.isSignificant && t.type != TokenType.eof)
@@ -309,7 +356,7 @@ class CalcEngine {
       }
       if (!_safeLabelPrefix(tokens.take(i), scope)) continue;
       final evaluated = _evaluateExpression(
-        source.substring(tokens[i].start),
+        '$head${source.substring(tokens[i].start)}',
         index,
         evaluator,
         scope,
@@ -403,12 +450,15 @@ class CalcEngine {
   /// what is left is the amount — which is what someone writing a price per
   /// mailbox means by it. A rate over something the calculator does know,
   /// `$120 / 3 months`, is untouched and stays a rate.
+  ///
+  /// [head] is as for [_labelledAmount].
   _EvaluatedLine? _labelledArithmetic(
     String source,
     int index,
     Evaluator evaluator,
-    CalcScope scope,
-  ) {
+    CalcScope scope, {
+    String head = '',
+  }) {
     final tokens = Lexer(source)
         .tokenize()
         .where((t) => t.isSignificant && t.type != TokenType.eof)
@@ -446,7 +496,7 @@ class CalcEngine {
     if (dropped.isEmpty) return null;
 
     final evaluated = _evaluateExpression(
-      _withoutTokens(source, tokens, dropped),
+      '$head${_withoutTokens(source, tokens, dropped)}',
       index,
       evaluator,
       scope,

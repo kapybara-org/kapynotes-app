@@ -188,6 +188,20 @@ const Set<String> prefixFunctionNames = {
   'fromunix',
 };
 
+/// Whether a line opening `name =` or `name :` gives [name] a value.
+///
+/// Any word can be a variable: `min = 5`, `log = 3` and `a = 2` are names the
+/// note chose, and once chosen they are that name for the rest of the note,
+/// in the same way `x` and unit names already were. Only the words that join
+/// calculations together, `to`, `in`, `per` and the rest, need the `=`. A
+/// colon after one of them is much more likely to be prose (`To: 5 people`)
+/// than a definition, and taking it as one would quietly stop `5 km to mi`
+/// working further down.
+bool isAssignableName(String name, String operator) {
+  if (operator == '=') return true;
+  return operator == ':' && !calcKeywords.contains(name.toLowerCase());
+}
+
 /// Recursive-descent parser for one line of note text.
 ///
 /// Precedence, loosest first:
@@ -230,10 +244,21 @@ class Parser {
     if (!_atEnd) _index++;
   }
 
+  /// Whether the token at [offset] is the operator word [word]. A word the
+  /// note has defined as a variable is never an operator: the note said what
+  /// it is.
   bool _isWord(String word, [int offset = 0]) {
     final t = _peek(offset);
-    return t.type == TokenType.identifier && t.text.toLowerCase() == word;
+    return t.type == TokenType.identifier &&
+        t.text.toLowerCase() == word &&
+        !_boundNames.contains(t.text);
   }
+
+  /// [_current] is an identifier with a built-in meaning the note has not
+  /// replaced with a variable of its own.
+  bool get _currentIsBuiltIn =>
+      _current.type == TokenType.identifier &&
+      !_boundNames.contains(_current.text);
 
   /// Parses a complete line, requiring that every token is consumed. Trailing
   /// garbage is a parse failure, which is what stops prose like
@@ -249,13 +274,11 @@ class Parser {
 
   Node _parseAssignment() {
     // `subtotal = 42` and the Soulver-style `Groceries: 42`.
-    if (_current.type == TokenType.identifier &&
-        !calcKeywords.contains(_current.text.toLowerCase()) &&
-        !functionNames.contains(_current.text.toLowerCase())) {
+    if (_current.type == TokenType.identifier) {
       final next = _peek();
       final isAssign =
           next.type == TokenType.operator &&
-          (next.text == '=' || next.text == ':');
+          isAssignableName(_current.text, next.text);
       if (isAssign) {
         final name = _current.text;
         _advance();
@@ -344,7 +367,7 @@ class Parser {
   NumericNotation? _conversionNotation() {
     final isLead =
         (_current.type == TokenType.operator && _current.text == '->') ||
-        (_current.type == TokenType.identifier &&
+        (_currentIsBuiltIn &&
             const [
               'to',
               'into',
@@ -383,7 +406,7 @@ class Parser {
     if (_current.type == TokenType.operator && _current.text == '->') {
       return true;
     }
-    if (_current.type != TokenType.identifier) return false;
+    if (!_currentIsBuiltIn) return false;
     final word = _current.text.toLowerCase();
     if (word == 'to' || word == 'into') return true;
     if (word == 'in' || word == 'as') {
@@ -665,7 +688,7 @@ class Parser {
     }
     final basedCall = _tryWrittenBaseFunction();
     if (basedCall != null) return basedCall;
-    if (_current.type == TokenType.identifier &&
+    if (_currentIsBuiltIn &&
         prefixFunctionNames.contains(_current.text.toLowerCase()) &&
         _peek().type != TokenType.lparen) {
       final name = _current.text.toLowerCase();
@@ -724,13 +747,13 @@ class Parser {
       // The spelled-out form, so "20 percent of 80" reads the same as
       // "20% of 80". The `as a percent of` phrase is matched earlier, at the
       // conversion level, and never reaches here.
-      if (_current.type == TokenType.identifier &&
+      if (_currentIsBuiltIn &&
           const ['percent', 'pct'].contains(_current.text.toLowerCase())) {
         _advance();
         node = PercentNode(node);
         continue;
       }
-      if (_current.type == TokenType.identifier) {
+      if (_currentIsBuiltIn) {
         final scale = numberScaleNames[_current.text.toLowerCase()];
         if (scale != null) {
           _advance();
@@ -833,7 +856,7 @@ class Parser {
 
     if (token.type == TokenType.identifier) {
       final word = token.text.toLowerCase();
-      if (calcKeywords.contains(word)) {
+      if (calcKeywords.contains(word) && !_boundNames.contains(token.text)) {
         throw CalcError('unexpected "${token.text}"');
       }
       if (_peek().type == TokenType.lparen) {

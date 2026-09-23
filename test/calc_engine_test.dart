@@ -484,6 +484,49 @@ void main() {
       expect(doc('subtotal = 42\nsubtotal * 3'), {0: '42', 1: '126'});
     });
 
+    // A name the note chooses is that name from then on, whatever the word
+    // means to the calculator elsewhere.
+    test('any word can be a variable', () {
+      for (final name in [
+        'min',
+        'max',
+        'sum',
+        'avg',
+        'log',
+        'ln',
+        'round',
+        'sqrt',
+        'mod',
+        'a',
+        'in',
+        'to',
+        'per',
+        'of',
+        'on',
+        'with',
+        'hex',
+        'dec',
+        'lakh',
+      ]) {
+        expect(doc('$name = 7\n$name * 2\n$name + 1'), {
+          0: '7',
+          1: '14',
+          2: '8',
+        }, reason: name);
+      }
+      // Before this, `min = 7` compared a minute with seven and said false.
+      expect(doc('min: 7\nmin * 2'), {0: '7', 1: '14'});
+      expect(doc('sum = 7\n1\nsum'), {0: '7', 1: '1', 2: '7'});
+      // A call is still a call.
+      expect(doc('min = 7\nmin(3, 5)'), {0: '7', 1: '3'});
+    });
+
+    test('a joining word needs = to become a variable', () {
+      // `To: 5 people` is prose far more often than a definition, and taking
+      // it as one would stop `to` converting further down.
+      expect(doc('to: 5 people\n5 km to m'), {1: '5,000 m'});
+    });
+
     test('supports colon assignment', () {
       expect(doc('Groceries: 120\nGroceries / 4'), {0: '120', 1: '30'});
     });
@@ -802,6 +845,37 @@ void main() {
       // nothing, which is what the rest of the engine does when unsure.
       expect(line('2x3'), isNull);
       expect(line('20 domains v2'), isNull);
+    });
+
+    // The same words, once the amount is given a name. They used to fail
+    // there, and so then did every later line that used the name.
+    test('a labelled value can be assigned', () {
+      expect(
+        doc(
+          'domains = 20\n'
+          'mailboxes= domains * 5 mail boxes\n'
+          '\n'
+          'domain_cost = domains * \$10/domain\n'
+          'mailbox_cost: mailboxes * \$2/mailbox\n'
+          '\n'
+          'total_cost = domain_cost + mailbox_cost',
+        ),
+        {0: '20', 1: '100', 3: '200.00 USD', 4: '200.00 USD', 6: '400.00 USD'},
+      );
+      expect(doc('rent = Flat 4B 1200 usd\nrent * 2'), {
+        0: '1,200.00 USD',
+        1: '2,400.00 USD',
+      });
+      expect(doc('seats: 12 seats x \$8\nseats / 2'), {
+        0: '96.00 USD',
+        1: '48.00 USD',
+      });
+    });
+
+    test('an assigned value is held to the same rules as a line', () {
+      expect(line('n = 10 min break'), isNull);
+      expect(line('n = 12 + mangoes'), isNull);
+      expect(line('n = Room 12'), isNull);
     });
 
     test('quantities feed the running total', () {
