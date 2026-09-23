@@ -6,13 +6,16 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../core/toast.dart';
 import '../data/note.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
 import '../data/writing_streak.dart';
 import '../sync/presence.dart';
+import '../sync/safety.dart';
 import '../sync/sharing.dart';
 import '../sync/spaces.dart';
+import '../sync/sync_api.dart' show SyncRefusedException;
 import 'app_logo.dart';
 import 'collaborator_colors.dart';
 import 'compact_icon_button.dart';
@@ -21,6 +24,7 @@ import 'context_menu.dart';
 import 'editor/note_footer.dart';
 import 'editor_panes.dart';
 import 'member_avatars.dart';
+import 'safety_dialogs.dart';
 import 'sidebar_timestamp.dart';
 import 'streak_badge.dart';
 
@@ -57,6 +61,27 @@ const KapyIconData unhideIcon = KapyIcons.unlockRounded;
 /// A scroll position is session state, so every fresh app launch conceals the
 /// row again without turning its visibility into a saved preference.
 const _mobileNotesCenterKey = ValueKey<String>('sidebar-mobile-notes-start');
+
+/// The two halves of a signed-in library.
+///
+/// A note belongs to whoever owns the space it is in. The person's own notes,
+/// shared or not, are one list: sharing a note does not make it any less
+/// theirs, so it stays where they left it and only gains the faces of the
+/// people it is open to. Notes other people own are the other list.
+enum SidebarTab { mine, shared }
+
+/// Which tab [note] is listed under.
+///
+/// A shared note in a space this device has not heard the details of yet is
+/// counted as somebody else's: the owner's own spaces are always known here,
+/// since this device made them or was told about them when they were made.
+SidebarTab sidebarTabOf(Note note, Sharing sharing) {
+  if (!note.isShared) return SidebarTab.mine;
+  final space = sharing.spaceOf(note);
+  return space != null && space.ownerId == sharing.userId
+      ? SidebarTab.mine
+      : SidebarTab.shared;
+}
 
 /// The note list, with search.
 class Sidebar extends StatelessWidget {
@@ -110,8 +135,11 @@ class Sidebar extends StatelessWidget {
     this.streak,
     this.collaborators = const {},
     this.onOpenSpace,
+    this.tab = SidebarTab.mine,
+    this.onTabChanged,
   });
 
+  /// The notes to list, already narrowed to [tab] while the tabs are shown.
   final List<Note> notes;
   final Set<String> pinnedNoteIds;
 
@@ -209,6 +237,14 @@ class Sidebar extends StatelessWidget {
   /// a label.
   final ValueChanged<String>? onOpenSpace;
 
+  /// Whose notes the list is showing. Only read while the tabs are shown:
+  /// with an account unlocked, outside the archive and Hidden Notes.
+  final SidebarTab tab;
+
+  /// Switches tabs. Null leaves the tabs out, as a build without an account
+  /// has nothing to put in the second one.
+  final ValueChanged<SidebarTab>? onTabChanged;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -227,6 +263,12 @@ class Sidebar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (showHeader) const _Header(),
+            if (_tabbed)
+              _SidebarTabs(
+                tab: tab,
+                invitations: sharing!.invites.length,
+                onChanged: onTabChanged!,
+              ),
             _SearchField(
               query: query,
               onChanged: onQueryChanged,
@@ -235,7 +277,15 @@ class Sidebar extends StatelessWidget {
               hiddenMode: hiddenMode,
               focusNode: searchFocusNode,
               shortcut: searchShortcut,
+              belowTabs: _tabbed,
             ),
+            if (!_specialMode && sharing != null && sharing!.invites.isNotEmpty)
+              _Invitations(
+                sharing: sharing!,
+                onJoined: onTabChanged == null
+                    ? null
+                    : () => onTabChanged!(SidebarTab.shared),
+              ),
             if (archiveMode && (notes.isNotEmpty || selecting))
               _ArchiveActions(
                 selecting: selecting,
@@ -288,8 +338,17 @@ class Sidebar extends StatelessWidget {
 extension on Sidebar {
   bool get _specialMode => archiveMode || hiddenMode;
 
+  /// The tabs split the ordinary list only. The archive and Hidden Notes
+  /// are folders of their own, and a build without an account has nobody
+  /// else's notes to show.
+  bool get _tabbed => sharing != null && !_specialMode && onTabChanged != null;
+
+  bool get _onSharedTab => _tabbed && tab == SidebarTab.shared;
+
+  /// Hidden Notes are always the person's own, so the way into them sits
+  /// over their own notes rather than over other people's.
   bool get _showMobileHiddenEntry =>
-      AppPlatform.isMobile && onHiddenToggle != null;
+      AppPlatform.isMobile && onHiddenToggle != null && !_onSharedTab;
 
   bool get _showDesktopHiddenEntry =>
       AppPlatform.isDesktop &&
@@ -306,12 +365,16 @@ extension on Sidebar {
   bool get _grouped =>
       _hasPinned ||
       _summarised ||
-      (sharing != null && notes.any((note) => note.isShared));
+      (_tabbed
+          ? _onSharedTab && notes.isNotEmpty
+          : sharing != null && notes.any((note) => note.isShared));
 
   /// Whether the heading over the person's own notes counts them and carries
   /// the streak: over the whole list only. A search result is not the
-  /// library, and the archive is where notes go once they are done with.
-  bool get _summarised => !_specialMode && query.trim().isEmpty;
+  /// library, the archive is where notes go once they are done with, and
+  /// other people's notes are not the person's writing.
+  bool get _summarised =>
+      !_specialMode && !_onSharedTab && query.trim().isEmpty;
 
   Widget _buildEmpty(BuildContext context) {
     final empty = _SidebarEmpty(
@@ -320,8 +383,13 @@ extension on Sidebar {
                 ? 'Archived Notes is empty'
                 : hiddenMode
                 ? 'Hidden Notes is empty'
+                : _onSharedTab
+                ? 'Nothing shared with you yet'
                 : 'No notes yet'
           : 'No matching notes',
+      detail: query.trim().isEmpty && _onSharedTab
+          ? 'Notes other people share with you appear here'
+          : null,
     );
     if (!_showMobileHiddenEntry) return empty;
     return CustomScrollView(
@@ -342,8 +410,13 @@ extension on Sidebar {
       context,
       AppControlMetrics.sidebarNoteRowExtent,
     );
-    Widget rowBuilder(BuildContext context, int index) =>
-        SizedBox(height: extent, child: _row(notes[index], shared: false));
+    Widget rowBuilder(BuildContext context, int index) => SizedBox(
+      height: extent,
+      child: _row(
+        notes[index],
+        shared: sharing != null && notes[index].isShared,
+      ),
+    );
 
     if (!_showMobileHiddenEntry) {
       return ListView.builder(
@@ -442,6 +515,13 @@ extension on Sidebar {
     (onMoveSelect ?? onSelect)(ordered[next].id);
   }
 
+  /// The space whose people a shared row shows at its end: wherever the row
+  /// is not already under that space's own heading, which shows them.
+  Space? _peopleOf(Note note, {required bool shared, required bool pinned}) {
+    if (!shared || !_tabbed || (_onSharedTab && !pinned)) return null;
+    return sharing?.spaceOf(note);
+  }
+
   Widget _row(
     Note note, {
     required bool shared,
@@ -456,6 +536,8 @@ extension on Sidebar {
     pinned: pinned,
     locked: lockedNoteIds.contains(note.id),
     collaborators: shared ? collaborators[note.id] ?? const [] : const [],
+    sharedWith: _peopleOf(note, shared: shared, pinned: pinned),
+    currentUserId: sharing?.userId ?? '',
     onTap: () => onSelect(note.id),
     onOpenToSide: onOpenToSide == null ? null : () => onOpenToSide!(note.id),
     openElsewhere: openElsewhereIds.contains(note.id),
@@ -498,6 +580,7 @@ extension on Sidebar {
     pinnedNoteIds: pinnedNoteIds,
     sharing: sharing,
     specialMode: _specialMode,
+    tab: _tabbed ? tab : null,
   );
 
   Widget _buildGrouped(BuildContext context) {
@@ -512,8 +595,9 @@ extension on Sidebar {
       AppControlMetrics.sidebarNoteRowExtent,
     );
     // Pinned ones included: the number is how many notes are theirs, not how
-    // many happen to sit under the heading.
-    final ownCount = hasSharedSections
+    // many happen to sit under the heading. Behind the tabs every note in
+    // this list is theirs, shared or not.
+    final ownCount = hasSharedSections && !_tabbed
         ? notes.where((note) => !note.isShared).length
         : notes.length;
     final summary = _summarised && ownCount > 0;
@@ -530,7 +614,7 @@ extension on Sidebar {
         for (final note in pinned)
           _GroupedNote(
             note,
-            shared: hasSharedSections && note.isShared,
+            shared: sharing != null && note.isShared,
             pinned: true,
           ),
       ],
@@ -560,12 +644,13 @@ extension on Sidebar {
       if (mine.isNotEmpty || summary) ...[
         _GroupedLabel(
           _SectionLabel(
-            label: hasSharedSections ? 'My notes' : 'Notes',
+            label: hasSharedSections && !_tabbed ? 'My notes' : 'Notes',
             count: summary ? ownCount : null,
             streak: summary ? streak : null,
           ),
         ),
-        for (final note in mine) _GroupedNote(note, shared: false),
+        for (final note in mine)
+          _GroupedNote(note, shared: sharing != null && note.isShared),
       ],
     ];
 
@@ -802,11 +887,17 @@ class SidebarNoteGroups {
     required Set<String> pinnedNoteIds,
     required Sharing? sharing,
     required bool specialMode,
+    SidebarTab? tab,
   }) : pinned = specialMode
            ? const []
            : notes.where((note) => pinnedNoteIds.contains(note.id)).toList(),
-       hasSharedSections =
-           sharing != null && notes.any((note) => note.isShared) {
+       // Behind the tabs the person's own shared notes sit among the rest,
+       // and only other people's are gathered under their spaces.
+       hasSharedSections = switch (tab) {
+         SidebarTab.mine => false,
+         SidebarTab.shared => sharing != null && notes.isNotEmpty,
+         null => sharing != null && notes.any((note) => note.isShared),
+       } {
     final pinnedIds = pinned.map((note) => note.id).toSet();
     final remaining = notes
         .where((note) => !pinnedIds.contains(note.id))
@@ -1469,6 +1560,445 @@ class _Header extends StatelessWidget {
   );
 }
 
+/// My Notes and Shared with Me, as one segmented control at the top of the
+/// list.
+///
+/// Two segments rather than two more sections, because a shared library
+/// grows two ways at once and a single list made the person's own notes the
+/// ones at the bottom. A dot on the second segment says an invitation is
+/// waiting, for the moment the notice under the search field is scrolled
+/// past or missed.
+class _SidebarTabs extends StatelessWidget {
+  const _SidebarTabs({
+    required this.tab,
+    required this.invitations,
+    required this.onChanged,
+  });
+
+  final SidebarTab tab;
+  final int invitations;
+  final ValueChanged<SidebarTab> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final touch = !AppPlatform.hasPointer;
+    return Padding(
+      // The search field's gutter, so the two line up edge to edge.
+      padding: touch
+          ? const EdgeInsets.fromLTRB(10, 9, 10, 0)
+          : const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Container(
+        key: const ValueKey('sidebar-tabs'),
+        height: touch ? 34 : 28,
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: palette.hover,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _SidebarTabButton(
+                key: const ValueKey('sidebar-tab-mine'),
+                label: 'My Notes',
+                selected: tab == SidebarTab.mine,
+                onTap: () => onChanged(SidebarTab.mine),
+              ),
+            ),
+            Expanded(
+              child: _SidebarTabButton(
+                key: const ValueKey('sidebar-tab-shared'),
+                label: 'Shared with Me',
+                selected: tab == SidebarTab.shared,
+                waiting: invitations,
+                onTap: () => onChanged(SidebarTab.shared),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarTabButton extends StatelessWidget {
+  const _SidebarTabButton({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.waiting = 0,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  /// Invitations waiting behind this tab, drawn as a dot.
+  final int waiting;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final accent = Theme.of(context).colorScheme.primary;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: switch (waiting) {
+        0 => label,
+        1 => '$label, 1 invitation',
+        _ => '$label, $waiting invitations',
+      },
+      child: ExcludeSemantics(
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: selected ? null : onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              decoration: BoxDecoration(
+                color: selected
+                    ? palette.surfaceBackground
+                    : palette.surfaceBackground.withValues(alpha: 0),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: selected
+                      ? palette.controlBorder
+                      : palette.controlBorder.withValues(alpha: 0),
+                  width: 0.5,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: AppTypeScale.small,
+                        fontWeight: selected
+                            ? FontWeight.w500
+                            : FontWeight.w400,
+                        color: selected
+                            ? palette.textPrimary
+                            : palette.textSecondary,
+                      ),
+                    ),
+                  ),
+                  if (waiting > 0) ...[
+                    const SizedBox(width: 5),
+                    Container(
+                      key: const ValueKey('sidebar-tab-invitation-dot'),
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: accent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Invitations waiting for an answer, just under the search field.
+///
+/// Where they are seen: an invitation used to wait in Settings › Sharing,
+/// which nobody opens to find out whether somebody has shared something with
+/// them. Accepting from here opens Shared with Me, where the notes arrive.
+///
+/// Report and Block stay one tap away behind the card's menu, as they are in
+/// Settings: an invitation is somebody else's words arriving unasked, and the
+/// stores expect the way to refuse them to sit wherever they are shown.
+class _Invitations extends StatefulWidget {
+  const _Invitations({required this.sharing, this.onJoined});
+
+  final Sharing sharing;
+
+  /// Shows the notes an accepted invitation brings.
+  final VoidCallback? onJoined;
+
+  @override
+  State<_Invitations> createState() => _InvitationsState();
+}
+
+class _InvitationsState extends State<_Invitations> {
+  /// The invitation being answered. One at a time, so a second tap cannot
+  /// race the first to the server.
+  String? _busy;
+
+  Future<void> _act(
+    PendingInvite invite,
+    Future<void> Function() action, {
+    required String waiting,
+    required String done,
+    bool joins = false,
+  }) async {
+    if (_busy != null) return;
+    setState(() => _busy = invite.token);
+    final sharing = widget.sharing;
+    final onJoined = widget.onJoined;
+    var progress = Toast.showProgress(context, waiting);
+    try {
+      try {
+        await action();
+      } on SyncRefusedException catch (error) {
+        if (error.code != termsRequiredCode || !mounted) rethrow;
+        // Reading the rules is not work in progress, so the spinner stops
+        // until they are agreed to and the answer goes through again.
+        progress.dismiss();
+        final accepted = await showSharingTermsSheet(context, sharing: sharing);
+        if (!accepted || !mounted) return;
+        progress = Toast.showProgress(context, waiting);
+        await action();
+      }
+      progress.success(done);
+      // Answered, the invitation leaves the list and may take this card with
+      // it, so the switch does not wait on it being mounted.
+      if (joins) onJoined?.call();
+    } catch (error) {
+      progress.error(describeSharingError(error));
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+  }
+
+  Future<void> _more(PendingInvite invite, Offset position) async {
+    final sharing = widget.sharing;
+    final choice = await showKapyContextMenu<String>(
+      context: context,
+      globalPosition: position,
+      items: [
+        PopupMenuItem(
+          key: ValueKey('invite-report-${invite.token}'),
+          value: 'report',
+          height: 36,
+          child: const Text('Report'),
+        ),
+        PopupMenuItem(
+          key: ValueKey('invite-block-${invite.token}'),
+          value: 'block',
+          height: 36,
+          child: Text('Block ${invite.inviterDisplayName}'),
+        ),
+      ],
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case 'report':
+        await showReportDialog(
+          context,
+          sharing: sharing,
+          target: ReportTarget.invitation(
+            token: invite.token,
+            email: invite.invitedBy,
+          ),
+        );
+      case 'block':
+        await _act(
+          invite,
+          () => sharing.blockPerson(invite.invitedBy),
+          waiting: 'Blocking…',
+          done: 'Blocked ${invite.inviterDisplayName}',
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sharing = widget.sharing;
+    return Column(
+      key: const ValueKey('sidebar-invitations'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final invite in sharing.invites)
+          _InvitationCard(
+            key: ValueKey('sidebar-invite-${invite.token}'),
+            invite: invite,
+            busy: _busy != null,
+            onAccept: () => _act(
+              invite,
+              () => sharing.acceptInvite(invite.token),
+              waiting: 'Joining…',
+              done: 'Joined. Notes appear once they sync',
+              joins: true,
+            ),
+            onDecline: () => _act(
+              invite,
+              () => sharing.declineInvite(invite.token),
+              waiting: 'Declining…',
+              done: 'Invitation declined',
+            ),
+            onMore: (position) => unawaited(_more(invite, position)),
+          ),
+      ],
+    );
+  }
+}
+
+class _InvitationCard extends StatelessWidget {
+  const _InvitationCard({
+    super.key,
+    required this.invite,
+    required this.busy,
+    required this.onAccept,
+    required this.onDecline,
+    required this.onMore,
+  });
+
+  final PendingInvite invite;
+  final bool busy;
+  final VoidCallback onAccept;
+  final VoidCallback onDecline;
+  final ValueChanged<Offset> onMore;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final touch = !AppPlatform.hasPointer;
+    final who = invite.inviterDisplayName;
+    final title = invite.hasGeneratedSpaceName
+        ? '$who invited you to share notes'
+        : '$who invited you to ${invite.spaceName}';
+    // The address stays on an invitation: it comes from somebody who may be
+    // a stranger, and a name is only what they call themselves.
+    final detail = [
+      if (invite.invitedByName != null) invite.invitedBy,
+      '${invite.role.accessLabel} access',
+    ].join(' · ');
+    final compact = TextButton.styleFrom(
+      visualDensity: VisualDensity.compact,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      minimumSize: Size(0, touch ? 34 : 26),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      textStyle: TextStyle(fontSize: AppTypeScale.small),
+    );
+    return Padding(
+      padding: touch
+          ? const EdgeInsets.fromLTRB(10, 0, 10, 8)
+          : const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(10, 8, 4, 6),
+        decoration: BoxDecoration(
+          color: palette.surfaceBackground,
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: palette.controlBorder, width: 0.5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: KapyIcon(
+                    KapyIcons.mailOutlined,
+                    size: AppControlMetrics.iconControl,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: AppTypeScale.small,
+                          height: 1.3,
+                          color: palette.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        detail,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: AppTypeScale.caption,
+                          color: palette.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Builder(
+                  builder: (buttonContext) => CompactIconButton(
+                    key: ValueKey('sidebar-invite-more-${invite.token}'),
+                    tooltip: 'More',
+                    extent: AppControlMetrics.fieldAdornmentSlot,
+                    foregroundColor: palette.textTertiary,
+                    onPressed: busy
+                        ? null
+                        : () {
+                            final box =
+                                buttonContext.findRenderObject() as RenderBox?;
+                            onMore(
+                              box == null
+                                  ? Offset.zero
+                                  : box.localToGlobal(
+                                      box.size.bottomRight(Offset.zero),
+                                    ),
+                            );
+                          },
+                    icon: KapyIcon(
+                      KapyIcons.moreRounded,
+                      size: AppControlMetrics.iconAdornment,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  key: ValueKey('sidebar-invite-decline-${invite.token}'),
+                  style: compact,
+                  onPressed: busy ? null : onDecline,
+                  child: const Text('Decline'),
+                ),
+                const SizedBox(width: 4),
+                FilledButton(
+                  key: ValueKey('sidebar-invite-accept-${invite.token}'),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    minimumSize: Size(0, touch ? 34 : 26),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    textStyle: TextStyle(fontSize: AppTypeScale.small),
+                  ),
+                  onPressed: busy ? null : onAccept,
+                  child: const Text('Accept'),
+                ),
+                const SizedBox(width: 4),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SearchField extends StatefulWidget {
   const _SearchField({
     required this.query,
@@ -1478,7 +2008,12 @@ class _SearchField extends StatefulWidget {
     required this.hiddenMode,
     this.focusNode,
     this.shortcut,
+    this.belowTabs = false,
   });
+
+  /// Sits under the tabs rather than the title bar, and needs less room
+  /// above it to read as part of the same header.
+  final bool belowTabs;
 
   final String query;
   final ValueChanged<String> onChanged;
@@ -1524,8 +2059,8 @@ class _SearchFieldState extends State<_SearchField> {
       // footer and archive actions hold, and the same room under the title
       // bar. The list's own top padding makes up the gap beneath it.
       padding: AppPlatform.hasPointer
-          ? const EdgeInsets.fromLTRB(12, 12, 12, 8)
-          : const EdgeInsets.fromLTRB(10, 9, 10, 9),
+          ? EdgeInsets.fromLTRB(12, widget.belowTabs ? 8 : 12, 12, 8)
+          : EdgeInsets.fromLTRB(10, widget.belowTabs ? 8 : 9, 10, 9),
       child: Row(
         children: [
           Expanded(
@@ -1678,6 +2213,8 @@ class NoteRow extends StatefulWidget {
     this.pinned = false,
     this.shared = false,
     this.collaborators = const [],
+    this.sharedWith,
+    this.currentUserId = '',
     this.locked = false,
     this.selecting = false,
     this.checked = false,
@@ -1728,6 +2265,14 @@ class NoteRow extends StatefulWidget {
   /// Whoever else has the note open right now. While anybody does, the row
   /// says who in place of when it was last changed.
   final List<Collaborator> collaborators;
+
+  /// The space whose people the row shows after its timestamp, as a small
+  /// stack of faces. Null where a heading above already shows them, or the
+  /// note is nobody's but the reader's.
+  final Space? sharedWith;
+
+  /// The reader, left out of [sharedWith]'s faces.
+  final String currentUserId;
 
   /// Whether the note limit holds the note read-only.
   final bool locked;
@@ -2110,6 +2655,8 @@ class _NoteRowState extends State<NoteRow> {
                             shared: widget.shared,
                             locked: widget.locked,
                             collaborators: widget.collaborators,
+                            sharedWith: widget.sharedWith,
+                            currentUserId: widget.currentUserId,
                           ),
                       ],
                     ),
@@ -2178,6 +2725,8 @@ class _UpdatedAtMetadata extends StatelessWidget {
     required this.displayTime,
     this.shared = false,
     this.collaborators = const [],
+    this.sharedWith,
+    this.currentUserId = '',
     this.locked = false,
   });
 
@@ -2185,7 +2734,12 @@ class _UpdatedAtMetadata extends StatelessWidget {
   final DateTime Function(DateTime) displayTime;
   final bool shared;
   final List<Collaborator> collaborators;
+  final Space? sharedWith;
+  final String currentUserId;
   final bool locked;
+
+  /// Small enough to sit on the caption line without making the row taller.
+  static double get faceExtent => AppControlMetrics.iconInline + 2;
 
   @override
   Widget build(BuildContext context) {
@@ -2195,7 +2749,15 @@ class _UpdatedAtMetadata extends StatelessWidget {
       updatedAt,
       displayTime: displayTime,
     );
-    final what = [if (locked) 'Read-only', if (shared) 'Shared'];
+    final space = sharedWith;
+    final people = space?.peoplePhrase(currentUserId);
+    // The faces say it is shared, and with whom, so the row keeps the clock
+    // every other row has instead of the people glyph.
+    final faces = space != null && people != null;
+    final what = [
+      if (locked) 'Read-only',
+      if (faces) 'Shared with $people' else if (shared) 'Shared',
+    ];
     return Semantics(
       label: what.isEmpty
           ? 'Updated $timestamp'
@@ -2206,14 +2768,16 @@ class _UpdatedAtMetadata extends StatelessWidget {
             KapyIcon(
               locked
                   ? KapyIcons.lockRounded
-                  : shared
+                  : shared && !faces
                   ? KapyIcons.peopleOutlined
                   : KapyIcons.scheduleRounded,
               size: AppControlMetrics.iconInline,
               color: palette.textTertiary,
             ),
             const SizedBox(width: 4),
-            Expanded(
+            // The time keeps its place against the icon and the faces follow
+            // it; on a narrow sidebar the time gives way first.
+            Flexible(
               child: Text(
                 timestamp,
                 maxLines: 1,
@@ -2224,6 +2788,16 @@ class _UpdatedAtMetadata extends StatelessWidget {
                 ),
               ),
             ),
+            if (faces) ...[
+              const SizedBox(width: 6),
+              SpacePeopleAvatars(
+                key: const ValueKey('note-row-people'),
+                space: space,
+                currentUserId: currentUserId,
+                extent: faceExtent,
+                maxAvatars: 3,
+              ),
+            ],
           ],
         ),
       ),
@@ -2474,21 +3048,40 @@ class _SpaceHeader extends StatelessWidget {
 }
 
 class _SidebarEmpty extends StatelessWidget {
-  const _SidebarEmpty({required this.message});
+  const _SidebarEmpty({required this.message, this.detail});
 
   final String message;
+
+  /// A quieter line under [message], saying what will fill the space.
+  final String? detail;
 
   @override
   Widget build(BuildContext context) => Center(
     child: Padding(
       padding: const EdgeInsets.all(24),
-      child: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: AppTypeScale.body,
-          color: context.palette.textTertiary,
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: AppTypeScale.body,
+              color: context.palette.textTertiary,
+            ),
+          ),
+          if (detail case final detail?) ...[
+            const SizedBox(height: 4),
+            Text(
+              detail,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: AppTypeScale.small,
+                color: context.palette.textTertiary,
+              ),
+            ),
+          ],
+        ],
       ),
     ),
   );

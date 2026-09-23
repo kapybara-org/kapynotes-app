@@ -194,6 +194,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   String? _selectedId;
   String _query = '';
+
+  /// Which half of the library the sidebar lists. Not remembered across
+  /// launches: the app always opens on the person's own notes.
+  SidebarTab _sidebarTab = SidebarTab.mine;
+
   bool _initialNoteScheduled = false;
   bool _openSessionScheduled = false;
   bool _drawerContentReady = false;
@@ -1234,6 +1239,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       pinnedNoteIds: widget.notes.pinnedNoteIds,
       sharing: widget.account?.sharing,
       specialMode: _specialMode,
+      tab: widget.account?.sharing == null || _specialMode ? null : _sidebarTab,
     ).displayOrder;
     final starting = !_noteSwitcher.isActive;
     final next = _noteSwitcher.advance(
@@ -1346,6 +1352,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _query = '';
       _archiveMode = false;
       if (!creatingHidden) _hiddenMode = false;
+      // A new note is the person's own, so it is listed where they can see
+      // it being written.
+      _sidebarTab = SidebarTab.mine;
       _setSelectedId(note.id);
     });
     widget.prefs.lastOpenedNoteId = note.id;
@@ -1958,6 +1967,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return sharing.spaceById(note.spaceId)?.members ?? const [];
   }
 
+  /// Switches the sidebar between the person's own notes and other people's.
+  /// The open note stays open: a tab is a way of looking at the list, not a
+  /// choice of note.
+  void _setSidebarTab(SidebarTab tab) {
+    if (tab == _sidebarTab) return;
+    setState(() => _sidebarTab = tab);
+  }
+
   /// Opens a shared space's people from its heading in the notes list.
   void _openSpace(String spaceId) {
     final sharing = widget.account?.sharing;
@@ -2120,11 +2137,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   List<Note> get _visibleNotes {
-    final notes = _archiveMode
+    final searched = _archiveMode
         ? widget.notes.searchArchived(_query)
         : _hiddenMode
         ? widget.notes.searchHidden(_query)
         : widget.notes.search(_query);
+    // The ordinary list is split by whose the notes are once there is an
+    // account to have shared anything with, and everything that walks the
+    // list — the arrow keys, the note after an archived one — walks the
+    // half on screen.
+    final sharing = widget.account?.sharing;
+    final notes = _specialMode || sharing == null
+        ? searched
+        : [
+            for (final note in searched)
+              if (sidebarTabOf(note, sharing) == _sidebarTab) note,
+          ];
     final recent = widget.prefs.recentlyOpenedNoteIds;
     if (notes.length < 2 || recent.isEmpty) return notes;
 
@@ -2332,6 +2360,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     onOpenSpace: widget.account?.sharing == null
                         ? null
                         : _openSpace,
+                    tab: _sidebarTab,
+                    onTabChanged: _setSidebarTab,
                     onSettingsPressed: _showSettings,
                     searchShortcut: widget.shortcuts.bindingFor(
                       ShortcutAction.findNotes,
@@ -2542,6 +2572,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onOpenSpace: widget.account?.sharing == null
                           ? null
                           : _openSpace,
+                      tab: _sidebarTab,
+                      onTabChanged: _setSidebarTab,
                       onSettingsPressed: _showSettings,
                       searchShortcut: widget.shortcuts.bindingFor(
                         ShortcutAction.findNotes,
