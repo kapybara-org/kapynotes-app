@@ -351,4 +351,49 @@ void main() {
       );
     });
   });
+
+  group('fitted, words kept whole', () {
+    // Short labels beside a column of prose, as a budget table has them.
+    const budget =
+        '| Item | Cost | Notes |\n'
+        '| --- | --- | --- |\n'
+        '| Flights | 420 usd | Booked through the airline, window seats |\n'
+        '| Hotel | 610 usd | Three nights, breakfast included |';
+
+    double longestWord(String word) {
+      final painter = TextPainter(
+        text: TextSpan(text: word, style: _base),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      addTearDown(painter.dispose);
+      return painter.width + TableGeometry.padding * 2;
+    }
+
+    test('no column is narrower than its longest word while they all fit', () {
+      final natural = geometryFor(budget);
+      final needed =
+          longestWord('Flights') +
+          longestWord('420') +
+          longestWord('breakfast');
+      // Room for every longest word, but nowhere near the natural width.
+      final width = needed + 30;
+      expect(natural.width, greaterThan(width));
+      final fitted = geometryFor(budget, fitToWidth: width);
+      expect(fitted.width, closeTo(width, 0.5));
+      expect(
+        fitted.columns[2],
+        greaterThanOrEqualTo(longestWord('breakfast') - 0.5),
+        reason: 'the prose column keeps room for its longest word',
+      );
+      expect(
+        fitted.columns[0],
+        greaterThanOrEqualTo(longestWord('Flights') - 0.5),
+      );
+    });
+
+    test('too narrow even for that, it still fits the width it is given', () {
+      final fitted = geometryFor(budget, fitToWidth: 120);
+      expect(fitted.width, closeTo(120, 0.5));
+    });
+  });
 }

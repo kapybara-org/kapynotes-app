@@ -163,6 +163,33 @@ void main() {
       expect(tableIn(edit.value.text).rows.last.cells.last.text, 'x');
     });
 
+    test('a space typed at the end of a cell does not pile up', () {
+      var note = simple;
+      for (final typed in ['Tea ', 'Tea c', 'Tea ca ', 'Tea cak']) {
+        note = setMarkdownTableCell(
+          valueOf(note),
+          tableIn(note),
+          row: 1,
+          column: 0,
+          text: typed,
+        ).value.text;
+      }
+      expect(note, '| Item | Cost |\n| --- | --- |\n| Tea cak | 4 |');
+    });
+
+    test('words typed into an empty cell are padded like the rest', () {
+      const note = '| a | b |\n| --- | --- |\n|  |  |';
+      String typed(int column) => setMarkdownTableCell(
+        valueOf(note),
+        tableIn(note),
+        row: 1,
+        column: column,
+        text: 'Taxi',
+      ).value.text;
+      expect(typed(0), '| a | b |\n| --- | --- |\n| Taxi |  |');
+      expect(typed(1), '| a | b |\n| --- | --- |\n|  | Taxi |');
+    });
+
     test('a typed pipe stays in the words instead of splitting the cell', () {
       final edit = setMarkdownTableCell(
         valueOf(simple),
@@ -392,6 +419,57 @@ void main() {
       final rows = tableIn(edit.value.text).rows;
       expect(rows.first.cells.map((cell) => cell.text), ['Item', 'Cost']);
       expect(rows.last.cells.map((cell) => cell.text), ['Tea', '4']);
+    });
+  });
+
+  group('typing beside a table', () {
+    const note = 'Trip\n\n$simple\n\nafter';
+
+    /// [inserted] typed at [at], through [separateTypingFromTables].
+    TextEditingValue? typed(String note, int at, String inserted) {
+      final before = TextEditingValue(
+        text: note,
+        selection: TextSelection.collapsed(offset: at),
+      );
+      final after = TextEditingValue(
+        text: note.replaceRange(at, at, inserted),
+        selection: TextSelection.collapsed(offset: at + inserted.length),
+      );
+      return separateTypingFromTables(
+        before,
+        after,
+        MarkdownAnalyzer.analyzeWhole(note),
+      );
+    }
+
+    test('the line under a table keeps a blank line between them', () {
+      final at = note.indexOf('\n\nafter') + 1;
+      final value = typed(note, at, 'x')!;
+      expect(shownAt(value), 'Trip\n\n$simple\n\nx‸\nafter');
+      // Still one table, with the rows it had.
+      expect(
+        MarkdownAnalyzer.analyzeWhole(value.text).tables.single.rows,
+        hasLength(2),
+      );
+    });
+
+    test('the line over a table keeps a blank line between them', () {
+      final value = typed(note, 'Trip\n'.length, 'x')!;
+      expect(shownAt(value), 'Trip\nx‸\n\n$simple\n\nafter');
+      expect(MarkdownAnalyzer.analyzeWhole(value.text).tables, hasLength(1));
+    });
+
+    test('leaves everything else alone', () {
+      // A line break is a new line, not words.
+      expect(typed(note, note.indexOf('\n\nafter') + 1, '\n'), isNull);
+      // A row pasted under a table is asking to join it.
+      expect(
+        typed(note, note.indexOf('\n\nafter') + 1, '| Cake | 5 |'),
+        isNull,
+      );
+      // A line that already has words is not the empty line touching it.
+      expect(typed(note, note.length, 'x'), isNull);
+      expect(typed(note, 2, 'x'), isNull);
     });
   });
 
