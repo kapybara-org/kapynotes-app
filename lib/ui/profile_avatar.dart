@@ -60,6 +60,8 @@ class ProfileAvatar extends StatelessWidget {
           height: extent,
           fit: BoxFit.cover,
           filterQuality: FilterQuality.medium,
+          // A new photo replaces the old one when it is ready, not a blank.
+          gaplessPlayback: true,
           errorBuilder: (_, _, _) => fallback,
         ),
       ),
@@ -86,8 +88,30 @@ class ProfileAvatar extends StatelessWidget {
   }
 }
 
+/// Photos already decoded, by their data URL, most recently used last.
+///
+/// [MemoryImage] compares its bytes by identity, so bytes decoded afresh on
+/// every build missed the image cache each time: the photo was decoded again
+/// and nothing was drawn meanwhile, and a list showing faces on every row
+/// flickered with each keystroke that rebuilt it.
+final Map<String, Uint8List?> _decodedPhotos = {};
+const int _decodedPhotoLimit = 64;
+
 Uint8List? _dataImage(String? value) {
   if (value == null || !value.startsWith('data:image/')) return null;
+  if (_decodedPhotos.containsKey(value)) {
+    final bytes = _decodedPhotos.remove(value);
+    return _decodedPhotos[value] = bytes;
+  }
+  final bytes = _decodeDataImage(value);
+  _decodedPhotos[value] = bytes;
+  if (_decodedPhotos.length > _decodedPhotoLimit) {
+    _decodedPhotos.remove(_decodedPhotos.keys.first);
+  }
+  return bytes;
+}
+
+Uint8List? _decodeDataImage(String value) {
   final marker = value.indexOf('base64,');
   if (marker < 0) return null;
   try {
