@@ -515,7 +515,10 @@ void main() {
         }, reason: name);
       }
       // Before this, `min = 7` compared a minute with seven and said false.
-      expect(doc('min: 7\nmin * 2'), {0: '7', 1: '14'});
+      expect(doc('min = 7\nmin * 2'), {0: '7', 1: '14'});
+      // A colon is not enough for a word that already means something:
+      // `min: 18` is a setting far more often than a definition.
+      expect(doc('min: 18\nWalk 20 min')[1], '20 min');
       expect(doc('sum = 7\n1\nsum'), {0: '7', 1: '1', 2: '7'});
       // A call is still a call.
       expect(doc('min = 7\nmin(3, 5)'), {0: '7', 1: '3'});
@@ -876,6 +879,35 @@ void main() {
       expect(line('n = 10 min break'), isNull);
       expect(line('n = 12 + mangoes'), isNull);
       expect(line('n = Room 12'), isNull);
+      // And a line that shows nothing gives its name nothing either.
+      expect(doc('apt = Room 12\napt * 2'), isEmpty);
+      expect(doc('apt = 3\napt = Room 12\napt * 2'), {0: '3', 2: '6'});
+    });
+
+    // `Milk: 2 bottles` is a label with its amount, as it always was. Taking
+    // `Milk` for a variable would stop it labelling the lines below.
+    test('a colon label keeps its word free for later labels', () {
+      expect(doc('Milk: 2 bottles\nMilk powder \$8'), {
+        0: '2',
+        1: '8.00 USD',
+      });
+      expect(doc('Hotel: 3 nights\nHotel rate \$120\nHotel tax \$25'), {
+        0: '3',
+        1: '120.00 USD',
+        2: '25.00 USD',
+      });
+      // A value that works something out still defines the name.
+      expect(doc('fee: \$2/mailbox + \$1\nfee * 2'), {
+        0: '3.00 USD',
+        1: '6.00 USD',
+      });
+    });
+
+    test('an article stays an article when a is a variable', () {
+      expect(doc('a = 2\nTake 2 pills 3 times a day'), {0: '2'});
+      expect(doc('a = 2\n3 times a week'), {0: '2'});
+      expect(doc('a = 5\n25 as a % of 200')[1], '12.5');
+      expect(doc('a = 3\nb = 4\nsqrt(a^2 + b^2)')[2], '5');
     });
 
     test('quantities feed the running total', () {

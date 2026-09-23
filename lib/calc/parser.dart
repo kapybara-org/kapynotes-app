@@ -192,15 +192,22 @@ const Set<String> prefixFunctionNames = {
 ///
 /// Any word can be a variable: `min = 5`, `log = 3` and `a = 2` are names the
 /// note chose, and once chosen they are that name for the rest of the note,
-/// in the same way `x` and unit names already were. Only the words that join
-/// calculations together, `to`, `in`, `per` and the rest, need the `=`. A
-/// colon after one of them is much more likely to be prose (`To: 5 people`)
-/// than a definition, and taking it as one would quietly stop `5 km to mi`
-/// working further down.
+/// in the same way `x` and unit names already were. A word that already means
+/// something needs the `=`, though: the words that join calculations together
+/// (`to`, `in`, `per`) and the functions (`min`, `round`). A colon after one of
+/// them is much more likely to be prose or a setting (`To: 5 people`,
+/// `min: 18`) than a definition, and taking it as one would quietly stop
+/// `5 km to mi` or `Walk 20 min` working further down.
 bool isAssignableName(String name, String operator) {
   if (operator == '=') return true;
-  return operator == ':' && !calcKeywords.contains(name.toLowerCase());
+  if (operator != ':') return false;
+  final word = name.toLowerCase();
+  return !calcKeywords.contains(word) && !functionNames.contains(word);
 }
+
+/// The articles, which stay articles in `3 times a day` and `as a % of` even
+/// once a note has made `a` a variable.
+const Set<String> _articles = {'a', 'an'};
 
 /// Recursive-descent parser for one line of note text.
 ///
@@ -384,7 +391,12 @@ class Parser {
   Node? _tryAsPercentOfTail(Node left) {
     if (!_isWord('as')) return null;
     var offset = 1;
-    if (_isWord('a', offset) || _isWord('an', offset)) offset++;
+    // The phrase's own article, whatever the note has called `a`.
+    final article = _peek(offset);
+    if (article.type == TokenType.identifier &&
+        _articles.contains(article.text.toLowerCase())) {
+      offset++;
+    }
     final pct = _peek(offset);
     final isPercentWord =
         pct.type == TokenType.percent ||
@@ -760,6 +772,11 @@ class Parser {
           node = BinaryNode('*', node, NumberNode(scale));
           continue;
         }
+      }
+      // A note's `a` takes no unit: `3 times a day` is prose, not 3a days.
+      if (node is IdentifierNode &&
+          _articles.contains(node.name.toLowerCase())) {
+        break;
       }
       final unit = _tryUnitSuffix(node);
       if (unit != null) {

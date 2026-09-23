@@ -194,10 +194,68 @@ class CalcEngine {
       return null;
     }
 
+    // A colon also ends a label, `Milk: 2 bottles`, which shows its amount
+    // and names nothing; making `Milk` a variable would stop it labelling
+    // `Milk powder $8` further down. There only a value that works something
+    // out is a definition, as `fee: $2/mailbox` is.
+    if (assign.text == ':' && !_computes(tokens.sublist(2), scope)) {
+      return null;
+    }
+
     final head = source.substring(0, assign.end);
     final value = source.substring(assign.end);
-    return _labelledArithmetic(value, index, evaluator, scope, head: head) ??
+    // Each reading evaluates `name = …`, which gives the name a value even
+    // when the reading then refuses what it got: `n = Room 12` is a bare
+    // number, not an amount. Unless one of them keeps its answer, the name
+    // goes back to what it was.
+    final had = scope.variables.containsKey(name.text);
+    final before = scope.variables[name.text];
+    final read =
+        _labelledArithmetic(value, index, evaluator, scope, head: head) ??
         _labelledAmount(value, index, evaluator, scope, head: head);
+    if (read == null) {
+      if (had) {
+        scope.variables[name.text] = before!;
+      } else {
+        scope.variables.remove(name.text);
+      }
+    }
+    return read;
+  }
+
+  /// Whether [tokens], the value of an assignment, work something out rather
+  /// than state one amount: an operator after the first token, the letter x
+  /// between amounts, or a name the note has defined.
+  bool _computes(List<Token> tokens, CalcScope scope) {
+    for (var i = 0; i < tokens.length; i++) {
+      final token = tokens[i];
+      // A sign in front of the amount is part of it, and a colon between
+      // numbers is a time or a ratio.
+      if (token.type == TokenType.operator &&
+          i > 0 &&
+          const [
+            '+',
+            '-',
+            '*',
+            '/',
+            '^',
+            '×',
+            '÷',
+            '−',
+            '–',
+            '—',
+          ].contains(token.text)) {
+        return true;
+      }
+      if (token.type == TokenType.identifier &&
+          scope.variables.containsKey(token.text)) {
+        return true;
+      }
+      if (_isTimesLetter(token, i + 1 < tokens.length ? tokens[i + 1] : null)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Reads the value to the right of an explicit label boundary.
