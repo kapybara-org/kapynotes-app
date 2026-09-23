@@ -95,4 +95,25 @@ void main() {
     await swipe(tester, const Offset(-40, -600), steps: 20);
     expect(toggles, 0);
   });
+
+  testWidgets('a swipe that starts over an exclusion is left to it', (
+    tester,
+  ) async {
+    // A drawing canvas pans with exactly this gesture.
+    var toggles = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SidebarSwipe(
+          sidebarVisible: false,
+          onToggle: () => toggles++,
+          child: const SidebarSwipeExclusion(
+            child: SizedBox.expand(child: ColoredBox(color: Color(0xFF000000))),
+          ),
+        ),
+      ),
+    );
+    await swipe(tester, const Offset(-SidebarSwipe.threshold - 20, 0));
+    await scrollSwipe(tester, const Offset(-SidebarSwipe.threshold - 20, 0));
+    expect(toggles, 0);
+  });
 }

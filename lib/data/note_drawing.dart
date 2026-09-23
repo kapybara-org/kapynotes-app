@@ -141,6 +141,18 @@ class DrawElement {
       points.add(value.toDouble());
     }
     if (points.length.isOdd) points.removeLast();
+    // Each kind needs its own number of points to draw at all: a line or a
+    // box from a single point threw in the painter and in hit testing, and
+    // took everything stacked above it off the canvas.
+    final pairs = points.length ~/ 2;
+    final enough = switch (kind) {
+      DrawKind.pen || DrawKind.text => pairs >= 1,
+      DrawKind.rect ||
+      DrawKind.ellipse ||
+      DrawKind.line ||
+      DrawKind.arrow => pairs >= 2,
+    };
+    if (!enough) return null;
     final z = raw['z'];
     final color = raw['c'];
     final width = raw['w'];

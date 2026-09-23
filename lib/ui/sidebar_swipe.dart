@@ -39,7 +39,13 @@ class SidebarSwipe extends StatefulWidget {
 class _SidebarSwipeState extends State<SidebarSwipe> {
   static const _scrollGestureIdle = Duration(milliseconds: 160);
 
+  final _SidebarSwipeExclusions _exclusions = _SidebarSwipeExclusions();
+
   double _travel = 0;
+
+  /// A trackpad pan that began over a [SidebarSwipeExclusion], which owns
+  /// the whole of it, wherever it goes next.
+  bool _panExcluded = false;
 
   /// Swallows the rest of a gesture once it has been acted on, so one long
   /// swipe toggles once instead of flapping the sidebar open and shut.
@@ -85,6 +91,7 @@ class _SidebarSwipeState extends State<SidebarSwipe> {
     return Listener(
       onPointerSignal: (event) {
         if (event is! PointerScrollEvent) return;
+        if (_exclusions.cover(event.position)) return;
         _accumulate(event.scrollDelta.dx, event.scrollDelta.dy);
         // Scroll signals do not carry an end event. Treat a short idle period
         // as the boundary so a later two-finger gesture can act again.
@@ -92,14 +99,94 @@ class _SidebarSwipeState extends State<SidebarSwipe> {
       },
       // A trackpad gesture arrives as a pan rather than as scroll signals on
       // some platforms, and reports its own beginning and end.
-      onPointerPanZoomStart: (_) {
+      onPointerPanZoomStart: (event) {
         _scrollRestTimer?.cancel();
         _rest();
+        _panExcluded = _exclusions.cover(event.position);
       },
-      onPointerPanZoomUpdate: (event) =>
-          _accumulate(event.panDelta.dx, event.panDelta.dy),
-      onPointerPanZoomEnd: (_) => _rest(),
-      child: widget.child,
+      onPointerPanZoomUpdate: (event) {
+        if (_panExcluded) return;
+        _accumulate(event.panDelta.dx, event.panDelta.dy);
+      },
+      onPointerPanZoomEnd: (_) {
+        _panExcluded = false;
+        _rest();
+      },
+      child: _SidebarSwipeScope(exclusions: _exclusions, child: widget.child),
     );
   }
+}
+
+/// Exempts a subtree from [SidebarSwipe].
+///
+/// A sideways two-finger gesture that starts inside one of these is left to
+/// it. A drawing canvas is the reason it exists: panning the canvas sideways
+/// is exactly the gesture that otherwise opened and shut the notes list, and
+/// resized the canvas under the pan.
+///
+/// Inert where there is no [SidebarSwipe] above it, which is every phone.
+class SidebarSwipeExclusion extends StatefulWidget {
+  const SidebarSwipeExclusion({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<SidebarSwipeExclusion> createState() => _SidebarSwipeExclusionState();
+}
+
+class _SidebarSwipeExclusionState extends State<SidebarSwipeExclusion> {
+  _SidebarSwipeExclusions? _exclusions;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final found = _SidebarSwipeScope.of(context);
+    if (identical(found, _exclusions)) return;
+    _exclusions?.remove(context);
+    _exclusions = found;
+    _exclusions?.add(context);
+  }
+
+  @override
+  void dispose() {
+    _exclusions?.remove(context);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+/// The regions a sidebar swipe must not begin in, read where the gesture
+/// lands rather than cached, since the canvas resizes with the window.
+class _SidebarSwipeExclusions {
+  final Set<BuildContext> _contexts = {};
+
+  void add(BuildContext context) => _contexts.add(context);
+
+  void remove(BuildContext context) => _contexts.remove(context);
+
+  bool cover(Offset globalPosition) {
+    for (final context in _contexts) {
+      if (!context.mounted) continue;
+      final box = context.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      if (box.size.contains(box.globalToLocal(globalPosition))) return true;
+    }
+    return false;
+  }
+}
+
+class _SidebarSwipeScope extends InheritedWidget {
+  const _SidebarSwipeScope({required this.exclusions, required super.child});
+
+  final _SidebarSwipeExclusions exclusions;
+
+  static _SidebarSwipeExclusions? of(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_SidebarSwipeScope>()
+      ?.exclusions;
+
+  @override
+  bool updateShouldNotify(_SidebarSwipeScope oldWidget) =>
+      !identical(exclusions, oldWidget.exclusions);
 }

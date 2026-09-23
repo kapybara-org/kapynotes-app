@@ -625,6 +625,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     final stopping = recording.isRecording;
     if (!stopping && !_canWriteNote(widget.notes.byId(id))) return;
+    // A drawing has nowhere to show a recording, or play it, or let it go:
+    // one delivered into it would only become part of its title.
+    if (!stopping && (widget.notes.byId(id)?.isDrawing ?? false)) {
+      Toast.show(
+        context,
+        'Voice notes go in a written note, not a drawing',
+        isError: true,
+      );
+      return;
+    }
     setState(() => _voiceActionBusy = true);
     final progress = Toast.showProgress(
       context,
@@ -676,6 +686,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     String noteId,
   ) async {
     if (!_canWriteNote(widget.notes.byId(noteId))) return;
+    // Switched to a drawing while recording, or taken for one elsewhere: the
+    // recording goes into a note of its own rather than into a title.
+    if (widget.notes.byId(noteId)?.isDrawing ?? false) {
+      noteId = widget.notes.create().id;
+    }
     final blobs = widget.notes.blobs;
     final hash = await blobs.adoptFile(
       result.file,
@@ -2574,7 +2589,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         backgroundColor: palette.isGlass
             ? Colors.transparent
             : palette.editorBackground,
-        drawerEnableOpenDragGesture: !AppPlatform.isMobile,
+        // Not over a drawing, where a stroke from the left edge is a stroke.
+        drawerEnableOpenDragGesture:
+            !AppPlatform.isMobile && !(selected?.isDrawing ?? false),
         drawerEdgeDragWidth: drawerEdgeDragWidth,
         onDrawerChanged: (isOpen) {
           setState(() {

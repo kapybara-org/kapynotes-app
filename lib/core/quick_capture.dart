@@ -106,7 +106,8 @@ class QuickCapture {
     final last = target != null && !target.isArchived
         ? target
         : notes.lastEditedNote;
-    if (!intent.continuesLastNote || last == null) {
+    // A drawing's body is its title, and words added there would be too.
+    if (!intent.continuesLastNote || last == null || last.isDrawing) {
       return notes.create(body: draft);
     }
     // Nothing was typed on the way in — the usual case, since storage loads

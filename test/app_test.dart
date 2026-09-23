@@ -15,6 +15,7 @@ import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/editor_workspace.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
+import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
@@ -2527,6 +2528,62 @@ void main() {
   group('draw mode', () {
     Finder plus() => find.byKey(const ValueKey('sidebar-new-note'));
     Finder draw() => find.byKey(const ValueKey('note-mode-draw'));
+
+    testWidgets('a stroke across a drawing on a phone stays a stroke', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'phone-drawing',
+          'body': 'Sketch',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+          'drawing': {'elements': <Object?>[]},
+        },
+      ];
+      await pumpApp(tester, size: const Size(420, 800));
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+
+      // Long and sideways: the shape of a page swipe, which opened the notes
+      // drawer or made a new note instead of leaving the line drawn.
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('drawing-surface')),
+      );
+      await tester.dragFrom(
+        surface.center - const Offset(120, 0),
+        const Offset(240, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteRow), findsNothing);
+      expect(notes.notes, hasLength(1));
+      expect(notes.byId('phone-drawing')!.drawing!.elements, hasLength(1));
+    });
+
+    test('restoring an archive over a drawing keeps the canvas', () async {
+      await notes.load();
+      final note = notes.create();
+      notes.setDrawingMode(note.id, drawing: true);
+      notes.updateDrawing(
+        note.id,
+        NoteDrawing([
+          DrawElement(
+            id: 'r',
+            kind: DrawKind.rect,
+            points: const [0, 0, 40, 30],
+            z: 0,
+          ),
+        ]),
+      );
+      // An archive holds no drawings yet: the note comes back as its title.
+      final restored = notes
+          .byId(note.id)!
+          .copyWith(drawing: null, body: 'Plan');
+      notes.importNotes([restored]);
+      expect(notes.byId(note.id)!.drawing!.elements, hasLength(1));
+      expect(notes.byId(note.id)!.body, 'Plan');
+    });
 
     testWidgets('a new note can become a drawing, and back while blank', (
       tester,
