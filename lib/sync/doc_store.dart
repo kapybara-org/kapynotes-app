@@ -157,6 +157,11 @@ class OutboxEntry {
   /// Sent and not yet answered. Cleared on disconnect so it goes again.
   bool inFlight = false;
 
+  /// Roughly how many bytes of JSON [ops] come to, kept while the entry is
+  /// still gathering typing; see [SyncService.coalesceLimit]. Not saved: an
+  /// entry read back from disk counts as sent, and gathers nothing more.
+  int plainBytes = 0;
+
   /// Handed to the network at least once. The server may hold it from then
   /// on, and it recognises a retry by [deviceSeq] alone, so a sent entry is
   /// never added to: whatever was typed afterwards would ride on a retry the
