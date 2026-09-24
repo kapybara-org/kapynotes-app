@@ -15,9 +15,11 @@ import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/release_history.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/update_checker.dart';
+import 'package:kapy_notes/data/update_installer.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'fake_update_installer.dart';
 import 'test_fonts.dart';
 
 class _MemoryStore extends LocalStore {
@@ -54,16 +56,35 @@ class _MemoryStore extends LocalStore {
 /// case here starts from a state the app already knows — the last check and
 /// the changelog are both on disk — so nothing should reach the network while
 /// the UI is on screen.
-UpdateChecker _offlineChecker(LocalStore store) => UpdateChecker(
-  store,
-  client: MockClient((_) async => throw StateError('no network in this test')),
-  packageInfo: PackageInfo(
-    appName: 'Kapy Notes',
-    packageName: 'com.kapybara.kapynotes',
-    version: '1.0.0',
-    buildNumber: '1',
-  ),
-);
+UpdateChecker _offlineChecker(LocalStore store, {UpdateInstaller? installer}) =>
+    UpdateChecker(
+      store,
+      client: MockClient(
+        (_) async => throw StateError('no network in this test'),
+      ),
+      packageInfo: PackageInfo(
+        appName: 'Kapy Notes',
+        packageName: 'com.kapybara.kapynotes',
+        version: '1.0.0',
+        buildNumber: '1',
+      ),
+      installer: installer,
+    );
+
+/// A checker whose release is already downloaded and checked, the way a
+/// launch finds it: the daily check is not due, and the installer reports
+/// what an earlier run left ready.
+Future<(UpdateChecker, FakeUpdateInstaller)> _readyChecker(
+  LocalStore store, {
+  bool quitsTheApp = true,
+}) async {
+  _seedPendingUpdate(store);
+  final installer = FakeUpdateInstaller(quitsTheApp: quitsTheApp)
+    ..onDisk = const StagedUpdate(version: '1.0.1', build: 2);
+  final checker = _offlineChecker(store, installer: installer);
+  await checker.checkIfDue();
+  return (checker, installer);
+}
 
 void _seedPendingUpdate(LocalStore store) => store.put('updates.v1', {
   'available': {
@@ -80,10 +101,6 @@ void _seedUpToDate(LocalStore store) => store.put('updates.v1', {
 });
 
 /// Every native call the test cares about, in the order it was made.
-///
-/// The order is the assertion worth making here: the window has to stop
-/// floating before Sparkle is asked for anything, or its panel opens
-/// underneath the window that asked for it.
 class _ChannelLog {
   final List<String> calls = [];
   final Map<String, Object?> lastArguments = {};
@@ -182,8 +199,8 @@ void main() {
     await _openUpdates(tester);
 
     expect(find.text('Version 1.0.1 available'), findsOneWidget);
-    expect(find.text('Ready to install · Current 1.0.0'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, 'Update'), findsOneWidget);
+    expect(find.text('Current 1.0.0'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Download'), findsOneWidget);
     expect(find.byKey(const ValueKey('update-release-notes')), findsOneWidget);
   });
 
@@ -265,64 +282,158 @@ void main() {
     expect(find.text('Checked today'), findsOneWidget);
   });
 
-  testWidgets('a window kept on top gets out of the updater\'s way', (
+  testWidgets('Download fetches the release, then offers the restart', (
+    tester,
+  ) async {
+    final store = _MemoryStore()..put('updates.autoDownload.v1', false);
+    _seedPendingUpdate(store);
+    final installer = FakeUpdateInstaller();
+    await _pump(
+      tester,
+      store,
+      checker: _offlineChecker(store, installer: installer),
+    );
+    await _openUpdates(tester);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Download'));
+    await tester.pump();
+
+    expect(find.text('Downloading version 1.0.1'), findsOneWidget);
+    expect(find.text('50% · Current 1.0.0'), findsOneWidget);
+
+    installer.finish();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Version 1.0.1 is ready'), findsOneWidget);
+    expect(find.text('Ready to install'), findsOneWidget);
+    final action = find.byKey(const ValueKey('update-action'));
+    expect(
+      find.descendant(of: action, matching: find.text('Update and restart')),
+      findsOneWidget,
+    );
+
+    await tester.tap(action);
+    await tester.pump();
+    expect(installer.installs, 1);
+    expect(find.text('Restarting…'), findsWidgets);
+    // Sparkle's quit never comes in a test; let the watchdog run out.
+    await tester.pump(UpdateChecker.restartTimeout);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a downloaded release restarts from the title bar in one '
+      'click', (tester) async {
+    final store = _MemoryStore();
+    final (checker, installer) = await _readyChecker(store, quitsTheApp: false);
+    var quits = 0;
+    await _pump(tester, store, checker: checker);
+    // The app root wires the quit to its own desktop integration; this one
+    // has none, so put the test's in.
+    checker.onBeforeQuitForUpdate = () async => quits++;
+
+    final restart = find.byKey(const ValueKey('toolbar-update-restart'));
+    expect(restart, findsOneWidget);
+    expect(
+      find.descendant(of: restart, matching: find.text('Update and restart')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Install Kapy Notes 1.0.1 and restart'), findsOne);
+    // The button says it; the badge that sends people to look would only
+    // repeat it.
+    expect(find.byKey(const ValueKey('sidebar-update-badge')), findsNothing);
+
+    await tester.tap(restart);
+    await tester.pump();
+
+    expect(installer.installs, 1);
+    expect(quits, 1);
+    expect(
+      find.descendant(of: restart, matching: find.text('Restarting…')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a narrow window shortens the button rather than crowding the '
+      'title', (tester) async {
+    final store = _MemoryStore();
+    final (checker, _) = await _readyChecker(store);
+    await _pump(tester, store, checker: checker);
+    tester.view.physicalSize = const Size(600, 700);
+    await tester.pumpAndSettle();
+
+    final restart = find.byKey(const ValueKey('toolbar-update-restart'));
+    expect(
+      find.descendant(of: restart, matching: find.text('Update')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Install Kapy Notes 1.0.1 and restart'), findsOne);
+  });
+
+  testWidgets('a download that fails to install says so, and goes back to '
+      'Download', (tester) async {
+    final store = _MemoryStore();
+    final (checker, installer) = await _readyChecker(store);
+    installer.installError = const UpdateInstallerException(
+      'The downloaded update was damaged',
+    );
+    await _pump(tester, store, checker: checker);
+    installer.onDisk = null;
+
+    await tester.tap(find.byKey(const ValueKey('toolbar-update-restart')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('toolbar-update-restart')), findsNothing);
+    expect(find.text('The downloaded update was damaged'), findsWidgets);
+    expect(find.byKey(const ValueKey('sidebar-update-badge')), findsOneWidget);
+  });
+
+  testWidgets('the gear stays quiet while a download runs by itself', (
     tester,
   ) async {
     final store = _MemoryStore();
     _seedPendingUpdate(store);
+    final installer = FakeUpdateInstaller();
+    final checker = _offlineChecker(store, installer: installer);
+    await checker.checkIfDue();
+    await _pump(tester, store, checker: checker);
 
-    final log = _ChannelLog()
-      ..watch(
-        'window_manager',
-        answers: {'isVisible': true, 'isMinimized': false},
-      )
-      ..watch('tray_manager')
-      ..watch(
-        'kapynotes/login_item',
-        answers: {'isSupported': false, 'isEnabled': false},
-      )
-      ..watch('dev.leanflutter.plugins/auto_updater')
-      // The plugin subscribes the moment it is first touched.
-      ..watch('dev.leanflutter.plugins/auto_updater_event');
+    expect(checker.isDownloading, isTrue);
+    expect(find.byKey(const ValueKey('sidebar-update-badge')), findsNothing);
+    expect(find.byKey(const ValueKey('toolbar-update-restart')), findsNothing);
 
-    late final DesktopIntegration desktop;
-    await _pump(
-      tester,
-      store,
-      desktop: (prefs) {
-        // The configuration this went wrong in: the window floats above every
-        // other app, Sparkle's panel included, so the button reported an
-        // updater that was already on screen and completely hidden.
-        prefs.alwaysOnTop = true;
-        return desktop = DesktopIntegration(layoutPrefs: prefs);
-      },
+    installer.finish();
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('toolbar-update-restart')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('automatic downloads can be turned off, and say what that '
+      'means', (tester) async {
+    final store = _MemoryStore();
+    _seedUpToDate(store);
+    final checker = await _pump(tester, store);
+    await _openUpdates(tester);
+
+    final toggle = find.byKey(const ValueKey('update-auto-download'));
+    expect(toggle, findsOneWidget);
+    expect(checker.autoDownload, isTrue);
+    expect(
+      find.textContaining('downloads them in the background'),
+      findsOneWidget,
     );
 
-    await _openUpdates(tester);
-    await tester.tap(find.byKey(const ValueKey('update-action')));
+    await tester.tap(toggle);
     await tester.pumpAndSettle();
 
-    expect(log.calls, contains('window_manager.setAlwaysOnTop'));
-    expect(log.lastArguments['window_manager.setAlwaysOnTop'], {
-      'isAlwaysOnTop': false,
-    });
+    expect(checker.autoDownload, isFalse);
+    expect(store.data['updates.autoDownload.v1'], isFalse);
     expect(
-      log.calls,
-      contains('dev.leanflutter.plugins/auto_updater.checkForUpdates'),
-    );
-    expect(
-      log.calls.indexOf('window_manager.setAlwaysOnTop'),
-      lessThan(
-        log.calls.indexOf(
-          'dev.leanflutter.plugins/auto_updater.checkForUpdates',
-        ),
+      find.text(
+        'Checks for updates daily. Nothing downloads until you choose '
+        'Download.',
       ),
-    );
-    // Given up rather than borrowed, and said out loud: the toolbar button
-    // that would otherwise show it is behind the settings sheet.
-    expect(desktop.layoutPrefs.alwaysOnTop, isFalse);
-    expect(
-      find.text('Updater opened · Always on top turned off'),
       findsOneWidget,
     );
   });

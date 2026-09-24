@@ -13,6 +13,7 @@ class MainFlutterWindow: NSWindow {
   private var windowMaterialChannel: FlutterMethodChannel?
   private var windowPinChannel: FlutterMethodChannel?
   private var systemRegionChannel: FlutterMethodChannel?
+  private var updaterChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
     let flutterViewController = KapyFlutterViewController()
@@ -71,6 +72,9 @@ class MainFlutterWindow: NSWindow {
       with: flutterViewController.engine.binaryMessenger
     )
     systemRegionChannel = SystemRegion.register(
+      with: flutterViewController.engine.binaryMessenger
+    )
+    updaterChannel = AppUpdater.register(
       with: flutterViewController.engine.binaryMessenger
     )
 

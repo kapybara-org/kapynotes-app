@@ -132,27 +132,53 @@ to be looked at, and skipping it is one less click.
 Desktop builds schedule a quiet check of `dl.kapynotes.com/latest.json` five
 seconds after launch and resume. The checker makes a network request at most
 once every 24 hours after a successful response; failures retry after two
-hours. When a newer release exists, the app puts a dot on the settings gear
-and an **Update** button in Settings → Updates. Nothing is downloaded before
-that button is pressed; the check is only a few hundred bytes of JSON.
+hours. The check is only a few hundred bytes of JSON.
 
-The install itself is Sparkle on macOS and WinSparkle on Windows, behind the
-`auto_updater` plugin. Only the install half is used: Sparkle's own background
-check runs against the standard user driver, which throws its update panel on
-screen the moment it finds something, so the quiet half is `UpdateChecker` in
-`lib/data/update_checker.dart` instead.
+When it finds a newer release, the app downloads it in the background — the
+**Download updates automatically** switch in Settings → Updates, on unless
+turned off — and checks its signature. Nothing is asked of the user until
+then. Once it is ready, an **Update and restart** row appears in the notes
+list above Settings, and that one click installs the release and relaunches
+into it. With the switch off, Settings offers **Download** instead, and the
+same row appears when that finishes. A failed download says why in Settings
+and tries again two hours later.
+
+`UpdateChecker` in `lib/data/update_checker.dart` owns all of that; the
+platform half is an `UpdateInstaller`:
+
+- **macOS: Sparkle**, driven directly by `macos/Runner/AppUpdater.swift` over
+  the `kapynotes/updater` channel. Sparkle's own scheduler stays off, because
+  it puts its update panel on screen the moment it finds something. Instead
+  the app calls `checkForUpdatesInBackground` with automatic downloads
+  allowed, which runs Sparkle's automatic driver: it downloads, verifies and
+  prepares the release with no window, then hands the app an
+  `immediateInstallationBlock` through `willInstallUpdateOnQuit`. **Update and
+  restart** invokes that block, and Sparkle installs and relaunches without
+  showing anything. A prepared release also installs whenever the app quits,
+  clicked or not. Automatic downloads need `SUAllowsAutomaticUpdates` in
+  `Info.plist`: with automatic checks off, Sparkle refuses them otherwise and
+  falls back to its panel.
+- **Windows: the app itself.** WinSparkle cannot download without its own
+  window on screen, so `WindowsUpdateInstaller` does what it did, quietly: it
+  downloads the installer named in `latest.json`'s `windows` block into
+  `%LOCALAPPDATA%\com.kapybara\Kapy Notes\Updates` (resuming a download
+  that was cut off), checks the same DSA signature WinSparkle checked against
+  the key compiled into the app (`lib/data/update_signature.dart`), and on
+  the click runs it with WinSparkle's arguments and quits.
 
 There are two appcasts because the two frameworks disagree about what
 `sparkle:version` means — Sparkle compares it against `CFBundleVersion` (the
 `+N` half of pubspec's version), WinSparkle against the `ProductVersion` string
-in `windows/runner/Runner.rc`. The release job writes both, plus `latest.json`,
-with a five-minute cache header; they are the only mutable objects in the
-bucket.
+in `windows/runner/Runner.rc`. The Windows one is only read by builds from
+before the app downloaded its own updates, which still update through
+WinSparkle; keep publishing it until nobody runs those. The release job writes
+both, plus `latest.json`, with a five-minute cache header; they are the only
+mutable objects in the bucket.
 
 Each appcast and the in-app update notice point a release at its own
-`kapynotes.com/changelog/<version>` page. WinSparkle embeds that page in its
-Windows update dialog, so it shows only what changes in the version being
-offered. That focused view uses the release's short `highlights`; Settings
+`kapynotes.com/changelog/<version>` page. WinSparkle, in those older builds,
+embeds that page in its update dialog, so it shows only what changes in the
+version being offered. That focused view uses the release's short `highlights`; Settings
 keeps the complete `changes` for the browsable history. The release job
 refuses to publish a feed until that page is live.
 
@@ -160,10 +186,13 @@ Because macOS compares build numbers, a release that forgets to bump `+N` would
 tell every Mac it is already current. The `verify` job fails the release rather
 than let that ship.
 
-**Signing keys — already set up.** Both feeds are signed and the public halves
-are compiled into the app, so a hijacked feed cannot ship a payload. The
+**Signing keys — already set up.** Both releases are signed and the public
+halves are compiled into the app, so a hijacked feed cannot ship a payload. The
 EdDSA public key is `SUPublicEDKey` in `macos/Runner/Info.plist`; the DSA one
-is `windows/runner/resources/dsa_pub.pem`. Their private halves are the
+is `windows/runner/resources/dsa_pub.pem`, copied into
+`lib/data/update_signature.dart` — a test fails if the two ever differ, and
+another checks the verifier against the signature 1.28.0 actually shipped
+with. Their private halves are the
 `SPARKLE_ED_PRIVATE_KEY` and `WINSPARKLE_DSA_PRIVATE_KEY` repository secrets,
 and the release job fails loudly if either is missing.
 
@@ -177,8 +206,9 @@ macos/Pods/Sparkle/bin/generate_keys -x key.txt  # re-export for a new CI secret
 ```
 
 Note `sign_update`'s `-s` flag is deprecated and now fails; the release job
-uses `--ed-key-file`. The WinSparkle key is plain OpenSSL DSA and can be
-regenerated anywhere:
+uses `--ed-key-file`. The Windows key is plain OpenSSL DSA and can be
+regenerated anywhere (then copy the new public key into
+`lib/data/update_signature.dart` too):
 
 ```bash
 openssl dsaparam -out dsaparam.pem 2048
@@ -195,8 +225,8 @@ installation goes through Sparkle's `Installer.xpc`. That needs
 `mach-lookup.global-name` temporary exceptions in `Runner/*.entitlements` —
 remove either and updates fail at install time, after the download.
 
-On Windows, WinSparkle runs the Inno installer with `/VERYSILENT`, which skips
-the `[Run]` entry the Setup Completed checkbox lives on; a second `[Run]` entry
+On Windows, the app runs the Inno installer with `/VERYSILENT`, as WinSparkle
+did, which skips the `[Run]` entry the Setup Completed checkbox lives on; a second `[Run]` entry
 guarded by `Check: WizardSilent` brings the app back instead. It cannot be left
 to Restart Manager, whose restart only reaches applications that called
 `RegisterApplicationRestart`. The install is per-user, so it raises no UAC
@@ -255,9 +285,12 @@ certificate rather than the file, that will not improve across releases. Buying
 one needs a cloud HSM (e.g. Azure Trusted Signing) to sign from CI, since
 code-signing keys must now live on certified hardware.
 
-This is also the one place the in-app updater is not seamless: every Windows
-update runs an unsigned installer, so SmartScreen warns each time. macOS has no
-equivalent problem — the DMG is Developer ID signed and notarised.
+Builds that still update through WinSparkle run that unsigned installer, and
+SmartScreen can warn each time. The app's own updater writes the installer
+itself, so it carries no Mark of the Web, and starts it directly rather than
+through the shell, so SmartScreen should have nothing to say about it — but
+that has not yet been tried on a real Windows machine. macOS has no equivalent
+problem — the DMG is Developer ID signed and notarised.
 
 ## How it works
 

@@ -52,9 +52,10 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 
-	<!-- Sparkle. The feed URL is set in Dart rather than here on purpose: the
-	     quiet daily check is our own, and Sparkle is only ever pointed at the
-	     appcast at the moment someone presses Update. -->
+	<!-- Sparkle, driven by Runner/AppUpdater.swift. The feed URL is set in
+	     Dart rather than here on purpose: the quiet daily check is our own,
+	     and Sparkle is only pointed at the appcast once that check has found
+	     a release to download. -->
 
 	<!-- Sparkle refuses any release whose EdDSA signature does not verify
 	     against this key, so a hijacked feed cannot ship a payload. Its private
@@ -76,8 +77,15 @@
 	     finds a release — the interruption the whole design avoids. -->
 	<key>SUEnableAutomaticChecks</key>
 	<false/>
+	<!-- But a check the app asks for downloads silently, and then hands the
+	     app the one-click install. Sparkle only allows automatic downloads
+	     while its own automatic checks are on, unless this says otherwise;
+	     without it every download opens Sparkle's panel instead. When the
+	     app asks is its own setting, "Download updates automatically". -->
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
 	<key>SUAutomaticallyUpdate</key>
-	<false/>
+	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Kapy Notes uses the microphone to record voice notes.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

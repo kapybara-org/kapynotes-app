@@ -172,14 +172,13 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
 
   /// Stops the window floating, and turns the preference off with it.
   ///
-  /// For the moments the app puts something on screen that it does not draw:
-  /// Sparkle's update panel, WinSparkle's, the standard About panel. Every
-  /// one of them opens at the ordinary window level, so a floating window
-  /// sits over the top and the click that asked for it looks like it did
-  /// nothing — the app says the updater is open, and the user never sees it.
+  /// For the moments the app puts something on screen that it does not draw,
+  /// such as the standard About panel. It opens at the ordinary window level,
+  /// so a floating window sits over the top and the click that asked for it
+  /// looks like it did nothing.
   ///
   /// The pin is given up rather than borrowed, because nothing says when to
-  /// give it back. Sparkle emits no event when its panel is closed, so a
+  /// give it back. AppKit emits no event when such a panel is closed, so a
   /// restore could only be guessed at: on a timer, or the next time this
   /// window is focused. Both put the window back over a panel that is still
   /// open, which is the same bug with more moving parts. Given up, it is
@@ -230,9 +229,9 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   /// the user clicks and clicks at.
   ///
   /// Callable more than once, and answered by the first attempt every time.
-  /// An update ends up here twice: WinSparkle asks the app to leave at the
-  /// same moment the installer it already launched asks Windows to make it,
-  /// and the two arrive in either order. Saving twice would be wasteful;
+  /// An update ends up here twice: the updater quits the app at the same
+  /// moment the installer it has just launched asks Windows to make it, and
+  /// the two arrive in either order. Saving twice would be wasteful;
   /// destroying a window twice is a crash.
   Future<void> quit() => _quitting ??= _quit();
 

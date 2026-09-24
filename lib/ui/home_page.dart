@@ -2427,6 +2427,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     ? null
                     : _splitEditor,
                 splitTooltip: _splitTooltip,
+                updates: widget.updates,
               ),
               Expanded(
                 child: SplitView(
@@ -2758,6 +2759,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 alwaysOnTop: widget.prefs.alwaysOnTop,
                 onToggleAlwaysOnTop: _pinToggle,
                 alwaysOnTopShortcut: _pinShortcut,
+                updates: widget.updates,
               ),
             ),
             Expanded(

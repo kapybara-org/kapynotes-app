@@ -346,9 +346,9 @@ void main() {
   );
 
   test('being asked to leave twice still only leaves once', () async {
-    // An update arrives here from both ends at once: WinSparkle asks the app
-    // to quit at the same moment the installer it already launched asks
-    // Windows to make it. Destroying the window twice is a crash.
+    // An update arrives here from both ends at once: the updater quits the
+    // app at the same moment the installer it has just launched asks Windows
+    // to make it. Destroying the window twice is a crash.
     await integration.initialize(ShortcutPrefs(_MemoryStore())..load());
     await settle();
     window.calls.clear();

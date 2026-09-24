@@ -147,17 +147,26 @@ Root: HKCU; Subkey: "Software\Classes\kapynotes\shell\open\command"; ValueType: 
 ; tempting way past the SmartScreen warning — does not hand the user an app
 ; running as administrator.
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent runasoriginaluser
-; And the same thing for an update. WinSparkle runs this installer with
-; /VERYSILENT, so there is no Setup Completed page for that checkbox to live
-; on and the entry above is skipped — which used to leave every in-app update
-; finishing with the app closed and nothing bringing it back.
+; And the same thing for an update. The app runs this installer with
+; /VERYSILENT — as WinSparkle did before it — so there is no Setup Completed
+; page for that checkbox to live on and the entry above is skipped, which
+; used to leave every in-app update finishing with the app closed and nothing
+; bringing it back.
 ;
 ; Harmless if something else got there first: the runner holds a single
 ; instance mutex, so a second copy hands over to the one already running and
 ; exits.
 Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
+[InstallDelete]
+; WinSparkle, which updated the builds before the app downloaded its own
+; updates. Nothing loads it any more, and [Files] only ever adds.
+Type: files; Name: "{app}\WinSparkle.dll"
+
 [UninstallDelete]
 ; Notes live in %APPDATA% (path_provider) and are deliberately left behind on
 ; uninstall. Only the app's own installed files go.
 Type: dirifempty; Name: "{app}"
+; And any update the app downloaded and never installed. Local rather than
+; roaming app data: see WindowsUpdateInstaller.
+Type: filesandordirs; Name: "{localappdata}\com.kapybara\Kapy Notes\Updates"

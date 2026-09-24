@@ -1135,6 +1135,13 @@ class _SidebarFooterState extends State<_SidebarFooter> {
     final palette = context.palette;
     final updates = widget.updates;
     final version = updates?.currentVersion ?? _standaloneVersion;
+    // The badge asks the user to go and look. While a download is running,
+    // or once it has finished and the title bar offers the restart, there is
+    // nothing to go and look at.
+    final updateNeedsAttention =
+        (updates?.hasUpdate ?? false) &&
+        !(updates?.isReadyToInstall ?? false) &&
+        !(updates?.isDownloading ?? false);
     final rows =
         (widget.onHiddenPressed == null ? 0 : 1) +
         (widget.onArchivePressed == null ? 0 : 1) +
@@ -1169,7 +1176,7 @@ class _SidebarFooterState extends State<_SidebarFooter> {
                 key: const ValueKey('sidebar-settings'),
                 onPressed: widget.onSettingsPressed!,
                 version: version,
-                hasUpdate: updates?.hasUpdate ?? false,
+                hasUpdate: updateNeedsAttention,
                 shortcut: widget.settingsShortcut,
               ),
             ),

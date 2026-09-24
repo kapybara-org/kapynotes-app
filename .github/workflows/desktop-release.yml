@@ -20,10 +20,10 @@
 #   CLOUDFLARE_ACCOUNT_ID  the Kapybara Panel account id
 #   SPARKLE_ED_PRIVATE_KEY EdDSA key the macOS appcast is signed with; its
 #                          public half is SUPublicEDKey in macos/Runner/Info.plist
-#   WINSPARKLE_DSA_PRIVATE_KEY  DSA key (PEM) the Windows appcast is signed
+#   WINSPARKLE_DSA_PRIVATE_KEY  DSA key (PEM) the Windows installer is signed
 #                          with; its public half is windows/runner/resources/
-#                          dsa_pub.pem. Both come from
-#                          `dart run auto_updater:generate_keys`.
+#                          dsa_pub.pem, copied into lib/data/update_signature.dart.
+#                          The README has the openssl commands that make a pair.
 #
 # The update feeds are the only mutable objects in the bucket. Everything else
 # is uploaded immutable and never rewritten, so the appcasts and latest.json
@@ -173,13 +173,13 @@ jobs:
           if (-not (Test-Path $iscc)) { throw "Inno Setup not found on this runner" }
           & $iscc /DAppVersion=${{ needs.verify.outputs.version }} packaging\windows\kapynotes.iss
 
-      # WinSparkle rejects any release whose DSA signature does not verify
-      # against the DSAPub resource compiled into the app, so an unsigned feed
-      # is a feed no client will install from. This is the same pipeline
-      # WinSparkle's own sign_update.bat runs, inlined to avoid depending on
-      # the plugin's ephemeral symlink path.
+      # The app refuses any installer whose DSA signature does not verify
+      # against the public key compiled into it, so an unsigned release is
+      # one no client will install. The scheme is WinSparkle's — this is the
+      # pipeline its sign_update.bat runs — because WinSparkle is still what
+      # updates the builds from before the app downloaded its own updates.
       - id: sign
-        name: Sign the installer for WinSparkle
+        name: Sign the installer
         shell: bash
         env:
           DSA_PRIVATE_KEY: ${{ secrets.WINSPARKLE_DSA_PRIVATE_KEY }}
@@ -364,7 +364,10 @@ jobs:
       # sparkle:version means: Sparkle compares it to CFBundleVersion (the +N
       # build number), WinSparkle to the ProductVersion string in Runner.rc.
       # latest.json is neither — it is the few hundred bytes the app itself
-      # polls once a day to decide whether to show the dot.
+      # polls once a day to decide whether there is a release. Its "windows"
+      # block is what the Windows app downloads and verifies; the Windows
+      # appcast stays for builds from before that, which still update through
+      # WinSparkle.
       - name: Publish the update feeds
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -436,9 +439,17 @@ jobs:
             "version": "$VERSION",
             "build": $BUILD,
             "notesUrl": "$notes",
-            "publishedAt": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            "publishedAt": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+            "windows": {
+              "url": "$downloads/KapyNotes-$VERSION-setup.exe",
+              "length": $win_bytes,
+              "dsaSignature": "$WIN_SIGNATURE"
+            }
           }
           JSON
+          # A typo here ships a feed every Windows client silently fails to
+          # read, so the file is parsed before anything is uploaded.
+          python3 -c 'import json,sys; m=json.load(open("latest.json")); w=m["windows"]; assert w["url"].startswith("https://") and w["length"] > 0 and w["dsaSignature"], m'
 
           for file in appcast-macos.xml appcast-windows.xml latest.json; do
             case "$file" in
@@ -470,7 +481,7 @@ jobs:
 
       # The site names this version in three load-bearing places: the download
       # links, the public changelog anchor, and the focused page WinSparkle
-      # displays. They all come from one entry in releases.ts and are checked
+      # displays in builds that still update through it. They all come from one entry in releases.ts and are checked
       # before the feeds publish; leave the confirmation in the run summary.
       - name: The site has to know about this version
         env:

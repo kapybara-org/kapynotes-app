@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../core/toast.dart';
 import '../core/window_chrome.dart';
+import '../data/update_checker.dart';
 import '../sync/presence.dart';
 import '../sync/spaces.dart';
 import 'app_logo.dart';
@@ -40,6 +43,7 @@ class NoteToolbar extends StatelessWidget {
     this.present = const [],
     this.currentUserId = '',
     this.noteShared = false,
+    this.updates,
   });
 
   final VoidCallback onToggleSidebar;
@@ -100,6 +104,14 @@ class NoteToolbar extends StatelessWidget {
   /// Whether the open note lives in a shared space, which is what the share
   /// action's wording turns on.
   final bool noteShared;
+
+  /// Offers "Update and restart" once a release has downloaded. Null where
+  /// the app does not update itself.
+  final UpdateChecker? updates;
+
+  /// Wide enough for the update button to say what it does in full. Below
+  /// this it would run into the centred lockup, so it shortens to "Update".
+  static const double _updateLabelWidth = 680;
 
   static double get height => AppControlMetrics.toolbarHeight;
 
@@ -228,7 +240,9 @@ class NoteToolbar extends StatelessWidget {
                     top: topInset,
                     right: _edgeGap,
                     height: barHeight,
-                    child: _trailing(),
+                    child: _trailing(
+                      wide: constraints.maxWidth >= _updateLabelWidth,
+                    ),
                   ),
                 ],
               ],
@@ -289,11 +303,13 @@ class NoteToolbar extends StatelessWidget {
     );
   }
 
-  Widget _trailing() {
+  Widget _trailing({required bool wide}) {
     final splitTooltip = this.splitTooltip;
+    final updates = this.updates;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (updates != null) _UpdateButton(updates: updates, wide: wide),
         _ToolbarButton(
           icon: KapyIcons.addRounded,
           tooltip: AppPlatform.isMacOS ? 'New note  ⌘N' : 'New note  Ctrl+N',
@@ -326,6 +342,85 @@ class NoteToolbar extends StatelessWidget {
       ?sidebarShortcut,
     ].join('  '),
     onPressed: onToggleSidebar,
+  );
+}
+
+/// "Update and restart", the whole of an update once a release has downloaded
+/// and passed its checks.
+///
+/// In the title bar because the title bar is always there: the notes list
+/// starts every launch closed, so a button inside it would first need the
+/// list opened. Draws nothing at all until there is something to install,
+/// and listens to the checker itself, so a download counting up its percent
+/// rebuilds this and not the page under it.
+class _UpdateButton extends StatelessWidget {
+  const _UpdateButton({required this.updates, required this.wide});
+
+  final UpdateChecker updates;
+  final bool wide;
+
+  Future<void> _install(BuildContext context) async {
+    if (await updates.installAndRestart() || !context.mounted) return;
+    Toast.show(
+      context,
+      updates.downloadError ?? 'Could not install the update',
+      icon: KapyIcons.errorOutlined,
+      isError: true,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: updates,
+    builder: (context, _) {
+      final staged = updates.staged;
+      if (staged == null) return const SizedBox.shrink();
+      final palette = context.palette;
+      final installing = updates.isInstalling;
+      final label = installing
+          ? 'Restarting…'
+          : wide
+          ? 'Update and restart'
+          : 'Update';
+      return Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: Tooltip(
+          message: 'Install Kapy Notes ${staged.version} and restart',
+          child: TextButton.icon(
+            key: const ValueKey('toolbar-update-restart'),
+            onPressed: installing ? null : () => unawaited(_install(context)),
+            icon: KapyIcon(
+              KapyIcons.systemUpdateRounded,
+              size: 14,
+              color: installing ? palette.textTertiary : palette.chipCurrency,
+            ),
+            label: Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: AppTypeScale.small,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: palette.chipCurrency,
+              disabledForegroundColor: palette.textTertiary,
+              backgroundColor: palette.selectedBackground,
+              minimumSize: Size(0, AppControlMetrics.iconButtonExtent),
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              shape: StadiumBorder(
+                side: BorderSide(
+                  color: palette.chipCurrency.withValues(alpha: 0.35),
+                  width: 0.5,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
   );
 }
 

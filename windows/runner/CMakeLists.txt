@@ -30,10 +30,10 @@ apply_standard_settings(${BINARY_NAME})
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
 # FLUTTER_VERSION is pubspec's version verbatim, build metadata included, so
-# "1.4.0+5" rather than "1.4.0". Runner.rc needs the release triple on its own
-# because WinSparkle reads it back out of ProductVersion and compares it to the
-# appcast; see the note there. Built here rather than stringised in the .rc so
-# nothing depends on what rc.exe's preprocessor supports.
+# "1.4.0+5" rather than "1.4.0". Runner.rc puts the release triple on its own
+# into ProductVersion, which the update check reads back; see the note there.
+# Built here rather than stringised in the .rc so nothing depends on what
+# rc.exe's preprocessor supports.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_RELEASE_VERSION=\"${FLUTTER_VERSION_MAJOR}.${FLUTTER_VERSION_MINOR}.${FLUTTER_VERSION_PATCH}\"")
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_MAJOR=${FLUTTER_VERSION_MAJOR}")
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_MINOR=${FLUTTER_VERSION_MINOR}")

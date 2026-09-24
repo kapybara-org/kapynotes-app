@@ -30,6 +30,12 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_macos_pods File.dirname(File.realpath(__FILE__))
+
+  # The updater. A dependency of the app rather than of a plugin, because the
+  # app drives it directly: Runner/AppUpdater.swift. Pinned to the minor it
+  # shipped with; the Installer XPC service and the entitlements that reach
+  # it are version-sensitive, so a Sparkle upgrade is a deliberate change.
+  pod 'Sparkle', '~> 2.9.6'
   target 'RunnerTests' do
     inherit! :search_paths
   end

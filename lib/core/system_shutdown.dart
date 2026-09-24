@@ -11,7 +11,7 @@ import 'package:flutter/services.dart';
 /// replace the app it is updating.
 ///
 /// Nothing on the other platforms sends this. macOS hands its updates to
-/// Sparkle, which quits the host itself.
+/// Sparkle, which asks the app to quit the ordinary way.
 class SystemShutdown {
   const SystemShutdown._();
 

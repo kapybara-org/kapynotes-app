@@ -1759,6 +1759,13 @@ class _SettingsDialogState extends State<SettingsDialog>
       ),
       entry(
         updates,
+        'Download updates automatically',
+        icon: KapyIcons.downloadRounded,
+        target: 'update-auto-download',
+        keywords: ['auto update', 'automatic', 'background', 'restart'],
+      ),
+      entry(
+        updates,
         'Release notes',
         icon: KapyIcons.historyRounded,
         target: 'changelog',
@@ -2265,24 +2272,33 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   /// Everything the app knows about its own release, in the one place a
   /// person would look for it: which build is running, whether a newer one
-  /// exists, and the button that goes and finds out. One card: two headings
-  /// over one row each said less than the rows did.
+  /// exists, how far its download has got, and the button for whatever comes
+  /// next. One card: two headings over one row each said less than the rows
+  /// did.
   List<Widget> _updatesPane() {
     final updates = widget.updates!;
     return [
       const SettingsLabel('KAPY NOTES'),
-      SettingsGroup(
-        children: [
-          _VersionRow(updates: updates),
-          _UpdateRow(
-            key: const ValueKey('update-row'),
-            updates: updates,
-            desktop: widget.desktopIntegration,
-          ),
-        ],
+      ListenableBuilder(
+        listenable: updates,
+        builder: (context, _) => SettingsGroup(
+          children: [
+            _VersionRow(updates: updates),
+            _UpdateRow(key: const ValueKey('update-row'), updates: updates),
+            SettingsToggleRow(
+              key: const ValueKey('update-auto-download'),
+              icon: KapyIcons.downloadRounded,
+              title: 'Download updates automatically',
+              subtitle: 'So updating takes one click',
+              value: updates.autoDownload,
+              onChanged: (value) => updates.autoDownload = value,
+            ),
+          ],
+        ),
       ),
-      const SettingsNote(
-        'Checks for updates daily. Downloads start only when you choose Update.',
+      ListenableBuilder(
+        listenable: updates,
+        builder: (context, _) => SettingsNote(_updatesNote(updates)),
       ),
       const SizedBox(height: 18),
       // Keyed here rather than on the group below it: a search result scrolls
@@ -2297,6 +2313,21 @@ class _SettingsDialogState extends State<SettingsDialog>
       ),
       _ChangelogGroup(updates: updates),
     ];
+  }
+
+  /// When the update actually happens, which is not the same on the two
+  /// platforms: Sparkle installs a downloaded release whenever the app quits,
+  /// and the Windows installer only runs when asked.
+  static String _updatesNote(UpdateChecker updates) {
+    if (!updates.autoDownload) {
+      return 'Checks for updates daily. Nothing downloads until you choose '
+          'Download.';
+    }
+    return AppPlatform.isMacOS
+        ? 'Checks for updates daily and downloads them in the background. A '
+              'downloaded update installs when you restart or quit.'
+        : 'Checks for updates daily and downloads them in the background. A '
+              'downloaded update installs when you choose Update and restart.';
   }
 }
 
@@ -3902,37 +3933,48 @@ class _VersionRow extends StatelessWidget {
   }
 }
 
-/// The only place the update state is spelled out.
-///
-/// Nothing here downloads anything: the row reports what the daily manifest
-/// check found, and the button is the click that hands over to Sparkle or
-/// WinSparkle. Until it is pressed, no release has been fetched.
+/// The only place the update state is spelled out: what the daily check
+/// found, how far the download has got, and the button for whatever is next
+/// — a check, a download, or the restart that installs it.
 class _UpdateRow extends StatelessWidget {
-  const _UpdateRow({super.key, required this.updates, this.desktop});
+  const _UpdateRow({super.key, required this.updates});
 
   final UpdateChecker updates;
-
-  /// Null on the platforms with no window to speak of. Only the pin is wanted
-  /// from it: see [_runAction].
-  final DesktopIntegration? desktop;
 
   /// A check that has never reached the manifest may not claim anything, so
   /// the untouched state offers the check instead of asserting a verdict.
   String _title() {
+    final staged = updates.staged;
+    if (staged != null) return 'Version ${staged.version} is ready';
     final available = updates.available;
-    if (available != null) return 'Version ${available.version} available';
+    if (available != null) {
+      return updates.isDownloading
+          ? 'Downloading version ${available.version}'
+          : 'Version ${available.version} available';
+    }
     if (updates.isChecking) return 'Checking for updates';
     return updates.lastChecked == null ? 'Check for updates' : 'Up to date';
   }
 
   String _subtitle() {
-    if (updates.isInstalling) return 'Opening the updater';
-    final available = updates.available;
-    if (available != null) {
-      final current = updates.currentVersion;
-      return current.isEmpty
-          ? 'Ready to install'
-          : 'Ready to install · Current $current';
+    if (updates.isInstalling) return 'Restarting…';
+    final current = updates.currentVersion;
+    final installed = current.isEmpty ? '' : ' · Current $current';
+    // The version row above already names the build that is running, and the
+    // button beside this one is long enough to squeeze it out.
+    if (updates.staged != null) {
+      return updates.downloadError ?? 'Ready to install';
+    }
+    if (updates.available != null) {
+      if (updates.isDownloading) {
+        final progress = updates.downloadProgress;
+        return progress == null
+            ? 'In the background$installed'
+            : '${(progress * 100).floor()}%$installed';
+      }
+      final error = updates.downloadError;
+      if (error != null) return error;
+      return current.isEmpty ? 'Not downloaded yet' : 'Current $current';
     }
     final checked = updates.lastChecked;
     if (checked == null) return 'Checks once a day';
@@ -3969,43 +4011,29 @@ class _UpdateRow extends StatelessWidget {
     );
   }
 
+  /// The row reports a download and a restart itself, so only the check —
+  /// the one action whose whole result is a verdict — gets a toast.
   Future<void> _runAction(BuildContext context) async {
-    final installing = updates.available != null;
-    // Sparkle and WinSparkle both put their panel up at the ordinary window
-    // level, so a window kept on top covers it: the button would report an
-    // updater the user never sees. Give the pin up first — and say so, since
-    // the toolbar button that would otherwise show it is behind this sheet.
-    // Only for the install; a check opens nothing and touches no window.
-    final unpinned =
-        installing && (await desktop?.releaseAlwaysOnTop() ?? false);
-    if (!context.mounted) return;
-    final progress = Toast.showProgress(
-      context,
-      installing ? 'Opening the updater…' : 'Checking for updates…',
-    );
-    final succeeded = installing
-        ? await updates.startInstall()
-        : await updates.check();
+    if (updates.staged != null) {
+      await updates.installAndRestart();
+      return;
+    }
+    if (updates.available != null) {
+      await updates.download();
+      return;
+    }
+    final progress = Toast.showProgress(context, 'Checking for updates…');
+    final succeeded = await updates.check();
     if (!context.mounted) {
       progress.dismiss();
       return;
     }
     if (!succeeded) {
-      progress.error(
-        installing
-            ? 'Could not open the updater'
-            : 'Could not check for updates',
-      );
+      progress.error('Could not check for updates');
       return;
     }
     progress.success(
-      installing
-          ? unpinned
-                ? 'Updater opened · Always on top turned off'
-                : 'Updater opened'
-          : updates.hasUpdate
-          ? 'Update available'
-          : 'Kapy Notes is up to date',
+      updates.hasUpdate ? 'Update available' : 'Kapy Notes is up to date',
     );
   }
 
@@ -4016,7 +4044,14 @@ class _UpdateRow extends StatelessWidget {
       listenable: updates,
       builder: (context, _) {
         final available = updates.available;
-        final busy = updates.isChecking || updates.isInstalling;
+        final ready = updates.staged != null;
+        final busy =
+            updates.isChecking || updates.isDownloading || updates.isInstalling;
+        final label = ready
+            ? 'Update and restart'
+            : available != null
+            ? 'Download'
+            : 'Check';
         return Padding(
           padding: SettingsMetrics.padding,
           child: Row(
@@ -4024,11 +4059,11 @@ class _UpdateRow extends StatelessWidget {
               SizedBox(
                 width: SettingsMetrics.iconSlot,
                 child: KapyIcon(
-                  available != null
+                  available != null || ready
                       ? KapyIcons.systemUpdateRounded
                       : KapyIcons.verifiedOutlined,
                   size: SettingsMetrics.iconSize,
-                  color: available != null
+                  color: available != null || ready
                       ? palette.chipCurrency
                       : palette.textSecondary,
                 ),
@@ -4060,7 +4095,7 @@ class _UpdateRow extends StatelessWidget {
                 style: TextButton.styleFrom(
                   minimumSize: const Size(78, 30),
                   padding: const EdgeInsets.symmetric(horizontal: 10),
-                  backgroundColor: available != null
+                  backgroundColor: available != null || ready
                       ? palette.selectedBackground
                       : palette.controlBackground,
                   foregroundColor: palette.textPrimary,
@@ -4069,7 +4104,7 @@ class _UpdateRow extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  available != null ? 'Update' : 'Check',
+                  label,
                   style: TextStyle(
                     fontSize: AppTypeScale.caption,
                     fontWeight: _settingsMediumWeight,

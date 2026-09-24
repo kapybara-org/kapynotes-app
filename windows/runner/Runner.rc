@@ -57,20 +57,6 @@ IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 //
-// WinSparkle
-//
-
-// WinSparkle looks the update-signing public key up as a resource under
-// exactly this name and type. It refuses any release whose DSA signature does
-// not verify against it, so a hijacked feed cannot ship a payload. Replace the
-// committed placeholder with the key printed by
-// `dart run auto_updater:generate_keys`; while it is a placeholder every
-// update is rejected, which is the correct way for this to fail.
-DSAPub                  DSAPEM                  "resources\\dsa_pub.pem"
-
-
-/////////////////////////////////////////////////////////////////////////////
-//
 // Version
 //
 
@@ -80,19 +66,19 @@ DSAPub                  DSAPEM                  "resources\\dsa_pub.pem"
 #define VERSION_AS_NUMBER 1,0,0,0
 #endif
 
-// This is the string WinSparkle compares the appcast against. With nothing
-// passed to win_sparkle_set_app_build_version it falls back to ProductVersion
-// and reads it straight out of this resource.
+// The update check reads this string, through package_info_plus, to decide
+// whether the manifest's release is newer than the running build.
 //
-// It must be the release triple and nothing else. Flutter's FLUTTER_VERSION
-// carries pubspec's build metadata too, "1.4.0+5" rather than "1.4.0", and
-// WinSparkle's comparator splits on character class, so "1.4.0+5" becomes
-// 1 . 4 . 0 + 5 against the feed's 1 . 4 . 0. Equal as far as the shorter one
-// goes, and the first part past it is "+", a string rather than a number, so
-// it reads the extra segment as a pre-release marker and calls the installed
-// build older: exactly the rule that puts 1.5b3 behind 1.5. The feed then
-// offers a release that is already installed, forever, and every install
-// hands back the same answer.
+// It is the release triple and nothing else because of WinSparkle, which
+// updated the builds before this one and read the same string from theirs.
+// Flutter's FLUTTER_VERSION carries pubspec's build metadata too, "1.4.0+5"
+// rather than "1.4.0", and WinSparkle's comparator splits on character
+// class, so "1.4.0+5" becomes 1 . 4 . 0 + 5 against the feed's 1 . 4 . 0.
+// Equal as far as the shorter one goes, and the first part past it is "+", a
+// string rather than a number, so it reads the extra segment as a
+// pre-release marker and calls the installed build older: exactly the rule
+// that puts 1.5b3 behind 1.5. The feed then offers a release that is already
+// installed, forever, and every install hands back the same answer.
 #if defined(FLUTTER_RELEASE_VERSION)
 #define VERSION_AS_STRING FLUTTER_RELEASE_VERSION
 #elif defined(FLUTTER_VERSION)

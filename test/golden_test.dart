@@ -24,6 +24,7 @@ import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
+import 'fake_update_installer.dart';
 import 'test_fonts.dart';
 
 const _body = '''
@@ -67,6 +68,10 @@ Future<void> pumpForGolden(
   bool withImages = false,
   bool withUpdates = false,
   bool updateAvailable = false,
+
+  /// The pending release already downloaded, so the notes list offers
+  /// "Update and restart". Implies [updateAvailable].
+  bool updateReady = false,
   bool firstRun = false,
   bool sidebarVisible = true,
   bool withPinnedNote = false,
@@ -101,6 +106,10 @@ Future<void> pumpForGolden(
   ).toJson();
 
   UpdateChecker? updates;
+  if (updateReady) {
+    withUpdates = true;
+    updateAvailable = true;
+  }
   if (withUpdates) {
     // A checked, current app: the state the pane is in almost all the time,
     // and the only one whose copy does not move with the calendar.
@@ -161,7 +170,14 @@ Future<void> pumpForGolden(
         version: '1.1.0',
         buildNumber: '11',
       ),
+      installer: updateReady
+          ? (FakeUpdateInstaller()
+              ..onDisk = const StagedUpdate(version: '1.2.0', build: 12))
+          : null,
     );
+    // Picks the download up the way a launch does. Nothing is due, so the
+    // only thing this reaches is the installer's record of it.
+    if (updateReady) await updates.checkIfDue();
   }
 
   final notes = NotesStore(
@@ -372,6 +388,21 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark.png'),
+    );
+  });
+
+  // The one click an update asks for, in the title bar once the release is
+  // downloaded.
+  testWidgets('desktop dark, update ready to install', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      updateReady: true,
+    );
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_update_ready.png'),
     );
   });
 

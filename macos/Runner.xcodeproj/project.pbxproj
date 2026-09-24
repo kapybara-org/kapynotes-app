@@ -41,6 +41,7 @@
 		C1A0B0090000000000000002 /* WindowPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0090000000000000001 /* WindowPin.swift */; };
 		C1A0B00B0000000000000002 /* AccessibilityText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00B0000000000000001 /* AccessibilityText.swift */; };
 		C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00C0000000000000001 /* SystemRegion.swift */; };
+		C1A0B00D0000000000000002 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00D0000000000000001 /* AppUpdater.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -112,6 +113,7 @@
 		C1A0B0090000000000000001 /* WindowPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPin.swift; sourceTree = "<group>"; };
 		C1A0B00B0000000000000001 /* AccessibilityText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityText.swift; sourceTree = "<group>"; };
 		C1A0B00C0000000000000001 /* SystemRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemRegion.swift; sourceTree = "<group>"; };
+		C1A0B00D0000000000000001 /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -206,6 +208,7 @@
 				A11C10F02044A3C60003C046 /* WindowMaterial.swift */,
 				C1A0B0090000000000000001 /* WindowPin.swift */,
 				C1A0B00C0000000000000001 /* SystemRegion.swift */,
+				C1A0B00D0000000000000001 /* AppUpdater.swift */,
 				C1A0B0020000000000000001 /* RichClipboard.swift */,
 				C1A0B0030000000000000001 /* SpellCheck.swift */,
 				C1A0B0040000000000000001 /* Summaries.swift */,
@@ -507,6 +510,7 @@
 				A11C10F12044A3C60003C046 /* WindowMaterial.swift in Sources */,
 				C1A0B0090000000000000002 /* WindowPin.swift in Sources */,
 				C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */,
+				C1A0B00D0000000000000002 /* AppUpdater.swift in Sources */,
 				C1A0B0020000000000000002 /* RichClipboard.swift in Sources */,
 				C1A0B0030000000000000002 /* SpellCheck.swift in Sources */,
 				C1A0B0040000000000000002 /* Summaries.swift in Sources */,

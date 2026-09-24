@@ -49,8 +49,8 @@ Future<void> main() async {
   final prefs = LayoutPrefs(store);
   final shortcuts = ShortcutPrefs(store);
   final rates = RatesRepository(store);
-  // Only where Sparkle/WinSparkle can actually install: Linux desktop and the
-  // phones get their updates elsewhere and would show a button that lies.
+  // Only where the app can install its own updates: Linux desktop and the
+  // phones get theirs elsewhere and would show a button that lies.
   final updates = AppPlatform.hasAutoUpdate ? UpdateChecker(store) : null;
 
   // One object owns the session, the key and the sync loop; everything else

@@ -33,12 +33,10 @@ dependencies:
   # Opens note links and the active exchange-rate source attribution in the
   # platform browser.
   url_launcher: ^6.3.2
-  # Sparkle (macOS) and WinSparkle (Windows) behind one API. Only the install
-  # half is used: the quiet check is our own, so no Sparkle UI appears until
-  # the user asks for it. See UpdateChecker.
-  auto_updater: ^1.0.0
-  # Lets the update check compare the appcast against the running build. The
-  # version is native (Info.plist / the .rc), not a Dart constant.
+  # Lets the update check compare the manifest against the running build. The
+  # version is native (Info.plist / the .rc), not a Dart constant. The updater
+  # itself has no package: Sparkle is a pod driven by macos/Runner/Updater.swift,
+  # and Windows downloads its installer in Dart. See UpdateChecker.
   package_info_plus: ^10.2.1
 
   # End-to-end encryption for sync. The maintained fork: the original

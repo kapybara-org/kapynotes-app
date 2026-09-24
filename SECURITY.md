@@ -22,8 +22,9 @@ Of particular interest:
   Notes are encrypted on device; the key handling lives in `lib/sync/`.
 - Anything affecting the recovery key flow (`lib/sync/recovery_key.dart`).
 - Anything that would let an attacker get an update installed: the macOS
-  appcast is signed with an EdDSA key and the Windows one with DSA, and the
-  public halves ship inside the app.
+  release is signed with an EdDSA key, which Sparkle checks, and the Windows
+  installer with DSA, which the app checks itself before running it
+  (`lib/data/update_signature.dart`). The public halves ship inside the app.
 
 ## Update signing
 

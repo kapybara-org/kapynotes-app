@@ -9,6 +9,9 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/release_history.dart';
 import 'package:kapy_notes/data/update_checker.dart';
+import 'package:kapy_notes/data/update_installer.dart';
+
+import 'fake_update_installer.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class _MemoryStore extends LocalStore {
@@ -44,11 +47,31 @@ UpdateChecker _checker(
   LocalStore store, {
   required http.Client client,
   PackageInfo? installed,
+  UpdateInstaller? installer,
 }) => UpdateChecker(
   store,
   client: client,
   packageInfo: installed ?? _installed(),
+  installer: installer,
 );
+
+/// A manifest that also carries the Windows installer, as the release job
+/// writes it now.
+String _windowsManifest({String version = '1.0.1', int build = 2}) =>
+    jsonEncode({
+      ...jsonDecode(_manifest(version: version, build: build)) as Map,
+      'windows': {
+        'url': 'https://dl.example.test/KapyNotes-$version-setup.exe',
+        'length': 1024,
+        'dsaSignature': 'c2lnbmF0dXJl',
+      },
+    });
+
+void _seedAvailable(LocalStore store, {String version = '1.0.1'}) =>
+    store.put('updates.v1', {
+      'available': {'version': version, 'build': 2, 'notesUrl': ''},
+      'checkedAt': DateTime.now().toIso8601String(),
+    });
 
 void main() {
   setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
@@ -103,7 +126,7 @@ void main() {
 
   // Windows reports no build number at all: package_info_plus splits the
   // executable's ProductVersion on "+", and Runner.rc writes the bare release
-  // triple there on purpose, because WinSparkle reads the same string. Read
+  // triple there on purpose, because WinSparkle read the same string. Read
   // as a zero, the tie-break above fired on every Windows install of the
   // current release and the notice never went away.
   test('does not break a version tie against a build it cannot read', () async {
@@ -376,24 +399,290 @@ void main() {
     checker.dispose();
   });
 
-  test('a Windows install request quits the background app', () async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
-    final store = _MemoryStore();
-    final checker = _checker(
-      store,
-      client: MockClient((_) async => fail('must not reach the network')),
+  group('downloads and installs', () {
+    test('a release is downloaded as soon as a check finds it', () async {
+      final store = _MemoryStore();
+      final installer = FakeUpdateInstaller();
+      final checker = _checker(
+        store,
+        client: MockClient((_) async => http.Response(_manifest(), 200)),
+        installer: installer,
+      );
+
+      await checker.check();
+      await pumpEventQueue();
+
+      expect(checker.autoDownload, isTrue, reason: 'on unless turned off');
+      expect(installer.downloads.single.version, '1.0.1');
+      expect(checker.isDownloading, isTrue);
+      expect(checker.downloadProgress, 0.5);
+      expect(checker.isReadyToInstall, isFalse);
+
+      installer.finish();
+      await pumpEventQueue();
+
+      expect(checker.isDownloading, isFalse);
+      expect(checker.downloadProgress, isNull);
+      expect(checker.isReadyToInstall, isTrue);
+      expect(checker.staged!.version, '1.0.1');
+      checker.dispose();
+    });
+
+    test('with automatic downloads off, only a click downloads', () async {
+      final store = _MemoryStore();
+      final installer = FakeUpdateInstaller();
+      final checker = _checker(
+        store,
+        client: MockClient((_) async => http.Response(_manifest(), 200)),
+        installer: installer,
+      )..autoDownload = false;
+
+      await checker.check();
+      await pumpEventQueue();
+      expect(checker.hasUpdate, isTrue);
+      expect(installer.downloads, isEmpty);
+
+      final downloaded = checker.download();
+      await pumpEventQueue();
+      expect(installer.downloads, hasLength(1));
+      installer.finish();
+      expect(await downloaded, isTrue);
+      expect(checker.isReadyToInstall, isTrue);
+      checker.dispose();
+    });
+
+    test(
+      'the choice is kept, and turning it on fetches what was found',
+      () async {
+        final store = _MemoryStore();
+        _seedAvailable(store);
+        final installer = FakeUpdateInstaller();
+        final checker = _checker(
+          store,
+          client: MockClient((_) async => fail('no check is due')),
+          installer: installer,
+        )..autoDownload = false;
+
+        await checker.checkIfDue();
+        await pumpEventQueue();
+        expect(installer.downloads, isEmpty);
+        expect(store.data['updates.autoDownload.v1'], isFalse);
+
+        checker.autoDownload = true;
+        await pumpEventQueue();
+        expect(store.data['updates.autoDownload.v1'], isTrue);
+        expect(installer.downloads.single.version, '1.0.1');
+        checker.dispose();
+      },
     );
-    var quits = 0;
-    checker.onBeforeQuitForUpdate = () async => quits++;
 
-    checker.onUpdaterBeforeQuitForUpdate(null);
-    await Future<void>.delayed(Duration.zero);
+    test('a download an earlier run finished is ready at once', () async {
+      final store = _MemoryStore();
+      _seedAvailable(store);
+      final installer = FakeUpdateInstaller()
+        ..onDisk = const StagedUpdate(version: '1.0.1', build: 2);
+      final checker = _checker(
+        store,
+        client: MockClient((_) async => fail('no check is due')),
+        installer: installer,
+      );
 
-    expect(quits, 1);
-    checker.onUpdaterBeforeQuitForUpdate(null);
-    await Future<void>.delayed(Duration.zero);
-    expect(quits, 1, reason: 'the native callback may be delivered twice');
-    checker.dispose();
+      await checker.checkIfDue();
+      await pumpEventQueue();
+
+      expect(checker.isReadyToInstall, isTrue);
+      expect(installer.downloads, isEmpty);
+      // Everything but the release still wanted is tidied away.
+      expect(installer.cleanUps.single?.version, '1.0.1');
+      checker.dispose();
+    });
+
+    test('a failed download says why and waits before trying itself', () async {
+      final store = _MemoryStore();
+      _seedAvailable(store);
+      final installer = FakeUpdateInstaller();
+      final checker = _checker(
+        store,
+        client: MockClient((_) async => fail('no check is due')),
+        installer: installer,
+      );
+
+      await checker.checkIfDue();
+      await pumpEventQueue();
+      installer.fail('The download stalled');
+      await pumpEventQueue();
+
+      expect(checker.isDownloading, isFalse);
+      expect(checker.isReadyToInstall, isFalse);
+      expect(checker.downloadError, 'The download stalled');
+
+      // A resume soon after is not a reason to hammer a failing server...
+      await checker.checkIfDue();
+      await pumpEventQueue();
+      expect(installer.downloads, hasLength(1));
+
+      // ...but a click is.
+      final retried = checker.download();
+      await pumpEventQueue();
+      expect(installer.downloads, hasLength(2));
+      expect(checker.downloadError, isNull);
+      installer.finish();
+      expect(await retried, isTrue);
+      checker.dispose();
+    });
+
+    test('a newer release replaces one already downloaded', () async {
+      final store = _MemoryStore();
+      final installer = FakeUpdateInstaller()
+        ..onDisk = const StagedUpdate(version: '1.0.1', build: 2);
+      _seedAvailable(store);
+      var manifest = _manifest();
+      final checker = _checker(
+        store,
+        client: MockClient((_) async => http.Response(manifest, 200)),
+        installer: installer,
+      );
+      await checker.checkIfDue();
+      await pumpEventQueue();
+      expect(checker.staged!.version, '1.0.1');
+      expect(installer.downloads, isEmpty);
+
+      manifest = _manifest(version: '1.0.2', build: 3);
+      await checker.check();
+      await pumpEventQueue();
+
+      expect(installer.downloads.single.version, '1.0.2');
+      checker.dispose();
+    });
+
+    test(
+      'a download that is not ahead of the running build is not offered',
+      () async {
+        final store = _MemoryStore();
+        _seedAvailable(store);
+        final installer = FakeUpdateInstaller();
+        final checker = _checker(
+          store,
+          client: MockClient((_) async => fail('no check is due')),
+          installer: installer,
+        );
+        await checker.checkIfDue();
+        await pumpEventQueue();
+
+        // The feed Sparkle read was behind the manifest, and handed back the
+        // version already running.
+        installer.finish(version: '1.0.0');
+        await pumpEventQueue();
+
+        expect(checker.isReadyToInstall, isFalse);
+        expect(await checker.installAndRestart(), isFalse);
+        expect(installer.installs, 0);
+        checker.dispose();
+      },
+    );
+
+    test('Windows installs, then quits so the installer can run', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      final store = _MemoryStore();
+      _seedAvailable(store);
+      final installer = FakeUpdateInstaller()
+        ..onDisk = const StagedUpdate(version: '1.0.1', build: 2);
+      final checker = _checker(
+        store,
+        client: MockClient((_) async => fail('no check is due')),
+        installed: _installed(build: ''),
+        installer: installer,
+      );
+      var quits = 0;
+      checker.onBeforeQuitForUpdate = () async => quits++;
+      await checker.checkIfDue();
+
+      expect(await checker.installAndRestart(), isTrue);
+
+      expect(installer.installs, 1);
+      expect(quits, 1);
+      expect(checker.isInstalling, isTrue);
+      expect(
+        await checker.installAndRestart(),
+        isFalse,
+        reason: 'a second click while the first is under way does nothing',
+      );
+      expect(installer.installs, 1);
+      checker.dispose();
+    });
+
+    test('Sparkle quits the app itself', () async {
+      final store = _MemoryStore();
+      _seedAvailable(store);
+      final installer = FakeUpdateInstaller(quitsTheApp: true)
+        ..onDisk = const StagedUpdate(version: '1.0.1', build: 2);
+      final checker = _checker(
+        store,
+        client: MockClient((_) async => fail('no check is due')),
+        installer: installer,
+      );
+      var quits = 0;
+      checker.onBeforeQuitForUpdate = () async => quits++;
+      await checker.checkIfDue();
+
+      expect(await checker.installAndRestart(), isTrue);
+
+      expect(installer.installs, 1);
+      expect(quits, 0);
+      expect(checker.isInstalling, isTrue);
+      checker.dispose();
+    });
+
+    test('an install that fails leaves a button that can work', () async {
+      final store = _MemoryStore();
+      _seedAvailable(store);
+      final installer = FakeUpdateInstaller()
+        ..onDisk = const StagedUpdate(version: '1.0.1', build: 2)
+        ..installError = const UpdateInstallerException(
+          'The downloaded update was damaged',
+        );
+      final checker = _checker(
+        store,
+        client: MockClient((_) async => fail('no check is due')),
+        installer: installer,
+      )..autoDownload = false;
+      await checker.checkIfDue();
+      // The installer threw the damaged file away.
+      installer.onDisk = null;
+
+      expect(await checker.installAndRestart(), isFalse);
+
+      expect(checker.isInstalling, isFalse);
+      expect(checker.downloadError, 'The downloaded update was damaged');
+      expect(checker.isReadyToInstall, isFalse);
+      expect(checker.hasUpdate, isTrue, reason: 'so Download is offered');
+      checker.dispose();
+    });
+
+    test('Windows reads the manifest again for a notice cached without '
+        'its installer', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      final store = _MemoryStore();
+      _seedAvailable(store);
+      var requests = 0;
+      final installer = FakeUpdateInstaller();
+      final checker = _checker(
+        store,
+        client: MockClient((_) async {
+          requests++;
+          return http.Response(_windowsManifest(), 200);
+        }),
+        installed: _installed(build: ''),
+        installer: installer,
+      );
+
+      await checker.checkIfDue();
+      await pumpEventQueue();
+
+      expect(requests, 1);
+      expect(installer.downloads.single.windows?.length, 1024);
+      checker.dispose();
+    });
   });
 
   group('the changelog', () {
