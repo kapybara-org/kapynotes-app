@@ -309,6 +309,7 @@ class Sidebar extends StatelessWidget {
                   onEnterSelected: onEnterSelected,
                   onArchiveSelected: _archiveSelected,
                   onDeleteSelected: _deleteSelected,
+                  archiveShortcut: archiveShortcut,
                   child: notes.isEmpty
                       ? _buildEmpty(context)
                       : _grouped
@@ -480,8 +481,9 @@ extension on Sidebar {
     return null;
   }
 
-  /// Files the highlighted note away: what Delete does in the list, mirroring
-  /// the glyph the row itself offers. Null where there is nothing to file.
+  /// Files the highlighted note away: what the archive shortcut does in the
+  /// list, mirroring the glyph the row itself offers. Null where there is
+  /// nothing to file.
   VoidCallback? get _archiveSelected {
     if (_specialMode || selecting || onArchive == null) return null;
     final note = _highlighted;
@@ -698,11 +700,10 @@ extension on Sidebar {
 /// The keys the note list answers for the note it has highlighted.
 ///
 /// A focus of its own rather than a binding over the whole window, because
-/// the same Delete has to go on deleting a character while somebody is
-/// typing: the only thing that tells the two apart is where the keyboard is
-/// pointed. Pressing anywhere in the list points it here — which is what
-/// makes "click a note, then press Delete" work — and the search field above
-/// is outside this subtree, so it keeps its own Delete untouched.
+/// the same arrows have to go on moving the caret while somebody is typing:
+/// the only thing that tells the two apart is where the keyboard is pointed.
+/// Pressing anywhere in the list points it here, and the search field above
+/// is outside this subtree, so it keeps its own keys untouched.
 ///
 /// Left out on touch, which has no Delete key and would only lose its
 /// on-screen keyboard to this.
@@ -712,6 +713,7 @@ class _NoteListKeys extends StatefulWidget {
     required this.onEnterSelected,
     required this.onArchiveSelected,
     required this.onDeleteSelected,
+    required this.archiveShortcut,
     required this.child,
   });
 
@@ -729,6 +731,11 @@ class _NoteListKeys extends StatefulWidget {
   /// the button there already asks for.
   final VoidCallback? onDeleteSelected;
 
+  /// The one press that removes the highlighted note: the same shortcut the
+  /// editor answers, so it means one thing wherever the keyboard is. Null
+  /// where the reader has cleared it, and then no key removes a note here.
+  final ShortcutBinding? archiveShortcut;
+
   final Widget child;
 
   @override
@@ -744,30 +751,21 @@ class _NoteListKeysState extends State<_NoteListKeys> {
     super.dispose();
   }
 
-  /// Whether [event] is the press a list of things is expected to answer by
-  /// removing the one it has picked.
+  /// Whether [event] is the archive shortcut, the press this list answers by
+  /// removing the note it has picked.
   ///
-  /// macOS takes a row out of a list with Cmd+Delete and Windows with Delete
-  /// on its own; with the list holding the keyboard rather than a text field
-  /// the bare key cannot mean anything else on either, so both arrive here.
-  /// Shift comes through because Windows spells "and do not keep it" that
-  /// way, and a row offers one destructive action at a time, so there is
-  /// nothing for it to choose between. Option is left alone — it is nobody's
-  /// delete, and may be somebody's shortcut.
+  /// Never Delete on its own, on any platform. Any press in the list hands it
+  /// the keyboard, a click on the note already open included, and nothing on
+  /// screen says so: the caret just goes out. A Delete meant for the note's
+  /// text then filed the whole note away.
   ///
   /// Only the press, never the repeat: a key held down must not empty the
   /// list.
-  static bool _removes(KeyEvent event) {
+  bool _removes(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
-    if (event.logicalKey != LogicalKeyboardKey.delete &&
-        event.logicalKey != LogicalKeyboardKey.backspace) {
-      return false;
-    }
-    final keyboard = HardwareKeyboard.instance;
-    if (keyboard.isAltPressed) return false;
-    return AppPlatform.isMacOS
-        ? !keyboard.isControlPressed
-        : !keyboard.isMetaPressed;
+    final shortcut = widget.archiveShortcut;
+    return shortcut != null &&
+        shortcut.activator.accepts(event, HardwareKeyboard.instance);
   }
 
   /// Bare vertical arrows belong to the list while it holds the keyboard.
@@ -839,10 +837,10 @@ class _NoteListKeysState extends State<_NoteListKeys> {
     archive();
     // Archiving the open note moves the caret into whichever note takes its
     // place, which is right when the note was archived from the editor and
-    // wrong when the press came from here: the next Delete would edit that
-    // note instead of archiving it. Asking for the keyboard back afterwards
-    // is answered after that, post-frame callbacks running in the order they
-    // were asked for.
+    // wrong when the press came from here: the next arrow would move that
+    // note's caret instead of walking the list. Asking for the keyboard back
+    // afterwards is answered after that, post-frame callbacks running in the
+    // order they were asked for.
     _keepFocus();
     return KeyEventResult.handled;
   }

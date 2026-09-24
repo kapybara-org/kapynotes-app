@@ -3505,15 +3505,24 @@ void main() {
     /// "Ready to type on open" is what decides where the keyboard goes when a
     /// note is opened: on, and opening one puts the caret in it, which is
     /// where a Delete belongs to the text. Off, and the list keeps it — which
-    /// is the state these are about.
-    Future<void> listHasTheKeyboard(WidgetTester tester) async {
+    /// is the state these are about, and the one a click on the note already
+    /// open leaves behind with the setting on.
+    Future<void> listHasTheKeyboard(
+      WidgetTester tester, {
+      TargetPlatform platform = TargetPlatform.macOS,
+    }) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       store.data['readyToTypeOnOpen.v1'] = false;
       await pumpApp(tester);
     }
 
     /// Three notes, newest first, with the list showing them.
-    Future<void> threeNotes(WidgetTester tester) async {
-      await listHasTheKeyboard(tester);
+    Future<void> threeNotes(
+      WidgetTester tester, {
+      TargetPlatform platform = TargetPlatform.macOS,
+    }) async {
+      await listHasTheKeyboard(tester, platform: platform);
       for (final body in ['First', 'Second', 'Third']) {
         notes.create();
         notes.updateBody(notes.notes.first.id, body);
@@ -3521,23 +3530,64 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('archives the note that was clicked, and the next one after '
-        'it', (tester) async {
+    /// [key] with [modifiers] held: the archive shortcut, Cmd+Delete on a
+    /// Mac, unless a test says otherwise.
+    Future<void> chord(
+      WidgetTester tester, {
+      List<LogicalKeyboardKey> modifiers = const [LogicalKeyboardKey.metaLeft],
+      LogicalKeyboardKey key = LogicalKeyboardKey.backspace,
+    }) async {
+      for (final modifier in modifiers) {
+        await tester.sendKeyDownEvent(modifier);
+      }
+      await tester.sendKeyEvent(key);
+      for (final modifier in modifiers.reversed) {
+        await tester.sendKeyUpEvent(modifier);
+      }
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('never archives the clicked note on its own', (tester) async {
       await threeNotes(tester);
 
       await tester.tap(find.widgetWithText(NoteRow, 'Third'));
       await tester.pumpAndSettle();
+      // Both keys a Mac calls delete: the big one and fn+delete. Nothing on
+      // screen says the list has the keyboard, so either one may have been
+      // meant for the note's text.
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
       await tester.sendKeyEvent(LogicalKeyboardKey.delete);
       await tester.pumpAndSettle();
+
+      expect(notes.archivedNotes, isEmpty);
+      expect(notes.notes.map((note) => note.title), [
+        'Third',
+        'Second',
+        'First',
+      ]);
+      expect(find.text('Note moved to Archived Notes'), findsNothing);
+    });
+
+    testWidgets('archives the clicked note with Cmd+Delete, and the next one '
+        'after it', (tester) async {
+      await threeNotes(tester);
+
+      await tester.tap(find.widgetWithText(NoteRow, 'Third'));
+      await tester.pumpAndSettle();
+      await chord(tester);
 
       expect(notes.archivedNotes.single.title, 'Third');
       expect(find.text('Note moved to Archived Notes'), findsOneWidget);
 
       // The list keeps the keyboard: archiving the open note hands the caret
-      // to the note that takes its place, and a second press must still be
-      // the list's and not that editor's.
-      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      // to the note that takes its place, and the next press must still be
+      // the list's and not that editor's. A Delete is nobody's there, so the
+      // note now open keeps every letter.
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
       await tester.pumpAndSettle();
+      expect(notes.notes.map((note) => note.title), ['Second', 'First']);
+
+      await chord(tester);
       expect(
         notes.archivedNotes.map((note) => note.title),
         unorderedEquals(['Third', 'Second']),
@@ -3545,21 +3595,57 @@ void main() {
       expect(notes.notes.single.title, 'First');
     });
 
-    testWidgets('answers Cmd+Delete, the way macOS files from a list', (
+    testWidgets('answers Shift+Delete on Windows, and not Delete on its own', (
       tester,
     ) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      await threeNotes(tester);
+      await threeNotes(tester, platform: TargetPlatform.windows);
 
       await tester.tap(find.widgetWithText(NoteRow, 'Third'));
       await tester.pumpAndSettle();
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pumpAndSettle();
+      expect(notes.archivedNotes, isEmpty);
+
+      await chord(
+        tester,
+        modifiers: const [LogicalKeyboardKey.shiftLeft],
+        key: LogicalKeyboardKey.delete,
+      );
+      expect(notes.archivedNotes.single.title, 'Third');
+    });
+
+    testWidgets('follows the archive shortcut when it is changed or cleared', (
+      tester,
+    ) async {
+      await threeNotes(tester);
+      shortcuts.update(
+        ShortcutAction.deleteNote,
+        const ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.backspace,
+          physicalKey: PhysicalKeyboardKey.backspace,
+          meta: true,
+          shift: true,
+        ),
+      );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.widgetWithText(NoteRow, 'Third'));
+      await tester.pumpAndSettle();
+      await chord(tester);
+      expect(notes.archivedNotes, isEmpty);
+
+      const cmdShift = [
+        LogicalKeyboardKey.metaLeft,
+        LogicalKeyboardKey.shiftLeft,
+      ];
+      await chord(tester, modifiers: cmdShift);
       expect(notes.archivedNotes.single.title, 'Third');
+
+      shortcuts.clear(ShortcutAction.deleteNote);
+      await tester.pumpAndSettle();
+      await chord(tester, modifiers: cmdShift);
+      await chord(tester);
+      expect(notes.archivedNotes, hasLength(1));
     });
 
     testWidgets('leaves the note alone once the editor has the keyboard', (
@@ -3612,14 +3698,12 @@ void main() {
 
       await tester.tap(find.widgetWithText(NoteRow, 'Only'));
       await tester.pumpAndSettle();
-      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
-      await tester.pumpAndSettle();
+      await chord(tester);
       expect(notes.notes, isEmpty);
 
       // The list still holds the keyboard, and now has nothing to answer
       // with. Pressing again must be a press that does nothing.
-      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
-      await tester.pumpAndSettle();
+      await chord(tester);
       expect(notes.notes, isEmpty);
       expect(notes.archivedNotes, hasLength(1));
     });
@@ -3637,8 +3721,12 @@ void main() {
 
       await tester.tap(find.widgetWithText(NoteRow, 'Third'));
       await tester.pumpAndSettle();
-      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      // Delete on its own asks nothing here either.
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
       await tester.pumpAndSettle();
+      expect(find.text('Delete note?'), findsNothing);
+
+      await chord(tester);
 
       expect(notes.archivedNotes, hasLength(3));
       expect(find.text('Delete note?'), findsOneWidget);
