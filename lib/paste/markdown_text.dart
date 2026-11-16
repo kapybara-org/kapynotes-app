@@ -78,12 +78,21 @@ PasteOutput normalizeMarkdownPaste(String source) {
     } else {
       final written = out.toString();
       final lineStart = written.lastIndexOf('\n') + 1;
-      if (written.substring(lineStart).trim().isNotEmpty) out.write('\n');
+      if (written.substring(lineStart).trim().isNotEmpty) {
+        out
+          ..clear()
+          ..write(written.trimRight())
+          ..write('\n');
+      }
       out.write('\uFFFC');
       images.add(picture);
       final lineEnd = text.indexOf('\n', to);
       final rest = text.substring(to, lineEnd < 0 ? text.length : lineEnd);
-      if (rest.trim().isNotEmpty) out.write('\n');
+      if (rest.trim().isNotEmpty) {
+        out.write('\n');
+        cursor = to + rest.length - rest.trimLeft().length;
+        continue;
+      }
     }
     cursor = to;
   }
