@@ -94,7 +94,9 @@ enum RichClipboard {
   /// The contents are fetched once, with `items`, so iOS asks for
   /// permission to paste at most once. Rich text is converted to HTML only
   /// when nothing else offers HTML, because the conversion is slow and HTML
-  /// from the source is better.
+  /// from the source is better. The pictures in RTFD are still read when that
+  /// HTML shows them by a `file:///` URL, which is how Cocoa apps' own HTML
+  /// refers to them.
   static func read(from pasteboard: UIPasteboard) -> [String: Any] {
     guard pasteboard.numberOfItems > 0 else { return ["types": [String]()] }
     let items = pasteboard.items
@@ -123,14 +125,16 @@ enum RichClipboard {
       sourceUrl = sourceUrl ?? archive.url
       resources += archive.resources
     }
+    let rtfd = data(value(UTType.flatRTFD.identifier))
     if html == nil,
-       let richText = richText(
-         rtfd: data(value(UTType.flatRTFD.identifier)),
-         rtf: data(value(UTType.rtf.identifier))
-       ),
-       let converted = convertToHtml(richText) {
-      snapshot["rtfHtml"] = converted.html
-      resources += converted.resources
+       let richText = richText(rtfd: rtfd, rtf: data(value(UTType.rtf.identifier))),
+       let rtfHtml = convertToHtml(richText) {
+      snapshot["rtfHtml"] = rtfHtml
+      resources += attachmentResources(of: richText, namedBy: rtfHtml)
+    } else if let html, let rtfd,
+              imageSources(in: html).contains(where: { $0.hasPrefix("file:///") }),
+              let richText = richText(rtfd: rtfd, rtf: nil) {
+      resources += attachmentResources(of: richText, namedBy: html)
     }
     snapshot["html"] = html
     snapshot["sourceUrl"] = sourceUrl
@@ -272,25 +276,29 @@ enum RichClipboard {
     return nil
   }
 
-  /// `text` as HTML, with each attachment's bytes named by the `src` its
-  /// `<img>` has in that HTML.
-  ///
-  /// The HTML writer names an attachment by a `file:///` URL of its file name,
-  /// so attachments are matched to images by that name, then in order.
-  static func convertToHtml(
-    _ text: NSAttributedString
-  ) -> (html: String, resources: [[String: Any]])? {
-    let range = NSRange(location: 0, length: text.length)
+  private static func convertToHtml(_ text: NSAttributedString) -> String? {
     guard let data = try? text.data(
-            from: range,
+            from: NSRange(location: 0, length: text.length),
             documentAttributes: [.documentType: NSAttributedString.DocumentType.html]
-          ),
-          let html = String(data: data, encoding: .utf8) else {
+          ) else {
       return nil
     }
+    return String(data: data, encoding: .utf8)
+  }
 
+  /// The bytes of `text`'s attachments, each named by the `src` of the
+  /// `<img>` that shows it in `html`.
+  ///
+  /// The Cocoa HTML writer, both ours and the one an app used for its own
+  /// `public.html`, names an attachment by a `file:///` URL of its file
+  /// name, which no reader can open. So attachments are matched to those
+  /// images by that name, then in order, and other images are left alone.
+  private static func attachmentResources(
+    of text: NSAttributedString,
+    namedBy html: String
+  ) -> [[String: Any]] {
     var attachments: [(name: String?, bytes: Data, type: UTType?)] = []
-    text.enumerateAttribute(.attachment, in: range) { value, _, _ in
+    text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: text.length)) { value, _, _ in
       guard let attachment = value as? NSTextAttachment else { return }
       let wrapper = attachment.fileWrapper
       guard let bytes = wrapper?.regularFileContents ?? attachment.contents else { return }
@@ -303,10 +311,9 @@ enum RichClipboard {
     var unused = Array(attachments.indices)
     var named = Set<String>()
     var resources: [[String: Any]] = []
-    for source in imageSources(in: html) where named.insert(source).inserted {
-      let name = source.hasPrefix("file:///")
-        ? String(source.dropFirst("file:///".count)).removingPercentEncoding
-        : nil
+    for source in imageSources(in: html)
+    where source.hasPrefix("file:///") && named.insert(source).inserted {
+      let name = String(source.dropFirst("file:///".count)).removingPercentEncoding
       guard let index = unused.first(where: { attachments[$0].name == name }) ?? unused.first else {
         break
       }
@@ -320,7 +327,7 @@ enum RichClipboard {
         ])
       }
     }
-    return (html, resources)
+    return resources
   }
 
   /// Every `<img src>` in `html`, as the attribute's value.
