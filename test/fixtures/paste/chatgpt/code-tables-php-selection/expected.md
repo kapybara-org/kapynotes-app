@@ -1,0 +1,197 @@
+<!-- read as: html -->
+**Yes—Chainguard’s published packages contain substantive security backports. The changes address both request-startup/session state and PHP’s handling of memory exhaustion.** They go considerably further than disabling upload progress.
+
+For your WHM/cPanel server, the practical conclusion is that **`session.upload_progress.enabled=Off` remains a useful precaution, but you should still install PHP packages that your vendor explicitly identifies as fixing both CVEs.**
+
+I examined the image metadata, compared the previous and updated packages, recovered their build recipes, and compared shipped development headers and VM code with the corresponding PHP release source. Here is what I found.
+
+## 1. What Chainguard actually published
+
+At the time of my checks on **21 October 2026**, the image SBOMs reported these PHP package revisions:
+
+| Image tags checked | PHP package revision |
+| --- | --- |
+| `latest`, `latest-fpm` | 8.5.11-r4 |
+| `8.4`, `8.4-fpm` | 8.4.26-r4 |
+| `8.3`, `8.3-fpm` | 8.3.35-r4 |
+| `8.2` | 8.2.34-r4 |
+
+The links above are the registry’s machine-readable SBOM attestations.
+
+For PHP 8.5, I confirmed the transition from **`8.5.11-r3` to `8.5.11-r4`**. The updated package retains the PHP 8.5.11 source base and adds these two patch files:
+
+```
+GHSA-w8hw-w9fx-j79w.patch
+GHSA-w8hw-w9fx-j79w-fixup.patch
+```
+
+It also adds a step to regenerate PHP’s VM executor, rebuild its compiled execution objects, and test the new memory-limit behavior. Those steps are recorded in the build recipe embedded in the published r4 package; they are absent from the previous r3 package.
+
+**The `-r4` suffix matters.** This is a downstream backport: an upstream-looking version such as `8.5.11` does not, by itself, establish whether the fix is installed. The same principle applies when you inspect an EasyApache package—check its complete vendor version and release.
+
+### How I obtained the source for review
+
+The two original patch files were not retrievable through the source location referenced by the package. However, Fedora had made the **PHP 8.5.12 source archive** available. I downloaded it and checked its SHA-512 against Fedora’s published source manifest.
+
+That archive’s `NEWS` explicitly groups:
+
+- `CVE-2026-109618` and `CVE-2026-109619`;
+- `GHSA-w8hw-w9fx-j79w` and `GHSA-6wmf-4rv5-p3rp`;
+
+under **“Avoid state corruption via bailout.”** This is in the PHP 8.5.12 source archive available through Fedora.
+
+I then corroborated the relevant changes against Chainguard’s actual shipped headers and VM code. The implementation details below come from that source comparison. I cannot separately attribute individual changes to the main patch versus its `-fixup` file.
+
+## 2. There is a direct fix for the updated blog’s stale-serialization-state finding
+
+This is the part most directly relevant to your original question.
+
+PHP now initializes certain request state **before request-data processing can invoke the session upload-progress handler**. The new helper, `php_basic_early_rinit()`, resets:
+
+- `BG(serialize_lock)`;
+- `BG(serialize)`;
+- `BG(unserialize)`;
+- related URL-rewriter state.
+
+The source comment explicitly explains why: the upload-progress handler can serialize or unserialize session data **before normal module request initialization**, usually called RINIT. The helper is now called early enough to precede that processing.
+
+**Why that matters:** if an earlier request terminated while serialization bookkeeping was still populated, a subsequent request’s early upload-progress processing must not reuse that stale state. Moving initialization earlier directly addresses that lifecycle problem.
+
+This is consistent with the updated article’s surviving concern about cross-request serialization state. It is more specific than a generic reference-count adjustment; the existing `Z_TRY_ADDREF(progress->data)` is still present.
+
+*Source locations: `main/main.c`, `ext/standard/basic_functions.c`, and the URL-scanner initialization code in the reviewed release source.*
+
+## 3. Upload-progress session parsing is restricted during startup
+
+The corresponding source also introduces a special mode for reading and rewriting sessions during the early upload-progress pass.
+
+In that mode, objects are represented internally as `__PHP_Incomplete_Class`, without resolving their application classes. That prevents this early processing from invoking:
+
+- Autoloaders.
+- `unserialize_callback_func`.
+- `__wakeup()`.
+- `__unserialize()`.
+
+The serializer preserves the necessary object and enum representations so the session data can be written back without running those callbacks. **This restriction is scoped to the early upload-progress pass.**
+
+There are several associated fixes:
+
+- Session globals are reset when multipart processing starts.
+- Upload-progress update and cleanup check whether session initialization actually succeeded.
+- The callback no longer runs through `request_parse_body()` after modules have been activated; the source specifically identifies that case as corrupting the session.
+- The temporary `$_SESSION` populated during the restricted early pass is removed afterward.
+
+These changes make the startup path’s assumptions explicit: it can maintain progress information, but it must do so with correctly initialized state and without invoking application object behavior prematurely.
+
+*Source locations: `ext/session/session.c`, `ext/standard/var.c`, and `ext/standard/var_unserializer.re` in the release source.*
+
+## 4. The larger change: memory exhaustion is handled at safer boundaries
+
+The engine changes are broader than session handling.
+
+Previously, exceeding PHP’s memory limit could cause the allocator to report a fatal error and call `zend_bailout()`. A bailout is a nonlocal jump out of the current C execution path. If it interrupts an operation partway through updating internal state, ordinary cleanup and state restoration can be skipped.
+
+The reviewed implementation introduces **deferred out-of-memory handling**:
+
+1. Record that memory exhaustion occurred, including the original error location.
+2. Mark an out-of-memory condition as pending.
+3. Signal the VM that it needs attention.
+4. Allow relevant internal routines to reach cleanup paths.
+5. Handle the fatal error and unwind execution at a controlled boundary.
+
+The VM changes include handling failures that occur **between opcodes**, cleaning up unfinished call frames, and checking for pending memory errors around internal function calls. The actual Chainguard VM header contains these new handling paths.
+
+This does **not** make memory exhaustion an ordinary recoverable application exception. The request still fails. It also does not eliminate every `zend_bailout()` in PHP: startup without an application execution frame, timeouts, and other fatal-error paths have their own behavior.
+
+*Source locations: `Zend/zend_alloc.c`, `Zend/zend_execute_API.c`, `Zend/zend_vm_def.h`, and generated `Zend/zend_vm_execute.h`; corroborated against the Chainguard r4 development package.*
+
+### A new hard memory limit provides bounded cleanup headroom
+
+To make deferred failure possible, ordinary allocations can temporarily go beyond `memory_limit` while the engine reaches a suitable stopping point.
+
+A new directive controls a separate ceiling:
+
+```
+memory_hard_limit_percent
+```
+
+In the reviewed PHP 8.5 implementation, its default internal mode is `-1`. For a finite `memory_limit`, that means:
+
+| Existing `memory_limit` | Default hard threshold |
+| --- | --- |
+| `128M` | 256 MiB |
+| `256M` | 512 MiB |
+| `1G` | 2 GiB |
+| `2G` | 3 GiB |
+
+The rule is twice the soft limit up to 1 GiB, then the soft limit plus 1 GiB, subject to the allocator’s maximum. An explicitly configured percentage must be at least 100.
+
+These thresholds describe **PHP-managed allocation accounting**. They are not total worker RSS limits, and ordinary requests do not automatically consume the additional allowance. The extra headroom exists for exhaustion handling.
+
+If an ordinary allocation would exceed the hard limit, the implementation logs a hard-limit error and calls:
+
+```
+_exit(137);
+```
+
+That immediately terminates the process, bypassing the normal PHP shutdown path. Consequently, **exit status 137 accompanied by this new message can be PHP’s own deliberate exit**; it does not, by itself, prove that the kernel’s OOM killer intervened.
+
+*Source locations: `zend_mm_update_hard_limit()` and `zend_mm_hard_limit_error()` in `Zend/zend_alloc.c`, plus the directive registration in `main/main.c`, in the reviewed release source.*
+
+### Parsers and unserializers also gain explicit failure handling
+
+The source adds allocation functions that can return failure when the soft limit would be exceeded. Updated callers can then release partially constructed data and return through their normal cleanup paths.
+
+For example, multipart-buffer growth can preserve the original buffer when reallocation fails. Multipart parsing, ordinary POST-variable processing, and unserialization gain checks for pending memory exhaustion and cleanup of partially constructed values.
+
+This is another reason the upload-progress switch cannot be equated with the complete fix: **some changed request-processing paths operate independently of upload progress.**
+
+*Source locations: `Zend/zend_alloc.h`, `main/rfc1867.c`, `main/php_variables.c`, `main/SAPI.c`, and `ext/standard/var_unserializer.re` in the reviewed source.*
+
+## 5. What the package tests establish—and what I checked about the backport
+
+Chainguard’s new package-level regression test is designed to require the following behavior:
+
+| Case | Required result in the test definition |
+| --- | --- |
+| Soft-limit exhaustion with `memory_limit=8M` | Fatal memory error and exit status `255`, while reaching a marker after the allocation and a registered shutdown function |
+| Allocation above the hard threshold with the same soft limit | Hard-limit error identifying a 16 MiB threshold and exit status `137` |
+| Configuration inspection | The new `memory_hard_limit_percent` directive exists |
+
+These assertions are embedded in the published package’s build metadata. I inspected the definitions; I did not independently execute the tests.
+
+The corresponding release source also adds regressions for stale unserialization bookkeeping, partially built call frames, request parsing under memory pressure, and preventing user-code execution during upload-progress processing.
+
+### The comparison supports a security backport, with a clear review limit
+
+Six relevant headers in Chainguard’s shipped development package are **byte-for-byte identical** to the staged PHP 8.5.12 source, including the allocator, executor globals, session globals, early-initialization declaration, and serialization interfaces.
+
+The VM template and generated executor are not completely identical to the full 8.5.12 release. I investigated that difference rather than assuming it was a missing security change:
+
+- The VM template differs by changes corresponding exactly to an earlier include/eval exception-handling fix.
+- It also differs by an earlier constant-comparison fix.
+- The new delayed-memory-error handling and unfinished-call cleanup are present in Chainguard’s generated VM.
+
+Those differences are consistent with backporting the security changes onto 8.5.11 while the full 8.5.12 release also contains other bug fixes.
+
+**My confidence is strong that the published r4 packages contain the substantive patch family described here.** The limits are that I did not retrieve the two original standalone patch files, independently execute their regression suite, or validate exploit resistance on your server. The evidence also does not justify assigning one patch file to each CVE—the release notes group the two vulnerabilities together.
+
+## 6. What this means for your WHM/cPanel server
+
+The patch review strengthens the case for updating the actual PHP runtime.
+
+1. **Keep upload progress disabled while you obtain the vendor fix.** That reduces exposure to the specific early session-processing path. It does not reproduce the engine, parser, and lifecycle changes above.
+2. **Use a cPanel/EasyApache package explicitly documented to cover both CVEs, for every PHP branch serving your sites.** Chainguard’s images are separate container runtimes; their publication does not update your installed `ea-phpXX` packages. cPanel manages its PHP packages through EasyApache 4 and the server’s package manager.
+3. **Verify the complete vendor package revision and recycle the affected PHP workers after updating.** A backport can retain the upstream version number. Verify the runtime used by the websites, as well as any separate CLI jobs.
+4. **Do not try to obtain this protection by adding `memory_hard_limit_percent` to an unpatched `php.ini`.** The protection requires new compiled PHP code. I would initially retain the patched vendor’s default behavior rather than reduce the headroom as an improvised mitigation.
+5. **Account for the changed exhaustion behavior operationally.** After patching, review PHP worker memory budgets and logs with the temporary headroom and deliberate hard-limit exits in mind. That is particularly relevant if your FPM concurrency was sized using `memory_limit` as though it were a strict total-memory ceiling.
+
+Finally, the updated blog’s observations about whether particular workers survive failed startup should not be used to exempt FPM or another handler from this update. The official PHP notice concerns two critical vulnerabilities and encourages all PHP users to upgrade; the source changes show why focusing exclusively on the upload-progress demonstration is too narrow.
+
+---
+
+If you want, I can:
+
+- Explain implications of Chainguard PHP patch for cPanel security
+- Detail the new PHP memory exhaustion handling introduced by the patches
+- Summarize the fixes related to PHP upload-progress session handling

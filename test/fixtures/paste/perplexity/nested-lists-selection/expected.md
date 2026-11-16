@@ -1,0 +1,30 @@
+<!-- read as: html -->
+Over the past five months, the Japanese government and several Japanese universities have launched significant new initiatives to **increase funding and resources to attract and support scholars impacted by funding cuts in the United States**, particularly those resulting from the policies of the Trump administration.
+
+**Key developments include:**
+
+- **Government Funding Initiatives:**
+  - In June 2025, the Japanese government announced the “J-RISE Initiative” (Japan Research & Innovation for Scientific Excellence), a strategic program with a budget of **¥100 billion (about $693 million)** to attract top researchers from abroad, including those affected by US funding reductions [theregister](https://www.theregister.com/2025/06/16/japan_has_a_yen_for/). This initiative is designed to make Japan a more attractive destination for global scientific talent by improving salaries, research environments, and support systems [nikkei](https://asia.nikkei.com/Politics/Japan-to-tackle-low-pay-in-bid-to-lure-researchers-fleeing-Trump-cuts).
+  - The initiative leverages the revenue from Japan’s **10 trillion yen University Fund**, with a portion earmarked for urgent measures to recruit both foreign and overseas Japanese researchers [mext](https://www.mext.go.jp/b_menu/houdou/mext_01543.html). The Ministry of Education, Culture, Sports, Science and Technology (MEXT) has allocated **¥3.3 billion (about $23 million)** over three years to subsidize domestic universities accepting foreign researchers, including young researchers and Ph.D. students [nhk](https://www3.nhk.or.jp/nhkworld/en/news/20250702_17/).
+- **University-Level Actions:**
+  - **Osaka University** has set aside **¥600 million to ¥1 billion** to accept up to 100 US postdoctoral researchers at its Graduate School of Medicine. The university plans to open international applications and provide support for both research and living conditions [japannews.yomiuri](https://japannews.yomiuri.co.jp/politics/politics-government/20250531-257400/).
+  - **Tohoku University** is investing about **¥30 billion (over $200 million)** to recruit approximately 500 researchers from Japan and abroad, with a particular focus on those affected by US funding cuts [theregister](https://www.theregister.com/2025/06/16/japan_has_a_yen_for/).
+  - At least **87 Japanese universities** have announced new support measures and budgets to host foreign researchers and students from the US, including tuition waivers, housing support, and acceptance as both regular and non-degree students [japantimes](https://www.japantimes.co.jp/news/2025/06/07/japan/society/harvard-ban-japan-universities/). Some universities, such as Tohoku, have conducted recruitment events at major US institutions like Stanford and Harvard [japannews.yomiuri](https://japannews.yomiuri.co.jp/politics/politics-government/20250531-257400/).
+- **Policy and Structural Changes:**
+  - The Japanese government is working to address the traditionally lower salaries for researchers compared to the US and Europe, aiming to offer compensation at levels competitive with overseas institutions [yomiuri](https://www.yomiuri.co.jp/science/20250612-OYT1T50233/).
+  - There are plans to relax certain administrative requirements and improve research infrastructure to make Japan more attractive to international scholars [yomiuri](https://www.yomiuri.co.jp/science/20250612-OYT1T50233/).
+
+**Motivation and Context:**
+These measures are a direct response to the **exodus of researchers from the US**, where recent policy changes have led to significant cuts in scientific funding and increased job instability. Japanese officials have explicitly stated that attracting this talent is a national priority, both to enhance Japan’s research capabilities and to compete with similar recruitment drives by Europe and China [theregister](https://www.theregister.com/2025/06/16/japan_has_a_yen_for/).
+
+**Summary Table of Major Initiatives**
+
+| Initiative/University | Funding/Support | Target Group | Key Features |
+| --- | --- | --- | --- |
+| J-RISE Initiative (Govt) | ¥100 billion (approx. $693 million) | Top international researchers, incl. US | Salary parity, research environment improvements |
+| MEXT Subsidy Program | ¥3.3 billion over 3 years | Young researchers, PhD students | Salaries, research expenses, equipment |
+| Osaka University | ¥600 million–¥1 billion | Up to 100 US postdocs | Research, living support, medical sector focus |
+| Tohoku University | ¥30 billion (approx. $208 million) | ~500 researchers (Japan & abroad) | Recruitment events, family support, infrastructure |
+| 87+ Japanese Universities | New budgets, various supports | US/foreign researchers & students | Tuition waivers, housing, flexible admissions |
+
+These developments represent a **major shift in Japan’s approach to international academic recruitment**, with a clear focus on supporting scholars who have been impacted by US funding cuts and creating a more competitive, attractive research environment in Japan [theregister](https://www.theregister.com/2025/06/16/japan_has_a_yen_for/).

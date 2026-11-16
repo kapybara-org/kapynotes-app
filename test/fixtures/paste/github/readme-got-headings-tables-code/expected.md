@@ -1,0 +1,185 @@
+<!-- read as: html -->
+[Got](https://github.com/sindresorhus/got/blob/main/media/logo.svg)
+
+---
+
+<sup>Sindre's open source work is supported by the community.</sup>
+<sup>Special thanks to:</sup>
+
+[Fame Helsinki](https://www.fame.fi/#gh-light-mode-only)
+
+[Depot logo](https://depot.dev/?utm_source=github&utm_medium=sindresorhus)
+
+[**Fast remote container builds and GitHub Actions runners.**](https://depot.dev/?utm_source=github&utm_medium=sindresorhus)
+
+---
+
+> Human-friendly and powerful HTTP request library for Node.js
+
+[Downloads](https://npmjs.com/got) [Install size](https://packagephobia.com/result?p=got)
+
+[See how Got compares to other HTTP libraries](https://github.com/sindresorhus/got#comparison)
+
+---
+
+**You probably want** [**Ky**](https://github.com/sindresorhus/ky) **instead, by the same people. It's smaller, works in the browser too, and is more stable since it's built on** [**`Fetch`**](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API)**. Or** [**fetch-extras**](https://github.com/sindresorhus/fetch-extras) **for simple needs.**
+
+---
+
+**Support questions should be asked** [**here**](https://github.com/sindresorhus/got/discussions)**.**
+
+## Install
+
+```shell
+npm install got
+```
+
+**Warning:** This package is native [ESM](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules) and no longer provides a CommonJS export. If your project uses CommonJS, you will have to [convert to ESM](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c). Please don't open issues for questions regarding CommonJS / ESM.
+
+**Got v11 is no longer maintained and we will not accept any backport requests.**
+
+## Take a peek
+
+**A** [**quick start**](https://github.com/sindresorhus/got/blob/main/documentation/quick-start.md) **guide is available.**
+
+### JSON mode
+
+Got has a dedicated option for handling JSON payload.
+Furthermore, the promise exposes a `.json<T>()` function that returns `Promise<T>`. It also exposes a `.json(schema)` function that validates the payload with a [Standard Schema](https://standardschema.dev/) and infers the type from the schema.
+
+```js
+import got from 'got';
+
+const {data} = await got.post('https://httpbin.org/anything', {
+	json: {
+		hello: 'world'
+	}
+}).json();
+
+console.log(data);
+//=> {"hello": "world"}
+```
+
+For advanced JSON usage, check out the [`parseJson`](https://github.com/sindresorhus/got/blob/main/documentation/2-options.md#parsejson) and [`stringifyJson`](https://github.com/sindresorhus/got/blob/main/documentation/2-options.md#stringifyjson) options.
+
+**For more useful tips like this, visit the** [**Tips**](https://github.com/sindresorhus/got/blob/main/documentation/tips.md) **page.**
+
+## Highlights
+
+- [Used by 10K+ packages and 5M+ repos](https://github.com/sindresorhus/got/network/dependents)
+- [Actively maintained](https://github.com/sindresorhus/got/graphs/contributors)
+
+## Documentation
+
+By default, Got will retry on failure. To disable this option, set [`options.retry.limit`](https://github.com/sindresorhus/got/blob/main/documentation/7-retry.md#retry) to 0.
+
+#### Main API
+
+- [x] [Promise API](https://github.com/sindresorhus/got/blob/main/documentation/1-promise.md)
+- [x] [Options](https://github.com/sindresorhus/got/blob/main/documentation/2-options.md)
+- [x] [Stream API](https://github.com/sindresorhus/got/blob/main/documentation/3-streams.md)
+- [x] [Pagination API](https://github.com/sindresorhus/got/blob/main/documentation/4-pagination.md)
+- [x] [Advanced HTTPS API](https://github.com/sindresorhus/got/blob/main/documentation/5-https.md)
+- [x] [HTTP/2 support](https://github.com/sindresorhus/got/blob/main/documentation/2-options.md#http2)
+- [x] [`Response` class](https://github.com/sindresorhus/got/blob/main/documentation/3-streams.md#response-2)
+- [x] [Response validation with Standard Schema](https://github.com/sindresorhus/got/blob/main/documentation/1-promise.md#promisejsonschema)
+
+#### Timeouts and retries
+
+- [x] [Advanced timeout handling](https://github.com/sindresorhus/got/blob/main/documentation/6-timeout.md)
+- [x] [Retries on failure](https://github.com/sindresorhus/got/blob/main/documentation/7-retry.md)
+- [x] [Errors with metadata](https://github.com/sindresorhus/got/blob/main/documentation/8-errors.md)
+
+#### Advanced creation
+
+- [x] [Hooks](https://github.com/sindresorhus/got/blob/main/documentation/9-hooks.md)
+- [x] [Instances](https://github.com/sindresorhus/got/blob/main/documentation/10-instances.md)
+- [x] [Progress events & other events](https://github.com/sindresorhus/got/blob/main/documentation/3-streams.md#events)
+- [x] [Plugins](https://github.com/sindresorhus/got/blob/main/documentation/lets-make-a-plugin.md)
+- [x] [Compose](https://github.com/sindresorhus/got/blob/main/documentation/examples/advanced-creation.js)
+
+#### Cache, Proxy and UNIX sockets
+
+- [x] [RFC 7234 compliant caching](https://github.com/sindresorhus/got/blob/main/documentation/cache.md)
+- [x] [Proxy support](https://github.com/sindresorhus/got/blob/main/documentation/tips.md#proxying)
+- [x] [Unix Domain Sockets](https://github.com/sindresorhus/got/blob/main/documentation/2-options.md#enableunixsockets)
+
+#### Integration
+
+- [x] [Diagnostics Channel](https://github.com/sindresorhus/got/blob/main/documentation/diagnostics-channel.md)
+- [x] [TypeScript support](https://github.com/sindresorhus/got/blob/main/documentation/typescript.md)
+- [x] [AWS](https://github.com/sindresorhus/got/blob/main/documentation/tips.md#aws)
+- [x] [Testing](https://github.com/sindresorhus/got/blob/main/documentation/tips.md#testing)
+
+---
+
+### Migration guides
+
+- [Request migration guide](https://github.com/sindresorhus/got/blob/main/documentation/migration-guides/request.md)
+  - [*(Note that Request is unmaintained)*](https://github.com/request/request/issues/3142)
+- [Axios](https://github.com/sindresorhus/got/blob/main/documentation/migration-guides/axios.md)
+- [Node.js](https://github.com/sindresorhus/got/blob/main/documentation/migration-guides/nodejs.md)
+
+## Got plugins
+
+- [`got4aws`](https://github.com/SamVerschueren/got4aws) - Got convenience wrapper to interact with AWS v4 signed APIs
+- [`gh-got`](https://github.com/sindresorhus/gh-got) - Got convenience wrapper to interact with the GitHub API
+- [`gl-got`](https://github.com/singapore/gl-got) - Got convenience wrapper to interact with the GitLab API
+- [`gotql`](https://github.com/khaosdoctor/gotql) - Got convenience wrapper to interact with GraphQL using JSON-parsed queries instead of strings
+- [`got-fetch`](https://github.com/alexghr/got-fetch) - Got with a [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) interface
+- [`got-scraping`](https://github.com/apify/got-scraping) - Got wrapper specifically designed for web scraping purposes
+- [`got-ssrf`](https://github.com/JaneJeon/got-ssrf) - Got wrapper to protect server-side requests against SSRF attacks
+
+## Comparison
+
+|  | `got` | [`node-fetch`](https://github.com/node-fetch/node-fetch) | [`ky`](https://github.com/sindresorhus/ky) | [`axios`](https://github.com/axios/axios) | [`superagent`](https://github.com/visionmedia/superagent) |
+| --- | :-: | :-: | :-: | :-: | :-: |
+| HTTP/2 support | ✔️ | ❌ | ✔️ | ❌ | ✔️\*\* |
+| Browser support | ❌ | ✔️\* | ✔️ | ✔️ | ✔️ |
+| Promise API | ✔️ | ✔️ | ✔️ | ✔️ | ✔️ |
+| Stream API | ✔️ | Node.js only | ❌ | ❌ | ✔️ |
+| Pagination API | ✔️ | ❌ | ❌ | ❌ | ❌ |
+| Request aborting | ✔️ | ✔️ | ✔️ | ✔️ | ✔️ |
+| RFC 7234 caching | ✔️ | ❌ | ❌ | ❌ | ❌ |
+| Cookies (out-of-the-box) | ✔️ | ❌ | ❌ | ❌ | ❌ |
+| Follows redirects | ✔️ | ✔️ | ✔️ | ✔️ | ✔️ |
+| Retries on failure | ✔️ | ❌ | ✔️ | ❌ | ✔️ |
+| Progress events | ✔️ | ❌ | ✔️ | Browser only | ✔️ |
+| Handles gzip/deflate | ✔️ | ✔️ | ✔️ | ✔️ | ✔️ |
+| Advanced timeouts | ✔️ | ❌ | ❌ | ❌ | ❌ |
+| Timings | ✔️ | ❌ | ❌ | ❌ | ❌ |
+| Errors with metadata | ✔️ | ❌ | ✔️ | ✔️ | ❌ |
+| JSON mode | ✔️ | ✔️ | ✔️ | ✔️ | ✔️ |
+| Custom defaults | ✔️ | ❌ | ✔️ | ✔️ | ❌ |
+| Composable | ✔️ | ❌ | ❌ | ❌ | ✔️ |
+| Hooks | ✔️ | ❌ | ✔️ | ✔️ | ❌ |
+| Issues open |  |  |  |  |  |
+| Issues closed |  |  |  |  |  |
+| Downloads |  |  |  |  |  |
+| Coverage | TBD |  |  |  |  |
+| Build |  |  |  |  |  |
+| Bugs |  |  |  |  |  |
+| Dependents |  |  |  |  |  |
+| Install size |  |  |  |  |  |
+| GitHub stars |  |  |  |  |  |
+| TypeScript support |  |  |  |  |  |
+| Last commit |  |  |  |  |  |
+
+\* It's almost API compatible with the browser `fetch` API.
+\*\* Need to switch the protocol manually. Doesn't accept PUSH streams and doesn't reuse HTTP/2 sessions.
+❇️ Almost-stable feature, but the API may change. Don't hesitate to try it out!
+❔ Feature in early stage of development. Very experimental.
+
+[Click here](https://packagephobia.com/result?p=@sindresorhus/is@8.0.0,byte-counter@0.1.0,cacheable-request@13.0.18,chunk-data@0.1.0,decompress-response@10.0.0,keyv@5.6.0,lowercase-keys@4.0.1,responselike@4.0.2,type-fest@5.6.0,uint8array-extras@1.5.0) to see the install size of the Got dependencies.
+
+## Maintainers
+
+|  |  |
+| --- | --- |
+| [Sindre Sorhus](https://sindresorhus.com/) | [Szymon Marczak](https://github.com/szmarczak) |
+
+⟦picture 1⟧⟦picture 2⟧
+<!--
+picture 1 at 9052: https://github.com/sindresorhus.png?size=100, alt "Sindre Sorhus", width 1.00
+picture 2 at 9053: https://github.com/szmarczak.png?size=100, alt "Szymon Marczak", width 1.00
+-->

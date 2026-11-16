@@ -1,0 +1,15 @@
+<!-- read as: html -->
+Hi team,
+
+Here is the agenda for **Thursday**; please read the [spec](https://example.com/spec) beforehand:
+
+- Fixture review
+- Paste pipeline demo
+
+| Time | Topic |
+| --- | --- |
+| 10:00 | Fixtures |
+
+Thanks,
+
+Asha

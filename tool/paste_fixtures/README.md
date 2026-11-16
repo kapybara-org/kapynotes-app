@@ -71,6 +71,18 @@ node apply_notes.mjs $FIXROOT                 # notes.json is the source of trut
 Hacker News (Algolia API: `hn.algolia.com/api/v1/search?query="chatgpt.com/share"`). Shared conversations are deleted and
 change over time, so a recapture can differ; that is expected. Scripts pin which assistant turn to use where it mattered.
 
+## What each fixture pastes as
+
+`test/paste/fixture_pipeline_test.dart` runs every fixture through the paste pipeline twice, once for a markdown note and once
+for a plain one, and compares the result with `expected.md` and `expected.plain.txt` beside it. Each file says which
+representation the paste was read from, then the note's text with `⟦picture N⟧` where each picture goes, then the pictures
+and (for a plain note) the heading, bold and italic ranges. After changing the pipeline, or adding a fixture, rewrite them
+and read the diff, which is the review of what a paste from that source now looks like:
+
+```
+PASTE_FIXTURES_UPDATE=1 flutter test test/paste/fixture_pipeline_test.dart
+```
+
 ## What could not be captured, and why
 
 * **claude.ai/share**: Cloudflare "Just a moment" challenge for headless Chrome, still there after 20 s. No Claude web fixture;
@@ -81,5 +93,6 @@ change over time, so a recapture can differ; that is expected. Scripts pin which
   selection captures exist.
 * **Gemini copy button**: the signed-out share page has only "Copy prompt" on the user turns; selection captures only.
 * **Notion (notion.site)**: most of 38 sampled public pages returned the Cloudflare challenge; the two that loaded had one
-  image or two code blocks and no toggles/to-dos/callouts. No Notion fixture yet: capturing one also needs headless copy, which I paused after the system pasteboard counter moved (see the report).
+  image or two code blocks and no toggles/to-dos/callouts. No Notion fixture yet: capturing one also needs headless copy,
+  which was paused after the system pasteboard's change count moved while someone was using the Mac.
 * **Windows and Android/iOS** payloads can only be synthesized here; there is no Windows capture script.

@@ -1,0 +1,14 @@
+<!-- read as: html -->
+**Release 2.4 is out** 🎉 *thanks to everyone* and ~~old plan~~, details in [the changelog](https://example.com/release/2.4). Run `kapy sync --force` if you see conflicts. :kapy-party:
+
+- Faster sync
+- New importer
+  - Word
+  - Excel
+
+> Ship it on Friday.
+
+```
+const total = items.reduce((a, b) => a + b.price, 0);
+console.log(total);
+```

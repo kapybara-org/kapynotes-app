@@ -1,0 +1,8 @@
+<!-- read as: code -->
+```typescript
+export async function loadNotes(userId: string): Promise<Note[]> {
+  const res = await fetch(`/api/users/${userId}/notes`);
+  if (!res.ok) throw new Error("failed");
+  return res.json();
+}
+```
