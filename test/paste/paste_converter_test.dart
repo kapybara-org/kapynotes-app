@@ -143,7 +143,7 @@ void main() {
       text: 'item',
       html: '<ul>${items.join()}</ul>',
     );
-    expect(snapshot.html!.length, greaterThan(32 * 1024));
+    expect(snapshot.html!.length, greaterThan(16 * 1024));
     final background = await convertPasteInBackground(snapshot, markdown: true);
     final direct = convertPaste(snapshot, markdown: true);
     expect(background.kind, PasteKind.html);

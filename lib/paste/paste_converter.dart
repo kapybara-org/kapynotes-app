@@ -96,7 +96,7 @@ Future<PasteConversion> convertPasteInBackground(
   return Isolate.run(() => convertPaste(snapshot, markdown: markdown));
 }
 
-const _backgroundThreshold = 32 * 1024;
+const _backgroundThreshold = 16 * 1024;
 
 String _trimCode(String text) {
   var code = text;
