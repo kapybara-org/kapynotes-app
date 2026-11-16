@@ -723,6 +723,24 @@ class AppTypeScale {
       ? 11.5
       : 11;
 
+  /// The names under the spaces rail's tiles, and the streak's run of days.
+  /// A step under [caption], because each sits under its own icon rather
+  /// than being read on its own.
+  static double get railLabel => _touch
+      ? 13
+      : _windows
+      ? 12
+      : 11;
+
+  /// The figure in a count badge, such as the invitations on Shared. Smaller
+  /// than [micro], because it is bold, it sits in a coloured dot, and it is
+  /// never more than two digits.
+  static double get badge => _touch
+      ? 11
+      : _windows
+      ? 10.5
+      : 9.5;
+
   /// Metadata, list snippets, the helper line under a control.
   static double get caption => _touch
       ? 13

@@ -2568,7 +2568,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       archiveShortcut: widget.shortcuts.bindingFor(
                         ShortcutAction.deleteNote,
                       ),
-                      showHeader: false,
                       emptyMessage: space == LibrarySpace.drawings
                           ? 'No drawings yet'
                           : null,

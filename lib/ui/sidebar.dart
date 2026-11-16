@@ -32,15 +32,15 @@ import 'streak_badge.dart';
 import 'tonal_button.dart';
 import 'window_drag_area.dart';
 
-/// What throwing a note away looks like, everywhere it is offered.
+/// What putting a note away looks like, everywhere it is offered: the filing
+/// box the spaces rail draws for the Archive.
 ///
-/// A bin rather than a filing box. Nothing else in the app removes a note, so
-/// the Archive *is* where notes go when you are done with them, and a box that
-/// reads as "file this away" sent people looking for a delete that was not
-/// there. The archive is still not destruction — [deleteIcon] is — which is
-/// why the two are the ordinary bin and the crossed-out one, the pairing every
-/// mail client uses for the same two ideas.
-const KapyIconData archiveIcon = KapyIcons.deleteOutlined;
+/// A bare box once sent people looking for a delete that was not there, so
+/// the box never stands alone: the rail names it Archive, the note menu says
+/// Archive note, and the toast says where the note went. Destruction is
+/// [deleteIcon], the crossed-out bin, the pairing mail clients use for the
+/// same two ideas.
+const KapyIconData archiveIcon = KapyIcons.archiveOutlined;
 
 /// Taking a note out of the archive and back into the list.
 ///
@@ -120,7 +120,6 @@ class Sidebar extends StatelessWidget {
     this.hiddenShortcut,
     this.updates,
     this.searchFocusNode,
-    this.showHeader = true,
     this.archiveMode = false,
     this.hiddenMode = false,
     this.archivedCount = 0,
@@ -211,7 +210,6 @@ class Sidebar extends StatelessWidget {
   /// store owns updates; the version still comes from the installed package.
   final UpdateChecker? updates;
   final FocusNode? searchFocusNode;
-  final bool showHeader;
   final bool archiveMode;
   final bool hiddenMode;
   final int archivedCount;
@@ -259,7 +257,8 @@ class Sidebar extends StatelessWidget {
   ///
   /// The rail holds what the list would otherwise carry, so with a window bar
   /// the tabs are left out while [tab] still narrows the list, and
-  /// invitations wait under Shared, where the rail's badge points.
+  /// invitations wait under Shared, where the rail's badge points. Without
+  /// one, the list is the compact layout's drawer, under the wordmark.
   final Widget? windowBar;
 
   /// What the list says when there is nothing in it to show, in place of the
@@ -279,13 +278,11 @@ class Sidebar extends StatelessWidget {
       // Colour runs to the window edges; content stays clear of the status
       // bar, home indicator and any display cutout.
       child: SafeArea(
-        top: showHeader || _besideRail,
         right: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (showHeader) const _Header(),
-            ?windowBar,
+            windowBar ?? const _Header(),
             if (_showsTabs)
               _SidebarTabs(
                 tab: tab,
@@ -1590,7 +1587,7 @@ class SidebarWindowBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final handwritten = WritingFont.handwritten;
+    const handwritten = WritingFont.handwritten;
     final newNoteShortcut = this.newNoteShortcut;
     final hideShortcut = this.hideShortcut;
     return SizedBox(

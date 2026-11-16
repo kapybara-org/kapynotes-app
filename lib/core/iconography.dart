@@ -67,6 +67,10 @@ class KapyIcons {
     HugeIcons.strokeRoundedCameraAdd01,
   );
   static const addRounded = KapyIconData(0xE003, HugeIcons.strokeRoundedAdd01);
+  static const archiveOutlined = KapyIconData(
+    0xE090,
+    HugeIcons.strokeRoundedArchive03,
+  );
   static const arrowBackRounded = KapyIconData(
     0xE004,
     HugeIcons.strokeRoundedArrowLeft02,

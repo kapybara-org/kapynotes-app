@@ -228,6 +228,16 @@ class SpacesRail extends StatelessWidget {
   }
 }
 
+/// The words on the rail: a space's name under its tile, and the streak's
+/// run of days under its flame.
+TextStyle _railLabel(Color color, {required bool strong}) => TextStyle(
+  fontSize: AppTypeScale.railLabel,
+  height: 14 / 11,
+  fontWeight: strong ? FontWeight.w600 : FontWeight.w500,
+  color: color,
+  fontFeatures: const [FontFeature.tabularFigures()],
+);
+
 /// One space on the rail: an icon on a tile with its name under it, the tile
 /// in sage while the list shows the space.
 class _RailItem extends StatefulWidget {
@@ -319,15 +329,13 @@ class _RailItemState extends State<_RailItem> {
                   maxLines: 1,
                   softWrap: false,
                   overflow: TextOverflow.fade,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.caption,
-                    height: 1.2,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: selected
+                  style: _railLabel(
+                    selected
                         ? palette.textPrimary
                         : lit
                         ? palette.textSecondary
                         : palette.textTertiary,
+                    strong: selected,
                   ),
                 ),
               ],
@@ -355,7 +363,8 @@ class _Badge extends StatelessWidget {
       key: const ValueKey('rail-shared-badge'),
       height: 17,
       constraints: const BoxConstraints(minWidth: 17),
-      padding: const EdgeInsets.symmetric(horizontal: 3),
+      // Inside the ring, which the decoration adds to it.
+      padding: const EdgeInsets.symmetric(horizontal: 5),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: palette.clay,
@@ -367,7 +376,7 @@ class _Badge extends StatelessWidget {
         count > 99 ? '99+' : '$count',
         textScaler: TextScaler.noScaling,
         style: TextStyle(
-          fontSize: AppTypeScale.micro,
+          fontSize: AppTypeScale.badge,
           height: 1,
           fontWeight: FontWeight.w600,
           color: palette.sidebarBackground,
@@ -425,16 +434,9 @@ class _RailStreak extends StatelessWidget {
                   days == 1 ? '1 day' : '$days days',
                   maxLines: 1,
                   softWrap: false,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.caption,
-                    height: 1.2,
-                    fontWeight: FontWeight.w600,
-                    color: Color.lerp(
-                      palette.textTertiary,
-                      palette.textPrimary,
-                      t,
-                    ),
-                    fontFeatures: const [FontFeature.tabularFigures()],
+                  style: _railLabel(
+                    Color.lerp(palette.textTertiary, palette.textPrimary, t)!,
+                    strong: true,
                   ),
                 ),
               ],
@@ -574,7 +576,7 @@ class _RailAccount extends StatelessWidget {
                 color: palette.textTertiary,
               )
             : Text(
-                _initial(name),
+                avatarInitial(name),
                 textScaler: TextScaler.noScaling,
                 style: TextStyle(
                   fontSize: AppTypeScale.control,
@@ -622,14 +624,6 @@ class _RailAccount extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  static String _initial(String value) {
-    for (final rune in value.runes) {
-      final char = String.fromCharCode(rune);
-      if (char.trim().isNotEmpty) return char.toUpperCase();
-    }
-    return '?';
   }
 }
 

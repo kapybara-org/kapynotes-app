@@ -3867,14 +3867,20 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('the way into the archive reads as a bin, not a filing box', (
+    testWidgets('the way into the archive is named under its box', (
       tester,
     ) async {
       await pumpApp(tester);
       await tester.pumpAndSettle();
 
+      // A bare box once sent people looking for a delete, so the word under
+      // it is what this pins, beside the icon every archive action shares.
       final entry = find.byKey(const ValueKey('rail-archive'));
       expect(entry, findsOneWidget);
+      expect(
+        find.descendant(of: entry, matching: find.text('Archive')),
+        findsOneWidget,
+      );
       expect(
         find.descendant(of: entry, matching: findKapyIcon(archiveIcon)),
         findsOneWidget,
