@@ -58,7 +58,7 @@ class HtmlPasteReader {
     final out = _Builder();
     _walkChildren(root, const _Context(), out);
     out.flush();
-    return _mergeAdjacentCode(out.blocks);
+    return _checklists(_mergeAdjacentCode(out.blocks));
   }
 
   /// Whether [html] is code that a code editor copied: every word set in a
@@ -784,6 +784,49 @@ class HtmlPasteReader {
     }
     return merged;
   }
+
+  /// Paragraphs that open with a ballot box, which is how Pages and Notes
+  /// write a checklist into rich text, read as the to-dos they are.
+  static List<PasteBlock> _checklists(List<PasteBlock> blocks) {
+    final result = <PasteBlock>[];
+    for (final block in blocks) {
+      final task = _taskOf(block);
+      if (task == null) {
+        result.add(block);
+        continue;
+      }
+      final last = result.isEmpty ? null : result.last;
+      if (last is PasteList &&
+          !last.ordered &&
+          last.items.every((item) => item.checked != null)) {
+        result[result.length - 1] = PasteList(
+          ordered: false,
+          items: [...last.items, task],
+        );
+      } else {
+        result.add(PasteList(ordered: false, items: [task]));
+      }
+    }
+    return result;
+  }
+
+  static PasteListItem? _taskOf(PasteBlock block) {
+    if (block is! PasteParagraph) return null;
+    final first = block.inlines.firstOrNull;
+    if (first is! PasteText) return null;
+    final box = _ballotBox.firstMatch(first.text);
+    if (box == null) return null;
+    final rest = first.text.substring(box.end);
+    return PasteListItem([
+      PasteParagraph([
+        if (rest.isNotEmpty)
+          PasteText(rest, styles: first.styles, href: first.href),
+        ...block.inlines.skip(1),
+      ]),
+    ], checked: box.group(1) != '\u2610');
+  }
+
+  static final _ballotBox = RegExp('^\\s*([\u2610\u2611\u2612])\\s+');
 
   /// GitHub draws a checklist as one list item holding every task. Each task
   /// becomes an item of its own here, so each keeps its own box.
