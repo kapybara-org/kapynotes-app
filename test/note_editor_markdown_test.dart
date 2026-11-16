@@ -41,6 +41,7 @@ Widget harness(
   bool markdown = true,
   bool autofocus = false,
   bool readOnly = false,
+  bool light = false,
   double? width,
   List<NoteFormatRange> initialFormats = const [],
   ValueChanged<String>? onBodyChanged,
@@ -57,7 +58,7 @@ Widget harness(
         );
 
   return MaterialApp(
-    theme: KapyTheme.dark(),
+    theme: light ? KapyTheme.light() : KapyTheme.dark(),
     home: Scaffold(
       body: bound(
         NoteEditor(
@@ -1826,6 +1827,81 @@ void main() {
       expect(two, greaterThan(one));
       expect(three - two, greaterThan(0));
       expect(three - two, closeTo(two - one, 1), reason: 'a line apiece');
+    });
+
+    group('as a golden', () {
+      const note =
+          '# Formulas, code and underline\n'
+          '\n'
+          r'The area of a circle is $\pi r^2$, and lunch was $5 or $10.'
+          '\n'
+          '\n'
+          '\$\$\n'
+          r'x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}'
+          '\n'
+          '\$\$\n'
+          '\n'
+          r'TeX that does not parse stays as written: $\frac{a$'
+          '\n'
+          '\n'
+          '<u>Underlined</u>, E = mc<sup>2</sup>, H<sub>2</sub>O and '
+          '2<sup>n</sup>\n'
+          '\n'
+          '```python\n'
+          'def area(r):\n'
+          '    # a circle\n'
+          '    return 3.14159 * r ** 2  # "pi r squared"\n'
+          '```\n'
+          '\n'
+          '| Constant | Value |\n'
+          '| --- | --- |\n'
+          '| Speed of light | 299 792 458<br>metres a second |\n'
+          r'| $c^2$ | <u>squared</u> |'
+          '\n'
+          '\n'
+          '5 + 3';
+
+      Future<void> pumpNote(
+        WidgetTester tester, {
+        bool light = false,
+        bool focused = false,
+      }) async {
+        tester.view.physicalSize = const Size(900, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          harness(note, light: light, autofocus: focused),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('dark', (tester) async {
+        await pumpNote(tester);
+        await expectLater(
+          find.byType(NoteEditor),
+          matchesGoldenFile('goldens/markdown_rendering_dark.png'),
+        );
+      });
+
+      testWidgets('light', (tester) async {
+        await pumpNote(tester, light: true);
+        await expectLater(
+          find.byType(NoteEditor),
+          matchesGoldenFile('goldens/markdown_rendering_light.png'),
+        );
+      });
+
+      testWidgets('dark, the caret in a formula set apart', (tester) async {
+        await pumpNote(tester, focused: true);
+        controllerOf(tester).selection = TextSelection.collapsed(
+          offset: note.indexOf(r'\frac{-b'),
+        );
+        await tester.pumpAndSettle();
+        await expectLater(
+          find.byType(NoteEditor),
+          matchesGoldenFile('goldens/markdown_rendering_revealed_dark.png'),
+        );
+      });
     });
   });
 }
