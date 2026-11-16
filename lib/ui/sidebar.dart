@@ -1690,7 +1690,7 @@ class SidebarWindowBar extends StatelessWidget {
                             ? 'Hide notes'
                             : 'Hide notes  ${hideShortcut.displayLabel}',
                         extent: AppControlMetrics.tonalButtonHeight,
-                        foregroundColor: palette.textSecondary,
+                        radius: 8,
                         onPressed: onHide,
                         icon: KapyIcon(
                           KapyIcons.menuOpenRounded,

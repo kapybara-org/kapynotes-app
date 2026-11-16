@@ -4818,6 +4818,15 @@ void main() {
         ),
         findsOneWidget,
       );
+      // Drawn the way the design draws it: 30pt square, rounded to 8.
+      expect(tester.getSize(hide), const Size.square(30));
+      final button = tester.widget<IconButton>(
+        find.descendant(of: hide, matching: find.byType(IconButton)),
+      );
+      expect(
+        button.style!.shape!.resolve({}),
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      );
 
       await tester.tap(hide);
       await tester.pumpAndSettle();
