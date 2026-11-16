@@ -10,6 +10,10 @@ formats such as `HTML Format` stored as the full CF_HTML payload with its header
 `sidecars` list names files stored beside the representations that are **not** clipboard types (for example the
 `clip_image001.png` a Word `file:///` URL points at, or the two files a Finder fixture refers to).
 
+`macos-snapshot.json`, beside a macOS fixture whose read derives something (rich text as HTML, resources, VS Code's data,
+files, an image), is the map the macOS rich clipboard's `read` returns for it, bytes as `{"base64": …}`. The hosted
+`RichClipboardFixtureTests` compares it; `tool/paste_fixtures/update_macos_snapshots.sh` regenerates it.
+
 ## The three kinds of fixture
 
 **Headless web captures (`capture: real`, `headless/`).** Pages are driven in `chrome-headless-shell` over CDP with
