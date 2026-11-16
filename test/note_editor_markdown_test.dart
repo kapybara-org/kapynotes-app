@@ -1810,5 +1810,22 @@ void main() {
         lessThan(styleOf(tester, 'x<').fontSize!),
       );
     });
+
+    testWidgets('a <br> in a cell gives its row another line', (tester) async {
+      Future<double> afterWith(String cell) async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(harness('| a |\n| --- |\n| $cell |\n\nafter'));
+        await tester.pumpAndSettle();
+        return centerOf(tester, 'after').dy;
+      }
+
+      final one = await afterWith('one two');
+      final two = await afterWith('one<br>two');
+      final three = await afterWith('one<br>two<br>three');
+      expect(two, greaterThan(one));
+      expect(three - two, greaterThan(0));
+      expect(three - two, closeTo(two - one, 1), reason: 'a line apiece');
+    });
   });
 }

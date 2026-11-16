@@ -681,6 +681,10 @@ class MarkdownAnalysis {
   /// as its TeX, in the grid.
   List<MarkdownMath> get maths => _parts.maths;
 
+  /// `<br>` tags, which a table's cell draws as the line break they ask for.
+  /// Anywhere else a tag is shown as written, as any other inline HTML is.
+  List<TextRange> get lineBreaks => _parts.lineBreaks;
+
   /// The rest of what the calculator does not read: struck-through text, and
   /// the `*` and `_` around emphasis — the markers only, not the words.
   List<TextRange> get unread => _parts.unread;
@@ -755,6 +759,9 @@ class MarkdownAnalysis {
   /// The words of [start, end) with every marker in it hidden, trimmed, and
   /// cut wherever their inline markdown changes: what a table's cell shows
   /// when the table is drawn as a grid rather than as its text.
+  ///
+  /// A `<br>` becomes the line break it asks for, the spaces either side of
+  /// it dropped, since a cell has nowhere else to put one.
   List<MarkdownRun> runsIn(int start, int end) {
     final hidden = [
       for (final conceal in conceals)
@@ -767,6 +774,10 @@ class MarkdownAnalysis {
             _runStyles.contains(span.style))
           span,
     ];
+    final breaks = [
+      for (final tag in lineBreaks)
+        if (tag.start >= start && tag.end <= end) tag,
+    ];
     final cuts = <int>{start, end};
     for (final conceal in hidden) {
       cuts
@@ -778,6 +789,11 @@ class MarkdownAnalysis {
         ..add(span.start.clamp(start, end))
         ..add(span.end.clamp(start, end));
     }
+    for (final tag in breaks) {
+      cuts
+        ..add(tag.start)
+        ..add(tag.end);
+    }
     final sorted = cuts.toList()..sort();
 
     final runs = <MarkdownRun>[];
@@ -788,16 +804,29 @@ class MarkdownAnalysis {
           hidden.any((conceal) => conceal.start <= from && to <= conceal.end)) {
         continue;
       }
+      final lineBreak = breaks.any((tag) => tag.start <= from && to <= tag.end);
       final styles = {
         for (final span in styled)
-          if (span.start <= from && to <= span.end) span.style,
+          if (span.start <= from &&
+              to <= span.end &&
+              !(lineBreak && span.style == MarkdownStyle.html))
+            span.style,
       };
-      final words = text.substring(from, to);
+      final words = lineBreak ? '\n' : text.substring(from, to);
       if (runs.isNotEmpty && setEquals(runs.last.styles, styles)) {
         final last = runs.removeLast();
         runs.add((text: last.text + words, styles: styles));
       } else {
         runs.add((text: words, styles: styles));
+      }
+    }
+    if (breaks.isNotEmpty) {
+      for (var i = 0; i < runs.length; i++) {
+        final run = runs[i];
+        runs[i] = (
+          text: run.text.replaceAll(_spacedBreak, '\n'),
+          styles: run.styles,
+        );
       }
     }
 
@@ -814,6 +843,8 @@ class MarkdownAnalysis {
     runs[runs.length - 1] = (text: last.text.trimRight(), styles: last.styles);
     return runs;
   }
+
+  static final _spacedBreak = RegExp(r'[ \t]*\n[ \t]*');
 
   /// The markdown that styles words wherever they are drawn.
   static const _runStyles = {
@@ -1199,6 +1230,7 @@ class _Parts {
     required this.codeBlocks,
     required this.fencedCode,
     required this.maths,
+    required this.lineBreaks,
     required this.unread,
     required this.literals,
     required this.addresses,
@@ -1221,6 +1253,7 @@ class _Parts {
     codeBlocks: [],
     fencedCode: [],
     maths: [],
+    lineBreaks: [],
     unread: [],
     literals: [],
     addresses: [],
@@ -1240,6 +1273,7 @@ class _Parts {
   final List<TextRange> codeBlocks;
   final List<MarkdownCodeBlock> fencedCode;
   final List<MarkdownMath> maths;
+  final List<TextRange> lineBreaks;
   final List<TextRange> unread;
   final List<TextRange> literals;
   final List<TextRange> addresses;
@@ -1268,6 +1302,7 @@ class _Parts {
       codeBlocks: all((p) => p.codeBlocks, _shift),
       fencedCode: all((p) => p.fencedCode, (c, by) => c._shifted(by)),
       maths: all((p) => p.maths, (m, by) => m._shifted(by)),
+      lineBreaks: all((p) => p.lineBreaks, _shift),
       unread: all((p) => p.unread, _shift),
       literals: all((p) => p.literals, _shift),
       addresses: all((p) => p.addresses, _shift),
@@ -1277,7 +1312,8 @@ class _Parts {
   }
 
   /// Just the tables, and only what [MarkdownAnalysis.runsIn] needs to draw
-  /// their cells: the inline styles inside them, and the markers those hide.
+  /// their cells: the inline styles inside them, the markers those hide, and
+  /// the `<br>` tags that break their lines.
   ///
   /// Everything else is dropped rather than emptied by its reader, so that one
   /// answer covers every part of the editor at once — nothing can quietly read
@@ -1309,6 +1345,7 @@ class _Parts {
       codeBlocks: const [],
       fencedCode: const [],
       maths: const [],
+      lineBreaks: lineBreaks,
       unread: const [],
       literals: const [],
       addresses: const [],
@@ -1745,6 +1782,7 @@ class _Collector {
   final _codeBlocks = <TextRange>[];
   final _fencedCode = <MarkdownCodeBlock>[];
   final _maths = <MarkdownMath>[];
+  final _lineBreaks = <TextRange>[];
   final _unread = <TextRange>[];
   final _literals = <TextRange>[];
   final _addresses = <TextRange>[];
@@ -1770,6 +1808,7 @@ class _Collector {
     _maths.sort((a, b) => a.start.compareTo(b.start));
     for (final ranges in [
       _codeBlocks,
+      _lineBreaks,
       _unread,
       _literals,
       _addresses,
@@ -1791,6 +1830,7 @@ class _Collector {
       codeBlocks: List.unmodifiable(_codeBlocks),
       fencedCode: List.unmodifiable(_fencedCode),
       maths: List.unmodifiable(_maths),
+      lineBreaks: List.unmodifiable(_lineBreaks),
       unread: List.unmodifiable(_unread),
       literals: List.unmodifiable(_literals),
       addresses: List.unmodifiable(_addresses),
@@ -2096,6 +2136,12 @@ class _Collector {
               : MarkdownStyle.html,
         );
         _record(_literals, start, end);
+        if (_inTable(start) &&
+            _lineBreakTag.hasMatch(
+              source.substring(_clamp(start), _clamp(end)),
+            )) {
+          _record(_lineBreaks, start, end);
+        }
       case 'math' || 'displayMath':
         _math(node, claimed);
       case 'linkReferenceDefinition':
@@ -2236,7 +2282,7 @@ class _Collector {
   }
 
   /// Whether [offset] is in the table being read: a cell's words are drawn by
-  /// its grid, which shows a formula as its TeX.
+  /// its grid, which shows a formula as its TeX and a `<br>` as a line break.
   bool _inTable(int offset) =>
       _tables.isNotEmpty &&
       offset >= _tables.last.start &&
@@ -2314,6 +2360,8 @@ class _Collector {
     r'^<(/?)(u|ins|sup|sub)>$',
     caseSensitive: false,
   );
+
+  static final _lineBreakTag = RegExp(r'^<br\s*/?>$', caseSensitive: false);
 
   void _listItem(
     md.Element node,

@@ -624,6 +624,19 @@ void main() {
       );
       expect(stylesOf(crossed, '<sup>'), contains(MarkdownStyle.html));
     });
+
+    test('<br> breaks the line of a table\'s cell, and nothing else', () {
+      final analysis = read(
+        '| a |\n|---|\n| one<br>two <br/> three<BR />four |',
+      );
+      final cell = analysis.tables.single.rows[1].cells.single;
+      expect(
+        [for (final run in analysis.runsIn(cell.start, cell.end)) run.text],
+        ['one\ntwo\nthree\nfour'],
+      );
+      expect(analysis.lineBreaks, hasLength(3));
+      expect(read('one<br>two').lineBreaks, isEmpty);
+    });
   });
 
   group('fenced code', () {
@@ -709,6 +722,7 @@ void main() {
           for (final block in analysis.fencedCode)
             '${block.language}-${ranges(block.code)}',
         ],
+        ranges(analysis.lineBreaks),
         analysis.calculatorText,
       ];
     }
@@ -717,6 +731,28 @@ void main() {
       final random = Random(20260911);
       for (var i = 0; i < 1500; i++) {
         final note = randomNote(random);
+        expect(
+          everything(MarkdownAnalyzer().analyze(note)),
+          everything(MarkdownAnalyzer.analyzeWhole(note)),
+          reason: note,
+        );
+      }
+    });
+
+    test('gives the same with math and HTML in the note', () {
+      const markup = [
+        r'$$', r'$$x$$', r'$x$', r'$\frac{a}{b}$', r'$5 and $10', //
+        r'a \$5', r'$ $', r'a $x', r'y$ b', r'> $$', r'- $$', r'  $$',
+        r'$$ $$', r'$\text{$}$', '<u>u</u>', '<sup>2</sup>', '<sub>', '</sub>',
+        '<br>', '| a<br>b |', r'| $x$ | <u>y</u> |', '|---|---|', '```py',
+        '```',
+      ];
+      final random = Random(41);
+      for (var i = 0; i < 800; i++) {
+        final note = List.generate(random.nextInt(24), (_) {
+          final pool = random.nextBool() ? markup : vocabulary;
+          return pool[random.nextInt(pool.length)];
+        }).join('\n');
         expect(
           everything(MarkdownAnalyzer().analyze(note)),
           everything(MarkdownAnalyzer.analyzeWhole(note)),

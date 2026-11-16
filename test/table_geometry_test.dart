@@ -396,4 +396,36 @@ void main() {
       expect(fitted.width, closeTo(120, 0.5));
     });
   });
+
+  group('a <br> in a cell', () {
+    test('starts a line of its own, at the natural size and fitted alike', () {
+      for (final fitToWidth in [null, 400.0]) {
+        final geometry = geometryFor(
+          '| a |\n| --- |\n| one<br>two |',
+          fitToWidth: fitToWidth,
+        );
+        final [header, row] = geometry.table.rows;
+        final cell = geometry.cell(row, 0)!;
+        expect(cell.plainText, 'one\ntwo', reason: '$fitToWidth');
+        expect(cell.computeLineMetrics(), hasLength(2), reason: '$fitToWidth');
+        expect(
+          geometry.rowHeight(row),
+          greaterThan(geometry.rowHeight(header)),
+          reason: '$fitToWidth',
+        );
+      }
+    });
+
+    test('at the natural size, cuts each of its lines short on its own', () {
+      final long = List.filled(40, 'word').join(' ');
+      final geometry = geometryFor('| a |\n| --- |\n| $long<br>short |');
+      final cell = geometry.cell(geometry.table.rows[1], 0)!;
+      final lines = cell.plainText.split('\n');
+      expect(lines, hasLength(2));
+      expect(lines.first, endsWith('…'));
+      expect(lines.last, 'short');
+      expect(cell.computeLineMetrics(), hasLength(2));
+      expect(cell.width, lessThanOrEqualTo(TableGeometry.maxCellWidth));
+    });
+  });
 }
