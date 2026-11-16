@@ -1,0 +1,17 @@
+{
+  "files" : [
+    "/Users/sample/Desktop/kapy-sample-notes.txt",
+    "/Users/sample/Desktop/kapy-sample-chart.png"
+  ],
+  "text" : "kapy-sample-notes.txt\nkapy-sample-chart.png",
+  "types" : [
+    "public.file-url",
+    "CorePasteboardFlavorType 0x6675726C",
+    "dyn.ah62d4rv4gu8y6y4grf0gn5xbrzw1gydcr7u1e3cytf2gn",
+    "NSFilenamesPboardType",
+    "dyn.ah62d4rv4gu8yc6durvwwaznwmuuha2pxsvw0e55bsmwca7d3sbwu",
+    "Apple URL pasteboard type",
+    "public.utf8-plain-text",
+    "NSStringPboardType"
+  ]
+}
