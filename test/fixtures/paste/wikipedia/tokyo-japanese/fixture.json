@@ -1,0 +1,28 @@
+{
+  "source": "wikipedia",
+  "case": "tokyo-japanese",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Selected the first paragraphs of the Japanese Wikipedia article 東京都 and ran document.execCommand(\"copy\").",
+  "url": "https://ja.wikipedia.org/wiki/%E6%9D%B1%E4%BA%AC%E9%83%BD",
+  "notes": "First paragraphs of the Japanese article: full-width punctuation, no spaces between words, a <ruby class=\"yomigana\"> reading annotation in the first sentence, 15 citation markers like [1][注釈 1].",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

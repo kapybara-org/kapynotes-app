@@ -1,0 +1,28 @@
+{
+  "source": "wikipedia",
+  "case": "quadratic-formula-derivation",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Selected the whole article body of \"Quadratic formula\" (all sections, 200+ MathML formulas) and ran document.execCommand(\"copy\").",
+  "url": "https://en.wikipedia.org/wiki/Quadratic_formula",
+  "notes": "Whole article body (667 KB): 209 <math> elements, 15 sections with [edit] spans (mw-editsection), 84 citation markers (<sup class=\"mw-ref reference\">), a table with colspan, 43 inline SVGs, lists.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1971 @@
+Not to be confused with quadratic function or quadratic equation.
+A graph of a parabola-shaped function which intersects the x-axis at x = 1 and x = 5
+The roots of the quadratic function y = ⁠
+1
+/
+2
+⁠x2 − 3x + ⁠
+5
+/
+2
+⁠ are the places where the graph intersects the x-axis, the values x = 1 and x = 5. They can be found via the quadratic formula.
+In elementary algebra, the quadratic formula is a closed-form expression describing the solutions of a quadratic equation. Other ways of solving quadratic equations, such as completing the square, yield the same solutions.
+
+Given a general quadratic equation of the form ⁠
+a
+x
+2
++
+b
+x
++
+c
+=
+0
+⁠, with ⁠
+x
+⁠ representing an unknown, and coefficients ⁠
+a
+⁠, ⁠
+b
+⁠, and ⁠
+c
+⁠ representing known real or complex numbers with ⁠
+a
+≠
+0
+⁠, the values of ⁠
+x
+⁠ satisfying the equation, called the roots or zeros, can be found using the quadratic formula,
+
+x
+=
+−
+b
+±
+b
+2
+−
+4
+a
+c
+2
+a
+,
+
+where the plus–minus symbol "⁠
+±
+⁠" indicates that the equation has two roots.[1] Written separately, these are:
+
+x
+1
+=
+−
+b
++
+b
+2
+−
+4
+a
+c
+2
+a
+,
+x
+2
+=
+−
+b
+−
+b
+2
+−
+4
+a
+c
+2
+a
+.
+
+The quantity ⁠
+Δ
+=
+b
+2
+−
+4
+a
+c
+⁠ is known as the discriminant of the quadratic equation.[2] If the coefficients ⁠
+a
+⁠, ⁠
+b
+⁠, and ⁠
+c
+⁠ are real numbers then when ⁠
+Δ
+>
+0
+⁠, the equation has two distinct real roots; when ⁠
+Δ
+=
+0
+⁠, the equation has one repeated real root; and when ⁠
+Δ
+<
+0
+⁠, the equation has no real roots but has two distinct complex roots, which are complex conjugates of each other.
+
+Geometrically, the roots represent the ⁠
+x
+⁠ values at which the graph of the quadratic function ⁠
+y
+=
+a
+x
+2
++
+b
+x
++
+c
+⁠, a parabola, crosses the ⁠
+x
+⁠-axis: the graph's ⁠
+x
+⁠-intercepts.[3] The quadratic formula can also be used to identify the parabola's axis of symmetry.[4]
+
+Derivation by completing the square
+
+To complete the square, form a squared binomial on the left-hand side of a quadratic equation, from which the solution can be found by taking the square root of both sides.
+The standard way to derive the quadratic formula is to apply the method of completing the square to the generic quadratic equation ⁠
+a
+x
+2
++
+b
+x
++
+c
+=
+0
+⁠.[5][6][7][8] The idea is to transform the equation into the form ⁠
+(
+x
++
+k
+)
+2
+=
+s
+⁠ for some expressions ⁠
+k
+⁠ and ⁠
+s
+⁠ written in terms of the coefficients; take the square root of both sides; and then isolate ⁠
+x
+⁠.
+
+We start by dividing the equation by the quadratic coefficient ⁠
+a
+⁠, which is allowed because ⁠
+a
+⁠ is non-zero. Afterwards, we subtract the constant term ⁠
+c
+/
+a
+⁠ to isolate it on the right-hand side:
+
+a
+x
+2
++
+b
+x
++
+c
+=
+0
+x
+2
++
+b
+a
+x
++
+c
+a
+=
+0
+x
+2
++
+b
+a
+x
+=
+−
+c
+a
+.
+
+The left-hand side is now of the form ⁠
+x
+2
++
+2
+k
+x
+⁠, and we can "complete the square" by adding a constant ⁠
+k
+2
+⁠ to obtain a squared binomial ⁠
+x
+2
++
+2
+k
+x
++
+k
+2
+=
+⁠⁠
+(
+x
++
+k
+)
+2
+⁠. In this example we add ⁠
+(
+b
+/
+2
+a
+)
+2
+⁠ to both sides so that the left-hand side can be factored (see the figure):
+
+x
+2
++
+2
+(
+b
+2
+a
+)
+x
++
+(
+b
+2
+a
+)
+2
+=
+−
+c
+a
++
+(
+b
+2
+a
+)
+2
+(
+x
++
+b
+2
+a
+)
+2
+=
+b
+2
+−
+4
+a
+c
+4
+a
+2
+.
+
+Because the left-hand side is now a perfect square, we can easily take the square root of both sides:
+
+x
++
+b
+2
+a
+=
+±
+b
+2
+−
+4
+a
+c
+2
+a
+.
+
+Finally, subtracting ⁠
+b
+/
+2
+a
+⁠ from both sides to isolate ⁠
+x
+⁠ produces the quadratic formula:
+
+x
+=
+−
+b
+±
+b
+2
+−
+4
+a
+c
+2
+a
+.
+
+Equivalent formulations
+The quadratic formula can equivalently be written using various alternative expressions, for instance
+
+x
+=
+−
+b
+2
+a
+±
+(
+b
+2
+a
+)
+2
+−
+c
+a
+,
+
+which can be derived by first dividing a quadratic equation by ⁠
+2
+a
+⁠, resulting in ⁠
+1
+2
+x
+2
++
+b
+2
+a
+x
++
+c
+2
+a
+=
+0
+⁠, then substituting the new coefficients into the standard quadratic formula. Because this variant allows re-use of the intermediately calculated quantity ⁠
+b
+2
+a
+⁠, it can slightly reduce the arithmetic involved.
+
+Square root in the denominator 
+A lesser known quadratic formula, first mentioned by Giulio Fagnano,[9] describes the same roots via an equation with the square root in the denominator (assuming ⁠
+c
+≠
+0
+⁠):
+
+x
+=
+2
+c
+−
+b
+∓
+b
+2
+−
+4
+a
+c
+.
+
+Here the minus–plus symbol "⁠
+∓
+⁠" indicates that the two roots of the quadratic equation, in the same order as the standard quadratic formula, are
+
+x
+1
+=
+2
+c
+−
+b
+−
+b
+2
+−
+4
+a
+c
+,
+x
+2
+=
+2
+c
+−
+b
++
+b
+2
+−
+4
+a
+c
+.
+
+This variant has been jokingly called the "citardauq" formula ("quadratic" spelled backwards).[10]
+
+When ⁠
+−
+b
+⁠ has the opposite sign as either ⁠
++
+b
+2
+−
+4
+a
+c
+⁠ or ⁠
+−
+b
+2
+−
+4
+a
+c
+⁠, subtraction can cause catastrophic cancellation, resulting in poor accuracy in numerical calculations; choosing between the version of the quadratic formula with the square root in the numerator or denominator depending on the sign of ⁠
+b
+⁠ can avoid this problem. See § Numerical calculation below.
+
+This version of the quadratic formula is used in Muller's method for finding the roots of general functions. It can be derived from the standard formula from the identity ⁠
+x
+1
+x
+2
+=
+c
+/
+a
+⁠, one of Vieta's formulas. Alternately, it can be derived by dividing each side of the equation ⁠
+a
+x
+2
++
+b
+x
++
+c
+=
+0
+⁠ by ⁠
+x
+2
+⁠ to get ⁠
+c
+x
+−
+2
++
+b
+x
+−
+1
++
+a
+=
+0
+⁠, applying the standard formula to find the two roots ⁠
+x
+−
+1
+⁠, and then taking the reciprocal to find the roots ⁠
+x
+⁠ of the original equation.
+
+Other derivations
+Any generic method or algorithm for solving quadratic equations can be applied to an equation with symbolic coefficients and used to derive some closed-form expression equivalent to the quadratic formula. Alternative methods are sometimes simpler than completing the square, and may offer interesting insight into other areas of mathematics.
+
+Completing the square by Śrīdhara's method
+Instead of dividing by ⁠
+a
+⁠ to isolate ⁠
+x
+2
+⁠, it can be slightly simpler to multiply by ⁠
+4
+a
+⁠ instead to produce ⁠
+(
+2
+a
+x
+)
+2
+⁠, which allows us to complete the square without need for fractions. Then the steps of the derivation are:[11]
+
+Multiply each side by ⁠
+4
+a
+⁠.
+Add ⁠
+b
+2
+−
+4
+a
+c
+⁠ to both sides to complete the square.
+Take the square root of both sides.
+Isolate ⁠
+x
+⁠.
+Applying this method to a generic quadratic equation with symbolic coefficients yields the quadratic formula:
+
+a
+x
+2
++
+b
+x
++
+c
+=
+0
+4
+a
+2
+x
+2
++
+4
+a
+b
+x
++
+4
+a
+c
+=
+0
+4
+a
+2
+x
+2
++
+4
+a
+b
+x
++
+b
+2
+=
+b
+2
+−
+4
+a
+c
+(
+2
+a
+x
++
+b
+)
+2
+=
+b
+2
+−
+4
+a
+c
+2
+a
+x
++
+b
+=
+±
+b
+2
+−
+4
+a
+c
+x
+=
+−
+b
+±
+b
+2
+−
+4
+a
+c
+2
+a
+.
+
+This method for completing the square is ancient and was known to the 8th–9th century Indian mathematician Śrīdhara.[12] Compared with the modern standard method for completing the square, this alternate method avoids fractions until the last step and hence does not require a rearrangement after step 3 to obtain a common denominator in the right side.[11]
+
+By substitution
+Another derivation uses a change of variables to eliminate the linear term. Then the equation takes the form ⁠
+u
+2
+=
+s
+⁠ in terms of a new variable ⁠
+u
+⁠ and some constant expression ⁠
+s
+⁠, whose roots are then ⁠
+u
+=
+±
+s
+⁠.
+
+By substituting ⁠
+x
+=
+u
+−
+b
+2
+a
+⁠ into ⁠
+a
+x
+2
++
+b
+x
++
+c
+=
+0
+⁠, expanding the products and combining like terms, and then solving for ⁠
+u
+2
+⁠, we have:
+
+a
+(
+u
+−
+b
+2
+a
+)
+2
++
+b
+(
+u
+−
+b
+2
+a
+)
++
+c
+=
+0
+a
+(
+u
+2
+−
+b
+a
+u
++
+b
+2
+4
+a
+2
+)
++
+b
+(
+u
+−
+b
+2
+a
+)
++
+c
+=
+0
+a
+u
+2
+−
+b
+u
++
+b
+2
+4
+a
++
+b
+u
+−
+b
+2
+2
+a
++
+c
+=
+0
+a
+u
+2
++
+4
+a
+c
+−
+b
+2
+4
+a
+=
+0
+u
+2
+=
+b
+2
+−
+4
+a
+c
+4
+a
+2
+.
+
+Finally, after taking a square root of both sides and substituting the resulting expression for ⁠
+u
+⁠ back into ⁠
+x
+=
+u
+−
+b
+2
+a
+,
+⁠ the familiar quadratic formula emerges:
+
+x
+=
+−
+b
+±
+b
+2
+−
+4
+a
+c
+2
+a
+.
+
+By using algebraic identities
+The following method was used by many historical mathematicians:[13]
+
+Let the roots of the quadratic equation ⁠
+a
+x
+2
++
+b
+x
++
+c
+=
+0
+⁠ be ⁠
+α
+⁠ and ⁠
+β
+⁠. The derivation starts from an identity for the square of a difference (valid for any two complex numbers), of which we can take the square root on both sides:
+
+(
+α
+−
+β
+)
+2
+=
+(
+α
++
+β
+)
+2
+−
+4
+α
+β
+α
+−
+β
+=
+±
+(
+α
++
+β
+)
+2
+−
+4
+α
+β
+.
+
+Since the coefficient ⁠
+a
+≠
+0
+⁠, we can divide the quadratic equation by ⁠
+a
+⁠ to obtain a monic polynomial with the same roots. Namely,
+
+x
+2
++
+b
+a
+x
++
+c
+a
+=
+(
+x
+−
+α
+)
+(
+x
+−
+β
+)
+=
+x
+2
+−
+(
+α
++
+β
+)
+x
++
+α
+β
+.
+
+This implies that the sum ⁠
+α
++
+β
+=
+−
+b
+a
+⁠ and the product ⁠
+α
+β
+=
+c
+a
+⁠. Thus the identity can be rewritten:
+
+α
+−
+β
+=
+±
+(
+−
+b
+a
+)
+2
+−
+4
+c
+a
+=
+±
+b
+2
+−
+4
+a
+c
+a
+.
+
+Therefore,
+
+α
+=
+1
+2
+(
+α
++
+β
+)
++
+1
+2
+(
+α
+−
+β
+)
+=
+−
+b
+2
+a
+±
+b
+2
+−
+4
+a
+c
+2
+a
+,
+β
+=
+1
+2
+(
+α
++
+β
+)
+−
+1
+2
+(
+α
+−
+β
+)
+=
+−
+b
+2
+a
+∓
+b
+2
+−
+4
+a
+c
+2
+a
+.
+
+The two possibilities for each of ⁠
+α
+⁠ and ⁠
+β
+⁠ are the same two roots in opposite order, so we can combine them into the standard quadratic equation:
+x
+=
+−
+b
+±
+b
+2
+−
+4
+a
+c
+2
+a
+.
+
+By Lagrange resolvents
+Further information: Lagrange resolvents
+An alternative way of deriving the quadratic formula is via the method of Lagrange resolvents,[14] which is an early part of Galois theory.[15] This method can be generalized to give the roots of cubic polynomials and quartic polynomials, and leads to Galois theory, which allows one to understand the solution of algebraic equations of any degree in terms of the symmetry group of their roots, the Galois group.
+
+This approach focuses on the roots themselves rather than algebraically rearranging the original equation. Given a monic quadratic polynomial ⁠
+x
+2
++
+p
+x
++
+q
+⁠ assume that ⁠
+α
+⁠ and ⁠
+β
+⁠ are the two roots. So the polynomial factors as
+
+x
+2
++
+p
+x
++
+q
+=
+(
+x
+−
+α
+)
+(
+x
+−
+β
+)
+=
+x
+2
+−
+(
+α
++
+β
+)
+x
++
+α
+β
+
+which implies ⁠
+p
+=
+−
+(
+α
++
+β
+)
+⁠ and ⁠
+q
+=
+α
+β
+⁠.
+
+Since multiplication and addition are both commutative, exchanging the roots ⁠
+α
+⁠ and ⁠
+β
+⁠ will not change the coefficients ⁠
+p
+⁠ and ⁠
+q
+⁠: one can say that ⁠
+p
+⁠ and ⁠
+q
+⁠ are symmetric polynomials in ⁠
+α
+⁠ and ⁠
+β
+⁠. Specifically, they are the elementary symmetric polynomials – any symmetric polynomial in ⁠
+α
+⁠ and ⁠
+β
+⁠ can be expressed in terms of ⁠
+α
++
+β
+⁠ and ⁠
+α
+β
+⁠ instead.
+
+The Galois theory approach to analyzing and solving polynomials is to ask whether, given coefficients of a polynomial each of which is a symmetric function in the roots, one can "break" the symmetry and thereby recover the roots. Using this approach, solving a polynomial of degree ⁠
+n
+⁠ is related to the ways of rearranging ("permuting") ⁠
+n
+⁠ terms, called the symmetric group on ⁠
+n
+⁠ letters and denoted ⁠
+S
+n
+⁠. For the quadratic polynomial, the only ways to rearrange two roots are to either leave them be or to transpose them, so solving a quadratic polynomial is simple.
+
+To find the roots ⁠
+α
+⁠ and ⁠
+β
+⁠, consider their sum and difference:
+
+r
+1
+=
+α
++
+β
+,
+r
+2
+=
+α
+−
+β
+.
+
+These are called the Lagrange resolvents of the polynomial, from which the roots can be recovered as
+
+α
+=
+1
+2
+(
+r
+1
++
+r
+2
+)
+,
+β
+=
+1
+2
+(
+r
+1
+−
+r
+2
+)
+.
+
+Because ⁠
+r
+1
+=
+α
++
+β
+⁠ is a symmetric function in ⁠
+α
+⁠ and ⁠
+β
+⁠, it can be expressed in terms of ⁠
+p
+⁠ and ⁠
+q
+,
+⁠ specifically ⁠
+r
+1
+=
+−
+p
+⁠ as described above. However, ⁠
+r
+2
+=
+α
+−
+β
+⁠ is not symmetric, since exchanging ⁠
+α
+⁠ and ⁠
+β
+⁠ yields the additive inverse ⁠
+−
+r
+2
+=
+β
+−
+α
+⁠. So ⁠
+r
+2
+⁠ cannot be expressed in terms of the symmetric polynomials. However, its square ⁠
+r
+2
+2
+=
+(
+α
+−
+β
+)
+2
+⁠ is symmetric in the roots, expressible in terms of ⁠
+p
+⁠ and ⁠
+q
+⁠. Specifically ⁠
+r
+2
+2
+=
+(
+α
+−
+β
+)
+2
+=
+⁠⁠
+(
+α
++
+β
+)
+2
+−
+4
+α
+β
+=
+⁠⁠
+p
+2
+−
+4
+q
+⁠, which implies ⁠
+r
+2
+=
+±
+p
+2
+−
+4
+q
+⁠. Taking the positive root "breaks" the symmetry, resulting in
+
+r
+1
+=
+−
+p
+,
+r
+2
+=
+p
+2
+−
+4
+q
+
+from which the roots ⁠
+α
+⁠ and ⁠
+β
+⁠ are recovered as
+
+x
+=
+1
+2
+(
+r
+1
+±
+r
+2
+)
+=
+1
+2
+(
+−
+p
+±
+p
+2
+−
+4
+q
+)
+
+which is the quadratic formula for a monic polynomial.
+
+Substituting ⁠
+p
+=
+b
+/
+a
+⁠, ⁠
+q
+=
+c
+/
+a
+⁠ yields the usual expression for an arbitrary quadratic polynomial. The resolvents can be recognized as
+
+1
+2
+r
+1
+=
+−
+1
+2
+p
+=
+−
+b
+2
+a
+,
+r
+2
+2
+=
+p
+2
+−
+4
+q
+=
+b
+2
+−
+4
+a
+c
+a
+2
+,
+
+respectively the vertex and the discriminant of the monic polynomial.
+
+A similar but more complicated method works for cubic equations, which have three resolvents and a quadratic equation (the "resolving polynomial") relating ⁠
+r
+2
+⁠ and ⁠
+r
+3
+⁠, which one can solve by the quadratic equation, and similarly for a quartic equation (degree 4), whose resolving polynomial is a cubic, which can in turn be solved.[14] The same method for a quintic equation yields a polynomial of degree 24, which does not simplify the problem, and, in fact, solutions to quintic equations in general cannot be expressed using only roots.
+
+Numerical calculation
+The quadratic formula is exactly correct when performed using the idealized arithmetic of real numbers, but when approximate arithmetic is used instead, for example pen-and-paper arithmetic carried out to a fixed number of decimal places or the floating-point binary arithmetic available on computers, the limitations of the number representation can lead to substantially inaccurate results unless great care is taken in the implementation. Specific difficulties include catastrophic cancellation in computing the sum ⁠
+−
+b
+±
+Δ
+⁠ if ⁠
+b
+≈
+±
+Δ
+⁠; catastrophic calculation in computing the discriminant ⁠
+Δ
+=
+b
+2
+−
+4
+a
+c
+⁠ itself in cases where ⁠
+b
+2
+≈
+4
+a
+c
+⁠; degeneration of the formula when ⁠
+a
+⁠, ⁠
+b
+⁠, or ⁠
+c
+⁠ is represented as zero or infinite; and possible overflow or underflow when multiplying or dividing extremely large or small numbers, even in cases where the roots can be accurately represented.[16][17]
+
+Catastrophic cancellation occurs when two numbers which are approximately equal are subtracted. While each of the numbers may independently be representable to a certain number of digits of precision, the identical leading digits of each number cancel, resulting in a difference of lower relative precision. When ⁠
+b
+≈
+Δ
+⁠, evaluation of ⁠
+−
+b
++
+Δ
+⁠ causes catastrophic cancellation, as does the evaluation of ⁠
+−
+b
+−
+Δ
+⁠ when ⁠
+b
+≈
+−
+Δ
+⁠. When using the standard quadratic formula, calculating one of the two roots always involves addition, which preserves the working precision of the intermediate calculations, while calculating the other root involves subtraction, which compromises it. Therefore, naïvely following the standard quadratic formula often yields one result with less relative precision than expected. Unfortunately, introductory algebra textbooks typically do not address this problem, even though it causes students to obtain inaccurate results in other school subjects such as introductory chemistry.[18]
+
+For example, if trying to solve the equation ⁠
+x
+2
+−
+1634
+x
++
+2
+=
+0
+⁠ using a pocket calculator, the result of the quadratic formula ⁠
+x
+=
+817
+±
+667
+487
+⁠ might be approximately calculated as:[19]
+
+x
+1
+=
+817
++
+816.998
+776
+0
+=
+1.633
+998
+776
+×
+1
+0
+3
+,
+x
+2
+=
+817
+−
+816.998
+776
+0
+=
+1.224
+×
+1
+0
+−
+3
+.
+
+Even though the calculator used ten decimal digits of precision for each step, calculating the difference between two approximately equal numbers has yielded a result for ⁠
+x
+2
+⁠ with only four correct digits.
+
+One way to recover an accurate result is to use the identity ⁠
+x
+1
+x
+2
+=
+c
+/
+a
+⁠. In this example ⁠
+x
+2
+⁠ can be calculated as ⁠
+x
+2
+=
+2
+/
+x
+1
+=
+⁠⁠
+1.223
+991
+125
+×
+1
+0
+−
+3
+⁠, which is correct to the full ten digits. Another more or less equivalent approach is to use the version of the quadratic formula with the square root in the denominator to calculate one of the roots (see § Square root in the denominator above).
+
+Practical computer implementations of the solution of quadratic equations commonly choose which formula to use for each root depending on the sign of ⁠
+b
+⁠.[20]
+
+These methods do not prevent possible overflow or underflow of the floating-point exponent in computing ⁠
+b
+2
+⁠ or ⁠
+4
+a
+c
+⁠, which can lead to numerically representable roots not being computed accurately. A more robust but computationally expensive strategy is to start with the substitution ⁠
+x
+=
+−
+u
+sgn
+⁡
+(
+b
+)
+|
+c
+|
+/
+|
+a
+|
+⁠, turning the quadratic equation into
+
+u
+2
+−
+2
+|
+b
+|
+2
+|
+a
+|
+|
+c
+|
+u
++
+sgn
+⁡
+(
+c
+)
+=
+0
+,
+
+where ⁠
+sgn
+⁠ is the sign function. Letting ⁠
+d
+=
+|
+b
+|
+/
+2
+|
+a
+|
+|
+c
+|
+⁠, this equation has the form ⁠
+u
+2
+−
+2
+d
+u
+±
+1
+=
+0
+⁠, for which one solution is ⁠
+u
+1
+=
+d
++
+d
+2
+∓
+1
+⁠ and the other solution is ⁠
+u
+2
+=
+±
+1
+/
+u
+1
+⁠. The roots of the original equation are then ⁠
+x
+1
+=
+−
+sgn
+⁡
+(
+b
+)
+(
+|
+c
+|
+/
+|
+a
+|
+ 
+)
+u
+1
+⁠ and ⁠
+x
+2
+=
+−
+sgn
+⁡
+(
+b
+)
+(
+|
+c
+|
+/
+|
+a
+|
+ 
+)
+u
+2
+⁠.[21][22]
+
+With additional complication the expense and extra rounding of the square roots can be avoided by approximating them as powers of two, while still avoiding exponent overflow for representable roots.[17]
+
+Historical development
+The earliest methods for solving quadratic equations were geometric. Babylonian cuneiform tablets contain problems reducible to solving quadratic equations.[23] The Egyptian Berlin Papyrus, dating back to the Middle Kingdom (2050 BC to 1650 BC), contains the solution to a two-term quadratic equation.[24]
+
+The Greek mathematician Euclid (circa 300 BC) used geometric methods to solve quadratic equations in Book 2 of his Elements, an influential mathematical treatise[25] Rules for quadratic equations appear in the Chinese The Nine Chapters on the Mathematical Art circa 200 BC.[26][27] In his work Arithmetica, the Greek mathematician Diophantus (circa 250 AD) solved quadratic equations with a method more recognizably algebraic than the geometric algebra of Euclid.[25] His solution gives only one root, even when both roots are positive.[28]
+
+The Indian mathematician Brahmagupta included a generic method for finding one root of a quadratic equation in his treatise Brāhmasphuṭasiddhānta (circa 628 AD), written out in words in the style of that time.[29][30] His solution of the quadratic equation ⁠
+a
+x
+2
++
+b
+x
+=
+c
+⁠ was as follows: "To the absolute number multiplied by four times the [coefficient of the] square, add the square of the [coefficient of the] middle term; the square root of the same, less the [coefficient of the] middle term, being divided by twice the [coefficient of the] square is the value."[31] In modern notation, this can be written ⁠
+x
+=
+(
+c
+⋅
+4
+a
++
+b
+2
+−
+b
+)
+/
+2
+a
+⁠. The Indian mathematician Śrīdhara (8th–9th century) came up with a similar algorithm for solving quadratic equations in a now-lost work on algebra quoted by Bhāskara II.[32] The modern quadratic formula is sometimes called Sridharacharya's formula in India and Bhaskara's formula in Brazil.[33]
+
+The 9th-century Persian mathematician Muḥammad ibn Mūsā al-Khwārizmī solved quadratic equations algebraically.[34] The quadratic formula covering all cases was first obtained by Simon Stevin in 1594.[35] In 1637 René Descartes published La Géométrie containing special cases of the quadratic formula in the form we know today.[36]
+
+Geometric significance
+In terms of coordinate geometry, an axis-aligned parabola is a curve whose ⁠
+(
+x
+,
+y
+)
+⁠-coordinates are the graph of a second-degree polynomial, of the form ⁠
+y
+=
+a
+x
+2
++
+b
+x
++
+c
+⁠, where ⁠
+a
+⁠, ⁠
+b
+⁠, and ⁠
+c
+⁠ are real-valued constant coefficients with ⁠
+a
+≠
+0
+⁠.
+
+Geometrically, the quadratic formula defines the points ⁠
+(
+x
+,
+0
+)
+⁠ on the graph, where the parabola crosses the ⁠
+x
+⁠-axis. Furthermore, it can be separated into two terms,
+
+x
+=
+−
+b
+±
+b
+2
+−
+4
+a
+c
+2
+a
+=
+−
+b
+2
+a
+±
+b
+2
+−
+4
+a
+c
+2
+a
+.
+
+The first term describes the axis of symmetry, the line ⁠
+x
+=
+−
+b
+2
+a
+⁠. The second term, ⁠
+b
+2
+−
+4
+a
+c
+/
+2
+a
+⁠, gives the distance the roots are away from the axis of symmetry.
+
+If the parabola's vertex is on the ⁠
+x
+⁠-axis, then the corresponding equation has a single repeated root on the line of symmetry, and this distance term is zero; algebraically, the discriminant ⁠
+b
+2
+−
+4
+a
+c
+=
+0
+⁠.
+
+If the discriminant is positive, then the vertex is not on the ⁠
+x
+⁠-axis but the parabola opens in the direction of the ⁠
+x
+⁠-axis, crossing it twice, so the corresponding equation has two real roots. If the discriminant is negative, then the parabola opens in the opposite direction, never crossing the ⁠
+x
+⁠-axis, and the equation has no real roots; in this case the two complex-valued roots will be complex conjugates whose real part is the ⁠
+x
+⁠ value of the axis of symmetry.
+
+Dimensional analysis
+If the constants ⁠
+a
+⁠, ⁠
+b
+⁠, and/or ⁠
+c
+⁠ are not unitless then the quantities ⁠
+x
+⁠ and ⁠
+b
+a
+⁠ must have the same units, because the terms ⁠
+a
+x
+2
+⁠ and ⁠
+b
+x
+⁠ agree on their units. By the same logic, the coefficient ⁠
+c
+⁠ must have the same units as ⁠
+b
+2
+a
+⁠, irrespective of the units of ⁠
+x
+⁠. This can be a powerful tool for verifying that a quadratic expression of physical quantities has been set up correctly.
+
+See also
+Fundamental theorem of algebra
+Vieta's formulas
+Notes
+ Sterling, Mary Jane (2010), Algebra I For Dummies, Wiley Publishing, p. 219, ISBN 978-0-470-55964-2
+ "Discriminant review", Khan Academy, retrieved 2019-11-10
+ "Understanding the quadratic formula", Khan Academy, retrieved 2019-11-10
+ "Axis of Symmetry of a Parabola. How to find axis from equation or from a graph. To find the axis of symmetry ...", www.mathwarehouse.com, retrieved 2019-11-10
+ Rich, Barnett; Schmidt, Philip (2004), Schaum's Outline of Theory and Problems of Elementary Algebra, The McGraw–Hill Companies, Chapter 13 §4.4, p. 291, ISBN 0-07-141083-X
+ Li, Xuhui. An Investigation of Secondary School Algebra Teachers' Mathematical Knowledge for Teaching Algebraic Equation Solving, p. 56 (ProQuest, 2007): "The quadratic formula is the most general method for solving quadratic equations and is derived from another general method: completing the square."
+ Rockswold, Gary. College algebra and trigonometry and precalculus, p. 178 (Addison Wesley, 2002).
+ Beckenbach, Edwin et al. Modern college algebra and trigonometry, p. 81 (Wadsworth Pub. Co., 1986).
+ Specifically, Fagnano began with the equation ⁠
+x
+x
++
+b
+b
+=
+a
+x
+⁠ and found the solutions to be 
+x
+=
+2
+b
+b
+a
+∓
+a
+1
+−
+4
+b
+b
+a
+a
+.
+(In the 18th century, the square ⁠
+x
+2
+⁠ was conventionally written as ⁠
+x
+x
+⁠.)
+Fagnano, Giulio Carlo (1750), "Applicazione dell' algoritmo nuovo Alla resoluzione analitica dell' equazioni del secondo, del terzo, e del quarto grado" [Application of a new algorithm to the analytical resolution of equations of the second, third, and fourth degree], Produzioni matematiche del conte Giulio Carlo di Fagnano, Marchese de' Toschi, e DiSant' Ononio (in Italian), vol. 1, Pesaro: Gavelliana, Appendice seconda, eq. 6, p. 467, doi:10.3931/e-rara-8663
+ Goff, Gerald K. (1976), "The Citardauq Formula", The Mathematics Teacher, 69 (7): 550–551, doi:10.5951/MT.69.7.0550, JSTOR 27960584
+ Hoehn, Larry (1975), "A More Elegant Method of Deriving the Quadratic Formula", The Mathematics Teacher, 68 (5): 442–443, doi:10.5951/MT.68.5.0442, JSTOR 27960212
+ Starting from a quadratic equation of the form ⁠
+a
+x
+2
++
+b
+x
+=
+c
+⁠, Śrīdhara's method, as quoted by Bhāskara II (c. 1150): "Multiply both sides of the equation by a number equal to four times the [coefficient of the] square, and add to them a number equal to the square of the original [coefficient of the] unknown quantity. [Then extract the root.]".
+Smith 1923, p. 446
+ Debnath, Lokenath (2009), "The legacy of Leonhard Euler – a tricentennial tribute", International Journal of Mathematical Education in Science and Technology, 40 (3): 353–388, doi:10.1080/00207390802642237
+ Clark, A. (1984). Elements of abstract algebra. Courier Corporation. p. 146.
+ Prasolov, Viktor; Solovyev, Yuri (1997), Elliptic functions and elliptic integrals, AMS Bookstore, p. 134, ISBN 978-0-8218-0587-9
+ Forsythe, George E. (1969), "Solving a Quadratic Equation on a Computer", The Mathematical Sciences: A Collection of Essays, MIT Press, pp. 138–152, ISBN 0-262-03026-8
+ Goualard, Frédéric (2023), The Ins and Outs of Solving Quadratic Equations with Floating-Point Arithmetic (Technical report), University of Nantes, HAL hal-04116310
+ Thompson, H. Bradford (1987), "Good numerical technique in chemistry: The quadratic equation", Journal of Chemical Education, 64 (12): 1009, doi:10.1021/ed064p1009
+ This example comes from:
+Henrici, Peter (1982), Essentials of Numerical Analysis with Pocket Calculator Demonstrations, New York: Wiley, p. 13
+ Forsythe, George E. (1966), How Do You Solve a Quadratic Equation (PDF) (Tech report), Stanford University, STAN-CS-66-40 (AD639052)
+ Baker, Henry G. (1998), "You Could Learn a Lot from a Quadratic: Overloading Considered Harmful", SIGPLAN Notices, 33 (1): 30–38, doi:10.1145/609742.609746
+ Mastronardi, Nicola; Van Dooren, Paul (2015), "Revisiting the stability of computing the roots of a quadratic polynomial", Electronic Transactions on Numerical Analysis, 44: 73–83, arXiv:1409.8072, archived from the original on 2025-03-03, retrieved 2024-03-15
+ Irving 2013, p. 34.
+ The Cambridge Ancient History Part 2 Early History of the Middle East, Cambridge University Press, 1971, p. 530, ISBN 978-0-521-07791-0
+ Irving 2013, p. 39.
+ Aitken, Wayne, "A Chinese Classic: The Nine Chapters" (PDF), Mathematics Department, California State University, retrieved 28 April 2013
+ Smith 1923, p. 380.
+ Smith 1923, p. 134.
+ Bradley, Michael. The Birth of Mathematics: Ancient Times to 1300, p. 86 (Infobase Publishing 2006).
+ Mackenzie, Dana. The Universe in Zero Words: The Story of Mathematics as Told through Equations, p. 61 (Princeton University Press, 2012).
+ Stillwell, John (2004), Mathematics and Its History (2nd ed.), Springer, p. 87, ISBN 0-387-95336-1
+ O'Connor, John J.; Robertson, Edmund F. (2000), "Sridhara", MacTutor History of Mathematics Archive, University of St Andrews
+ Rocha, Rodrigo Luis da (2023). O uso da expressão 'fórmula de bhaskara' em livros didáticos brasileiros e sua relação com o método resolutivo da equação do 2º grau [The use of the expression 'bhaskara formula' in Brazilian textbooks and its relationship with the method for solving quadratic equations] (master's thesis) (in Portuguese). Universidade Federal do Paraná. hdl:1884/82597.
+Guedes, Eduardo Gomes (2019). A equação quadrática e as contribuições de Bhaskara [The quadratic equation and Bhaskara's contributions] (master's thesis) (in Portuguese). Universidade Federal do Paraná. hdl:1884/66582.
+Banerjee, Isha (July 2, 2024). "India Molded Math. Then Europe Claimed It". The Juggernaut. For instance, some Indian schools call the quadratic formula Sridharacharya's formula and some Brazilian schools call it Bhaskara's formula.
+ Irving 2013, p. 42.
+ Struik, D. J.; Stevin, Simon (1958), The Principal Works of Simon Stevin, Mathematics (PDF), vol. II–B, C. V. Swets & Zeitlinger, p. 470, archived from the original (PDF) on 2021-02-24, retrieved 2013-10-11
+ Rene Descartes, The Geometry
+References
+Wikimedia Commons logo
+Wikimedia Commons has media related to Quadratic formula.
+Smith, David Eugene (1923), History of Mathematics, vol. 2, Boston: Ginn
+Irving, Ron (2013), Beyond the Quadratic Formula, MAA, ISBN 978-0-88385-783-0
+vte
+Polynomials, polynomial functions and polynomial equations
+By degree	
+Zero polynomial (degree undefined or −1 or −∞)Constant function (0)Linear function (1) Linear equationQuadratic function (2) Quadratic equationCubic function (3) Cubic equationQuartic function (4) Quartic equationQuintic equation (5)Sextic equation (6)Septic equation (7)
+By properties	
+UnivariateBivariateMultivariateMonomialBinomialTrinomialIrreducibleSquare-freeHomogeneousQuasi-homogeneous
+Tools and algorithms	
+FactorizationGreatest common divisorDivisionHorner's method of evaluationPolynomial identity testingResultantDiscriminantGröbner basis

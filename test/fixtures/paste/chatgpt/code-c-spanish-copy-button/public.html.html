@@ -1,0 +1,224 @@
+<meta charset='utf-8'><!--[$:0--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><html><head></head><body><div><!--[--><!--[--><!--[--><!--]--><!--]--><!--[--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><div><!--[--><!--[f1--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><h3><!--[--><!--[f1--><!--[--><!--[-->Writing a Lexer and Parser in C<!--]--><!--]--><!--]--><!--]--></h3><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><p><!--[--><!--[f1--><!--[--><!--[-->Here's a basic lexer and parser in C for a hypothetical programming language that supports integer types constrained to specific integer ranges. I'll provide the relevant code for lexing and parsing integer types with constraints.<!--]--><!--]--><!--]--><!--]--></p><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><h3><!--[--><!--[f1--><!--[--><!--[-->Lexer<!--]--><!--]--><!--]--><!--]--></h3><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><h4><!--[--><!--[f1--><!--[--><!--[-->Header (lexer.h)<!--]--><!--]--><!--]--><!--]--></h4><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><div><!--[--><span><!--[--><!--[--><!--[--><!--]--><!--]--><!--[--><!--]--><!--]--></span><!--]--><!--[--><div><!--[--><span>c</span><!--]--></div><!--[--><pre><code data-code-language="c"><!--[--><!--[$!s0--><!--try-b--><!--if-->#ifndef LEXER_H
+#define LEXER_H
+
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;ctype.h&gt;
+
+typedef enum {
+    TOKEN_INT,
+    TOKEN_RANGE,
+    TOKEN_IDENTIFIER,
+    TOKEN_LPAREN,
+    TOKEN_RPAREN,
+    TOKEN_COLON,
+    TOKEN_COMMA,
+    TOKEN_EOF,
+    TOKEN_UNKNOWN
+} TokenType;
+
+typedef struct {
+    TokenType type;
+    char* value;
+} Token;
+
+typedef struct {
+    const char* source;
+    size_t length;
+    size_t position;
+} Lexer;
+
+Lexer* create_lexer(const char* source);
+void destroy_lexer(Lexer* lexer);
+Token next_token(Lexer* lexer);
+void destroy_token(Token token);
+
+#endif // LEXER_H
+<!--/if--><!--/try-b--><!--]--><!--]--></code></pre><!--]--><!--]--></div><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><h4><!--[--><!--[f1--><!--[--><!--[-->Implementation (lexer.c)<!--]--><!--]--><!--]--><!--]--></h4><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><div><!--[--><span><!--[--><!--[--><!--[--><!--]--><!--]--><!--[--><!--]--><!--]--></span><!--]--><!--[--><div><!--[--><span>c</span><!--]--></div><!--[--><pre><code data-code-language="c"><!--[--><!--[$!s0--><!--try-b--><!--if-->#include "lexer.h"
+
+Lexer* create_lexer(const char* source) {
+    Lexer* lexer = (Lexer*)malloc(sizeof(Lexer));
+    lexer-&gt;source = source;
+    lexer-&gt;length = strlen(source);
+    lexer-&gt;position = 0;
+    return lexer;
+}
+
+void destroy_lexer(Lexer* lexer) {
+    free(lexer);
+}
+
+static char peek_char(Lexer* lexer) {
+    if (lexer-&gt;position &gt;= lexer-&gt;length) {
+        return '\0';
+    }
+    return lexer-&gt;source[lexer-&gt;position];
+}
+
+static char advance_char(Lexer* lexer) {
+    if (lexer-&gt;position &gt;= lexer-&gt;length) {
+        return '\0';
+    }
+    return lexer-&gt;source[lexer-&gt;position++];
+}
+
+static Token make_token(TokenType type, const char* value) {
+    Token token;
+    token.type = type;
+    token.value = strdup(value);
+    return token;
+}
+
+static void skip_whitespace(Lexer* lexer) {
+    while (isspace(peek_char(lexer))) {
+        advance_char(lexer);
+    }
+}
+
+static Token scan_number(Lexer* lexer) {
+    size_t start = lexer-&gt;position - 1;
+    while (isdigit(peek_char(lexer))) {
+        advance_char(lexer);
+    }
+    char* value = strndup(lexer-&gt;source + start, lexer-&gt;position - start);
+    return make_token(TOKEN_INT, value);
+}
+
+static Token scan_identifier(Lexer* lexer) {
+    size_t start = lexer-&gt;position - 1;
+    while (isalnum(peek_char(lexer)) || peek_char(lexer) == '_') {
+        advance_char(lexer);
+    }
+    char* value = strndup(lexer-&gt;source + start, lexer-&gt;position - start);
+    return make_token(TOKEN_IDENTIFIER, value);
+}
+
+Token next_token(Lexer* lexer) {
+    skip_whitespace(lexer);
+    char current = advance_char(lexer);
+
+    if (isdigit(current)) {
+        return scan_number(lexer);
+    }
+
+    if (isalpha(current) || current == '_') {
+        return scan_identifier(lexer);
+    }
+
+    switch (current) {
+        case '\0': return make_token(TOKEN_EOF, "");
+        case '(': return make_token(TOKEN_LPAREN, "(");
+        case ')': return make_token(TOKEN_RPAREN, ")");
+        case ':': return make_token(TOKEN_COLON, ":");
+        case ',': return make_token(TOKEN_COMMA, ",");
+        case '-':
+            if (peek_char(lexer) == '&gt;') {
+                advance_char(lexer);
+                return make_token(TOKEN_RANGE, "-&gt;");
+            }
+            break;
+    }
+
+    char unknown[2] = { current, '\0' };
+    return make_token(TOKEN_UNKNOWN, unknown);
+}
+
+void destroy_token(Token token) {
+    free(token.value);
+}
+<!--/if--><!--/try-b--><!--]--><!--]--></code></pre><!--]--><!--]--></div><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><h3><!--[--><!--[f1--><!--[--><!--[-->Parser<!--]--><!--]--><!--]--><!--]--></h3><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><h4><!--[--><!--[f1--><!--[--><!--[-->Header (parser.h)<!--]--><!--]--><!--]--><!--]--></h4><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><div><!--[--><span><!--[--><!--[--><!--[--><!--]--><!--]--><!--[--><!--]--><!--]--></span><!--]--><!--[--><div><!--[--><span>c</span><!--]--></div><!--[--><pre><code data-code-language="c"><!--[--><!--[$!s0--><!--try-b--><!--if-->#ifndef PARSER_H
+#define PARSER_H
+
+#include "lexer.h"
+
+typedef struct {
+    char* name;
+    int min_value;
+    int max_value;
+} ConstrainedIntType;
+
+typedef struct {
+    Lexer* lexer;
+    Token current_token;
+} Parser;
+
+Parser* create_parser(const char* source);
+void destroy_parser(Parser* parser);
+ConstrainedIntType* parse_constrained_int_type(Parser* parser);
+
+#endif // PARSER_H
+<!--/if--><!--/try-b--><!--]--><!--]--></code></pre><!--]--><!--]--></div><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><h4><!--[--><!--[f1--><!--[--><!--[-->Implementation (parser.c)<!--]--><!--]--><!--]--><!--]--></h4><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><div><!--[--><span><!--[--><!--[--><!--[--><!--]--><!--]--><!--[--><!--]--><!--]--></span><!--]--><!--[--><div><!--[--><span>c</span><!--]--></div><!--[--><pre><code data-code-language="c"><!--[--><!--[$!s0--><!--try-b--><!--if-->#include "parser.h"
+
+Parser* create_parser(const char* source) {
+    Parser* parser = (Parser*)malloc(sizeof(Parser));
+    parser-&gt;lexer = create_lexer(source);
+    parser-&gt;current_token = next_token(parser-&gt;lexer);
+    return parser;
+}
+
+void destroy_parser(Parser* parser) {
+    destroy_token(parser-&gt;current_token);
+    destroy_lexer(parser-&gt;lexer);
+    free(parser);
+}
+
+static void consume_token(Parser* parser, TokenType expected) {
+    if (parser-&gt;current_token.type == expected) {
+        destroy_token(parser-&gt;current_token);
+        parser-&gt;current_token = next_token(parser-&gt;lexer);
+    } else {
+        fprintf(stderr, "Error: Expected token of type %d but got %d\n", expected, parser-&gt;current_token.type);
+        exit(1);
+    }
+}
+
+static int parse_integer(Parser* parser) {
+    int value = atoi(parser-&gt;current_token.value);
+    consume_token(parser, TOKEN_INT);
+    return value;
+}
+
+ConstrainedIntType* parse_constrained_int_type(Parser* parser) {
+    ConstrainedIntType* result = (ConstrainedIntType*)malloc(sizeof(ConstrainedIntType));
+
+    if (parser-&gt;current_token.type != TOKEN_IDENTIFIER) {
+        fprintf(stderr, "Error: Expected identifier for type name\n");
+        exit(1);
+    }
+
+    result-&gt;name = strdup(parser-&gt;current_token.value);
+    consume_token(parser, TOKEN_IDENTIFIER);
+
+    consume_token(parser, TOKEN_LPAREN);
+    result-&gt;min_value = parse_integer(parser);
+    consume_token(parser, TOKEN_RANGE);
+    result-&gt;max_value = parse_integer(parser);
+    consume_token(parser, TOKEN_RPAREN);
+
+    return result;
+}
+<!--/if--><!--/try-b--><!--]--><!--]--></code></pre><!--]--><!--]--></div><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><h3><!--[--><!--[f1--><!--[--><!--[-->Main Program<!--]--><!--]--><!--]--><!--]--></h3><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><p><!--[--><!--[f1--><!--[--><!--[-->To demonstrate the lexer and parser:<!--]--><!--]--><!--]--><!--]--></p><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><div><!--[--><span><!--[--><!--[--><!--[--><!--]--><!--]--><!--[--><!--]--><!--]--></span><!--]--><!--[--><div><!--[--><span>c</span><!--]--></div><!--[--><pre><code data-code-language="c"><!--[--><!--[$!s0--><!--try-b--><!--if-->#include &lt;stdio.h&gt;
+#include "parser.h"
+
+int main() {
+    const char* source_code = "ConstrainedInt(0-&gt;100)";
+    Parser* parser = create_parser(source_code);
+
+    ConstrainedIntType* int_type = parse_constrained_int_type(parser);
+    printf("Parsed constrained int type:\n");
+    printf("Name: %s\n", int_type-&gt;name);
+    printf("Range: %d -&gt; %d\n", int_type-&gt;min_value, int_type-&gt;max_value);
+
+    destroy_parser(parser);
+    free(int_type-&gt;name);
+    free(int_type);
+
+    return 0;
+}
+<!--/if--><!--/try-b--><!--]--><!--]--></code></pre><!--]--><!--]--></div><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><h3><!--[--><!--[f1--><!--[--><!--[-->Compilation and Execution<!--]--><!--]--><!--]--><!--]--></h3><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><ol start="1"><!--[--><!--[f1--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><li><!--[--><!--[f1--><!--[--><!--[-->Create files for the above code:<!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><ul><!--[--><!--[f1--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><li><!--[--><!--[f1--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><code><!--[--><!--[f1--><!--[--><!--[-->lexer.h<!--]--><!--]--><!--]--><!--]--></code><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--></li><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><li><!--[--><!--[f1--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><code><!--[--><!--[f1--><!--[--><!--[-->lexer.c<!--]--><!--]--><!--]--><!--]--></code><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--></li><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><li><!--[--><!--[f1--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><code><!--[--><!--[f1--><!--[--><!--[-->parser.h<!--]--><!--]--><!--]--><!--]--></code><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--></li><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><li><!--[--><!--[f1--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><code><!--[--><!--[f1--><!--[--><!--[-->parser.c<!--]--><!--]--><!--]--><!--]--></code><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--></li><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><li><!--[--><!--[f1--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><code><!--[--><!--[f1--><!--[--><!--[-->main.c<!--]--><!--]--><!--]--><!--]--></code><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--></li><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--></ul><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--></li><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><li><!--[--><!--[f1--><!--[--><!--[-->Compile using:<!--]--><!--]--><!--]--><!--]--></li><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--></ol><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><div><!--[--><span><!--[--><!--[--><!--[--><!--]--><!--]--><!--[--><!--]--><!--]--></span><!--]--><!--[--><div><!--[--><span>bash</span><!--]--></div><!--[--><pre><code data-code-language="bash"><!--[--><!--[$!s0--><!--try-b--><!--if-->gcc -o parser lexer.c parser.c main.c
+<!--/if--><!--/try-b--><!--]--><!--]--></code></pre><!--]--><!--]--></div><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><ol start="3"><!--[--><!--[f1--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><li><!--[--><!--[f1--><!--[--><!--[-->Run:<!--]--><!--]--><!--]--><!--]--></li><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--></ol><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><div><!--[--><span><!--[--><!--[--><!--[--><!--]--><!--]--><!--[--><!--]--><!--]--></span><!--]--><!--[--><div><!--[--><span>bash</span><!--]--></div><!--[--><pre><code data-code-language="bash"><!--[--><!--[$!s0--><!--try-b--><!--if-->./parser
+<!--/if--><!--/try-b--><!--]--><!--]--></code></pre><!--]--><!--]--></div><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><h3><!--[--><!--[f1--><!--[--><!--[-->Output<!--]--><!--]--><!--]--><!--]--></h3><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><div><!--[--><span><!--[--><!--[--><!--[--><!--]--><!--]--><!--[--><!--]--><!--]--></span><!--]--><!--[--><div><!--[--><!--]--></div><!--[--><pre><code><!--[--><!--[$!s0--><!--try-b--><!--if-->Parsed constrained int type:
+Name: ConstrainedInt
+Range: 0 -&gt; 100
+<!--/if--><!--/try-b--><!--]--><!--]--></code></pre><!--]--><!--]--></div><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><!--[--><p><!--[--><!--[f1--><!--[--><!--[-->This provides a basic foundation for a lexer and parser in C that can recognize integer types with specific ranges. You can extend this further by adding more language features.<!--]--><!--]--><!--]--><!--]--></p><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--></div><!--[--><!--[--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--[--><!--[--><!--]--><!--]--><!--[--><!--]--><!--]--></div><!--[--><!--]--><!--[--><!--]--><!--[--><!--]--><!--[--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--><!--]--></body></html>

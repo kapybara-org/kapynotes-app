@@ -1,0 +1,23 @@
+{
+  "source": "outlook",
+  "case": "email-body-mac",
+  "app": "Microsoft Outlook for Mac 16.x (synthesized, guess)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized, GUESS: selecting part of an email body in Outlook for Mac and copying.",
+  "notes": "SYNTHESIZED and a GUESS: I believe Outlook for Mac (classic) writes Word-flavoured HTML like Word for Mac, and new Outlook writes plain browser-style HTML. This reuses the Word-flavoured form. Recapture with capture_macos.swift to settle it.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        }
+      ]
+    }
+  ]
+}

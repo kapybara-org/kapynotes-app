@@ -1,0 +1,19 @@
+{
+  "source": "chatgpt",
+  "case": "mac-app-copy-button-guess",
+  "app": "ChatGPT for macOS (synthesized, GUESS)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized GUESS: the copy button under an answer in the ChatGPT Mac app.",
+  "notes": "GUESS, not captured. As far as I know the ChatGPT desktop app's copy button writes only the markdown source as plain text (math as $$...$$ or \\[ \\] depending on the answer; this uses $$). Contrast with the web copy button captured under chatgpt/*-copy-button, which also writes text/html. Replace with a real capture via capture_macos.swift.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        }
+      ]
+    }
+  ]
+}

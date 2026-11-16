@@ -1,0 +1,28 @@
+{
+  "source": "wikipedia",
+  "case": "einstein-section-with-edit-links",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Selected the \"Childhood, youth and education\" heading plus its first six paragraphs in \"Albert Einstein\" and ran document.execCommand(\"copy\").",
+  "url": "https://en.wikipedia.org/wiki/Albert_Einstein",
+  "notes": "'Childhood, youth and education' heading plus six paragraphs: 18 citation markers (<sup class=\"mw-ref reference\"> with [n] and [note n]), 5 images. NOTE: the '[edit]' spans did not make it into this selection (the heading's mw-editsection is outside the range); the larger Quadratic-formula capture contains 15 mw-editsection spans.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

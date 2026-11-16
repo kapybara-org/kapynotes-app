@@ -1,0 +1,28 @@
+{
+  "source": "google-sheets",
+  "case": "styled-list-view-only",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened a public view-only Google Sheet (SFF PC Master List) in the Sheets editor in headless Chrome, selected the top-left 10 rows x 6 columns, Cmd+C.",
+  "url": "https://docs.google.com/spreadsheets/d/1AddRvGWJ_f4B6UC7_IftDiVudVc8CJ8sxLUqlxVsCz4/edit",
+  "notes": "Real Sheets copy (view-only): backgrounds, borders per cell edge, fonts and font sizes as inline td styles, empty styled cells.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+
+
+Got
+
+
+
+
+Sindre's open source work is supported by the community.
+Special thanks to:
+
+
+
+Fame Helsinki
+
+
+
+Depot logo
+Fast remote container builds and GitHub Actions runners.
+
+
+
+
+
+
+
+
+
+
+Human-friendly and powerful HTTP request library for Node.js
+
+Downloads Install size
+
+See how Got compares to other HTTP libraries
+
+You probably want Ky instead, by the same people. It's smaller, works in the browser too, and is more stable since it's built on Fetch. Or fetch-extras for simple needs.
+
+Support questions should be asked here.
+
+Install
+npm install got
+Warning: This package is native ESM and no longer provides a CommonJS export. If your project uses CommonJS, you will have to convert to ESM. Please don't open issues for questions regarding CommonJS / ESM.
+
+Got v11 is no longer maintained and we will not accept any backport requests.
+
+Take a peek
+A quick start guide is available.
+
+JSON mode
+Got has a dedicated option for handling JSON payload.
+Furthermore, the promise exposes a .json<T>() function that returns Promise<T>. It also exposes a .json(schema) function that validates the payload with a Standard Schema and infers the type from the schema.
+
+import got from 'got';
+
+const {data} = await got.post('https://httpbin.org/anything', {
+	json: {
+		hello: 'world'
+	}
+}).json();
+
+console.log(data);
+//=> {"hello": "world"}
+For advanced JSON usage, check out the parseJson and stringifyJson options.
+
+For more useful tips like this, visit the Tips page.
+
+Highlights
+Used by 10K+ packages and 5M+ repos
+Actively maintained
+Documentation
+By default, Got will retry on failure. To disable this option, set options.retry.limit to 0.
+
+Main API
+ Promise API
+ Options
+ Stream API
+ Pagination API
+ Advanced HTTPS API
+ HTTP/2 support
+ Response class
+ Response validation with Standard Schema
+Timeouts and retries
+ Advanced timeout handling
+ Retries on failure
+ Errors with metadata
+Advanced creation
+ Hooks
+ Instances
+ Progress events & other events
+ Plugins
+ Compose
+Cache, Proxy and UNIX sockets
+ RFC 7234 compliant caching
+ Proxy support
+ Unix Domain Sockets
+Integration
+ Diagnostics Channel
+ TypeScript support
+ AWS
+ Testing
+Migration guides
+Request migration guide
+(Note that Request is unmaintained)
+Axios
+Node.js
+Got plugins
+got4aws - Got convenience wrapper to interact with AWS v4 signed APIs
+gh-got - Got convenience wrapper to interact with the GitHub API
+gl-got - Got convenience wrapper to interact with the GitLab API
+gotql - Got convenience wrapper to interact with GraphQL using JSON-parsed queries instead of strings
+got-fetch - Got with a fetch interface
+got-scraping - Got wrapper specifically designed for web scraping purposes
+got-ssrf - Got wrapper to protect server-side requests against SSRF attacks
+Comparison
+got	node-fetch	ky	axios	superagent
+HTTP/2 support	✔️	❌	✔️	❌	✔️**
+Browser support	❌	✔️*	✔️	✔️	✔️
+Promise API	✔️	✔️	✔️	✔️	✔️
+Stream API	✔️	Node.js only	❌	❌	✔️
+Pagination API	✔️	❌	❌	❌	❌
+Request aborting	✔️	✔️	✔️	✔️	✔️
+RFC 7234 caching	✔️	❌	❌	❌	❌
+Cookies (out-of-the-box)	✔️	❌	❌	❌	❌
+Follows redirects	✔️	✔️	✔️	✔️	✔️
+Retries on failure	✔️	❌	✔️	❌	✔️
+Progress events	✔️	❌	✔️	Browser only	✔️
+Handles gzip/deflate	✔️	✔️	✔️	✔️	✔️
+Advanced timeouts	✔️	❌	❌	❌	❌
+Timings	✔️	❌	❌	❌	❌
+Errors with metadata	✔️	❌	✔️	✔️	❌
+JSON mode	✔️	✔️	✔️	✔️	✔️
+Custom defaults	✔️	❌	✔️	✔️	❌
+Composable	✔️	❌	❌	❌	✔️
+Hooks	✔️	❌	✔️	✔️	❌
+Issues open					
+Issues closed					
+Downloads					
+Coverage	TBD				
+Build					
+Bugs					
+Dependents					
+Install size					
+GitHub stars					
+TypeScript support					
+Last commit					
+* It's almost API compatible with the browser fetch API.
+** Need to switch the protocol manually. Doesn't accept PUSH streams and doesn't reuse HTTP/2 sessions.
+❇️ Almost-stable feature, but the API may change. Don't hesitate to try it out!
+❔ Feature in early stage of development. Very experimental.
+
+Click here to see the install size of the Got dependencies.
+
+Maintainers
+Sindre Sorhus	Szymon Marczak
+Sindre Sorhus	Szymon Marczak

@@ -1,0 +1,12 @@
+Project brief
+Plain text, then bold, italic, underlined, struck through and a link.
+	•	Ship the importer
+	◦	Word and Excel
+	◦	Apple Notes
+	•	Write the release notes
+	1	Collect fixtures
+	2	Write the parser
+	3	Review with design
+☐ Buy milk
+☑ Send the invoice
+￼

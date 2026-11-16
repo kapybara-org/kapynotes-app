@@ -1,0 +1,28 @@
+{
+  "source": "chatgpt",
+  "case": "nested-lists-emoji-2-selection",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the public ChatGPT share page and selected the longest assistant answer (nested lists, headings and emoji) from its first block to its last with a DOM range (what a mouse drag over the answer yields), then ran document.execCommand(\"copy\").",
+  "url": "https://chatgpt.com/share/67bde29f-a56c-800a-8e26-44a5a3ad2326",
+  "notes": "Selection capture (DOM range + execCommand('copy')), so it is Chrome's serialization: org.chromium.source-url is the page URL, every element carries a computed inline style=, the first block starts with <br class=\"Apple-interchange-newline\">, and plain text is the rendered text (UI labels such as 'Thought for ...' / 'Worked for ...' can lead it; tokens of rendered math sit on separate lines). Code blocks lose their language-* classes in this path. Nested bullet lists under emoji headings.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

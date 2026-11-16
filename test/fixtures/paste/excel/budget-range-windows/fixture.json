@@ -1,0 +1,31 @@
+{
+  "source": "excel",
+  "case": "budget-range-windows",
+  "app": "Microsoft Excel for Windows 16.0 (Microsoft 365) (synthesized)",
+  "platform": "windows",
+  "capture": "synthesized",
+  "how": "Synthesized: the same A1:D6 range copied in Excel for Windows.",
+  "notes": "SYNTHESIZED. Same table as the Mac fixture, with the Windows formats: \"HTML Format\" (CF_HTML, CRLF, 10-digit offsets), \"Csv\" (Excel registers a CSV format with display text; CRLF rows), CF_UNICODETEXT as TSV with CRLF, and PNG for the picture of the range. Excel for Windows also registers Biff12/Biff8/Biff5, \"Link\", \"Sylk\", \"DIF\", \"Rich Text Format\" and many more, which are not reproduced.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "HTML Format",
+          "file": "HTML_Format.html"
+        },
+        {
+          "type": "CF_UNICODETEXT",
+          "file": "CF_UNICODETEXT.txt"
+        },
+        {
+          "type": "Csv",
+          "file": "Csv.csv"
+        },
+        {
+          "type": "PNG",
+          "file": "PNG.png"
+        }
+      ]
+    }
+  ]
+}

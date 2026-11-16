@@ -1,0 +1,27 @@
+{
+  "source": "excel",
+  "case": "budget-range-mac",
+  "app": "Microsoft Excel for Mac 16.x (synthesized)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized: A1:D6 of a small budget sheet (merged title across A1:D1, header row with fill, currency-formatted numbers, formulas =B3*C3 and =SUM(D3:D5), a merged Total label) selected and copied in Excel for Mac.",
+  "notes": "SYNTHESIZED from the structure Excel writes. HTML: xmlns:x=\"urn:schemas-microsoft-com:office:excel\", a <style> block with .xlNN classes plus mso-number-format, cells carry x:num (raw number) and x:fmla (formula) attributes, merged cells are colspan, the trailing <![if supportMisalignedColumns]> hidden spacer row, <!--StartFragment--> directly after <body>. The cell text is the formatted display value ($42.00), x:num holds the unformatted value. plain text is TSV of display values (Excel writes displayed text: \"$3.50\"). Excel also writes an image of the range (public.png here, drawn as a stand-in chart; real Excel renders the cells) and private BIFF/OOXML types (not reproduced; unsure which exact names Excel for Mac registers). Unsure: Mac Excel quotes TSV cells only when they contain tabs/newlines/quotes.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.png",
+          "file": "public.png.png"
+        }
+      ]
+    }
+  ]
+}

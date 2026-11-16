@@ -1,0 +1,9 @@
+{
+  "name": "paste-fixtures-headless-capture",
+  "private": true,
+  "type": "module",
+  "description": "Headless Chrome capture of web clipboard fixtures; not part of the app",
+  "dependencies": {
+    "puppeteer-core": "25.17.0"
+  }
+}

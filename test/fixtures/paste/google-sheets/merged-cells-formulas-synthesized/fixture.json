@@ -1,0 +1,27 @@
+{
+  "source": "google-sheets",
+  "case": "merged-cells-formulas-synthesized",
+  "app": "Chrome (Google Sheets editor) (synthesized)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized: A1:D5 of a small Google Sheet (merged title and merged Total label, header fill, currency format, formulas) selected in the Sheets grid and copied with Cmd+C in Chrome on macOS.",
+  "notes": "SYNTHESIZED. REAL view-only Sheets copies were captured headless (see google-sheets/*-view-only) and this mirrors their structure: <meta charset=utf-8> (Chrome) + <google-sheets-html-origin> custom element, a <style> with td rules, <table xmlns=... data-sheets-root=\"1\" data-sheets-baot=\"1\">, <colgroup>, merged cells as rowspan=\"1\" colspan=\"N\" on the first cell with the covered cells OMITTED (not empty), per-cell inline styles. What is NOT verified: this is a copy from a sheet with edit rights, where I believe cells additionally carry data-sheets-value (JSON {\"1\":type,\"2\":string|\"3\":number}), data-sheets-numberformat and data-sheets-formula (R1C1) — the real view-only captures carry none of those. Plain text is TSV; org.chromium.source-url is the sheet URL.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+In elementary algebra, the quadratic formula is a closed-form expression describing the solutions of a quadratic equation. Other ways of solving quadratic equations, such as completing the square, yield the same solutions.
+
+Given a general quadratic equation of the form ⁠
+a
+x
+2
++
+b
+x
++
+c
+=
+0
+⁠, with ⁠
+x
+⁠ representing an unknown, and coefficients ⁠
+a
+⁠, ⁠
+b
+⁠, and ⁠
+c
+⁠ representing known real or complex numbers with ⁠
+a
+≠
+0
+⁠, the values of ⁠
+x
+⁠ satisfying the equation, called the roots or zeros, can be found using the quadratic formula,
+
+x
+=
+−
+b
+±
+b
+2
+−
+4
+a
+c
+2
+a
+,
+
+where the plus–minus symbol "⁠
+±
+⁠" indicates that the equation has two roots.[1] Written separately, these are:
+

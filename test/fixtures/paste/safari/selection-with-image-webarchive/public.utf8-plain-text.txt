@@ -1,0 +1,4 @@
+Why fixtures matter
+A paste pipeline is only as good as the payloads you test it against. See also.
+￼
+Coverage by source app.

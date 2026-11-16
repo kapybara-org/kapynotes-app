@@ -1,0 +1,28 @@
+{
+  "source": "perplexity",
+  "case": "table-math-selection",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the public Perplexity session page and selected the answer body (tables and some math) with a DOM range, then ran document.execCommand(\"copy\").",
+  "url": "https://www.perplexity.ai/session/08b4e2d1-f249-4827-8b69-2f3d7207a753",
+  "notes": "Perplexity session page selection: 4 tables, block math as <span class=\"katex-display\"> with <annotation encoding=\"application/x-tex\"> present, utility-class (Tailwind) markup with escaped brackets in class names. No copy-button capture (button writes nothing headless).",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

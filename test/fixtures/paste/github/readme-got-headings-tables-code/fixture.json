@@ -1,0 +1,28 @@
+{
+  "source": "github",
+  "case": "readme-got-headings-tables-code",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the rendered README of github.com/sindresorhus/got and selected the entire README body (article.markdown-body) with a DOM range, then ran document.execCommand(\"copy\").",
+  "url": "https://github.com/sindresorhus/got",
+  "notes": "Selection of article.markdown-body of a GitHub README. Each heading is <h2 class=\"heading-element\"> followed by <a id=\"user-content-install\" class=\"anchor\" aria-label=\"Permalink: Install\" href=\"...#install\"> (an invisible permalink anchor with an octicon SVG, opacity 0) inside div.markdown-heading; 2 tables, 2 <pre> blocks, 61 <img> (badges and images), 23 checkbox inputs (task list items), 95 emoji. Image/link URLs are absolute.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}
