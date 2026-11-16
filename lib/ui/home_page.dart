@@ -10,7 +10,6 @@ import 'package:flutter/services.dart'
         SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
-import '../audio/voice_availability.dart';
 import '../audio/voice_player.dart';
 import '../audio/voice_recording_controller.dart';
 import '../billing/note_limit.dart';
@@ -616,12 +615,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Starts recording into the selected note, or stops one already running.
   ///
   /// The single place every entry point lands: the widget's Dictate tap, the
-  /// toolbar mic, the footer button, the shortcut and the context menu. While
-  /// [voiceNotesEnabled] is off a Dictate tap is a Write tap — the note is
-  /// open, at the end, with the keyboard up, which is the part of dictating
-  /// the phone's own keyboard can already finish.
+  /// toolbar mic, the footer button, the shortcut and the context menu.
   Future<void> _startVoiceRecording({String? noteId}) async {
-    if (!voiceNotesEnabled || _voiceActionBusy) return;
+    if (_voiceActionBusy) return;
     final recording = widget.recording;
     final id = noteId ?? _selectedId;
     if (recording == null || id == null) return;
@@ -2814,7 +2810,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceStateFor: _voiceStateFor,
           onOpenVoiceNote: _openVoiceNote,
           recording: widget.recording,
-          onRecordVoice: voiceNotesEnabled && _canWriteNote(note)
+          onRecordVoice: _canWriteNote(note)
               ? () => unawaited(_startVoiceRecording())
               : null,
           voiceActionBusy: _voiceActionBusy,
@@ -2913,7 +2909,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceStateFor: _voiceStateFor,
           onOpenVoiceNote: _openVoiceNote,
           recording: widget.recording,
-          onRecordVoice: voiceNotesEnabled && _canWriteNote(note)
+          onRecordVoice: _canWriteNote(note)
               ? () {
                   onFocus?.call();
                   unawaited(_startVoiceRecording(noteId: note.id));

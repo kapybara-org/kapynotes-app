@@ -53,10 +53,14 @@ git tag v1.0.1 && git push origin v1.0.1
 
 `.github/workflows/desktop-release.yml` then builds a notarised DMG on a macOS
 runner and the Inno Setup installer on a Windows one, uploads both to the
-`kapynotes` R2 bucket under `downloads/`, and cuts a GitHub Release. The
-landing page pins both filenames, so bump them in
-`website/src/pages/index.astro` and redeploy — the release job prints this
-reminder in its summary.
+`kapynotes` R2 bucket under `downloads/`, and cuts a GitHub Release. Before
+tagging, add the version to `website/src/data/releases.ts` in the
+`kapybara-org/kapynotes` repository and deploy the site: the download links,
+the changelog and the page the updater shows all come from that one entry, and
+the job will not publish the update feeds until the version's changelog page is
+live. Deploy it just before the tag rather than well ahead of it — the download
+links point at the new files the moment the site deploys, and those only exist
+once this job uploads them.
 
 Tags rather than pushes because the artifacts are named after the version and
 served `immutable` for a year: republishing one filename would leave Cloudflare
@@ -559,10 +563,9 @@ The spec described an Electron build. These changed for Flutter:
   making a new one — a way back into the notebook, not a way to fill it with
   one-line fragments, and not something that spends a plan's note allowance on
   a mis-tap. What each adds on arrival is the rest of it: Capture opens the
-  image picker over that note, and Dictate will start a recording in it once
-  there is a recorder to start (see `docs/voice-notes.md` in the monorepo —
-  until then a Dictate tap is a Write tap, and `HomePage._startVoiceRecording`
-  is the one place it will be filled in).
+  image picker over that note, and Dictate starts a voice recording in it
+  through `HomePage._startVoiceRecording`, where the toolbar mic and the footer
+  button land too.
 
   The platform reports which action a launch came through over a single method
   channel, `kapynotes/quick_capture`, and answers once: whoever asks first gets
