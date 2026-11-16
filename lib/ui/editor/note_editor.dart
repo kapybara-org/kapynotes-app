@@ -5584,19 +5584,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     style: textStyle,
                     withComposing: false,
                   ),
-                  text: _controller.text,
                   maxWidth: contentWidth,
                   strut: strut,
                   textScaler: textScaler,
-                  // What is hidden changes where lines wrap, so it is part of
-                  // what the measurement depends on.
-                  layoutKey: (
-                    widget.writingFont,
-                    widget.editorTextScale,
-                    _formats,
-                    widget.markdownEnabled,
-                    concealment.key,
-                  ),
                   placeholders: _controller.placeholderDimensions(),
                 );
                 _lineOffsets = offsets;
