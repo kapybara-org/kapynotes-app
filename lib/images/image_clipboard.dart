@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:pasteboard/pasteboard.dart';
 
+import '../paste/clipboard_snapshot.dart';
 import 'image_codec.dart';
 
 /// Keeps base64 expansion from turning a broad selection into a memory spike.
@@ -248,6 +249,9 @@ class ImageClipboard {
   const ImageClipboard();
 
   static const _richChannel = MethodChannel('kapynotes/rich_clipboard');
+
+  /// Everything the clipboard holds, read at once.
+  Future<ClipboardSnapshot> readSnapshot() => ClipboardSnapshot.read();
 
   /// A Kapy Notes rich fragment, when the clipboard carries one.
   Future<NoteClipboardFragment?> readFragment() async {

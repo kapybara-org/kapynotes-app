@@ -22,6 +22,7 @@ import 'package:kapy_notes/images/image_clipboard.dart';
 import 'package:kapy_notes/images/image_codec.dart';
 import 'package:kapy_notes/images/image_ingest.dart';
 import 'package:kapy_notes/images/image_picker.dart';
+import 'package:kapy_notes/paste/clipboard_snapshot.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_image_view.dart';
@@ -192,6 +193,12 @@ class FakeClipboard implements ImageClipboard {
 
   @override
   Future<List<String>> readImageFiles() async => files;
+
+  @override
+  Future<ClipboardSnapshot> readSnapshot() async => ClipboardSnapshot(
+    text: (await Clipboard.getData(Clipboard.kTextPlain))?.text,
+    html: fragment?.html,
+  );
 }
 
 Widget harness(

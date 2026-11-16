@@ -32,6 +32,7 @@ enum ShortcutAction {
   formatBullets,
   formatChecklist,
   recordVoiceNote,
+  pasteAsPlainText,
 }
 
 extension ShortcutActionCopy on ShortcutAction {
@@ -63,6 +64,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.formatBullets => 'Bulleted list',
     ShortcutAction.formatChecklist => 'Checklist',
     ShortcutAction.recordVoiceNote => 'Record a voice note',
+    ShortcutAction.pasteAsPlainText => 'Paste as plain text',
   };
 
   String get description => switch (this) {
@@ -108,6 +110,8 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.formatChecklist => 'Toggle a checklist on the current lines',
     ShortcutAction.recordVoiceNote =>
       'Start recording into this note, or stop the one running',
+    ShortcutAction.pasteAsPlainText =>
+      'Paste only the words, without the formatting they came with',
   };
 
   /// Registered with the operating system rather than the widget tree, so it
@@ -661,6 +665,14 @@ class ShortcutPrefs extends ChangeNotifier {
       ShortcutAction.recordVoiceNote => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyR,
         physicalKey: PhysicalKeyboardKey.keyR,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      // The chord browsers, Google Docs and Slack all use for it.
+      ShortcutAction.pasteAsPlainText => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyV,
+        physicalKey: PhysicalKeyboardKey.keyV,
         meta: useMeta,
         control: !useMeta,
         shift: true,
