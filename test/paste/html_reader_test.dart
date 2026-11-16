@@ -328,6 +328,18 @@ void main() {
       expect(picture.src, 'https://example.com/real.jpg');
     });
 
+    test("an answer's avatar is not a picture, a large photo is", () {
+      expect(
+        pictures(
+          '<p>Answered by <img src="https://www.gravatar.com/avatar/f7b0?s=64" '
+          'alt="Sam\'s user avatar" width="32" height="32"> Sam</p>'
+          '<p><img src="https://example.com/avatar-party.jpg" '
+          'alt="The avatar party" width="480" height="320"></p>',
+        ).map((picture) => picture.src),
+        ['https://example.com/avatar-party.jpg'],
+      );
+    });
+
     test('spacers and tracking pixels are not pictures', () {
       expect(
         read(

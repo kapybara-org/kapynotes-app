@@ -1060,6 +1060,11 @@ class HtmlPasteReader {
       return;
     }
     if (source.contains('favicon')) return;
+    if (_isAvatar(image, alt, source) &&
+        (width ?? 0) <= 64 &&
+        (height ?? 0) <= 64) {
+      return;
+    }
     if (_isVector(source)) {
       if (alt.isNotEmpty) out.line.addText(alt, context);
       return;
@@ -1129,6 +1134,16 @@ class HtmlPasteReader {
         address.host == 'img.shields.io' ||
         address.host == 'badgen.net' ||
         address.pathSegments.contains('badge');
+  }
+
+  /// A person's face beside their name on a comment or an answer: who said
+  /// it rather than what they said.
+  static bool _isAvatar(dom.Element image, String alt, String source) {
+    final host = Uri.tryParse(source)?.host ?? '';
+    return alt.toLowerCase().contains('avatar') ||
+        image.className.toLowerCase().contains('avatar') ||
+        host == 'gravatar.com' ||
+        host.endsWith('.gravatar.com');
   }
 
   String? _imageSource(dom.Element image) {

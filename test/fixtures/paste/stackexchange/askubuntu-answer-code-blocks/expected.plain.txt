@@ -31,15 +31,11 @@ Improve this answer (https://askubuntu.com/posts/46630/edit)
 
 edited Feb 11 at 14:44 (https://askubuntu.com/posts/46630/revisions)
 
-⟦picture 1⟧
-
 Thibaut Giroud (https://askubuntu.com/users/1668156/thibaut-giroud)
 
 32 bronze badges
 
 answered Jun 2, 2011 at 20:03
-
-⟦picture 2⟧
 
 nickguletskii (https://askubuntu.com/users/nickguletskii)
 
@@ -59,8 +55,6 @@ nickguletskii (https://askubuntu.com/users/nickguletskii)
 
 Show 6 more comments (https://askubuntu.com/questions/46627/how-can-i-make-a-script-that-opens-terminal-windows-and-executes-commands-in-the#)
 <!--
-picture 1 at 684: https://www.gravatar.com/avatar/f7b0c9b9d1942ffd9b20177c26567bb1?s=64&d=identicon&r=PG&f=y&so-version=2, alt "Thibaut Giroud's user avatar", 32x32, width 0.25
-picture 2 at 805: https://www.gravatar.com/avatar/dcaf917b9d8ebe5f3aaab831c0a8bec6?s=64&d=identicon&r=PG, alt "nickguletskii's user avatar", 32x32, width 0.25
 bold 0..3: "230"
 subtitle 112..161: "To make the terminal stay when the command exits:"
 italic 261..265: "Edit"
@@ -69,7 +63,7 @@ italic 292..297: "Title"
 italic 309..316: "Command"
 italic 329..346: "Hold the terminal"
 italic 380..398: "When command exits"
-bold 756..757: "3"
-bold 867..872: "4,970"
-bold 2652..2653: "6"
+bold 753..754: "3"
+bold 861..866: "4,970"
+bold 2646..2647: "6"
 -->
