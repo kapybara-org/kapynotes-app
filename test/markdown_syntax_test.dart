@@ -588,6 +588,26 @@ void main() {
     });
   });
 
+  group('fenced code', () {
+    test('that names a language is kept, with where its code is', () {
+      const note =
+          '```python\nprint(1)\n```\n\n'
+          '- ```ts\n  let x = 1;\n  ```\n\n'
+          '```\nplain\n```';
+      final blocks = read(note).fencedCode;
+      expect([for (final block in blocks) block.language], ['python', 'ts']);
+      String code(MarkdownCodeBlock block) => [
+        for (final range in block.code) note.substring(range.start, range.end),
+      ].join();
+      expect(code(blocks.first), 'print(1)\n');
+      expect(
+        code(blocks.last),
+        'let x = 1;\n',
+        reason: 'the item\'s indentation is not code',
+      );
+    });
+  });
+
   group('reading in pieces', () {
     const vocabulary = [
       '', '', '', '   ', '\t', //
@@ -647,6 +667,10 @@ void main() {
         ],
         ranges(analysis.atomicPrefixes),
         [for (final math in analysis.maths) math.toString()],
+        [
+          for (final block in analysis.fencedCode)
+            '${block.language}-${ranges(block.code)}',
+        ],
         analysis.calculatorText,
       ];
     }

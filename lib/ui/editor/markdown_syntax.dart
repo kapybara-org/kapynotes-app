@@ -199,6 +199,34 @@ class MarkdownMath {
       'MarkdownMath($start, $end, ${display ? 'display' : 'inline'}: $tex)';
 }
 
+/// A fenced code block whose info string names a language, for colouring the
+/// code the way that language reads.
+@immutable
+class MarkdownCodeBlock {
+  const MarkdownCodeBlock(this.language, this.code);
+
+  /// The info string's first word, as written: `python`, `ts`, `C++`.
+  final String language;
+
+  /// Where the code sits, fences left out. In more than one piece when the
+  /// block is indented or quoted, since a line's indentation or `>` is not
+  /// code.
+  final List<TextRange> code;
+
+  MarkdownCodeBlock _shifted(int by) => MarkdownCodeBlock(language, [
+    for (final range in code) _shift(range, by),
+  ]);
+
+  @override
+  bool operator ==(Object other) =>
+      other is MarkdownCodeBlock &&
+      other.language == language &&
+      listEquals(other.code, code);
+
+  @override
+  int get hashCode => Object.hash(language, Object.hashAll(code));
+}
+
 enum MarkdownBlockKind { code, quote, rule }
 
 /// A block that is drawn behind the text as well as in it: the panel under a
@@ -636,6 +664,9 @@ class MarkdownAnalysis {
 
   /// Fenced and indented code blocks, which the calculator does not read.
   List<TextRange> get codeBlocks => _parts.codeBlocks;
+
+  /// The fenced code blocks that name a language, for colouring their code.
+  List<MarkdownCodeBlock> get fencedCode => _parts.fencedCode;
 
   /// Every formula outside a table, in order. One in a table's cell is drawn
   /// as its TeX, in the grid.
@@ -1154,6 +1185,7 @@ class _Parts {
     required this.listItems,
     required this.atomicPrefixes,
     required this.codeBlocks,
+    required this.fencedCode,
     required this.maths,
     required this.unread,
     required this.literals,
@@ -1175,6 +1207,7 @@ class _Parts {
     listItems: [],
     atomicPrefixes: [],
     codeBlocks: [],
+    fencedCode: [],
     maths: [],
     unread: [],
     literals: [],
@@ -1193,6 +1226,7 @@ class _Parts {
   final List<MarkdownListItem> listItems;
   final List<TextRange> atomicPrefixes;
   final List<TextRange> codeBlocks;
+  final List<MarkdownCodeBlock> fencedCode;
   final List<MarkdownMath> maths;
   final List<TextRange> unread;
   final List<TextRange> literals;
@@ -1220,6 +1254,7 @@ class _Parts {
       listItems: all((p) => p.listItems, (i, by) => i._shifted(by)),
       atomicPrefixes: all((p) => p.atomicPrefixes, _shift),
       codeBlocks: all((p) => p.codeBlocks, _shift),
+      fencedCode: all((p) => p.fencedCode, (c, by) => c._shifted(by)),
       maths: all((p) => p.maths, (m, by) => m._shifted(by)),
       unread: all((p) => p.unread, _shift),
       literals: all((p) => p.literals, _shift),
@@ -1260,6 +1295,7 @@ class _Parts {
       listItems: const [],
       atomicPrefixes: const [],
       codeBlocks: const [],
+      fencedCode: const [],
       maths: const [],
       unread: const [],
       literals: const [],
@@ -1695,6 +1731,7 @@ class _Collector {
   final _tables = <MarkdownTable>[];
   final _listItems = <MarkdownListItem>[];
   final _codeBlocks = <TextRange>[];
+  final _fencedCode = <MarkdownCodeBlock>[];
   final _maths = <MarkdownMath>[];
   final _unread = <TextRange>[];
   final _literals = <TextRange>[];
@@ -1737,6 +1774,7 @@ class _Collector {
       listItems: List.unmodifiable(_listItems),
       atomicPrefixes: List.unmodifiable(_atomicPrefixes()),
       codeBlocks: List.unmodifiable(_codeBlocks),
+      fencedCode: List.unmodifiable(_fencedCode),
       maths: List.unmodifiable(_maths),
       unread: List.unmodifiable(_unread),
       literals: List.unmodifiable(_literals),
@@ -1989,6 +2027,18 @@ class _Collector {
         _style(start, end, MarkdownStyle.codeBlock);
         _record(_codeBlocks, start, end);
         _record(_literals, start, end);
+        final language = node.attributes['language'];
+        if (language != null && language.isNotEmpty) {
+          final code = [
+            for (final line in node.children)
+              ?_range(line.start.offset, line.end.offset),
+          ];
+          if (code.isNotEmpty) {
+            _fencedCode.add(
+              MarkdownCodeBlock(_unmask(language), List.unmodifiable(code)),
+            );
+          }
+        }
         _blocks.add(
           MarkdownBlock(MarkdownBlockKind.code, _clamp(start), _clamp(end)),
         );

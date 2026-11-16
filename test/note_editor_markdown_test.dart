@@ -1640,7 +1640,7 @@ void main() {
       expect(controllerOf(tester).text, 'say **hi** x');
     });
   });
-  group('formulas', () {
+  group('formulas and code', () {
     /// Where the first box [needle] is drawn in sits on screen.
     Rect rectOf(WidgetTester tester, String needle) {
       final start = controllerOf(tester).text.indexOf(needle);
@@ -1762,6 +1762,27 @@ void main() {
         closeTo(below.center.dy, 2),
         reason: 'the result is beside the line it belongs to',
       );
+    });
+
+    testWidgets('fenced code is coloured by its language, from the palette', (
+      tester,
+    ) async {
+      const body =
+          '```python\ndef total(xs):\n    return sum(xs)  # all\n```\n\n'
+          '```nosuchlanguage\ndefine "it" # too\n```';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+      const palette = KapyTheme.darkPalette;
+      expect(styleOf(tester, 'def').color, palette.keyword);
+      expect(styleOf(tester, 'return').color, palette.keyword);
+      expect(styleOf(tester, 'total').color, palette.function);
+      expect(styleOf(tester, '# all').color, palette.comment);
+      expect(styleOf(tester, '# all').fontStyle, FontStyle.italic);
+      // A language it does not know is left as it is written.
+      final plain = styleOf(tester, 'define');
+      expect(styleOf(tester, '"it"').color, plain.color);
+      expect(styleOf(tester, '# too').color, plain.color);
+      expect(styleOf(tester, '# too').fontStyle, plain.fontStyle);
     });
   });
 }

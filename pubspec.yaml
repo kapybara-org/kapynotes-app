@@ -160,6 +160,10 @@ dependencies:
   # widget test, and reports the baseline a formula among words sits on.
   # Apache-2.0.
   flutter_math_fork: ^0.7.4
+  # Colouring a fenced code block in the language its info string names: the
+  # highlight.js grammars ported to Dart, MIT. Each grammar is a value of its
+  # own that the app names, so only the languages it registers are compiled in.
+  re_highlight: ^0.0.3
   # One quiet, consistent line-icon language across every app surface.
   # Hugeicons' free stroke-rounded set is MIT licensed and tree-shaken.
   hugeicons: ^1.1.7

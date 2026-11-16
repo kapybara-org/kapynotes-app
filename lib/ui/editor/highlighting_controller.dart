@@ -9,6 +9,7 @@ import '../../core/editor_font.dart';
 import '../../core/note_link.dart';
 import '../../core/theme.dart';
 import '../../data/note_format.dart';
+import 'code_highlighting.dart';
 import 'editor_formatting.dart';
 import 'markdown_syntax.dart';
 import 'note_math.dart';
@@ -49,6 +50,7 @@ class HighlightingController extends TextEditingController {
   final MarkdownAnalyzer _markdownAnalyzer = MarkdownAnalyzer();
   Map<int, NoteImageSpan> _imageSpans = const {};
   final NoteMath _math = NoteMath();
+  final CodeHighlighter _codeHighlighter = CodeHighlighter();
   double _mathWidth = 0;
   List<(int, PlaceholderDimensions)> _formulaPlaceholders = const [];
 
@@ -257,6 +259,7 @@ class HighlightingController extends TextEditingController {
         MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
     final stretches = _listStretches(analysis, base, scaler);
     final formulas = concealment.formulas;
+    final code = _codeTokens(analysis);
     final composing = withComposing && value.isComposingRangeValid
         ? value.composing
         : null;
@@ -305,6 +308,10 @@ class HighlightingController extends TextEditingController {
     for (final formula in formulas) {
       boundaries.add(formula.start + 1);
     }
+    for (final token in code) {
+      boundaries.add(token.start);
+      boundaries.add(token.end);
+    }
     if (composing != null) {
       boundaries.add(composing.start.clamp(0, source.length));
       boundaries.add(composing.end.clamp(0, source.length));
@@ -328,6 +335,7 @@ class HighlightingController extends TextEditingController {
     var stretchIndex = 0;
     var formulaIndex = 0;
     final formulaCopies = <String, int>{};
+    var codeIndex = 0;
     final placeholders = <(int, PlaceholderDimensions)>[];
 
     for (var i = 0; i < cuts.length - 1; i++) {
@@ -456,6 +464,14 @@ class HighlightingController extends TextEditingController {
           : linkColor;
       if (markdown != 0) {
         segmentStyle = _markdownBlockStyle(segmentStyle, base, marked);
+      }
+      while (codeIndex < code.length && code[codeIndex].end <= start) {
+        codeIndex++;
+      }
+      if (codeIndex < code.length && code[codeIndex].start <= start) {
+        segmentStyle = segmentStyle.merge(
+          _codeTokenStyle(code[codeIndex].kind),
+        );
       }
       final matchingFormats = _formats.where(
         (format) => format.start <= start && format.end >= end,
@@ -684,6 +700,35 @@ class HighlightingController extends TextEditingController {
     painter.dispose();
     return width;
   }
+
+  MarkdownAnalysis? _colouredFor;
+  List<CodeToken> _colouredCode = const [];
+
+  /// The colours of [analysis]'s fenced code, worked out once per analysis.
+  List<CodeToken> _codeTokens(MarkdownAnalysis analysis) {
+    if (identical(analysis, _colouredFor)) return _colouredCode;
+    _colouredFor = analysis;
+    return _colouredCode = analysis.fencedCode.isEmpty
+        ? const []
+        : _codeHighlighter.tokensIn(analysis.text, analysis.fencedCode);
+  }
+
+  /// Code coloured from the note's own palette, so that it sits in the note
+  /// in light and in dark alike rather than in some editor's theme.
+  TextStyle _codeTokenStyle(CodeTokenKind kind) => switch (kind) {
+    CodeTokenKind.keyword => TextStyle(color: _palette.keyword),
+    CodeTokenKind.string => TextStyle(color: _palette.chipCurrency),
+    CodeTokenKind.number => TextStyle(color: _palette.number),
+    CodeTokenKind.comment => TextStyle(
+      color: _palette.comment,
+      fontStyle: FontStyle.italic,
+    ),
+    CodeTokenKind.title => TextStyle(color: _palette.function),
+    CodeTokenKind.type ||
+    CodeTokenKind.attribute => TextStyle(color: _palette.unit),
+    CodeTokenKind.variable => TextStyle(color: _palette.variable),
+    CodeTokenKind.punctuation => TextStyle(color: _palette.operator),
+  };
 
   @override
   void dispose() {
