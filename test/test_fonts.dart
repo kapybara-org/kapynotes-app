@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -35,6 +36,21 @@ Future<void> loadTestFonts() async {
     'assets/fonts/Figtree-Italic-Variable.ttf',
   ]);
   await _loadAll('Geist Mono', ['assets/fonts/GeistMono-Variable.ttf']);
+
+  // KaTeX's faces, which flutter_math_fork draws formulas in. They are in the
+  // test's asset bundle like every package font, and like every one of them
+  // are only drawn once they are loaded.
+  final manifest =
+      jsonDecode(await rootBundle.loadString('FontManifest.json')) as List;
+  for (final entry in manifest.cast<Map<String, Object?>>()) {
+    final family = entry['family']! as String;
+    if (!family.startsWith('packages/flutter_math_fork/')) continue;
+    final loader = FontLoader(family);
+    for (final font in (entry['fonts']! as List).cast<Map<String, Object?>>()) {
+      loader.addFont(rootBundle.load(font['asset']! as String));
+    }
+    await loader.load();
+  }
 }
 
 Future<void> _load(String family, List<String> candidates) async {

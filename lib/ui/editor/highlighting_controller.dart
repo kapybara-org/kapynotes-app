@@ -11,6 +11,7 @@ import '../../core/theme.dart';
 import '../../data/note_format.dart';
 import 'editor_formatting.dart';
 import 'markdown_syntax.dart';
+import 'note_math.dart';
 
 /// One image, already sized and built, ready to be dropped into the span tree
 /// at its placeholder.
@@ -47,6 +48,9 @@ class HighlightingController extends TextEditingController {
   bool _markdown;
   final MarkdownAnalyzer _markdownAnalyzer = MarkdownAnalyzer();
   Map<int, NoteImageSpan> _imageSpans = const {};
+  final NoteMath _math = NoteMath();
+  double _mathWidth = 0;
+  List<(int, PlaceholderDimensions)> _formulaPlaceholders = const [];
 
   /// Native spelling results currently painted by this rich text controller.
   ///
@@ -139,6 +143,7 @@ class HighlightingController extends TextEditingController {
       selection,
       revealBlocks: markdownReveal.blocks,
       revealEdges: markdownReveal.edges,
+      drawable: (math) => _math.draws(math.tex),
     );
     _concealment = concealment;
     _concealedFor = analysis;
@@ -163,17 +168,30 @@ class HighlightingController extends TextEditingController {
     _imageSpans = value;
   }
 
+  /// Deliberately silent, for the same reason as [setImageSpansDuringLayout].
+  ///
+  /// The width of the writing column a formula is drawn in: display math is
+  /// centred across it, and any formula wider than it is drawn smaller.
+  void setMathWidthDuringLayout(double value) {
+    _mathWidth = value;
+  }
+
   /// The placeholder boxes [TextPainter] must be told about before it can lay
-  /// out a span containing [WidgetSpan]s, in the order they appear.
+  /// out a span containing [WidgetSpan]s, in the order they appear: pictures,
+  /// table rows, and the formulas the last [buildTextSpan] drew.
   List<PlaceholderDimensions> placeholderDimensions() {
-    final offsets = _imageSpans.keys.toList()..sort();
-    return [
-      for (final offset in offsets)
-        PlaceholderDimensions(
-          size: Size(_imageSpans[offset]!.width, _imageSpans[offset]!.height),
-          alignment: PlaceholderAlignment.top,
+    final placeholders = [
+      for (final MapEntry(key: offset, value: image) in _imageSpans.entries)
+        (
+          offset,
+          PlaceholderDimensions(
+            size: Size(image.width, image.height),
+            alignment: PlaceholderAlignment.top,
+          ),
         ),
-    ];
+      ..._formulaPlaceholders,
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    return [for (final (_, dimensions) in placeholders) dimensions];
   }
 
   void _invalidate() {
@@ -235,11 +253,10 @@ class HighlightingController extends TextEditingController {
     final concealment = markdownConcealment();
     final hidden = concealment.hidden;
     final transparent = concealment.transparent;
-    final stretches = _listStretches(
-      analysis,
-      base,
-      MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling,
-    );
+    final scaler =
+        MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
+    final stretches = _listStretches(analysis, base, scaler);
+    final formulas = concealment.formulas;
     final composing = withComposing && value.isComposingRangeValid
         ? value.composing
         : null;
@@ -285,6 +302,9 @@ class HighlightingController extends TextEditingController {
       boundaries.add(stretch.start);
       boundaries.add(stretch.end);
     }
+    for (final formula in formulas) {
+      boundaries.add(formula.start + 1);
+    }
     if (composing != null) {
       boundaries.add(composing.start.clamp(0, source.length));
       boundaries.add(composing.end.clamp(0, source.length));
@@ -306,6 +326,9 @@ class HighlightingController extends TextEditingController {
     var hiddenIndex = 0;
     var transparentIndex = 0;
     var stretchIndex = 0;
+    var formulaIndex = 0;
+    final formulaCopies = <String, int>{};
+    final placeholders = <(int, PlaceholderDimensions)>[];
 
     for (var i = 0; i < cuts.length - 1; i++) {
       final start = cuts[i];
@@ -353,6 +376,41 @@ class HighlightingController extends TextEditingController {
         children.add(
           WidgetSpan(alignment: PlaceholderAlignment.top, child: image.child),
         );
+        continue;
+      }
+
+      // A formula drawn as itself stands in the place of its first character,
+      // the way a picture does, with the rest of its TeX hidden after it.
+      while (formulaIndex < formulas.length &&
+          formulas[formulaIndex].end <= start) {
+        formulaIndex++;
+      }
+      final formula =
+          formulaIndex < formulas.length &&
+              formulas[formulaIndex].start <= start
+          ? formulas[formulaIndex]
+          : null;
+      if (formula != null && start == formula.start) {
+        final (span, placeholder) = _formulaSpan(
+          formula,
+          copy: formulaCopies.update(
+            formula.tex,
+            (copy) => copy + 1,
+            ifAbsent: () => 0,
+          ),
+          words: _markdownBlockStyle(
+            base,
+            base,
+            (style) => style != MarkdownStyle.math && marked(style),
+          ),
+          base: base,
+          scaler: scaler,
+          indent: formula.display
+              ? _indent(formula.start, hidden, stretches, base, scaler)
+              : 0,
+        );
+        children.add(span);
+        placeholders.add((formula.start, placeholder));
         continue;
       }
 
@@ -497,12 +555,140 @@ class HighlightingController extends TextEditingController {
         }
       }
 
+      // A line break inside a formula drawn as itself would still break the
+      // line, hidden or not, and leave an empty line under the formula for
+      // each one; the span the field draws is not the note's text, so here it
+      // is a space.
+      final words = source.substring(start, end);
       children.add(
-        TextSpan(text: source.substring(start, end), style: segmentStyle),
+        TextSpan(
+          text: formula == null ? words : words.replaceAll(_lineEnd, ' '),
+          style: segmentStyle,
+        ),
       );
     }
 
+    _formulaPlaceholders = placeholders;
     return _NoteSpan(style: base, children: children);
+  }
+
+  static final _lineEnd = RegExp('[\r\n]');
+
+  /// How much bigger a formula is set than the words around it. KaTeX's own
+  /// face runs small beside a sans serif at the same size.
+  static const double _mathScale = 1.1;
+
+  /// [formula] as a placeholder, and the box [placeholderDimensions] reports
+  /// for it.
+  ///
+  /// Among words a formula sits on their baseline. Set apart, it is centred
+  /// across what is left of the writing column after [indent], in the middle
+  /// of a line of its own. Both are drawn in the size and colour of the words
+  /// they stand among, in [words].
+  ///
+  /// A placeholder's widget is scaled with the text by the field, so it is
+  /// built at the size the text is before scaling, and the box is reported
+  /// at the size it comes out at. [copy] is which of the formulas drawn with
+  /// the same TeX this one is: see [NoteMath.formula].
+  (WidgetSpan, PlaceholderDimensions) _formulaSpan(
+    MarkdownMath formula, {
+    required int copy,
+    required TextStyle words,
+    required TextStyle base,
+    required TextScaler scaler,
+    required double indent,
+  }) {
+    final size = base.fontSize ?? kDefaultFontSize;
+    final scale = scaler.scale(size) / size;
+    final room = math.max(0.0, _mathWidth - indent) / scale;
+    final drawn = _math.formula(
+      formula.tex,
+      display: formula.display,
+      fontSize: (words.fontSize ?? size) * _mathScale,
+      color: words.color ?? _palette.textPrimary,
+      maxWidth: room,
+      copy: copy,
+    );
+    if (!formula.display) {
+      return (
+        WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: drawn.child,
+        ),
+        PlaceholderDimensions(
+          size: Size(drawn.width * scale, drawn.height * scale),
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          baselineOffset: drawn.baseline * scale,
+        ),
+      );
+    }
+    final width = math.max(room, drawn.width);
+    return (
+      WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: SizedBox(
+          width: width,
+          height: drawn.height,
+          child: Center(child: drawn.child),
+        ),
+      ),
+      PlaceholderDimensions(
+        size: Size(width * scale, drawn.height * scale),
+        alignment: PlaceholderAlignment.middle,
+      ),
+    );
+  }
+
+  /// How far into its line [offset] is drawn: the advance of what is shown
+  /// before it, with the room any list marker there is spaced out to.
+  double _indent(
+    int offset,
+    List<TextRange> hidden,
+    List<_Stretch> stretches,
+    TextStyle base,
+    TextScaler scaler,
+  ) {
+    final source = text;
+    final lineStart = offset == 0
+        ? 0
+        : source.lastIndexOf('\n', offset - 1) + 1;
+    if (lineStart >= offset) return 0;
+    final painter = TextPainter(
+      text: TextSpan(
+        style: base,
+        children: [
+          for (var i = lineStart; i < offset; i++)
+            if (!hidden.any((range) => range.start <= i && i < range.end))
+              TextSpan(
+                text: source[i],
+                style: TextStyle(
+                  letterSpacing: stretches
+                      .where((stretch) => stretch.start <= i && i < stretch.end)
+                      .firstOrNull
+                      ?.spacing,
+                ),
+              ),
+        ],
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    )..layout();
+    final width = painter
+        .getOffsetForCaret(
+          TextPosition(offset: painter.plainText.length),
+          Rect.zero,
+        )
+        .dx;
+    painter.dispose();
+    return width;
+  }
+
+  @override
+  void dispose() {
+    _math.dispose();
+    super.dispose();
   }
 
   /// The room a list marker takes — a bullet, a box or a number, with the

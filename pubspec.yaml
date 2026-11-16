@@ -154,6 +154,12 @@ dependencies:
   # passes the CommonMark and GFM spec suites, and it is pure Dart, so it runs
   # the same on every platform and inside a widget test.
   dart_markdown: ^3.1.7
+  # Drawing a note's `$…$` and `$$…$$` as the formulas they write. Pure Dart
+  # and Flutter's own text engine, with KaTeX's fonts bundled (about 660 KB),
+  # so it lays a formula out offline, the same on every platform and inside a
+  # widget test, and reports the baseline a formula among words sits on.
+  # Apache-2.0.
+  flutter_math_fork: ^0.7.4
   # One quiet, consistent line-icon language across every app surface.
   # Hugeicons' free stroke-rounded set is MIT licensed and tree-shaken.
   hugeicons: ^1.1.7
@@ -213,6 +219,9 @@ flutter:
     - assets/fonts/ShantellSans-OFL.txt
     - assets/fonts/Figtree-OFL.txt
     - assets/fonts/GeistMono-OFL.txt
+    # The notice KaTeX's fonts come with, which flutter_math_fork bundles
+    # without: its own LICENSE is the package's, not the fonts'.
+    - packages/flutter_math_fork/katex_fonts/LICENSE
   fonts:
     - family: Shantell Sans
       fonts:

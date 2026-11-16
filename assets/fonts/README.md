@@ -53,6 +53,16 @@ monospace face (`AppFonts.monoFallback` in `lib/core/theme.dart`).
 Licenses: [`Figtree-OFL.txt`](Figtree-OFL.txt),
 [`GeistMono-OFL.txt`](GeistMono-OFL.txt)
 
+## Formula fonts
+
+Formulas written in TeX are drawn in KaTeX's fonts, which come with
+flutter_math_fork rather than living here: twenty files, about 660 KB in
+every install. They are MIT licensed by Khan Academy, and that notice ships
+as `packages/flutter_math_fork/katex_fonts/LICENSE`, listed in
+`pubspec.yaml`, since the package's own LICENSE does not carry it.
+
+Source: <https://github.com/KaTeX/katex-fonts>
+
 ## Brand font
 
 The `Kapy Notes` wordmark uses Odin Rounded Bold by Frank Hemmekam.

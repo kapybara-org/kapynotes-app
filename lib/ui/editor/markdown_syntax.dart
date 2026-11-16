@@ -25,8 +25,9 @@ enum MarkdownStyle {
   /// A fenced or indented code block, fences included.
   codeBlock,
 
-  /// A formula in TeX, its dollar signs included, shown as its TeX in code's
-  /// face; see [MarkdownMath].
+  /// A formula in TeX, its dollar signs included. Drawn as the formula it
+  /// writes, and as its TeX in code's face while the caret is at it; see
+  /// [MarkdownMath].
   math,
 
   /// Everything inside a block quote.
@@ -156,6 +157,31 @@ class MarkdownMath {
 
   MarkdownMath _shifted(int by) =>
       MarkdownMath(start + by, end + by, tex, display: display);
+
+  /// Whether the formula shows its TeX rather than itself, with the selection
+  /// at [selection].
+  ///
+  /// Only in a note being edited, which is what [revealBlocks] says. A caret
+  /// or a selection's end anywhere inside always shows it: that is where the
+  /// TeX is typed. Against its edges, display math shows, as a block's syntax
+  /// does; inline math as inline markers do, so only with [revealEdges] — and
+  /// a formula whose closing `$` has just been typed is drawn at once. A
+  /// selection reaching over the whole of one leaves it drawn.
+  bool revealedAt(
+    TextSelection? selection, {
+    required bool revealBlocks,
+    required bool revealEdges,
+  }) {
+    if (!revealBlocks || selection == null || !selection.isValid) return false;
+    bool inside(int offset) => offset > start && offset < end;
+    if (inside(selection.baseOffset) || inside(selection.extentOffset)) {
+      return true;
+    }
+    if (!selection.isCollapsed) return false;
+    final caret = selection.baseOffset;
+    if (caret != start && caret != end) return false;
+    return display || revealEdges;
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -544,12 +570,14 @@ class MarkdownConcealment {
   const MarkdownConcealment._({
     required this.hidden,
     required this.transparent,
+    required this.formulas,
     required this.key,
   });
 
   static const none = MarkdownConcealment._(
     hidden: [],
     transparent: [],
+    formulas: [],
     key: 0,
   );
 
@@ -559,6 +587,11 @@ class MarkdownConcealment {
   /// Laid out as usual but not drawn, because something is drawn in their
   /// place: a bullet, a checkbox, a table's grid. Sorted, never overlapping.
   final List<TextRange> transparent;
+
+  /// The formulas drawn as formulas rather than as their TeX. Each is in
+  /// [hidden] whole; the editor draws the formula in the place of its first
+  /// character. Sorted.
+  final List<MarkdownMath> formulas;
 
   /// Changes whenever what is shown does, for anything that caches a layout.
   final int key;
@@ -770,10 +803,15 @@ class MarkdownAnalysis {
   /// [revealEdges] is false in the same cases and also while the writer is
   /// typing, so markers they have just completed disappear as they complete
   /// them rather than lingering beside the caret.
+  ///
+  /// A formula is drawn as itself unless [MarkdownMath.revealedAt] says
+  /// otherwise, or [drawable] says it cannot be: TeX the editor cannot draw
+  /// stays in sight as written.
   MarkdownConcealment concealFor(
     TextSelection? selection, {
     required bool revealBlocks,
     required bool revealEdges,
+    bool Function(MarkdownMath math)? drawable,
   }) {
     final valid = selection != null && selection.isValid;
     final caret = valid && selection.isCollapsed ? selection.baseOffset : null;
@@ -830,6 +868,24 @@ class MarkdownAnalysis {
       }
     }
 
+    final formulas = <MarkdownMath>[];
+    for (var i = 0; i < maths.length; i++) {
+      final math = maths[i];
+      final drawn =
+          (drawable?.call(math) ?? true) &&
+          !math.revealedAt(
+            selection,
+            revealBlocks: revealBlocks,
+            revealEdges: revealEdges,
+          );
+      if (drawn) {
+        formulas.add(math);
+        hidden.add(TextRange(start: math.start, end: math.end));
+      } else {
+        key = Object.hash(key, conceals.length + i);
+      }
+    }
+
     final transparent = <TextRange>[
       for (final ornament in ornaments)
         if (ornament.kind != MarkdownOrnamentKind.codeSpan)
@@ -856,6 +912,7 @@ class MarkdownAnalysis {
     return MarkdownConcealment._(
       hidden: _merged(hidden),
       transparent: _merged(transparent),
+      formulas: List.unmodifiable(formulas),
       key: key,
     );
   }
@@ -2114,7 +2171,8 @@ class _Collector {
       offset < _tables.last.end;
 
   /// A formula: its TeX shown as code with its dollar signs quiet, and
-  /// outside a table one of [MarkdownAnalysis.maths].
+  /// outside a table the formula itself, which the editor draws in place of
+  /// all of it.
   void _math(md.Element node, Set<int> claimed) {
     final start = node.start.offset;
     final end = node.end.offset;

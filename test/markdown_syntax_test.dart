@@ -557,6 +557,35 @@ void main() {
         [r'$x$:math'],
       );
     });
+
+    test('drawn, is hidden whole; with the caret in it, shown as written', () {
+      expect(visible(r'a $x$ b|'), 'a  b');
+      expect(visible(r'a $x|$ b'), r'a $x$ b');
+      expect(visible(r'a $x|$ b', typing: true), r'a $x$ b');
+      // Against an edge it shows as any inline marker does: not while typing.
+      expect(visible(r'a $x$| b'), r'a $x$ b');
+      expect(visible(r'a $x$| b', typing: true), 'a  b');
+      expect(visible(r'a $x|$ b', editing: false), 'a  b');
+      // Set apart, it shows with the caret against it, as a block's syntax.
+      expect(visible('\$\$\nx\n\$\$|', typing: true), '\$\$\nx\n\$\$');
+      expect(visible('\$\$\nx\n\$\$\n|'), '\n');
+    });
+
+    test('drawn, is named for the editor to draw', () {
+      const note = r'a $x$ and $$y$$';
+      final drawn = read(
+        note,
+      ).concealFor(null, revealBlocks: false, revealEdges: false);
+      expect([for (final math in drawn.formulas) math.tex], ['x', 'y']);
+      final undrawable = read(note).concealFor(
+        null,
+        revealBlocks: false,
+        revealEdges: false,
+        drawable: (math) => math.tex != 'x',
+      );
+      expect([for (final math in undrawable.formulas) math.tex], ['y']);
+      expect(undrawable.hidden, [const TextRange(start: 10, end: 15)]);
+    });
   });
 
   group('reading in pieces', () {
