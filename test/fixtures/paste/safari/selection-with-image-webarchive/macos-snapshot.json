@@ -1,0 +1,28 @@
+{
+  "html" : "<meta charset=\"utf-8\"><h2 style=\"font-family: Georgia, serif; font-size: 22px; font-weight: 700;\">Why fixtures matter</h2><p style=\"font-family: Georgia, serif; font-size: 16px;\">A paste pipeline is only as good as the payloads you test it against. <a href=\"https://example.com/articles/other\">See also</a>.</p><figure style=\"margin: 0px;\"><img src=\"https://example.com/articles/img/chart.png\" alt=\"Bar chart of coverage\" width=\"240\" height=\"140\"><figcaption style=\"font-size: 13px;\">Coverage by source app.</figcaption></figure>",
+  "resources" : [
+    {
+      "data" : {
+        "base64" : "iVBORw0KGgoAAAANSUhEUgAAAPAAAACMCAYAAABCtSQoAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAA8KADAAQAAAABAAAAjAAAAADKAgU/AAAErklEQVR4Ae3bMW4UURREUUCkOEfsB2SJtZAQsQIiEtYCMpj1IHKbbAIjSFB3gHskD9NV7xDx5dZ01a1/ZQf248PhcPfIPwQQiCTwJDK10Agg8IcAgV0EBIIJEDh4PNERILA7gEAwAQIHjyc6AgR2BxAIJkDg4PFER4DA7gACwQQIHDye6AgQ2B1AIJgAgYPHEx0BArsDCAQTIHDweKIjQGB3AIFgAgQOHk90BAjsDiAQTIDAweOJjgCB3QEEggkQOHg80REgsDuAQDABAgePJzoCBHYHEAgmQODg8URHgMDuAALBBAgcPJ7oCBDYHUAgmACBg8cTHQECuwMIBBMgcPB4oiNAYHcAgWACBA4eT3QECOwOIBBMgMDB44mOwFMIEDiGwNX1zTGPP/izly8vHvwzkz+QwMnrnSH7l2+3Z3jr31cS+C+L3//zI/SShxMCUQQIHDWXsAgsCRB4ycMJgSgCBI6aS1gElgQIvOThhEAUAQJHzSUsAksCBF7ycEIgigCBo+YSFoElAQIveTghEEWAwFFzCYvAkgCBlzycEIgiQOCouYRFYEmAwEseTghEESBw1FzCIrAkQOAlDycEogj4e+CouYS9j8CPd9/ve+SkX3/+/sVJP3/94b4Dr4k4IxBEgMBBY4mKwJoAgddEnBEIIkDgoLFERWBNgMBrIs4IBBEgcNBYoiKwJkDgNRFnBIIIEDhoLFERWBMg8JqIMwJBBAgcNJaoCKwJjPtVyh9v36wZ/Nfz8w8f/+v7vKybgO/A3ftqV06AwOUDq9dNgMDd+2pXToDA5QOr102AwN37aldOgMDlA6vXTYDA3ftqV06AwOUDq9dNgMDd+2pXToDA5QOr102AwN37aldOgMDlA6vXTYDA3ftqV06AwOUDq9dNgMDd+2pXTmDc3wPvfc9PNzdnjfj64uKs7/fy4wgQ+DheJ3/6883tyd/xrxcQ+F909vc1P0LvbxOJENhMgMCbUXkQgf0RIPD+NpEIgc0ECLwZlQcR2B8BAu9vE4kQ2EyAwJtReRCB/REg8P42kQiBzQQIvBmVBxHYHwEC728TiRDYTODBfxPr9uvV5pef4sFnry5P8bE+E4FdEnhwgX9eE3iXSwtVScCP0JWzKjWFAIGnLK1nJQECV86q1BQCBJ6ytJ6VBAhcOatSUwgQeMrSelYSIHDlrEpNIUDgKUvrWUmAwJWzKjWFAIGnLK1nJQECV86q1BQCBJ6ytJ6VBAhcOatSUwgQeMrSelYSIHDlrEpNIUDgKUvrWUmAwJWzKjWFAIGnLK1nJQECV86q1BQCBJ6ytJ6VBAhcOatSUwgQeMrSelYSIHDlrEpNIUDgKUvrWUmAwJWzKjWFAIGnLK1nJQECV86q1BQCBJ6ytJ6VBAhcOatSUwgQeMrSelYSIHDlrEpNIUDgKUvrWUmAwJWzKjWFAIGnLK1nJQECV86q1BQCBJ6ytJ6VBAhcOatSUwg8PhwOd1PK6olAGwHfgdsW1WcUAQKPmlvZNgIEbltUn1EECDxqbmXbCBC4bVF9RhEg8Ki5lW0jQOC2RfUZRYDAo+ZWto0AgdsW1WcUAQKPmlvZNgIEbltUn1EEfgGsrCEOx/DOtgAAAABJRU5ErkJggg=="
+      },
+      "mime" : "image/png",
+      "name" : "https://example.com/articles/img/chart.png"
+    }
+  ],
+  "sourceUrl" : "https://example.com/articles/fixtures",
+  "text" : "Why fixtures matter\nA paste pipeline is only as good as the payloads you test it against. See also.\n￼\nCoverage by source app.",
+  "types" : [
+    "com.apple.webarchive",
+    "Apple Web Archive pasteboard type",
+    "public.rtf",
+    "NeXT Rich Text Format v1.0 pasteboard type",
+    "public.utf16-external-plain-text",
+    "CorePasteboardFlavorType 0x75743136",
+    "public.utf8-plain-text",
+    "NSStringPboardType",
+    "com.apple.flat-rtfd",
+    "NeXT RTFD pasteboard type",
+    "public.html",
+    "Apple HTML pasteboard type"
+  ]
+}

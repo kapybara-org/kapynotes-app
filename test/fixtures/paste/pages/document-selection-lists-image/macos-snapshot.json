@@ -1,0 +1,23 @@
+{
+  "resources" : [
+    {
+      "data" : {
+        "base64" : "iVBORw0KGgoAAAANSUhEUgAAAPAAAACMCAYAAABCtSQoAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAA8KADAAQAAAABAAAAjAAAAADKAgU/AAAElklEQVR4Ae3bMW4UaxBFYYxITY5gPVizFJbAClgCSxlstgMiZ5xNYCRS629ppLG76tb3wteWp+45fWQH5uZ8Pj+98R8CCLQk8Lbl1Y5GAIH/BATsRUCgMQEBN5bndAQE7B1AoDEBATeW53QEBOwdQKAxAQE3lud0BATsHUCgMQEBN5bndAQE7B1AoDEBATeW53QEBOwdQKAxAQE3lud0BATsHUCgMQEBN5bndAQE7B1AoDEBATeW53QEBOwdQKAxAQE3lud0BATsHUCgMQEBN5bndAQE7B1AoDEBATeW53QEBOwdQKAxAQE3lud0BATsHUCgMQEBN5bndAQE7B1AoDEBATeW53QEBOwdQKAxAQE3lud0BATsHUCgMQEBN5bndATeQYDAJQRO98dLvvzqX3t7d7j69+z8DQXc2d4Otz8+CHgH7MuP9Cv0Eo0HCNQnIOD6jlyIwJKAgJdoPECgPgEB13fkQgSWBAS8ROMBAvUJCLi+IxcisCQg4CUaDxCoT0DA9R25EIElAQEv0XiAQH0CAq7vyIUILAkIeInGAwTqExBwfUcuRGBJQMBLNB4gUJ+AgOs7ciECSwICXqLxAIH6BPx74PqOXHgBgS+/fl/w1df/0u+fPl7/m258Rz+BN+B4hEB1AgKubsh9CGwQEPAGHI8QqE5AwNUNuQ+BDQIC3oDjEQLVCQi4uiH3IbBBQMAbcDxCoDoBAVc35D4ENggIeAOORwhUJyDg6obch8AGgXF/Svnn675/avfh2+v+qd2Ge48CCPgJHCDRhLkEBDzXveUBBAQcINGEuQQEPNe95QEEBBwg0YS5BAQ8173lAQQEHCDRhLkEBDzXveUBBAQcINGEuQQEPNe95QEEBBwg0YS5BAQ8173lAQQEHCDRhLkEBDzXveUBBAQcINGEuQTG/Xvg6qpP98ddT7y9O+z6+T78MgICvozXi3/144OAXxxy0Af4FTpIpinzCAh4nnOLgwgIOEimKfMICHiec4uDCAg4SKYp8wgIeJ5zi4MICDhIpinzCAh4nnOLgwgIOEimKfMIXP0vsY4Pf3elePj8ftfP9+EIvCaBqwf84+fpNe9/9lkCfobE/wgm4FfoYLmm5RMQcL5jC4MJCDhYrmn5BASc79jCYAICDpZrWj4BAec7tjCYgICD5ZqWT0DA+Y4tDCYg4GC5puUTEHC+YwuDCQg4WK5p+QQEnO/YwmACAg6Wa1o+AQHnO7YwmICAg+Walk9AwPmOLQwmIOBguablExBwvmMLgwkIOFiuafkEBJzv2MJgAgIOlmtaPgEB5zu2MJiAgIPlmpZPQMD5ji0MJiDgYLmm5RMQcL5jC4MJCDhYrmn5BASc79jCYAICDpZrWj4BAec7tjCYgICD5ZqWT0DA+Y4tDCYg4GC5puUTEHC+YwuDCQg4WK5p+QQEnO/YwmACAg6Wa1o+gZvz+fyUP9NCBDIJ+Amc6dWqIQQEPES0mZkEBJzp1aohBAQ8RLSZmQQEnOnVqiEEBDxEtJmZBASc6dWqIQQEPES0mZkEBJzp1aohBAQ8RLSZmQQEnOnVqiEE/gHgByEOpBghhQAAAABJRU5ErkJggg=="
+      },
+      "mime" : "image/png",
+      "name" : "file:///chart.png"
+    }
+  ],
+  "rtfHtml" : "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n<html>\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n<meta http-equiv=\"Content-Style-Type\" content=\"text/css\">\n<title></title>\n<meta name=\"Generator\" content=\"Cocoa HTML Writer\">\n<meta name=\"CocoaVersion\" content=\"2775.2\">\n<style type=\"text/css\">\np.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 24.0px Helvetica}\np.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 14.0px Helvetica}\np.p3 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}\nli.li2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 14.0px Helvetica}\nspan.s1 {text-decoration: underline}\nspan.s2 {text-decoration: line-through}\nspan.s3 {text-decoration: underline ; color: #0a60ff}\nol.ol1 {list-style-type: decimal}\nul.ul1 {list-style-type: disc}\nul.ul2 {list-style-type: circle}\n</style>\n</head>\n<body>\n<p class=\"p1\"><b>Project brief</b></p>\n<p class=\"p2\">Plain text, then <b>bold</b>, <i>italic</i>, <span class=\"s1\">underlined</span>, <span class=\"s2\">struck through</span> and a <a href=\"https://example.com/roadmap\"><span class=\"s3\">link</span></a>.</p>\n<ul class=\"ul1\">\n<li class=\"li2\">Ship the importer</li>\n<ul class=\"ul2\">\n<li class=\"li2\">Word and Excel</li>\n<li class=\"li2\">Apple Notes</li>\n</ul>\n<li class=\"li2\">Write the release notes</li>\n</ul>\n<ol class=\"ol1\">\n<li class=\"li2\">Collect fixtures</li>\n<li class=\"li2\">Write the parser</li>\n<li class=\"li2\">Review with design</li>\n</ol>\n<p class=\"p2\">☐ Buy milk</p>\n<p class=\"p2\">☑ Send the invoice</p>\n<p class=\"p3\"><img src=\"file:///chart.png\" alt=\"chart.png\"></p>\n</body>\n</html>\n",
+  "text" : "Project brief\nPlain text, then bold, italic, underlined, struck through and a link.\n\t•\tShip the importer\n\t◦\tWord and Excel\n\t◦\tApple Notes\n\t•\tWrite the release notes\n\t1\tCollect fixtures\n\t2\tWrite the parser\n\t3\tReview with design\n☐ Buy milk\n☑ Send the invoice\n￼\n",
+  "types" : [
+    "public.rtf",
+    "NeXT Rich Text Format v1.0 pasteboard type",
+    "public.utf16-external-plain-text",
+    "CorePasteboardFlavorType 0x75743136",
+    "public.utf8-plain-text",
+    "NSStringPboardType",
+    "com.apple.flat-rtfd",
+    "NeXT RTFD pasteboard type"
+  ]
+}
