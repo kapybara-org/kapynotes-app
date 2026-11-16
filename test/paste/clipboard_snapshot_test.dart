@@ -6,13 +6,14 @@ import 'package:kapy_notes/paste/clipboard_snapshot.dart';
 
 /// Windows' "HTML Format" around [fragment], with byte offsets the way
 /// Windows writes them and [before] ahead of the fragment inside the page.
-String windowsHtml(
-  String fragment, {
-  String before = '',
-  String? sourceUrl,
-}) {
+String windowsHtml(String fragment, {String before = '', String? sourceUrl}) {
   final source = sourceUrl == null ? '' : 'SourceURL:$sourceUrl\r\n';
-  String header(int startHtml, int endHtml, int startFragment, int endFragment) {
+  String header(
+    int startHtml,
+    int endHtml,
+    int startFragment,
+    int endFragment,
+  ) {
     String pad(int value) => value.toString().padLeft(10, '0');
     return 'Version:0.9\r\n'
         'StartHTML:${pad(startHtml)}\r\n'
@@ -87,9 +88,15 @@ void main() {
       'rtfHtml': Uint8List(3),
       'resources': [
         'not a map',
-        {'name': 7, 'data': Uint8List.fromList([1])},
+        {
+          'name': 7,
+          'data': Uint8List.fromList([1]),
+        },
         {'name': 'empty', 'data': Uint8List(0)},
-        {'name': 'list', 'data': [1, 2, 3]},
+        {
+          'name': 'list',
+          'data': [1, 2, 3],
+        },
       ],
       'vscode': {'mode': 'dart'},
       'kapy': '',
@@ -164,7 +171,8 @@ void main() {
 
     test('falls back to the markup when the offsets are missing', () {
       final snapshot = ClipboardSnapshot.fromChannel({
-        'html': 'Version:0.9\r\nSourceURL:https://example.com\r\n'
+        'html':
+            'Version:0.9\r\nSourceURL:https://example.com\r\n'
             '<html><body><p>No offsets</p></body></html>',
       });
 
@@ -181,7 +189,8 @@ void main() {
         ['-000000001', '0000000040'],
       ]) {
         final snapshot = ClipboardSnapshot.fromChannel({
-          'html': 'Version:0.9\r\n'
+          'html':
+              'Version:0.9\r\n'
               'StartHTML:${offsets[0]}\r\n'
               'EndHTML:${offsets[1]}\r\n'
               '$markup',
