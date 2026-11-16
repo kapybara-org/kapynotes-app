@@ -119,7 +119,9 @@ List<String> _resultTargets(WidgetTester tester) => [
 /// screen, not merely built somewhere below the fold.
 bool _onScreen(WidgetTester tester, Finder finder) {
   final rect = tester.getRect(finder);
-  final dialog = tester.getRect(find.byType(AlertDialog));
+  final dialog = tester.getRect(
+    find.byKey(const ValueKey('settings-dialog-content')),
+  );
   return rect.top >= dialog.top && rect.bottom <= dialog.bottom;
 }
 
@@ -224,7 +226,7 @@ void main() {
               widget is KapyIcon && widget.icon == KapyIcons.searchRounded,
         ),
       );
-      expect(tester.getSize(icon), Size.square(AppControlMetrics.iconSearch));
+      expect(tester.getSize(icon), const Size.square(15));
     });
 
     testWidgets('is waiting in the field when settings opens, and Return '
@@ -253,7 +255,7 @@ void main() {
         _onScreen(tester, find.byKey(const ValueKey('theme-setting'))),
         isTrue,
       );
-      expect(find.text('WRITING FONT'), findsOneWidget);
+      expect(find.text('Writing font'), findsOneWidget);
       expect(tester.widget<TextField>(_field).controller!.text, isEmpty);
     });
 
@@ -296,7 +298,10 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(tester.widget<TextField>(_field).controller!.text, isEmpty);
-      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('settings-dialog-content')),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const ValueKey('settings-search-results')),
         findsNothing,
@@ -304,7 +309,10 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsNothing);
+      expect(
+        find.byKey(const ValueKey('settings-dialog-content')),
+        findsNothing,
+      );
     });
 
     testWidgets('says so when nothing matches', (tester) async {
@@ -328,7 +336,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.widget<TextField>(_field).controller!.text, isEmpty);
-      expect(find.text('SYSTEM-WIDE'), findsOneWidget);
+      expect(find.text('System-wide'), findsOneWidget);
     });
 
     testWidgets('⌘F goes back to the field from anywhere in settings', (

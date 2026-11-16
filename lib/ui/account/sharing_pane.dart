@@ -38,7 +38,7 @@ class SharingPane extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SettingsLabel('SHARING'),
+            const SettingsLabel('Sharing'),
             SettingsGroup(
               children: [
                 SettingsRow(
@@ -226,7 +226,7 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SettingsLabel('SHARING'),
+        const SettingsLabel('Sharing'),
         SettingsGroup(
           key: const ValueKey('sharing-group'),
           children: [
@@ -298,8 +298,8 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
               : 'Share from the people button, or long-press a note.',
         ),
         if (sharing.blocks.isNotEmpty) ...[
-          const SizedBox(height: 18),
-          const SettingsLabel('BLOCKED'),
+          SizedBox(height: SettingsMetrics.groupGap),
+          const SettingsLabel('Blocked'),
           SettingsGroup(
             children: [
               for (final block in sharing.blocks)

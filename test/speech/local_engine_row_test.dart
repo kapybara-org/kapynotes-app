@@ -173,7 +173,7 @@ void main() {
   testWidgets('a build with no models still shows the shelf', (tester) async {
     await _openVoicePane(tester);
 
-    expect(find.text('RECORDINGS & SUMMARIES'), findsOneWidget);
+    expect(find.text('Recordings & summaries'), findsOneWidget);
     expect(find.text('ON THIS DEVICE'), findsNothing);
     expect(find.byKey(const ValueKey('local-transcription-row')), findsOne);
     expect(find.byKey(const ValueKey('local-summary-row')), findsOne);

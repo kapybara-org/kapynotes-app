@@ -25,6 +25,7 @@ import '../speech/transcriber.dart';
 import 'model_terms_sheet.dart';
 import 'settings_rows.dart';
 import 'settings_search.dart';
+import 'tonal_button.dart';
 import 'sidebar_timestamp.dart';
 import '../speech/local_models.dart';
 import '../speech/speech_errors.dart';
@@ -85,6 +86,17 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.appearance => KapyIcons.storiesOutlined,
     SettingsSection.shortcuts => KapyIcons.keyboardOutlined,
     SettingsSection.updates => KapyIcons.systemUpdateRounded,
+  };
+
+  /// The glyph beside the label in the desktop dialog's rail.
+  KapyIconData get railIcon => switch (this) {
+    SettingsSection.general => KapyIcons.tuneRounded,
+    SettingsSection.sync => KapyIcons.accountCircleOutlined,
+    SettingsSection.plan => KapyIcons.verifiedOutlined,
+    SettingsSection.voice => KapyIcons.micRounded,
+    SettingsSection.appearance => KapyIcons.paintBoardOutlined,
+    SettingsSection.shortcuts => KapyIcons.commandOutlined,
+    SettingsSection.updates => KapyIcons.refreshOutlined,
   };
 
   /// What is behind the label, for the layouts that show a list of categories
@@ -149,6 +161,7 @@ Future<void> showSettings(
       if (!context.mounted) return Future<void>.value();
       return showDialog<void>(
         context: context,
+        barrierColor: context.palette.scrim,
         builder: (context) => build(asSheet: false),
       );
     }
@@ -248,10 +261,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// Other desktop platforms may still stack at their narrowest. Windows
   /// borrows enough host-window width before opening, and always keeps the
   /// section rail visible while that resize reaches Flutter.
-  static const double _railBreakpoint = 520;
-  static const double _railWidth = 164;
-  static const double _panedWidth = 600;
-  static const double _stackedWidth = 440;
+  static const double _railBreakpoint = 560;
+  static const double _dialogWidth = 820;
+  static const double _dialogHeight = 700;
+  static const double _navWidth = 224;
 
   String? _shortcutError;
   String? _loginItemError;
@@ -574,7 +587,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         (_speechConsent?.isAccepted ?? false) &&
         prefs.transcriptEngine == TranscriptEngine.cloud;
     return [
-      const SettingsLabel('TRANSCRIPTION'),
+      const SettingsLabel('Transcription'),
       SettingsGroup(
         children: [
           _EngineChoiceRow(
@@ -619,8 +632,8 @@ class _SettingsDialogState extends State<SettingsDialog>
             ),
           ),
         ),
-      const SizedBox(height: 18),
-      const SettingsLabel('RECORDINGS & SUMMARIES'),
+      SizedBox(height: SettingsMetrics.groupGap),
+      const SettingsLabel('Recordings & summaries'),
       SettingsGroup(
         children: [
           SettingsToggleRow(
@@ -1143,34 +1156,145 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   Widget _buildDialog(BuildContext context) {
     final media = MediaQuery.sizeOf(context);
-    final available = media.width - 80;
-    final paned = AppPlatform.isWindows || available >= _railBreakpoint;
-    final width = math.min(paned ? _panedWidth : _stackedWidth, available);
-    // A fixed height keeps the dialog from resizing under the pointer
-    // as sections of different lengths are selected.
-    final height = (media.height - 140).clamp(260.0, 520.0);
+    final palette = context.palette;
+    // A fixed size keeps the dialog from resizing under the pointer as
+    // sections of different lengths are selected; a small window takes all
+    // but a margin of itself.
+    final width = math.min(_dialogWidth, media.width - 48);
+    final height = math.min(_dialogHeight, media.height - 48);
+    final paned = AppPlatform.isWindows || width >= _railBreakpoint;
+    const corners = BorderRadius.all(Radius.circular(AppRadii.dialog));
 
-    return AlertDialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
-      contentPadding: EdgeInsets.fromLTRB(paned ? 18 : 22, 18, 24, 0),
-      actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
-      title: const Text(
-        'Settings',
-        style: TextStyle(fontWeight: _settingsSemiboldWeight),
-      ),
-      content: SizedBox(
+    return Dialog(
+      insetPadding: const EdgeInsets.all(24),
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      elevation: 0,
+      child: Container(
         key: const ValueKey('settings-dialog-content'),
         width: width,
         height: height,
-        child: paned ? _buildPaned(context) : _buildStacked(context),
+        clipBehavior: Clip.antiAlias,
+        foregroundDecoration: BoxDecoration(
+          borderRadius: corners,
+          border: Border.all(color: palette.separator),
+        ),
+        decoration: BoxDecoration(
+          color: palette.surfaceBackground,
+          borderRadius: corners,
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x80000000),
+              offset: Offset(0, 30),
+              blurRadius: 60,
+              spreadRadius: -24,
+            ),
+            BoxShadow(
+              color: Color(0x59000000),
+              offset: Offset(0, 2),
+              blurRadius: 8,
+            ),
+          ],
+        ),
+        // Line heights here are the design's, which centre a line's
+        // leading the way CSS does.
+        child: DefaultTextHeightBehavior(
+          textHeightBehavior: const TextHeightBehavior(
+            leadingDistribution: TextLeadingDistribution.even,
+          ),
+          child: paned ? _buildPaned(context) : _buildStacked(context),
+        ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text(
-            'Done',
-            style: TextStyle(fontWeight: _settingsMediumWeight),
+    );
+  }
+
+  /// The pane's heading: what is on show, a line on what is in it, and the
+  /// way out.
+  Widget _paneHeader({required String title, required String summary}) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 22, 22, 18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Shantell Sans',
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    height: 26 / 20,
+                    color: palette.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  summary,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 16 / 12.5,
+                    color: palette.textDescription,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          TonalButton(
+            key: const ValueKey('settings-done'),
+            label: 'Done',
+            shortcut: 'esc',
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// [pane] under the pane's heading, fading out at its foot so the last
+  /// row reads as more to scroll to rather than as cut off.
+  Widget _paneColumn({
+    required String title,
+    required String summary,
+    required Widget pane,
+  }) {
+    final surface = context.palette.surfaceBackground;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _paneHeader(title: title, summary: summary),
+        Expanded(
+          child: Stack(
+            children: [
+              Positioned.fill(child: pane),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 64,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: const [0, 0.85],
+                        colors: [surface.withValues(alpha: 0), surface],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -1284,67 +1408,121 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// down for something and a field that finds it saves the looking. Its
   /// results take the pane's place, so the rail stays a way back out.
   Widget _buildPaned(BuildContext context) {
+    final palette = context.palette;
+    final section = _section;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          width: _railWidth,
+        Container(
+          width: _navWidth,
+          padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+          decoration: BoxDecoration(
+            color: palette.sidebarBackground,
+            border: Border(right: BorderSide(color: palette.paneEdge)),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Container(
+                height: 26,
+                padding: const EdgeInsets.only(left: 10),
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Settings',
+                  style: TextStyle(
+                    fontFamily: 'Shantell Sans',
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    height: 22 / 17,
+                    color: palette.textHeading,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
               // Settings opened on purpose, sent to one pane, leaves the
               // keyboard to whatever that pane wanted it for.
               _searchField(autofocus: widget.section == null),
-              const SizedBox(height: 8),
+              const SizedBox(height: 14),
               Expanded(
                 child: _SettingsRail(
-                  sections: _sections,
+                  sections: _railSections,
                   // No category is the one on show while results are.
-                  selected: _searching ? null : _section,
+                  selected: _searching ? null : section,
                   onSelect: _selectFromRail,
                 ),
               ),
+              if (widget.updates case final updates?)
+                ListenableBuilder(
+                  listenable: updates,
+                  builder: (context, _) => _VersionStatus(updates: updates),
+                ),
             ],
           ),
         ),
-        const SizedBox(width: 14),
         Expanded(
-          child: _ScrollingPane(
-            key: _paneKey,
-            controller: _scrollController,
-            flashTarget: _flashTarget,
-            flash: _flash,
-            children: _searching ? [_searchResults()] : _paneFor(_section),
+          child: _paneColumn(
+            title: _searching ? 'Search' : section.label,
+            summary: _searching
+                ? 'Settings that match “$_query”'
+                : section.summary,
+            pane: _ScrollingPane(
+              key: _paneKey,
+              controller: _scrollController,
+              flashTarget: _flashTarget,
+              flash: _flash,
+              children: _searching ? [_searchResults()] : _paneFor(section),
+            ),
           ),
         ),
       ],
     );
   }
 
+  /// The rail's order: the account sections, then the two that shape the
+  /// writing, then the keys and the app itself.
+  List<SettingsSection> get _railSections => [
+    for (final section in const [
+      SettingsSection.general,
+      SettingsSection.sync,
+      SettingsSection.plan,
+      SettingsSection.voice,
+      SettingsSection.appearance,
+      SettingsSection.shortcuts,
+      SettingsSection.updates,
+    ])
+      if (_sections.contains(section)) section,
+  ];
+
   Widget _buildStacked(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _searchField(autofocus: widget.section == null),
-        const SizedBox(height: 12),
-        Expanded(
-          child: _ScrollingPane(
-            key: _paneKey,
-            controller: _scrollController,
-            flashTarget: _flashTarget,
-            flash: _flash,
-            children: _searching
-                ? [_searchResults()]
-                : [
-                    for (final section in _sections) ...[
-                      if (section != _sections.first)
-                        const SizedBox(height: 20),
-                      ..._paneFor(section),
-                    ],
-                  ],
+    return _paneColumn(
+      title: 'Settings',
+      summary: 'Everything in one list',
+      pane: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(28, 0, 24, 12),
+            child: _searchField(autofocus: widget.section == null),
           ),
-        ),
-      ],
+          Expanded(
+            child: _ScrollingPane(
+              key: _paneKey,
+              controller: _scrollController,
+              flashTarget: _flashTarget,
+              flash: _flash,
+              children: _searching
+                  ? [_searchResults()]
+                  : [
+                      for (final section in _sections) ...[
+                        if (section != _sections.first)
+                          const SizedBox(height: 20),
+                        ..._paneFor(section),
+                      ],
+                    ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1888,7 +2066,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// name, and a button loose under the last card. Now every row says what it
   /// is, next to the rows it is read with.
   List<Widget> _generalPane() => [
-    const SettingsLabel('OPENING'),
+    const SettingsLabel('Opening'),
     SettingsGroup(
       children: [
         SettingsNavigationRow(
@@ -1900,7 +2078,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         ),
         SettingsToggleRow(
           key: const ValueKey('ready-to-type-on-open-toggle'),
-          icon: KapyIcons.keyboardOutlined,
+          icon: KapyIcons.textCursorOutlined,
           title: 'Ready to type on open',
           subtitle: 'Restore your cursor or start a new dated line',
           value: widget.layoutPrefs.readyToTypeOnOpen,
@@ -1908,11 +2086,11 @@ class _SettingsDialogState extends State<SettingsDialog>
         ),
       ],
     ),
-    const SizedBox(height: 18),
+    SizedBox(height: SettingsMetrics.groupGap),
     // The time zone sits under the separators because they are what it
     // dates: a row further down, under a heading of its own, read as a
     // setting for the whole computer.
-    const SettingsLabel('WRITING'),
+    const SettingsLabel('Writing'),
     SettingsGroup(
       children: [
         SettingsToggleRow(
@@ -1935,7 +2113,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         ),
         SettingsToggleRow(
           key: const ValueKey('spell-check-toggle'),
-          icon: KapyIcons.spellcheckRounded,
+          icon: KapyIcons.spellCheckOutlined,
           title: 'Check spelling',
           subtitle: 'Underline possible misspellings',
           value: widget.layoutPrefs.spellCheckEnabled,
@@ -1945,7 +2123,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         // they are typed. Nothing in a note is converted either way.
         SettingsToggleRow(
           key: const ValueKey('markdown-toggle'),
-          icon: KapyIcons.tagRounded,
+          icon: KapyIcons.hashtagOutlined,
           title: 'Markdown in notes',
           subtitle: 'Use # headings, - lists, and [] checkboxes',
           value: widget.layoutPrefs.markdownEnabled,
@@ -1953,13 +2131,13 @@ class _SettingsDialogState extends State<SettingsDialog>
         ),
       ],
     ),
-    const SizedBox(height: 18),
-    const SettingsLabel('YOUR NOTES'),
+    SizedBox(height: SettingsMetrics.groupGap),
+    const SettingsLabel('Your notes'),
     SettingsGroup(
       children: [
         SettingsNavigationRow(
           key: const ValueKey('export-notes'),
-          icon: KapyIcons.shareRounded,
+          icon: KapyIcons.uploadOutlined,
           title: 'Export all notes',
           // The one-line warning the plaintext deserves, at the moment it
           // matters. Not called a backup, because nothing here runs on its own.
@@ -1976,17 +2154,17 @@ class _SettingsDialogState extends State<SettingsDialog>
       ],
     ),
     if (AppPlatform.isDesktop) ...[
-      const SizedBox(height: 18),
+      SizedBox(height: SettingsMetrics.groupGap),
       // Everything about the window as a thing on the desktop: what is in it,
       // whether it outlives being closed, and the one reset. The reset is a
       // row like the others rather than a button under the card, which read
       // as belonging to the whole pane.
-      const SettingsLabel('WINDOW'),
+      const SettingsLabel('Window'),
       SettingsGroup(
         children: [
           SettingsToggleRow(
             key: const ValueKey('sidebar-toggle'),
-            icon: KapyIcons.viewSidebarOutlined,
+            icon: KapyIcons.menuOpenRounded,
             // Named the way the shortcut that toggles it is named.
             title: 'Notes list',
             subtitle: 'Show the notes list beside your editor',
@@ -1995,7 +2173,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           ),
           SettingsToggleRow(
             key: const ValueKey('hidden-notes-sidebar-toggle'),
-            icon: KapyIcons.lockRounded,
+            icon: KapyIcons.lockKeyOutlined,
             title: 'Hidden Notes',
             subtitle:
                 'Show the protected folder · '
@@ -2006,7 +2184,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           ),
           SettingsToggleRow(
             key: const ValueKey('keep-running-toggle'),
-            icon: KapyIcons.closeFullscreenRounded,
+            icon: KapyIcons.computerOutlined,
             title: AppPlatform.isMacOS
                 ? 'Keep running in the menu bar'
                 : 'Keep running in the tray',
@@ -2030,9 +2208,9 @@ class _SettingsDialogState extends State<SettingsDialog>
             ),
           SettingsRow(
             key: const ValueKey('panel-widths-setting'),
-            icon: KapyIcons.viewColumnOutlined,
+            icon: KapyIcons.panelColumnsOutlined,
             title: 'Panel widths',
-            subtitle: 'Reset the notes and results columns',
+            subtitle: 'Reset the notes list to its default width',
             trailing: SettingsRowButton(
               key: const ValueKey('reset-panel-widths'),
               label: 'Reset',
@@ -2068,7 +2246,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// the reader nothing the word had not. The writing fonts keep their list,
   /// because each one is shown in itself, and that is the point of it.
   List<Widget> _appearancePane() => [
-    const SettingsLabel('THEME'),
+    const SettingsLabel('Theme'),
     SettingsGroup(
       children: [
         _SegmentedRow<AppearanceMode>(
@@ -2133,8 +2311,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         ],
       ],
     ),
-    const SizedBox(height: 18),
-    const SettingsLabel('WRITING FONT'),
+    SizedBox(height: SettingsMetrics.groupGap),
+    const SettingsLabel('Writing font'),
     SettingsGroup(
       children: [
         for (final font in WritingFont.values)
@@ -2174,11 +2352,11 @@ class _SettingsDialogState extends State<SettingsDialog>
     const SettingsNote(
       'Applies only to notes. Menus and controls use the system font.',
     ),
-    const SizedBox(height: 18),
+    SizedBox(height: SettingsMetrics.groupGap),
     // How numbers are written and where the currency rates behind them come
     // from, together: the credit used to be a heading of its own over one row,
     // which read as one more thing to set.
-    const SettingsLabel('NUMBERS'),
+    const SettingsLabel('Numbers'),
     SettingsGroup(
       children: [
         for (final system in NumberSystem.values)
@@ -2218,7 +2396,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         ),
       ),
     ),
-    const SettingsLabel('SYSTEM-WIDE'),
+    const SettingsLabel('System-wide'),
     SettingsGroup(
       children: [
         for (final action in ShortcutAction.values.where(
@@ -2234,8 +2412,8 @@ class _SettingsDialogState extends State<SettingsDialog>
       ],
     ),
     for (final group in _ShortcutGroup.values) ...[
-      const SizedBox(height: 18),
-      SettingsLabel(group.label),
+      SizedBox(height: SettingsMetrics.groupGap),
+      SettingsLabel(group.title),
       SettingsGroup(
         children: [
           for (final action in ShortcutAction.values.where(
@@ -2278,7 +2456,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   List<Widget> _updatesPane() {
     final updates = widget.updates!;
     return [
-      const SettingsLabel('KAPY NOTES'),
+      const SettingsLabel('Kapy Notes'),
       ListenableBuilder(
         listenable: updates,
         builder: (context, _) => SettingsGroup(
@@ -2300,14 +2478,14 @@ class _SettingsDialogState extends State<SettingsDialog>
         listenable: updates,
         builder: (context, _) => SettingsNote(_updatesNote(updates)),
       ),
-      const SizedBox(height: 18),
+      SizedBox(height: SettingsMetrics.groupGap),
       // Keyed here rather than on the group below it: a search result scrolls
       // to what it lands on and lights it, and the group is taller than the
       // window by a dozen releases.
       ListenableBuilder(
         listenable: updates,
         builder: (context, _) => SettingsLabel(
-          updates.hasUpdate ? "WHAT'S NEW" : 'RELEASE NOTES',
+          updates.hasUpdate ? "What's new" : 'Release notes',
           key: const ValueKey('changelog'),
         ),
       ),
@@ -2549,7 +2727,7 @@ class _PlanUsagePane extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SettingsLabel('PLAN'),
+        const SettingsLabel('Plan'),
         SettingsGroup(
           children: [
             SettingsRow(
@@ -2580,8 +2758,8 @@ class _PlanUsagePane extends StatelessWidget {
             'Showing last saved totals. Refresh when you are online.',
             icon: KapyIcons.warningRounded,
           ),
-        const SizedBox(height: 18),
-        SettingsLabel(signedIn ? 'USAGE' : 'FREE PLAN LIMITS'),
+        SizedBox(height: SettingsMetrics.groupGap),
+        SettingsLabel(signedIn ? 'Usage' : 'Free plan limits'),
         SettingsGroup(
           children: [
             _PlanUsageRow(
@@ -2891,7 +3069,9 @@ class _ScrollingPane extends StatelessWidget {
       radius: const Radius.circular(999),
       child: SingleChildScrollView(
         controller: controller,
-        padding: const EdgeInsets.only(right: 7),
+        padding: AppPlatform.hasPointer
+            ? const EdgeInsets.fromLTRB(28, 0, 24, 24)
+            : const EdgeInsets.only(right: 7),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: children,
@@ -2937,26 +3117,17 @@ class _SettingsRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.controlBackground,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: palette.controlBorder, width: 0.5),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final section in sections)
-              _RailItem(
-                section: section,
-                selected: section == selected,
-                onTap: () => onSelect(section),
-              ),
-          ],
-        ),
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final section in sections)
+            _RailItem(
+              section: section,
+              selected: section == selected,
+              onTap: () => onSelect(section),
+            ),
+        ],
       ),
     );
   }
@@ -2976,49 +3147,105 @@ class _RailItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
+    const corners = BorderRadius.all(Radius.circular(AppRadii.control));
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Semantics(
         selected: selected,
         button: true,
-        child: InkWell(
-          key: ValueKey('settings-section-${section.name}'),
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(7),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-            decoration: BoxDecoration(
-              color: selected ? palette.selectedBackground : Colors.transparent,
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: Row(
-              children: [
-                KapyIcon(
-                  section.icon,
-                  size: 15,
-                  color: selected ? accent : palette.textTertiary,
-                ),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Text(
-                    section.label,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: selected
-                          ? _settingsSemiboldWeight
-                          : _settingsRegularWeight,
-                      color: selected
-                          ? palette.textPrimary
-                          : palette.textSecondary,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+        child: Material(
+          color: selected ? palette.tonalBackground : Colors.transparent,
+          borderRadius: corners,
+          child: InkWell(
+            key: ValueKey('settings-section-${section.name}'),
+            onTap: onTap,
+            borderRadius: corners,
+            hoverColor: palette.hover,
+            child: Container(
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                children: [
+                  KapyIcon(
+                    section.railIcon,
+                    size: 16,
+                    strokeWidth: 1.7,
+                    color: selected
+                        ? palette.tonalForeground
+                        : palette.textTertiary,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      section.label,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        height: 16 / 13.5,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: selected
+                            ? palette.tonalForeground
+                            : palette.textMuted,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The installed version at the foot of the rail, with a dot that says
+/// whether there is a newer one.
+class _VersionStatus extends StatelessWidget {
+  const _VersionStatus({required this.updates});
+
+  final UpdateChecker updates;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final version = updates.currentVersion;
+    if (version.isEmpty) return const SizedBox.shrink();
+    final shown = version.endsWith('.0')
+        ? version.substring(0, version.length - 2)
+        : version;
+    final pending = updates.hasUpdate;
+    return Container(
+      key: const ValueKey('settings-version-status'),
+      height: 18,
+      padding: const EdgeInsets.only(left: 10),
+      child: Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: pending
+                  ? palette.keyword
+                  : Theme.of(context).colorScheme.primary,
+              shape: BoxShape.circle,
+            ),
+            child: const SizedBox.square(dimension: 6),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              'Version $shown · ${pending ? 'Update available' : 'Up to date'}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11.5,
+                height: 14 / 11.5,
+                color: palette.textTertiary,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

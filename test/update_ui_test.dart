@@ -16,6 +16,7 @@ import 'package:kapy_notes/data/release_history.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/update_checker.dart';
 import 'package:kapy_notes/data/update_installer.dart';
+import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -548,7 +549,13 @@ void main() {
       find.byKey(const ValueKey('settings-section-updates')),
       findsNothing,
     );
-    expect(find.text('KAPY NOTES'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(SettingsDialog),
+        matching: find.text('Kapy Notes'),
+      ),
+      findsNothing,
+    );
     expect(find.widgetWithText(TextButton, 'Check'), findsNothing);
   });
 
@@ -620,7 +627,7 @@ void main() {
         );
         await _openUpdates(tester);
 
-        expect(find.text("WHAT'S NEW"), findsOneWidget);
+        expect(find.text("What's new"), findsOneWidget);
         expect(find.byKey(const ValueKey('release-1.0.1')), findsOneWidget);
         expect(
           find.text('The update waiting to be installed.'),
@@ -660,7 +667,7 @@ void main() {
       );
       await _openUpdates(tester);
 
-      expect(find.text('RELEASE NOTES'), findsOneWidget);
+      expect(find.text('Release notes'), findsOneWidget);
       expect(find.byKey(const ValueKey('release-1.0.0')), findsOneWidget);
       expect(find.byKey(const ValueKey('release-0.9.0')), findsOneWidget);
       expect(find.text('2 Sep 2026'), findsOneWidget);

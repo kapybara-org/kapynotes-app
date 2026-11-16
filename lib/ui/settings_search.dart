@@ -175,67 +175,93 @@ class SettingsSearchField extends StatelessWidget {
       },
       child: ValueListenableBuilder<TextEditingValue>(
         valueListenable: controller,
-        builder: (context, value, _) => TextField(
-          key: const ValueKey('settings-search'),
-          controller: controller,
-          focusNode: focusNode,
-          autofocus: autofocus,
-          autocorrect: false,
-          enableSuggestions: false,
-          textInputAction: TextInputAction.search,
-          onSubmitted: (_) => onSubmitted(),
-          style: TextStyle(
-            fontSize: AppTypeScale.control,
-            color: palette.textPrimary,
-          ),
-          cursorHeight: AppTypeScale.control + 2,
-          decoration: kapyFieldDecoration(
-            context,
-            hintText: 'Search settings',
-            hintStyle: TextStyle(
-              fontSize: AppTypeScale.control,
-              color: palette.textTertiary,
+        builder: (context, value, _) {
+          final pointer = AppPlatform.hasPointer;
+          final size = pointer ? 13.0 : AppTypeScale.control;
+          final field = TextField(
+            key: const ValueKey('settings-search'),
+            controller: controller,
+            focusNode: focusNode,
+            autofocus: autofocus,
+            autocorrect: false,
+            enableSuggestions: false,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => onSubmitted(),
+            style: TextStyle(
+              fontSize: size,
+              height: pointer ? 16 / 13 : null,
+              color: palette.textPrimary,
             ),
-            // InputDecorator gives its prefix the whole adornment slot. Center
-            // loosens those constraints so the glyph keeps its intended size.
-            prefixIcon: Center(
-              widthFactor: 1,
-              heightFactor: 1,
-              child: KapyIcon(
-                KapyIcons.searchRounded,
-                size: AppControlMetrics.iconSearch,
+            cursorHeight: size + 2,
+            decoration: kapyFieldDecoration(
+              context,
+              hintText: 'Search settings',
+              hintStyle: TextStyle(
+                fontSize: size,
+                height: pointer ? 16 / 13 : null,
                 color: palette.textTertiary,
               ),
-            ),
-            prefixIconConstraints: BoxConstraints(
-              minWidth: AppControlMetrics.fieldAdornmentSlot + 2,
-              minHeight: AppControlMetrics.fieldAdornmentSlot,
-            ),
-            suffixIcon: value.text.isEmpty
-                ? null
-                : CompactIconButton(
-                    key: const ValueKey('settings-search-clear'),
-                    tooltip: 'Clear search',
-                    extent: AppControlMetrics.fieldAdornmentSlot,
-                    foregroundColor: palette.textTertiary,
-                    onPressed: () {
-                      controller.clear();
-                      focusNode.requestFocus();
-                    },
-                    icon: KapyIcon(
-                      KapyIcons.cancelRounded,
-                      size: AppControlMetrics.iconAdornment,
-                    ),
+              fillColor: pointer ? palette.surfaceBackground : null,
+              borderWidth: pointer ? 1.5 : null,
+              radius: pointer ? 10 : null,
+              // InputDecorator gives its prefix the whole adornment slot.
+              // Center loosens those constraints so the glyph keeps its
+              // intended size.
+              prefixIcon: Padding(
+                padding: EdgeInsets.only(
+                  left: pointer ? 9 : 0,
+                  right: pointer ? 8 : 0,
+                ),
+                child: Center(
+                  widthFactor: 1,
+                  heightFactor: 1,
+                  child: KapyIcon(
+                    KapyIcons.searchRounded,
+                    size: pointer ? 15 : AppControlMetrics.iconSearch,
+                    strokeWidth: pointer ? 1.8 : 1.5,
+                    color: pointer
+                        ? palette.textSecondary
+                        : palette.textTertiary,
                   ),
-            suffixIconConstraints: BoxConstraints(
-              minWidth: AppControlMetrics.fieldAdornmentSlot,
-              minHeight: AppControlMetrics.fieldAdornmentSlot,
+                ),
+              ),
+              prefixIconConstraints: pointer
+                  ? const BoxConstraints(minHeight: 31)
+                  : BoxConstraints(
+                      minWidth: AppControlMetrics.fieldAdornmentSlot + 2,
+                      minHeight: AppControlMetrics.fieldAdornmentSlot,
+                    ),
+              suffixIcon: value.text.isEmpty
+                  ? null
+                  : CompactIconButton(
+                      key: const ValueKey('settings-search-clear'),
+                      tooltip: 'Clear search',
+                      extent: pointer
+                          ? 28
+                          : AppControlMetrics.fieldAdornmentSlot,
+                      foregroundColor: palette.textTertiary,
+                      onPressed: () {
+                        controller.clear();
+                        focusNode.requestFocus();
+                      },
+                      icon: KapyIcon(
+                        KapyIcons.cancelRounded,
+                        size: AppControlMetrics.iconAdornment,
+                      ),
+                    ),
+              suffixIconConstraints: BoxConstraints(
+                minWidth: pointer ? 30 : AppControlMetrics.fieldAdornmentSlot,
+                minHeight: pointer ? 28 : AppControlMetrics.fieldAdornmentSlot,
+              ),
+              contentPadding: pointer
+                  ? const EdgeInsets.only(right: 10, top: 8.5, bottom: 8.5)
+                  : EdgeInsets.symmetric(
+                      vertical: AppControlMetrics.fieldVerticalPadding,
+                    ),
             ),
-            contentPadding: EdgeInsets.symmetric(
-              vertical: AppControlMetrics.fieldVerticalPadding,
-            ),
-          ),
-        ),
+          );
+          return pointer ? SizedBox(height: 34, child: field) : field;
+        },
       ),
     );
   }
@@ -300,7 +326,7 @@ class SettingsSearchResults<S> extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SettingsLabel(
-          results.length == 1 ? '1 SETTING' : '${results.length} SETTINGS',
+          results.length == 1 ? '1 setting' : '${results.length} settings',
         ),
         SettingsGroup(
           children: [

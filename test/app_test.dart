@@ -37,6 +37,7 @@ import 'package:kapy_notes/ui/hidden_notes_gate.dart';
 import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
+import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_swipe.dart';
 import 'package:kapy_notes/ui/toolbar.dart';
@@ -809,7 +810,7 @@ void main() {
       matching: find.byKey(const ValueKey('compact-switch-indicator')),
     );
     expect(prefs.dailySeparatorsEnabled, isTrue);
-    expect(tester.getSize(compactSwitch), const Size(34, 18));
+    expect(tester.getSize(compactSwitch), const Size(34, 20));
 
     final readyToType = find.byKey(
       const ValueKey('ready-to-type-on-open-toggle'),
@@ -871,7 +872,7 @@ void main() {
     );
   });
 
-  testWidgets('settings keeps system labels regular or lighter', (
+  testWidgets('settings sets its type at the Riverbank weights', (
     tester,
   ) async {
     await pumpApp(tester);
@@ -880,36 +881,22 @@ void main() {
     await openSettings(tester);
 
     final settings = find.byType(SettingsDialog);
-    final textWidgets = find.descendant(
-      of: settings,
-      matching: find.byType(Text),
-    );
-    for (final element in textWidgets.evaluate()) {
-      final text = element.widget as Text;
-      final inherited = DefaultTextStyle.of(element).style;
-      final weight = text.style?.fontWeight ?? inherited.fontWeight;
-      expect(
-        (weight ?? FontWeight.w400).value,
-        lessThanOrEqualTo(FontWeight.w500.value),
-        reason: '${text.data ?? text.textSpan?.toPlainText()} is too bold',
-      );
-    }
-
     FontWeight weightOf(String label) {
       final finder = find.descendant(of: settings, matching: find.text(label));
-      final element = tester.element(finder);
-      final text = tester.widget<Text>(finder);
+      final element = tester.element(finder.first);
+      final text = tester.widget<Text>(finder.first);
       return text.style?.fontWeight ??
           DefaultTextStyle.of(element).style.fontWeight ??
           FontWeight.w400;
     }
 
-    expect(weightOf('Settings'), FontWeight.w400);
-    expect(weightOf('General'), FontWeight.w400);
-    expect(weightOf('Appearance'), FontWeight.w400);
-    expect(weightOf('OPENING'), FontWeight.w400);
-    expect(weightOf('Daily separators'), FontWeight.w400);
-    expect(weightOf('Done'), FontWeight.w400);
+    // Headings and the selected section are semibold; the sections not on
+    // show are medium; a row's description is regular.
+    expect(weightOf('Settings'), FontWeight.w600);
+    expect(weightOf('Opening'), FontWeight.w600);
+    expect(weightOf('Daily separators'), FontWeight.w600);
+    expect(weightOf('Appearance'), FontWeight.w500);
+    expect(weightOf('Add a dated line when a new day begins'), FontWeight.w400);
   });
 
   testWidgets('selects and persists the note time zone from settings', (
@@ -1096,7 +1083,7 @@ void main() {
     expect(editor().style?.fontFamily, WritingFont.clean.fontFamily);
 
     await openSettings(tester, section: SettingsSection.appearance);
-    expect(find.text('WRITING FONT'), findsOneWidget);
+    expect(find.text('Writing font'), findsOneWidget);
     for (final font in WritingFont.values) {
       expect(find.byKey(ValueKey('writing-font-${font.name}')), findsOneWidget);
     }
@@ -1512,22 +1499,25 @@ void main() {
     // The shortcuts another app can refuse lead the pane, then the in-app
     // keys by what they act on: the list, the panes beside it, the window,
     // what goes into a note, and how it is formatted.
+    Finder label(String text) => find.byWidgetPredicate(
+      (widget) => widget is SettingsLabel && widget.text == text,
+    );
     const headings = [
-      'SYSTEM-WIDE',
-      'NOTES',
-      'SPLIT VIEW',
-      'WINDOW',
-      'EDITOR',
-      'INSERT',
-      'FORMATTING',
+      'System-wide',
+      'Notes',
+      'Split view',
+      'Window',
+      'Editor',
+      'Insert',
+      'Formatting',
     ];
     for (final heading in headings) {
-      expect(find.text(heading), findsOneWidget);
+      expect(label(heading), findsOneWidget);
     }
     for (var index = 1; index < headings.length; index++) {
       expect(
-        tester.getTopLeft(find.text(headings[index - 1])).dy,
-        lessThan(tester.getTopLeft(find.text(headings[index])).dy),
+        tester.getTopLeft(label(headings[index - 1])).dy,
+        lessThan(tester.getTopLeft(label(headings[index])).dy),
       );
     }
     // The rail shows one pane at a time, so the general options are gone.
@@ -2400,7 +2390,7 @@ void main() {
 
     expect(
       tester.getSize(find.byKey(const ValueKey('settings-dialog-content'))),
-      const Size(600, 520),
+      const Size(820, 700),
     );
   });
 
@@ -3083,12 +3073,8 @@ void main() {
 
     await openSettings(tester);
     final toggle = find.byKey(const ValueKey('hidden-notes-sidebar-toggle'));
-    final settingsPane = find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.byType(SingleChildScrollView),
-    );
     final settingsScrollable = find.descendant(
-      of: settingsPane,
+      of: find.byType(Scrollbar),
       matching: find.byType(Scrollable),
     );
     expect(settingsScrollable, findsOneWidget);
@@ -3110,7 +3096,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(prefs.hiddenFolderVisible, isTrue);
 
-    await tester.tap(find.widgetWithText(TextButton, 'Done'));
+    await tester.tap(find.byKey(const ValueKey('settings-done')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsOneWidget);
   });

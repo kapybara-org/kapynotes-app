@@ -313,7 +313,10 @@ void main() {
       720.0,
       reason: 'the Windows host is widened before the dialog is shown',
     );
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('settings-dialog-content')),
+      findsOneWidget,
+    );
     final general = find.byKey(const ValueKey('settings-section-general'));
     expect(general, findsOneWidget);
     expect(find.text('Daily separators'), findsOneWidget);
@@ -324,7 +327,7 @@ void main() {
     expect(find.text('WRITING FONT'), findsNothing);
     expect(find.byKey(const ValueKey('settings-sheet-done')), findsNothing);
 
-    await tester.tap(find.widgetWithText(TextButton, 'Done'));
+    await tester.tap(find.byKey(const ValueKey('settings-done')));
     await tester.pumpAndSettle();
     expect(
       (nativeCalls.lastWhere((call) => call.method == 'setBounds').arguments
