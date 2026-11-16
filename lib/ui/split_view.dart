@@ -1,7 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../core/theme.dart';
-
 /// A two-pane layout whose divider the user can drag.
 ///
 /// The width is owned by the caller so it can be persisted; this widget only
@@ -38,8 +36,6 @@ class _SplitViewState extends State<SplitView> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = widget.sidebarWidth.clamp(
@@ -111,7 +107,7 @@ class _SplitViewState extends State<SplitView> {
                             decoration: BoxDecoration(
                               color: _dragging || _hovering
                                   ? Theme.of(context).colorScheme.primary
-                                  : palette.separator,
+                                  : Colors.transparent,
                               borderRadius: BorderRadius.circular(999),
                             ),
                           ),

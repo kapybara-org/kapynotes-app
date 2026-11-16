@@ -778,6 +778,14 @@ class AppTypeScale {
       ? 19
       : 16;
 
+  /// The name of the space the notes list is showing, over the list: the
+  /// window's own heading, set in Shantell Sans.
+  static double get spaceTitle => _touch
+      ? 20
+      : _windows
+      ? 18
+      : 17;
+
   /// The brand lockup, which is set in its own face and carries its own
   /// optical size a half point off [title].
   static double get wordmark => _touch

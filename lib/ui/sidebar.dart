@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
+import '../core/editor_font.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
@@ -23,12 +23,14 @@ import 'control_surface.dart';
 import 'context_menu.dart';
 import 'editor/note_footer.dart';
 import 'editor_panes.dart';
+import 'installed_version.dart';
 import 'keycap.dart';
 import 'member_avatars.dart';
 import 'safety_dialogs.dart';
 import 'sidebar_timestamp.dart';
 import 'streak_badge.dart';
 import 'tonal_button.dart';
+import 'window_drag_area.dart';
 
 /// What throwing a note away looks like, everywhere it is offered.
 ///
@@ -97,7 +99,7 @@ class Sidebar extends StatelessWidget {
     required this.displayTime,
     required this.onQueryChanged,
     required this.onSelect,
-    required this.onCreate,
+    this.onCreate,
     this.onMoveSelect,
     this.onEnterSelected,
     this.onOpenToSide,
@@ -139,6 +141,8 @@ class Sidebar extends StatelessWidget {
     this.onOpenSpace,
     this.tab = SidebarTab.mine,
     this.onTabChanged,
+    this.windowBar,
+    this.emptyMessage,
   });
 
   /// The notes to list, already narrowed to [tab] while the tabs are shown.
@@ -153,7 +157,10 @@ class Sidebar extends StatelessWidget {
   final DateTime Function(DateTime) displayTime;
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<String> onSelect;
-  final VoidCallback onCreate;
+
+  /// Makes a note from the + beside the search field. Null leaves the + out,
+  /// as beside the spaces rail, where the window bar has New note.
+  final VoidCallback? onCreate;
 
   /// Selects a row reached by sidebar arrow keys without committing its MRU
   /// position. Null uses [onSelect], as compact layouts do.
@@ -247,6 +254,19 @@ class Sidebar extends StatelessWidget {
   /// has nothing to put in the second one.
   final ValueChanged<SidebarTab>? onTabChanged;
 
+  /// The bar across the top of the list in the wide window, where the spaces
+  /// rail stands beside it: see [SidebarWindowBar].
+  ///
+  /// The rail holds what the list would otherwise carry, so with a window bar
+  /// the tabs are left out while [tab] still narrows the list, and
+  /// invitations wait under Shared, where the rail's badge points.
+  final Widget? windowBar;
+
+  /// What the list says when there is nothing in it to show, in place of the
+  /// name of the folder it would otherwise give. A search that finds nothing
+  /// still says so.
+  final String? emptyMessage;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -259,13 +279,14 @@ class Sidebar extends StatelessWidget {
       // Colour runs to the window edges; content stays clear of the status
       // bar, home indicator and any display cutout.
       child: SafeArea(
-        top: showHeader,
+        top: showHeader || _besideRail,
         right: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (showHeader) const _Header(),
-            if (_tabbed)
+            ?windowBar,
+            if (_showsTabs)
               _SidebarTabs(
                 tab: tab,
                 invitations: sharing!.invites.length,
@@ -279,7 +300,7 @@ class Sidebar extends StatelessWidget {
               hiddenMode: hiddenMode,
               focusNode: searchFocusNode,
               shortcut: searchShortcut,
-              belowTabs: _tabbed,
+              belowTabs: _showsTabs,
             ),
             if (archiveMode && (notes.isNotEmpty || selecting))
               _ArchiveActions(
@@ -298,7 +319,8 @@ class Sidebar extends StatelessWidget {
                 invitations:
                     !_specialMode &&
                         sharing != null &&
-                        sharing!.invites.isNotEmpty
+                        sharing!.invites.isNotEmpty &&
+                        (!_besideRail || _onSharedTab)
                     ? _Invitations(
                         sharing: sharing!,
                         onJoined: onTabChanged == null
@@ -352,6 +374,11 @@ extension on Sidebar {
   /// else's notes to show.
   bool get _tabbed => sharing != null && !_specialMode && onTabChanged != null;
 
+  bool get _besideRail => windowBar != null;
+
+  /// The rail beside the list switches between the two halves itself.
+  bool get _showsTabs => _tabbed && !_besideRail;
+
   bool get _onSharedTab => _tabbed && tab == SidebarTab.shared;
 
   /// Hidden Notes are always the person's own, so the way into them sits
@@ -388,13 +415,14 @@ extension on Sidebar {
   Widget _buildEmpty(BuildContext context) {
     final empty = _SidebarEmpty(
       message: query.trim().isEmpty
-          ? archiveMode
-                ? 'Archived Notes is empty'
-                : hiddenMode
-                ? 'Hidden Notes is empty'
-                : _onSharedTab
-                ? 'Nothing shared with you yet'
-                : 'No notes yet'
+          ? emptyMessage ??
+                (archiveMode
+                    ? 'Archived Notes is empty'
+                    : hiddenMode
+                    ? 'Hidden Notes is empty'
+                    : _onSharedTab
+                    ? 'Nothing shared with you yet'
+                    : 'No notes yet')
           : 'No matching notes',
       detail: query.trim().isEmpty && _onSharedTab
           ? 'Notes other people share with you appear here'
@@ -1059,7 +1087,7 @@ class _NoteCount extends StatelessWidget {
   }
 }
 
-class _SidebarFooter extends StatefulWidget {
+class _SidebarFooter extends StatelessWidget {
   const _SidebarFooter({
     this.onSettingsPressed,
     this.onArchivePressed,
@@ -1085,69 +1113,15 @@ class _SidebarFooter extends StatefulWidget {
   final UpdateChecker? updates;
 
   @override
-  State<_SidebarFooter> createState() => _SidebarFooterState();
-}
-
-class _SidebarFooterState extends State<_SidebarFooter> {
-  String _standaloneVersion = '';
-
-  @override
-  void initState() {
-    super.initState();
-    widget.updates?.addListener(_changed);
-    if (widget.updates == null && !AppPlatform.isFlutterTest) {
-      unawaited(_readInstalledVersion());
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _SidebarFooter oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.updates == widget.updates) return;
-    oldWidget.updates?.removeListener(_changed);
-    widget.updates?.addListener(_changed);
-    if (widget.updates == null &&
-        _standaloneVersion.isEmpty &&
-        !AppPlatform.isFlutterTest) {
-      unawaited(_readInstalledVersion());
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.updates?.removeListener(_changed);
-    super.dispose();
-  }
-
-  void _changed() {
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _readInstalledVersion() async {
-    try {
-      final info = await PackageInfo.fromPlatform();
-      if (mounted) setState(() => _standaloneVersion = info.version);
-    } catch (error) {
-      debugPrint('KapyNotes: could not show the installed version: $error');
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final updates = widget.updates;
-    final version = updates?.currentVersion ?? _standaloneVersion;
-    // The badge asks the user to go and look. While a download is running,
-    // or once it has finished and the title bar offers the restart, there is
-    // nothing to go and look at.
-    final updateNeedsAttention =
-        (updates?.hasUpdate ?? false) &&
-        !(updates?.isReadyToInstall ?? false) &&
-        !(updates?.isDownloading ?? false);
+    final onHiddenPressed = this.onHiddenPressed;
+    final onArchivePressed = this.onArchivePressed;
+    final onSettingsPressed = this.onSettingsPressed;
     final rows =
-        (widget.onHiddenPressed == null ? 0 : 1) +
-        (widget.onArchivePressed == null ? 0 : 1) +
-        (widget.onSettingsPressed == null ? 0 : 1);
+        (onHiddenPressed == null ? 0 : 1) +
+        (onArchivePressed == null ? 0 : 1) +
+        (onSettingsPressed == null ? 0 : 1);
     return Container(
       height: AppControlMetrics.scaleBar(context, NoteFooter.height * rows),
       decoration: BoxDecoration(
@@ -1155,31 +1129,34 @@ class _SidebarFooterState extends State<_SidebarFooter> {
       ),
       child: Column(
         children: [
-          if (widget.onHiddenPressed != null)
+          if (onHiddenPressed != null)
             Expanded(
               child: _HiddenEntry(
-                showingHidden: widget.showingHidden,
-                count: widget.hiddenCount,
-                onPressed: widget.onHiddenPressed!,
-                shortcut: widget.hiddenShortcut,
+                showingHidden: showingHidden,
+                count: hiddenCount,
+                onPressed: onHiddenPressed,
+                shortcut: hiddenShortcut,
               ),
             ),
-          if (widget.onArchivePressed != null)
+          if (onArchivePressed != null)
             Expanded(
               child: _ArchiveEntry(
-                showingArchive: widget.showingArchive,
-                count: widget.archivedCount,
-                onPressed: widget.onArchivePressed!,
+                showingArchive: showingArchive,
+                count: archivedCount,
+                onPressed: onArchivePressed,
               ),
             ),
-          if (widget.onSettingsPressed != null)
+          if (onSettingsPressed != null)
             Expanded(
-              child: _SettingsEntry(
-                key: const ValueKey('sidebar-settings'),
-                onPressed: widget.onSettingsPressed!,
-                version: version,
-                hasUpdate: updateNeedsAttention,
-                shortcut: widget.settingsShortcut,
+              child: InstalledVersion(
+                updates: updates,
+                builder: (context, version, updateWaiting) => _SettingsEntry(
+                  key: const ValueKey('sidebar-settings'),
+                  onPressed: onSettingsPressed,
+                  version: version,
+                  hasUpdate: updateWaiting,
+                  shortcut: settingsShortcut,
+                ),
               ),
             ),
         ],
@@ -1571,6 +1548,169 @@ class _Header extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// The bar across the top of the notes list in the wide window: the name of
+/// the space the list is showing and how many notes it holds, New note, and
+/// the way to put the list away.
+///
+/// It sits level with the traffic lights over the rail beside it, and like a
+/// title bar it drags the window wherever nothing on it is a button.
+class SidebarWindowBar extends StatelessWidget {
+  const SidebarWindowBar({
+    super.key,
+    required this.title,
+    required this.count,
+    required this.onCreate,
+    required this.onHide,
+    this.newNoteShortcut,
+    this.hideShortcut,
+  });
+
+  final String title;
+
+  /// How many notes the space holds, whatever a search has narrowed the list
+  /// to.
+  final int count;
+  final VoidCallback onCreate;
+  final VoidCallback onHide;
+
+  /// Printed on New note's keycap, so the chord is learnt from the button.
+  final ShortcutBinding? newNoteShortcut;
+  final ShortcutBinding? hideShortcut;
+
+  static const double height = 52;
+
+  /// Narrower than these, New note gives up its keycap and then its word, so
+  /// the space's name keeps its room on a list dragged narrow. Measured at
+  /// the reader's text size, which the name and the button both grow with.
+  static const double _keycapWidth = 280;
+  static const double _labelWidth = 250;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final handwritten = WritingFont.handwritten;
+    final newNoteShortcut = this.newNoteShortcut;
+    final hideShortcut = this.hideShortcut;
+    return SizedBox(
+      height: AppControlMetrics.scaleBar(context, height),
+      child: Stack(
+        children: [
+          const Positioned.fill(
+            child: WindowDragArea(child: SizedBox.expand()),
+          ),
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final width =
+                      constraints.maxWidth /
+                      MediaQuery.textScalerOf(context).scale(1);
+                  final keycap = width >= _keycapWidth;
+                  final label = width >= _labelWidth;
+                  return Row(
+                    children: [
+                      Expanded(
+                        // Its own drag region, because text takes the pointer
+                        // before the bar's can.
+                        child: WindowDragArea(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Flexible(
+                                child: Semantics(
+                                  header: true,
+                                  child: Text(
+                                    title,
+                                    key: const ValueKey('sidebar-space-title'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontFamily: handwritten.fontFamily,
+                                      fontFamilyFallback:
+                                          handwritten.fontFamilyFallback,
+                                      fontVariations:
+                                          handwritten.fontVariations,
+                                      fontSize: AppTypeScale.spaceTitle,
+                                      height: 1.3,
+                                      fontWeight: FontWeight.w600,
+                                      color: palette.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (label) ...[
+                                const SizedBox(width: 7),
+                                // The tooltip is what a screen reader hears:
+                                // "3 notes", where the bare figure would be
+                                // read as just a number.
+                                Tooltip(
+                                  message: count == 1
+                                      ? '1 note'
+                                      : '$count notes',
+                                  child: Text(
+                                    '$count',
+                                    key: const ValueKey('sidebar-space-count'),
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontSize: AppTypeScale.small,
+                                      fontWeight: FontWeight.w600,
+                                      color: palette.textTertiary,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TonalButton(
+                        key: const ValueKey('sidebar-new-note'),
+                        icon: KapyIcons.addRounded,
+                        label: label ? 'New note' : null,
+                        shortcut: keycap ? newNoteShortcut?.keycapLabel : null,
+                        // Without its keycap the button still teaches the
+                        // chord, on hover.
+                        tooltip: keycap
+                            ? null
+                            : [
+                                'New note',
+                                ?newNoteShortcut?.displayLabel,
+                              ].join('  '),
+                        onPressed: onCreate,
+                      ),
+                      const SizedBox(width: 8),
+                      CompactIconButton(
+                        key: const ValueKey('sidebar-hide'),
+                        tooltip: hideShortcut == null
+                            ? 'Hide notes'
+                            : 'Hide notes  ${hideShortcut.displayLabel}',
+                        extent: AppControlMetrics.tonalButtonHeight,
+                        foregroundColor: palette.textSecondary,
+                        onPressed: onHide,
+                        icon: KapyIcon(
+                          KapyIcons.menuOpenRounded,
+                          size: AppControlMetrics.iconAction,
+                          strokeWidth: 1.7,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// My Notes and Shared with Me, as one segmented control at the top of the
@@ -2050,9 +2190,9 @@ class _SearchField extends StatefulWidget {
   const _SearchField({
     required this.query,
     required this.onChanged,
-    required this.onCreate,
     required this.archiveMode,
     required this.hiddenMode,
+    this.onCreate,
     this.focusNode,
     this.shortcut,
     this.belowTabs = false,
@@ -2064,7 +2204,9 @@ class _SearchField extends StatefulWidget {
 
   final String query;
   final ValueChanged<String> onChanged;
-  final VoidCallback onCreate;
+
+  /// The + beside the field. Null leaves it out.
+  final VoidCallback? onCreate;
   final bool archiveMode;
   final bool hiddenMode;
   final FocusNode? focusNode;
@@ -2173,13 +2315,15 @@ class _SearchFieldState extends State<_SearchField> {
               ),
             ),
           ),
-          const SizedBox(width: 6),
-          TonalButton(
-            key: const ValueKey('sidebar-new-note'),
-            icon: KapyIcons.addRounded,
-            tooltip: 'New note',
-            onPressed: widget.onCreate,
-          ),
+          if (widget.onCreate case final onCreate?) ...[
+            const SizedBox(width: 6),
+            TonalButton(
+              key: const ValueKey('sidebar-new-note'),
+              icon: KapyIcons.addRounded,
+              tooltip: 'New note',
+              onPressed: onCreate,
+            ),
+          ],
         ],
       ),
     );
