@@ -1722,7 +1722,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           group: 'Window',
           icon: KapyIcons.viewColumnOutlined,
           target: 'panel-widths-setting',
-          keywords: ['reset', 'resize', 'sidebar width', 'results column'],
+          keywords: ['reset', 'resize', 'sidebar width'],
         ),
       ],
 
