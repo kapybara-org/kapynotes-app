@@ -147,7 +147,7 @@ class LayoutPrefs extends ChangeNotifier {
   bool _readyToTypeOnOpen = true;
   bool _dailySeparatorsEnabled = true;
   bool _spellCheckEnabled = true;
-  bool _markdownEnabled = false;
+  bool _markdownEnabled = true;
   NumberSystem _numberSystem = NumberSystem.auto;
   WritingFont _writingFont = WritingFont.clean;
   double _editorTextScale = defaultEditorTextScale;
@@ -204,9 +204,11 @@ class LayoutPrefs extends ChangeNotifier {
   /// Whether notes are written in markdown: `# `, `**`, `- ` and the rest
   /// drawn as what they mean, and the formatting controls writing them.
   ///
-  /// Off by default, and a matter of how this device shows and edits notes
+  /// On by default, and a matter of how this device shows and edits notes
   /// rather than of the notes: nothing is converted either way, so switching
-  /// it back leaves every note exactly as it was written.
+  /// it back leaves every note exactly as it was written. The setting is only
+  /// stored once the writer changes it, so a device that has never stored it
+  /// gets markdown, and one that switched it off keeps it off.
   bool get markdownEnabled => _markdownEnabled;
   WritingFont get writingFont => _writingFont;
 
@@ -345,7 +347,7 @@ class LayoutPrefs extends ChangeNotifier {
     _readyToTypeOnOpen = _store.read<bool>(_readyToTypeOnOpenKey) ?? true;
     _dailySeparatorsEnabled = _store.read<bool>(_dailySeparatorsKey) ?? true;
     _spellCheckEnabled = _store.read<bool>(_spellCheckKey) ?? true;
-    _markdownEnabled = _store.read<bool>(_markdownKey) ?? false;
+    _markdownEnabled = _store.read<bool>(_markdownKey) ?? true;
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
     _editorTextScale = _normalizeEditorTextScale(
