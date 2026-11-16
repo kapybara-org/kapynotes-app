@@ -7,7 +7,9 @@ import 'keycap.dart';
 /// with an optional keycap naming its shortcut.
 ///
 /// New note, Share and Done are tonal buttons in the Riverbank design, and
-/// one that is only an icon is the + beside the notes search.
+/// one that is only an icon is the + beside the notes search. It is the
+/// theme's filled button in other colours: its shape, elevation and timing
+/// come from the theme, and only its colours, size and weight are its own.
 class TonalButton extends StatelessWidget {
   const TonalButton({
     super.key,
@@ -35,9 +37,6 @@ class TonalButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final background = palette.tonalBackground;
-    final foreground = palette.tonalForeground;
-    final extent = AppControlMetrics.tonalButtonHeight;
     final icon = this.icon;
     final label = this.label;
     final shortcut = this.shortcut;
@@ -45,7 +44,9 @@ class TonalButton extends StatelessWidget {
     final button = FilledButton(
       onPressed: onPressed,
       style: ButtonStyle(
-        minimumSize: WidgetStatePropertyAll(Size.square(extent)),
+        minimumSize: WidgetStatePropertyAll(
+          Size.square(AppControlMetrics.tonalButtonHeight),
+        ),
         padding: WidgetStatePropertyAll(
           label == null
               ? EdgeInsets.zero
@@ -54,39 +55,15 @@ class TonalButton extends StatelessWidget {
                   end: shortcut == null ? 12 : 6,
                 ),
         ),
-        visualDensity: VisualDensity.standard,
-        tapTargetSize: AppControlMetrics.iconButtonTapTargetSize,
-        elevation: const WidgetStatePropertyAll(0),
-        shadowColor: const WidgetStatePropertyAll(Colors.transparent),
-        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-        backgroundColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.disabled)) {
-            return palette.controlBackground;
-          }
-          if (states.contains(WidgetState.pressed)) {
-            return Color.alphaBlend(
-              foreground.withValues(alpha: 0.13),
-              background,
-            );
-          }
-          if (states.contains(WidgetState.hovered) ||
-              states.contains(WidgetState.focused)) {
-            return Color.alphaBlend(
-              foreground.withValues(alpha: 0.07),
-              background,
-            );
-          }
-          return background;
-        }),
+        backgroundColor: KapyTheme.fillStates(
+          palette.tonalBackground,
+          ink: palette.tonalForeground,
+          disabled: palette.controlBackground,
+        ),
         foregroundColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.disabled)
               ? palette.textTertiary
-              : foreground,
-        ),
-        shape: const WidgetStatePropertyAll(
-          RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(AppRadii.control)),
-          ),
+              : palette.tonalForeground,
         ),
         textStyle: WidgetStatePropertyAll(
           Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -94,7 +71,6 @@ class TonalButton extends StatelessWidget {
             fontWeight: FontWeight.w700,
           ),
         ),
-        animationDuration: const Duration(milliseconds: 120),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

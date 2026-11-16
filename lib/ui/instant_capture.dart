@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
+import '../core/theme.dart';
 
 /// The smallest useful mobile first frame: a focused, editable note surface.
 ///
@@ -98,13 +99,13 @@ class _CaptureSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
-    final background = dark ? const Color(0xFF23201C) : const Color(0xFFF8F7F4);
-    final foreground = dark ? const Color(0xFFE2DCCF) : const Color(0xFF292B30);
-    final cursor = dark ? const Color(0xFF7D9468) : const Color(0xFFA85F38);
+    final brightness = MediaQuery.platformBrightnessOf(context);
+    final palette = brightness == Brightness.dark
+        ? KapyTheme.darkPalette
+        : KapyTheme.lightPalette;
 
     return ColoredBox(
-      color: background,
+      color: palette.editorBackground,
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
@@ -120,18 +121,18 @@ class _CaptureSurface extends StatelessWidget {
               maxLines: null,
               minLines: null,
               style: TextStyle(
-                color: foreground,
+                color: palette.textPrimary,
                 fontSize: 16,
                 height: 1.55,
                 fontWeight: FontWeight.w300,
                 fontFamilyFallback: AppPlatform.monoFontFallback,
               ),
-              cursorColor: cursor,
-              backgroundCursorColor: background,
-              selectionColor: cursor.withValues(alpha: 0.24),
+              cursorColor: KapyTheme.accentFor(brightness),
+              backgroundCursorColor: palette.editorBackground,
+              selectionColor: palette.selection,
               keyboardType: TextInputType.multiline,
               textInputAction: TextInputAction.newline,
-              keyboardAppearance: dark ? Brightness.dark : Brightness.light,
+              keyboardAppearance: brightness,
               autocorrect: false,
               enableSuggestions: false,
               textCapitalization: TextCapitalization.none,

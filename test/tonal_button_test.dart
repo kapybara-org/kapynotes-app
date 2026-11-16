@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -88,6 +89,27 @@ void main() {
     await tester.tap(find.byType(TonalButton));
     expect(pressed, 1);
     semantics.dispose();
+  });
+
+  testWidgets('under the pointer a tonal button lays its own ink on the sage', (
+    tester,
+  ) async {
+    await _pump(tester, TonalButton(label: 'Share', onPressed: () {}));
+    const palette = KapyTheme.darkPalette;
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+
+    await mouse.moveTo(tester.getCenter(find.byType(TonalButton)));
+    await tester.pumpAndSettle();
+
+    expect(
+      _surface(tester).color,
+      Color.alphaBlend(
+        palette.tonalForeground.withValues(alpha: 0.07),
+        palette.tonalBackground,
+      ),
+    );
   });
 
   testWidgets('an icon-only tonal button is square and named by its tooltip', (
