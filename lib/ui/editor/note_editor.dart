@@ -1440,6 +1440,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     for (final ref in after) {
       survivors[ref.hash] = (survivors[ref.hash] ?? 0) + 1;
     }
+    var removed = 0;
     for (final ref in before) {
       final left = survivors[ref.hash] ?? 0;
       if (left > 0) {
@@ -1447,8 +1448,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         continue;
       }
       _removedRefs.add((textBefore: textBefore, ref: ref));
+      removed++;
     }
-    while (_removedRefs.length > _maxRemovedRefs) {
+    while (_removedRefs.length > math.max(_maxRemovedRefs, removed)) {
       _removedRefs.removeAt(0);
     }
   }

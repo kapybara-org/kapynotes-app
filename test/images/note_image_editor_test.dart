@@ -1547,6 +1547,34 @@ void main() {
       await restore(tester, 'a$anchor b');
       expect(reported!.single.hash, refs[0].hash);
     });
+    testWidgets('one edit that drops many pictures gives them all back', (
+      tester,
+    ) async {
+      final editorKey = GlobalKey<NoteEditorState>();
+      List<NoteAttachmentRef>? reported;
+      const count = 30;
+      final body = List.filled(count, anchor).join('\n');
+      await tester.pumpWidget(
+        harness(
+          body,
+          attachments: [
+            for (var i = 0; i < count; i++) at(i * 2, which: i % refs.length),
+          ],
+          editorKey: editorKey,
+          onAttachmentsChanged: (refs) => reported = refs,
+        ),
+      );
+      await tester.pump();
+
+      await restore(tester, 'gone');
+      expect(reported, isEmpty);
+
+      await restore(tester, body);
+      expect(reported, hasLength(count));
+      expect(reported!.map((ref) => ref.offset), [
+        for (var i = 0; i < count; i++) i * 2,
+      ]);
+    });
   });
 
   group('pasting', () {
