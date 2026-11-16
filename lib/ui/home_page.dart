@@ -62,6 +62,7 @@ import 'empty_state.dart';
 import 'hidden_notes_gate.dart';
 import 'kapy_header_mascot.dart';
 import 'mobile_page_swipe.dart';
+import 'notes_list.dart';
 import 'sidebar.dart';
 import 'settings_dialog.dart';
 import 'sidebar_swipe.dart';
@@ -206,6 +207,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// of looking at the list rather than a choice of note, and only in the
   /// wide window: the compact list has no rail to leave it by.
   bool _drawingsOnly = false;
+
+  /// The kinds of media the list beside the rail is narrowed to. Not kept
+  /// across launches, so a filter left on cannot pass for missing notes.
+  Set<NoteMedia> _mediaFilter = NoteMedia.values.toSet();
+
+  /// Whether that list shows every pinned note, after See all.
+  bool _pinnedOnly = false;
+
+  bool get _showingPinnedOnly =>
+      _pinnedOnly && !_specialMode && widget.notes.pinnedNoteIds.isNotEmpty;
 
   bool _initialNoteScheduled = false;
   bool _openSessionScheduled = false;
@@ -2325,6 +2336,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// are.
   void _showSpace(LibrarySpace space) {
     if (space == _space) return;
+    _pinnedOnly = false;
     switch (space) {
       case LibrarySpace.archive:
         _toggleArchive();
@@ -2343,13 +2355,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   List<Note> get _visibleNotes {
-    final notes = _narrowed(
+    var notes = _narrowed(
       _archiveMode
           ? widget.notes.searchArchived(_query)
           : _hiddenMode
           ? widget.notes.searchHidden(_query)
           : widget.notes.search(_query),
     );
+    final pinnedOnly = _showingPinnedOnly;
+    if (pinnedOnly || _mediaFilter.length < NoteMedia.values.length) {
+      final pinned = widget.notes.pinnedNoteIds;
+      notes = [
+        for (final note in notes)
+          if (NoteMedia.shows(note, _mediaFilter) &&
+              (!pinnedOnly || pinned.contains(note.id)))
+            note,
+      ];
+    }
     final recent = widget.prefs.recentlyOpenedNoteIds;
     if (notes.length < 2 || recent.isEmpty) return notes;
 
@@ -2571,6 +2593,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       emptyMessage: space == LibrarySpace.drawings
                           ? 'No drawings yet'
                           : null,
+                      engine: widget.engines.engine,
+                      now: widget.notes.now,
+                      cards: widget.prefs.noteCards,
+                      onCardsChanged: (cards) => widget.prefs.noteCards = cards,
+                      mediaFilter: _mediaFilter,
+                      onMediaFilterChanged: (media) =>
+                          setState(() => _mediaFilter = media),
+                      pinnedOnly: _showingPinnedOnly,
+                      onPinnedOnlyChanged: (value) =>
+                          setState(() => _pinnedOnly = value),
                       windowBar: SidebarWindowBar(
                         title: space.title,
                         count: _spaceCount,

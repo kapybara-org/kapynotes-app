@@ -106,6 +106,11 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// A switch that is off: the track reads as a slot, not as a control.
   final Color switchTrackOff;
 
+  /// The title on a note's sticky card or list row, and the sage that marks
+  /// a link inside the list, such as See all.
+  final Color cardTitle;
+  final Color accentText;
+
   /// How much of the desktop the window's chrome lets through: a multiplier on
   /// the alpha of every [GlassSurface]. 1 is fully opaque.
   ///
@@ -230,6 +235,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.cardBackground,
     required this.paneEdge,
     required this.switchTrackOff,
+    required this.cardTitle,
+    required this.accentText,
     this.translucency = 1,
     this.paperTranslucency = 1,
   });
@@ -292,6 +299,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? cardBackground,
     Color? paneEdge,
     Color? switchTrackOff,
+    Color? cardTitle,
+    Color? accentText,
     double? translucency,
     double? paperTranslucency,
   }) => CalcPalette(
@@ -351,6 +360,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     cardBackground: cardBackground ?? this.cardBackground,
     paneEdge: paneEdge ?? this.paneEdge,
     switchTrackOff: switchTrackOff ?? this.switchTrackOff,
+    cardTitle: cardTitle ?? this.cardTitle,
+    accentText: accentText ?? this.accentText,
     translucency: translucency ?? this.translucency,
     paperTranslucency: paperTranslucency ?? this.paperTranslucency,
   );
@@ -419,6 +430,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       cardBackground: mix(cardBackground, other.cardBackground),
       paneEdge: mix(paneEdge, other.paneEdge),
       switchTrackOff: mix(switchTrackOff, other.switchTrackOff),
+      cardTitle: mix(cardTitle, other.cardTitle),
+      accentText: mix(accentText, other.accentText),
       translucency: translucency + (other.translucency - translucency) * t,
       paperTranslucency:
           paperTranslucency + (other.paperTranslucency - paperTranslucency) * t,
@@ -1000,6 +1013,8 @@ class KapyTheme {
     cardBackground: Color(0xFF292621),
     paneEdge: Color(0xFF2C2924),
     switchTrackOff: Color(0xFF3A362F),
+    cardTitle: Color(0xFFD9D3C6),
+    accentText: Color(0xFF9DB384),
   );
 
   /// A cool, clean paper palette rather than the previous warm stationery.
@@ -1062,6 +1077,8 @@ class KapyTheme {
     cardBackground: Color(0xFFF2F1ED),
     paneEdge: Color(0xFFE2E0DA),
     switchTrackOff: Color(0xFFDAD8D2),
+    cardTitle: Color(0xFF2A2620),
+    accentText: Color(0xFF56703C),
   );
 
   /// Transparency mode.

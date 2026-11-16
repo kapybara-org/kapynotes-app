@@ -37,6 +37,10 @@ class NotesStore extends ChangeNotifier {
 
   final LocalStore _store;
   final DateTime Function() _now;
+
+  /// The time the store dates its notes by, for anything that says how long
+  /// ago they were changed.
+  DateTime now() => _now();
   List<Note> _notes = const [];
   List<Note> _activeNotes = const [];
   List<Note> _archivedNotes = const [];

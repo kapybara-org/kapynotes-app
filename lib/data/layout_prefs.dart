@@ -95,6 +95,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _resultsVisibleKey = 'resultsVisible.v1';
   static const String _sidebarKey = 'sidebar.v1';
   static const String _hiddenFolderVisibleKey = 'hiddenFolderVisible.v1';
+  static const String _noteCardsKey = 'noteCards.v1';
   static const String _windowWidthKey = 'windowWidth.v1';
   static const String _windowHeightKey = 'windowHeight.v1';
   static const String _windowXKey = 'windowX.v1';
@@ -140,6 +141,7 @@ class LayoutPrefs extends ChangeNotifier {
   double _sidebarWidth = defaultSidebarWidth;
   bool _sidebarVisible = false;
   bool _hiddenFolderVisible = true;
+  bool _noteCards = true;
   Size _windowSize = defaultWindowSize;
   Offset? _windowPosition;
   bool _readyToTypeOnOpen = true;
@@ -181,6 +183,10 @@ class LayoutPrefs extends ChangeNotifier {
   double get sidebarWidth => _sidebarWidth;
   bool get sidebarVisible => _sidebarVisible;
   bool get hiddenFolderVisible => _hiddenFolderVisible;
+
+  /// Whether the desktop notes list draws its notes as sticky cards rather
+  /// than as rows. Cards are how the list first appears.
+  bool get noteCards => _noteCards;
   Size get windowSize => _windowSize;
   Offset? get windowPosition => _windowPosition;
 
@@ -330,6 +336,7 @@ class LayoutPrefs extends ChangeNotifier {
     // state for this session, not a preference carried into the next one.
     _sidebarVisible = false;
     _hiddenFolderVisible = _store.read<bool>(_hiddenFolderVisibleKey) ?? true;
+    _noteCards = _store.read<bool>(_noteCardsKey) ?? true;
     _windowSize = _clampWindowSize(
       Size(
         _readDouble(_windowWidthKey) ?? defaultWindowSize.width,
@@ -768,6 +775,13 @@ class LayoutPrefs extends ChangeNotifier {
   }
 
   void toggleHiddenFolder() => hiddenFolderVisible = !_hiddenFolderVisible;
+
+  set noteCards(bool value) {
+    if (value == _noteCards) return;
+    _noteCards = value;
+    _store.putNow(_noteCardsKey, value);
+    notifyListeners();
+  }
 
   void toggleSidebar() {
     _sidebarVisible = !_sidebarVisible;

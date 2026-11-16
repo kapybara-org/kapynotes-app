@@ -351,6 +351,18 @@ class KapyIcons {
     0xE092,
     HugeIcons.strokeRoundedUserMultiple,
   );
+  static const filterRounded = KapyIconData(
+    0xE0D0,
+    HugeIcons.strokeRoundedFilterHorizontal,
+  );
+  static const listViewRounded = KapyIconData(
+    0xE0D1,
+    HugeIcons.strokeRoundedListView,
+  );
+  static const gridViewRounded = KapyIconData(
+    0xE0D2,
+    HugeIcons.strokeRoundedGridView,
+  );
   static const photoLibraryOutlined = KapyIconData(
     0xE049,
     HugeIcons.strokeRoundedImage02,
