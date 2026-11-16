@@ -90,6 +90,18 @@ void main() {
     );
   });
 
+  test('stacked conditions under a sum are a substack', () {
+    expect(
+      tex(
+        '<munder><mo>∏</mo><mrow><mtable>'
+        '<mtr><mtd><mi>q</mi><mo>∣</mo><mi>n</mi></mtd></mtr>'
+        '<mtr><mtd><mi>q</mi><mo>≠</mo><mi>p</mi></mtd></mtr>'
+        '</mtable></mrow></munder><mi>q</mi>',
+      ),
+      r'\prod_{\substack{q\mid n \\ q\ne p}}q',
+    );
+  });
+
   test('a symbol with no TeX name stays the character it is', () {
     expect(tex('<mi>☃</mi><mo>+</mo><mn>1</mn>'), '☃+1');
   });

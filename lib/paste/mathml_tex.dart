@@ -55,6 +55,11 @@ String _node(dom.Element element) {
     case 'munderover':
       return _underOver(children);
     case 'mtable':
+      if (_inScript(element) &&
+          children.every((row) => row.children.length <= 1)) {
+        final rows = [for (final row in children) _node(row).trim()];
+        return '\\substack{${rows.join(r' \\ ')}}';
+      }
       final align = element.attributes['columnalign'] ?? '';
       return _table(
         element,
@@ -107,6 +112,23 @@ String _row(List<dom.Element> children) {
   }
   return '\\left${_fence(open)}${_join(inner)}\\right${_fence(close)}';
 }
+
+/// Whether [element] is a script rather than a base — the conditions under
+/// a sum, the index beside a letter — where a table of one column is the
+/// stacked lines \substack draws.
+bool _inScript(dom.Element element) {
+  dom.Element child = element;
+  var parent = element.parent;
+  while (parent != null &&
+      (parent.localName == 'mrow' || parent.localName == 'mstyle')) {
+    child = parent;
+    parent = parent.parent;
+  }
+  if (parent == null || !_scripts.contains(parent.localName)) return false;
+  return parent.children.indexOf(child) > 0;
+}
+
+const _scripts = {'msub', 'msup', 'msubsup', 'munder', 'mover', 'munderover'};
 
 bool _isFence(dom.Element element) =>
     element.localName == 'mo' && element.attributes['fence'] == 'true';

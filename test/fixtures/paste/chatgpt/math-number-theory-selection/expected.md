@@ -67,7 +67,7 @@ $$q^{-\beta t}(1-q^{-t}).$$
 
 For every prime $r\nmid n$, we need $Y_{r}<t$, which has probability $1-r^{-t}$. Multiplying and summing over the possible final primes gives
 
-$$\begin{aligned}h(n) & =\sum_{p^{\alpha}\parallel n}\int_{1}^{\infty}\alpha\log p\cdot p^{-\alpha t}\prod_{\begin{matrix}q^{\beta}\parallel n \\ q\ne p\end{matrix}}q^{-\beta t}(1-q^{-t})\prod_{r\nmid n}(1-r^{-t})\,dt \\  & =\int_{1}^{\infty}\frac{n^{-t}}{\zeta(t)}\left(\sum_{p^{\alpha}\parallel n}\frac{\alpha\log p}{1-p^{-t}}\right)\,dt.\end{aligned}$$
+$$\begin{aligned}h(n) & =\sum_{p^{\alpha}\parallel n}\int_{1}^{\infty}\alpha\log p\cdot p^{-\alpha t}\prod_{\substack{q^{\beta}\parallel n \\ q\ne p}}q^{-\beta t}(1-q^{-t})\prod_{r\nmid n}(1-r^{-t})\,dt \\  & =\int_{1}^{\infty}\frac{n^{-t}}{\zeta(t)}\left(\sum_{p^{\alpha}\parallel n}\frac{\alpha\log p}{1-p^{-t}}\right)\,dt.\end{aligned}$$
 
 Now observe that for $t>1$,
 
