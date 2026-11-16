@@ -20,6 +20,11 @@ class LineResult {
 
   final DigitGrouping grouping;
 
+  /// Whether the line reads the note's running total, `total` or `sum`, or
+  /// converts it, as `total in eur` does: the figure a list of amounts
+  /// builds up to.
+  final bool isTotal;
+
   /// Number-system-aware words and scale context, prepared only if a visible
   /// chip needs them. Long notes should not spell every off-screen result on
   /// each keystroke.
@@ -34,6 +39,7 @@ class LineResult {
     required this.text,
     required this.copyText,
     this.grouping = DigitGrouping.international,
+    this.isTotal = false,
   });
 
   ResultKind get kind => value.kind;
@@ -148,6 +154,16 @@ class CalcEngine {
     ConvertNode() => _isAggregateReadout(node.value, variables),
     _ => false,
   };
+
+  /// The readouts of the running total itself, as against `prev` or `avg`.
+  static bool _isTotalReadout(Node node, Map<String, CalcValue> variables) =>
+      switch (node) {
+        IdentifierNode() =>
+          !variables.containsKey(node.name) &&
+              const {'sum', 'total'}.contains(node.name.toLowerCase()),
+        ConvertNode() => _isTotalReadout(node.value, variables),
+        _ => false,
+      };
 
   _EvaluatedLine? _evaluateLine(
     String rawLine,
@@ -365,6 +381,7 @@ class CalcEngine {
           text: ResultFormatter.display(value, grouping: grouping),
           copyText: ResultFormatter.copy(value),
           grouping: grouping,
+          isTotal: _isTotalReadout(node, scope.variables),
         ),
         isAggregateReadout: _isAggregateReadout(node, scope.variables),
       );

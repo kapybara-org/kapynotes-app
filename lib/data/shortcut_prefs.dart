@@ -49,7 +49,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.focusThirdPane => 'Focus pane 3',
     ShortcutAction.toggleSidebar => 'Toggle notes list',
     ShortcutAction.toggleHiddenFolder => 'Toggle Hidden Notes folder',
-    ShortcutAction.toggleResults => 'Toggle results column',
+    ShortcutAction.toggleResults => 'Toggle results',
     ShortcutAction.toggleAlwaysOnTop => 'Keep window on top',
     ShortcutAction.deleteNote => 'Archive current note',
     ShortcutAction.openSettings => 'Open settings',
@@ -85,7 +85,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.toggleHiddenFolder =>
       'Reveal or hide Hidden Notes in the notes list',
     ShortcutAction.toggleResults =>
-      'Show or hide the results column on the right',
+      'Show or hide the results at the ends of calculating lines',
     ShortcutAction.toggleAlwaysOnTop =>
       'Float the window over other apps, or let it fall behind again',
     ShortcutAction.deleteNote =>

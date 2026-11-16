@@ -3121,7 +3121,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           // enough of one for a grouped currency and its three-letter code.
           gutterWidth: MediaQuery.sizeOf(context).width >= 400 ? 152 : 132,
           resultsVisible: true,
-          showDivider: false,
           autofocus: _readyToTypeIn(note),
           startAtEnd: _readyToTypeIn(note),
           initialCaret: _resumeCaretIn(note),
@@ -3160,9 +3159,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
           storedDocument: () => _storedDocument(note.id),
-          onGutterWidthChanged: (_) {},
-          onResultsVisibilityChanged: (_) {},
-          onGutterWidthReset: () {},
           onSettingsPressed: _showSettings,
         ),
       ),
@@ -3208,7 +3204,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _publishPreparedImage(note.id, staged, prepared),
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
-          gutterWidth: widget.prefs.gutterWidth,
           resultsVisible: widget.prefs.resultsVisible,
           autofocus:
               active && !_selectionAutofocusSuppressed && _readyToTypeIn(note),
@@ -3255,12 +3250,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
           storedDocument: () => _storedDocument(note.id),
-          onGutterWidthChanged: (value) => widget.prefs.gutterWidth = value,
-          onResultsVisibilityChanged: (value) =>
-              widget.prefs.resultsVisible = value,
-          onGutterWidthReset: widget.prefs.resetGutterWidth,
           onSettingsPressed: _showSettings,
-          hideEmptyResults: AppPlatform.isMobile,
         ),
       ),
     );

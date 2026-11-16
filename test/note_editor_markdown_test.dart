@@ -66,7 +66,6 @@ Widget harness(
           initialFormats: initialFormats,
           engine: engine,
           highlighter: Highlighter(engine.registry),
-          gutterWidth: 200,
           resultsVisible: true,
           markdownEnabled: markdown,
           readOnly: readOnly,
@@ -76,9 +75,6 @@ Widget harness(
             onBodyChanged?.call(body);
             onFormatsChanged?.call(formats);
           },
-          onGutterWidthChanged: (_) {},
-          onResultsVisibilityChanged: (_) {},
-          onGutterWidthReset: () {},
           onSettingsPressed: () {},
           writingFont: WritingFont.handwritten,
           shortcuts: shortcutPrefs,

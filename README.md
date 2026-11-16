@@ -2,7 +2,7 @@
 
 Offline-first notes where every line is also a live calculator. Write freely;
 any line that looks like arithmetic is worked out as you type and its result
-appears in a gutter beside it.
+appears at the end of the line.
 
 ```
 Lisbon trip budget
@@ -388,10 +388,10 @@ mirrored-div stack a browser forces on you.
 
 Results are aligned by laying the note out a second time with the same width,
 style and strut the field uses, and reading each line's offset from it. The
-gutter and the field share one `ScrollController`. That combination is what
+results and the field share one `ScrollController`. That combination is what
 keeps a result pinned to its line through wrapping, scrolling and text scaling
 — and it is asserted directly in `test/note_editor_test.dart`, which compares
-chip positions against the field's own `RenderEditable` geometry.
+result positions against the field's own `RenderEditable` geometry.
 
 Clicking a result copies it at full precision.
 
@@ -542,8 +542,8 @@ The spec described an Electron build. These changed for Flutter:
   most recently edited note when no launch text was entered. A launch draft
   becomes a new note, unless the app was opened from a widget, which carries
   it into the note being written instead. Search and the full note
-  list are built only when the hamburger drawer first opens; the gutter is
-  fixed-width and the divider is hidden.
+  list are built only when the hamburger drawer first opens; results keep
+  a fixed-width column beside the text.
 - **The widgets (iOS / Android)** — two of them, offering three actions:
   **Write**, **Dictate** and **Capture**. The square widget is one cell and one
   action, chosen when it is placed and changed afterwards — iOS through *Edit

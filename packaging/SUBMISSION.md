@@ -186,7 +186,7 @@ compact phone layout there: one column, a hamburger drawer, and most of a
 13-inch display left empty. That is the shape of a Guideline 4.0 rejection.
 
 The compact/wide switch is now decided by width alone, so iPad gets the same
-sidebar, editor and results columns the desktop build uses. Two insets come
+sidebar and editor the desktop build uses. Two insets come
 with that, because the wide layout is its own chrome rather than a `Scaffold`:
 it takes the bottom safe area so the running total clears the home indicator,
 and it lifts both panes over the software keyboard. Both are covered by tests

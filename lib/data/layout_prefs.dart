@@ -87,16 +87,13 @@ class LayoutPrefs extends ChangeNotifier {
   /// and wide enough for the page's toolbar beside the rail.
   static const Size minimumWindowSize = Size(520, 520);
 
-  static const double minGutterWidth = 72;
-  static const double maxGutterWidth = 480;
-  static const double defaultGutterWidth = 190;
-
   static const double minSidebarWidth = 150;
   static const double maxSidebarWidth = 420;
   static const double defaultSidebarWidth = 336;
 
-  static const String _gutterKey = 'gutter.v1';
-  static const String _resultsVisibleKey = 'resultsVisible.v1';
+  /// v1 recorded the old results column folded away to make room. Results
+  /// now take no width, so they start out shown again.
+  static const String _resultsVisibleKey = 'resultsVisible.v2';
   static const String _sidebarKey = 'sidebar.v1';
   static const String _hiddenFolderVisibleKey = 'hiddenFolderVisible.v1';
   static const String _noteCardsKey = 'noteCards.v1';
@@ -140,7 +137,6 @@ class LayoutPrefs extends ChangeNotifier {
   /// locale", which is what this did before it could ask.
   String? _region;
 
-  double _gutterWidth = defaultGutterWidth;
   bool _resultsVisible = true;
   double _sidebarWidth = defaultSidebarWidth;
   bool _sidebarVisible = false;
@@ -182,7 +178,6 @@ class LayoutPrefs extends ChangeNotifier {
   }) : _locale = locale ?? (() => PlatformDispatcher.instance.locale),
        _readRegion = region ?? SystemRegion.read;
 
-  double get gutterWidth => _gutterWidth;
   bool get resultsVisible => _resultsVisible;
   double get sidebarWidth => _sidebarWidth;
   bool get sidebarVisible => _sidebarVisible;
@@ -331,7 +326,6 @@ class LayoutPrefs extends ChangeNotifier {
       ResultFormatter.sample(system.resolve(_locale(), region: _region));
 
   void load() {
-    _gutterWidth = _clampGutter(_readDouble(_gutterKey) ?? defaultGutterWidth);
     _resultsVisible = _store.read<bool>(_resultsVisibleKey) ?? true;
     _sidebarWidth = _clampSidebar(
       _readDouble(_sidebarKey) ?? defaultSidebarWidth,
@@ -396,14 +390,6 @@ class LayoutPrefs extends ChangeNotifier {
     _defaultNoteId = _readNoteId(_defaultNoteKey);
     _readCarets();
     _pruneCarets();
-    notifyListeners();
-  }
-
-  set gutterWidth(double value) {
-    final clamped = _clampGutter(value);
-    if (clamped == _gutterWidth) return;
-    _gutterWidth = clamped;
-    _store.putNow(_gutterKey, clamped);
     notifyListeners();
   }
 
@@ -735,22 +721,9 @@ class LayoutPrefs extends ChangeNotifier {
     return null;
   }
 
-  void resetGutterWidth() => gutterWidth = defaultGutterWidth;
-
-  void resetPanelWidths() {
-    if (_gutterWidth == defaultGutterWidth &&
-        _sidebarWidth == defaultSidebarWidth &&
-        _resultsVisible) {
-      return;
-    }
-    _gutterWidth = defaultGutterWidth;
-    _sidebarWidth = defaultSidebarWidth;
-    _resultsVisible = true;
-    _store.putNow(_gutterKey, _gutterWidth);
-    _store.putNow(_sidebarKey, _sidebarWidth);
-    _store.putNow(_resultsVisibleKey, _resultsVisible);
-    notifyListeners();
-  }
+  /// The notes list is the one panel left with a width of its own: results
+  /// sit at the ends of their lines.
+  void resetPanelWidths() => sidebarWidth = defaultSidebarWidth;
 
   /// Records that the login-item default has had its one chance, whether or
   /// not the OS accepted it. A machine whose policy forbids login items would
@@ -766,9 +739,7 @@ class LayoutPrefs extends ChangeNotifier {
 
   void toggleAlwaysOnTop() => alwaysOnTop = !_alwaysOnTop;
 
-  /// The right-hand column's counterpart to [toggleSidebar]. The divider's
-  /// own handle already collapses and restores it; this is the same door for
-  /// anyone whose hands are on the keyboard.
+  /// Hides the results at the ends of calculating lines, or brings them back.
   void toggleResults() => resultsVisible = !_resultsVisible;
 
   set hiddenFolderVisible(bool value) {
@@ -876,10 +847,6 @@ class LayoutPrefs extends ChangeNotifier {
     final clean = value?.trim() ?? '';
     return clean.isEmpty ? null : clean;
   }
-
-  static double _clampGutter(double value) => value.isFinite
-      ? value.clamp(minGutterWidth, maxGutterWidth)
-      : defaultGutterWidth;
 
   static double _clampSidebar(double value) => value.isFinite
       ? value.clamp(minSidebarWidth, maxSidebarWidth)
