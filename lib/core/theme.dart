@@ -1229,6 +1229,7 @@ class KapyTheme {
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: palette.surfaceBackground,
+        barrierColor: palette.scrim,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         shadowColor: Colors.transparent,

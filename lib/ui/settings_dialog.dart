@@ -161,7 +161,6 @@ Future<void> showSettings(
       if (!context.mounted) return Future<void>.value();
       return showDialog<void>(
         context: context,
-        barrierColor: context.palette.scrim,
         builder: (context) => build(asSheet: false),
       );
     }
