@@ -649,9 +649,12 @@ class HighlightingController extends TextEditingController {
     if (marked(MarkdownStyle.quote)) {
       result = result.copyWith(color: _palette.textSecondary);
     }
-    if (marked(MarkdownStyle.codeBlock) || marked(MarkdownStyle.code)) {
+    if (marked(MarkdownStyle.codeBlock) ||
+        marked(MarkdownStyle.code) ||
+        marked(MarkdownStyle.math)) {
       // The panel under a code block and the pill under inline code are drawn
       // behind the field, where the selection highlight still shows over them.
+      // A formula's TeX, shown as written, is code too.
       result = _codeStyle(result);
     }
     return result;

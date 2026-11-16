@@ -5508,8 +5508,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                         );
                         // The pill inline code has in the text can be a plain
                         // background in a grid painted behind it: there is no
-                        // selection to show over it there.
-                        return styles.contains(MarkdownStyle.code)
+                        // selection to show over it there. A formula in a cell
+                        // is drawn as its TeX, which is code too.
+                        return styles.contains(MarkdownStyle.code) ||
+                                styles.contains(MarkdownStyle.math)
                             ? drawn.copyWith(
                                 backgroundColor: palette.controlBackground,
                               )

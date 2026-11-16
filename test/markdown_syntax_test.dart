@@ -482,6 +482,83 @@ void main() {
     });
   });
 
+  group('math', () {
+    List<String> formulas(String note) => [
+      for (final math in read(note).maths)
+        '${math.display ? 'display' : 'inline'} ${math.start}-${math.end} '
+            '${math.tex}',
+    ];
+
+    test('is never a price', () {
+      for (final note in [
+        r'$5 and $10',
+        r'$4.50 + $3',
+        r'costs $5, total $10',
+        r'between $5-$10',
+        r'a $x$5 b',
+        r'paid \$5 and \$10',
+      ]) {
+        expect(formulas(note), isEmpty, reason: note);
+      }
+      const prices = r'$5 and $10';
+      expect(identical(read(prices).calculatorText, prices), isTrue);
+    });
+
+    test('is read among words by pandoc\'s rules', () {
+      expect(formulas(r'The area is $\pi r^2$ here'), [
+        r'inline 12-21 \pi r^2',
+      ]);
+      // A backslash keeps a dollar sign inside, and \text{} may hold some.
+      expect(formulas(r'$a \$ b$'), [r'inline 0-8 a \$ b']);
+      expect(formulas(r'$\text{costs $5}$ ok'), [
+        r'inline 0-17 \text{costs $5}',
+      ]);
+      expect(formulas(r'\$5 and \$10 and $y$'), ['inline 17-20 y']);
+      expect(formulas('a \$b +\nc\$ d'), ['inline 2-9 b +\nc']);
+      expect(formulas(r'`code $x$` and $y$'), ['inline 15-18 y']);
+      // Among words, $$ is a formula among words too.
+      expect(formulas(r'math $$x^2$$ among words'), ['inline 5-12 x^2']);
+    });
+
+    test('set apart is TeX up to its closing \$\$', () {
+      const note = '\$\$\nx^2\n- y\n\$\$\n\nafter';
+      expect(formulas(note), ['display 0-13 x^2\n- y']);
+      expect(read(note).listItems, isEmpty, reason: '- y is TeX');
+      expect(formulas(r'$$x = 1$$'), ['display 0-9 x = 1']);
+      expect(formulas('para\n\$\$\nz\n\$\$\nmore'), ['display 5-12 z']);
+      expect(formulas('> \$\$\n> a\n> \$\$'), ['display 2-13 a']);
+      expect(formulas('- item\n\n  \$\$\n  a + b\n  \$\$'), [
+        'display 10-25 a + b',
+      ]);
+    });
+
+    test('set apart needs its closing \$\$ before a blank line', () {
+      expect(formulas('\$\$\nunclosed\n\nnext'), isEmpty);
+      expect(formulas(r'$$'), isEmpty);
+    });
+
+    test('is literal, and the calculator reads none of it', () {
+      const note = r'5 + 3 and $1 + 1$';
+      final analysis = read(note);
+      expect(stylesOf(analysis, r'$1 + 1$'), contains(MarkdownStyle.math));
+      expect(analysis.isLiteral(10, 17), isTrue);
+      expect(analysis.calculatorText, '5 + 3 and '.padRight(note.length));
+    });
+
+    test('in a table is left to the grid, which shows its TeX', () {
+      final analysis = read('| a |\n|---|\n| \$x\$ |');
+      expect(analysis.maths, isEmpty);
+      final cell = analysis.tables.single.rows[1].cells.single;
+      expect(
+        [
+          for (final run in analysis.runsIn(cell.start, cell.end))
+            '${run.text}:${run.styles.map((style) => style.name).join('+')}',
+        ],
+        [r'$x$:math'],
+      );
+    });
+  });
+
   group('reading in pieces', () {
     const vocabulary = [
       '', '', '', '   ', '\t', //
@@ -540,6 +617,7 @@ void main() {
                 ]}',
         ],
         ranges(analysis.atomicPrefixes),
+        [for (final math in analysis.maths) math.toString()],
         analysis.calculatorText,
       ];
     }
