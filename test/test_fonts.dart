@@ -15,9 +15,9 @@ Future<void> loadTestFonts() async {
     ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
   await materialIcons.load();
   await _load('SF Mono', ['/System/Library/Fonts/SFNSMono.ttf']);
-  // Flutter's default UI family on macOS. Arial stands in for the real San
-  // Francisco face, which ships only inside .ttc collections that
-  // [FontLoader] cannot read.
+  // The system faces, which set the clean writing style and draw what Figtree
+  // lacks. Arial stands in for the real San Francisco face, which ships only
+  // inside .ttc collections that [FontLoader] cannot read.
   for (final family in [
     'Roboto',
     '.SF Pro Text',

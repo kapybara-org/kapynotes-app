@@ -20,15 +20,16 @@ class Keycap extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Container(
-      constraints: BoxConstraints(
-        minWidth: tonal ? 0 : 20,
-        minHeight: tonal ? 18 : 20,
-      ),
-      padding: EdgeInsets.symmetric(horizontal: tonal ? 5 : 6, vertical: 2),
+      constraints: tonal
+          ? const BoxConstraints(minHeight: 18)
+          : const BoxConstraints(minWidth: 20, minHeight: 20),
+      padding: tonal
+          ? const EdgeInsets.symmetric(horizontal: 5, vertical: 2)
+          : const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: tonal ? palette.tonalKeyBackground : palette.keycapBackground,
         border: tonal ? null : Border.all(color: palette.keycapBorder),
-        borderRadius: BorderRadius.circular(5),
+        borderRadius: const BorderRadius.all(Radius.circular(5)),
       ),
       child: Center(
         widthFactor: 1,

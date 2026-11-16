@@ -494,13 +494,12 @@ class EditorMetrics {
 ///
 /// Keeping these steps close makes the app feel friendly without turning
 /// every panel into a pill. Borders, never shadows, separate one layer from
-/// another. Controls of every kind share one radius; menus, floating panels
-/// and the cards inside a dialog share the next.
+/// another. Controls of every kind share one radius: buttons, icon actions,
+/// fields and toggles. Menus, floating panels and the cards inside a dialog
+/// share the next.
 class AppRadii {
   const AppRadii._();
 
-  static const double icon = 9;
-  static const double button = 9;
   static const double control = 9;
   static const double surface = 12;
   static const double dialog = 18;
@@ -583,7 +582,7 @@ class AppControlMetrics {
 
   /// Height of a tonal button, and the side of one that is only an icon.
   /// A step under [buttonHeight] on a desktop, because it sits in bars and
-  /// headers beside 30pt icon actions rather than at the foot of a dialog.
+  /// headers rather than at the foot of a dialog.
   static double get tonalButtonHeight => _touch ? 44 : 30;
 
   /// The square a text field reserves for a leading or trailing glyph, and the
@@ -680,8 +679,8 @@ class AppControlMetrics {
 ///
 /// Every size the chrome renders comes from here rather than from a literal at
 /// the call site. macOS keeps its compact 10–16px desktop rhythm. Windows gets
-/// a slightly larger optical column because Segoe UI is commonly rasterised at
-/// 96dpi there: the old 10.5px subtitles lost both shape and hierarchy. The
+/// a slightly larger optical column because type there is commonly rasterised
+/// at 96dpi: the old 10.5px subtitles lost both shape and hierarchy. The
 /// touch column is pitched to iOS Dynamic Type at its default Large setting,
 /// where 17 is body and 13 is the smallest size Apple sets anything a user is
 /// meant to actually read.
@@ -695,10 +694,11 @@ class AppTypeScale {
   static bool get _touch => !AppPlatform.hasPointer;
   static bool get _windows => AppPlatform.isWindows;
 
-  /// The smallest legible annotation: an uppercase section label, a keycap
-  /// hint. 10.5 is a real size on a Mac but too fine on a typical Windows
-  /// display and unreadable on a phone held at arm's length, so each gets a
-  /// larger floor suited to its viewing distance and rasterisation.
+  /// The smallest legible annotation: an uppercase section label, the key
+  /// chip in a tonal button. 10.5 is a real size on a Mac but too fine on a
+  /// typical Windows display and unreadable on a phone held at arm's length,
+  /// so each gets a larger floor suited to its viewing distance and
+  /// rasterisation.
   static double get micro => _touch
       ? 13
       : _windows
@@ -816,6 +816,31 @@ class KapyTheme {
   static const brand = Color(0xFFC97849);
   static const _darkAccent = Color(0xFF7D9468);
   static const _lightAccent = Color(0xFFA85F38);
+
+  /// The accent the theme for [brightness] marks focus, the caret and what is
+  /// on with.
+  static Color accentFor(Brightness brightness) =>
+      brightness == Brightness.dark ? _darkAccent : _lightAccent;
+
+  /// A filled control's background in each state: [fill] at rest, with a
+  /// little of its [ink] laid over it when hovered or focused and a little
+  /// more while pressed, and [disabled] when it has nothing to do. The accent
+  /// button and the tonal one share it, so both answer the pointer alike.
+  static WidgetStateProperty<Color> fillStates(
+    Color fill, {
+    required Color ink,
+    required Color disabled,
+  }) => WidgetStateProperty.resolveWith((states) {
+    if (states.contains(WidgetState.disabled)) return disabled;
+    if (states.contains(WidgetState.pressed)) {
+      return Color.alphaBlend(ink.withValues(alpha: 0.13), fill);
+    }
+    if (states.contains(WidgetState.hovered) ||
+        states.contains(WidgetState.focused)) {
+      return Color.alphaBlend(ink.withValues(alpha: 0.07), fill);
+    }
+    return fill;
+  });
 
   static ThemeData light({
     bool transparency = false,
@@ -1002,7 +1027,7 @@ class KapyTheme {
   static ThemeData _build(Brightness brightness, CalcPalette palette) {
     final dark = brightness == Brightness.dark;
     final compactControls = AppPlatform.isDesktop;
-    final accent = dark ? _darkAccent : _lightAccent;
+    final accent = accentFor(brightness);
     final onAccent = dark ? const Color(0xFF1C1A17) : Colors.white;
     final buttonHeight = AppControlMetrics.buttonHeight;
     final iconButtonExtent = AppControlMetrics.iconButtonExtent;
@@ -1202,7 +1227,7 @@ class KapyTheme {
           }),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadii.icon),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
           ),
         ),
@@ -1219,37 +1244,21 @@ class KapyTheme {
               tapTargetSize: tapTarget,
               elevation: 0,
               shadowColor: Colors.transparent,
-              backgroundColor: accent,
               foregroundColor: onAccent,
-              disabledBackgroundColor: palette.controlBackground,
               disabledForegroundColor: palette.textTertiary,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadii.button),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
                 fontWeight: FontWeight.w600,
               ),
             ).copyWith(
-              backgroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.disabled)) {
-                  return palette.controlBackground;
-                }
-                if (states.contains(WidgetState.pressed)) {
-                  return Color.alphaBlend(
-                    onAccent.withValues(alpha: 0.13),
-                    accent,
-                  );
-                }
-                if (states.contains(WidgetState.hovered) ||
-                    states.contains(WidgetState.focused)) {
-                  return Color.alphaBlend(
-                    onAccent.withValues(alpha: 0.07),
-                    accent,
-                  );
-                }
-                return accent;
-              }),
+              backgroundColor: fillStates(
+                accent,
+                ink: onAccent,
+                disabled: palette.controlBackground,
+              ),
               overlayColor: const WidgetStatePropertyAll(Colors.transparent),
               animationDuration: const Duration(milliseconds: 120),
             ),
@@ -1269,7 +1278,7 @@ class KapyTheme {
               foregroundColor: palette.textPrimary,
               side: BorderSide(color: palette.controlBorder),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadii.button),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
@@ -1313,7 +1322,7 @@ class KapyTheme {
               tapTargetSize: tapTarget,
               foregroundColor: accent,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadii.icon),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
@@ -1354,7 +1363,7 @@ class KapyTheme {
           visualDensity: VisualDensity.standard,
           side: BorderSide(color: palette.controlBorder),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadii.button),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           tapTargetSize: tapTarget,
           textStyle: base.textTheme.labelLarge?.copyWith(

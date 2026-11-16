@@ -676,7 +676,7 @@ class _ShareHeader extends StatelessWidget {
           height: 38,
           decoration: BoxDecoration(
             color: accent.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(AppRadii.button),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             border: Border.all(color: accent.withValues(alpha: 0.28)),
           ),
           alignment: Alignment.center,

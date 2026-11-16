@@ -62,7 +62,7 @@ void main() {
     expect(filled.textStyle!.resolve({})!.fontWeight, FontWeight.w600);
     expect(
       (filled.shape!.resolve({})! as RoundedRectangleBorder).borderRadius,
-      BorderRadius.circular(AppRadii.button),
+      BorderRadius.circular(AppRadii.control),
     );
     expect(outlined.side!.resolve({})!.width, 1);
     expect(outlined.minimumSize!.resolve({})!.height, 36);
@@ -84,7 +84,7 @@ void main() {
     );
   });
 
-  test('Windows uses native, readable typography for small interface copy', () {
+  test('Windows keeps readable sizes for small interface copy', () {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
