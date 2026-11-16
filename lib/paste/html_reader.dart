@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 
+import 'mathml_tex.dart';
 import 'paste_tree.dart';
 
 /// Image bytes a clipboard carried alongside its markup, by the URL or file
@@ -28,6 +29,14 @@ class HtmlPasteReader {
 
   final _CssSheet _css = _CssSheet();
 
+  /// The size most of the words are set in, for markup that says what is a
+  /// heading only by its size: Apple's, from Notes, Pages and TextEdit.
+  double? _textSize;
+
+  /// Whether the markup is a word processor's (Google Docs, Word), where
+  /// code is written as paragraphs set in a monospace face.
+  var _editorDocument = false;
+
   List<PasteBlock> read(String html) {
     final document = html_parser.parse(_withoutDownlevelConditionals(html));
     for (final style in document.querySelectorAll('style')) {
@@ -35,12 +44,92 @@ class HtmlPasteReader {
     }
     final root = document.body ?? document.documentElement;
     if (root == null) return const [];
+    final generator = document
+        .querySelector('meta[name="Generator"]')
+        ?.attributes['content'];
+    _textSize = generator != null && generator.startsWith('Cocoa HTML Writer')
+        ? _commonSize(root)
+        : null;
+    _editorDocument =
+        html.contains('docs-internal-guid') ||
+        (generator?.startsWith('Microsoft') ?? false);
     _rewriteWordLists(root);
+    _splitTaskItems(root);
     final out = _Builder();
     _walkChildren(root, const _Context(), out);
     out.flush();
     return _mergeAdjacentCode(out.blocks);
   }
+
+  /// Whether [html] is code that a code editor copied: every word set in a
+  /// monospace face and nothing else to say — no headings, lists, links,
+  /// tables or pictures. JetBrains, Xcode's rich text and terminals write
+  /// their colours this way, and the words are the code.
+  bool readsAsCode(String html) {
+    final document = html_parser.parse(html);
+    for (final style in document.querySelectorAll('style')) {
+      _css.add(style.text);
+    }
+    final root = document.body;
+    if (root == null) return false;
+    const structure =
+        'pre, code, h1, h2, h3, h4, h5, h6, li, table, img, a[href], '
+        'blockquote';
+    if (root.querySelector(structure) != null) return false;
+    var words = false;
+    final pending = <dom.Node>[root];
+    while (pending.isNotEmpty) {
+      final node = pending.removeLast();
+      if (node is dom.Text) {
+        if (node.data.trim().isEmpty) continue;
+        words = true;
+        if (!_monospaced(node.parent)) return false;
+        continue;
+      }
+      if (node is dom.Element && _dropped.contains(node.localName)) continue;
+      pending.addAll(node.nodes);
+    }
+    return words;
+  }
+
+  bool _monospaced(dom.Element? element) {
+    for (var at = element; at != null; at = at.parent) {
+      final declarations = _css.declarationsFor(at);
+      final face =
+          declarations['font-family'] ??
+          declarations['font'] ??
+          at.attributes['face'];
+      if (face != null) {
+        return _monospace.hasMatch(face.split(',').first);
+      }
+    }
+    return false;
+  }
+
+  /// Whether a word processor's paragraph is a line of code: every word in
+  /// it set in a monospace face, with nothing in it a code block can't hold.
+  bool _isCodeParagraph(dom.Element paragraph) {
+    if (paragraph.querySelector('a[href], img') != null) return false;
+    var words = false;
+    final pending = <dom.Node>[paragraph];
+    while (pending.isNotEmpty) {
+      final node = pending.removeLast();
+      if (node is dom.Text) {
+        if (node.data.trim().isEmpty) continue;
+        words = true;
+        if (!_monospaced(node.parent)) return false;
+        continue;
+      }
+      pending.addAll(node.nodes);
+    }
+    return words;
+  }
+
+  static final _monospace = RegExp(
+    r'mono|menlo|monaco|consolas|courier|jetbrains|fira ?code|source ?code|'
+    r'cascadia|inconsolata|hack\b',
+    caseSensitive: false,
+  );
 
   // ---------------------------------------------------------------------
   // Walking
@@ -61,7 +150,11 @@ class HtmlPasteReader {
     final tag = element.localName ?? '';
     if (_dropped.contains(tag) || _droppedClass(element)) return;
     final declarations = _css.declarationsFor(element);
-    if (_isHidden(element, declarations) && !_isMath(element)) return;
+    if (_isHidden(element, declarations) &&
+        !_isMath(element) &&
+        element.querySelector('math') == null) {
+      return;
+    }
 
     if (_isMath(element)) {
       final math = _readMath(element);
@@ -76,13 +169,37 @@ class HtmlPasteReader {
       }
     }
 
+    // Perplexity's source chip: its source's name, linked, and set apart
+    // from the sentence it ends.
+    final citation = element.attributes['data-pplx-citation-url'];
+    if (citation != null) {
+      final label = element.text.replaceAll(RegExp(r'\s*\+\d+\s*$'), '').trim();
+      final href = _resolveLink(citation);
+      if (label.isNotEmpty && href != null) {
+        out.line
+          ..addText(' ', context)
+          ..addText(label, _Context(styles: context.styles, href: href));
+      }
+      return;
+    }
+
     final inner = _styled(element, declarations, context);
 
-    final wordTitle = tag == 'p' ? _wordTitleLevel(element) : null;
+    if (tag == 'p' && _editorDocument && _isCodeParagraph(element)) {
+      out.flush();
+      out.blocks.add(PasteCode(_codeText(element).trimRight()));
+      return;
+    }
+
+    final wordTitle = tag == 'p'
+        ? _wordTitleLevel(element) ?? _sizedTitleLevel(element)
+        : null;
     if (wordTitle != null) {
       out.flush();
       final inlines = _inlinesOf(element, inner);
-      if (_hasWords(inlines)) out.blocks.add(PasteHeading(wordTitle, inlines));
+      if (_hasWords(inlines)) {
+        out.blocks.add(PasteHeading(wordTitle, _unboldedHeading(inlines)));
+      }
       return;
     }
 
@@ -91,7 +208,12 @@ class HtmlPasteReader {
         out.flush();
         final inlines = _inlinesOf(element, inner);
         if (_hasWords(inlines)) {
-          out.blocks.add(PasteHeading(int.parse(tag.substring(1)), inlines));
+          out.blocks.add(
+            PasteHeading(
+              int.parse(tag.substring(1)),
+              _unboldedHeading(inlines),
+            ),
+          );
         }
         return;
       case 'ul' || 'ol' || 'menu' || 'dir':
@@ -125,7 +247,9 @@ class HtmlPasteReader {
             PasteCode(_trimCode(text), language: _languageOf(element)),
           );
         } else if (text.isNotEmpty) {
-          out.line.add(PasteCodeSpan(text, href: inner.href));
+          out.line.add(
+            PasteCodeSpan(text, styles: inner.styles, href: inner.href),
+          );
         }
         return;
       case 'table':
@@ -260,8 +384,6 @@ class HtmlPasteReader {
         styles.add(PasteStyle.superscript);
       case 'sub':
         styles.add(PasteStyle.subscript);
-      case 'th':
-        styles.add(PasteStyle.bold);
     }
     final weight = declarations['font-weight'];
     if (weight != null) {
@@ -301,12 +423,14 @@ class HtmlPasteReader {
 
     final whiteSpace = declarations['white-space'];
     var pre = context.pre;
+    var preLine = context.preLine;
     if (whiteSpace != null) {
+      preLine = whiteSpace == 'pre-line';
       pre =
-          whiteSpace.startsWith('pre') && whiteSpace != 'pre-line' ||
-          whiteSpace == 'break-spaces';
+          !preLine &&
+          (whiteSpace.startsWith('pre') || whiteSpace == 'break-spaces');
     }
-    return _Context(styles: styles, href: href, pre: pre);
+    return _Context(styles: styles, href: href, pre: pre, preLine: preLine);
   }
 
   bool _isHidden(dom.Element element, Map<String, String> declarations) {
@@ -644,21 +768,60 @@ class HtmlPasteReader {
   /// highlighters — read back as one block.
   static List<PasteBlock> _mergeAdjacentCode(List<PasteBlock> blocks) {
     final merged = <PasteBlock>[];
+    var lines = false;
     for (final block in blocks) {
+      final line =
+          block is PasteCode &&
+          block.language == null &&
+          !block.text.contains('\n');
       final last = merged.isEmpty ? null : merged.last;
-      if (block is PasteCode &&
-          last is PasteCode &&
-          last.language == block.language &&
-          !last.text.contains('\n') &&
-          !block.text.contains('\n') &&
-          last.language == null) {
-        merged.removeLast();
-        merged.add(PasteCode('${last.text}\n${block.text}'));
+      if (line && lines && last is PasteCode) {
+        merged[merged.length - 1] = PasteCode('${last.text}\n${block.text}');
         continue;
       }
       merged.add(block);
+      lines = line;
     }
     return merged;
+  }
+
+  /// GitHub draws a checklist as one list item holding every task. Each task
+  /// becomes an item of its own here, so each keeps its own box.
+  static void _splitTaskItems(dom.Element root) {
+    for (final item in root.querySelectorAll('li')) {
+      final parent = item.parent;
+      if (parent == null) continue;
+      final boxes = [
+        for (final box in item.querySelectorAll('input[type="checkbox"]'))
+          if (identical(_closestItem(box), item)) box,
+      ];
+      if (boxes.length < 2) continue;
+      final tasks = <dom.Element>[];
+      for (final box in boxes) {
+        var task = box;
+        while (task.parent != null &&
+            !identical(task.parent, item) &&
+            task.parent!.querySelectorAll('input[type="checkbox"]').length ==
+                1) {
+          task = task.parent!;
+        }
+        tasks.add(task);
+      }
+      var after = _nextElementSibling(item);
+      for (final task in tasks.reversed) {
+        final split = dom.Element.tag('li')..append(task);
+        parent.insertBefore(split, after);
+        after = split;
+      }
+      if (item.text.trim().isEmpty) item.remove();
+    }
+  }
+
+  static dom.Element? _closestItem(dom.Element element) {
+    for (var at = element.parent; at != null; at = at.parent) {
+      if (at.localName == 'li') return at;
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------------
@@ -702,7 +865,8 @@ class HtmlPasteReader {
         final declarations = _css.declarationsFor(cell);
         if (_isHidden(cell, declarations)) continue;
         fillSpans();
-        final inlines = _inlinesOf(cell, _styled(cell, declarations, context));
+        final read = _inlinesOf(cell, _styled(cell, declarations, context));
+        final inlines = r == 0 ? _withoutBold(read) : read;
         final colspan = (int.tryParse(cell.attributes['colspan'] ?? '') ?? 1)
             .clamp(1, 64);
         final rowspan = (int.tryParse(cell.attributes['rowspan'] ?? '') ?? 1)
@@ -793,6 +957,28 @@ class HtmlPasteReader {
     return false;
   }
 
+  /// A header cell's words without the bold a header is drawn in anyway.
+  static List<PasteInline> _withoutBold(List<PasteInline> inlines) => [
+    for (final inline in inlines)
+      switch (inline) {
+        PasteText(:final text, :final styles, :final href)
+            when styles.contains(PasteStyle.bold) =>
+          PasteText(
+            text,
+            styles: {...styles}..remove(PasteStyle.bold),
+            href: href,
+          ),
+        PasteCodeSpan(:final code, :final styles, :final href)
+            when styles.contains(PasteStyle.bold) =>
+          PasteCodeSpan(
+            code,
+            styles: {...styles}..remove(PasteStyle.bold),
+            href: href,
+          ),
+        _ => inline,
+      },
+  ];
+
   static PasteAlign _alignOf(
     dom.Element cell,
     Map<String, String> declarations,
@@ -802,7 +988,6 @@ class HtmlPasteReader {
     return switch (value) {
       'center' => PasteAlign.center,
       'right' || 'end' => PasteAlign.right,
-      'left' || 'start' => PasteAlign.left,
       _ => PasteAlign.none,
     };
   }
@@ -813,7 +998,7 @@ class HtmlPasteReader {
   void _readImage(dom.Element image, _Context context, _Builder out) {
     final alt = (image.attributes['alt'] ?? '').trim();
     if (_isEmojiImage(image, alt)) {
-      out.line.addText(alt, context);
+      out.line.addText(_emojiOf(image, alt), context);
       return;
     }
     final declarations = _css.declarationsFor(image);
@@ -832,6 +1017,10 @@ class HtmlPasteReader {
       return;
     }
     if (source.contains('favicon')) return;
+    if (_isVector(source)) {
+      if (alt.isNotEmpty) out.line.addText(alt, context);
+      return;
+    }
     PasteImage picture;
     if (source.startsWith('data:')) {
       final decoded = _decodeDataUri(source);
@@ -874,6 +1063,31 @@ class HtmlPasteReader {
     out.line.add(PasteImageInline(picture, href: context.href));
   }
 
+  /// Whether a picture is drawn in SVG, which a note can't hold: badges,
+  /// logos. Read from its file name or data type, or for GitHub's image
+  /// proxy from the address it hides in hex.
+  static bool _isVector(String source) {
+    if (source.toLowerCase().startsWith('data:image/svg')) return true;
+    var address = Uri.tryParse(source);
+    if (address == null) return false;
+    if (address.host == 'camo.githubusercontent.com') {
+      final hex = address.pathSegments.lastOrNull ?? '';
+      if (RegExp(r'^(?:[0-9a-f]{2})+$').hasMatch(hex)) {
+        final original = Uri.tryParse(
+          utf8.decode([
+            for (var i = 0; i < hex.length; i += 2)
+              int.parse(hex.substring(i, i + 2), radix: 16),
+          ], allowMalformed: true),
+        );
+        if (original != null) address = original;
+      }
+    }
+    return address.path.toLowerCase().endsWith('.svg') ||
+        address.host == 'img.shields.io' ||
+        address.host == 'badgen.net' ||
+        address.pathSegments.contains('badge');
+  }
+
   String? _imageSource(dom.Element image) {
     final attributes = image.attributes;
     final src = attributes['src'];
@@ -908,6 +1122,27 @@ class HtmlPasteReader {
         alt.runes.length <= 2 &&
         alt.runes.every((rune) => rune >= 0x2190);
   }
+
+  /// The emoji a picture of one stands for: the code points its file is
+  /// named after, as Slack, GitHub and Twemoji name them, or else its alt
+  /// text, which for a custom emoji is its :shortcode:.
+  static String _emojiOf(dom.Element image, String alt) {
+    final file = Uri.tryParse(
+      image.attributes['src'] ?? '',
+    )?.pathSegments.lastOrNull;
+    final match = _codePointFile.firstMatch(file ?? '');
+    if (match == null) return alt;
+    final points = [
+      for (final part in match.group(1)!.split('-')) int.parse(part, radix: 16),
+    ];
+    final emoji = points.any((point) => point >= 0x2000 && point <= 0x10FFFF);
+    return emoji ? String.fromCharCodes(points) : alt;
+  }
+
+  static final _codePointFile = RegExp(
+    r'^([0-9a-f]{2,6}(?:-[0-9a-f]{2,6})*)(?:@\dx)?\.(?:png|svg|gif|webp)$',
+    caseSensitive: false,
+  );
 
   static ({Uint8List bytes, String mime})? _decodeDataUri(String uri) {
     final comma = uri.indexOf(',');
@@ -988,10 +1223,11 @@ class HtmlPasteReader {
         classes.contains('katex-display') ||
         classes.contains('mwe-math-element') ||
         classes.contains('MathJax_Display') ||
-        classes.contains('math-display') &&
-            element.attributes.containsKey('data-latex') ||
-        classes.contains('math-inline') &&
-            element.attributes.containsKey('data-latex');
+        (classes.contains('math-display') ||
+                classes.contains('math-block') ||
+                classes.contains('math-inline')) &&
+            (element.attributes.containsKey('data-latex') ||
+                element.attributes.containsKey('data-math'));
   }
 
   ({String tex, bool display})? _readMath(dom.Element element) {
@@ -1005,9 +1241,14 @@ class HtmlPasteReader {
         display: (element.attributes['type'] ?? '').contains('display'),
       );
     }
-    final latex = element.attributes['data-latex'];
+    final latex =
+        element.attributes['data-latex'] ?? element.attributes['data-math'];
     if (latex != null && latex.trim().isNotEmpty) {
-      return (tex: latex.trim(), display: classes.contains('math-display'));
+      return (
+        tex: latex.trim(),
+        display:
+            classes.contains('math-display') || classes.contains('math-block'),
+      );
     }
     final annotation = element.querySelector(
       'annotation[encoding="application/x-tex"], annotation[encoding="TeX"]',
@@ -1028,13 +1269,20 @@ class HtmlPasteReader {
     if (alttext != null && alttext.trim().isNotEmpty) {
       return (tex: _cleanTex(alttext), display: display);
     }
+    final source = _parsoidTex(math);
+    if (source != null) return (tex: _cleanTex(source), display: display);
     final fallback = element.querySelector('img[alt]');
     final alt = fallback?.attributes['alt'];
     if (alt != null && alt.trim().isNotEmpty) {
       return (tex: _cleanTex(alt), display: display);
     }
-    // MathML with no TeX anywhere: its text is the nearest honest thing.
-    final text = (math ?? element).text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (math != null) {
+      final tex = mathmlToTex(math);
+      if (tex.isNotEmpty) return (tex: tex, display: display);
+    }
+    // Drawn math with no TeX and no MathML: its text is the nearest honest
+    // thing.
+    final text = element.text.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (text.isEmpty) return null;
     return (tex: text, display: display);
   }
@@ -1046,7 +1294,24 @@ class HtmlPasteReader {
       dotAll: true,
     ).firstMatch(tex);
     if (wrapper != null) tex = wrapper.group(1)!.trim();
-    return tex;
+    return tex.replaceFirst(
+      RegExp(r'^\\(?:displaystyle|textstyle)(?![A-Za-z])\s*'),
+      '',
+    );
+  }
+
+  /// The TeX Wikipedia's Parsoid keeps in a formula's data-mw.
+  static String? _parsoidTex(dom.Element? math) {
+    final raw = math?.attributes['data-mw'];
+    if (raw == null) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      final body = decoded is Map ? decoded['body'] : null;
+      final source = body is Map ? body['extsrc'] : null;
+      return source is String && source.trim().isNotEmpty ? source : null;
+    } on FormatException {
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -1068,7 +1333,9 @@ class HtmlPasteReader {
       final run = <dom.Element>[first];
       var next = index + 1;
       while (next < paragraphs.length &&
-          identical(_nextElementSibling(run.last), paragraphs[next])) {
+          identical(_nextElementSibling(run.last), paragraphs[next]) &&
+          !(_msoListLevel(paragraphs[next]) == 1 &&
+              _msoListId(paragraphs[next]) != _msoListId(first))) {
         run.add(paragraphs[next]);
         next++;
       }
@@ -1084,6 +1351,12 @@ class HtmlPasteReader {
     final at = siblings.indexOf(element);
     return at >= 0 && at + 1 < siblings.length ? siblings[at + 1] : null;
   }
+
+  /// Which of the document's lists a paragraph belongs to, so that a
+  /// numbered list right after a bulleted one stays a list of its own.
+  static String? _msoListId(dom.Element element) => RegExp(
+    r'mso-list:\s*(l\d+)\s+level',
+  ).firstMatch(element.attributes['style'] ?? '')?.group(1);
 
   static int? _msoListLevel(dom.Element element) {
     final style = element.attributes['style'] ?? '';
@@ -1159,6 +1432,51 @@ class HtmlPasteReader {
     return null;
   }
 
+  /// A paragraph set well above the size of the words around it, in markup
+  /// with no other way of saying it is a heading.
+  int? _sizedTitleLevel(dom.Element paragraph) {
+    final textSize = _textSize;
+    if (textSize == null) return null;
+    final size = _fontSize(paragraph);
+    final words = paragraph.text.trim();
+    if (size == null || words.isEmpty || words.length > 120) return null;
+    final ratio = size / textSize;
+    if (ratio >= 1.6) return 1;
+    if (ratio >= 1.2) return 2;
+    return null;
+  }
+
+  double? _commonSize(dom.Element root) {
+    final bySize = <double, int>{};
+    for (final element in root.querySelectorAll('p, li')) {
+      final size = _fontSize(element);
+      if (size == null) continue;
+      bySize[size] = (bySize[size] ?? 0) + element.text.trim().length;
+    }
+    if (bySize.isEmpty) return null;
+    return bySize.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+  }
+
+  double? _fontSize(dom.Element element) {
+    final declarations = _css.declarationsFor(element);
+    final value = declarations['font-size'] ?? declarations['font'];
+    final match = RegExp(r'([0-9.]+)px').firstMatch(value ?? '');
+    return match == null ? null : double.tryParse(match.group(1)!);
+  }
+
+  /// A heading's words without the bold every heading is drawn in, when
+  /// all of them were bold.
+  static List<PasteInline> _unboldedHeading(List<PasteInline> inlines) {
+    final words = inlines.whereType<PasteText>().where(
+      (text) => text.text.trim().isNotEmpty,
+    );
+    if (words.isEmpty ||
+        !words.every((text) => text.styles.contains(PasteStyle.bold))) {
+      return inlines;
+    }
+    return _withoutBold(inlines);
+  }
+
   /// A Word title or subtitle paragraph, which Word does not write as a
   /// heading element.
   static int? _wordTitleLevel(dom.Element paragraph) {
@@ -1183,6 +1501,12 @@ class HtmlPasteReader {
     for (final name in element.classes) {
       if (_droppedClasses.contains(name)) return true;
     }
+    // Wikipedia's footnote marks; the same class is a real link elsewhere.
+    if (element.localName == 'sup' && element.classes.contains('reference')) {
+      return true;
+    }
+    // ChatGPT's "Thought for 12s" above an answer.
+    if (element.attributes.containsKey('data-cot-label')) return true;
     final testId = element.attributes['data-testid'] ?? '';
     if (testId.contains('copy') || testId.contains('citation-pill')) {
       return element.localName == 'button' || testId.contains('copy');
@@ -1237,10 +1561,12 @@ const _dropped = {
 const _droppedClasses = {
   // Wikipedia: section edit links, footnote marks, jump links.
   'mw-editsection',
-  'reference',
   'mw-cite-backlink',
   'mw-jump-link',
   'noprint',
+  // Wikipedia's picture of a formula, beside the MathML it is read from.
+  'mwe-math-fallback-image-inline',
+  'mwe-math-fallback-image-display',
   // GitHub: the link icon beside every heading, copy buttons.
   'anchor',
   'octicon',
@@ -1327,14 +1653,28 @@ const _notLanguages = {
 /// What the walk carries down the tree: the emphasis in force, the link the
 /// words are inside, and whether white space is kept as written.
 class _Context {
-  const _Context({this.styles = const {}, this.href, this.pre = false});
+  const _Context({
+    this.styles = const {},
+    this.href,
+    this.pre = false,
+    this.preLine = false,
+  });
 
   final Set<PasteStyle> styles;
   final String? href;
+
+  /// White space kept as written.
   final bool pre;
 
-  _Context withStyle(PasteStyle style) =>
-      _Context(styles: {...styles, style}, href: href, pre: pre);
+  /// Line breaks kept as written, while runs of spaces still collapse.
+  final bool preLine;
+
+  _Context withStyle(PasteStyle style) => _Context(
+    styles: {...styles, style},
+    href: href,
+    pre: pre,
+    preLine: preLine,
+  );
 }
 
 class _Builder {
@@ -1361,12 +1701,20 @@ class _Line {
 
   void addText(String raw, _Context context) {
     var text = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-    text = text.replaceAll(RegExp('[\u200b\ufeff\u00ad\ufffc]'), '');
+    text = text.replaceAll(RegExp('[\u200b\u2060\ufeff\u00ad\ufffc]'), '');
     if (context.pre) {
       final lines = text.split('\n');
       for (var i = 0; i < lines.length; i++) {
         if (i > 0) _inlines.add(const PasteBreak());
         _append(lines[i].replaceAll('\u00a0', ' '), context);
+      }
+      return;
+    }
+    if (context.preLine && text.contains('\n')) {
+      final lines = text.split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        if (i > 0) addBreak(context);
+        addText(lines[i], _Context(styles: context.styles, href: context.href));
       }
       return;
     }
