@@ -212,6 +212,15 @@ final class NoteImageRef extends NoteAttachmentRef {
   final bool isPreparing;
   final Uint8List? previewBytes;
 
+  /// Where a pasted picture is still to be fetched from, while its bytes are
+  /// not on this device: being downloaded, or waiting to be tried again.
+  ///
+  /// Persisted, so a note saved or synced halfway through a download can be
+  /// retried on any device that knows the field. A build that doesn't reads
+  /// the ref as a picture it can't fetch and draws its "not on this device"
+  /// box; the slot is never lost.
+  final String? src;
+
   const NoteImageRef({
     required super.offset,
     required super.hash,
@@ -226,6 +235,7 @@ final class NoteImageRef extends NoteAttachmentRef {
     this.thumbId,
     this.isPreparing = false,
     this.previewBytes,
+    this.src,
   });
 
   /// Narrower than this and an image stops being a picture and starts being a
@@ -261,6 +271,7 @@ final class NoteImageRef extends NoteAttachmentRef {
     final thumbHash = raw['thumbHash'];
     final widthFactor = raw['widthFactor'];
     final thumbId = raw['thumbId'];
+    final src = raw['src'];
     return NoteImageRef(
       offset: offset,
       hash: hash,
@@ -275,6 +286,7 @@ final class NoteImageRef extends NoteAttachmentRef {
           : 1,
       attachmentId: attachmentId,
       thumbId: thumbId is String ? thumbId : null,
+      src: src is String && src.isNotEmpty ? src : null,
     );
   }
 
@@ -302,6 +314,7 @@ final class NoteImageRef extends NoteAttachmentRef {
     previewBytes: identical(previewBytes, _keepPreview)
         ? this.previewBytes
         : previewBytes as Uint8List?,
+    src: src,
   );
 
   @override
@@ -322,6 +335,7 @@ final class NoteImageRef extends NoteAttachmentRef {
     if (widthFactor < 1) 'widthFactor': widthFactor,
     if (attachmentId != null) 'attachmentId': attachmentId,
     if (thumbId != null) 'thumbId': thumbId,
+    if (src != null) 'src': src,
   };
 
   @override
@@ -337,7 +351,8 @@ final class NoteImageRef extends NoteAttachmentRef {
       other.widthFactor == widthFactor &&
       other.attachmentId == attachmentId &&
       other.thumbId == thumbId &&
-      other.isPreparing == isPreparing;
+      other.isPreparing == isPreparing &&
+      other.src == src;
 
   @override
   int get hashCode => Object.hash(
@@ -352,6 +367,7 @@ final class NoteImageRef extends NoteAttachmentRef {
     attachmentId,
     thumbId,
     isPreparing,
+    src,
   );
 }
 
