@@ -103,7 +103,8 @@ void main() {
     final purchases = FakePurchaseStore();
     await pumpSettings(tester, purchases: purchases);
 
-    expect(find.text('Plan & usage'), findsOneWidget);
+    // Once in the navigation and once over the pane it opens.
+    expect(find.text('Plan & usage'), findsNWidgets(2));
     expect(find.byKey(const ValueKey('plan-current')), findsOneWidget);
     expect(find.text('Free plan'), findsOneWidget);
     expect(find.text('Your plan and included cloud limits'), findsOneWidget);
