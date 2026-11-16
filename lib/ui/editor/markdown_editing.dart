@@ -1286,8 +1286,6 @@ TextEditingValue? _typedAtCaret(
 ///   the next line's hidden structure.
 /// * Return at the start of a heading's words opens a line above it, rather
 ///   than splitting the heading from its own words.
-/// * `[] ` or `[ ] ` typed at the start of a line makes a task, as it always
-///   has in this app.
 TextEditingValue? markdownStructureEdit(
   TextEditingValue oldValue,
   TextEditingValue newValue,
@@ -1355,25 +1353,269 @@ TextEditingValue? markdownStructureEdit(
       );
     }
   }
+  return null;
+}
 
-  // `[] ` and `[ ] ` at the start of a line.
-  if (text == old.replaceRange(caret, caret, ' ')) {
-    final line = markdownLinePrefix(old, caret);
-    if (!line.isListItem) {
-      final typed = old.substring(line.contentStart, caret);
-      if (typed == '[]' || typed == '[ ]') {
-        const task = '- [ ] ';
-        return TextEditingValue(
-          text: old.replaceRange(line.contentStart, caret, task),
-          selection: TextSelection.collapsed(
-            offset: line.contentStart + task.length,
-          ),
-        );
-      }
-    }
+/// A markdown shortcut just typed, remembered for one keystroke so that
+/// Backspace or Undo straight after it can give back what was typed, the way
+/// Notion does: `# ` that became a heading comes back as the two characters,
+/// escaped (`\# `) so that they stay characters.
+///
+/// Also remembers a code fence while it is being typed, so that Return at
+/// the end of it can tell a fence the writer is opening from one that was
+/// already there.
+class MarkdownShortcut {
+  TextEditingValue? _made;
+  TextEditingValue? _typed;
+  TextEditingValue? _fence;
+
+  /// What the writer typed, as plain text, if [value] is still exactly what
+  /// the shortcut made of it.
+  TextEditingValue? typedFor(TextEditingValue value) =>
+      _isAt(value, _made) ? _typed : null;
+
+  void clear() {
+    _made = null;
+    _typed = null;
+    _fence = null;
+  }
+}
+
+/// Whether [value] is [state]: the same text, and the caret in the same
+/// place.
+bool _isAt(TextEditingValue value, TextEditingValue? state) =>
+    state != null &&
+    value.text == state.text &&
+    value.selection.isCollapsed &&
+    value.selection.baseOffset == state.selection.baseOffset;
+
+/// A line's start, typed up to a marker that a space makes into structure:
+/// a heading's `#`, a bullet, a number, a quote's `>` or a task's box. Only
+/// at the start of the words, after any indentation and quote markers.
+final _shortcutMarker = RegExp(
+  r'^[ \t]*(?:> ?)*(#{1,6}|[-*+]|[0-9]{1,9}[.)]|>|\[[ xX]?\])$',
+);
+
+/// A line that opens a fenced code block, from its first column.
+final _fenceLine = RegExp(r'^ {0,3}(?:`{3,}[^`]*|~{3,}.*)$');
+
+/// [marker] as characters rather than markdown: a backslash before the one
+/// character that makes it syntax.
+String _escaped(String marker) {
+  final last = marker.length - 1;
+  return _isDigit(marker.codeUnitAt(0))
+      ? '${marker.substring(0, last)}\\${marker.substring(last)}'
+      : '\\$marker';
+}
+
+/// What a keystroke becomes when it completes a markdown shortcut. Null
+/// leaves it as it was.
+///
+/// * A space after a marker at the start of a line — `# `, `- `, `* `,
+///   `+ `, `1. `, `> ` — is left as typed, since markdown already reads it
+///   as structure. `[] `, `[ ] ` and `[x] ` become a task, ticked for `x`.
+/// * Return at the end of a code fence the writer has just typed writes the
+///   closing fence too, with the caret between, so the rest of the note does
+///   not turn into code.
+/// * `---` straight under a line of words is a divider rather than the
+///   underline CommonMark would read it as, which would make the words above
+///   a heading: a blank line goes in above it.
+/// * Backspace straight after any of these, while the shortcut turned into
+///   formatting, gives back what was typed as plain text. See
+///   [MarkdownShortcut].
+///
+/// None of it happens while an input method is composing: the text is the
+/// input method's until it commits.
+TextEditingValue? markdownShortcutEdit(
+  TextEditingValue oldValue,
+  TextEditingValue newValue,
+  MarkdownAnalysis Function(String text) markdown,
+  MarkdownShortcut shortcut,
+) {
+  final typedBack = shortcut.typedFor(oldValue);
+  final fenceOpen = _isAt(oldValue, shortcut._fence);
+  shortcut.clear();
+  if (newValue.composing.isValid && !newValue.composing.isCollapsed) {
+    return null;
+  }
+  final selection = oldValue.selection;
+  if (!selection.isValid || !selection.isCollapsed) return null;
+  final old = oldValue.text;
+  final text = newValue.text;
+  final caret = selection.start;
+
+  if (typedBack != null &&
+      caret > 0 &&
+      text == old.replaceRange(caret - 1, caret, '')) {
+    return typedBack;
+  }
+
+  final added = text.length - old.length;
+  if (added <= 0) return null;
+  final inserted = text.substring(caret, caret + added);
+  if (text != old.replaceRange(caret, caret, inserted)) return null;
+  final lineStart = caret == 0 ? 0 : old.lastIndexOf('\n', caret - 1) + 1;
+  final end = caret + added;
+
+  if (inserted == '\n') {
+    if (!fenceOpen) return null;
+    return _closeFence(oldValue, caret, lineStart, markdown(old), shortcut);
+  }
+
+  final newline = text.indexOf('\n', end);
+  final lineEnd = newline < 0 ? text.length : newline;
+  if (end == lineEnd &&
+      !inserted.contains('\n') &&
+      _fenceLine.hasMatch(text.substring(lineStart, lineEnd)) &&
+      (fenceOpen || !_fenceLine.hasMatch(old.substring(lineStart, caret)))) {
+    shortcut._fence = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: end),
+    );
+    return null;
+  }
+
+  if (inserted == ' ') {
+    return _markerTyped(
+      oldValue,
+      newValue,
+      caret,
+      lineStart,
+      markdown,
+      shortcut,
+    );
+  }
+  if (inserted == '-' && end == lineEnd) {
+    return _dividerTyped(
+      oldValue,
+      newValue,
+      caret,
+      lineStart,
+      markdown,
+      shortcut,
+    );
   }
   return null;
 }
+
+TextEditingValue? _markerTyped(
+  TextEditingValue oldValue,
+  TextEditingValue newValue,
+  int caret,
+  int lineStart,
+  MarkdownAnalysis Function(String text) markdown,
+  MarkdownShortcut shortcut,
+) {
+  final old = oldValue.text;
+  final marker = _shortcutMarker.firstMatch(
+    old.substring(lineStart, caret),
+  )?[1];
+  if (marker == null) return null;
+  final markerStart = caret - marker.length;
+  var made = newValue;
+  if (marker.startsWith('[')) {
+    final task = marker.length == 3 && marker[1] != ' ' ? '- [x] ' : '- [ ] ';
+    made = TextEditingValue(
+      text: old.replaceRange(markerStart, caret, task),
+      selection: TextSelection.collapsed(offset: markerStart + task.length),
+    );
+  }
+  final at = made.selection.baseOffset;
+  if (markdown(made.text).atomicPrefixAt(at)?.end == at) {
+    final typed = '${_escaped(marker)} ';
+    shortcut
+      .._made = made
+      .._typed = TextEditingValue(
+        text: old.replaceRange(markerStart, caret, typed),
+        selection: TextSelection.collapsed(offset: markerStart + typed.length),
+      );
+  }
+  return identical(made, newValue) ? null : made;
+}
+
+/// The closing fence for the one the caret is at the end of, if that line
+/// opens a code block rather than closing one.
+TextEditingValue? _closeFence(
+  TextEditingValue oldValue,
+  int caret,
+  int lineStart,
+  MarkdownAnalysis analysis,
+  MarkdownShortcut shortcut,
+) {
+  final old = oldValue.text;
+  final opensBlock = analysis.codeBlocks.any(
+    (block) => block.start <= lineStart + 3 && block.start >= lineStart,
+  );
+  if (!opensBlock) return null;
+  final line = old.substring(lineStart, caret);
+  final fenceStart = lineStart + line.length - line.trimLeft().length;
+  final char = old[fenceStart];
+  var run = fenceStart;
+  while (run < caret && old[run] == char) {
+    run++;
+  }
+  final closing = '\n${old.substring(lineStart, run)}';
+  final made = TextEditingValue(
+    text: old.replaceRange(caret, caret, '\n$closing'),
+    selection: TextSelection.collapsed(offset: caret + 1),
+  );
+  shortcut
+    .._made = made
+    .._typed = TextEditingValue(
+      text: old
+          .replaceRange(caret, caret, '\n')
+          .replaceRange(fenceStart, fenceStart, '\\'),
+      selection: TextSelection.collapsed(offset: caret + 2),
+    );
+  return made;
+}
+
+/// A blank line above `---` typed straight under a line of words.
+TextEditingValue? _dividerTyped(
+  TextEditingValue oldValue,
+  TextEditingValue newValue,
+  int caret,
+  int lineStart,
+  MarkdownAnalysis Function(String text) markdown,
+  MarkdownShortcut shortcut,
+) {
+  final text = newValue.text;
+  if (text.substring(lineStart, caret + 1) != '---') return null;
+  final analysis = markdown(text);
+  final underlines = analysis.spans.any(
+    (span) => span.end == lineStart && _isHeading(span.style),
+  );
+  final TextEditingValue made;
+  if (underlines) {
+    made = TextEditingValue(
+      text: text.replaceRange(lineStart, lineStart, '\n'),
+      selection: TextSelection.collapsed(offset: caret + 2),
+    );
+  } else if (analysis.blocks.any(
+    (block) => block.kind == MarkdownBlockKind.rule && block.start == lineStart,
+  )) {
+    made = newValue;
+  } else {
+    return null;
+  }
+  shortcut
+    .._made = made
+    .._typed = TextEditingValue(
+      text: text.replaceRange(lineStart, lineStart, '\\'),
+      selection: TextSelection.collapsed(offset: caret + 2),
+    );
+  return identical(made, newValue) ? null : made;
+}
+
+bool _isHeading(MarkdownStyle style) => switch (style) {
+  MarkdownStyle.heading1 ||
+  MarkdownStyle.heading2 ||
+  MarkdownStyle.heading3 ||
+  MarkdownStyle.heading4 ||
+  MarkdownStyle.heading5 ||
+  MarkdownStyle.heading6 => true,
+  _ => false,
+};
 
 // ---------------------------------------------------------------------------
 // Tables

@@ -496,6 +496,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// Bold switched on for the next word, and the like. See [MarkdownTyping].
   final MarkdownTyping _markdownTyping = MarkdownTyping();
 
+  /// The shortcut just typed, which Backspace or Undo gives back as typed.
+  /// See [MarkdownShortcut].
+  final MarkdownShortcut _markdownShortcut = MarkdownShortcut();
+
   /// Whether inline markdown stays hidden even beside the caret: while the
   /// writer is typing, so markers disappear as they are completed, and until
   /// they next move the caret themselves.
@@ -1186,6 +1190,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           // The writer moved the caret: anything waiting to be typed is
           // off, and the syntax beside the caret may show again.
           _markdownTyping.clear();
+          _markdownShortcut.clear();
           _markdownQuiet = false;
         }
       }
@@ -1536,6 +1541,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   bool _canIndent({required bool outdent}) => _indentsAsMarkdown
       ? canIndentMarkdownSelection(_controller.value, outdent: outdent)
       : canIndentSelection(_controller.value, outdent: outdent);
+
+  /// What Undo does straight after a markdown shortcut: gives back what was
+  /// typed. False when the last thing typed was not one.
+  bool _undoMarkdownShortcut() {
+    final typed = _markdownShortcut.typedFor(_controller.value);
+    if (typed == null || widget.readOnly || !widget.markdownEnabled) {
+      return false;
+    }
+    _markdownShortcut.clear();
+    _controller.value = typed;
+    return true;
+  }
 
   /// Puts a markdown control's edit into the note.
   ///
@@ -3689,6 +3706,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // what is drawn changes with focus.
     if (widget.markdownEnabled && mounted) {
       _markdownTyping.clear();
+      _markdownShortcut.clear();
       setState(() => _markdownQuiet = true);
     }
     if (_focusNode.hasFocus) {
@@ -6106,7 +6124,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: _handleEditorKey,
-        child: _textField(textStyle, strut),
+        child: Actions(
+          actions: {UndoTextIntent: _ShortcutUndoAction(_undoMarkdownShortcut)},
+          child: _textField(textStyle, strut),
+        ),
       ),
     );
   }
@@ -6240,6 +6261,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   _StaleInputFormatter(_rebaseStaleInput),
                   _dailySeparatorFormatter,
                   if (widget.markdownEnabled) ...[
+                    _MarkdownShortcutFormatter(
+                      _controller.markdownFor,
+                      _markdownShortcut,
+                    ),
                     _MarkdownTypingFormatter(
                       _controller.markdownFor,
                       _markdownTyping,
@@ -6611,9 +6636,38 @@ class _MarkdownTypingFormatter extends TextInputFormatter {
   }
 }
 
+/// Markdown shortcuts as they are typed, and Backspace straight after one
+/// giving back what was typed. See [markdownShortcutEdit].
+class _MarkdownShortcutFormatter extends TextInputFormatter {
+  const _MarkdownShortcutFormatter(this.markdown, this.shortcut);
+
+  final MarkdownAnalysis Function(String text) markdown;
+  final MarkdownShortcut shortcut;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) => markdownShortcutEdit(oldValue, newValue, markdown, shortcut) ?? newValue;
+}
+
+/// Undo, unless a markdown shortcut was the last thing typed: then what was
+/// typed comes back as plain text, as Backspace would give it.
+class _ShortcutUndoAction extends ContextAction<UndoTextIntent> {
+  _ShortcutUndoAction(this.undoShortcut);
+
+  final bool Function() undoShortcut;
+
+  @override
+  Object? invoke(UndoTextIntent intent, [BuildContext? context]) {
+    if (undoShortcut()) return null;
+    return callingAction?.invoke(intent);
+  }
+}
+
 /// Keystrokes that act on a line's hidden markdown as one piece: Backspace
 /// at the start of a heading or list item takes the whole `## ` or `- [ ] `
-/// away, and `[] ` at the start of a line becomes a checkbox.
+/// away.
 class _MarkdownStructureFormatter extends TextInputFormatter {
   const _MarkdownStructureFormatter(this.markdown);
 
