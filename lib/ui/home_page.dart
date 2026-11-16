@@ -65,8 +65,10 @@ import 'mobile_page_swipe.dart';
 import 'sidebar.dart';
 import 'settings_dialog.dart';
 import 'sidebar_swipe.dart';
+import 'spaces_rail.dart';
 import 'split_view.dart';
 import 'toolbar.dart';
+import 'window_drag_area.dart';
 import 'draw/drawing_canvas.dart';
 import 'draw/note_mode_switch.dart';
 
@@ -199,6 +201,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// launches: the app opens on the tab of the note it opens on, and on the
   /// person's own notes when there is none.
   SidebarTab _sidebarTab = SidebarTab.mine;
+
+  /// Whether the list beside the rail shows only drawings. Like a tab, a way
+  /// of looking at the list rather than a choice of note, and only in the
+  /// wide window: the compact list has no rail to leave it by.
+  bool _drawingsOnly = false;
 
   bool _initialNoteScheduled = false;
   bool _openSessionScheduled = false;
@@ -358,6 +365,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void didChangeMetrics() {
+    if (mounted && _drawingsOnly && _usesCompactLayout) {
+      setState(() => _drawingsOnly = false);
+    }
     // An open compact drawer is disposed when a desktop window crosses into
     // the two-pane layout. Scaffold cannot report a closing transition after
     // that disposal, so clear the transient flag here. Otherwise returning to
@@ -1082,13 +1092,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Lists the tab [id] is in, when a note is opened from somewhere other
   /// than the list: a link, a pane, the note put back after the archive. A
   /// row the reader clicked is in the tab on screen already, and the reader
-  /// switching tabs moves no selection, so neither is overruled.
+  /// switching tabs moves no selection, so neither is overruled. A note that
+  /// is not a drawing takes the list out of Drawings, for the same reason.
   void _showTabOf(String? id) {
-    final sharing = widget.account?.sharing;
-    if (id == null || sharing == null || _specialMode) return;
+    if (id == null || _specialMode) return;
     final note = widget.notes.byId(id);
     if (note == null) return;
-    _sidebarTab = sidebarTabOf(note, sharing);
+    if (_drawingsOnly) {
+      if (note.isDrawing) return;
+      _drawingsOnly = false;
+    }
+    final sharing = widget.account?.sharing;
+    if (sharing != null) _sidebarTab = sidebarTabOf(note, sharing);
   }
 
   /// Abandons a held-key preview before another interaction takes ownership.
@@ -1457,6 +1472,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // A new note is the person's own, so it is listed where they can see
       // it being written.
       _sidebarTab = SidebarTab.mine;
+      _drawingsOnly = false;
       _setSelectedId(note.id);
     });
     widget.prefs.lastOpenedNoteId = note.id;
@@ -2261,23 +2277,79 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  List<Note> get _visibleNotes {
-    final searched = _archiveMode
-        ? widget.notes.searchArchived(_query)
-        : _hiddenMode
-        ? widget.notes.searchHidden(_query)
-        : widget.notes.search(_query);
-    // The ordinary list is split by whose the notes are once there is an
-    // account to have shared anything with, and everything that walks the
-    // list — the arrow keys, the note after an archived one — walks the
-    // half on screen.
+  /// Narrows [notes] to what the list is showing. The ordinary list is split
+  /// by whose the notes are once there is an account to have shared anything
+  /// with, or narrowed to drawings from the rail, and everything that walks
+  /// the list (the arrow keys, the note after an archived one) walks what is
+  /// on screen. The archive and Hidden Notes are folders of their own.
+  List<Note> _narrowed(List<Note> notes) {
+    if (_specialMode) return notes;
+    if (_drawingsOnly) {
+      return [
+        for (final note in notes)
+          if (note.isDrawing) note,
+      ];
+    }
     final sharing = widget.account?.sharing;
-    final notes = _specialMode || sharing == null
-        ? searched
-        : [
-            for (final note in searched)
-              if (sidebarTabOf(note, sharing) == _sidebarTab) note,
-          ];
+    if (sharing == null) return notes;
+    return [
+      for (final note in notes)
+        if (sidebarTabOf(note, sharing) == _sidebarTab) note,
+    ];
+  }
+
+  /// The space the rail shows as open.
+  LibrarySpace get _space => _archiveMode
+      ? LibrarySpace.archive
+      : _hiddenMode
+      ? LibrarySpace.hidden
+      : _drawingsOnly
+      ? LibrarySpace.drawings
+      : widget.account?.sharing != null && _sidebarTab == SidebarTab.shared
+      ? LibrarySpace.shared
+      : LibrarySpace.notes;
+
+  /// How many notes the open space holds, for the bar over the list: all of
+  /// them, whatever the search has narrowed the list to.
+  int get _spaceCount => _narrowed(
+    _archiveMode
+        ? widget.notes.archivedNotes
+        : _hiddenMode
+        ? widget.notes.hiddenNotes
+        : widget.notes.notes,
+  ).length;
+
+  /// Opens [space] from the rail, the way the tabs, the archive row and the
+  /// Hidden Notes row it replaces did: Hidden Notes asks for its gate on the
+  /// way in, and the archive and Hidden Notes are left the way they always
+  /// are.
+  void _showSpace(LibrarySpace space) {
+    if (space == _space) return;
+    switch (space) {
+      case LibrarySpace.archive:
+        _toggleArchive();
+      case LibrarySpace.hidden:
+        unawaited(_toggleHiddenNotes());
+      case LibrarySpace.notes || LibrarySpace.drawings || LibrarySpace.shared:
+        if (_archiveMode) _toggleArchive();
+        if (_hiddenMode) _leaveHiddenNotes();
+        setState(() {
+          _drawingsOnly = space == LibrarySpace.drawings;
+          _sidebarTab = space == LibrarySpace.shared
+              ? SidebarTab.shared
+              : SidebarTab.mine;
+        });
+    }
+  }
+
+  List<Note> get _visibleNotes {
+    final notes = _narrowed(
+      _archiveMode
+          ? widget.notes.searchArchived(_query)
+          : _hiddenMode
+          ? widget.notes.searchHidden(_query)
+          : widget.notes.search(_query),
+    );
     final recent = widget.prefs.recentlyOpenedNoteIds;
     if (notes.length < 2 || recent.isEmpty) return notes;
 
@@ -2386,133 +2458,194 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // A tablet reaches this layout too, and it has no Scaffold to resize
     // around the software keyboard. Desktop reports zero here.
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    // The canvas left around the page, on every side but the one against the
+    // notes list, whose own margin keeps the two apart.
+    const pageInset = 12.0;
 
     // The desktop layout is its own chrome rather than a Scaffold, but text
-    // fields, menus and ink still need a Material ancestor.
-    // Transparent in glass mode so the window's blurred desktop is what shows
-    // through the thinned surfaces; solid otherwise, since a window with no
-    // material behind it shows black through any gap.
+    // fields, menus and ink still need a Material ancestor. It is the canvas
+    // the rail, the notes list and the page stand on, and transparent in glass
+    // mode so the window's blurred desktop is what shows through the thinned
+    // surfaces: a window with no material behind it shows black through any
+    // gap.
     return Material(
       color: context.palette.isGlass
           ? Colors.transparent
-          : context.palette.editorBackground,
+          : context.palette.sidebarColor,
       child: Padding(
         padding: EdgeInsets.only(bottom: keyboardInset),
         child: ListenableBuilder(
           listenable: _toolbarSources,
-          builder: (context, _) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              NoteToolbar(
-                mascotController: _kapyHeader,
-                sidebarVisible: widget.prefs.sidebarVisible,
-                sidebarShortcut: _sidebarShortcut,
-                settingsShortcut: _settingsShortcut,
-                onToggleSidebar: widget.prefs.toggleSidebar,
-                onSettingsPressed: _showSettings,
-                onCreate: _createNote,
-                onShare: _shareSelected,
-                members: _selectedMembers,
-                present: _selectedPresence,
-                currentUserId: widget.account?.sharing?.userId ?? '',
-                noteShared: selected?.isShared ?? false,
-                alwaysOnTop: widget.prefs.alwaysOnTop,
-                onToggleAlwaysOnTop: _pinToggle,
-                alwaysOnTopShortcut: _pinShortcut,
-                onSplit: _specialMode || !_workspace.canSplit
-                    ? null
-                    : _splitEditor,
-                splitTooltip: _splitTooltip,
-                updates: widget.updates,
-              ),
-              Expanded(
-                child: SplitView(
-                  sidebarVisible: widget.prefs.sidebarVisible,
-                  sidebarWidth: widget.prefs.sidebarWidth,
-                  minSidebarWidth: LayoutPrefs.minSidebarWidth,
-                  maxSidebarWidth: LayoutPrefs.maxSidebarWidth,
-                  onWidthChanged: (value) => widget.prefs.sidebarWidth = value,
-                  onHide: widget.prefs.toggleSidebar,
-                  sidebar: Sidebar(
-                    notes: _visibleNotes,
-                    pinnedNoteIds: widget.notes.pinnedNoteIds,
-                    lockedNoteIds: _noteLimit?.lockedIds ?? const {},
-                    selectedId: _selectedId,
-                    query: _query,
-                    displayTime: widget.prefs.displayTime,
-                    searchFocusNode: _searchFocus,
-                    onQueryChanged: (value) => setState(() => _query = value),
-                    onSelect: AppPlatform.isDesktop
-                        ? _selectFromSidebar
-                        : _select,
-                    onMoveSelect: AppPlatform.isDesktop
-                        ? _previewFromSidebar
-                        : null,
-                    onEnterSelected: AppPlatform.isDesktop
-                        ? _enterSelectedEditorFromSidebar
-                        : null,
-                    onCreate: _createNote,
-                    onOpenToSide: _specialMode ? null : _openNoteToSide,
-                    openElsewhereIds: _specialMode
-                        ? const {}
-                        : _workspace.openNoteIds.difference({?_selectedId}),
-                    onArchive: _archiveNote,
-                    onRestore: _restoreNote,
-                    onHide: (id) => unawaited(_hideNote(id)),
-                    onUnhide: _unhideNote,
-                    onTogglePin: _specialMode ? null : _togglePinnedNote,
-                    onArchiveToggle: _toggleArchive,
-                    onHiddenToggle: () => unawaited(_toggleHiddenNotes()),
-                    archiveMode: _archiveMode,
-                    hiddenMode: _hiddenMode,
-                    onDelete: _deleteNote,
-                    onDeleteAll: () => unawaited(_deleteAllArchived()),
-                    selecting: _selectingArchived,
-                    checkedIds: _checkedArchived,
-                    onToggleChecked: _toggleChecked,
-                    onStartSelecting: _startSelecting,
-                    onCancelSelecting: _cancelSelecting,
-                    onCheckAll: _checkAllArchived,
-                    onDeleteChecked: () => unawaited(_deleteChecked()),
-                    onRestoreChecked: _restoreChecked,
-                    archivedCount: widget.notes.archivedNotes.length,
-                    hiddenCount: widget.notes.hiddenNotes.length,
-                    showHiddenFolder: widget.prefs.hiddenFolderVisible,
-                    streak: widget.notes.streak,
-                    onShare: widget.account == null ? null : _shareNote,
-                    sharing: widget.account?.sharing,
-                    collaborators:
-                        widget.account?.sync?.collaboratorsByNote ?? const {},
-                    onOpenSpace: widget.account?.sharing == null
-                        ? null
-                        : _openSpace,
-                    tab: _sidebarTab,
-                    onTabChanged: _setSidebarTab,
-                    onSettingsPressed: _showSettings,
-                    searchShortcut: widget.shortcuts.bindingFor(
-                      ShortcutAction.findNotes,
-                    ),
-                    settingsShortcut: widget.shortcuts.bindingFor(
-                      ShortcutAction.openSettings,
-                    ),
-                    archiveShortcut: widget.shortcuts.bindingFor(
-                      ShortcutAction.deleteNote,
-                    ),
-                    hiddenShortcut: widget.shortcuts.bindingFor(
-                      ShortcutAction.toggleHiddenFolder,
-                    ),
-                    updates: widget.updates,
-                    showHeader: false,
+          builder: (context, _) {
+            final space = _space;
+            final sidebarVisible = widget.prefs.sidebarVisible;
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SpacesRail(
+                  space: space,
+                  onSelected: _showSpace,
+                  invitations: widget.account?.sharing?.invites.length,
+                  showHidden:
+                      _hiddenMode ||
+                      (widget.prefs.hiddenFolderVisible &&
+                          widget.notes.hiddenNotes.isNotEmpty),
+                  hiddenShortcut: widget.shortcuts.bindingFor(
+                    ShortcutAction.toggleHiddenFolder,
                   ),
-                  // No bottom inset here: on a tablet the note's footer runs
-                  // to the bottom edge and holds its own controls above the
-                  // home indicator, and the empty state does the same with its
-                  // paper.
-                  body: _buildWideWorkspace(),
+                  streak: widget.notes.streak,
+                  onSettingsPressed: _showSettings,
+                  settingsShortcut: widget.shortcuts.bindingFor(
+                    ShortcutAction.openSettings,
+                  ),
+                  updates: widget.updates,
+                  onAccountPressed: widget.account == null
+                      ? null
+                      : () => _showSettings(section: SettingsSection.sync),
+                  user: widget.account?.user,
+                  syncStatus: widget.account?.sync?.status,
                 ),
-              ),
-            ],
-          ),
+                Expanded(
+                  child: SplitView(
+                    sidebarVisible: sidebarVisible,
+                    sidebarWidth: widget.prefs.sidebarWidth,
+                    minSidebarWidth: LayoutPrefs.minSidebarWidth,
+                    maxSidebarWidth: LayoutPrefs.maxSidebarWidth,
+                    onWidthChanged: (value) =>
+                        widget.prefs.sidebarWidth = value,
+                    onHide: widget.prefs.toggleSidebar,
+                    sidebar: Sidebar(
+                      notes: _visibleNotes,
+                      pinnedNoteIds: widget.notes.pinnedNoteIds,
+                      lockedNoteIds: _noteLimit?.lockedIds ?? const {},
+                      selectedId: _selectedId,
+                      query: _query,
+                      displayTime: widget.prefs.displayTime,
+                      searchFocusNode: _searchFocus,
+                      onQueryChanged: (value) => setState(() => _query = value),
+                      onSelect: AppPlatform.isDesktop
+                          ? _selectFromSidebar
+                          : _select,
+                      onMoveSelect: AppPlatform.isDesktop
+                          ? _previewFromSidebar
+                          : null,
+                      onEnterSelected: AppPlatform.isDesktop
+                          ? _enterSelectedEditorFromSidebar
+                          : null,
+                      onOpenToSide: _specialMode ? null : _openNoteToSide,
+                      openElsewhereIds: _specialMode
+                          ? const {}
+                          : _workspace.openNoteIds.difference({?_selectedId}),
+                      onArchive: _archiveNote,
+                      onRestore: _restoreNote,
+                      onHide: (id) => unawaited(_hideNote(id)),
+                      onUnhide: _unhideNote,
+                      onTogglePin: _specialMode ? null : _togglePinnedNote,
+                      archiveMode: _archiveMode,
+                      hiddenMode: _hiddenMode,
+                      onDelete: _deleteNote,
+                      onDeleteAll: () => unawaited(_deleteAllArchived()),
+                      selecting: _selectingArchived,
+                      checkedIds: _checkedArchived,
+                      onToggleChecked: _toggleChecked,
+                      onStartSelecting: _startSelecting,
+                      onCancelSelecting: _cancelSelecting,
+                      onCheckAll: _checkAllArchived,
+                      onDeleteChecked: () => unawaited(_deleteChecked()),
+                      onRestoreChecked: _restoreChecked,
+                      onShare: widget.account == null ? null : _shareNote,
+                      sharing: widget.account?.sharing,
+                      collaborators:
+                          widget.account?.sync?.collaboratorsByNote ?? const {},
+                      onOpenSpace: widget.account?.sharing == null
+                          ? null
+                          : _openSpace,
+                      tab: _sidebarTab,
+                      onTabChanged: _setSidebarTab,
+                      searchShortcut: widget.shortcuts.bindingFor(
+                        ShortcutAction.findNotes,
+                      ),
+                      archiveShortcut: widget.shortcuts.bindingFor(
+                        ShortcutAction.deleteNote,
+                      ),
+                      emptyMessage: space == LibrarySpace.drawings
+                          ? 'No drawings yet'
+                          : null,
+                      windowBar: SidebarWindowBar(
+                        title: space.title,
+                        count: _spaceCount,
+                        onCreate: _createNote,
+                        newNoteShortcut: widget.shortcuts.bindingFor(
+                          ShortcutAction.newNote,
+                        ),
+                        onHide: widget.prefs.toggleSidebar,
+                        hideShortcut: widget.shortcuts.bindingFor(
+                          ShortcutAction.toggleSidebar,
+                        ),
+                      ),
+                    ),
+                    // No bottom inset here: on a tablet the note's footer
+                    // holds its own controls above the home indicator, and
+                    // the empty state does the same with its paper.
+                    body: SafeArea(
+                      left: false,
+                      bottom: false,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          const Positioned(
+                            left: 0,
+                            top: 0,
+                            right: 0,
+                            height: pageInset,
+                            child: WindowDragArea(child: SizedBox.expand()),
+                          ),
+                          AnimatedPadding(
+                            duration: const Duration(milliseconds: 160),
+                            curve: Curves.easeOutCubic,
+                            padding: EdgeInsets.fromLTRB(
+                              sidebarVisible ? 0 : pageInset,
+                              pageInset,
+                              pageInset,
+                              pageInset,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                NoteToolbar(
+                                  mascotController: _kapyHeader,
+                                  sidebarVisible: sidebarVisible,
+                                  sidebarShortcut: _sidebarShortcut,
+                                  onToggleSidebar: widget.prefs.toggleSidebar,
+                                  onCreate: _createNote,
+                                  onShare: _shareSelected,
+                                  members: _selectedMembers,
+                                  present: _selectedPresence,
+                                  currentUserId:
+                                      widget.account?.sharing?.userId ?? '',
+                                  noteShared: selected?.isShared ?? false,
+                                  alwaysOnTop: widget.prefs.alwaysOnTop,
+                                  onToggleAlwaysOnTop: _pinToggle,
+                                  alwaysOnTopShortcut: _pinShortcut,
+                                  onSplit: _specialMode || !_workspace.canSplit
+                                      ? null
+                                      : _splitEditor,
+                                  splitTooltip: _splitTooltip,
+                                  updates: widget.updates,
+                                  atWindowLeftEdge: false,
+                                ),
+                                Expanded(child: _buildWideWorkspace()),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );

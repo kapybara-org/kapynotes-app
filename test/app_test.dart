@@ -40,6 +40,7 @@ import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_swipe.dart';
+import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/toolbar.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
@@ -182,8 +183,27 @@ TextField fieldInPane(WidgetTester tester, int index) =>
 String bodyInPane(WidgetTester tester, int index) =>
     fieldInPane(tester, index).controller!.text.trimRight();
 
-/// The one way into settings on every layout: the notes list's labelled row.
-Finder settingsAffordance() => find.byKey(const ValueKey('sidebar-settings'));
+/// The way into settings on every layout: the rail's gear beside a wide
+/// window's notes list, and the notes list's labelled row everywhere else.
+Finder settingsAffordance() => find.byWidgetPredicate(
+  (widget) =>
+      widget.key == const ValueKey('rail-settings') ||
+      widget.key == const ValueKey('sidebar-settings'),
+);
+
+/// The empty state's own New note, rather than the one over the notes list.
+Finder emptyStateNewNote() => find.descendant(
+  of: find.byType(EmptyState),
+  matching: find.widgetWithText(FilledButton, 'New note'),
+);
+
+/// The name of the space the notes list is showing, in the bar over it.
+String? spaceTitle(WidgetTester tester) =>
+    tester.widget<Text>(find.byKey(const ValueKey('sidebar-space-title'))).data;
+
+/// How many notes that space holds, beside its name.
+String? spaceCount(WidgetTester tester) =>
+    tester.widget<Text>(find.byKey(const ValueKey('sidebar-space-count'))).data;
 
 /// Finds the notes-list toolbar action without coupling tests to the shortcut
 /// suffix that its hover tooltip now teaches.
@@ -343,7 +363,7 @@ void main() {
     expect(find.byKey(const ValueKey('toolbar-app-wordmark')), findsOneWidget);
     expect(find.text('No notes yet'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
 
     expect(find.byType(EmptyState), findsNothing);
@@ -549,11 +569,18 @@ void main() {
 
     expect(prefs.sidebarVisible, isFalse);
     // SplitView keeps the list mounted inside an OverflowBox and collapses
-    // the container around it, so the list's own rect is 260 wide either way
-    // and geometry says nothing here. The toolbar does: it offers to show the
-    // notes rather than to hide them.
+    // the container around it, so the list's own rect keeps its width either
+    // way, the hide button in its header included, and geometry says nothing
+    // here. The toolbar does: it offers to show the notes rather than to hide
+    // them.
     expect(notesToggleWithLabel('Show notes'), findsOneWidget);
-    expect(notesToggleWithLabel('Hide notes'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(NoteToolbar),
+        matching: notesToggleWithLabel('Hide notes'),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets(
@@ -634,7 +661,9 @@ void main() {
 
     final toolbar = find.byType(NoteToolbar);
     final wordmark = find.byKey(const ValueKey('toolbar-app-wordmark'));
-    final add = findKapyIcon(KapyIcons.addRounded).first;
+    final add = find
+        .descendant(of: toolbar, matching: findKapyIcon(KapyIcons.addRounded))
+        .first;
     final menu = findKapyIcon(KapyIcons.menuRounded);
 
     expect(toolbar, findsOneWidget);
@@ -757,7 +786,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -796,7 +825,7 @@ void main() {
     store.data['resultsVisible.v1'] = false;
     store.data['sidebar.v1'] = 360.0;
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
 
     await openSettings(tester);
@@ -841,7 +870,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
 
     expect(prefs.spellCheckEnabled, isTrue);
@@ -876,7 +905,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
     await openSettings(tester);
 
@@ -903,7 +932,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
     await openSettings(tester);
 
@@ -937,7 +966,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
     await tester.enterText(
       find.descendant(
@@ -1011,7 +1040,7 @@ void main() {
     ).toJson();
 
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
     await openSettings(tester, section: SettingsSection.appearance);
 
@@ -1028,7 +1057,7 @@ void main() {
 
   testWidgets('switches the number system and reformats live', (tester) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(EditableText).last, 'rev = 7000000');
     await tester.pumpAndSettle();
@@ -1069,7 +1098,7 @@ void main() {
 
   testWidgets('changes the writing font live and persists it', (tester) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
 
     TextField editor() => tester.widget<TextField>(
@@ -1188,7 +1217,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
 
     CalcPalette palette() => Theme.of(
@@ -1335,7 +1364,7 @@ void main() {
     windowGlassAvailable = false;
     store.data['transparencyEnabled.v1'] = true;
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
 
     final palette = Theme.of(
@@ -1350,7 +1379,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
 
     // Dictation apps and text expanders do not type: they write into whatever
@@ -1461,7 +1490,7 @@ void main() {
     final integration = DesktopIntegration(layoutPrefs: prefs);
     await pumpApp(tester, desktopIntegration: integration);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
     await tester.enterText(
       find.descendant(
@@ -1492,7 +1521,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'New note'));
+    await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
     await openSettings(tester, section: SettingsSection.shortcuts);
 
@@ -1595,7 +1624,7 @@ void main() {
     );
     expect(
       find.descendant(
-        of: find.byType(Sidebar),
+        of: find.byType(SpacesRail),
         matching: find.byTooltip(
           'Settings · ${shortcuts.bindingFor(ShortcutAction.openSettings)!.displayLabel}',
         ),
@@ -2350,7 +2379,8 @@ void main() {
   testWidgets(
     'toolbar settings sits beside notes, teaches its shortcut, and opens',
     (tester) async {
-      await pumpApp(tester);
+      // A narrow window's toolbar. Beside the rail, settings is its gear.
+      await pumpApp(tester, size: const Size(600, 760));
 
       final toolbar = find.byType(NoteToolbar);
       final menu = find.descendant(
@@ -2486,9 +2516,14 @@ void main() {
   });
 
   testWidgets('creates a note from the plus beside search', (tester) async {
-    await pumpApp(tester);
+    // A narrow window's notes list. Beside the rail, New note sits in the bar
+    // over the list instead; see the spaces rail group.
+    await notes.load();
+    notes.create(body: 'Something written');
+    await pumpApp(tester, size: const Size(600, 760));
+    await showNotesList(tester);
     final before = notes.notes.length;
-    final search = find.byType(TextField).first;
+    final search = find.byKey(const ValueKey('sidebar-search-field'));
     final add = find.byKey(const ValueKey('sidebar-new-note'));
 
     expect(add, findsOneWidget);
@@ -2502,7 +2537,10 @@ void main() {
   testWidgets('leaves breathing room around the sidebar search row', (
     tester,
   ) async {
-    await pumpApp(tester);
+    await notes.load();
+    notes.create(body: 'Something written');
+    await pumpApp(tester, size: const Size(600, 760));
+    await showNotesList(tester);
 
     final sidebar = tester.getRect(find.byType(Sidebar));
     final search = tester.getRect(
@@ -2522,14 +2560,17 @@ void main() {
       await pumpApp(tester);
 
       final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
-      final field = tester.getRect(
-        find.byKey(const ValueKey('sidebar-search-field')),
+      final search = find.byKey(const ValueKey('sidebar-search-field'));
+      final field = tester.getRect(search);
+      final searchKeycap = find.descendant(
+        of: search,
+        matching: find.byType(Keycap),
       );
-      final keycap = tester.getRect(find.byType(Keycap));
+      final keycap = tester.getRect(searchKeycap);
 
       expect(
         find.descendant(
-          of: find.byType(Keycap),
+          of: searchKeycap,
           matching: find.text(binding.keycapLabel),
         ),
         findsOneWidget,
@@ -2769,7 +2810,7 @@ void main() {
       final blank = notes.notes.first;
       notes.archive(blank.id);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+      await tester.tap(find.byKey(const ValueKey('rail-archive')));
       await tester.pumpAndSettle();
       final made = notes.notes.length;
 
@@ -2907,7 +2948,10 @@ void main() {
         .map((row) => row.note.title)
         .toList();
     expect(find.text('Pinned'), findsOneWidget);
-    expect(find.text('Notes'), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(Sidebar), matching: find.text('Notes')),
+      findsOneWidget,
+    );
     expect(rowTitles(), ['Reference', 'Today']);
     expect(notes.isPinned(reference.id), isTrue);
 
@@ -2947,7 +2991,7 @@ void main() {
     expect(find.widgetWithText(NoteRow, 'Third'), findsNothing);
     expect(find.byType(NoteEditor), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+    await tester.tap(find.byKey(const ValueKey('rail-archive')));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(NoteRow, 'Third'), findsOneWidget);
 
@@ -2973,7 +3017,7 @@ void main() {
         ShortcutAction.toggleHiddenFolder,
       )!;
       expect(prefs.hiddenFolderVisible, isTrue);
-      expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
+      expect(find.byKey(const ValueKey('rail-hidden')), findsNothing);
 
       await openNoteActions(tester, private.id);
       await tester.tap(find.byKey(ValueKey('hide-note-${private.id}')));
@@ -2985,69 +3029,53 @@ void main() {
         find.text('Moved to Hidden Notes. Open Hidden Notes from the sidebar.'),
         findsOneWidget,
       );
-      expect(
-        find.byKey(const ValueKey('sidebar-hidden-notes')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('rail-hidden')), findsOneWidget);
 
       await pressShortcut(tester, hiddenShortcut);
       expect(gate.unlockCalls, 0, reason: 'the shortcut only hides the row');
       expect(prefs.hiddenFolderVisible, isFalse);
-      expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
+      expect(find.byKey(const ValueKey('rail-hidden')), findsNothing);
 
       await pressShortcut(tester, hiddenShortcut);
       expect(prefs.hiddenFolderVisible, isTrue);
+      expect(find.byKey(const ValueKey('rail-hidden')), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('sidebar-hidden-notes')),
+        find.byTooltip('Hidden Notes · ${hiddenShortcut.displayLabel}'),
         findsOneWidget,
       );
-      expect(find.text(hiddenShortcut.displayLabel), findsOneWidget);
       expect(
-        tester
-            .getTopLeft(find.byKey(const ValueKey('sidebar-hidden-notes')))
-            .dy,
+        tester.getTopLeft(find.byKey(const ValueKey('rail-hidden'))).dy,
         lessThan(
-          tester.getTopLeft(find.byKey(const ValueKey('sidebar-archive'))).dy,
+          tester.getTopLeft(find.byKey(const ValueKey('rail-archive'))).dy,
         ),
       );
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('sidebar-hidden-notes')),
-          matching: find.text('1'),
-        ),
-        findsOneWidget,
-      );
-
-      await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
+      await tester.tap(find.byKey(const ValueKey('rail-hidden')));
       await tester.pumpAndSettle();
       expect(gate.unlockCalls, 1);
+      // The rail names the folder; the bar over the list counts what is in it.
+      expect(spaceTitle(tester), 'Hidden');
+      expect(spaceCount(tester), '1');
       expect(find.widgetWithText(NoteRow, 'Private note'), findsOneWidget);
       expect(openNoteBody(tester), 'Private note');
 
-      await tester.tap(find.byKey(const ValueKey('sidebar-all-notes')));
+      await tester.tap(find.byKey(const ValueKey('rail-notes')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
+      await tester.tap(find.byKey(const ValueKey('rail-hidden')));
       await tester.pumpAndSettle();
       expect(gate.unlockCalls, 2, reason: 'entering again must authenticate');
 
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       await tester.pumpAndSettle();
       expect(find.widgetWithText(NoteRow, 'Private note'), findsNothing);
-      expect(
-        find.byKey(const ValueKey('sidebar-hidden-notes')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('rail-hidden')), findsOneWidget);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
 
       await pressShortcut(tester, hiddenShortcut);
-      expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
+      expect(find.byKey(const ValueKey('rail-hidden')), findsNothing);
       expect(gate.unlockCalls, 2, reason: 'hiding the row must not enter it');
       await pressShortcut(tester, hiddenShortcut);
-      expect(
-        find.byKey(const ValueKey('sidebar-hidden-notes')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('rail-hidden')), findsOneWidget);
       expect(
         gate.unlockCalls,
         2,
@@ -3069,7 +3097,7 @@ void main() {
     await pumpApp(tester);
 
     expect(prefs.hiddenFolderVisible, isFalse);
-    expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
+    expect(find.byKey(const ValueKey('rail-hidden')), findsNothing);
 
     await openSettings(tester);
     final toggle = find.byKey(const ValueKey('hidden-notes-sidebar-toggle'));
@@ -3098,7 +3126,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('settings-done')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsOneWidget);
+    expect(find.byKey(const ValueKey('rail-hidden')), findsOneWidget);
   });
 
   testWidgets('system image UI does not close an unlocked hidden note', (
@@ -3118,7 +3146,7 @@ void main() {
       },
     );
 
-    await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
+    await tester.tap(find.byKey(const ValueKey('rail-hidden')));
     await tester.pumpAndSettle();
     expect(openNoteBody(tester), 'Private note');
 
@@ -3276,7 +3304,7 @@ void main() {
     final gate = _HiddenGate(allowUnlock: false);
     await pumpApp(tester, hiddenNotesGate: gate);
 
-    await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
+    await tester.tap(find.byKey(const ValueKey('rail-hidden')));
     await tester.pumpAndSettle();
 
     expect(gate.unlockCalls, 1);
@@ -3477,7 +3505,7 @@ void main() {
         notes.archive(note.id);
       }
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+      await tester.tap(find.byKey(const ValueKey('rail-archive')));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(NoteRow, 'Third'));
       await tester.pumpAndSettle();
@@ -3729,7 +3757,7 @@ void main() {
         notes.archive(note.id);
       }
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+      await tester.tap(find.byKey(const ValueKey('rail-archive')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.widgetWithText(NoteRow, 'Third'));
@@ -3815,7 +3843,7 @@ void main() {
         notes.archive(note.id);
       }
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+      await tester.tap(find.byKey(const ValueKey('rail-archive')));
       await tester.pumpAndSettle();
       return notes.archivedNotes;
     }
@@ -3825,14 +3853,20 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('the way into the archive reads as a bin, not a filing box', (
+    testWidgets('the way into the archive is named under its box', (
       tester,
     ) async {
       await pumpApp(tester);
       await tester.pumpAndSettle();
 
-      final entry = find.byKey(const ValueKey('sidebar-archive'));
+      // A bare box once sent people looking for a delete, so the word under
+      // it is what this pins, beside the icon every archive action shares.
+      final entry = find.byKey(const ValueKey('rail-archive'));
       expect(entry, findsOneWidget);
+      expect(
+        find.descendant(of: entry, matching: find.text('Archive')),
+        findsOneWidget,
+      );
       expect(
         find.descendant(of: entry, matching: findKapyIcon(archiveIcon)),
         findsOneWidget,
@@ -3949,9 +3983,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('1 selected'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('sidebar-all-notes')));
+      await tester.tap(find.byKey(const ValueKey('rail-notes')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+      await tester.tap(find.byKey(const ValueKey('rail-archive')));
       await tester.pumpAndSettle();
 
       // Back to opening notes, with nothing held over from last time.
@@ -4661,6 +4695,258 @@ void main() {
     });
   });
 
+  group('spaces rail', () {
+    List<String> rowTitles(WidgetTester tester) => tester
+        .widgetList<NoteRow>(find.byType(NoteRow))
+        .map((row) => row.note.title)
+        .toList();
+
+    Future<void> openSpace(WidgetTester tester, String space) async {
+      await tester.tap(find.byKey(ValueKey('rail-$space')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the bar names the open space and counts all of it', (
+      tester,
+    ) async {
+      await notes.load();
+      notes.create(body: 'Groceries');
+      notes.create(body: 'Standup');
+      await pumpApp(tester);
+
+      expect(spaceTitle(tester), 'My notes');
+      expect(spaceCount(tester), '2');
+
+      // A search narrows the list, not the space.
+      await tester.enterText(
+        find.byKey(const ValueKey('sidebar-search-field')),
+        'Groc',
+      );
+      await tester.pumpAndSettle();
+      expect(rowTitles(tester), ['Groceries']);
+      expect(spaceCount(tester), '2');
+    });
+
+    testWidgets('New note sits in the bar over the search, with its keycap', (
+      tester,
+    ) async {
+      await notes.load();
+      notes.create(body: 'Something written');
+      await pumpApp(tester);
+
+      final add = find.byKey(const ValueKey('sidebar-new-note'));
+      final bar = tester.getRect(find.byType(SidebarWindowBar));
+      final search = tester.getRect(
+        find.byKey(const ValueKey('sidebar-search-field')),
+      );
+      expect(add, findsOneWidget);
+      expect(tester.getCenter(add).dy, closeTo(bar.center.dy, 0.5));
+      expect(tester.getRect(add).bottom, lessThanOrEqualTo(search.top));
+      expect(
+        find.descendant(
+          of: add,
+          matching: find.text(
+            shortcuts.bindingFor(ShortcutAction.newNote)!.keycapLabel,
+          ),
+        ),
+        findsOneWidget,
+      );
+      // The search field under it keeps clear of the list's edges.
+      final sidebar = tester.getRect(find.byType(Sidebar));
+      expect(search.left - sidebar.left, greaterThanOrEqualTo(12));
+      expect(sidebar.right - search.right, greaterThanOrEqualTo(12));
+
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(2));
+    });
+
+    testWidgets('a list dragged narrow keeps the name, and New note its plus', (
+      tester,
+    ) async {
+      await notes.load();
+      notes.create(body: 'Something written');
+      await pumpApp(tester);
+      prefs.sidebarWidth = LayoutPrefs.minSidebarWidth;
+      await tester.pumpAndSettle();
+
+      final add = find.byKey(const ValueKey('sidebar-new-note'));
+      expect(
+        find.descendant(of: add, matching: find.text('New note')),
+        findsNothing,
+      );
+      expect(
+        find.byTooltip(
+          'New note  ${shortcuts.bindingFor(ShortcutAction.newNote)!.displayLabel}',
+        ),
+        findsOneWidget,
+      );
+      expect(spaceTitle(tester), 'My notes');
+
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(2));
+    });
+
+    testWidgets('the bar puts the list away with the toolbar\'s own toggle', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.create();
+      await tester.pumpAndSettle();
+
+      final binding = shortcuts.bindingFor(ShortcutAction.toggleSidebar)!;
+      final hide = find.byKey(const ValueKey('sidebar-hide'));
+      expect(
+        find.descendant(
+          of: find.byType(SidebarWindowBar),
+          matching: find.byTooltip('Hide notes  ${binding.displayLabel}'),
+        ),
+        findsOneWidget,
+      );
+      // Drawn the way the design draws it: 30pt square, rounded to 8.
+      expect(tester.getSize(hide), const Size.square(30));
+      final button = tester.widget<IconButton>(
+        find.descendant(of: hide, matching: find.byType(IconButton)),
+      );
+      expect(
+        button.style!.shape!.resolve({}),
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      );
+
+      await tester.tap(hide);
+      await tester.pumpAndSettle();
+      expect(prefs.sidebarVisible, isFalse);
+      // The page moves up to the rail, with the canvas's margin on that side
+      // too now that no list sits against it.
+      expect(
+        tester.getRect(find.byType(NoteToolbar)).left,
+        tester.getRect(find.byType(SpacesRail)).right + 12,
+      );
+
+      await tester.tap(notesToggleWithLabel('Show notes'));
+      await tester.pumpAndSettle();
+      expect(prefs.sidebarVisible, isTrue);
+      expect(
+        tester.getRect(find.byType(NoteToolbar)).left,
+        tester.getRect(find.byType(Sidebar)).right,
+      );
+    });
+
+    testWidgets('Drawings lists only drawings, until a new note is made', (
+      tester,
+    ) async {
+      store.data['notes.v1'] = [
+        {'id': 'words', 'body': 'Words', 'createdAt': 2000, 'updatedAt': 2000},
+        {
+          'id': 'sketch',
+          'body': 'Sketch',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+          'drawing': {'elements': <Object?>[]},
+        },
+      ];
+      await pumpApp(tester);
+      expect(rowTitles(tester), unorderedEquals(['Words', 'Sketch']));
+
+      await openSpace(tester, 'drawings');
+      expect(rowTitles(tester), ['Sketch']);
+      expect(spaceTitle(tester), 'Drawings');
+      expect(spaceCount(tester), '1');
+
+      await openSpace(tester, 'notes');
+      expect(rowTitles(tester), unorderedEquals(['Words', 'Sketch']));
+      expect(spaceTitle(tester), 'My notes');
+
+      // A new note is not a drawing yet, so the list goes back to show it.
+      await openSpace(tester, 'drawings');
+      await tester.tap(find.byKey(const ValueKey('sidebar-new-note')));
+      await tester.pumpAndSettle();
+      expect(spaceTitle(tester), 'My notes');
+      expect(notes.notes, hasLength(3));
+    });
+
+    testWidgets('Drawings says so while there are none', (tester) async {
+      await notes.load();
+      notes.create(body: 'Words');
+      await pumpApp(tester);
+
+      await openSpace(tester, 'drawings');
+      expect(find.byType(NoteRow), findsNothing);
+      expect(find.text('No drawings yet'), findsOneWidget);
+      expect(spaceCount(tester), '0');
+    });
+
+    testWidgets('the archive opens from the rail, and Notes leaves it', (
+      tester,
+    ) async {
+      await notes.load();
+      notes.create(body: 'Kept');
+      final done = notes.create(body: 'Done with');
+      notes.archive(done.id);
+      await pumpApp(tester);
+
+      await openSpace(tester, 'archive');
+      expect(rowTitles(tester), ['Done with']);
+      expect(spaceTitle(tester), 'Archive');
+      expect(spaceCount(tester), '1');
+      expect(
+        tester.getSemantics(find.byKey(const ValueKey('rail-archive'))),
+        isSemantics(isSelected: true),
+      );
+
+      await openSpace(tester, 'notes');
+      expect(rowTitles(tester), ['Kept']);
+      expect(spaceTitle(tester), 'My notes');
+      expect(
+        tester.getSemantics(find.byKey(const ValueKey('rail-notes'))),
+        isSemantics(isSelected: true),
+      );
+    });
+
+    testWidgets('the rail\'s gear teaches its shortcut and opens settings', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+
+      final gear = find.byKey(const ValueKey('rail-settings'));
+      final binding = shortcuts.bindingFor(ShortcutAction.openSettings)!;
+      expect(gear, findsOneWidget);
+      expect(
+        find.byTooltip('Settings · ${binding.displayLabel}'),
+        findsOneWidget,
+      );
+      // One way in: the page's toolbar no longer carries a second gear.
+      expect(
+        find.descendant(
+          of: find.byType(NoteToolbar),
+          matching: findKapyIcon(KapyIcons.settingsOutlined),
+        ),
+        findsNothing,
+      );
+
+      await tester.tap(gear);
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsDialog), findsOneWidget);
+    });
+
+    testWidgets('the streak moves to the rail, and still says what it means', (
+      tester,
+    ) async {
+      await notes.load();
+      notes.create(body: 'Written today');
+      await pumpApp(tester);
+
+      final streak = find.byKey(const ValueKey('rail-streak'));
+      expect(
+        find.descendant(of: streak, matching: find.text('1 day')),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('1-day writing streak'), findsOneWidget);
+      expect(find.byKey(const ValueKey('sidebar-streak')), findsNothing);
+    });
+  });
+
   group('window chrome', () {
     testWidgets(
       'keeps the compact desktop toolbar clear of macOS window controls',
@@ -4686,54 +4972,64 @@ void main() {
       notes.create();
       await tester.pumpAndSettle();
 
+      final rail = tester.getRect(find.byType(SpacesRail));
       final toolbar = find.byType(NoteToolbar);
-      final wordmark = find.byKey(const ValueKey('toolbar-app-wordmark'));
-      final add = find.byTooltip('New note  ⌘N');
-      final menu = notesToggleWithLabel('Hide notes');
-
-      // One title bar spans both panes, so native controls sit over an inert
-      // drag region instead of forcing a second, taller sidebar header.
-      expect(tester.getTopLeft(toolbar).dx, 0);
-      expect(tester.getRect(toolbar).width, 1100);
-      expect(
-        tester.getCenter(wordmark).dx,
-        closeTo(tester.getCenter(toolbar).dx, 0.5),
+      final menu = find.descendant(
+        of: toolbar,
+        matching: notesToggleWithLabel('Hide notes'),
       );
-      // The drawer's button leads, starting where the traffic lights end.
-      expect(tester.getTopLeft(menu).dx, lessThan(tester.getTopLeft(add).dx));
+
+      // The rail runs down the window's left edge, and its spaces start below
+      // the strip the traffic lights are drawn in, which it keeps clear.
+      expect(rail.topLeft, Offset.zero);
       expect(
-        tester.getTopLeft(menu).dx,
-        greaterThanOrEqualTo(WindowChrome.trafficLightsWidth),
+        tester.getRect(find.byKey(const ValueKey('rail-notes'))).top,
+        greaterThanOrEqualTo(WindowChrome.trafficLightsHeight),
+      );
+      // Everything else starts beside it, so the page's toolbar no longer
+      // steps aside for controls that are not over it.
+      expect(tester.getRect(find.byType(Sidebar)).left, rail.right);
+      expect(tester.getRect(toolbar).left, greaterThanOrEqualTo(rail.right));
+      expect(
+        tester.getTopLeft(menu).dx - tester.getTopLeft(toolbar).dx,
+        lessThan(WindowChrome.trafficLightsWidth),
       );
 
       prefs.toggleSidebar();
       await tester.pumpAndSettle();
 
-      expect(tester.getTopLeft(toolbar).dx, 0);
+      expect(
+        tester.getTopLeft(toolbar).dx,
+        greaterThanOrEqualTo(WindowChrome.trafficLightsWidth),
+      );
       expect(notesToggleWithLabel('Show notes'), findsOneWidget);
     }, skip: !WindowChrome.overlaysContent);
 
-    testWidgets('starts both panes below one seamless macOS title bar', (
+    testWidgets('runs one title bar across the rail and the notes list', (
       tester,
     ) async {
       await pumpApp(tester);
       notes.create();
       await tester.pumpAndSettle();
 
-      final toolbar = find.byType(NoteToolbar);
-      final search = find.byType(TextField).first;
-      expect(tester.getTopLeft(toolbar), Offset.zero);
+      final bar = tester.getRect(find.byType(SidebarWindowBar));
+      expect(bar.top, 0);
+      expect(bar.height, SpacesRail.titleBarHeight);
       expect(
-        tester.getRect(search).top,
-        greaterThanOrEqualTo(tester.getRect(toolbar).bottom),
+        tester.getRect(find.byKey(const ValueKey('rail-notes'))).top,
+        greaterThanOrEqualTo(bar.bottom),
       );
       expect(
-        tester.getRect(find.byKey(const ValueKey('toolbar-app-wordmark'))).left,
-        greaterThan(WindowChrome.trafficLightsWidth),
+        tester.getRect(find.byKey(const ValueKey('sidebar-search-field'))).top,
+        greaterThanOrEqualTo(bar.bottom),
       );
+      // The page stands on the canvas, a margin in from the window's edges.
+      final toolbar = tester.getRect(find.byType(NoteToolbar));
+      expect(toolbar.top, 12);
+      expect(toolbar.right, 1100 - 12);
     }, skip: !WindowChrome.overlaysContent);
 
-    testWidgets('keeps both panes inside the display safe area', (
+    testWidgets('keeps every pane inside the display safe area', (
       tester,
     ) async {
       const safeTop = 59.0;
@@ -4750,21 +5046,28 @@ void main() {
       notes.updateBody(notes.notes.first.id, 'Budget\n2 + 2');
       await tester.pumpAndSettle();
 
-      // The unified title stays below the status bar; both panes begin after it.
+      // The rail, the bar over the list and the page all begin below the
+      // status bar, while the canvas they stand on runs up behind it.
+      expect(
+        tester.getRect(find.byKey(const ValueKey('rail-notes'))).top,
+        greaterThanOrEqualTo(safeTop),
+      );
+      expect(
+        tester.getRect(find.byType(SidebarWindowBar)).top,
+        greaterThanOrEqualTo(safeTop),
+      );
+      expect(tester.getTopLeft(find.byType(NoteToolbar)).dy, safeTop + 12);
       expect(
         tester.getTopLeft(find.text(AppWordmark.name)).dy,
         greaterThanOrEqualTo(safeTop),
       );
       expect(
-        tester.getRect(find.byType(ListView)).bottom,
-        lessThanOrEqualTo(size.height - safeBottom),
-      );
-
-      // Toolbar: contents below the status bar, background still behind it.
-      expect(tester.getTopLeft(find.byType(NoteToolbar)).dy, 0);
-      expect(
         tester.getTopLeft(findKapyIcon(KapyIcons.addRounded).last).dy,
         greaterThanOrEqualTo(safeTop),
+      );
+      expect(
+        tester.getRect(find.byType(ListView)).bottom,
+        lessThanOrEqualTo(size.height - safeBottom),
       );
 
       // Editor: text stops short of the home indicator.
@@ -4779,10 +5082,10 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('note-total'))).bottom,
         lessThanOrEqualTo(size.height - safeBottom),
       );
-      // The bar it sits in reaches the edge all the same, the way the toolbar
-      // reaches the top one: the strip is background of the footer, not a band
-      // of empty page below it.
-      expect(tester.getRect(find.byType(NoteFooter)).bottom, size.height);
+      // The page itself runs down to the canvas's margin, and its footer holds
+      // the controls above the indicator rather than the page stopping short
+      // over a band of canvas.
+      expect(tester.getRect(find.byType(NoteFooter)).bottom, size.height - 12);
     });
 
     testWidgets('lifts the two-pane layout clear of a software keyboard', (

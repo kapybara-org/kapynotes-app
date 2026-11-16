@@ -163,8 +163,15 @@ Future<UpdateChecker> _pump(
 }
 
 Future<void> _openSettings(WidgetTester tester) async {
-  // Settings is a row in the notes list, and nowhere else, so a layout with
-  // the list put away opens it first.
+  // Beside a wide window's notes list, settings is the rail's gear.
+  final gear = find.byKey(const ValueKey('rail-settings'));
+  if (gear.evaluate().isNotEmpty) {
+    await tester.tap(gear);
+    await tester.pumpAndSettle();
+    return;
+  }
+  // A narrow window keeps it as a row in the notes list, so a layout with the
+  // list put away opens that first.
   final open = find.byWidgetPredicate(
     (widget) =>
         widget is Tooltip && (widget.message ?? '').startsWith('Show notes'),
@@ -176,6 +183,19 @@ Future<void> _openSettings(WidgetTester tester) async {
   await tester.tap(find.byKey(const ValueKey('sidebar-settings')).first);
   await tester.pumpAndSettle();
 }
+
+/// What the rail's gear says on hover: its name and shortcut, then the
+/// version running and whether a newer one waits.
+String _gearTooltip(WidgetTester tester) => tester
+    .widget<Tooltip>(
+      find
+          .ancestor(
+            of: find.byKey(const ValueKey('rail-settings')),
+            matching: find.byType(Tooltip),
+          )
+          .first,
+    )
+    .message!;
 
 /// Updates have their own rail section, so every assertion about them starts
 /// by selecting it.
@@ -332,6 +352,10 @@ void main() {
     // has none, so put the test's in.
     checker.onBeforeQuitForUpdate = () async => quits++;
 
+    // Wide enough for the button to say it in full beside the notes list.
+    tester.view.physicalSize = const Size(1200, 760);
+    await tester.pumpAndSettle();
+
     final restart = find.byKey(const ValueKey('toolbar-update-restart'));
     expect(restart, findsOneWidget);
     expect(
@@ -341,7 +365,7 @@ void main() {
     expect(find.byTooltip('Install Kapy Notes 1.0.1 and restart'), findsOne);
     // The button says it; the badge that sends people to look would only
     // repeat it.
-    expect(find.byKey(const ValueKey('sidebar-update-badge')), findsNothing);
+    expect(find.byKey(const ValueKey('rail-update-badge')), findsNothing);
 
     await tester.tap(restart);
     await tester.pump();
@@ -385,7 +409,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('toolbar-update-restart')), findsNothing);
     expect(find.text('The downloaded update was damaged'), findsWidgets);
-    expect(find.byKey(const ValueKey('sidebar-update-badge')), findsOneWidget);
+    expect(find.byKey(const ValueKey('rail-update-badge')), findsOneWidget);
   });
 
   testWidgets('the gear stays quiet while a download runs by itself', (
@@ -399,7 +423,7 @@ void main() {
     await _pump(tester, store, checker: checker);
 
     expect(checker.isDownloading, isTrue);
-    expect(find.byKey(const ValueKey('sidebar-update-badge')), findsNothing);
+    expect(find.byKey(const ValueKey('rail-update-badge')), findsNothing);
     expect(find.byKey(const ValueKey('toolbar-update-restart')), findsNothing);
 
     installer.finish();
@@ -496,10 +520,11 @@ void main() {
     await _pump(tester, store);
 
     expect(find.bySemanticsLabel('Settings, update available'), findsOneWidget);
-    expect(find.byKey(const ValueKey('sidebar-app-version')), findsOneWidget);
-    expect(find.text('v1.0.0'), findsOneWidget);
-    expect(find.byKey(const ValueKey('sidebar-update-badge')), findsOneWidget);
-    expect(find.text('Update'), findsOneWidget);
+    expect(find.byKey(const ValueKey('rail-update-badge')), findsOneWidget);
+    // The gear has no room to print the version, so its tooltip carries it,
+    // and says what the dot means.
+    expect(_gearTooltip(tester), contains('v1.0.0'));
+    expect(_gearTooltip(tester), contains('Update available'));
   });
 
   testWidgets('the gear says nothing while the app is current', (tester) async {
@@ -509,8 +534,9 @@ void main() {
 
     expect(find.bySemanticsLabel('Settings'), findsWidgets);
     expect(find.bySemanticsLabel('Settings, update available'), findsNothing);
-    expect(find.byKey(const ValueKey('sidebar-app-version')), findsOneWidget);
-    expect(find.byKey(const ValueKey('sidebar-update-badge')), findsNothing);
+    expect(_gearTooltip(tester), contains('v1.0.0'));
+    expect(_gearTooltip(tester), isNot(contains('Update available')));
+    expect(find.byKey(const ValueKey('rail-update-badge')), findsNothing);
   });
 
   testWidgets('the update row is absent where the app cannot update itself', (

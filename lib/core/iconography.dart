@@ -67,6 +67,10 @@ class KapyIcons {
     HugeIcons.strokeRoundedCameraAdd01,
   );
   static const addRounded = KapyIconData(0xE003, HugeIcons.strokeRoundedAdd01);
+  static const archiveOutlined = KapyIconData(
+    0xE090,
+    HugeIcons.strokeRoundedArchive03,
+  );
   static const arrowBackRounded = KapyIconData(
     0xE004,
     HugeIcons.strokeRoundedArrowLeft02,
@@ -200,6 +204,7 @@ class KapyIcons {
     0xE024,
     HugeIcons.strokeRoundedAlertCircle,
   );
+  static const fireOutlined = KapyIconData(0xE091, HugeIcons.strokeRoundedFire);
   static const flagOutlined = KapyIconData(
     0xE025,
     HugeIcons.strokeRoundedFlag02,
@@ -342,6 +347,10 @@ class KapyIcons {
     0xE048,
     HugeIcons.strokeRoundedUserGroup,
   );
+  static const groupOutlined = KapyIconData(
+    0xE092,
+    HugeIcons.strokeRoundedUserMultiple,
+  );
   static const photoLibraryOutlined = KapyIconData(
     0xE049,
     HugeIcons.strokeRoundedImage02,
@@ -392,6 +401,10 @@ class KapyIcons {
   static const settingsOutlined = KapyIconData(
     0xE057,
     HugeIcons.strokeRoundedSettings01,
+  );
+  static const settingsGearOutlined = KapyIconData(
+    0xE093,
+    HugeIcons.strokeRoundedSettings02,
   );
   static const spellcheckRounded = KapyIconData(
     0xE058,

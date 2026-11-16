@@ -15,6 +15,7 @@ class CompactIconButton extends StatelessWidget {
     this.selected = false,
     this.foregroundColor,
     this.extent,
+    this.radius = 6,
     this.tapTargetSize,
   });
 
@@ -24,6 +25,9 @@ class CompactIconButton extends StatelessWidget {
   final bool selected;
   final Color? foregroundColor;
   final double? extent;
+
+  /// The corner of the surface it paints on hover, focus and selection.
+  final double radius;
 
   /// Overrides the platform's tap target, for a row that has measured its
   /// buttons edge to edge and cannot afford padding around each one.
@@ -74,7 +78,9 @@ class CompactIconButton extends StatelessWidget {
               return BorderSide.none;
             }),
             shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(radius),
+              ),
             ),
           ),
         ),

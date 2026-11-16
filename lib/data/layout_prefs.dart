@@ -89,7 +89,7 @@ class LayoutPrefs extends ChangeNotifier {
 
   static const double minSidebarWidth = 150;
   static const double maxSidebarWidth = 420;
-  static const double defaultSidebarWidth = 260;
+  static const double defaultSidebarWidth = 336;
 
   static const String _gutterKey = 'gutter.v1';
   static const String _resultsVisibleKey = 'resultsVisible.v1';
