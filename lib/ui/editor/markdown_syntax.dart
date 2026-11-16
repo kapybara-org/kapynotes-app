@@ -1479,7 +1479,10 @@ const _asteriskMask = 0xE000;
 /// than becoming an italic four that the calculator would then be told to
 /// read past. It costs `un*frigging*believable`, which is a price worth
 /// paying here.
-String _maskOperatorAsterisks(String source) {
+///
+/// Each hidden `*` becomes [mask], one code unit for one, so every offset
+/// stays where it was.
+String maskOperatorAsterisks(String source, {int mask = _asteriskMask}) {
   if (!source.contains('*')) return source;
   List<int>? units;
   var i = 0;
@@ -1497,7 +1500,7 @@ String _maskOperatorAsterisks(String source) {
         _endsOperand(source.codeUnitAt(i - 1)) &&
         _startsOperand(source.codeUnitAt(end))) {
       units ??= List<int>.of(source.codeUnits);
-      units.fillRange(i, end, _asteriskMask);
+      units.fillRange(i, end, mask);
     }
     i = end;
   }
@@ -1542,7 +1545,7 @@ _Parts _parse(String source) {
   );
   final List<md.Node> nodes;
   try {
-    nodes = document.parse(_maskOperatorAsterisks(source));
+    nodes = document.parse(maskOperatorAsterisks(source));
   } catch (error, stack) {
     // A parser fault must cost the note its styling, never its text: the
     // piece simply draws as plain writing.
