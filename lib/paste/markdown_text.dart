@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dart_markdown/dart_markdown.dart' as md;
 
+import '../ui/editor/markdown_syntax.dart' show maskOperatorAsterisks;
 import 'html_reader.dart';
 import 'paste_tree.dart';
 
@@ -189,8 +190,17 @@ String _withDollarMath(String prose) {
 /// would run the lines of a paragraph together. Math is set aside before
 /// the markdown is read, since TeX is full of what markdown would take as
 /// its own escapes and emphasis, and comes back as the math it was.
-List<PasteBlock> readMarkdownPaste(String source) {
-  final text = cleanPastedText(source).replaceAll(_mathTokenEnds, '');
+List<PasteBlock> readMarkdownPaste(String source) =>
+    _readMarkdown(cleanPastedText(source), note: false);
+
+/// A note's own markdown read into blocks, the way the note's editor reads
+/// it rather than the way an AI's answer is read: math is only ever between
+/// dollars, and a `*` between two operands is multiplication, not emphasis.
+List<PasteBlock> readNoteMarkdown(String text) =>
+    _readMarkdown(text, note: true);
+
+List<PasteBlock> _readMarkdown(String source, {required bool note}) {
+  final text = source.replaceAll(_marks, '');
   final String html;
   try {
     final maths = <({String tex, bool display})>[];
@@ -199,12 +209,17 @@ List<PasteBlock> readMarkdownPaste(String source) {
     for (final (from, to) in _readRanges(text).kept) {
       if (from < cursor) continue;
       masked
-        ..write(_setMathAside(text.substring(cursor, from), maths))
+        ..write(
+          _setMathAside(text.substring(cursor, from), maths, brackets: !note),
+        )
         ..write(text.substring(from, to));
       cursor = to;
     }
-    masked.write(_setMathAside(text.substring(cursor), maths));
-    html = _parser().parse(masked.toString()).toHtml().replaceAllMapped(
+    masked.write(_setMathAside(text.substring(cursor), maths, brackets: !note));
+    final parsed = note
+        ? maskOperatorAsterisks(masked.toString(), mask: _operator)
+        : masked.toString();
+    final rendered = _parser().parse(parsed).toHtml().replaceAllMapped(
       _mathToken,
       (match) {
         final math = maths[int.parse(match[1]!)];
@@ -212,6 +227,11 @@ List<PasteBlock> readMarkdownPaste(String source) {
         return '<span class="$kind" data-latex="${htmlEscape.convert(math.tex)}"></span>';
       },
     );
+    html = note
+        ? rendered
+              .replaceAll(String.fromCharCode(_operator), '*')
+              .replaceAll(_operatorInAddress, '*')
+        : rendered;
   } on Object {
     return [
       for (final paragraph in text.split(RegExp(r'\n{2,}')))
@@ -223,8 +243,14 @@ List<PasteBlock> readMarkdownPaste(String source) {
   );
 }
 
-final _mathTokenEnds = RegExp('[\uE000\uE001]');
+/// Private-use characters the text is marked with while it is read: the
+/// ends of a math token, and a `*` that is an operator.
+final _marks = RegExp('[\uE000-\uE002]');
 final _mathToken = RegExp('\uE000(\\d+)\uE001');
+const _operator = 0xE002;
+
+/// [_operator] as an address writes it.
+const _operatorInAddress = '%EE%80%82';
 final _dollarDisplayMath = RegExp(r'\$\$([\s\S]{1,4000}?)\$\$');
 
 /// Pandoc's rule for single-dollar math, which keeps "$5 and $10" money:
@@ -235,11 +261,15 @@ final _dollarMath = RegExp(
 );
 
 /// [prose] with each piece of math in it swapped for a token that markdown
-/// passes through untouched, the math itself added to [maths].
-String _setMathAside(String prose, List<({String tex, bool display})> maths) {
+/// passes through untouched, the math itself added to [maths]. The \(…\)
+/// and \[…\] ChatGPT writes count as math only with [brackets].
+String _setMathAside(
+  String prose,
+  List<({String tex, bool display})> maths, {
+  required bool brackets,
+}) {
   if (!prose.contains('\$') &&
-      !prose.contains(r'\[') &&
-      !prose.contains(r'\(')) {
+      !(brackets && (prose.contains(r'\[') || prose.contains(r'\(')))) {
     return prose;
   }
   String Function(Match) aside({required bool display}) => (match) {
@@ -248,9 +278,11 @@ String _setMathAside(String prose, List<({String tex, bool display})> maths) {
     maths.add((tex: tex, display: display));
     return '\uE000${maths.length - 1}\uE001';
   };
-  return prose
-      .replaceAllMapped(_dollarDisplayMath, aside(display: true))
-      .replaceAllMapped(_displayMath, aside(display: true))
-      .replaceAllMapped(_inlineMath, aside(display: false))
-      .replaceAllMapped(_dollarMath, aside(display: false));
+  var result = prose.replaceAllMapped(_dollarDisplayMath, aside(display: true));
+  if (brackets) {
+    result = result
+        .replaceAllMapped(_displayMath, aside(display: true))
+        .replaceAllMapped(_inlineMath, aside(display: false));
+  }
+  return result.replaceAllMapped(_dollarMath, aside(display: false));
 }
