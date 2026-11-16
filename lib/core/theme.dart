@@ -85,6 +85,11 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color totalPillBackground;
   final Color totalPillText;
 
+  /// Riverbank's clay, the one warm mark on the page: a pinned note's pin,
+  /// the note title's hand-drawn underline, the streak's flame and the badge
+  /// that counts invitations.
+  final Color clay;
+
   /// How much of the desktop the window's chrome lets through: a multiplier on
   /// the alpha of every [GlassSurface]. 1 is fully opaque.
   ///
@@ -201,6 +206,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.resultPillText,
     required this.totalPillBackground,
     required this.totalPillText,
+    required this.clay,
     this.translucency = 1,
     this.paperTranslucency = 1,
   });
@@ -255,6 +261,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? resultPillText,
     Color? totalPillBackground,
     Color? totalPillText,
+    Color? clay,
     double? translucency,
     double? paperTranslucency,
   }) => CalcPalette(
@@ -306,6 +313,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     resultPillText: resultPillText ?? this.resultPillText,
     totalPillBackground: totalPillBackground ?? this.totalPillBackground,
     totalPillText: totalPillText ?? this.totalPillText,
+    clay: clay ?? this.clay,
     translucency: translucency ?? this.translucency,
     paperTranslucency: paperTranslucency ?? this.paperTranslucency,
   );
@@ -366,6 +374,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       resultPillText: mix(resultPillText, other.resultPillText),
       totalPillBackground: mix(totalPillBackground, other.totalPillBackground),
       totalPillText: mix(totalPillText, other.totalPillText),
+      clay: mix(clay, other.clay),
       translucency: translucency + (other.translucency - translucency) * t,
       paperTranslucency:
           paperTranslucency + (other.paperTranslucency - paperTranslucency) * t,
@@ -888,6 +897,7 @@ class KapyTheme {
     resultPillText: Color(0xFFB3C79C),
     totalPillBackground: Color(0xFF7D9468),
     totalPillText: Color(0xFF1C1A17),
+    clay: Color(0xFFCF7A57),
   );
 
   /// A cool, clean paper palette rather than the previous warm stationery.
@@ -942,6 +952,7 @@ class KapyTheme {
     resultPillText: Color(0xFF445A2F),
     totalPillBackground: Color(0xFF56703C),
     totalPillText: Color(0xFFFCFAF4),
+    clay: Color(0xFFD0663B),
   );
 
   /// Transparency mode.
