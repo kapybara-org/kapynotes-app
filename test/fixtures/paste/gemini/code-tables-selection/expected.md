@@ -1,13 +1,9 @@
 <!-- read as: html -->
 I have updated the document and reformatted it according to your specifications.
 
-⟦picture 1⟧
-
 qualia_reformatted
 
 XLSX
-
-⟦picture 2⟧
 
 qualia_reformatted
 
@@ -61,7 +57,3 @@ qualia_reformatted
 3. Factor Boldness: Added a subtle bold weight and a very light gray fill to the "Factor" column to anchor the row data.
 
 The reformatted file is attached below.
-<!--
-picture 1 at 82: https://drive-thirdparty.googleusercontent.com/32/type/application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, alt "XLSX icon", width 1.00
-picture 2 at 111: https://drive-thirdparty.googleusercontent.com/32/type/application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, alt "XLSX icon", width 1.00
--->

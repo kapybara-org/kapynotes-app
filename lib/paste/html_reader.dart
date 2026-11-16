@@ -1207,8 +1207,16 @@ class HtmlPasteReader {
 
   static double? _pixels(String? value) {
     if (value == null) return null;
-    final match = RegExp(r'^\s*([0-9.]+)\s*(px)?\s*$').firstMatch(value);
-    return match == null ? null : double.tryParse(match.group(1)!);
+    final match = RegExp(
+      r'^\s*([0-9.]+)\s*(px|pt|r?em)?\s*$',
+    ).firstMatch(value);
+    final number = match == null ? null : double.tryParse(match.group(1)!);
+    if (number == null) return null;
+    return switch (match!.group(2)) {
+      'pt' => number * 4 / 3,
+      'em' || 'rem' => number * 16,
+      _ => number,
+    };
   }
 
   // ---------------------------------------------------------------------

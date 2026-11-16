@@ -1,13 +1,9 @@
 <!-- read as: html -->
 I have updated the document and reformatted it according to your specifications.
 
-⟦picture 1⟧
-
 qualia_reformatted
 
 XLSX
-
-⟦picture 2⟧
 
 qualia_reformatted
 
@@ -62,8 +58,6 @@ Suggested "Pretty" Enhancements (Applied):
 
 The reformatted file is attached below.
 <!--
-picture 1 at 82: https://drive-thirdparty.googleusercontent.com/32/type/application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, alt "XLSX icon", width 1.00
-picture 2 at 111: https://drive-thirdparty.googleusercontent.com/32/type/application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, alt "XLSX icon", width 1.00
-subtitle 3644..3667: "Implementation Details:"
-subtitle 4299..4341: "Suggested \"Pretty\" Enhancements (Applied):"
+subtitle 3638..3661: "Implementation Details:"
+subtitle 4293..4335: "Suggested \"Pretty\" Enhancements (Applied):"
 -->

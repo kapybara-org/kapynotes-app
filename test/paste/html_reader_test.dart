@@ -332,7 +332,9 @@ void main() {
       expect(
         read(
           '<p>Words<img src="https://example.com/t.gif" width="1" height="1">'
-          '<img src="https://example.com/icon.png" width="16"></p>',
+          '<img src="https://example.com/icon.png" width="16">'
+          '<img src="https://example.com/chip.png" '
+          'style="width: 1.25rem; height: 1.25rem"></p>',
         ),
         'Words',
       );
