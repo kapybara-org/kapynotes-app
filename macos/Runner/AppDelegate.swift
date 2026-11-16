@@ -14,9 +14,13 @@ class AppDelegate: FlutterAppDelegate {
     hasVisibleWindows flag: Bool
   ) -> Bool {
     if !flag {
-      for window in sender.windows {
-        window.makeKeyAndOrderFront(self)
-      }
+      // The spelling, substitutions and languages panels live in
+      // `sender.windows` for the whole session, hidden, once anything reads
+      // `NSSpellChecker.spellingPanel`. Ordering every window front would
+      // bring them up beside the notes window.
+      sender.windows
+        .first { $0 is MainFlutterWindow }?
+        .makeKeyAndOrderFront(self)
     }
     return true
   }
