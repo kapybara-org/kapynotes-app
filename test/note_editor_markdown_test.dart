@@ -160,6 +160,27 @@ Future<void> typeAtCaret(WidgetTester tester, String text) async {
   await tester.pump();
 }
 
+/// Backspace the way a software keyboard sends it: the text without the
+/// character before the caret, as one edit.
+Future<void> softBackspace(WidgetTester tester) async {
+  final value = controllerOf(tester).value;
+  final caret = value.selection.start;
+  tester.testTextInput.updateEditingValue(
+    TextEditingValue(
+      text: value.text.replaceRange(caret - 1, caret, ''),
+      selection: TextSelection.collapsed(offset: caret - 1),
+    ),
+  );
+  await tester.pump();
+}
+
+/// Types [keys] one character at a time, each its own edit.
+Future<void> typeKeys(WidgetTester tester, String keys) async {
+  for (final key in keys.split('')) {
+    await typeAtCaret(tester, key);
+  }
+}
+
 Future<void> sendShortcut(WidgetTester tester, ShortcutBinding binding) async {
   final modifiers = [
     if (binding.meta) LogicalKeyboardKey.metaLeft,
@@ -362,6 +383,196 @@ void main() {
       await tester.enterText(find.byType(TextField), '• one\n');
       await tester.pumpAndSettle();
       expect(controllerOf(tester).text, '• one\n• ');
+    });
+
+    testWidgets('[x] and a space makes a ticked task, from either keyboard', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness(''));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '[x]');
+      await tester.enterText(find.byType(TextField), '[x] ');
+      await tester.pumpAndSettle();
+      expect(controllerOf(tester).text, '- [x] ');
+
+      await tester.pumpWidget(
+        harness('', editorKey: const ValueKey('keys'), autofocus: true),
+      );
+      await tester.pumpAndSettle();
+      await typeKeys(tester, '[x] done');
+      expect(controllerOf(tester).text, '- [x] done');
+      expect(
+        styleOf(tester, 'done').decoration,
+        TextDecoration.lineThrough,
+        reason: 'ticked',
+      );
+    });
+
+    testWidgets('* and + make bullets, and a list keeps its first number', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+      // Return twice: the second, on an empty item, leaves the list.
+      await typeKeys(tester, '* star\n\n+ plus\n\n3. three\nfour');
+      expect(
+        controllerOf(tester).text,
+        '* star\n+ plus\n3. three\n4. four',
+        reason: 'Return continues the list it is in, numbers and all',
+      );
+      expect(styleOf(tester, '+ plus').color!.a, 0, reason: 'a bullet');
+      expect(isHidden(tester, '* star'), isFalse, reason: 'drawn over');
+      expect(styleOf(tester, '* star').color!.a, 0, reason: 'a bullet');
+    });
+
+    testWidgets('a fence and Return opens a block and closes it', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness('Intro\n\nOutro', autofocus: true));
+      await tester.pumpAndSettle();
+      controllerOf(tester).selection = const TextSelection.collapsed(offset: 6);
+      await tester.pump();
+
+      await typeKeys(tester, '```dart\n- item\n');
+      expect(
+        controllerOf(tester).text,
+        'Intro\n```dart\n- item\n\n```\nOutro',
+        reason: 'closed, and no list continued inside it',
+      );
+      expect(controllerOf(tester).selection.baseOffset, 21);
+      expect(
+        styleOf(tester, 'Outro').fontFamily,
+        styleOf(tester, 'Intro').fontFamily,
+      );
+    });
+
+    testWidgets('--- under words is a divider, not their underline', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness('Words', autofocus: true));
+      await tester.pumpAndSettle();
+      final plain = styleOf(tester, 'Words').fontSize;
+      controllerOf(tester).selection = const TextSelection.collapsed(offset: 5);
+      await tester.pump();
+
+      await typeKeys(tester, '\n-');
+      expect(styleOf(tester, 'Words').fontSize, plain, reason: 'not a heading');
+      await typeKeys(tester, '--');
+      expect(controllerOf(tester).text, 'Words\n\n---');
+      expect(styleOf(tester, 'Words').fontSize, plain);
+    });
+
+    testWidgets('markdown is drawn as it is typed', (tester) async {
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+      await typeKeys(
+        tester,
+        'a *one* _two_ **three** ~~four~~ `five` [six](https://six.example) '
+        'snake_case_name https://seven.example',
+      );
+
+      expect(styleOf(tester, 'one').fontStyle, FontStyle.italic);
+      expect(styleOf(tester, 'two').fontStyle, FontStyle.italic);
+      expect(styleOf(tester, 'three').fontWeight, FontWeight.w700);
+      expect(styleOf(tester, 'four').decoration, TextDecoration.lineThrough);
+      expect(
+        styleOf(tester, 'five').fontFamily,
+        isNot(styleOf(tester, 'a ').fontFamily),
+      );
+      expect(styleOf(tester, 'six').color, isNot(styleOf(tester, 'a ').color));
+      for (final marker in [
+        '*one',
+        '_two',
+        '**three',
+        '~~four',
+        '`five',
+        '[six',
+      ]) {
+        expect(isHidden(tester, marker), isTrue, reason: marker);
+      }
+      expect(isHidden(tester, '](https://six'), isTrue);
+      expect(styleOf(tester, 'case').fontStyle, isNot(FontStyle.italic));
+      expect(isHidden(tester, '_case'), isFalse, reason: 'snake_case as typed');
+      expect(styleOf(tester, 'seven').color, styleOf(tester, 'six').color);
+    });
+
+    testWidgets(
+      'Backspace straight after a shortcut gives back what was typed',
+      (tester) async {
+        await tester.pumpWidget(harness('', autofocus: true));
+        await tester.pumpAndSettle();
+
+        // A software keyboard: every key an editing-value update.
+        await typeKeys(tester, '# ');
+        await softBackspace(tester);
+        expect(controllerOf(tester).text, r'\# ');
+        await typeKeys(tester, 'not a heading');
+        expect(isHidden(tester, r'\#'), isTrue, reason: 'the escape is hidden');
+        expect(isHidden(tester, '# not'), isFalse);
+        expect(
+          styleOf(tester, 'not a heading').fontSize,
+          styleOf(tester, '# not').fontSize,
+        );
+
+        // A hardware keyboard: Backspace a key event.
+        await typeKeys(tester, '\n\n- ');
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+        await tester.pump();
+        expect(controllerOf(tester).text, '\\# not a heading\n\n\\- ');
+
+        // And only straight after.
+        await typeKeys(tester, '\n\n> x');
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+        await tester.pump();
+        expect(controllerOf(tester).text, '\\# not a heading\n\n\\- \n\n> ');
+      },
+    );
+
+    testWidgets('Undo straight after a shortcut gives back what was typed', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness('Words', autofocus: true));
+      await tester.pumpAndSettle();
+      controllerOf(tester).selection = const TextSelection.collapsed(offset: 5);
+      // Open a while, so the history holds the note as it was opened.
+      await tester.pump(const Duration(seconds: 1));
+
+      await typeKeys(tester, '\n[ ] ');
+      expect(controllerOf(tester).text, 'Words\n- [ ] ');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+      expect(controllerOf(tester).text, 'Words\n\\[ ] ');
+
+      // The next Undo is an ordinary one.
+      await tester.pump(const Duration(seconds: 1));
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+      expect(controllerOf(tester).text, 'Words');
+    });
+
+    testWidgets('nothing is converted while an input method is composing', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '[x] ',
+          selection: TextSelection.collapsed(offset: 4),
+          composing: TextRange(start: 0, end: 4),
+        ),
+      );
+      await tester.pump();
+      expect(controllerOf(tester).text, '[x] ');
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.autocorrect, isFalse);
+      expect(field.smartQuotesType, SmartQuotesType.disabled);
+      expect(field.smartDashesType, SmartDashesType.disabled);
     });
 
     testWidgets('Tab nests an item under the one above it', (tester) async {
@@ -795,6 +1006,40 @@ void main() {
   });
 
   group('the calculator', () {
+    testWidgets('multiplies with * between operands, however typed', (
+      tester,
+    ) async {
+      for (final (body, result) in [
+        ('2*3*4', '24'),
+        ('(2+3)*4', '20'),
+        ('3 * 4 * 5', '60'),
+        ('price = 4\nprice * 3', '12'),
+      ]) {
+        await tester.pumpWidget(harness(body));
+        await tester.pumpAndSettle();
+        expect(chipWithText(result), findsOneWidget, reason: body);
+      }
+    });
+
+    testWidgets('reads list, quote, code and escaped lines as markdown', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness('- 5\n\n> 6 * 7\n\n    9 * 8\n\n~~5~~ 11\n\\- 13'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(chipWithText('-5'), findsNothing, reason: 'a bullet, not minus');
+      expect(chipWithText('42'), findsNothing, reason: 'a quote');
+      expect(chipWithText('72'), findsNothing, reason: 'indented code');
+      expect(chipWithText('11'), findsOneWidget, reason: 'struck is not read');
+      expect(
+        chipWithText('-13'),
+        findsOneWidget,
+        reason: 'an escaped minus is the minus it shows',
+      );
+    });
+
     testWidgets('reads a list item as words, and emphasis as what it holds', (
       tester,
     ) async {
