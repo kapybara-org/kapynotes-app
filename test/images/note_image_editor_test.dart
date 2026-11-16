@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show PointerDeviceKind;
 
@@ -16,6 +17,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/attachment_limits.dart';
+import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/images/image_clipboard.dart';
@@ -158,12 +160,16 @@ class FakeClipboard implements ImageClipboard {
     this.image,
     this.files = const [],
     this.fragment,
+    this.kapy,
     this.onReadImage,
   });
 
   ClipboardImage? image;
   List<String> files;
   NoteClipboardFragment? fragment;
+
+  /// What the clipboard holds in Kapy Notes' own type.
+  String? kapy;
   VoidCallback? onReadImage;
   int reads = 0;
   final List<NoteClipboardFragment> writes = [];
@@ -198,15 +204,19 @@ class FakeClipboard implements ImageClipboard {
   Future<ClipboardSnapshot> readSnapshot() async => ClipboardSnapshot(
     text: (await Clipboard.getData(Clipboard.kTextPlain))?.text,
     html: fragment?.html,
+    kapy: kapy,
   );
 }
 
 Widget harness(
   String body, {
   required List<NoteAttachmentRef> attachments,
+  List<NoteFormatRange> formats = const [],
+  bool markdownEnabled = false,
   BlobStore? images,
   ImageClipboard? clipboard,
   ValueChanged<List<NoteAttachmentRef>>? onAttachmentsChanged,
+  ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
   GlobalKey<NoteEditorState>? editorKey,
   ImageFileAcquirer? imageAcquirer,
   ImageBatchIngestor? imageIngestor,
@@ -229,7 +239,9 @@ Widget harness(
       key: editorKey ?? ValueKey(body),
       noteId: 'test',
       initialBody: body,
+      initialFormats: formats,
       initialAttachments: attachments,
+      markdownEnabled: markdownEnabled,
       images: images ?? store,
       clipboard: clipboard ?? FakeClipboard(),
       imageAcquirer: imageAcquirer,
@@ -249,8 +261,10 @@ Widget harness(
       resultsVisible: true,
       writingFont: WritingFont.handwritten,
       shortcuts: shortcutPrefs,
-      onDocumentChanged: (body, formats, refs) =>
-          onAttachmentsChanged?.call(refs),
+      onDocumentChanged: (body, formats, refs) {
+        onAttachmentsChanged?.call(refs);
+        onFormatsChanged?.call(formats);
+      },
       onGutterWidthChanged: (_) {},
       onResultsVisibilityChanged: (_) {},
       onGutterWidthReset: () {},
@@ -1546,6 +1560,553 @@ void main() {
       await restore(tester, 'a$anchor b');
       expect(reported!.single.hash, refs[0].hash);
     });
+  });
+
+  group('copying out', () {
+    setUp(() {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    });
+    final windows = TargetPlatformVariant.only(TargetPlatform.windows);
+
+    Future<void> pressWithControl(
+      WidgetTester tester,
+      LogicalKeyboardKey key,
+    ) async {
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.sendKeyEvent(key, platform: 'windows');
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.pump();
+    }
+
+    Future<NoteClipboardFragment> copyWithKey(
+      WidgetTester tester,
+      FakeClipboard clipboard,
+      LogicalKeyboardKey key,
+    ) async {
+      await pressWithControl(tester, key);
+      await tester.runAsync(
+        () => clipboard.waitForWrite().timeout(const Duration(seconds: 1)),
+      );
+      await tester.pump();
+      return clipboard.writes.single;
+    }
+
+    Future<TextEditingController> select(
+      WidgetTester tester,
+      GlobalKey<NoteEditorState> editorKey,
+      TextSelection selection,
+    ) async {
+      editorKey.currentState!.focusAtEnd();
+      final controller = tester
+          .widget<TextField>(find.byType(TextField))
+          .controller!;
+      controller.selection = selection;
+      await tester.pump();
+      return controller;
+    }
+
+    final pdf = Uint8List.fromList(utf8.encode('%PDF-1.4 a plan'));
+
+    /// A PDF the note holds, its bytes in the store the tests copy from.
+    Future<NoteFileRef> storedFile(int offset, {int? claimedBytes}) async =>
+        NoteFileRef(
+          offset: offset,
+          hash: await immediateStore.put(pdf),
+          key: Uint8List(32),
+          mime: 'application/pdf',
+          bytes: claimedBytes ?? pdf.length,
+          name: 'plan.pdf',
+        );
+
+    testWidgets('Ctrl-C copies words alone with their styles', (tester) async {
+      const body = 'Plan\nbuy milk today';
+      const formats = [
+        NoteFormatRange(start: 0, end: 4, format: NoteFormat.heading),
+        NoteFormatRange(start: 9, end: 13, format: NoteFormat.bold),
+      ];
+      final clipboard = FakeClipboard();
+      final editorKey = GlobalKey<NoteEditorState>();
+      await tester.pumpWidget(
+        harness(
+          body,
+          attachments: const [],
+          formats: formats,
+          clipboard: clipboard,
+          images: immediateStore,
+          editorKey: editorKey,
+        ),
+      );
+      await tester.pump();
+      await select(
+        tester,
+        editorKey,
+        const TextSelection(baseOffset: 0, extentOffset: 13),
+      );
+
+      final copied = await copyWithKey(
+        tester,
+        clipboard,
+        LogicalKeyboardKey.keyC,
+      );
+      expect(copied.body, 'Plan\nbuy milk');
+      expect(copied.markdown, isFalse);
+      expect(copied.formats, formats);
+      expect(copied.plainText, 'Plan\nbuy milk');
+      expect(copied.html, '<h1>Plan</h1><p>buy <b>milk</b></p>');
+    }, variant: windows);
+
+    testWidgets('a markdown note copies its markdown, a picture as a label', (
+      tester,
+    ) async {
+      final body = '**Hi** $anchor';
+      final clipboard = FakeClipboard();
+      final editorKey = GlobalKey<NoteEditorState>();
+      await tester.pumpWidget(
+        harness(
+          body,
+          attachments: [at(7)],
+          markdownEnabled: true,
+          clipboard: clipboard,
+          images: immediateStore,
+          editorKey: editorKey,
+        ),
+      );
+      await tester.pump();
+      await select(
+        tester,
+        editorKey,
+        TextSelection(baseOffset: 0, extentOffset: body.length),
+      );
+
+      final copied = await copyWithKey(
+        tester,
+        clipboard,
+        LogicalKeyboardKey.keyC,
+      );
+      expect(copied.body, body);
+      expect(copied.markdown, isTrue);
+      expect(copied.plainText, '**Hi** ![image]');
+      expect(copied.html, contains('<b>Hi</b>'));
+      expect(
+        copied.html,
+        contains('<img data-kapynotes-image="0" src="data:image/png;base64,'),
+      );
+      await tester.pump(const Duration(seconds: 5));
+    }, variant: windows);
+
+    testWidgets('a file is copied with its bytes', (tester) async {
+      final file = await storedFile(4);
+      final body = 'see $anchor';
+      final clipboard = FakeClipboard();
+      final editorKey = GlobalKey<NoteEditorState>();
+      await tester.pumpWidget(
+        harness(
+          body,
+          attachments: [file],
+          clipboard: clipboard,
+          images: immediateStore,
+          editorKey: editorKey,
+        ),
+      );
+      await tester.pump();
+      await select(
+        tester,
+        editorKey,
+        TextSelection(baseOffset: 0, extentOffset: body.length),
+      );
+
+      final copied = await copyWithKey(
+        tester,
+        clipboard,
+        LogicalKeyboardKey.keyC,
+      );
+      expect(copied.body, body);
+      final carried = copied.attachments.single;
+      expect(carried.ref.offset, 4);
+      expect((carried.ref as NoteFileRef).name, 'plan.pdf');
+      expect(carried.bytes, pdf);
+      expect(find.text('Copied with attachments'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
+    }, variant: windows);
+
+    testWidgets('past the caps, a file is copied as its label', (tester) async {
+      final file = await storedFile(
+        4,
+        claimedBytes: maxClipboardFragmentBytes + 1,
+      );
+      final body = 'see $anchor';
+      final clipboard = FakeClipboard();
+      final editorKey = GlobalKey<NoteEditorState>();
+      await tester.pumpWidget(
+        harness(
+          body,
+          attachments: [file],
+          clipboard: clipboard,
+          images: immediateStore,
+          editorKey: editorKey,
+        ),
+      );
+      await tester.pump();
+      await select(
+        tester,
+        editorKey,
+        TextSelection(baseOffset: 0, extentOffset: body.length),
+      );
+
+      final copied = await copyWithKey(
+        tester,
+        clipboard,
+        LogicalKeyboardKey.keyC,
+      );
+      expect(copied.body, 'see [Attachment]');
+      expect(copied.attachments, isEmpty);
+      expect(
+        find.text(
+          'Copied without its attachments, which are too large to copy at '
+          'once',
+        ),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 5));
+    }, variant: windows);
+
+    testWidgets('Ctrl-X cuts what it copied', (tester) async {
+      const body = 'keep this';
+      final clipboard = FakeClipboard();
+      final editorKey = GlobalKey<NoteEditorState>();
+      await tester.pumpWidget(
+        harness(
+          body,
+          attachments: const [],
+          clipboard: clipboard,
+          images: immediateStore,
+          editorKey: editorKey,
+        ),
+      );
+      await tester.pump();
+      final controller = await select(
+        tester,
+        editorKey,
+        const TextSelection(baseOffset: 5, extentOffset: 9),
+      );
+
+      final copied = await copyWithKey(
+        tester,
+        clipboard,
+        LogicalKeyboardKey.keyX,
+      );
+      expect(copied.body, 'this');
+      expect(controller.text, 'keep ');
+    }, variant: windows);
+
+    testWidgets("a plain note's selection pastes back identical, in one step", (
+      tester,
+    ) async {
+      final file = await storedFile(16);
+      final picture = at(5).copyWith(widthFactor: 0.6);
+      final body = 'Trip\n$anchor\nsee plan $anchor';
+      final source = FakeClipboard();
+      final sourceKey = GlobalKey<NoteEditorState>();
+      await tester.pumpWidget(
+        harness(
+          body,
+          attachments: [picture, file],
+          formats: const [
+            NoteFormatRange(start: 0, end: 4, format: NoteFormat.heading),
+            NoteFormatRange(start: 11, end: 15, format: NoteFormat.bold),
+          ],
+          clipboard: source,
+          images: immediateStore,
+          editorKey: sourceKey,
+        ),
+      );
+      await tester.pump();
+      await select(
+        tester,
+        sourceKey,
+        TextSelection(baseOffset: 0, extentOffset: body.length),
+      );
+      final copied = await copyWithKey(tester, source, LogicalKeyboardKey.keyC);
+      await tester.pump(const Duration(seconds: 5));
+
+      final targetKey = GlobalKey<NoteEditorState>();
+      List<NoteAttachmentRef>? attachments;
+      List<NoteFormatRange>? formats;
+      await tester.pumpWidget(
+        harness(
+          'before ',
+          attachments: const [],
+          clipboard: FakeClipboard(kapy: copied.kapy),
+          editorKey: targetKey,
+          onAttachmentsChanged: (refs) => attachments = refs,
+          onFormatsChanged: (ranges) => formats = ranges,
+        ),
+      );
+      await tester.pump();
+      targetKey.currentState!.focusAtEnd();
+      await tester.pump();
+      // Let EditableText commit the focused value as the undo baseline.
+      await tester.pump(const Duration(milliseconds: 600));
+
+      await tester.runAsync(
+        () =>
+            targetKey.currentState!.handlePaste(SelectionChangedCause.keyboard),
+      );
+      await tester.pump();
+      final editable = tester.state<EditableTextState>(
+        find.byType(EditableText),
+      );
+      expect(editable.textEditingValue.text, 'before $body');
+      expect(formats, const [
+        NoteFormatRange(start: 7, end: 11, format: NoteFormat.heading),
+        NoteFormatRange(start: 18, end: 22, format: NoteFormat.bold),
+      ]);
+      final [image, pasted] = attachments!;
+      expect(image, isA<NoteImageRef>());
+      expect(
+        (
+          image.offset,
+          (image as NoteImageRef).width,
+          image.height,
+          image.widthFactor,
+        ),
+        (12, picture.width, picture.height, 0.6),
+      );
+      expect(pasted.offset, 23);
+      expect(
+        ((pasted as NoteFileRef).name, pasted.mime),
+        ('plan.pdf', 'application/pdf'),
+      );
+      expect(await tester.runAsync(() => store.read(pasted.hash)), pdf);
+
+      await tester.pump(const Duration(milliseconds: 600));
+      await pressWithControl(tester, LogicalKeyboardKey.keyZ);
+      expect(editable.textEditingValue.text, 'before ');
+      expect(attachments, isEmpty);
+      await tester.pump(const Duration(seconds: 5));
+    }, variant: windows);
+
+    testWidgets(
+      "a markdown note's selection pastes back as the same markdown",
+      (tester) async {
+        final body = [
+          '# Plan',
+          '',
+          '- [ ] buy **milk**',
+          '- [x] call *mom*',
+          '',
+          '| a | b |',
+          '| --- | --: |',
+          '| 1 | 2 |',
+          '',
+          '```js',
+          'let x = 1;',
+          '```',
+          '',
+          r'$x^2$ and [docs](https://example.com)',
+          anchor,
+          'the end',
+        ].join('\n');
+        final picture = body.indexOf(anchor);
+        final selection = TextSelection(
+          baseOffset: body.indexOf('- [ ]'),
+          extentOffset: body.length,
+        );
+        final markdown = selection.textInside(body);
+        final source = FakeClipboard();
+        final sourceKey = GlobalKey<NoteEditorState>();
+        await tester.pumpWidget(
+          harness(
+            body,
+            attachments: [at(picture).copyWith(widthFactor: 0.6)],
+            markdownEnabled: true,
+            clipboard: source,
+            images: immediateStore,
+            editorKey: sourceKey,
+          ),
+        );
+        await tester.pump();
+        await select(tester, sourceKey, selection);
+        final copied = await copyWithKey(
+          tester,
+          source,
+          LogicalKeyboardKey.keyC,
+        );
+        expect(copied.body, markdown);
+        expect(copied.plainText, markdown.replaceAll(anchor, '![image]'));
+        await tester.pump(const Duration(seconds: 5));
+
+        final targetKey = GlobalKey<NoteEditorState>();
+        List<NoteAttachmentRef>? attachments;
+        await tester.pumpWidget(
+          harness(
+            '',
+            attachments: const [],
+            markdownEnabled: true,
+            clipboard: FakeClipboard(kapy: copied.kapy),
+            editorKey: targetKey,
+            onAttachmentsChanged: (refs) => attachments = refs,
+          ),
+        );
+        await tester.pump();
+        targetKey.currentState!.focusAtEnd();
+        await tester.pump();
+        await tester.runAsync(
+          () => targetKey.currentState!.handlePaste(
+            SelectionChangedCause.keyboard,
+          ),
+        );
+        await tester.pump();
+        expect(
+          tester
+              .state<EditableTextState>(find.byType(EditableText))
+              .textEditingValue
+              .text,
+          markdown,
+        );
+        final image = attachments!.single as NoteImageRef;
+        expect(
+          (image.offset, image.widthFactor),
+          (picture - selection.start, 0.6),
+        );
+        await tester.pump(const Duration(seconds: 5));
+      },
+      variant: windows,
+    );
+
+    testWidgets('a copy from a markdown note is rewritten for a plain one', (
+      tester,
+    ) async {
+      final copied = NoteClipboardFragment(
+        body: '# Trip\n$anchor\n- **go**',
+        markdown: true,
+        images: [
+          ClipboardFragmentImage(
+            offset: 7,
+            bytes: pngOf(40, 30, seed: 3),
+            mime: 'image/png',
+            width: 40,
+            height: 30,
+            widthFactor: 0.5,
+          ),
+        ],
+      );
+      final editorKey = GlobalKey<NoteEditorState>();
+      List<NoteAttachmentRef>? attachments;
+      List<NoteFormatRange>? formats;
+      await tester.pumpWidget(
+        harness(
+          '',
+          attachments: const [],
+          clipboard: FakeClipboard(kapy: copied.kapy),
+          editorKey: editorKey,
+          onAttachmentsChanged: (refs) => attachments = refs,
+          onFormatsChanged: (ranges) => formats = ranges,
+        ),
+      );
+      await tester.pump();
+      editorKey.currentState!.focusAtEnd();
+      await tester.pump();
+
+      await tester.runAsync(
+        () =>
+            editorKey.currentState!.handlePaste(SelectionChangedCause.keyboard),
+      );
+      await tester.pump();
+      expect(
+        tester
+            .state<EditableTextState>(find.byType(EditableText))
+            .textEditingValue
+            .text,
+        'Trip\n\n$anchor\n\n• go',
+      );
+      expect(formats, const [
+        NoteFormatRange(start: 0, end: 4, format: NoteFormat.heading),
+        NoteFormatRange(start: 11, end: 13, format: NoteFormat.bold),
+      ]);
+      final image = attachments!.single as NoteImageRef;
+      expect((image.offset, image.widthFactor), (6, 0.5));
+      await tester.pump(const Duration(seconds: 5));
+    }, variant: windows);
+
+    testWidgets('a copy from a plain note is written as markdown', (
+      tester,
+    ) async {
+      const copied = NoteClipboardFragment(
+        body: 'Trip\n• go',
+        markdown: false,
+        images: [],
+        formats: [
+          NoteFormatRange(start: 0, end: 4, format: NoteFormat.heading),
+        ],
+      );
+      final editorKey = GlobalKey<NoteEditorState>();
+      await tester.pumpWidget(
+        harness(
+          '',
+          attachments: const [],
+          markdownEnabled: true,
+          clipboard: FakeClipboard(kapy: copied.kapy),
+          editorKey: editorKey,
+        ),
+      );
+      await tester.pump();
+      editorKey.currentState!.focusAtEnd();
+      await tester.pump();
+
+      await tester.runAsync(
+        () =>
+            editorKey.currentState!.handlePaste(SelectionChangedCause.keyboard),
+      );
+      await tester.pump();
+      expect(
+        tester
+            .state<EditableTextState>(find.byType(EditableText))
+            .textEditingValue
+            .text,
+        '# Trip\n\n- go',
+      );
+    }, variant: windows);
+  });
+
+  testWidgets("the selection toolbar's Copy copies the fragment", (
+    tester,
+  ) async {
+    final clipboard = FakeClipboard();
+    final editorKey = GlobalKey<NoteEditorState>();
+    await tester.pumpWidget(
+      harness(
+        'Select this text',
+        attachments: const [],
+        clipboard: clipboard,
+        images: immediateStore,
+        editorKey: editorKey,
+      ),
+    );
+    await tester.pumpAndSettle();
+    // A tap first, as a person would make, so the field has its overlay.
+    await tester.tap(find.byType(TextField));
+    await tester.pump(kDoubleTapTimeout);
+    await tester.pumpAndSettle();
+    final controller = tester
+        .widget<TextField>(find.byType(TextField))
+        .controller!;
+    controller.selection = const TextSelection(baseOffset: 0, extentOffset: 6);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('selection-copy')));
+    await tester.runAsync(
+      () => clipboard.waitForWrite().timeout(const Duration(seconds: 1)),
+    );
+    expect(clipboard.writes.single.body, 'Select');
   });
 
   group('pasting', () {
