@@ -685,8 +685,9 @@ class MarkdownAnalysis {
   /// Anywhere else a tag is shown as written, as any other inline HTML is.
   List<TextRange> get lineBreaks => _parts.lineBreaks;
 
-  /// The rest of what the calculator does not read: struck-through text, and
-  /// the `*` and `_` around emphasis — the markers only, not the words.
+  /// The rest of what the calculator does not read: struck-through text, the
+  /// `*` and `_` around emphasis — the markers only, not the words — and
+  /// the backslash of an escape.
   List<TextRange> get unread => _parts.unread;
 
   /// Where the text is literal rather than prose: code, code blocks, HTML.
@@ -1402,6 +1403,11 @@ List<int> _chunkStarts(String text) {
   return starts;
 }
 
+bool _isShortDashes(String underline) {
+  final dashes = underline.trim();
+  return dashes.length < 3 && dashes.replaceAll('-', '').isEmpty;
+}
+
 bool _isIndentOrBreak(int unit) =>
     unit == 0x20 || unit == 0x09 || unit == 0x0A || unit == 0x0D;
 
@@ -2017,6 +2023,13 @@ class _Collector {
       case 'setextHeading':
         // The underline is the last marker; the heading is what it underlines.
         final underline = markers.isEmpty ? null : markers.last;
+        // `-` and `--` under a line of words are a bullet or a divider being
+        // typed, not an underline: read as one, the line above would turn
+        // into a heading and back with every key.
+        if (underline != null && _isShortDashes(underline.text)) {
+          claimed.add(underline.start.offset);
+          break;
+        }
         _style(
           start,
           underline?.start.offset ?? end,
@@ -2262,8 +2275,10 @@ class _Collector {
       if (claimed.contains(marker.start.offset)) continue;
       _style(marker.start.offset, marker.end.offset, MarkdownStyle.syntax);
       // What is left is an escape's backslash, or a hard line break's: shown
-      // with the caret against it, like any other inline marker.
+      // with the caret against it, like any other inline marker, and not
+      // read by the calculator, so `\- 5` is the minus five it shows.
       if (marker.text == r'\') {
+        _record(_unread, marker.start.offset, marker.end.offset);
         _conceal(
           marker.start.offset,
           marker.end.offset,
