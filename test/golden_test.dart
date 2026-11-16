@@ -654,7 +654,7 @@ void main() {
     addTearDown(mouse.removePointer);
     await mouse.addPointer(location: Offset.zero);
     await mouse.moveTo(
-      tester.getCenter(find.byKey(const ValueKey('toolbar-notes-toggle'))),
+      tester.getCenter(find.byKey(const ValueKey('page-more'))),
     );
     await tester.pumpAndSettle();
 

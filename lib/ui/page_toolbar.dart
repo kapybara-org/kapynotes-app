@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../data/update_checker.dart';
 import '../sync/presence.dart';
 import '../sync/spaces.dart';
 import '../sync/sync_service.dart' show SyncStatus;
@@ -11,6 +12,7 @@ import 'compact_icon_button.dart';
 import 'context_menu.dart';
 import 'member_avatars.dart';
 import 'tonal_button.dart';
+import 'toolbar.dart' show UpdateRestartButton;
 import 'window_drag_area.dart';
 
 /// The bar across the top of the page: where the open note lives, whether it
@@ -40,6 +42,7 @@ class PageToolbar extends StatelessWidget {
     this.pinned = false,
     this.onTogglePin,
     this.moreActions = const [],
+    this.updates,
   });
 
   /// The breadcrumb: the space the list is showing, then the open note's
@@ -75,10 +78,17 @@ class PageToolbar extends StatelessWidget {
   final List<KapyMenuAction> moreActions;
   final ValueChanged<String> onMore;
 
+  /// Offers "Update and restart" once a release has downloaded. Null where
+  /// the app does not update itself.
+  final UpdateChecker? updates;
+
   static const double height = 56;
 
   /// Narrower than this, Saved steps aside for the breadcrumb.
   static const double _savedWidth = 460;
+
+  /// Narrower than this, "Update and restart" shortens to "Update".
+  static const double _updateLabelWidth = 680;
 
   @override
   Widget build(BuildContext context) {
@@ -88,6 +98,7 @@ class PageToolbar extends StatelessWidget {
         : AppControlMetrics.iconButtonExtent;
     final showListShortcut = this.showListShortcut;
     final newNoteShortcut = this.newNoteShortcut;
+    final updates = this.updates;
 
     return SizedBox(
       key: const ValueKey('page-toolbar'),
@@ -149,6 +160,11 @@ class PageToolbar extends StatelessWidget {
                           onPressed: onShare,
                         ),
                       ),
+                    ),
+                  if (updates != null)
+                    UpdateRestartButton(
+                      updates: updates,
+                      wide: constraints.maxWidth >= _updateLabelWidth,
                     ),
                   if (noteOpen && constraints.maxWidth >= _savedWidth) ...[
                     _SaveStatus(syncStatus),

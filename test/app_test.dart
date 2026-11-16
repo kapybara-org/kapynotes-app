@@ -42,6 +42,8 @@ import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_swipe.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
+import 'package:kapy_notes/ui/page_card.dart';
+import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/toolbar.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
@@ -237,6 +239,14 @@ Future<TestGesture> hoverNote(WidgetTester tester, String noteId) async {
   return mouse;
 }
 
+/// Opens the page's More menu and picks [value] from it.
+Future<void> pickPageAction(WidgetTester tester, String value) async {
+  await tester.tap(find.byKey(const ValueKey('page-more')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(ValueKey('page-more-$value')));
+  await tester.pumpAndSettle();
+}
+
 Future<void> openNoteActions(WidgetTester tester, String noteId) async {
   final mouse = await hoverNote(tester, noteId);
   await tester.tap(find.byKey(ValueKey('note-actions-$noteId')));
@@ -377,7 +387,7 @@ void main() {
     await pumpApp(tester);
 
     expect(find.byType(EmptyState), findsOneWidget);
-    expect(find.byKey(const ValueKey('toolbar-app-wordmark')), findsOneWidget);
+    expect(find.byType(PageToolbar), findsOneWidget);
     expect(find.text('No notes yet'), findsOneWidget);
 
     await tester.tap(emptyStateNewNote());
@@ -540,41 +550,38 @@ void main() {
     expect(notes.notes.single.body, 'Earlier thought');
   });
 
-  testWidgets('the pin sits beside the lockup, outside its drag region', (
+  testWidgets('the page pins its note, and More keeps the window on top', (
     tester,
   ) async {
     await pumpApp(tester);
+    final note = notes.create(body: 'alpha');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NoteRow, 'alpha'));
     await tester.pumpAndSettle();
 
-    final pin = findKapyIcon(KapyIcons.pinOutlined);
-    final wordmark = find.byKey(const ValueKey('toolbar-app-wordmark'));
-    expect(pin, findsOneWidget);
-
-    // The lockup is window chrome and drags the window. The pin must not be
-    // under that: DragToMoveArea recognises double taps, so it holds the
-    // gesture arena for the timeout and a button beneath it answers late on
-    // every single click.
+    // A button, so it answers at once rather than after the drag region's
+    // double-tap timeout.
+    final pin = find.byKey(const ValueKey('page-pin'));
     expect(
       find.ancestor(of: pin, matching: find.byType(WindowDragArea)),
       findsNothing,
-      reason: 'the pin would answer a double-tap timeout late on every click',
     );
-    expect(
-      find.ancestor(of: wordmark, matching: find.byType(WindowDragArea)),
-      findsOneWidget,
-      reason: 'the lockup still has to drag the window',
-    );
-
-    // Beside it, and on the trailing side of it.
-    expect(
-      tester.getCenter(pin).dx,
-      greaterThan(tester.getCenter(wordmark).dx),
-    );
-
     await tester.tap(pin);
     await tester.pumpAndSettle();
-    expect(findKapyIcon(KapyIcons.pinRounded), findsOneWidget);
-    expect(findKapyIcon(KapyIcons.pinOutlined), findsNothing);
+    expect(notes.isPinned(note.id), isTrue);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('page-breadcrumb')),
+        matching: find.text('Pinned'),
+      ),
+      findsOneWidget,
+    );
+
+    await pickPageAction(tester, 'on-top');
+    expect(prefs.alwaysOnTop, isTrue);
+    await tester.tap(find.byKey(const ValueKey('page-more')));
+    await tester.pumpAndSettle();
+    expect(find.text('Stop keeping on top'), findsOneWidget);
   });
 
   testWidgets('a first run opens on a page, with the notes list closed', (
@@ -593,7 +600,7 @@ void main() {
     expect(notesToggleWithLabel('Show notes'), findsOneWidget);
     expect(
       find.descendant(
-        of: find.byType(NoteToolbar),
+        of: find.byType(PageToolbar),
         matching: notesToggleWithLabel('Hide notes'),
       ),
       findsNothing,
@@ -606,10 +613,6 @@ void main() {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-      Finder toolbarIcon(KapyIconData icon) => find.descendant(
-        of: find.byType(NoteToolbar),
-        matching: findKapyIcon(icon),
-      );
       final barrier = find.byKey(const ValueKey('sidebar-overlay-barrier'));
 
       await pumpApp(tester, size: const Size(620, 620), sidebarVisible: false);
@@ -626,7 +629,7 @@ void main() {
       expect(prefs.sidebarVisible, isTrue);
       expect(
         tester.getRect(find.byType(Sidebar)).right,
-        lessThanOrEqualTo(tester.getRect(find.byType(NoteToolbar)).left),
+        lessThanOrEqualTo(tester.getRect(find.byType(PageCard)).left),
       );
 
       // Narrowed again, the window folds it away and keeps every action.
@@ -634,9 +637,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(Sidebar), findsNothing);
       expect(barrier, findsNothing);
-      expect(toolbarIcon(KapyIcons.menuRounded), findsOneWidget);
-      expect(toolbarIcon(KapyIcons.addRounded), findsOneWidget);
-      expect(toolbarIcon(KapyIcons.peopleOutlined), findsOneWidget);
+      for (final key in ['page-show-list', 'page-new-note', 'page-share']) {
+        expect(find.byKey(ValueKey(key)), findsOneWidget);
+      }
 
       tester.view.physicalSize = const Size(760, 620);
       await tester.pumpAndSettle();
@@ -646,7 +649,7 @@ void main() {
   );
 
   testWidgets(
-    'the pin survives every desktop width, and never reaches a phone',
+    'Keep on top survives every desktop width, and never reaches a phone',
     (tester) async {
       // The bug this replaces: the compact toolbar is a second call site, and
       // it was reached by a narrow desktop window as well as by a phone. The
@@ -657,23 +660,16 @@ void main() {
         LayoutPrefs.minimumWindowSize,
       ]) {
         await pumpApp(tester, size: size);
+        await tester.tap(find.byKey(const ValueKey('page-more')));
+        await tester.pumpAndSettle();
         expect(
-          findKapyIcon(KapyIcons.pinOutlined),
+          find.byKey(const ValueKey('page-more-on-top')),
           findsOneWidget,
-          reason: 'the pin went missing at $size',
+          reason: 'Keep on top went missing at $size',
         );
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
       }
-
-      // The list opened over a narrow window's page leaves the toolbar, and
-      // the pin on it, where they were.
-      await pumpApp(tester, size: const Size(700, 620));
-      await tester.tap(notesToggleWithLabel('Show notes'));
-      await tester.pumpAndSettle();
-      expect(
-        findKapyIcon(KapyIcons.pinOutlined),
-        findsOneWidget,
-        reason: 'the pin went under the list',
-      );
 
       // A phone has no window to float, so the control is absent rather than
       // present and inert.
@@ -688,31 +684,8 @@ void main() {
   testWidgets('keeps exchange-rate status out of the toolbar', (tester) async {
     await pumpApp(tester);
 
-    final toolbar = find.byType(NoteToolbar);
-    final wordmark = find.byKey(const ValueKey('toolbar-app-wordmark'));
-    final add = find
-        .descendant(of: toolbar, matching: findKapyIcon(KapyIcons.addRounded))
-        .first;
-    final menu = findKapyIcon(KapyIcons.menuRounded);
-
-    expect(toolbar, findsOneWidget);
+    expect(find.byType(PageToolbar), findsOneWidget);
     expect(find.textContaining('Rates'), findsNothing);
-    expect(
-      find.descendant(of: toolbar, matching: find.text(AppWordmark.name)),
-      findsOneWidget,
-    );
-    expect(
-      tester.getCenter(wordmark).dx,
-      closeTo(tester.getCenter(toolbar).dx, 0.5),
-    );
-    expect(tester.getCenter(menu).dx, lessThan(tester.getCenter(add).dx));
-    expect(
-      find.descendant(
-        of: toolbar,
-        matching: findKapyIcon(KapyIcons.moreRounded),
-      ),
-      findsNothing,
-    );
   });
 
   testWidgets('uses compact toolbar and roomier footer surfaces on desktop', (
@@ -722,22 +695,19 @@ void main() {
     notes.create();
     await tester.pumpAndSettle();
 
-    final toolbar = find.byType(NoteToolbar);
-    Finder toolbarButton(KapyIconData icon) => find
-        .ancestor(
-          of: find.descendant(of: toolbar, matching: findKapyIcon(icon)),
-          matching: find.byType(IconButton),
-        )
-        .first;
-
-    expect(
-      tester.getSize(toolbarButton(KapyIcons.addRounded)),
-      const Size.square(24),
+    Finder pageButton(String key, Type type) => find.descendant(
+      of: find.byKey(ValueKey(key)),
+      matching: find.byType(type),
     );
     expect(
-      tester.getSize(toolbarButton(KapyIcons.menuRounded)),
-      const Size.square(24),
+      tester.getSize(pageButton('page-pin', IconButton)),
+      const Size.square(32),
     );
+    expect(
+      tester.getSize(pageButton('page-more', IconButton)),
+      const Size.square(32),
+    );
+    expect(tester.getSize(pageButton('page-share', FilledButton)).height, 32);
     final footerBold = find.descendant(
       of: find.byKey(const ValueKey('format-bold')),
       matching: find.byType(IconButton),
@@ -828,12 +798,11 @@ void main() {
     expect(find.widgetWithText(NoteRow, 'Weekend budget'), findsOneWidget);
     expect(
       find.descendant(
-        of: find.byType(NoteToolbar),
+        of: find.byType(PageToolbar),
         matching: find.text('Weekend budget'),
       ),
       findsNothing,
     );
-    expect(find.byKey(const ValueKey('toolbar-app-wordmark')), findsOneWidget);
   });
 
   testWidgets('opens footer settings and resets desktop panel widths', (
@@ -1593,30 +1562,19 @@ void main() {
     expect(recorded.shift, isTrue);
   });
 
-  testWidgets('the pin icon answers the click on a narrow window', (
+  testWidgets('Keep on top answers from More in a narrow window', (
     tester,
   ) async {
-    // The default window is 600 wide, under the two-pane breakpoint, so this
-    // is the layout a fresh install actually opens in — and the one where the
-    // toolbar was reading a preference nothing was listening to.
+    // The size a fresh install opens at.
     await pumpApp(tester, size: LayoutPrefs.defaultWindowSize);
     notes.create(body: 'alpha');
     await tester.pumpAndSettle();
-    expect(findKapyIcon(KapyIcons.pinOutlined), findsOneWidget);
 
-    await tester.tap(findKapyIcon(KapyIcons.pinOutlined));
-    await tester.pumpAndSettle();
-
-    // The window really did go on top; the icon has to say so in the same
-    // frame, without waiting for something else to redraw the page.
+    await pickPageAction(tester, 'on-top');
     expect(prefs.alwaysOnTop, isTrue);
-    expect(findKapyIcon(KapyIcons.pinRounded), findsOneWidget);
 
-    await tester.tap(findKapyIcon(KapyIcons.pinRounded));
-    await tester.pumpAndSettle();
-
+    await pickPageAction(tester, 'on-top');
     expect(prefs.alwaysOnTop, isFalse);
-    expect(findKapyIcon(KapyIcons.pinOutlined), findsOneWidget);
   });
 
   testWidgets('rebinding a shortcut updates the hints already on screen', (
@@ -1665,9 +1623,17 @@ void main() {
 
     expect(find.byTooltip('Bold · Cmd + Shift + K'), findsOneWidget);
 
-    // The toolbar spells its pin shortcut out too, from the same source.
+    // More spells out Keep on top's shortcut too, from the same source.
+    Finder onTopHint(String label) => find.descendant(
+      of: find.byKey(const ValueKey('page-more-on-top')),
+      matching: find.text(label),
+    );
     final pin = shortcuts.bindingFor(ShortcutAction.toggleAlwaysOnTop)!;
-    expect(find.byTooltip('Keep on top  ${pin.displayLabel}'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('page-more')));
+    await tester.pumpAndSettle();
+    expect(onTopHint(pin.displayLabel), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
 
     shortcuts.update(
       ShortcutAction.toggleAlwaysOnTop,
@@ -1680,7 +1646,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Keep on top  Cmd + Shift + J'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('page-more')));
+    await tester.pumpAndSettle();
+    expect(onTopHint('Cmd + Shift + J'), findsOneWidget);
   });
 
   testWidgets('a shortcut can be removed, and then answers nothing', (
@@ -1966,8 +1934,7 @@ void main() {
 
     await tester.tap(find.widgetWithText(NoteRow, 'Alpha'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('toolbar-split-view')));
-    await tester.pumpAndSettle();
+    await pickPageAction(tester, 'split');
     await tester.tap(find.widgetWithText(NoteRow, 'Bravo'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('pane-title-0')));
@@ -2058,17 +2025,20 @@ void main() {
     expect(find.byType(EditorPaneFrame), findsOneWidget);
     expect(find.byKey(const ValueKey('pane-title-0')), findsNothing);
 
-    // The title bar's split button opens an empty pane beside the note, and
+    // More's Split view opens an empty pane beside the note, and
     // the list fills whichever pane has the focus: the new one.
-    await tester.tap(find.byKey(const ValueKey('toolbar-split-view')));
-    await tester.pumpAndSettle();
+    await pickPageAction(tester, 'split');
     expect(find.byType(EditorPaneFrame), findsNWidgets(2));
     expect(find.text('Choose a note'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('page-more')));
+    await tester.pumpAndSettle();
     expect(
-      find.byTooltip('Choose a note for this pane first'),
+      find.text('Choose a note for this pane first'),
       findsOneWidget,
       reason: 'no second blank beside the first',
     );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(NoteRow, 'Third note'));
     await tester.pumpAndSettle();
@@ -2156,7 +2126,19 @@ void main() {
     // Three is as many as there are.
     await press(ShortcutAction.splitEditor);
     expect(find.byType(EditorPaneFrame), findsNWidgets(3));
-    expect(find.byTooltip('Up to three notes side by side'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('page-more')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<PopupMenuItem<String>>(
+            find.byKey(const ValueKey('page-more-split')),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(find.text('Up to three notes side by side'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
 
     await press(ShortcutAction.focusSecondPane);
     expect(fieldInPane(tester, 1).focusNode!.hasFocus, isTrue);
@@ -2381,14 +2363,18 @@ void main() {
     expect(prefs.sidebarVisible, isTrue);
   });
 
-  testWidgets('the hamburger tooltip includes its current shortcut', (
+  testWidgets('the show-list tooltip includes its current shortcut', (
     tester,
   ) async {
-    await pumpApp(tester);
+    await pumpApp(tester, sidebarVisible: false);
 
-    final menu = findKapyIcon(KapyIcons.menuRounded).first;
     final tooltip = tester.widget<Tooltip>(
-      find.ancestor(of: menu, matching: find.byType(Tooltip)).first,
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('page-show-list')),
+            matching: find.byType(Tooltip),
+          )
+          .first,
     );
     expect(
       tooltip.message,
@@ -2805,12 +2791,12 @@ void main() {
     });
 
     testWidgets('the toolbar plus answers the same way', (tester) async {
-      await pumpApp(tester);
-      await tester.tap(find.byTooltip('New note  ⌘N'));
+      await pumpApp(tester, sidebarVisible: false);
+      await tester.tap(find.byKey(const ValueKey('page-new-note')));
       await tester.pumpAndSettle();
       final made = notes.notes.length;
 
-      await tester.tap(find.byTooltip('New note  ⌘N'));
+      await tester.tap(find.byKey(const ValueKey('page-new-note')));
       await tester.pumpAndSettle();
       expect(notes.notes, hasLength(made));
     });
@@ -2989,7 +2975,10 @@ void main() {
         .widgetList<NoteRow>(find.byType(NoteRow))
         .map((row) => row.note.title)
         .toList();
-    expect(find.text('Pinned'), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(Sidebar), matching: find.text('Pinned')),
+      findsOneWidget,
+    );
     expect(
       find.descendant(of: find.byType(Sidebar), matching: find.text('Notes')),
       findsOneWidget,
@@ -3231,7 +3220,7 @@ void main() {
       notes.create(body: 'Trip plan');
       await pumpApp(tester, account: account);
 
-      await tester.tap(find.byTooltip('Share note').first);
+      await tester.tap(find.byKey(const ValueKey('page-share')));
       await tester.pumpAndSettle();
 
       // Not the share sheet, which would have nothing to share with, and not
@@ -4876,7 +4865,7 @@ void main() {
       // The page moves up to the rail, with the canvas's margin on that side
       // too now that no list sits against it.
       expect(
-        tester.getRect(find.byType(NoteToolbar)).left,
+        tester.getRect(find.byType(PageCard)).left,
         tester.getRect(find.byType(SpacesRail)).right + 12,
       );
 
@@ -4884,7 +4873,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(prefs.sidebarVisible, isTrue);
       expect(
-        tester.getRect(find.byType(NoteToolbar)).left,
+        tester.getRect(find.byType(PageCard)).left,
         tester.getRect(find.byType(Sidebar)).right,
       );
     });
@@ -4975,7 +4964,7 @@ void main() {
       // One way in: the page's toolbar no longer carries a second gear.
       expect(
         find.descendant(
-          of: find.byType(NoteToolbar),
+          of: find.byType(PageToolbar),
           matching: findKapyIcon(KapyIcons.settingsOutlined),
         ),
         findsNothing,
@@ -5111,7 +5100,7 @@ void main() {
       // The page stands a margin in from the rail, as in Paper's window with
       // the list hidden.
       expect(
-        tester.getRect(find.byType(NoteToolbar)).left,
+        tester.getRect(find.byType(PageCard)).left,
         tester.getRect(find.byType(SpacesRail)).right + 12,
       );
     });
@@ -5123,7 +5112,7 @@ void main() {
       notes.create(body: 'First note');
       notes.create(body: 'Second note');
       await pumpApp(tester, size: const Size(600, 720));
-      final page = tester.getRect(find.byType(NoteToolbar));
+      final page = tester.getRect(find.byType(PageCard));
 
       Future<void> open() async {
         await tester.tap(notesToggleWithLabel('Show notes'));
@@ -5134,7 +5123,7 @@ void main() {
 
       // Over the page, which keeps its place and its width.
       await open();
-      expect(tester.getRect(find.byType(NoteToolbar)), page);
+      expect(tester.getRect(find.byType(PageCard)), page);
 
       // A click on the page beside it.
       await tester.tapAt(Offset(page.right - 8, page.center.dy));
@@ -5207,11 +5196,6 @@ void main() {
       await tester.pumpAndSettle();
 
       final rail = tester.getRect(find.byType(SpacesRail));
-      final toolbar = find.byType(NoteToolbar);
-      final menu = find.descendant(
-        of: toolbar,
-        matching: notesToggleWithLabel('Hide notes'),
-      );
 
       // The rail runs down the window's left edge, and its spaces start below
       // the strip the traffic lights are drawn in, which it keeps clear.
@@ -5220,20 +5204,19 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('rail-notes'))).top,
         greaterThanOrEqualTo(WindowChrome.trafficLightsHeight),
       );
-      // Everything else starts beside it, so the page's toolbar no longer
-      // steps aside for controls that are not over it.
+      // Everything else starts beside it, so the page's toolbar never steps
+      // aside for controls that are not over it.
       expect(tester.getRect(find.byType(Sidebar)).left, rail.right);
-      expect(tester.getRect(toolbar).left, greaterThanOrEqualTo(rail.right));
       expect(
-        tester.getTopLeft(menu).dx - tester.getTopLeft(toolbar).dx,
-        lessThan(WindowChrome.trafficLightsWidth),
+        tester.getRect(find.byType(PageCard)).left,
+        greaterThanOrEqualTo(rail.right),
       );
 
       prefs.toggleSidebar();
       await tester.pumpAndSettle();
 
       expect(
-        tester.getTopLeft(toolbar).dx,
+        tester.getTopLeft(find.byKey(const ValueKey('page-show-list'))).dx,
         greaterThanOrEqualTo(WindowChrome.trafficLightsWidth),
       );
       expect(notesToggleWithLabel('Show notes'), findsOneWidget);
@@ -5258,9 +5241,9 @@ void main() {
         greaterThanOrEqualTo(bar.bottom),
       );
       // The page stands on the canvas, a margin in from the window's edges.
-      final toolbar = tester.getRect(find.byType(NoteToolbar));
-      expect(toolbar.top, 12);
-      expect(toolbar.right, 1100 - 12);
+      final page = tester.getRect(find.byType(PageCard));
+      expect(page.top, 12);
+      expect(page.right, 1100 - 12);
     }, skip: !WindowChrome.overlaysContent);
 
     testWidgets('keeps every pane inside the display safe area', (
@@ -5290,11 +5273,7 @@ void main() {
         tester.getRect(find.byType(SidebarWindowBar)).top,
         greaterThanOrEqualTo(safeTop),
       );
-      expect(tester.getTopLeft(find.byType(NoteToolbar)).dy, safeTop + 12);
-      expect(
-        tester.getTopLeft(find.text(AppWordmark.name)).dy,
-        greaterThanOrEqualTo(safeTop),
-      );
+      expect(tester.getTopLeft(find.byType(PageCard)).dy, safeTop + 12);
       expect(
         tester.getTopLeft(findKapyIcon(KapyIcons.addRounded).last).dy,
         greaterThanOrEqualTo(safeTop),
@@ -5319,7 +5298,7 @@ void main() {
       // The page itself runs down to the canvas's margin, and its footer holds
       // the controls above the indicator rather than the page stopping short
       // over a band of canvas.
-      expect(tester.getRect(find.byType(NoteFooter)).bottom, size.height - 12);
+      expect(tester.getRect(find.byType(PageCard)).bottom, size.height - 12);
     });
 
     testWidgets('lifts the two-pane layout clear of a software keyboard', (

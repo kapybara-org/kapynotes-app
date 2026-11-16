@@ -2734,6 +2734,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                     moreActions: _pageActions(selected),
                                     onMore: (action) =>
                                         _runPageAction(action, selected),
+                                    updates: widget.updates,
                                   ),
                                   Expanded(child: _buildWideWorkspace()),
                                 ],

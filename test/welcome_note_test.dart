@@ -214,7 +214,10 @@ void main() {
     testWidgets('gives Kapy the one beat the word total already earns', (
       tester,
     ) async {
-      await pumpLaunch(tester, MemoryStore());
+      // The animated mark lives in the phone's title bar.
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpLaunch(tester, MemoryStore(), size: const Size(390, 760));
 
       final mascot = tester.widget<KapyHeaderMascot>(
         find.byType(KapyHeaderMascot),

@@ -290,7 +290,7 @@ class NoteToolbar extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (updates != null) _UpdateButton(updates: updates, wide: wide),
+        if (updates != null) UpdateRestartButton(updates: updates, wide: wide),
         _ToolbarButton(
           icon: KapyIcons.addRounded,
           tooltip: ['New note', ?newNoteShortcut].join('  '),
@@ -325,8 +325,12 @@ class NoteToolbar extends StatelessWidget {
 /// list opened. Draws nothing at all until there is something to install,
 /// and listens to the checker itself, so a download counting up its percent
 /// rebuilds this and not the page under it.
-class _UpdateButton extends StatelessWidget {
-  const _UpdateButton({required this.updates, required this.wide});
+class UpdateRestartButton extends StatelessWidget {
+  const UpdateRestartButton({
+    super.key,
+    required this.updates,
+    required this.wide,
+  });
 
   final UpdateChecker updates;
   final bool wide;

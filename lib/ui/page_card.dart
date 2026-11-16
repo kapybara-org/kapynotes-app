@@ -1,13 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../core/theme.dart';
-import 'kapy_cursor_peek.dart';
 
 /// The page the open note is written on: a rounded sheet a step lighter than
-/// the window, with Kapy peeking in from its bottom-right corner.
-///
-/// Its corners clip whatever is on it, Kapy included, so he reads as standing
-/// behind the page's edge rather than over the note.
+/// the window, which clips whatever is on it to its corners.
 class PageCard extends StatelessWidget {
   const PageCard({super.key, required this.child});
 
@@ -19,11 +15,11 @@ class PageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    const shape = BorderRadius.all(Radius.circular(radius));
     return DecoratedBox(
+      key: const ValueKey('page-card'),
       decoration: BoxDecoration(
         color: palette.paperColor,
-        borderRadius: shape,
+        borderRadius: const BorderRadius.all(Radius.circular(radius)),
         border: Border.all(color: palette.pageBorder, width: borderWidth),
         boxShadow: const [
           BoxShadow(
@@ -45,27 +41,7 @@ class PageCard extends StatelessWidget {
           borderRadius: const BorderRadius.all(
             Radius.circular(radius - borderWidth),
           ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              child,
-              Positioned(
-                right: -9,
-                bottom: -3,
-                width: 60,
-                height: 113,
-                child: IgnorePointer(
-                  child: Image.asset(
-                    KapyCursorPeek.assetPath,
-                    key: const ValueKey('page-kapy'),
-                    fit: BoxFit.fill,
-                    filterQuality: FilterQuality.medium,
-                    excludeFromSemantics: true,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          child: child,
         ),
       ),
     );
