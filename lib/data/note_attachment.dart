@@ -215,10 +215,10 @@ final class NoteImageRef extends NoteAttachmentRef {
   /// Where a pasted picture is still to be fetched from, while its bytes are
   /// not on this device: being downloaded, or waiting to be tried again.
   ///
-  /// Persisted, so a note saved or synced halfway through a download can be
-  /// retried on any device that knows the field. A build that doesn't reads
-  /// the ref as a picture it can't fetch and draws its "not on this device"
-  /// box; the slot is never lost.
+  /// Saved with the note, so a download cut short by quitting the app can
+  /// still be retried. It never leaves this device: a note waits to sync
+  /// until every picture in it is uploaded, and this one has nothing to
+  /// upload until it is fetched.
   final String? src;
 
   const NoteImageRef({

@@ -659,6 +659,63 @@ void main() {
     expect(server.rows, hasLength(1));
   });
 
+  test(
+    'a note waits to sync while a pasted picture is still at its address',
+    () async {
+      final one = Device(server, name: 'one', dir: await dirFor('one'));
+      addTearDown(one.dispose);
+      await one.boot();
+
+      final id = one.notes.create().id;
+      final key = randomKey();
+      one.notes.updateDocument(id, 'photo\n$anchor', const [], [
+        NoteImageRef(
+          offset: 6,
+          hash: BlobStore.hashOf(
+            Uint8List.fromList('https://example.com/p.png'.codeUnits),
+          ),
+          key: key,
+          mime: 'image/png',
+          width: 4,
+          height: 3,
+          bytes: 0,
+          src: 'https://example.com/p.png',
+        ),
+      ]);
+
+      await one.sync.syncNow();
+      await settle(server);
+
+      final waiting = one.notes.notes.single;
+      expect(waiting.isDirty, isTrue);
+      expect((waiting.attachments.single as NoteImageRef).src, isNotNull);
+      expect(server.rows, isEmpty);
+      expect(server.blobs, isEmpty);
+
+      final bytes = picture(5);
+      final hash = await one.images.put(bytes);
+      one.clock = one.clock.add(const Duration(minutes: 1));
+      one.notes.updateDocument(id, 'photo\n$anchor arrived', const [], [
+        NoteImageRef(
+          offset: 6,
+          hash: hash,
+          key: key,
+          mime: 'image/png',
+          width: 64,
+          height: 64,
+          bytes: bytes.length,
+        ),
+      ]);
+      await one.sync.syncNow();
+      await settle(server);
+
+      expect(server.blobs, hasLength(1));
+      expect(server.rows, hasLength(1));
+      expect(one.notes.notes.single.isDirty, isFalse);
+      expect(one.notes.notes.single.attachments.single.isUploaded, isTrue);
+    },
+  );
+
   test('one picture in two notes is downloaded once', () async {
     final one = Device(server, name: 'one', dir: await dirFor('one'));
     final two = Device(server, name: 'two', dir: await dirFor('two'));
