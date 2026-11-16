@@ -984,8 +984,8 @@ void main() {
       await tester.enterText(field, 'a | b\nc');
       await tester.pumpAndSettle();
 
-      expect(tester.widget<TextField>(field).controller!.text, r'a \| b c');
-      expect(latest, '| a | b |\n| --- | --- |\n| a \\| b c | 4 |');
+      expect(tester.widget<TextField>(field).controller!.text, r'a \| b<br>c');
+      expect(latest, '| a | b |\n| --- | --- |\n| a \\| b<br>c | 4 |');
     });
 
     testWidgets('Tab walks the cells, and past the last one adds a row', (

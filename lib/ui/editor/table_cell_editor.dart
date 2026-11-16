@@ -334,10 +334,11 @@ class TableCellEditor extends ChangeNotifier {
 class _TableCellInputFormatter extends TextInputFormatter {
   const _TableCellInputFormatter();
 
+  /// A cell holds one line of source: pasted lines are kept apart as the
+  /// <br> a cell draws as a line break, and a bare pipe is escaped so it
+  /// can't end the cell.
   String _safe(String text) => text
-      .replaceAll('\r\n', ' ')
-      .replaceAll('\r', ' ')
-      .replaceAll('\n', ' ')
+      .replaceAll(RegExp(r'[ \t]*(\r\n|\r|\n)+[ \t]*'), '<br>')
       .replaceAll(RegExp(r'(?<!\\)\|'), r'\|');
 
   int _map(String text, int offset) =>
