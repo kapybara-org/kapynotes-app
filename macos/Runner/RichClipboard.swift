@@ -12,6 +12,7 @@ enum RichClipboard {
   static let kapyType = NSPasteboard.PasteboardType("com.kapybara.kapynotes.fragment")
   private static let sourceUrlType = NSPasteboard.PasteboardType("org.chromium.source-url")
   private static let vscodeType = NSPasteboard.PasteboardType("vscode-editor-data")
+  private static let webCustomDataType = NSPasteboard.PasteboardType("org.chromium.web-custom-data")
   private static let webArchiveType = NSPasteboard.PasteboardType("com.apple.webarchive")
   private static let jpegType = NSPasteboard.PasteboardType(UTType.jpeg.identifier)
 
@@ -91,6 +92,7 @@ enum RichClipboard {
     var snapshot: [String: Any] = ["types": types.map(\.rawValue)]
     snapshot["text"] = pasteboard.string(forType: .string)
     snapshot["vscode"] = pasteboard.string(forType: vscodeType)
+      ?? pasteboard.data(forType: webCustomDataType).flatMap { webCustomData($0)["vscode-editor-data"] }
     snapshot["kapy"] = pasteboard.string(forType: kapyType)
 
     var html = pasteboard.string(forType: .html)
@@ -134,6 +136,38 @@ enum RichClipboard {
       snapshot["imageMime"] = "image/png"
     }
     return snapshot
+  }
+
+  /// The types a page set on a copy with `DataTransfer.setData` that are not
+  /// standard, which Chromium (and so VS Code, an Electron app) pickles into
+  /// one entry: the payload's size, the number of pairs, then each type and
+  /// value as a UTF-16 string, each string's length in code units first and
+  /// its end padded to four bytes.
+  static func webCustomData(_ data: Data) -> [String: String] {
+    let bytes = [UInt8](data)
+    var offset = 0
+    func uint32() -> Int? {
+      guard offset + 4 <= bytes.count else { return nil }
+      defer { offset += 4 }
+      return Int(bytes[offset]) | Int(bytes[offset + 1]) << 8
+        | Int(bytes[offset + 2]) << 16 | Int(bytes[offset + 3]) << 24
+    }
+    func string() -> String? {
+      guard let length = uint32(), length <= (bytes.count - offset) / 2 else { return nil }
+      let units = (0..<length).map {
+        UInt16(bytes[offset + 2 * $0]) | UInt16(bytes[offset + 2 * $0 + 1]) << 8
+      }
+      offset += (2 * length + 3) & ~3
+      return String(decoding: units, as: UTF16.self)
+    }
+
+    guard uint32() != nil, let count = uint32() else { return [:] }
+    var values: [String: String] = [:]
+    for _ in 0..<count {
+      guard let type = string(), let value = string() else { break }
+      values[type] = value
+    }
+    return values
   }
 
   /// Safari's copy: the page's markup, the page's address, and the bytes of

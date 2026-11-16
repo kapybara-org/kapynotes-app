@@ -85,6 +85,39 @@ class RichClipboardTests: XCTestCase {
     XCTAssertNil(snapshot["files"])
   }
 
+  func testReadsVsCodesDataFromChromiumsCustomData() {
+    let vscode = #"{"version":1,"mode":"python"}"#
+    var pickle = Data()
+    func append(_ value: UInt32) {
+      withUnsafeBytes(of: value.littleEndian) { pickle.append(contentsOf: $0) }
+    }
+    func append(_ string: String) {
+      let units = Array(string.utf16)
+      append(UInt32(units.count))
+      for unit in units {
+        withUnsafeBytes(of: unit.littleEndian) { pickle.append(contentsOf: $0) }
+      }
+      if units.count % 2 == 1 {
+        pickle.append(contentsOf: [0, 0])
+      }
+    }
+    append(UInt32(0))
+    append(UInt32(2))
+    append("text/x-other")
+    append("é")
+    append("vscode-editor-data")
+    append(vscode)
+    pickle.replaceSubrange(0..<4, with: withUnsafeBytes(of: UInt32(pickle.count - 4).littleEndian) { Data($0) })
+    let type = NSPasteboard.PasteboardType("org.chromium.web-custom-data")
+    pasteboard.declareTypes([type, .string], owner: nil)
+    pasteboard.setData(pickle, forType: type)
+    pasteboard.setString("print(1)", forType: .string)
+
+    XCTAssertEqual(RichClipboard.webCustomData(pickle), ["text/x-other": "é", "vscode-editor-data": vscode])
+    XCTAssertEqual(read()["vscode"] as? String, vscode)
+    XCTAssertEqual(RichClipboard.webCustomData(pickle.prefix(20)), [:])
+  }
+
   func testConvertsRtfdWithItsPicturesNamedAsTheHtmlNamesThem() {
     let red = picture(.red)
     let blue = picture(.blue)
