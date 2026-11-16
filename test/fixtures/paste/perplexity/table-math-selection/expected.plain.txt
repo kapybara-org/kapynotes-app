@@ -1,0 +1,76 @@
+<!-- read as: html -->
+A provisional comparison puts Switzerland at 19,773 transport-company records, Japan at 180,319, and the UK at 174,242 in the same worldwide commercial directory. Dividing by country area gives approximately 479 records per 1,000 km² in Switzerland, 477 in Japan, and 715 in the UK. However, these are directory counts—not a verified census of all active, independent transportation companies—and the supplier publishes conflicting totals on its country-specific pages. companydata (https://companydata.com/world/transport/)
+
+Counts and geographical density
+
+I have interpreted “transportation companies” broadly: businesses carrying passengers or goods by road, rail, water and air, plus the warehousing and freight-support activities included in the source. This is not a count limited to public-transport operators. The worldwide directory describes its coverage using SIC groups 40, 41, 42, 44 and 45, plus freight-arrangement code 4731. companydata (https://companydata.com/world/transport/)
+
+For consistency, the main comparison below uses all three counts from that directory’s worldwide page, dated 28 October 2026, rather than mixing its different country-page definitions. companydata (https://companydata.com/world/transport/)
+
+| Country | Transport records in worldwide directory | Total surface area, km² | Records per km² | Records per 1,000 km² | Density index: Switzerland = 100 |
+| --- | --- | --- | --- | --- | --- |
+| Switzerland | 19,773 | 41,285 | 0.479 | 478.9 | 100.0 |
+| Japan | 180,319 | 377,976 | 0.477 | 477.1 | 99.6 |
+| United Kingdom | 174,242 | 243,610 | 0.715 | 715.2 | 149.3 |
+
+Counts: CompanyData’s worldwide transport directory. Areas: Swiss Federal Statistical Office, Japan’s Statistical Handbook 2025, and the World Bank for the UK. Density figures and indices are my calculations. The denominator is total surface area, not built-up or inhabitable area. bfs.admin (https://www.bfs.admin.ch/bfsstatic/dam/assets/7846580/master)
+
+The metric is:
+
+\text{Transport-company record density}
+=
+\frac{\text{Number of transport records}}{\text{Country surface area in km²}}
+\times 1{,}000
+
+What this comparison suggests
+
+On this particular dataset:
+
+• Japan has about 9.1 times Switzerland’s transport records, but almost exactly the same number per unit of area.
+• The UK has about 8.8 times Switzerland’s records and approximately 49% greater geographical record density.
+• Switzerland and Japan are too close—less than 1% apart on this measure—to justify a meaningful density ranking given the data limitations. These comparisons are calculated from the directory counts and published country areas. bfs.admin (https://www.bfs.admin.ch/bfsstatic/dam/assets/7846580/master)
+
+Why these cannot be called definitive counts of “all companies”
+
+The important problem is that the source changes its totals and classification scope across pages:
+
+| Country | Worldwide-page count, 28 October 2026 | Country-page count, 21 October 2026 | Consequence |
+| --- | --- | --- | --- |
+| Switzerland | 19,773 | 10,019 | Country-page density falls to 242.7 per 1,000 km² |
+| Japan | 180,319 | Not established in this comparison | No equivalent country-page cross-check |
+| UK | 174,242 | 146,301 | Country-page density falls to 600.6 per 1,000 km² |
+
+The Swiss country page lists a narrower selection of NACE classes; the UK country page identifies its filter as divisions 49–51. The worldwide page describes a broader SIC-based selection including warehousing and freight arrangement. These are therefore not interchangeable populations, and the differences should not simply be interpreted as one week of business growth. companydata (https://companydata.com/world/transport/)
+
+There is also a counting-unit issue: the worldwide directory explicitly includes branch records alongside single-location businesses and head offices. Consequently, its “companies” are not necessarily unique independent enterprises or consolidated corporate groups. companydata (https://companydata.com/world/transport/)
+
+An official UK benchmark illustrates why the definition matters: the Office for National Statistics reported approximately 114,000 VAT- and/or PAYE-registered transport-and-storage businesses, including postal activities, in March 2025. That has a different date, industry scope and registration threshold from the commercial-directory figures. ons (https://www.ons.gov.uk/businessindustryandtrade/business/activitysizeandlocation/bulletins/ukbusinessactivitysizeandlocation/2025)
+
+Accordingly, the defensible finding is that the UK has the highest record density in this directory. A definitive Switzerland-versus-Japan ranking is not established.
+
+Which density metric is most useful?
+
+The right metric depends on what you want to understand:
+
+| Objective | Metric to use | What it measures |
+| --- | --- | --- |
+| Geographical business concentration | Active transport enterprises per 1,000 km² | How concentrated the business population is across national territory |
+| Business supply relative to population | Active transport enterprises per 100,000 residents | Number of enterprises relative to potential users |
+| Public-transport availability | Service-kilometres per resident, stop coverage and frequency | The service people can actually access |
+| Industry fragmentation | Enterprises alongside employment or revenue per enterprise | Whether activity is spread across many small firms or fewer large ones |
+
+For your requested comparison, I would retain companies per 1,000 km², but pair it with companies per 100,000 residents and separate passenger transport from freight/logistics. A company count alone cannot distinguish a small owner-driver business from a national transport operator, so it should not be read as a measure of service quality or transport capacity.
+
+What is—and is not—in the attached data
+
+The attached CSV contains the three-country comparison, density calculations, alternative published totals and source URLs.
+
+It is not a complete company-by-company list. The public directory pages show samples and advertise full exports through a database/API or paid file delivery; those underlying records were not retrieved or independently deduplicated here. A verified “all companies” list would require a consistent industry definition, active-status filter, reference date and rule for handling branches and subsidiaries across all three countries. companydata (https://companydata.com/world/transport/)
+<!--
+bold 302..311: "directory"
+subtitle 526..557: "Counts and geographical density"
+subtitle 2118..2147: "What this comparison suggests"
+subtitle 2705..2768: "Why these cannot be called definitive counts of “all companies”"
+subtitle 4665..4701: "Which density metric is most useful?"
+subtitle 5800..5839: "What is—and is not—in the attached data"
+-->

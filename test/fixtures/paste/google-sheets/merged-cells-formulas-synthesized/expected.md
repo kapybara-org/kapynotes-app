@@ -1,0 +1,7 @@
+<!-- read as: html -->
+| Q4 budget |  |  |  |
+| :-: | --: | --: | --: |
+| **Item** | **Qty** | **Unit price** | **Total** |
+| Notebooks | 12 | $3.50 | $42.00 |
+| Pens | 40 | $0.75 | $30.00 |
+| **Total** |  |  | **$72.00** |

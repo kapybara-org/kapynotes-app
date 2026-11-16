@@ -15,7 +15,7 @@ for (const f of fs.readdirSync(root, { recursive: true }).filter(f => f.endsWith
   if (!['macos', 'windows', 'android', 'ios'].includes(fx.platform)) fail(dir, 'bad platform');
   if (!['real', 'synthesized'].includes(fx.capture)) fail(dir, 'bad capture');
   if (/TODO/.test(JSON.stringify(fx))) fail(dir, 'TODO left in fixture.json');
-  const referenced = new Set(['fixture.json', 'macos-snapshot.json', ...(fx.sidecars || [])]);
+  const referenced = new Set(['fixture.json', 'macos-snapshot.json', 'expected.md', 'expected.plain.txt', ...(fx.sidecars || [])]);
   const types = [];
   fx.items.forEach((item, i) => {
     if (!item.representations.length) fail(dir, 'item ' + i + ' has no representations');

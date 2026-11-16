@@ -1,0 +1,11 @@
+<!-- read as: html -->
+| Q4 budget |  |  |  |
+| :-: | :-: | :-: | :-: |
+| Item | Qty | Unit price | Total |
+| Notebooks | 12 | $3.50 | $42.00 |
+| Pens | 40 | $0.75 | $30.00 |
+| Desk lamp | 2 | $24.99 | $49.98 |
+| Total |  |  | $121.98 |
+<!--
+clipboard bitmap: image/png 893 bytes
+-->

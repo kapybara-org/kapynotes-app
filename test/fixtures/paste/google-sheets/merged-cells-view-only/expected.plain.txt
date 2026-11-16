@@ -1,0 +1,10 @@
+<!-- read as: html -->
+|  | Tutorial How-To |  |  |  |  |  |  |  |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+|  |  |  |  |  |  |  |  |  |
+|  | This tutorial requires an API key for interaction.<br>If you don't have an API key, you can sign up for one via the Anthropic Console or view our static tutorial answer key instead. |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |
+|  | How to get started |  |  |  |  |  |  |  |
+|  | 1. Make a copy of this sheet and save it to your personal Google Drive<br>2. Install the Claude for Sheets extension (it may already be installed, in which case, skip to step 3) |  |  |  |  |  |  |  |
+|  |  |  | a. Go to the Claude for Sheets extension listing |  |  |  |  |  |
+|  |  |  | b. Click the blue install button |  |  |  |  |  |

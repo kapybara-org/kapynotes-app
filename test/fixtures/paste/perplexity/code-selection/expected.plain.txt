@@ -1,0 +1,72 @@
+<!-- read as: html -->
+Based on my research, zstd compression is not natively supported by iOS or Apple's frameworks, which means you cannot use zstd compression without adding some form of external code to your project. github (https://github.com/facebook/zstd)
+
+The Reality of zstd on iOS
+
+Apple's built-in Compression framework supports algorithms like zlib, lzfse, lz4, and lzma, but does not include zstd support. Since zstd is Facebook's open-source compression algorithm implemented as a C library, you'll need to incorporate it into your project somehow. developer.apple (https://developer.apple.com/documentation/compression)
+
+Approach Without Third-Party Package Managers
+
+If you want to avoid third-party dependencies through package managers like SPM or CocoaPods, your only option is to directly include the zstd C library source code in your iOS project and create your own Swift wrapper.
+
+Steps to Implement:
+
+1. Download zstd source code from Facebook's official repository github (https://github.com/facebook/zstd)
+2. Add the C library files directly to your Xcode project
+3. Create a bridging header to expose the C functions to Swift
+4. Write Swift wrapper functions around the core zstd C API
+
+Basic Implementation Structure:
+
+The core zstd C API provides functions like: facebook.github (http://facebook.github.io/zstd/zstd_manual.html)
+
+• ZSTD_compress() - for single-step compression
+• ZSTD_decompress() - for single-step decompression
+• ZSTD_compressStream() - for streaming compression
+• ZSTD_decompressStream() - for streaming decompression
+
+For data stream compression specifically, you'd use the streaming API functions which allow you to compress data in chunks rather than loading everything into memory at once. stackoverflow (https://stackoverflow.com/questions/44478254/does-any-mainstream-compression-algorithm-natively-support-streaming-data)
+
+Example Swift Wrapper Concept:
+
+// This would require including zstd C library in your project
+import Foundation
+
+class ZstdCompressor {
+    private var cstream: OpaquePointer?
+    
+    func initializeStream(compressionLevel: Int) -> Bool {
+        // Call ZSTD_createCStream() and ZSTD_initCStream()
+    }
+    
+    func compressChunk(_ data: Data) -> Data? {
+        // Call ZSTD_compressStream() with input buffer
+    }
+    
+    func finalize() -> Data? {
+        // Call ZSTD_endStream() and ZSTD_freeCStream()
+    }
+}
+
+Alternative Consideration
+
+If avoiding any external code is critical, consider using Apple's native compression algorithms instead. While they may not offer zstd's specific performance characteristics, algorithms like lz4 (available in Apple's Compression framework) provide fast compression suitable for real-time scenarios. developer.apple (https://developer.apple.com/documentation/compression)
+
+The fundamental limitation is that zstd simply isn't part of iOS's standard libraries, so some form of external code integration is unavoidable if you specifically need zstd compression. stackoverflow (https://stackoverflow.com/questions/40617471/wrapping-a-library-like-facebooks-zstandard-in-swift)
+<!--
+bold 22..93: "zstd compression is not natively supported by iOS or Apple's frameworks"
+subtitle 241..267: "The Reality of zstd on iOS"
+bold 286..307: "Compression framework"
+subtitle 613..658: "Approach Without Third-Party Package Managers"
+bold 777..824: "directly include the zstd C library source code"
+subtitle 881..900: "Steps to Implement:"
+bold 905..930: "Download zstd source code"
+bold 1012..1035: "Add the C library files"
+bold 1070..1094: "Create a bridging header"
+bold 1133..1162: "Write Swift wrapper functions"
+subtitle 1191..1222: "Basic Implementation Structure:"
+subtitle 1856..1886: "Example Swift Wrapper Concept:"
+subtitle 2379..2404: "Alternative Consideration"
+bold 2418..2421: "any"
+bold 2597..2600: "lz4"
+-->
