@@ -66,7 +66,7 @@ That makes the peak performance-per-dollar comparison fundamentally non-QoS-equi
 
 At MI c64, the chart reports roughly 48 tok/s on its horizontal “per-user” decode axis. But aggregate throughput divided by concurrency is:
 
-$$952/64=14.875\text{ output tok/s per occupied slot}.$$
+$$952/64=14.875\text{ output tok/s per occupied slot}.$$
 
 Those cannot both be end-to-end throughput measures.
 
@@ -74,19 +74,19 @@ The likely reconciliation is that the horizontal metric excludes prefill, queuei
 
 ### MI c16
 
-$$\text{reported decode duration}\approx400/61.5=6.50\text{ s}$$
+$$\text{reported decode duration}\approx400/61.5=6.50\text{ s}$$
 
-$$\text{total residence}\approx400(16)/880=7.27\text{ s}$$
+$$\text{total residence}\approx400(16)/880=7.27\text{ s}$$
 
-$$\text{time outside measured decode}\approx0.77\text{ s}.$$
+$$\text{time outside measured decode}\approx0.77\text{ s}.$$
 
 ### MI c64
 
-$$\text{reported decode duration}\approx400/48=8.33\text{ s}$$
+$$\text{reported decode duration}\approx400/48=8.33\text{ s}$$
 
-$$\text{total residence}\approx400(64)/952=26.89\text{ s}$$
+$$\text{total residence}\approx400(64)/952=26.89\text{ s}$$
 
-$$\text{time outside measured decode}\approx18.56\text{ s}.$$
+$$\text{time outside measured decode}\approx18.56\text{ s}.$$
 
 Visually:
 
@@ -130,11 +130,11 @@ Reporting separate maxima is not inherently wrong. Presenting them together with
 
 The proper comparison is a **quality-of-service frontier**:
 
-$$T_{\mathrm{S}\mathrm{L}\mathrm{O}}=\max T\quad\text{subject to}\quad\{\begin{matrix}p99(\mathrm{T}\mathrm{T}\mathrm{F}\mathrm{T})\le A \\ p99(\mathrm{T}\mathrm{P}\mathrm{O}\mathrm{T})\le B \\ p99(\mathrm{E}2\mathrm{E})\le C \\ \mathrm{e}\mathrm{r}\mathrm{r}\mathrm{o}\mathrm{r}\ \mathrm{r}\mathrm{a}\mathrm{t}\mathrm{e}\le D.\end{matrix}$$
+$$T_{\mathrm{S}\mathrm{L}\mathrm{O}}=\max T\quad\text{subject to}\quad\{\begin{matrix}p99(\mathrm{T}\mathrm{T}\mathrm{F}\mathrm{T})\le A \\ p99(\mathrm{T}\mathrm{P}\mathrm{O}\mathrm{T})\le B \\ p99(\mathrm{E}2\mathrm{E})\le C \\ \mathrm{e}\mathrm{r}\mathrm{r}\mathrm{o}\mathrm{r}\ \mathrm{r}\mathrm{a}\mathrm{t}\mathrm{e}\le D.\end{matrix}$$
 
 Then compare:
 
-$$\frac{T_{\mathrm{S}\mathrm{L}\mathrm{O}}}{\text{fully loaded hourly cost}}.$$
+$$\frac{T_{\mathrm{S}\mathrm{L}\mathrm{O}}}{\text{fully loaded hourly cost}}.$$
 
 The post instead compares each machine at a different unspecified service quality.
 
@@ -146,9 +146,9 @@ The MI c16 point has an approximate 7.27-second residence window. The B300 c24 p
 
 At the post’s prices:
 
-$$\text{MI c16 efficiency}\approx\frac{880}{8(2.50)}=44.0$$
+$$\text{MI c16 efficiency}\approx\frac{880}{8(2.50)}=44.0$$
 
-$$\text{B300 c24 efficiency}=\frac{1568}{8(6)}=32.67.$$
+$$\text{B300 c24 efficiency}=\frac{1568}{8(6)}=32.67.$$
 
 That gives MI about:
 
@@ -275,7 +275,7 @@ This omission is even more important because the public ROCm failure could be tr
 
 A useful metric would be **successful goodput**, not emitted tokens:
 
-$$G=T_{\text{raw}}\times\Pr(\text{request succeeds})\times\Pr(\text{meets SLO})\times\Pr(\text{quality is acceptable}).$$
+$$G=T_{\text{raw}}\times\Pr(\text{request succeeds})\times\Pr(\text{meets SLO})\times\Pr(\text{quality is acceptable}).$$
 
 ---
 
@@ -358,7 +358,7 @@ Multiplying by 3,600 converts this to tokens per dollar.
 
 At full saturation:
 
-$$C_{\text{out}}=\frac{\text{node dollars/hour}}{3600T}\times{10}^{6}.$$
+$$C_{\text{out}}=\frac{\text{node dollars/hour}}{3600T}\times{10}^{6}.$$
 
 This gives:
 
@@ -520,11 +520,11 @@ So the old MI path would still be slightly cheaper in raw rental terms, but B300
 
 The right workload-level metric is closer to:
 
-$$\text{successful tasks/hour under SLO}$$
+$$\text{successful tasks/hour under SLO}$$
 
 or:
 
-$$\text{fully loaded dollars per successful task},$$
+$$\text{fully loaded dollars per successful task},$$
 
 not output tokens alone.
 
@@ -661,7 +661,7 @@ Therefore, an 8×B200 node does not merely fail to hold “weights plus a 1M KV 
 
 Even using the article’s nominal 192GB value:
 
-$$8(192\text{ GB})=1.536\text{ TB},$$
+$$8(192\text{ GB})=1.536\text{ TB},$$
 
 which is already below the approximately 1.561TB checkpoint, before allocator fragmentation, kernels, graphs, activations and any sequence state.
 
@@ -705,7 +705,7 @@ That is a stronger and more accurate argument than “weights plus the 1M KV poo
 
 An ideal pure four-bit representation would be:
 
-$$2.8\text{T}\times4/8\approx1.4\text{ TB}.$$
+$$2.8\text{T}\times4/8\approx1.4\text{ TB}.$$
 
 The actual checkpoint is around 1.56TB because not every tensor is encoded as an ideal packed four-bit value. Non-expert tensors, scales, metadata and higher-precision components add overhead.
 
@@ -768,7 +768,7 @@ B200:  16 GPUs, TP16, two nodes over ~195 Gb/s RoCE
 
 A 195Gb/s link corresponds to only:
 
-$$195/8=24.375\text{ GB/s}.$$
+$$195/8=24.375\text{ GB/s}.$$
 
 Modern NVLink-class intra-node fabric is on the order of 1.8TB/s per GPU in the relevant NVIDIA platform, roughly:
 
@@ -906,15 +906,15 @@ But full top-p generally requires ordering or selection over the vocabulary.
 
 At c64 with a speculative block of five, a rough upper-bound verification shape is:
 
-$$64\times5=320\text{ rows}.$$
+$$64\times5=320\text{ rows}.$$
 
 Across a 160K vocabulary:
 
-$$320\times160000=51.2\text{ million probabilities}.$$
+$$320\times160000=51.2\text{ million probabilities}.$$
 
 A single FP32-sized copy is about:
 
-$$51.2\text{M}\times4\approx205\text{ MB},$$
+$$51.2\text{M}\times4\approx205\text{ MB},$$
 
 before indices, temporary sorting buffers and repeated reads/writes.
 
@@ -1005,7 +1005,7 @@ The exact draft revision and reason for selecting block five should be stated.
 
 A first-principles approximation is:
 
-$$\mathrm{s}\mathrm{p}\mathrm{e}\mathrm{e}\mathrm{d}\mathrm{u}\mathrm{p}\approx\frac{E[\text{accepted target tokens per round}]\times t_{\mathrm{b}\mathrm{a}\mathrm{s}\mathrm{e}\mathrm{l}\mathrm{i}\mathrm{n}\mathrm{e}\ \mathrm{t}\mathrm{a}\mathrm{r}\mathrm{g}\mathrm{e}\mathrm{t}\ \mathrm{s}\mathrm{t}\mathrm{e}\mathrm{p}}}{t_{\mathrm{d}\mathrm{r}\mathrm{a}\mathrm{f}\mathrm{t}}+t_{\mathrm{v}\mathrm{e}\mathrm{r}\mathrm{i}\mathrm{f}\mathrm{y}}+t_{\mathrm{s}\mathrm{a}\mathrm{m}\mathrm{p}\mathrm{l}\mathrm{e}\mathrm{r}}+t_{\mathrm{s}\mathrm{c}\mathrm{h}\mathrm{e}\mathrm{d}\mathrm{u}\mathrm{l}\mathrm{e}\mathrm{r}}}.$$
+$$\mathrm{s}\mathrm{p}\mathrm{e}\mathrm{e}\mathrm{d}\mathrm{u}\mathrm{p}\approx\frac{E[\text{accepted target tokens per round}]\times t_{\mathrm{b}\mathrm{a}\mathrm{s}\mathrm{e}\mathrm{l}\mathrm{i}\mathrm{n}\mathrm{e}\ \mathrm{t}\mathrm{a}\mathrm{r}\mathrm{g}\mathrm{e}\mathrm{t}\ \mathrm{s}\mathrm{t}\mathrm{e}\mathrm{p}}}{t_{\mathrm{d}\mathrm{r}\mathrm{a}\mathrm{f}\mathrm{t}}+t_{\mathrm{v}\mathrm{e}\mathrm{r}\mathrm{i}\mathrm{f}\mathrm{y}}+t_{\mathrm{s}\mathrm{a}\mathrm{m}\mathrm{p}\mathrm{l}\mathrm{e}\mathrm{r}}+t_{\mathrm{s}\mathrm{c}\mathrm{h}\mathrm{e}\mathrm{d}\mathrm{u}\mathrm{l}\mathrm{e}\mathrm{r}}}.$$
 
 Acceptance varies by task and sampling temperature. Official DSpark results show meaningfully different accepted lengths across coding, math, chat and million-token retrieval workloads rather than one constant factor.
 
@@ -1105,7 +1105,7 @@ $$f\approx91.5\%.$$
 
 Even if $f=1$:
 
-$$T_{\mathrm{n}\mathrm{e}\mathrm{w},\mathrm{m}\mathrm{i}\mathrm{n}}=51/2=25.5\text{ s},$$
+$$T_{\mathrm{n}\mathrm{e}\mathrm{w},\mathrm{m}\mathrm{i}\mathrm{n}}=51/2=25.5\text{ s},$$
 
 so reaching 23 seconds is impossible.
 
@@ -1117,7 +1117,7 @@ Thus, “almost entirely one kernel” requires that roughly **82–92% of the o
 
 K3 has 96 attention heads. Under TP8:
 
-$$96/8=12\text{ heads per rank}.$$
+$$96/8=12\text{ heads per rank}.$$
 
 Padding to 16 means:
 

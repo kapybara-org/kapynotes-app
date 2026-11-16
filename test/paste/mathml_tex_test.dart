@@ -90,6 +90,13 @@ void main() {
     );
   });
 
+  test("KaTeX's non-breaking spaces in text are spaces again", () {
+    expect(
+      tex('<mn>6.5</mn><mtext>\u00A0s per\u00A0slot</mtext>'),
+      r'6.5\text{ s per slot}',
+    );
+  });
+
   test('stacked conditions under a sum are a substack', () {
     expect(
       tex(

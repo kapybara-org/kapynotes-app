@@ -289,6 +289,7 @@ String _text(String text) {
     };
   }
   final escaped = text
+      .replaceAll('\u00A0', ' ')
       .replaceAll('\\', r'\textbackslash{}')
       .replaceAllMapped(RegExp(r'[{}$%#&_]'), (match) => '\\${match[0]}');
   return '\\text{$escaped}';
