@@ -152,6 +152,10 @@ class KapyIcons {
     0xE017,
     HugeIcons.strokeRoundedMinimizeScreen,
   );
+  static const cloudRounded = KapyIconData(
+    0xE0D3,
+    HugeIcons.strokeRoundedCloud,
+  );
   static const cloudOffRounded = KapyIconData(
     0xE018,
     HugeIcons.strokeRoundedCloudOff,
@@ -347,6 +351,10 @@ class KapyIcons {
     0xE048,
     HugeIcons.strokeRoundedUserGroup,
   );
+  static const personAddRounded = KapyIconData(
+    0xE0D4,
+    HugeIcons.strokeRoundedUserAdd01,
+  );
   static const groupOutlined = KapyIconData(
     0xE092,
     HugeIcons.strokeRoundedUserMultiple,
@@ -354,6 +362,10 @@ class KapyIcons {
   static const filterRounded = KapyIconData(
     0xE0D0,
     HugeIcons.strokeRoundedFilterHorizontal,
+  );
+  static const layersRounded = KapyIconData(
+    0xE0D5,
+    HugeIcons.strokeRoundedLayers01,
   );
   static const listViewRounded = KapyIconData(
     0xE0D1,

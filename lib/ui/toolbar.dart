@@ -3,7 +3,6 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
-import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/update_checker.dart';
@@ -11,7 +10,6 @@ import '../sync/presence.dart';
 import '../sync/spaces.dart';
 import 'app_logo.dart';
 import 'compact_icon_button.dart';
-import 'editor_panes.dart';
 import 'glass_surface.dart';
 import 'kapy_header_mascot.dart';
 import 'member_avatars.dart';
@@ -35,8 +33,7 @@ class NoteToolbar extends StatelessWidget {
     this.alwaysOnTop = false,
     this.onToggleAlwaysOnTop,
     this.alwaysOnTopShortcut,
-    this.onSplit,
-    this.splitTooltip,
+    this.newNoteShortcut,
     this.mascotController,
     this.members = const [],
     this.present = const [],
@@ -76,15 +73,8 @@ class NoteToolbar extends StatelessWidget {
   /// preferences rather than written here, because the binding is editable.
   final String? alwaysOnTopShortcut;
 
-  /// Opens a pane beside the open note. Null greys the button out rather than
-  /// removing it: once three notes are side by side, while the focused pane is
-  /// still empty, and in the archive.
-  final VoidCallback? onSplit;
-
-  /// What the split button says, which is also why it is grey when it is.
-  /// Null leaves the button out altogether where there is only ever one note
-  /// on screen, which is a phone.
-  final String? splitTooltip;
+  /// The current chord for a new note, taught by the + button's tooltip.
+  final String? newNoteShortcut;
 
   /// Drives the optional animated mark without changing toolbar geometry.
   final KapyHeaderController? mascotController;
@@ -296,7 +286,6 @@ class NoteToolbar extends StatelessWidget {
   }
 
   Widget _trailing({required bool wide}) {
-    final splitTooltip = this.splitTooltip;
     final updates = this.updates;
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -304,7 +293,7 @@ class NoteToolbar extends StatelessWidget {
         if (updates != null) _UpdateButton(updates: updates, wide: wide),
         _ToolbarButton(
           icon: KapyIcons.addRounded,
-          tooltip: AppPlatform.isMacOS ? 'New note  ⌘N' : 'New note  Ctrl+N',
+          tooltip: ['New note', ?newNoteShortcut].join('  '),
           onPressed: onCreate,
         ),
         const SizedBox(width: 2),
@@ -313,15 +302,6 @@ class NoteToolbar extends StatelessWidget {
           tooltip: noteShared ? 'Sharing' : 'Share note',
           onPressed: onShare,
         ),
-        if (splitTooltip != null) ...[
-          const SizedBox(width: 2),
-          _ToolbarButton(
-            key: const ValueKey('toolbar-split-view'),
-            glyph: SplitViewIcon(size: AppControlMetrics.iconAction),
-            tooltip: splitTooltip,
-            onPressed: onSplit,
-          ),
-        ],
       ],
     );
   }
@@ -419,17 +399,13 @@ class _UpdateButton extends StatelessWidget {
 class _ToolbarButton extends StatelessWidget {
   const _ToolbarButton({
     super.key,
-    this.icon,
-    this.glyph,
+    required this.icon,
     required this.tooltip,
     required this.onPressed,
     this.selected = false,
-  }) : assert((icon == null) != (glyph == null));
+  });
 
-  final KapyIconData? icon;
-
-  /// A drawn icon, for an action the icon font has nothing clear for.
-  final Widget? glyph;
+  final KapyIconData icon;
   final String tooltip;
 
   /// Null greys the action out rather than removing it.
@@ -448,7 +424,7 @@ class _ToolbarButton extends StatelessWidget {
           : selected
           ? palette.textPrimary
           : palette.textSecondary,
-      icon: glyph ?? KapyIcon(icon!, size: AppControlMetrics.iconAction),
+      icon: KapyIcon(icon, size: AppControlMetrics.iconAction),
     );
   }
 }

@@ -2643,22 +2643,6 @@ class _SearchShortcutHint extends StatelessWidget {
   }
 }
 
-class _NoteActionChoice {
-  const _NoteActionChoice({
-    required this.value,
-    required this.label,
-    required this.icon,
-    this.hint,
-    this.destructive = false,
-  });
-
-  final String value;
-  final String label;
-  final KapyIconData icon;
-  final String? hint;
-  final bool destructive;
-}
-
 /// How a [NoteRow] draws its note: the compact list's row, or the desktop
 /// list's row or sticky card beside the spaces rail.
 enum NoteRowStyle { compact, row, card }
@@ -2784,7 +2768,7 @@ class _NoteRowState extends State<NoteRow> {
     widget.onTap();
   }
 
-  List<_NoteActionChoice> _availableActions() {
+  List<KapyMenuAction> _availableActions() {
     // Named only where there is a keyboard to press it on: this same menu
     // opens on a long press on a phone, and a chord nobody there can type is
     // a line of noise beside the thing they came to tap.
@@ -2793,32 +2777,32 @@ class _NoteRowState extends State<NoteRow> {
         : null;
     return [
       if (_canOpenToSide)
-        _NoteActionChoice(
+        KapyMenuAction(
           value: 'open-side',
           label: 'Open to the side',
           icon: KapyIcons.viewColumnOutlined,
           hint: AppPlatform.isMacOS ? 'Option + Click' : 'Alt + Click',
         ),
       if (widget.onTogglePin != null)
-        _NoteActionChoice(
+        KapyMenuAction(
           value: 'pin',
           label: widget.pinned ? 'Unpin note' : 'Pin note',
           icon: widget.pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
         ),
       if (widget.onShare != null)
-        _NoteActionChoice(
+        KapyMenuAction(
           value: 'share',
           label: widget.shared ? 'Manage sharing' : 'Share note',
           icon: KapyIcons.peopleOutlined,
         ),
       if (widget.onHide != null)
-        const _NoteActionChoice(
+        const KapyMenuAction(
           value: 'hide',
           label: 'Move to Hidden Notes',
           icon: hiddenIcon,
         ),
       if (widget.onDelete != null)
-        _NoteActionChoice(
+        KapyMenuAction(
           value: 'delete',
           label: 'Delete permanently',
           icon: deleteIcon,
@@ -2826,13 +2810,13 @@ class _NoteRowState extends State<NoteRow> {
           destructive: true,
         ),
       if (widget.onRestore != null)
-        const _NoteActionChoice(
+        const KapyMenuAction(
           value: 'restore',
           label: 'Restore note',
           icon: restoreIcon,
         ),
       if (widget.onUnhide != null)
-        const _NoteActionChoice(
+        const KapyMenuAction(
           value: 'unhide',
           label: 'Move to Notes',
           icon: unhideIcon,
@@ -2841,7 +2825,7 @@ class _NoteRowState extends State<NoteRow> {
       // keep it last, after the protected-folder alternative, and use the
       // same warning colour as the permanent action in Archived Notes.
       if (widget.onArchive != null)
-        _NoteActionChoice(
+        KapyMenuAction(
           value: 'archive',
           label: 'Archive note',
           icon: archiveIcon,
@@ -2853,54 +2837,9 @@ class _NoteRowState extends State<NoteRow> {
 
   String _actionKey(String value) => '$value-note-${widget.note.id}';
 
-  Widget _actionContents(
-    BuildContext context,
-    _NoteActionChoice action, {
-    required bool touch,
-  }) {
-    final palette = context.palette;
-    final foreground = action.destructive
-        ? Theme.of(context).colorScheme.error
-        : palette.textPrimary;
-    return Row(
-      children: [
-        KapyIcon(
-          action.icon,
-          size: touch
-              ? AppControlMetrics.iconAction
-              : AppControlMetrics.iconControl,
-          color: action.destructive ? foreground : palette.textSecondary,
-        ),
-        SizedBox(width: touch ? 14 : 10),
-        Expanded(
-          child: Text(
-            action.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: touch ? AppTypeScale.body : AppTypeScale.control,
-              color: foreground,
-            ),
-          ),
-        ),
-        if (action.hint case final hint?) ...[
-          SizedBox(width: touch ? 18 : 10),
-          Text(
-            hint,
-            maxLines: 1,
-            style: TextStyle(
-              fontSize: AppTypeScale.control,
-              color: palette.textTertiary,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
   Future<String?> _showTouchActions(
     BuildContext context,
-    List<_NoteActionChoice> actions,
+    List<KapyMenuAction> actions,
   ) => showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
@@ -2954,11 +2893,7 @@ class _NoteRowState extends State<NoteRow> {
                           horizontal: 20,
                           vertical: 14,
                         ),
-                        child: _actionContents(
-                          sheetContext,
-                          action,
-                          touch: true,
-                        ),
+                        child: KapyMenuActionRow(action, touch: true),
                       ),
                     ),
                 ],
@@ -2983,9 +2918,10 @@ class _NoteRowState extends State<NoteRow> {
       // to the whole list rather than to the note it belongs to.
       final row =
           (widget.style == NoteRowStyle.compact
-                  ? this.context
-                  : Scrollable.maybeOf(this.context)?.context ?? this.context)
-              .findRenderObject()
+                      ? this.context
+                      : Scrollable.maybeOf(this.context)?.context ??
+                            this.context)
+                  .findRenderObject()
               as RenderBox?;
       final rowOrigin = row?.localToGlobal(Offset.zero);
       final preferredBounds = row == null || rowOrigin == null
@@ -3006,7 +2942,7 @@ class _NoteRowState extends State<NoteRow> {
               key: ValueKey(_actionKey(action.value)),
               value: action.value,
               height: 36,
-              child: _actionContents(context, action, touch: false),
+              child: KapyMenuActionRow(action, touch: false),
             ),
         ],
       );

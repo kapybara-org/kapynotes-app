@@ -94,30 +94,6 @@ void main() {
       });
     }
 
-    testWidgets('split view is the extreme-right action beside sharing', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        harness(
-          NoteToolbar(
-            onToggleSidebar: () {},
-            onCreate: () {},
-            onShare: () {},
-            onSplit: () {},
-            splitTooltip: 'Split view',
-          ),
-        ),
-      );
-
-      final add = tester.getCenter(findKapyIcon(KapyIcons.addRounded)).dx;
-      final share = tester.getCenter(findKapyIcon(KapyIcons.peopleOutlined)).dx;
-      final split = tester
-          .getCenter(find.byKey(const ValueKey('toolbar-split-view')))
-          .dx;
-      expect(add, lessThan(share));
-      expect(share, lessThan(split));
-    });
-
     testWidgets('the wordmark keeps the exact centre either way', (
       tester,
     ) async {

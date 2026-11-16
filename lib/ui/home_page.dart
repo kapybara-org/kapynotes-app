@@ -59,10 +59,13 @@ import 'editor_panes.dart';
 import 'billing/note_limit_dialog.dart';
 import 'billing/pro_sheet.dart';
 import 'empty_state.dart';
+import 'context_menu.dart';
 import 'hidden_notes_gate.dart';
 import 'kapy_header_mascot.dart';
 import 'mobile_page_swipe.dart';
 import 'notes_list.dart';
+import 'page_card.dart';
+import 'page_toolbar.dart';
 import 'sidebar.dart';
 import 'settings_dialog.dart';
 import 'sidebar_swipe.dart';
@@ -2557,6 +2560,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final space = _space;
             final listFits = _listFits;
             final listShown = _listShown;
+            final pinned =
+                selected != null &&
+                widget.notes.pinnedNoteIds.contains(selected.id);
             return Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -2698,32 +2704,40 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               pageInset,
                               pageInset,
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                NoteToolbar(
-                                  mascotController: _kapyHeader,
-                                  sidebarVisible: listShown,
-                                  sidebarShortcut: _sidebarShortcut,
-                                  onToggleSidebar: _toggleList,
-                                  onCreate: _createNote,
-                                  onShare: _shareSelected,
-                                  members: _selectedMembers,
-                                  present: _selectedPresence,
-                                  currentUserId:
-                                      widget.account?.sharing?.userId ?? '',
-                                  noteShared: selected?.isShared ?? false,
-                                  alwaysOnTop: widget.prefs.alwaysOnTop,
-                                  onToggleAlwaysOnTop: _pinToggle,
-                                  alwaysOnTopShortcut: _pinShortcut,
-                                  onSplit: _specialMode || !_workspace.canSplit
-                                      ? null
-                                      : _splitEditor,
-                                  splitTooltip: _splitTooltip,
-                                  updates: widget.updates,
-                                ),
-                                Expanded(child: _buildWideWorkspace()),
-                              ],
+                            child: PageCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  PageToolbar(
+                                    space: space.title,
+                                    section: pinned ? 'Pinned' : null,
+                                    listVisible: listFits && listShown,
+                                    onShowList: _toggleList,
+                                    showListShortcut: _sidebarShortcut,
+                                    onCreate: _createNote,
+                                    newNoteShortcut: widget.shortcuts
+                                        .bindingFor(ShortcutAction.newNote)
+                                        ?.displayLabel,
+                                    noteOpen: selected != null,
+                                    syncStatus: widget.account?.sync?.status,
+                                    members: _selectedMembers,
+                                    present: _selectedPresence,
+                                    currentUserId:
+                                        widget.account?.sharing?.userId ?? '',
+                                    noteShared: selected?.isShared ?? false,
+                                    onShare: _shareSelected,
+                                    pinned: pinned,
+                                    onTogglePin:
+                                        selected == null || _specialMode
+                                        ? null
+                                        : () => _togglePinnedNote(selected.id),
+                                    moreActions: _pageActions(selected),
+                                    onMore: (action) =>
+                                        _runPageAction(action, selected),
+                                  ),
+                                  Expanded(child: _buildWideWorkspace()),
+                                ],
+                              ),
                             ),
                           ),
                         ],
@@ -2739,18 +2753,91 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// The split button's words, which also say why it is grey when it is.
-  String get _splitTooltip {
-    if (!_specialMode) {
-      if (_workspace.paneCount >= EditorWorkspace.maxPanes) {
-        return 'Up to three notes side by side';
-      }
-      if (_selectedId == null) return 'Choose a note for this pane first';
-    }
+  /// What the page's More menu offers: the window's own actions, then the
+  /// open note's, in the order and on the terms of that note's menu in the
+  /// list.
+  List<KapyMenuAction> _pageActions(Note? note) {
+    final splitBlocker = _specialMode
+        ? null
+        : _workspace.paneCount >= EditorWorkspace.maxPanes
+        ? 'Up to three notes side by side'
+        : _selectedId == null
+        ? 'Choose a note for this pane first'
+        : null;
+    final canSplit = !_specialMode && _workspace.canSplit;
+    final mayEdit = note != null && _canEditNote(note);
+    final removeShortcut = widget.shortcuts
+        .bindingFor(ShortcutAction.deleteNote)
+        ?.displayLabel;
+    final alwaysOnTop = widget.prefs.alwaysOnTop;
     return [
-      'Split view',
-      ?widget.shortcuts.bindingFor(ShortcutAction.splitEditor)?.displayLabel,
-    ].join('  ');
+      KapyMenuAction(
+        value: 'split',
+        label: canSplit ? 'Split view' : splitBlocker ?? 'Split view',
+        icon: KapyIcons.viewColumnOutlined,
+        hint: canSplit
+            ? widget.shortcuts
+                  .bindingFor(ShortcutAction.splitEditor)
+                  ?.displayLabel
+            : null,
+        enabled: canSplit,
+      ),
+      if (_pinToggle != null)
+        KapyMenuAction(
+          value: 'on-top',
+          label: alwaysOnTop ? 'Stop keeping on top' : 'Keep on top',
+          icon: KapyIcons.layersRounded,
+          hint: _pinShortcut,
+        ),
+      if (mayEdit && !_specialMode && !note.isShared)
+        const KapyMenuAction(
+          value: 'hide',
+          label: 'Move to Hidden Notes',
+          icon: hiddenIcon,
+        ),
+      if (mayEdit && _archiveMode)
+        const KapyMenuAction(
+          value: 'restore',
+          label: 'Restore note',
+          icon: restoreIcon,
+        ),
+      if (mayEdit && _hiddenMode)
+        const KapyMenuAction(
+          value: 'unhide',
+          label: 'Move to Notes',
+          icon: unhideIcon,
+        ),
+      if (mayEdit)
+        KapyMenuAction(
+          value: _specialMode ? 'delete' : 'archive',
+          label: _specialMode ? 'Delete permanently' : 'Archive note',
+          icon: _specialMode ? deleteIcon : archiveIcon,
+          hint: removeShortcut,
+          destructive: true,
+        ),
+    ];
+  }
+
+  void _runPageAction(String action, Note? note) {
+    switch (action) {
+      case 'split':
+        _splitEditor();
+      case 'on-top':
+        _pinToggle?.call();
+    }
+    if (note == null) return;
+    switch (action) {
+      case 'hide':
+        unawaited(_hideNote(note.id));
+      case 'restore':
+        _restoreNote(note.id);
+      case 'unhide':
+        _unhideNote(note.id);
+      case 'archive':
+        _archiveNote(note.id);
+      case 'delete':
+        unawaited(_deleteNote(note.id));
+    }
   }
 
   Widget _buildWideWorkspace() {
@@ -2966,6 +3053,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 alwaysOnTop: widget.prefs.alwaysOnTop,
                 onToggleAlwaysOnTop: _pinToggle,
                 alwaysOnTopShortcut: _pinShortcut,
+                newNoteShortcut: widget.shortcuts
+                    .bindingFor(ShortcutAction.newNote)
+                    ?.displayLabel,
                 updates: widget.updates,
               ),
             ),

@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
 import '../core/theme.dart';
 import 'keycap.dart';
 
@@ -18,6 +19,7 @@ class TonalButton extends StatelessWidget {
     this.label,
     this.shortcut,
     this.tooltip,
+    this.tall = false,
   }) : assert(icon != null || label != null),
        assert(
          label != null || tooltip != null,
@@ -34,24 +36,43 @@ class TonalButton extends StatelessWidget {
 
   final String? tooltip;
 
+  /// The page toolbar's Share: two points taller, with rounder corners and a
+  /// finer icon than the notes list's New note.
+  final bool tall;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final icon = this.icon;
     final label = this.label;
     final shortcut = this.shortcut;
+    final pointer = AppPlatform.hasPointer;
+    final fine = pointer && (tall || label == null);
 
     final button = FilledButton(
       onPressed: onPressed,
       style: ButtonStyle(
         minimumSize: WidgetStatePropertyAll(
-          Size.square(AppControlMetrics.tonalButtonHeight),
+          Size.square(
+            tall && pointer ? 32 : AppControlMetrics.tonalButtonHeight,
+          ),
         ),
+        shape: tall
+            ? const WidgetStatePropertyAll(
+                RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(10)),
+                ),
+              )
+            : null,
         padding: WidgetStatePropertyAll(
           label == null
               ? EdgeInsets.zero
               : EdgeInsetsDirectional.only(
-                  start: icon == null ? 12 : 9,
+                  start: icon == null
+                      ? 12
+                      : tall
+                      ? 10
+                      : 9,
                   end: shortcut == null ? 12 : 6,
                 ),
         ),
@@ -78,8 +99,8 @@ class TonalButton extends StatelessWidget {
           if (icon != null)
             KapyIcon(
               icon,
-              size: AppControlMetrics.iconControl,
-              strokeWidth: 2.2,
+              size: fine ? 15 : AppControlMetrics.iconControl,
+              strokeWidth: fine ? 2 : 2.2,
             ),
           if (icon != null && label != null) const SizedBox(width: 6),
           if (label != null) Text(label),
