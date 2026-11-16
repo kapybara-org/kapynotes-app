@@ -45,6 +45,7 @@ class NoteImageView extends StatefulWidget {
     this.onResize,
     this.onResizeEnd,
     this.onRemove,
+    this.onRetry,
   });
 
   final NoteImageRef ref;
@@ -75,6 +76,9 @@ class NoteImageView extends StatefulWidget {
   final VoidCallback? onResizeEnd;
 
   final VoidCallback? onRemove;
+
+  /// Fetches a pasted picture again after its download failed.
+  final VoidCallback? onRetry;
 
   @override
   State<NoteImageView> createState() => _NoteImageViewState();
@@ -363,7 +367,16 @@ class _NoteImageViewState extends State<NoteImageView> {
     }
 
     final progress = widget.uploadProgress;
-    final media = progress == null
+    final address = widget.ref.src;
+    final media = address != null && preview == null
+        ? _RemoteImage(
+            address: address,
+            loading: widget.ref.isPreparing,
+            radius: radius,
+            compact: widget.box.height < 120,
+            onRetry: widget.onRetry,
+          )
+        : progress == null
         ? imageSurface(null)
         : ValueListenableBuilder<double?>(
             valueListenable: progress,
@@ -556,6 +569,73 @@ class _WidthHandle extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A pasted picture whose bytes are still at the address it was pasted
+/// from: a quiet box while it downloads, and another try when that failed.
+class _RemoteImage extends StatelessWidget {
+  const _RemoteImage({
+    required this.address,
+    required this.loading,
+    required this.radius,
+    required this.compact,
+    this.onRetry,
+  });
+
+  final String address;
+  final bool loading;
+  final BorderRadius radius;
+  final bool compact;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final host = Uri.tryParse(address)?.host ?? '';
+    return ClipRRect(
+      borderRadius: radius,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: palette.controlBackground,
+          borderRadius: radius,
+          border: Border.all(color: palette.separator, width: 0.5),
+        ),
+        child: loading
+            ? const _ImageTransferCover(preparing: true, progress: null)
+            : Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    KapyIcon(
+                      KapyIcons.imageOutlined,
+                      size: compact ? 18 : 24,
+                      color: palette.textTertiary,
+                    ),
+                    if (!compact) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        host.isEmpty
+                            ? "Couldn't load image"
+                            : "Couldn't load image from $host",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: AppTypeScale.caption,
+                          color: palette.textTertiary,
+                        ),
+                      ),
+                    ],
+                    if (onRetry != null)
+                      TextButton(
+                        key: const ValueKey('retry-image-download'),
+                        onPressed: onRetry,
+                        child: const Text('Retry'),
+                      ),
+                  ],
+                ),
+              ),
       ),
     );
   }
