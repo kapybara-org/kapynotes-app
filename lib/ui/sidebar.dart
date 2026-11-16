@@ -23,10 +23,12 @@ import 'control_surface.dart';
 import 'context_menu.dart';
 import 'editor/note_footer.dart';
 import 'editor_panes.dart';
+import 'keycap.dart';
 import 'member_avatars.dart';
 import 'safety_dialogs.dart';
 import 'sidebar_timestamp.dart';
 import 'streak_badge.dart';
+import 'tonal_button.dart';
 
 /// What throwing a note away looks like, everywhere it is offered.
 ///
@@ -2172,7 +2174,7 @@ class _SearchFieldState extends State<_SearchField> {
             ),
           ),
           const SizedBox(width: 6),
-          _IconButton(
+          TonalButton(
             key: const ValueKey('sidebar-new-note'),
             icon: KapyIcons.addRounded,
             tooltip: 'New note',
@@ -2191,28 +2193,19 @@ class _SearchShortcutHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
     final label = shortcut.displayLabel;
-    return Center(
-      child: Tooltip(
-        message: 'Global search · $label',
-        child: Semantics(
-          label: 'Global search shortcut $label',
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-            decoration: BoxDecoration(
-              color: palette.surfaceBackground.withMultipliedAlpha(0.42),
-              border: Border.all(color: palette.controlBorder, width: 0.5),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: AppPlatform.isWindows ? AppTypeScale.micro : 9.5,
-                height: AppPlatform.isWindows ? 1.1 : 1,
-                color: palette.textTertiary,
-              ),
-            ),
+    // Only as wide as the keycap: a hint that filled the slot would take the
+    // field's width and leave its placeholder no room to be drawn in.
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(end: 8),
+      child: Center(
+        widthFactor: 1,
+        child: Tooltip(
+          message: 'Global search · $label',
+          child: Semantics(
+            label: 'Global search shortcut $label',
+            excludeSemantics: true,
+            child: Keycap(shortcut.keycapLabel),
           ),
         ),
       ),

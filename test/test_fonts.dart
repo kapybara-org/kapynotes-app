@@ -30,6 +30,11 @@ Future<void> loadTestFonts() async {
     'assets/fonts/ShantellSans-Variable.ttf',
     'assets/fonts/ShantellSans-Italic-Variable.ttf',
   ]);
+  await _loadAll('Figtree', [
+    'assets/fonts/Figtree-Variable.ttf',
+    'assets/fonts/Figtree-Italic-Variable.ttf',
+  ]);
+  await _loadAll('Geist Mono', ['assets/fonts/GeistMono-Variable.ttf']);
 }
 
 Future<void> _load(String family, List<String> candidates) async {

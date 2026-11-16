@@ -99,9 +99,9 @@ class _CaptureSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
-    final background = dark ? const Color(0xFF202126) : const Color(0xFFF8F7F4);
-    final foreground = dark ? const Color(0xFFE8E7E4) : const Color(0xFF292B30);
-    final cursor = dark ? const Color(0xFFE0A06B) : const Color(0xFFA85F38);
+    final background = dark ? const Color(0xFF23201C) : const Color(0xFFF8F7F4);
+    final foreground = dark ? const Color(0xFFE2DCCF) : const Color(0xFF292B30);
+    final cursor = dark ? const Color(0xFF7D9468) : const Color(0xFFA85F38);
 
     return ColoredBox(
       color: background,

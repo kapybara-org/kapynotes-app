@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 
 import '../../calc/engine.dart';
 import '../../calc/value.dart';
-import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import 'line_metrics.dart';
@@ -188,8 +187,8 @@ class _ResultChipState extends State<ResultChip> {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
               style: TextStyle(
-                fontFamily: AppPlatform.monoFontFallback.first,
-                fontFamilyFallback: AppPlatform.monoFontFallback,
+                fontFamily: AppFonts.mono,
+                fontFamilyFallback: AppFonts.monoFallback,
                 fontSize: AppTypeScale.result,
                 height: 1.2,
                 color: color,
