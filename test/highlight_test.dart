@@ -60,4 +60,23 @@ void main() {
     expect(highlighted, contains(('sqrt', HighlightKind.function)));
     expect(highlighted, contains(('today', HighlightKind.constant)));
   });
+
+  test('colours ×, ÷ and − as operators and leaves dashes as text', () {
+    final highlighter = Highlighter(
+      CalcEngine(ratesPerUsd: const {'EUR': 0.5}).registry,
+    );
+    List<(String, HighlightKind)> spans(String body) => highlighter
+        .spans(body)
+        .map((span) => (body.substring(span.start, span.end), span.kind))
+        .toList();
+
+    expect(spans('3 × 49 usd'), contains(('×', HighlightKind.operator)));
+    expect(spans('10 ÷ 4'), contains(('÷', HighlightKind.operator)));
+    expect(spans('10 − 3'), contains(('−', HighlightKind.operator)));
+    expect(spans('Lunch — 12 usd'), [
+      ('12', HighlightKind.number),
+      ('usd', HighlightKind.currency),
+    ]);
+    expect(spans('2020–2024'), [('2020', HighlightKind.number)]);
+  });
 }

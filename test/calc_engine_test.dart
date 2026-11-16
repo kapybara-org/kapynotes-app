@@ -148,6 +148,14 @@ void main() {
       expect(line('7 mod 3'), '1');
     });
 
+    test('reads the ×, ÷ and − signs', () {
+      expect(line('3 × 49 usd'), '147.00 USD');
+      expect(line('10 ÷ 4'), '2.5');
+      expect(line('10 − 3'), '7');
+      expect(line('3 x 49 usd'), '147.00 USD');
+      expect(line('3 * 49 usd'), '147.00 USD');
+    });
+
     test('strips thousands separators', () {
       expect(line('1,250 + 750'), '2,000');
       expect(line('1_000_000 / 4'), '250,000');
@@ -639,6 +647,12 @@ void main() {
     test('ignores headings that end in a colon', () {
       expect(line('Budget:'), isNull);
       expect(line('# Trip to Lisbon'), isNull);
+    });
+
+    test('leaves en and em dashes as text', () {
+      expect(line('Lunch — 12 usd'), '12.00 USD');
+      expect(line('2020–2024'), isNull);
+      expect(line('pages 10–20'), isNull);
     });
 
     test('never throws on partially typed input', () {

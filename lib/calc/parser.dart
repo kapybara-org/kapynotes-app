@@ -562,7 +562,7 @@ class Parser {
     var left = _parseUnitSequence();
     while (true) {
       if (_current.type == TokenType.operator &&
-          const ['+', '-', '−', '–', '—'].contains(_current.text)) {
+          const ['+', '-', '−'].contains(_current.text)) {
         final op = _current.text == '+' ? '+' : '-';
         _advance();
         left = BinaryNode(op, left, _parseUnitSequence());
@@ -686,7 +686,7 @@ class Parser {
 
   Node _parseUnary() {
     if (_current.type == TokenType.operator &&
-        const ['-', '−', '–', '—'].contains(_current.text)) {
+        const ['-', '−'].contains(_current.text)) {
       _advance();
       return UnaryNode('-', _parseUnary());
     }

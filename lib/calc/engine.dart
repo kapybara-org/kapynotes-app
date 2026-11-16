@@ -233,18 +233,7 @@ class CalcEngine {
       // numbers is a time or a ratio.
       if (token.type == TokenType.operator &&
           i > 0 &&
-          const [
-            '+',
-            '-',
-            '*',
-            '/',
-            '^',
-            '×',
-            '÷',
-            '−',
-            '–',
-            '—',
-          ].contains(token.text)) {
+          const ['+', '-', '*', '/', '^', '×', '÷', '−'].contains(token.text)) {
         return true;
       }
       if (token.type == TokenType.identifier &&
@@ -439,7 +428,7 @@ class CalcEngine {
               (next.type == TokenType.operator && next.text == '-'));
     }
     return token.type == TokenType.operator &&
-        const ['-', '−', '–', '—'].contains(token.text) &&
+        const ['-', '−'].contains(token.text) &&
         next != null &&
         (next.type == TokenType.number ||
             next.type == TokenType.currencySymbol ||
@@ -465,7 +454,7 @@ class CalcEngine {
         case TokenType.operator:
           // Hyphens belong naturally in model names (`Model-7`). Every other
           // operator is evidence that the discarded prefix was arithmetic.
-          if (!const ['-', '−', '–', '—'].contains(token.text)) return false;
+          if (!const ['-', '−'].contains(token.text)) return false;
         case TokenType.currencySymbol:
         case TokenType.percent:
           return false;
