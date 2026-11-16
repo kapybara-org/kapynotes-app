@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/calc/engine.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -268,6 +269,8 @@ void main() {
     });
 
     testWidgets('does not offer the welcome note on a phone', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpLaunch(tester, MemoryStore(), size: const Size(390, 760));
       await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
       await tester.pumpAndSettle();

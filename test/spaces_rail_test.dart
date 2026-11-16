@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/writing_streak.dart';
 import 'package:kapy_notes/sync/auth_api.dart';
 import 'package:kapy_notes/sync/sync_service.dart';
@@ -190,4 +191,42 @@ void main() {
       expect(dot(tester), scheme.error);
     });
   });
+
+  for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+    testWidgets('fits the smallest ${platform.name} window with every space', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      // A Windows minimum is the outer window, and its caption and frame take
+      // some forty points of that. macOS draws its title bar over the rail.
+      final height =
+          LayoutPrefs.minimumWindowSize.height -
+          (platform == TargetPlatform.windows ? 40 : 0);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Material(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                height: height,
+                child: rail(
+                  invitations: 2,
+                  showHidden: true,
+                  streak: const WritingStreak(days: 3, wroteToday: true),
+                  onAccountPressed: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('rail-account'))).bottom,
+        lessThanOrEqualTo(height),
+      );
+    });
+  }
 }

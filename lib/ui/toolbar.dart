@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
-import '../core/window_chrome.dart';
 import '../data/update_checker.dart';
 import '../sync/presence.dart';
 import '../sync/spaces.dart';
@@ -44,7 +43,6 @@ class NoteToolbar extends StatelessWidget {
     this.currentUserId = '',
     this.noteShared = false,
     this.updates,
-    this.atWindowLeftEdge = true,
   });
 
   final VoidCallback onToggleSidebar;
@@ -84,8 +82,8 @@ class NoteToolbar extends StatelessWidget {
   final VoidCallback? onSplit;
 
   /// What the split button says, which is also why it is grey when it is.
-  /// Null leaves the button out altogether, where there is only ever one note
-  /// on screen: a phone, or a window too narrow for the notes list beside it.
+  /// Null leaves the button out altogether where there is only ever one note
+  /// on screen, which is a phone.
   final String? splitTooltip;
 
   /// Drives the optional animated mark without changing toolbar geometry.
@@ -110,11 +108,6 @@ class NoteToolbar extends StatelessWidget {
   /// the app does not update itself.
   final UpdateChecker? updates;
 
-  /// Whether the bar starts at the window's left edge, where macOS draws the
-  /// traffic lights over it. In the wide window it starts beside the spaces
-  /// rail, which keeps them clear itself.
-  final bool atWindowLeftEdge;
-
   /// Wide enough for the update button to say what it does in full. Below
   /// this it would run into the centred lockup, so it shortens to "Update".
   static const double _updateLabelWidth = 680;
@@ -124,7 +117,7 @@ class NoteToolbar extends StatelessWidget {
   /// Between the lockup and the pin, and mirrored on the other side.
   static const double _pinGap = 5;
 
-  /// Between an edge action and the window's edge.
+  /// Between an edge action and the bar's edge.
   static const double _edgeGap = 9;
 
   @override
@@ -155,7 +148,7 @@ class NoteToolbar extends StatelessWidget {
               0.0,
               math.min(
                 desiredLeadingRight,
-                constraints.maxWidth - _leadingInset - fixedLeadingWidth,
+                constraints.maxWidth - _edgeGap - fixedLeadingWidth,
               ),
             );
 
@@ -231,7 +224,7 @@ class NoteToolbar extends StatelessWidget {
                 if (showActions) ...[
                   Positioned(
                     top: topInset,
-                    left: _leadingInset,
+                    left: _edgeGap,
                     // Stops short of the lockup when there is room. On the
                     // narrowest phones, reserve the two fixed actions first;
                     // avatars still give up circles, then names, to fit.
@@ -259,12 +252,6 @@ class NoteToolbar extends StatelessWidget {
     );
   }
 
-  /// Where the leading cluster starts: clear of the traffic lights on macOS,
-  /// and a matching beat from the window edge everywhere else.
-  double get _leadingInset => WindowChrome.overlaysContent && atWindowLeftEdge
-      ? WindowChrome.trafficLightsWidth
-      : _edgeGap;
-
   /// Half the lockup, plus air.
   ///
   /// Estimated from the type size rather than measured: its only job is to
@@ -276,10 +263,8 @@ class NoteToolbar extends StatelessWidget {
 
   /// The drawer's button, and whoever the open note is shared with.
   ///
-  /// The menu leads on every platform, so the drawer opens from the same
-  /// corner everywhere. macOS paints its traffic lights over that corner, so
-  /// the button starts after them rather than under them — see
-  /// [_leadingInset], which is the whole of the difference there.
+  /// The menu leads on every platform, so the notes list opens from the same
+  /// corner everywhere.
   Widget _leading() {
     return Row(
       mainAxisSize: MainAxisSize.min,

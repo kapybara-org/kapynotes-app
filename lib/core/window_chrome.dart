@@ -20,15 +20,4 @@ class WindowChrome {
 
   /// True where the OS draws window controls over the app's own content.
   static bool get overlaysContent => AppPlatform.isMacOS;
-
-  /// Inset for a pane flush against the window's left edge that wants to keep
-  /// its content beside the window controls.
-  static double leadingInset({required bool atWindowLeftEdge}) =>
-      overlaysContent && atWindowLeftEdge ? trafficLightsWidth : 0;
-
-  /// Inset for a pane flush against the window's left edge that would rather
-  /// keep its content below the window controls. Taller panes prefer this;
-  /// a single-row toolbar has no room and uses [leadingInset] instead.
-  static double topInset({required bool atWindowLeftEdge}) =>
-      overlaysContent && atWindowLeftEdge ? trafficLightsHeight : 0;
 }

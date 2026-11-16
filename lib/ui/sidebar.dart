@@ -119,14 +119,12 @@ class Sidebar extends StatelessWidget {
     this.searchShortcut,
     this.settingsShortcut,
     this.archiveShortcut,
-    this.hiddenShortcut,
     this.updates,
     this.searchFocusNode,
     this.archiveMode = false,
     this.hiddenMode = false,
     this.archivedCount = 0,
     this.hiddenCount = 0,
-    this.showHiddenFolder = false,
     this.onDelete,
     this.onDeleteAll,
     this.selecting = false,
@@ -214,7 +212,6 @@ class Sidebar extends StatelessWidget {
   /// shortcut nobody can find is a shortcut nobody uses. Read from the
   /// binding rather than written out, so a rebound key is not misnamed here.
   final ShortcutBinding? archiveShortcut;
-  final ShortcutBinding? hiddenShortcut;
 
   /// Drives the Update badge beside the installed version. Null where the app
   /// store owns updates; the version still comes from the installed package.
@@ -224,7 +221,6 @@ class Sidebar extends StatelessWidget {
   final bool hiddenMode;
   final int archivedCount;
   final int hiddenCount;
-  final bool showHiddenFolder;
 
   /// Throws one note away for good. Only ever supplied in the archive.
   final ValueChanged<String>? onDelete;
@@ -389,20 +385,12 @@ class Sidebar extends StatelessWidget {
                 ),
               ),
             ),
-            if (onSettingsPressed != null ||
-                onArchiveToggle != null ||
-                _showDesktopHiddenEntry)
+            if (onSettingsPressed != null || onArchiveToggle != null)
               _SidebarFooter(
                 onSettingsPressed: onSettingsPressed,
                 onArchivePressed: onArchiveToggle,
-                onHiddenPressed: _showDesktopHiddenEntry
-                    ? onHiddenToggle
-                    : null,
                 showingArchive: archiveMode,
-                showingHidden: hiddenMode,
                 archivedCount: archivedCount,
-                hiddenCount: hiddenCount,
-                hiddenShortcut: hiddenShortcut,
                 settingsShortcut: settingsShortcut,
                 updates: updates,
               ),
@@ -432,11 +420,6 @@ extension on Sidebar {
   /// over their own notes rather than over other people's.
   bool get _showMobileHiddenEntry =>
       AppPlatform.isMobile && onHiddenToggle != null && !_onSharedTab;
-
-  bool get _showDesktopHiddenEntry =>
-      AppPlatform.isDesktop &&
-      onHiddenToggle != null &&
-      (hiddenMode || (showHiddenFolder && hiddenCount > 0));
 
   bool get _hasPinned =>
       !_specialMode && notes.any((note) => pinnedNoteIds.contains(note.id));
@@ -1356,35 +1339,25 @@ class _SidebarFooter extends StatelessWidget {
   const _SidebarFooter({
     this.onSettingsPressed,
     this.onArchivePressed,
-    this.onHiddenPressed,
     required this.showingArchive,
-    required this.showingHidden,
     required this.archivedCount,
-    required this.hiddenCount,
-    this.hiddenShortcut,
     this.settingsShortcut,
     this.updates,
   });
 
   final VoidCallback? onSettingsPressed;
   final VoidCallback? onArchivePressed;
-  final VoidCallback? onHiddenPressed;
   final bool showingArchive;
-  final bool showingHidden;
   final int archivedCount;
-  final int hiddenCount;
-  final ShortcutBinding? hiddenShortcut;
   final ShortcutBinding? settingsShortcut;
   final UpdateChecker? updates;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final onHiddenPressed = this.onHiddenPressed;
     final onArchivePressed = this.onArchivePressed;
     final onSettingsPressed = this.onSettingsPressed;
     final rows =
-        (onHiddenPressed == null ? 0 : 1) +
         (onArchivePressed == null ? 0 : 1) +
         (onSettingsPressed == null ? 0 : 1);
     return Container(
@@ -1394,15 +1367,6 @@ class _SidebarFooter extends StatelessWidget {
       ),
       child: Column(
         children: [
-          if (onHiddenPressed != null)
-            Expanded(
-              child: _HiddenEntry(
-                showingHidden: showingHidden,
-                count: hiddenCount,
-                onPressed: onHiddenPressed,
-                shortcut: hiddenShortcut,
-              ),
-            ),
           if (onArchivePressed != null)
             Expanded(
               child: _ArchiveEntry(
@@ -1435,21 +1399,18 @@ class _HiddenEntry extends StatelessWidget {
     required this.showingHidden,
     required this.count,
     required this.onPressed,
-    this.shortcut,
   });
 
   final bool showingHidden;
   final int count;
   final VoidCallback onPressed;
-  final ShortcutBinding? shortcut;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final label = showingHidden ? 'All notes' : 'Hidden Notes';
-    final shortcut = this.shortcut;
     return Tooltip(
-      message: shortcut == null ? label : '$label · ${shortcut.displayLabel}',
+      message: label,
       child: Semantics(
         button: true,
         label: label,
@@ -1479,7 +1440,7 @@ class _HiddenEntry extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (!showingHidden && count > 0) ...[
+                if (!showingHidden && count > 0)
                   Text(
                     '$count',
                     style: TextStyle(
@@ -1487,41 +1448,8 @@ class _HiddenEntry extends StatelessWidget {
                       color: palette.textTertiary,
                     ),
                   ),
-                  if (shortcut != null) const SizedBox(width: 8),
-                ],
-                if (shortcut != null) _FolderShortcutHint(shortcut: shortcut),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FolderShortcutHint extends StatelessWidget {
-  const _FolderShortcutHint({required this.shortcut});
-
-  final ShortcutBinding shortcut;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final label = shortcut.displayLabel;
-    return ExcludeSemantics(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-        decoration: BoxDecoration(
-          color: palette.surfaceBackground.withMultipliedAlpha(0.42),
-          border: Border.all(color: palette.controlBorder, width: 0.5),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: AppPlatform.isWindows ? AppTypeScale.micro : 9.5,
-            height: AppPlatform.isWindows ? 1.1 : 1,
-            color: palette.textTertiary,
           ),
         ),
       ),
