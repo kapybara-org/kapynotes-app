@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import '../data/note_format.dart';
+
 /// What a paste reads as, between the clipboard's markup and the note.
 ///
 /// Every source — a page's HTML, the HTML Apple builds from RTF, the
@@ -61,7 +63,7 @@ final class PasteCode extends PasteBlock {
   final String? language;
 }
 
-enum PasteAlign { none, left, center, right }
+enum PasteAlign { none, center, right }
 
 final class PasteTable extends PasteBlock {
   const PasteTable(this.rows, this.aligns);
@@ -100,9 +102,10 @@ final class PasteText extends PasteInline {
 }
 
 final class PasteCodeSpan extends PasteInline {
-  const PasteCodeSpan(this.code, {this.href});
+  const PasteCodeSpan(this.code, {this.styles = const {}, this.href});
 
   final String code;
+  final Set<PasteStyle> styles;
   final String? href;
 }
 
@@ -177,4 +180,66 @@ class PasteImage {
     width: (raw['width'] as num?)?.toDouble(),
     height: (raw['height'] as num?)?.toDouble(),
   );
+}
+
+/// What a paste puts into a note: its text, the styles a note without
+/// markdown holds beside the text, and its pictures.
+class PasteOutput {
+  const PasteOutput({
+    required this.text,
+    this.formats = const [],
+    this.images = const [],
+  });
+
+  /// One U+FFFC stands for each of [images], on a line of its own.
+  final String text;
+
+  /// Bold, italic, heading and subtitle over [text], for a note written
+  /// without markdown. Always empty for markdown, which says it in the text.
+  final List<NoteFormatRange> formats;
+  final List<PastedImage> images;
+
+  bool get isEmpty => text.isEmpty;
+
+  /// Whether there is anything here besides pictures.
+  bool get hasWords => text.replaceAll('\uFFFC', '').trim().isNotEmpty;
+
+  /// The same paste for a note that can't hold pictures, with every style
+  /// moved along with the words.
+  PasteOutput withoutPictures() {
+    if (images.isEmpty) return this;
+    int moved(int offset) =>
+        offset - '\uFFFC'.allMatches(text.substring(0, offset)).length;
+    return PasteOutput(
+      text: text.replaceAll('\uFFFC', ''),
+      formats: [
+        for (final range in formats)
+          NoteFormatRange(
+            start: moved(range.start),
+            end: moved(range.end),
+            format: range.format,
+          ),
+      ],
+    );
+  }
+}
+
+/// A picture and the offset of its U+FFFC in [PasteOutput.text].
+class PastedImage {
+  const PastedImage(this.offset, this.image);
+
+  final int offset;
+  final PasteImage image;
+}
+
+/// Pairs each U+FFFC in [text] with the next of [images], in order.
+List<PastedImage> placeImages(String text, List<PasteImage> images) {
+  final placed = <PastedImage>[];
+  var next = 0;
+  for (var i = 0; i < text.length && next < images.length; i++) {
+    if (text.codeUnitAt(i) == 0xFFFC) {
+      placed.add(PastedImage(i, images[next++]));
+    }
+  }
+  return placed;
 }
