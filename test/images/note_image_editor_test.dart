@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show PointerDeviceKind;
 
@@ -158,12 +159,14 @@ class FakeClipboard implements ImageClipboard {
     this.image,
     this.files = const [],
     this.fragment,
+    this.snapshot,
     this.onReadImage,
   });
 
   ClipboardImage? image;
   List<String> files;
   NoteClipboardFragment? fragment;
+  ClipboardSnapshot? snapshot;
   VoidCallback? onReadImage;
   int reads = 0;
   final List<NoteClipboardFragment> writes = [];
@@ -195,10 +198,12 @@ class FakeClipboard implements ImageClipboard {
   Future<List<String>> readImageFiles() async => files;
 
   @override
-  Future<ClipboardSnapshot> readSnapshot() async => ClipboardSnapshot(
-    text: (await Clipboard.getData(Clipboard.kTextPlain))?.text,
-    html: fragment?.html,
-  );
+  Future<ClipboardSnapshot> readSnapshot() async =>
+      snapshot ??
+      ClipboardSnapshot(
+        text: (await Clipboard.getData(Clipboard.kTextPlain))?.text,
+        html: fragment?.html,
+      );
 }
 
 Widget harness(
@@ -1730,6 +1735,97 @@ void main() {
           .textEditingValue
           .text;
       expect(text, contains(anchor));
+    });
+
+    testWidgets('a rich paste comes in formatted, its picture in place', (
+      tester,
+    ) async {
+      final png = pngOf(120, 90, seed: 10);
+      final clipboard = FakeClipboard(
+        snapshot: ClipboardSnapshot(
+          text: 'Title\none\nafter',
+          html:
+              '<h1>Title</h1><ul><li><b>one</b></li></ul>'
+              '<p><img src="data:image/png;base64,${base64.encode(png)}" '
+              'width="120" height="90" alt="dot"></p><p>after</p>',
+        ),
+      );
+      final editorKey = GlobalKey<NoteEditorState>();
+      List<NoteAttachmentRef>? reported;
+      await tester.pumpWidget(
+        harness(
+          '',
+          attachments: const [],
+          clipboard: clipboard,
+          editorKey: editorKey,
+          onAttachmentsChanged: (attachments) => reported = attachments,
+        ),
+      );
+      await tester.pump();
+      editorKey.currentState!.focusAtEnd();
+      await tester.pump();
+
+      await tester.runAsync(
+        () => editorKey.currentState!.handlePaste(SelectionChangedCause.tap),
+      );
+      await tester.pump();
+
+      final text = tester
+          .state<EditableTextState>(find.byType(EditableText))
+          .textEditingValue
+          .text;
+      expect(text, 'Title\n\n• one\n\n$anchor\n\nafter');
+      expect(reported, hasLength(1));
+      expect(reported!.single.offset, text.indexOf(anchor));
+      expect(find.byType(NoteImageView), findsOneWidget);
+      await tester.pump(const Duration(seconds: 2));
+    });
+
+    testWidgets('a web picture that cannot be fetched keeps its place', (
+      tester,
+    ) async {
+      final clipboard = FakeClipboard(
+        snapshot: const ClipboardSnapshot(
+          text: 'Before\nAfter',
+          html:
+              '<p>Before</p><p><img src="https://example.com/photo.png" '
+              'width="360" height="240" alt="photo"></p><p>After</p>',
+        ),
+      );
+      final editorKey = GlobalKey<NoteEditorState>();
+      List<NoteAttachmentRef>? reported;
+      await tester.pumpWidget(
+        harness(
+          '',
+          attachments: const [],
+          clipboard: clipboard,
+          editorKey: editorKey,
+          onAttachmentsChanged: (attachments) => reported = attachments,
+        ),
+      );
+      await tester.pump();
+      editorKey.currentState!.focusAtEnd();
+      await tester.pump();
+
+      await tester.runAsync(() async {
+        await editorKey.currentState!.handlePaste(SelectionChangedCause.tap);
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await tester.pump();
+
+      final text = tester
+          .state<EditableTextState>(find.byType(EditableText))
+          .textEditingValue
+          .text;
+      expect(text, 'Before\n\n$anchor\n\nAfter');
+      final ref = reported!.single as NoteImageRef;
+      expect(ref.offset, text.indexOf(anchor));
+      expect(ref.src, 'https://example.com/photo.png');
+      expect(ref.isPreparing, isFalse);
+      expect(
+        find.byKey(const ValueKey('retry-image-download')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('an empty clipboard falls through to the text paste', (
