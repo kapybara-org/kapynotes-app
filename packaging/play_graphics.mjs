@@ -27,7 +27,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = resolve(HERE, '..');
 const REPO_ROOT = [
   process.env.KAPYNOTES_REPO_ROOT,
-  resolve(APP_ROOT, '..'),
+  resolve(APP_ROOT, '..', 'kapynotes'),
   resolve(APP_ROOT, '..', 'KapyNotes'),
 ].find(
   (candidate) =>
