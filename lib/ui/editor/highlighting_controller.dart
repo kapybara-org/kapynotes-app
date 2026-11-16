@@ -502,7 +502,7 @@ class HighlightingController extends TextEditingController {
       );
     }
 
-    return TextSpan(style: base, children: children);
+    return _NoteSpan(style: base, children: children);
   }
 
   /// The room a list marker takes — a bullet, a box or a number, with the
@@ -783,3 +783,21 @@ class HighlightingController extends TextEditingController {
 /// Letter spacing over [start, end): see
 /// [HighlightingController._listStretches].
 typedef _Stretch = ({int start, int end, double spacing});
+
+/// The text the field draws, which works out its semantics information once
+/// and keeps it.
+///
+/// The field works that information out afresh, over every run in the note,
+/// each time its semantics are marked dirty, and taking in a widget marks
+/// them. So without this, opening a note with hundreds of formulas walked the
+/// whole note that many times over whenever the semantics tree was on, and on
+/// macOS it always is, for dictation: see `AccessibilityTree.swift`.
+class _NoteSpan extends TextSpan {
+  _NoteSpan({super.style, super.children});
+
+  late final List<InlineSpanSemanticsInformation> _semantics =
+      List.unmodifiable(super.getSemanticsInformation());
+
+  @override
+  List<InlineSpanSemanticsInformation> getSemanticsInformation() => _semantics;
+}

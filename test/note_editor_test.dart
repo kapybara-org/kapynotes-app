@@ -251,6 +251,24 @@ void main() {
     expect(decoration.focusedErrorBorder, InputBorder.none);
   });
 
+  testWidgets('works out what the note says to the semantics tree once', (
+    tester,
+  ) async {
+    const body = 'Bread 4\nMilk 2\n\n# Shopping';
+    await tester.pumpWidget(harness(body, autofocus: true));
+    await tester.pumpAndSettle();
+
+    // The field asks again whenever its semantics are marked dirty, which it
+    // does for every widget it takes in, and each answer walks the note.
+    final text = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .renderEditable
+        .text!;
+    final semantics = text.getSemanticsInformation();
+    expect(semantics.map((info) => info.text).join(), body);
+    expect(text.getSemanticsInformation(), same(semantics));
+  });
+
   testWidgets('ticking a box celebrates, unticking it does not', (
     tester,
   ) async {
