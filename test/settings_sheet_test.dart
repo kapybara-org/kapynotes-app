@@ -178,15 +178,15 @@ void main() {
       find.descendant(of: toggle, matching: find.text('Markdown in notes')),
       findsOneWidget,
     );
-    expect(prefs.markdownEnabled, isFalse);
-
-    await tester.tap(toggle);
-    await tester.pumpAndSettle();
     expect(prefs.markdownEnabled, isTrue);
 
     await tester.tap(toggle);
     await tester.pumpAndSettle();
     expect(prefs.markdownEnabled, isFalse);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(prefs.markdownEnabled, isTrue);
   });
 
   testWidgets('the back gesture leaves the category before the sheet', (
