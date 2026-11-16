@@ -7,12 +7,14 @@ import android.content.Context
 import android.net.Uri
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlin.text.Charsets.UTF_8
 
 /** Publishes one selection as text, HTML, and a native image at the same time. */
 object RichClipboard {
     private const val channelName = "kapynotes/rich_clipboard"
+    private const val MAX_IMAGE_BYTES = 25L * 1024 * 1024
 
     fun register(engine: FlutterEngine, context: Context) {
         val appContext = context.applicationContext
@@ -26,6 +28,14 @@ object RichClipboard {
                             result.success(null)
                         } catch (error: Exception) {
                             result.error("clipboard_write", error.message, null)
+                        }
+                    }
+
+                    "read" -> {
+                        try {
+                            result.success(read(appContext))
+                        } catch (error: Exception) {
+                            result.error("clipboard_read", error.message, null)
                         }
                     }
 
@@ -101,6 +111,59 @@ object RichClipboard {
             htmlFile?.delete()
             throw error
         }
+    }
+
+    /**
+     * Everything the primary clip offers a paste, in the shape
+     * `ClipboardSnapshot.fromChannel` reads: the first item's HTML and text,
+     * and its content URI's bytes when that URI is a picture.
+     */
+    private fun read(context: Context): Map<String, Any> {
+        val manager = context.getSystemService(ClipboardManager::class.java)
+        val clip = manager.primaryClip ?: return emptyMap()
+        val description = clip.description
+        val snapshot = mutableMapOf<String, Any>(
+            "types" to List(description.mimeTypeCount) { description.getMimeType(it) },
+        )
+        if (clip.itemCount == 0) return snapshot
+        val item = clip.getItemAt(0)
+        val uri = item.uri
+        val image = uri
+            ?.let { runCatching { context.contentResolver.getType(it) }.getOrNull() }
+            ?.takeIf { it.startsWith("image/") }
+        val html = item.htmlText
+            ?: uri?.let { ClipboardImageProvider.htmlFileFor(context, it) }
+                ?.takeIf(File::isFile)
+                ?.readText(UTF_8)
+        html?.let { snapshot["html"] = it }
+        val text = if (image == null) item.coerceToText(context) else item.text
+        text?.toString()?.takeIf { it.isNotEmpty() }?.let { snapshot["text"] = it }
+        if (uri != null && image != null) {
+            readCapped(context, uri)?.let {
+                snapshot["image"] = it
+                snapshot["imageMime"] = image
+            }
+        }
+        return snapshot
+    }
+
+    /** The bytes behind [uri], or null when it can't be read or is too large to paste. */
+    private fun readCapped(context: Context, uri: Uri): ByteArray? = try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(64 * 1024)
+            var total = 0L
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                total += read
+                if (total > MAX_IMAGE_BYTES) return@use null
+                output.write(buffer, 0, read)
+            }
+            output.toByteArray().takeIf { it.isNotEmpty() }
+        }
+    } catch (error: Exception) {
+        null
     }
 
     private fun readHtml(context: Context): String? {
