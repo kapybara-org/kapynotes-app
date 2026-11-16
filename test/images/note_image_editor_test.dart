@@ -1826,6 +1826,7 @@ void main() {
         find.byKey(const ValueKey('retry-image-download')),
         findsOneWidget,
       );
+      expect(find.byKey(const ValueKey('open-image-address')), findsOneWidget);
     });
 
     testWidgets('an empty clipboard falls through to the text paste', (

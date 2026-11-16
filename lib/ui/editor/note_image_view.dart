@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/platform.dart';
 import '../../core/theme.dart';
@@ -594,7 +596,12 @@ class _RemoteImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final host = Uri.tryParse(address)?.host ?? '';
+    final link = Uri.tryParse(address);
+    final host = link?.host ?? '';
+    final opensLink =
+        !compact &&
+        link != null &&
+        (link.scheme == 'https' || link.scheme == 'http');
     return ClipRRect(
       borderRadius: radius,
       child: DecoratedBox(
@@ -627,12 +634,28 @@ class _RemoteImage extends StatelessWidget {
                         ),
                       ),
                     ],
-                    if (onRetry != null)
-                      TextButton(
-                        key: const ValueKey('retry-image-download'),
-                        onPressed: onRetry,
-                        child: const Text('Retry'),
-                      ),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      children: [
+                        if (onRetry != null)
+                          TextButton(
+                            key: const ValueKey('retry-image-download'),
+                            onPressed: onRetry,
+                            child: const Text('Retry'),
+                          ),
+                        if (opensLink)
+                          TextButton(
+                            key: const ValueKey('open-image-address'),
+                            onPressed: () => unawaited(
+                              launchUrl(
+                                link,
+                                mode: LaunchMode.externalApplication,
+                              ),
+                            ),
+                            child: const Text('Open link'),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),
