@@ -1,0 +1,27 @@
+{
+  "source": "numbers",
+  "case": "table-cells",
+  "app": "Numbers 14.x for Mac (synthesized)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized: three rows of cells (header + 2 data rows + a totals row) selected in a Numbers table and copied.",
+  "notes": "SYNTHESIZED. Numbers writes Cocoa-HTML-writer HTML (p.pN / td.tdN / span.s1 CSS classes, <meta name=\"Generator\" content=\"Cocoa HTML Writer\">), RTF with an RTF table, TSV plain text of the displayed values, and private com.apple.iWork.TSP* / TST* types carrying the native cell data that only Numbers itself understands (not reproduced; names uncertain). The HTML table here has no <th>; header styling is a background class. The RTF here is abbreviated (valid but truncated to the header row plus the first data cell) — treat the HTML and plain text as the faithful parts.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "public.rtf",
+          "file": "public.rtf.rtf"
+        },
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        }
+      ]
+    }
+  ]
+}

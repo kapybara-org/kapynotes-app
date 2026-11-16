@@ -1,0 +1,28 @@
+{
+  "source": "wikipedia",
+  "case": "einstein-infobox-lead",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Selected from the infobox through the fourth paragraph of the lead of \"Albert Einstein\" and ran document.execCommand(\"copy\").",
+  "url": "https://en.wikipedia.org/wiki/Albert_Einstein",
+  "notes": "Infobox (<table class=\"infobox biography vcard\">) through the 4th lead paragraph: 3 tables incl. the infobox's nested tables (colspan header rows), 15 lists, 22 citation markers (<sup class=\"mw-ref reference\">), 4 images.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

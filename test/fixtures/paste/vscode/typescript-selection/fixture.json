@@ -1,0 +1,31 @@
+{
+  "source": "vscode",
+  "case": "typescript-selection",
+  "app": "Visual Studio Code 1.9x for macOS (synthesized)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized: Selecting a TypeScript function (several lines) in VS Code and pressing Cmd+C.",
+  "notes": "SYNTHESIZED. Same structure as the Python fixture with mode \"typescript\". When VS Code copies a line without a selection it sets isFromEmptySelection to true; this fixture is a multi-line selection.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "org.chromium.web-custom-data",
+          "file": "org.chromium.web-custom-data.bin"
+        },
+        {
+          "type": "vscode-editor-data",
+          "file": "vscode-editor-data.json"
+        }
+      ]
+    }
+  ]
+}

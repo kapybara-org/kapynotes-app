@@ -1,0 +1,23 @@
+{
+  "how" : "Synthesized: a 320x200 image copied from Preview (Edit > Copy).",
+  "source" : "image",
+  "case" : "single-image-png-tiff",
+  "items" : [
+    {
+      "representations" : [
+        {
+          "type" : "public.png",
+          "file" : "public.png.png"
+        },
+        {
+          "type" : "public.tiff",
+          "file" : "public.tiff.tiff"
+        }
+      ]
+    }
+  ],
+  "notes" : "SYNTHESIZED. macOS image copies carry the image as public.png and public.tiff (same pixels); some apps add com.apple.pict or only TIFF. There is no text representation, which is the point of the fixture: a clipboard with images and no text/html. Pixel content is a generated bar chart.",
+  "app" : "Preview 11.x for macOS (synthesized)",
+  "platform" : "macos",
+  "capture" : "synthesized"
+}

@@ -1,0 +1,27 @@
+{
+  "source": "gmail",
+  "case": "html-email-layout-tables-quote-signature",
+  "app": "Chrome (Gmail web UI) (synthesized)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized: selecting an HTML email in the Gmail web UI in Chrome (layout tables, a data table, a link, a quoted reply and the signature) and copying with Cmd+C.",
+  "notes": "SYNTHESIZED in the shape of a real Chrome selection copy of Gmail (computed styles inlined on the root, <meta charset='utf-8'> prefix, org.chromium.source-url = the Gmail URL). Traps: layout tables with role=\"presentation\" that are not data tables, a real data table with <thead>/<th>, links rewritten through https://www.google.com/url?q=..., <div class=\"gmail_quote\"> + <blockquote class=\"gmail_quote\">, the signature as <div class=\"gmail_signature\" data-smartmail=\"gmail_signature\"> preceded by \"-- \", <br clear=\"all\"> spacers.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

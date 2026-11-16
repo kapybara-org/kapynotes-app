@@ -1,0 +1,19 @@
+{
+  "source": "claude",
+  "case": "mac-app-copy-button-guess",
+  "app": "Claude for macOS (synthesized, GUESS)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized GUESS: the copy button under a reply in the Claude Mac app.",
+  "notes": "GUESS, not captured (claude.ai is behind a Cloudflare challenge for headless Chrome, so there is no web capture of Claude either). I believe the desktop app copies the reply as markdown plain text, possibly with a text/html twin; only plain text is included. Math is written as $...$ / $$...$$ in the guess. Replace with a real capture.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "source": "chatgpt",
+  "case": "table-math-headings-selection",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the public ChatGPT share page and selected the longest assistant answer (headings, a table and some math) from its first block to its last with a DOM range (what a mouse drag over the answer yields), then ran document.execCommand(\"copy\").",
+  "url": "https://chatgpt.com/share/6ab5ca51-3e0c-83e8-a232-892d3e4ef914",
+  "notes": "Selection capture (DOM range + execCommand('copy')), so it is Chrome's serialization: org.chromium.source-url is the page URL, every element carries a computed inline style=, the first block starts with <br class=\"Apple-interchange-newline\">, and plain text is the rendered text (UI labels such as 'Thought for ...' / 'Worked for ...' can lead it; tokens of rendered math sit on separate lines). Code blocks lose their language-* classes in this path. One <table>, headings, lists; the selection also picked up 10 <img> (google.com/s2/favicons source icons) and a leading 'Worked for 18s' label.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

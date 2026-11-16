@@ -1,0 +1,27 @@
+{
+  "how" : "Synthesized with NSAttributedString: a heading-styled paragraph, styled runs, a nested bullet list, a numbered list and a picture selected in a Pages document and copied.",
+  "source" : "pages",
+  "case" : "document-selection-lists-image",
+  "items" : [
+    {
+      "representations" : [
+        {
+          "file" : "public.rtf.rtf",
+          "type" : "public.rtf"
+        },
+        {
+          "type" : "com.apple.flat-rtfd",
+          "file" : "com.apple.flat-rtfd.rtfd"
+        },
+        {
+          "file" : "public.utf8-plain-text.txt",
+          "type" : "public.utf8-plain-text"
+        }
+      ]
+    }
+  ],
+  "notes" : "SYNTHESIZED. Pages writes RTF, flat RTFD (picture as attachment) and plain text, plus private com.apple.iWork.* types with the native object data that only iWork apps read (not reproduced; unsure of the names). The checklist paragraphs use ballot-box glyphs because that is how Pages' RTF exports its checklist-style bullets as far as I know (unsure). Plain text keeps U+FFFC (object replacement character) where the picture sits.",
+  "app" : "Pages 14.x for macOS (synthesized)",
+  "platform" : "macos",
+  "capture" : "synthesized"
+}

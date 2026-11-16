@@ -1,0 +1,28 @@
+{
+  "source": "wikipedia",
+  "case": "periodic-table-merged-cells",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Selected the first wikitable that uses both rowspan and colspan (orbital/shell capacity table) in the \"Periodic table\" article and ran document.execCommand(\"copy\").",
+  "url": "https://en.wikipedia.org/wiki/Periodic_table",
+  "notes": "The 'orbital shell capacity' wikitable of Periodic table: rowspan and colspan merged cells (1 rowspan, 5 colspan attributes). The selection is the <table> node itself.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

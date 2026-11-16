@@ -1,0 +1,28 @@
+{
+  "source": "perplexity",
+  "case": "code-selection",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the public Perplexity session page and selected the answer body (a code answer) with a DOM range, then ran document.execCommand(\"copy\").",
+  "url": "https://www.perplexity.ai/session/a46245cd-5731-42f1-9158-4de7c9c37bbe",
+  "notes": "Perplexity session page selection: one <pre> code block with inline <code>, headings, lists. No copy-button capture.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

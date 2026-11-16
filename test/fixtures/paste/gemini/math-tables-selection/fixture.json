@@ -1,0 +1,28 @@
+{
+  "source": "gemini",
+  "case": "math-tables-selection",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the public Gemini share page and selected the longest response (a <message-content> element: KaTeX math and tables) with a DOM range, then ran document.execCommand(\"copy\"). The shared (signed-out) view has no per-response copy button, only \"Copy prompt\" on user turns, so there is no copy-button capture.",
+  "url": "https://gemini.google.com/share/918e7883df8a",
+  "notes": "Gemini share page, selection of the longest <message-content>. No per-response copy button exists on the signed-out share page (only 'Copy prompt' on user turns). Math is <span class=\"math-inline\" data-math=\"CH_4 \\\\rightarrow C + 2H_2\"> (TeX in the data-math attribute) wrapping KaTeX DOM whose <math> has no TeX annotation; Plain text linearises the math (one token per line, followed by the KaTeX sub/superscript text again). 2 tables.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

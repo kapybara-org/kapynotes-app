@@ -1,0 +1,28 @@
+{
+  "source": "wikipedia",
+  "case": "tokyo-climate-table-cjk",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Selected the first wikitable with merged cells on the Japanese article 東京都 (climate data) and ran document.execCommand(\"copy\").",
+  "url": "https://ja.wikipedia.org/wiki/%E6%9D%B1%E4%BA%AC%E9%83%BD",
+  "notes": "The climate wikitable of the Japanese Tokyo article: 23 rowspan and 8 colspan merged cells, CJK headers, numeric cells.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

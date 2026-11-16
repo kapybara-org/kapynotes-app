@@ -1,0 +1,23 @@
+{
+  "source": "slack",
+  "case": "message-formatting-emoji-code",
+  "app": "Slack desktop 4.x for macOS (synthesized)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized: one Slack message (bold, italic, strikethrough, link, inline code, a standard :tada: emoji, a workspace custom emoji, a nested bullet list, a quote and a code block) selected and copied in Slack desktop.",
+  "notes": "SYNTHESIZED from the markup Slack renders (c-mrkdwn__* classes, data-stringify-* attributes). Key traps: custom emoji arrive as <img alt=\":kapy-party:\" data-stringify-emoji=\":kapy-party:\"> (alt is the colon-name), standard emoji as <span class=\"c-emoji\"><img alt=\":tada:\"> (the plain text has the Unicode glyph), code block is <pre class=\"c-mrkdwn__pre\">, quote is <blockquote class=\"c-mrkdwn__quote\">, lists are <ul class=\"p-rich_text_list p-rich_text_list__bullet\">. Slack desktop is Electron, so HTML carries Chrome's <meta charset='utf-8'> prefix. Slack also writes a private \"slack/texty\" entry (JSON of rich-text ops) into org.chromium.web-custom-data that is not reproduced. Unsure about the exact plain-text rendering of nested bullets (this uses • and ◦ with indentation).",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        }
+      ]
+    }
+  ]
+}

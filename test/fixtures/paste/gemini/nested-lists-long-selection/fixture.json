@@ -1,0 +1,28 @@
+{
+  "source": "gemini",
+  "case": "nested-lists-long-selection",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the public Gemini share page and selected the longest response (a <message-content> element: a ~40k-character answer with nested lists and tables) with a DOM range, then ran document.execCommand(\"copy\"). The shared (signed-out) view has no per-response copy button, only \"Copy prompt\" on user turns, so there is no copy-button capture.",
+  "url": "https://gemini.google.com/share/1e70ae398d26",
+  "notes": "Gemini share page selection: 12 <ul>, 32 <li>, 12 headings, no tables or code. No copy button on the share page.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+230
+
+gnome-terminal -- command
+or
+
+xterm -e command
+or
+
+konsole -e command
+Pretty much
+
+terminal -e command
+To make the terminal stay when the command exits:
+In konsole there is a --noclose flag.
+
+In xterm, there is a -hold flag.
+
+In gnome-terminal, go to Edit -> Profile Preferences -> Title. Click the Command tab. Select Hold the terminal from the drop-down menu labelled When command exits. You should create a new profile for that and execute with
+
+gnome-terminal --profile=NAMEOFTHEPROFILE -- command
+Share
+Improve this answer
+Follow
+edited Feb 11 at 14:44
+Thibaut Giroud's user avatar
+Thibaut Giroud
+322 bronze badges
+answered Jun 2, 2011 at 20:03
+nickguletskii's user avatar
+nickguletskii
+4,97033 gold badges2525 silver badges2929 bronze badges
+2
+If I try to hold the terminal, I get "child process exited normally with status code 127" – 
+Darshan Chaudhary
+ CommentedAug 12, 2016 at 7:49
+2
+gnome-terminal does not have the title option any more :( – 
+törzsmókus
+ CommentedFeb 22, 2017 at 13:04
+1
+@törzsmókus it is 2017 indeed! LTS releases have a 5 year support life. 14.04 does not end until April 2019. wiki.ubuntu.com/Releases – 
+bhass1
+ CommentedMar 5, 2017 at 22:33
+1
+gnome-terminal -e command only works if command is quoted. So this does not work: gnome-terminal -e "echo hello world; sleep 3" but this does: gnome-terminal -e "bash -c 'echo hello world; sleep 3'". Sigh. – 
+bgoodr
+ CommentedApr 16, 2017 at 19:47
+5
+consider using now: gnome-terminal -- command  – 
+dallonsi
+ CommentedJul 1, 2019 at 7:35 
+Show 6 more comments
