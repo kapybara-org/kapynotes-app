@@ -123,6 +123,30 @@ class RichClipboardTests: XCTestCase {
     XCTAssertTrue(isPng(named["file:///Pasted%20Graphic.tiff"]?.data))
   }
 
+  func testReadsRtfdPicturesThatACocoaAppsHtmlShows() throws {
+    let red = picture(.red).pngData()!
+    let wrapper = FileWrapper(regularFileWithContents: red)
+    wrapper.preferredFilename = "chart.png"
+    let attachment = NSTextAttachment()
+    attachment.fileWrapper = wrapper
+    let text = NSMutableAttributedString(string: "Chart ")
+    text.append(NSAttributedString(attachment: attachment))
+    let rtfd = try text.data(
+      from: NSRange(location: 0, length: text.length),
+      documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+    )
+    let html = #"<p>Chart <img src="file:///chart.png" alt="chart.png"></p>"#
+    pasteboard.setItems([[UTType.html.identifier: html, UTType.flatRTFD.identifier: rtfd]])
+
+    let snapshot = read()
+
+    XCTAssertEqual(snapshot["html"] as? String, html)
+    XCTAssertNil(snapshot["rtfHtml"])
+    let named = resources(snapshot)
+    XCTAssertEqual(Array(named.keys), ["file:///chart.png"])
+    XCTAssertEqual(named["file:///chart.png"]?.data, red)
+  }
+
   func testConvertsPlainRtfWhenThereIsNoHtml() {
     pasteboard.setItems([[UTType.rtf.identifier: Data(#"{\rtf1\ansi Plain {\b bold}}"#.utf8)]])
 

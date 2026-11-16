@@ -152,6 +152,35 @@ class RichClipboardTests: XCTestCase {
     XCTAssertTrue(isPng(named["file:///Pasted%20Graphic.tiff"]?.data))
   }
 
+  func testReadsRtfdPicturesThatACocoaAppsHtmlShows() {
+    let red = picture(.red).png
+    let wrapper = FileWrapper(regularFileWithContents: red)
+    wrapper.preferredFilename = "chart.png"
+    let text = NSMutableAttributedString(string: "Chart ")
+    text.append(NSAttributedString(attachment: NSTextAttachment(fileWrapper: wrapper)))
+    let rtfd = text.rtfd(from: NSRange(location: 0, length: text.length), documentAttributes: [:])!
+
+    for (html, expected) in [
+      (#"<p>Chart <img src="file:///chart.png" alt="chart.png"></p>"#, ["file:///chart.png"]),
+      (#"<p>Chart <img src="https://example.com/chart.png"></p>"#, []),
+    ] {
+      pasteboard.declareTypes([.html, .rtfd], owner: nil)
+      pasteboard.setString(html, forType: .html)
+      pasteboard.setData(rtfd, forType: .rtfd)
+
+      let snapshot = read()
+
+      XCTAssertEqual(snapshot["html"] as? String, html)
+      XCTAssertNil(snapshot["rtfHtml"])
+      let named = resources(snapshot)
+      XCTAssertEqual(Array(named.keys), expected, html)
+      if !expected.isEmpty {
+        XCTAssertEqual(named["file:///chart.png"]?.mime, "image/png")
+        XCTAssertEqual(named["file:///chart.png"]?.data, red)
+      }
+    }
+  }
+
   func testConvertsPlainRtfWhenThereIsNoHtml() {
     pasteboard.declareTypes([.rtf], owner: nil)
     pasteboard.setData(Data(#"{\rtf1\ansi Plain {\b bold}}"#.utf8), forType: .rtf)
