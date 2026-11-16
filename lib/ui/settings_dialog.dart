@@ -2350,7 +2350,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       ],
     ),
     const SettingsNote(
-      'Applies only to notes. Menus and controls use the system font.',
+      'Applies only to notes. Menus and controls keep the app font.',
     ),
     SizedBox(height: SettingsMetrics.groupGap),
     // How numbers are written and where the currency rates behind them come
