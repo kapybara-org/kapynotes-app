@@ -588,6 +588,44 @@ void main() {
     });
   });
 
+  group('HTML among words', () {
+    test('<u>, <ins>, <sup> and <sub> style what they hold', () {
+      final analysis = read(
+        '<u>under</u> <ins>inserted</ins> x<sup>2</sup> H<sub>3</sub>O',
+      );
+      expect(stylesOf(analysis, 'under'), contains(MarkdownStyle.underline));
+      expect(stylesOf(analysis, 'inserted'), contains(MarkdownStyle.underline));
+      expect(stylesOf(analysis, '2'), contains(MarkdownStyle.superscript));
+      expect(stylesOf(analysis, '3'), contains(MarkdownStyle.subscript));
+      expect(stylesOf(analysis, '<u>'), contains(MarkdownStyle.syntax));
+      expect(stylesOf(analysis, '<u>'), isNot(contains(MarkdownStyle.html)));
+    });
+
+    test('their tags hide like any inline marker', () {
+      expect(visible('a <u>word</u> b|'), 'a word b');
+      expect(visible('a <u>word</u>| b'), 'a <u>word</u> b');
+      expect(visible('a <u>word</u>| b', typing: true), 'a word b');
+    });
+
+    test('the calculator reads their words without them', () {
+      expect(read('<u>5 + 3</u>').calculatorText, '   5 + 3    ');
+    });
+
+    test('one never closed, or crossing another, stays the HTML it is', () {
+      final open = read('<u>open');
+      expect(stylesOf(open, '<u>'), contains(MarkdownStyle.html));
+      expect(stylesOf(open, 'open'), isNot(contains(MarkdownStyle.underline)));
+
+      final crossed = read('<u><sup>x</u></sup>');
+      expect(stylesOf(crossed, 'x'), contains(MarkdownStyle.underline));
+      expect(
+        stylesOf(crossed, 'x'),
+        isNot(contains(MarkdownStyle.superscript)),
+      );
+      expect(stylesOf(crossed, '<sup>'), contains(MarkdownStyle.html));
+    });
+  });
+
   group('fenced code', () {
     test('that names a language is kept, with where its code is', () {
       const note =

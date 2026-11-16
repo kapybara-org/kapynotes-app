@@ -501,10 +501,18 @@ class HighlightingController extends TextEditingController {
         };
       }
       if (markdown != 0) {
+        final script = openMarkdown
+            .where(
+              (span) =>
+                  span.style == MarkdownStyle.superscript ||
+                  span.style == MarkdownStyle.subscript,
+            )
+            .lastOrNull;
         segmentStyle = _markdownInlineStyle(
           segmentStyle,
           marked,
           segmentLinkColor,
+          script == null ? '' : source.substring(script.start, script.end),
         );
       }
       final done = checked || marked(MarkdownStyle.doneTask);
@@ -916,26 +924,30 @@ class HighlightingController extends TextEditingController {
     );
   }
 
-  /// How words under [styles] are drawn somewhere other than the field — in
-  /// a table drawn as a grid — in the faces and colours they have in it.
+  /// How [words] under [styles] are drawn somewhere other than the field —
+  /// in a table drawn as a grid — in the faces and colours they have in it.
   TextStyle markdownRunStyle(
     TextStyle base,
     Set<MarkdownStyle> styles,
-    Color linkColor,
-  ) {
+    Color linkColor, {
+    String words = '',
+  }) {
     bool marked(MarkdownStyle style) => styles.contains(style);
     return _markdownInlineStyle(
       _markdownBlockStyle(base, base, marked),
       marked,
       linkColor,
+      words,
     );
   }
 
-  /// The markdown that changes a word rather than a block.
+  /// The markdown that changes a word rather than a block. [script] is all
+  /// of the superscript or subscript the words are part of, if they are.
   TextStyle _markdownInlineStyle(
     TextStyle style,
     bool Function(MarkdownStyle) marked,
     Color linkColor,
+    String script,
   ) {
     var result = style;
     if (marked(MarkdownStyle.strong) || marked(MarkdownStyle.tableHeader)) {
@@ -944,10 +956,21 @@ class HighlightingController extends TextEditingController {
     if (marked(MarkdownStyle.emphasis)) {
       result = result.copyWith(fontStyle: FontStyle.italic);
     }
-    if (marked(MarkdownStyle.strikethrough)) {
+    final lines = [
+      if (marked(MarkdownStyle.underline)) TextDecoration.underline,
+      if (marked(MarkdownStyle.strikethrough)) TextDecoration.lineThrough,
+    ];
+    if (lines.isNotEmpty) {
       result = result.copyWith(
-        decoration: TextDecoration.lineThrough,
+        decoration: TextDecoration.combine(lines),
         decorationColor: result.color,
+      );
+    }
+    if (marked(MarkdownStyle.superscript) || marked(MarkdownStyle.subscript)) {
+      result = _scripted(
+        result,
+        script,
+        superscript: marked(MarkdownStyle.superscript),
       );
     }
     if (marked(MarkdownStyle.link)) {
@@ -961,6 +984,49 @@ class HighlightingController extends TextEditingController {
     }
     return result;
   }
+
+  /// Superscript or subscript: the face's own raised or lowered glyphs where
+  /// it has one for every character of [script], and otherwise the same words
+  /// smaller. A text engine cannot move words off their baseline, and the
+  /// line keeps its height either way.
+  ///
+  /// Which characters a face has these for is known for the faces a note is
+  /// written in: Shantell Sans for digits, the system face on Apple's
+  /// platforms for digits, small letters and `+=()`. Anywhere else the words
+  /// are drawn smaller.
+  TextStyle _scripted(
+    TextStyle style,
+    String script, {
+    required bool superscript,
+  }) {
+    final (feature, drawn) = switch (style.fontFamily) {
+      'Shantell Sans' => (superscript ? 'sups' : 'sinf', _digits),
+      '.AppleSystemUIFont' => (
+        superscript ? 'sups' : 'subs',
+        _appleScriptCharacters,
+      ),
+      _ => (null, const <int>{}),
+    };
+    if (feature != null &&
+        script.trim().isNotEmpty &&
+        script.runes.every((rune) => rune == 0x20 || drawn.contains(rune))) {
+      return style.copyWith(
+        fontFeatures: [...?style.fontFeatures, FontFeature.enable(feature)],
+      );
+    }
+    final size = style.fontSize;
+    final height = style.height;
+    if (size == null) return style;
+    return style.copyWith(
+      fontSize: size * _scriptScale,
+      height: height == null ? null : height / _scriptScale,
+    );
+  }
+
+  static const double _scriptScale = 0.75;
+  static final _digits = '0123456789'.runes.toSet();
+  static final _appleScriptCharacters =
+      '0123456789abcdefghijklmnopqrstuvwxyz+=()'.runes.toSet();
 
   static List<TextRange> _checkedTextRanges(String source) {
     final ranges = <TextRange>[];

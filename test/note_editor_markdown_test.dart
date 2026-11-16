@@ -1640,7 +1640,7 @@ void main() {
       expect(controllerOf(tester).text, 'say **hi** x');
     });
   });
-  group('formulas and code', () {
+  group('formulas, code and HTML', () {
     /// Where the first box [needle] is drawn in sits on screen.
     Rect rectOf(WidgetTester tester, String needle) {
       final start = controllerOf(tester).text.indexOf(needle);
@@ -1783,6 +1783,32 @@ void main() {
       expect(styleOf(tester, '"it"').color, plain.color);
       expect(styleOf(tester, '# too').color, plain.color);
       expect(styleOf(tester, '# too').fontStyle, plain.fontStyle);
+    });
+
+    testWidgets('underline, superscript and subscript, their tags hidden', (
+      tester,
+    ) async {
+      const body =
+          'a <u>under</u> E = mc<sup>2</sup> and H<sub>3</sub>O x<sup>n</sup>';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+      expect(isHidden(tester, '<u>'), isTrue);
+      expect(isHidden(tester, '</sup>'), isTrue);
+      expect(styleOf(tester, 'under').decoration, TextDecoration.underline);
+      // The handwritten face has raised and lowered figures of its own.
+      expect(
+        styleOf(tester, '2<').fontFeatures,
+        contains(const FontFeature.enable('sups')),
+      );
+      expect(
+        styleOf(tester, '3<').fontFeatures,
+        contains(const FontFeature.enable('sinf')),
+      );
+      // But not letters, which are drawn smaller instead.
+      expect(
+        styleOf(tester, 'n<').fontSize,
+        lessThan(styleOf(tester, 'x<').fontSize!),
+      );
     });
   });
 }

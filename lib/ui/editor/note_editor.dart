@@ -5501,11 +5501,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       scaler: textScaler,
                       fitToWidth: attachmentWidth,
                       minRowHeight: rowHeight,
-                      runStyle: (base, styles) {
+                      runStyle: (base, styles, words) {
                         final drawn = _controller.markdownRunStyle(
                           base,
                           styles,
                           Theme.of(context).colorScheme.primary,
+                          words: words,
                         );
                         // The pill inline code has in the text can be a plain
                         // background in a grid painted behind it: there is no

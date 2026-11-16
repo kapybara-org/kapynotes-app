@@ -6,7 +6,7 @@ import 'markdown_syntax.dart';
 
 /// How a run of a cell's words is drawn, given the markdown over them.
 typedef MarkdownRunStyle =
-    TextStyle Function(TextStyle base, Set<MarkdownStyle> styles);
+    TextStyle Function(TextStyle base, Set<MarkdownStyle> styles, String words);
 
 /// The grid one table is drawn as: how wide each column is, how tall each row
 /// is, and the words of each cell laid out ready to paint.
@@ -62,7 +62,7 @@ class TableGeometry {
                   style: runStyle(base, {
                     ...run.styles,
                     if (row.header) MarkdownStyle.tableHeader,
-                  }),
+                  }, run.text),
                 ),
             ],
           ),

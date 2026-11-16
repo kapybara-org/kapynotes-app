@@ -21,7 +21,7 @@ TableGeometry geometryFor(
     analysis: analysis,
     base: _base,
     scaler: TextScaler.noScaling,
-    runStyle: (base, styles) => base,
+    runStyle: (base, styles, words) => base,
     fitToWidth: fitToWidth,
     minRowHeight: minRowHeight,
   );
@@ -301,7 +301,7 @@ void main() {
       analysis: analysis,
       base: base,
       scaler: TextScaler.noScaling,
-      runStyle: (base, styles) => base,
+      runStyle: (base, styles, words) => base,
       fitToWidth: fitToWidth,
     );
 

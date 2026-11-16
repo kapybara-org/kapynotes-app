@@ -19,6 +19,15 @@ enum MarkdownStyle {
   emphasis,
   strikethrough,
 
+  /// Words between `<u>` and `</u>`, or `<ins>` and `</ins>`.
+  underline,
+
+  /// Words between `<sup>` and `</sup>`.
+  superscript,
+
+  /// Words between `<sub>` and `</sub>`.
+  subscript,
+
   /// Inline code, its backticks included.
   code,
 
@@ -811,6 +820,9 @@ class MarkdownAnalysis {
     MarkdownStyle.strong,
     MarkdownStyle.emphasis,
     MarkdownStyle.strikethrough,
+    MarkdownStyle.underline,
+    MarkdownStyle.superscript,
+    MarkdownStyle.subscript,
     MarkdownStyle.code,
     MarkdownStyle.math,
     MarkdownStyle.link,
@@ -1743,6 +1755,9 @@ class _Collector {
   /// over like any other line prefix.
   final _numbers = <TextRange>[];
 
+  /// Where each `<u>`, `<sup>` and the like that is one of a pair starts.
+  final _pairedTags = <int>{};
+
   _Parts finish({required _Tail tail, required bool hasReferences}) {
     _spans.sort((a, b) => a.start.compareTo(b.start));
     _links.sort((a, b) => a.start.compareTo(b.start));
@@ -2073,7 +2088,13 @@ class _Collector {
       case 'tableHeadCell':
         _style(start, end, MarkdownStyle.tableHeader);
       case 'htmlBlock' || 'rawHtml':
-        _style(start, end, MarkdownStyle.html);
+        _style(
+          start,
+          end,
+          _pairedTags.contains(start)
+              ? MarkdownStyle.syntax
+              : MarkdownStyle.html,
+        );
         _record(_literals, start, end);
       case 'math' || 'displayMath':
         _math(node, claimed);
@@ -2208,6 +2229,7 @@ class _Collector {
         );
       }
     }
+    _pairTags(node.children);
     for (final child in node.children) {
       visit(child, quoteDepth: childQuoteDepth, listDepth: childListDepth);
     }
@@ -2241,6 +2263,57 @@ class _Collector {
     if (tex.isEmpty) return;
     _maths.add(MarkdownMath(range.start, range.end, tex, display: display));
   }
+
+  /// `<u>`, `<ins>`, `<sup>` and `<sub>`, opening and closing among the
+  /// same words. Their words are drawn the way the tags ask, and the tags are
+  /// hidden like any other inline marker. One that crosses another, or is
+  /// never closed, stays the HTML it is written as.
+  void _pairTags(List<md.Node> nodes) {
+    final open = <(String, md.Element)>[];
+    for (final node in nodes) {
+      if (node is! md.Element || node.type != 'rawHtml') continue;
+      final tag = _pairedTag.firstMatch(
+        source.substring(_clamp(node.start.offset), _clamp(node.end.offset)),
+      );
+      if (tag == null) continue;
+      final name = tag[2]!.toLowerCase();
+      if (tag[1]!.isEmpty) {
+        open.add((name, node));
+        continue;
+      }
+      final at = open.lastIndexWhere((opening) => opening.$1 == name);
+      if (at < 0) continue;
+      final opening = open[at].$2;
+      open.removeRange(at, open.length);
+      final scopeStart = opening.start.offset;
+      final scopeEnd = node.end.offset;
+      final innerStart = opening.end.offset;
+      final innerEnd = node.start.offset;
+      _style(innerStart, innerEnd, switch (name) {
+        'sup' => MarkdownStyle.superscript,
+        'sub' => MarkdownStyle.subscript,
+        _ => MarkdownStyle.underline,
+      });
+      for (final marker in [opening, node]) {
+        _pairedTags.add(marker.start.offset);
+        _record(_unread, marker.start.offset, marker.end.offset);
+        _conceal(
+          marker.start.offset,
+          marker.end.offset,
+          MarkdownReveal.edges,
+          scopeStart: scopeStart,
+          scopeEnd: scopeEnd,
+          innerStart: innerStart,
+          innerEnd: innerEnd,
+        );
+      }
+    }
+  }
+
+  static final _pairedTag = RegExp(
+    r'^<(/?)(u|ins|sup|sub)>$',
+    caseSensitive: false,
+  );
 
   void _listItem(
     md.Element node,
