@@ -527,11 +527,13 @@ void HandleRead(std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
   }
   std::vector<uint8_t> image =
       ClipboardBytes(::RegisterClipboardFormatW(kPngClipboardFormat));
-  if (image.empty()) {
-    image = PngFromDib(ClipboardBytes(CF_DIB));
-  }
+  const std::vector<uint8_t> dib =
+      image.empty() ? ClipboardBytes(CF_DIB) : std::vector<uint8_t>();
   ::CloseClipboard();
 
+  if (image.empty()) {
+    image = PngFromDib(dib);
+  }
   if (!image.empty()) {
     snapshot[EncodableValue("image")] = EncodableValue(std::move(image));
     snapshot[EncodableValue("imageMime")] = EncodableValue("image/png");
