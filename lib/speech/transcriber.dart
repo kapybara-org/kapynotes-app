@@ -20,47 +20,6 @@ enum TranscriptEngine {
   device,
 }
 
-/// The cloud model used when [TranscriptEngine.cloud] is selected.
-///
-/// These ids mirror the server's allow-list exactly. They are preferences,
-/// never arbitrary API input, so the app cannot accidentally turn the speech
-/// endpoint into an open model proxy.
-enum CloudTranscriptionModel {
-  soniox(
-    id: 'stt-async-v5',
-    title: 'Soniox stt-async-v5',
-    route: 'Official Soniox API',
-  ),
-  microsoft(
-    id: 'microsoft/mai-transcribe-2',
-    title: 'Microsoft MAI-Transcribe 2',
-    route: 'Via OpenRouter',
-  ),
-  nvidia(
-    id: 'nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
-    title: 'NVIDIA Nemotron 3.5 ASR Streaming 0.6B',
-    route: 'Via OpenRouter',
-  );
-
-  const CloudTranscriptionModel({
-    required this.id,
-    required this.title,
-    required this.route,
-  });
-
-  final String id;
-  final String title;
-  final String route;
-
-  static CloudTranscriptionModel? fromId(Object? id) {
-    if (id is! String) return null;
-    for (final model in values) {
-      if (model.id == id) return model;
-    }
-    return null;
-  }
-}
-
 /// Whether a transcriber can run right now, and if not, what would fix it.
 ///
 /// Every value is something the settings row can say in one short sentence,

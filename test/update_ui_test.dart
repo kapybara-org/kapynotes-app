@@ -197,11 +197,11 @@ String _gearTooltip(WidgetTester tester) => tester
     )
     .message!;
 
-/// Updates have their own rail section, so every assertion about them starts
+/// Updates live in About & updates, so every assertion about them starts
 /// by selecting it.
 Future<void> _openUpdates(WidgetTester tester) async {
   await _openSettings(tester);
-  await tester.tap(find.byKey(const ValueKey('settings-section-updates')));
+  await tester.tap(find.byKey(const ValueKey('settings-section-about')));
   await tester.pumpAndSettle();
 }
 
@@ -571,10 +571,7 @@ void main() {
     await tester.pumpAndSettle();
     await _openSettings(tester);
 
-    expect(
-      find.byKey(const ValueKey('settings-section-updates')),
-      findsNothing,
-    );
+    expect(find.byKey(const ValueKey('settings-section-about')), findsNothing);
     expect(
       find.descendant(
         of: find.byType(SettingsDialog),

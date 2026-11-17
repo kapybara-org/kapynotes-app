@@ -6,8 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../billing/entitlements.dart';
-import '../billing/billing.dart';
+import '../calc/format.dart';
 import '../core/appearance.dart';
 import '../core/desktop_integration.dart';
 import '../core/device_memory.dart';
@@ -17,99 +16,95 @@ import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/layout_prefs.dart';
 import '../data/note.dart';
-import '../data/voice_prefs.dart';
-import 'voice_consent_sheet.dart';
-import '../speech/local_model_store.dart';
-import '../speech/summarizer.dart';
-import '../speech/transcriber.dart';
-import 'model_terms_sheet.dart';
-import 'settings_rows.dart';
-import 'settings_search.dart';
-import 'tonal_button.dart';
-import 'sidebar_timestamp.dart';
-import '../speech/local_models.dart';
-import '../speech/speech_errors.dart';
-import '../speech/speech_api.dart';
 import '../data/notes_store.dart';
+import '../data/rates.dart';
+import '../data/release_history.dart';
+import '../data/shortcut_prefs.dart';
+import '../data/time_zones.dart';
+import '../data/update_checker.dart';
+import '../data/voice_prefs.dart';
+import '../speech/cloud_access.dart';
+import '../speech/local_model_store.dart';
+import '../speech/local_models.dart';
+import '../speech/speech_api.dart';
+import '../speech/speech_errors.dart';
+import '../speech/summarizer.dart';
+import '../speech/summary_instructions.dart';
+import '../speech/transcriber.dart';
 import '../sync/account.dart';
+import 'account/plan_group.dart';
 import 'account/sharing_pane.dart';
 import 'account/sync_pane.dart';
-import 'billing/pro_sheet.dart';
+import 'control_surface.dart';
 import 'export_import.dart';
-import '../data/rates.dart';
-import '../data/shortcut_prefs.dart';
-import '../data/release_history.dart';
-import '../data/update_checker.dart';
-import '../data/time_zones.dart';
+import 'hidden_notes_gate.dart';
+import 'model_terms_sheet.dart';
+import 'notebook_paper.dart';
+import 'settings_rows.dart';
+import 'settings_search.dart';
+import 'sidebar_timestamp.dart';
+import 'tonal_button.dart';
+import 'voice_consent_sheet.dart';
+import 'voice_note_dialog.dart';
 
-/// The groups of settings, one per rail entry.
+/// The groups of settings, one per rail entry, in the rail's order.
 ///
 /// Adding a section is meant to be the whole job of adding a category of
-/// options: name it here, give it a pane in [_SettingsDialogState], and all
-/// three layouts pick it up.
+/// options: name it here, give it its groups in [_SettingsDialogState], and
+/// every layout, the search and the count of changed settings pick it up.
 enum SettingsSection {
-  general,
-  sync,
-  plan,
   appearance,
+  notes,
   voice,
+  window,
   shortcuts,
-  updates,
+  account,
+  about,
 }
 
 const _sheetCorners = BorderRadius.vertical(top: Radius.circular(22));
 const _sheetIndexKey = ValueKey('settings-sheet-index');
 
 /// Wide enough for the full desktop dialog, its insets, and the Windows frame.
-const double _windowsSettingsWindowWidth = 720;
-
-const _settingsRegularWeight = FontWeight.w400;
-const _settingsMediumWeight = FontWeight.w400;
-const _settingsSemiboldWeight = FontWeight.w400;
+const double _windowsSettingsWindowWidth = 1004;
 
 extension SettingsSectionCopy on SettingsSection {
   String get label => switch (this) {
-    SettingsSection.general => 'General',
-    SettingsSection.sync => 'Profile & sync',
-    SettingsSection.plan => 'Plan & usage',
-    SettingsSection.voice => 'Voice notes',
     SettingsSection.appearance => 'Appearance',
+    SettingsSection.notes => 'Notes',
+    SettingsSection.voice => 'Voice & AI',
+    SettingsSection.window => 'Window',
     SettingsSection.shortcuts => 'Shortcuts',
-    SettingsSection.updates => 'Updates',
+    SettingsSection.account => 'Account & sync',
+    SettingsSection.about => 'About & updates',
   };
 
   KapyIconData get icon => switch (this) {
-    SettingsSection.general => KapyIcons.tuneRounded,
-    SettingsSection.sync => KapyIcons.accountCircleOutlined,
-    SettingsSection.plan => KapyIcons.verifiedOutlined,
-    SettingsSection.voice => KapyIcons.micRounded,
-    SettingsSection.appearance => KapyIcons.storiesOutlined,
-    SettingsSection.shortcuts => KapyIcons.keyboardOutlined,
-    SettingsSection.updates => KapyIcons.systemUpdateRounded,
-  };
-
-  /// The glyph beside the label in the desktop dialog's rail.
-  KapyIconData get railIcon => switch (this) {
-    SettingsSection.general => KapyIcons.tuneRounded,
-    SettingsSection.sync => KapyIcons.accountCircleOutlined,
-    SettingsSection.plan => KapyIcons.verifiedOutlined,
-    SettingsSection.voice => KapyIcons.micRounded,
     SettingsSection.appearance => KapyIcons.paintBoardOutlined,
+    SettingsSection.notes => KapyIcons.noteOutlined,
+    SettingsSection.voice => KapyIcons.micRounded,
+    SettingsSection.window => KapyIcons.computerOutlined,
     SettingsSection.shortcuts => KapyIcons.commandOutlined,
-    SettingsSection.updates => KapyIcons.refreshOutlined,
+    SettingsSection.account => KapyIcons.accountCircleOutlined,
+    SettingsSection.about => KapyIcons.infoOutlined,
   };
 
-  /// What is behind the label, for the layouts that show a list of categories
-  /// instead of the categories themselves. Names the contents rather than
-  /// selling them: this line is read while looking for something.
+  /// What is behind the label: the line under a pane's title, and under a
+  /// category on the phone's list. Names the contents rather than selling
+  /// them, because it is read while looking for something.
   String get summary => switch (this) {
-    SettingsSection.general => 'Writing, notes, imports, and window',
-    SettingsSection.sync => 'Profile, sync, and sharing',
-    SettingsSection.plan => 'Plan, cloud usage, and storage',
-    SettingsSection.voice => 'Transcription and summaries',
-    SettingsSection.appearance => 'Theme, text size, paper, fonts, and numbers',
-    SettingsSection.shortcuts => 'Global and in-app shortcuts',
-    SettingsSection.updates => 'Version and release notes',
+    SettingsSection.appearance =>
+      'How Kapy Notes looks: theme, paper, fonts and text size',
+    SettingsSection.notes =>
+      'How notes open, typing and calculations, backup and Hidden Notes',
+    SettingsSection.voice =>
+      'Voice notes, transcripts and summaries, and where each one runs',
+    SettingsSection.window =>
+      'What the window shows, and what happens when it closes',
+    SettingsSection.shortcuts =>
+      'Every key, grouped by what it does. Click a key to change it',
+    SettingsSection.account => 'Your profile, sync, plan, sharing and sign-out',
+    SettingsSection.about => 'The version you have, updates and what changed',
   };
 }
 
@@ -133,7 +128,8 @@ Future<void> showSettings(
   Summarizer? deviceSummarizer,
   Transcriber? deviceTranscriber,
   VoidCallback? onTranscriptionReady,
-  Future<bool> Function(BuildContext context)? authorizeHiddenNotes,
+  CloudAccess? cloudAccess,
+  HiddenNotesGate? hiddenNotes,
   SettingsSection? section,
   String? notice,
 }) {
@@ -150,7 +146,8 @@ Future<void> showSettings(
     deviceSummarizer: deviceSummarizer,
     deviceTranscriber: deviceTranscriber,
     onTranscriptionReady: onTranscriptionReady,
-    authorizeHiddenNotes: authorizeHiddenNotes,
+    cloudAccess: cloudAccess,
+    hiddenNotes: hiddenNotes,
     section: section,
     notice: notice,
     asSheet: asSheet,
@@ -199,7 +196,8 @@ class SettingsDialog extends StatefulWidget {
     this.deviceSummarizer,
     this.deviceTranscriber,
     this.onTranscriptionReady,
-    this.authorizeHiddenNotes,
+    this.cloudAccess,
+    this.hiddenNotes,
     this.section,
     this.notice,
     this.asSheet = false,
@@ -230,9 +228,15 @@ class SettingsDialog extends StatefulWidget {
   /// selected or cloud consent is accepted.
   final VoidCallback? onTranscriptionReady;
 
-  /// Required before an export can include protected notes. Null is only for
-  /// isolated settings tests and still refuses an export containing them.
-  final Future<bool> Function(BuildContext context)? authorizeHiddenNotes;
+  /// Which engines the plan lets this device use, and the line that says
+  /// why when the cloud is not one of them. Null where there is no account
+  /// to have a plan.
+  final CloudAccess? cloudAccess;
+
+  /// What guards Hidden Notes: asked before an export can include them, and
+  /// for the PIN a desktop unlocks them with. Null only in isolated settings
+  /// tests, which then refuse an export containing them.
+  final HiddenNotesGate? hiddenNotes;
   final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
 
@@ -255,19 +259,105 @@ class SettingsDialog extends StatefulWidget {
   State<SettingsDialog> createState() => _SettingsDialogState();
 }
 
+/// One setting: the row a pane draws, and the entry a search finds.
+///
+/// Written once so the two cannot drift apart, and so whether it has moved
+/// off its default — the dot, the reset, the count in the rail — is decided
+/// in one place too.
+class _Setting {
+  const _Setting(
+    this.id,
+    this.title, {
+    this.subtitle,
+    this.tag,
+    this.keywords = const [],
+    this.value,
+    this.changed = false,
+    this.onReset,
+    this.control,
+    this.wide = false,
+    this.below,
+    this.onTap,
+    this.row,
+  });
+
+  /// The row's key, and how a search result finds it.
+  final String id;
+  final String title;
+  final String? subtitle;
+  final String? tag;
+
+  /// The other words people use for it — "dark mode" for the theme.
+  final List<String> keywords;
+
+  /// What it is set to, in a word, for a search result or the changed list.
+  final String? value;
+  final bool changed;
+  final VoidCallback? onReset;
+  final Widget? control;
+  final bool wide;
+  final Widget? below;
+  final VoidCallback? onTap;
+
+  /// A row of its own making, for the few that are more than words and a
+  /// control: a switch, which flips from anywhere on it, or an update.
+  final Widget? row;
+
+  Widget build() => KeyedSubtree(
+    key: ValueKey(id),
+    child:
+        row ??
+        SettingsRow(
+          title: title,
+          subtitle: subtitle,
+          tag: tag,
+          trailing: control,
+          wide: wide,
+          below: below,
+          changed: changed,
+          onReset: onReset,
+          onTap: onTap,
+        ),
+  );
+}
+
+/// A heading and the card of settings under it.
+class _Group {
+  const _Group(this.title, this.settings, {this.detail, this.after = const []});
+
+  final String title;
+  final String? detail;
+  final List<_Setting> settings;
+
+  /// What is said under the card: a note, an error.
+  final List<Widget> after;
+}
+
+/// The shortcut a row is recording, and — when the keys pressed already
+/// belong to another — the swap waiting for Return.
+typedef _ShortcutSwap = ({
+  ShortcutAction action,
+  ShortcutBinding binding,
+  ShortcutAction holder,
+});
+
 class _SettingsDialogState extends State<SettingsDialog>
     with SingleTickerProviderStateMixin {
   /// Other desktop platforms may still stack at their narrowest. Windows
   /// borrows enough host-window width before opening, and always keeps the
   /// section rail visible while that resize reaches Flutter.
   static const double _railBreakpoint = 560;
-  static const double _dialogWidth = 820;
-  static const double _dialogHeight = 700;
-  static const double _navWidth = 224;
+  static const double _dialogWidth = 940;
+  static const double _dialogHeight = 760;
+  static const double _navWidth = 232;
 
   String? _shortcutError;
   String? _loginItemError;
-  SettingsSection _section = SettingsSection.general;
+  SettingsSection _section = SettingsSection.appearance;
+
+  /// Whether the pane is the list of everything off its default, opened from
+  /// the foot of the rail, rather than a category.
+  bool _showingChanged = false;
 
   /// Which section the sheet has pushed, or null while it is showing the
   /// list of categories. Kept apart from [_section] because the dialog always
@@ -282,6 +372,9 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// What the search field says, trimmed. Empty while not searching.
   String _query = '';
 
+  /// The result Return opens, moved with the arrow keys.
+  int _resultIndex = 0;
+
   /// The dialog's scrolling pane, searched for the row a result points at.
   final GlobalKey _paneKey = GlobalKey();
 
@@ -295,12 +388,37 @@ class _SettingsDialogState extends State<SettingsDialog>
     duration: const Duration(milliseconds: 1600),
   );
 
+  /// The shortcuts pane's own filter: a name, or the keys somebody remembers.
+  final TextEditingController _shortcutFilter = TextEditingController();
+  final FocusNode _shortcutFilterFocus = FocusNode(
+    debugLabel: 'shortcut-filter',
+  );
+
+  /// Where keys go while a shortcut row is listening for new ones. Asked for
+  /// outright, because the search field already holds focus when settings
+  /// opens and an autofocus would defer to it.
+  final FocusNode _recordingFocus = FocusNode(debugLabel: 'shortcut-recording');
+
+  /// Whether the next chord pressed fills [_shortcutFilter] rather than
+  /// being typed into it.
+  bool _pressingKeys = false;
+
+  /// The shortcut a row is listening for, and a clash it is waiting to swap.
+  ShortcutAction? _recording;
+  _ShortcutSwap? _swap;
+  String? _recordError;
+
+  /// Whether this device unlocks Hidden Notes with a PIN of its own, which
+  /// is the only case a PIN can be changed. Asked once, as this opens.
+  bool _usesPin = false;
+
   bool get _searching => _query.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
     _search.addListener(_onSearchChanged);
+    _shortcutFilter.addListener(() => setState(() {}));
     if (!widget.asSheet) HardwareKeyboard.instance.addHandler(_onFindKey);
     _shortcutError = widget.desktopIntegration?.registrationError;
     _loadSpeechState();
@@ -317,6 +435,11 @@ class _SettingsDialogState extends State<SettingsDialog>
         }
       }),
     );
+    unawaited(
+      widget.hiddenNotes?.usesPin().then((value) {
+        if (mounted) setState(() => _usesPin = value);
+      }),
+    );
     // System Settings and the Task Manager can both drop the login item
     // without telling the app, so the switch is re-read every time this opens
     // rather than trusted from launch.
@@ -331,8 +454,8 @@ class _SettingsDialogState extends State<SettingsDialog>
     // The gear that opened this is badged when a release is waiting, so open
     // on the pane that badge is about rather than making it be hunted for.
     if (widget.updates?.hasUpdate ?? false) {
-      _section = SettingsSection.updates;
-      _sheetSection = SettingsSection.updates;
+      _section = SettingsSection.about;
+      _sheetSection = SettingsSection.about;
     }
     // An explicit destination wins over both: whoever asked for this pane knew
     // what the user was trying to do.
@@ -355,6 +478,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     if (!widget.asSheet) HardwareKeyboard.instance.removeHandler(_onFindKey);
     _search.dispose();
     _searchFocus.dispose();
+    _shortcutFilter.dispose();
+    _shortcutFilterFocus.dispose();
+    _recordingFocus.dispose();
     _flash.dispose();
     _flashTarget.dispose();
     _scrollController.dispose();
@@ -363,8 +489,8 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   Future<void> _exportNotes() async {
     if (widget.notes.hiddenNotes.isNotEmpty) {
-      final authorize = widget.authorizeHiddenNotes;
-      if (authorize == null) {
+      final gate = widget.hiddenNotes;
+      if (gate == null) {
         await showDialog<void>(
           context: context,
           builder: (context) => AlertDialog(
@@ -382,7 +508,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         );
         return;
       }
-      if (!await authorize(context) || !mounted) return;
+      if (!await gate.unlock(context) || !mounted) return;
     }
     if (!mounted) return;
     await runExport(context, widget.notes);
@@ -392,7 +518,10 @@ class _SettingsDialogState extends State<SettingsDialog>
     final query = _search.text.trim();
     if (query == _query) return;
     final wasSearching = _searching;
-    setState(() => _query = query);
+    setState(() {
+      _query = query;
+      _resultIndex = 0;
+    });
     // Results and a pane share the scroll; whichever takes over starts at
     // the top rather than wherever the other was left.
     if (wasSearching != _searching && _scrollController.hasClients) {
@@ -401,20 +530,31 @@ class _SettingsDialogState extends State<SettingsDialog>
   }
 
   /// ⌘F or Ctrl+F, from anywhere in the dialog, goes to the search field —
-  /// the same chord that finds things everywhere else. Only while this is
-  /// the route on top: a dialog opened over settings keeps its own keys.
+  /// the same chord that finds things everywhere else — and so does "/"
+  /// while nothing is being typed. Only while this is the route on top, and
+  /// never while a shortcut row is listening for keys of its own.
   bool _onFindKey(KeyEvent event) {
-    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyF) {
-      return false;
-    }
-    final keyboard = HardwareKeyboard.instance;
-    final chord = AppPlatform.isMacOS
-        ? keyboard.isMetaPressed && !keyboard.isControlPressed
-        : keyboard.isControlPressed && !keyboard.isMetaPressed;
-    if (!chord || keyboard.isAltPressed || keyboard.isShiftPressed) {
+    if (event is! KeyDownEvent || _recording != null || _pressingKeys) {
       return false;
     }
     if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return false;
+    final keyboard = HardwareKeyboard.instance;
+    final slash =
+        event.logicalKey == LogicalKeyboardKey.slash &&
+        !keyboard.isMetaPressed &&
+        !keyboard.isControlPressed &&
+        !keyboard.isAltPressed &&
+        FocusManager.instance.primaryFocus?.context
+                ?.findAncestorWidgetOfExactType<EditableText>() ==
+            null;
+    final chord =
+        event.logicalKey == LogicalKeyboardKey.keyF &&
+        (AppPlatform.isMacOS
+            ? keyboard.isMetaPressed && !keyboard.isControlPressed
+            : keyboard.isControlPressed && !keyboard.isMetaPressed) &&
+        !keyboard.isAltPressed &&
+        !keyboard.isShiftPressed;
+    if (!slash && !chord) return false;
     _searchFocus.requestFocus();
     _search.selection = TextSelection(
       baseOffset: 0,
@@ -423,22 +563,19 @@ class _SettingsDialogState extends State<SettingsDialog>
     return true;
   }
 
-  /// A section appears only where its subject does: shortcuts are a
-  /// desktop-only idea, and updates need the checker that only a platform
-  /// which can update itself is given.
+  /// A section appears only where its subject does: the window and its keys
+  /// are desktop ideas, updates need the checker that only a platform which
+  /// can update itself is given, and the account needs a server.
   bool _isAvailable(SettingsSection section) => switch (section) {
+    SettingsSection.window ||
     SettingsSection.shortcuts => AppPlatform.isDesktop,
-    SettingsSection.updates => widget.updates != null,
-    // Absent until the app is built with a server to talk to. Sharing lives
-    // inside it: an account is the thing both halves need, and reading about
-    // one straight after the other is how somebody actually meets them.
-    SettingsSection.sync => widget.account != null,
-    SettingsSection.plan => widget.account != null,
+    SettingsSection.about => widget.updates != null,
+    SettingsSection.account => widget.account != null,
     // Present even signed out, and even with no transcription configured:
     // recording works without an account, and the pane says so rather than
     // hiding and leaving the user to wonder where the setting went.
     SettingsSection.voice => widget.voicePrefs != null,
-    _ => true,
+    SettingsSection.appearance || SettingsSection.notes => true,
   };
 
   List<SettingsSection> get _sections =>
@@ -461,7 +598,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   ///
   /// Consent lives on the server rather than in a local flag so that a second
   /// device shows the same answer, and so withdrawing it actually stops jobs
-  /// rather than merely hiding the toggle.
+  /// rather than merely hiding a choice.
   void _loadSpeechState() {
     final speech = widget.account?.speech;
     if (speech == null) return;
@@ -491,7 +628,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     });
     final progress = Toast.showProgress(
       context,
-      on ? 'Turning on transcription…' : 'Turning off transcription…',
+      on
+          ? 'Turning on cloud transcription…'
+          : 'Turning off cloud transcription…',
     );
     var changed = false;
     try {
@@ -502,7 +641,9 @@ class _SettingsDialogState extends State<SettingsDialog>
       if (mounted) {
         setState(() => _speechConsent = status);
         progress.success(
-          on ? 'Transcription turned on' : 'Transcription turned off',
+          on
+              ? 'Cloud transcription turned on'
+              : 'Cloud transcription turned off',
         );
       } else {
         progress.dismiss();
@@ -523,274 +664,52 @@ class _SettingsDialogState extends State<SettingsDialog>
 
   Future<void> _selectCloudTranscription(VoicePrefs prefs) async {
     if (_speechBusy || widget.account?.speech == null) return;
-    if (_speechConsent?.isAccepted ?? false) {
-      setState(() => prefs.transcriptEngine = TranscriptEngine.cloud);
-      widget.onTranscriptionReady?.call();
+    if (!(_speechConsent?.isAccepted ?? false) &&
+        !await _setTranscription(true)) {
       return;
     }
-    if (await _setTranscription(true) && mounted) {
-      setState(() => prefs.transcriptEngine = TranscriptEngine.cloud);
-      widget.onTranscriptionReady?.call();
-    }
+    if (!mounted) return;
+    prefs.transcriptEngine = TranscriptEngine.cloud;
+    widget.onTranscriptionReady?.call();
   }
 
-  Future<void> _turnOffCloudTranscription() async {
-    await _setTranscription(false);
-  }
-
-  static const Map<String?, String> _speechLanguages = {
-    null: 'Detect automatically',
-    ...speechLanguages,
-  };
+  static String _languageName(String? code) =>
+      speechLanguages[code] ?? 'Detect automatically';
 
   Future<void> _pickSpeechLanguage(VoicePrefs prefs) async {
     final chosen = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('Transcription language'),
+        title: const Text('Language'),
         children: [
-          for (final entry in _speechLanguages.entries)
+          for (final code in [null, ...speechLanguages.keys])
             SimpleDialogOption(
-              onPressed: () => Navigator.of(context).pop(entry.key ?? ''),
-              child: Text(entry.value),
+              key: ValueKey('voice-language-${code ?? 'auto'}'),
+              onPressed: () => Navigator.of(context).pop(code ?? ''),
+              child: Text(_languageName(code)),
             ),
         ],
       ),
     );
     if (chosen == null || !mounted) return;
-    setState(() => prefs.language = chosen.isEmpty ? null : chosen);
+    prefs.language = chosen.isEmpty ? null : chosen;
   }
 
-  /// What happens to a recording, and where.
-  ///
-  /// Cloud and local transcription are one decision, so they sit together as
-  /// mutually exclusive choices. The shared recording options follow, then
-  /// the separate local summary engine.
-  List<Widget> _voicePane() {
-    final prefs = widget.voicePrefs;
-    if (prefs == null) return const [];
-    final signedIn = widget.account?.speech != null;
-    final cloudSelected =
-        signedIn &&
-        (_speechConsent?.isAccepted ?? false) &&
-        prefs.transcriptEngine == TranscriptEngine.cloud;
-    return [
-      const SettingsLabel('Transcription'),
-      SettingsGroup(
-        children: [
-          _EngineChoiceRow(
-            key: const ValueKey('cloud-transcription-row'),
-            icon: KapyIcons.micRounded,
-            title: 'Cloud transcription',
-            subtitle: signedIn
-                ? 'Send audio for transcription and summaries'
-                : 'Sign in for cloud transcription and summaries',
-            selected: cloudSelected,
-            enabled: signedIn && !_speechBusy,
-            onSelect: cloudSelected
-                ? null
-                : () => unawaited(_selectCloudTranscription(prefs)),
-            action: cloudSelected
-                ? SettingsRowButton(
-                    key: const ValueKey('voice-transcription-off'),
-                    label: 'Turn off',
-                    onPressed: _speechBusy
-                        ? null
-                        : () => unawaited(_turnOffCloudTranscription()),
-                  )
-                : null,
-          ),
-          _cloudTranscriptionModelRow(prefs),
-          _localTranscriptionRow(prefs),
-        ],
-      ),
-      const SettingsNote(
-        'The model choice applies only to cloud transcription. All three '
-        'cloud models support multilingual audio. Local transcription is '
-        'free, unlimited, and stays on this device.',
-      ),
-      if (_speechError != null)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Text(
-            _speechError!,
-            style: TextStyle(
-              fontSize: AppTypeScale.small,
-              color: Theme.of(context).colorScheme.error,
-            ),
-          ),
-        ),
-      SizedBox(height: SettingsMetrics.groupGap),
-      const SettingsLabel('Recordings & summaries'),
-      SettingsGroup(
-        children: [
-          SettingsToggleRow(
-            key: const ValueKey('voice-summary-toggle'),
-            icon: KapyIcons.subjectRounded,
-            title: 'Make a summary',
-            subtitle: !signedIn && prefs.summaryEngine == SummaryEngine.cloud
-                ? 'Choose local summaries or sign in for cloud'
-                : 'Add a title and key points after transcription',
-            value: prefs.summarize,
-            onChanged: (value) => setState(() => prefs.summarize = value),
-          ),
-          SettingsNavigationRow(
-            key: const ValueKey('voice-language-row'),
-            icon: KapyIcons.translateRounded,
-            title: 'Language',
-            subtitle:
-                _speechLanguages[prefs.language] ?? 'Detect automatically',
-            onTap: () => unawaited(_pickSpeechLanguage(prefs)),
-          ),
-          _localSummaryRow(prefs),
-        ],
-      ),
-      const SettingsNote(
-        'Summaries run automatically with the selected engine. Local '
-        'summaries stay on this device.',
-      ),
-      if (_localModelCredits.isNotEmpty)
-        _ModelCredits(models: _localModelCredits),
-    ];
-  }
-
-  Widget _cloudTranscriptionModelRow(VoicePrefs prefs) {
-    final selected = prefs.cloudTranscriptionModel;
-    return SettingsRow(
-      key: const ValueKey('voice-transcription-model-row'),
-      icon: KapyIcons.magicOutlined,
-      title: 'Transcription model',
-      subtitle: '${selected.title} · ${selected.route}',
-      trailing: PopupMenuButton<CloudTranscriptionModel>(
-        key: const ValueKey('voice-transcription-model-dropdown'),
-        tooltip: 'Choose transcription model',
-        initialValue: selected,
-        onSelected: (model) => setState(() {
-          prefs.cloudTranscriptionModel = model;
-        }),
-        itemBuilder: (context) => [
-          for (final model in CloudTranscriptionModel.values)
-            PopupMenuItem<CloudTranscriptionModel>(
-              key: ValueKey('voice-transcription-model-${model.name}'),
-              value: model,
-              height: 58,
-              child: Row(
-                children: [
-                  KapyIcon(
-                    model == selected
-                        ? KapyIcons.radioCheckedRounded
-                        : KapyIcons.radioUncheckedRounded,
-                    size: 17,
-                    color: model == selected
-                        ? Theme.of(context).colorScheme.primary
-                        : context.palette.textTertiary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(model.title),
-                        const SizedBox(height: 2),
-                        Text(
-                          model.route,
-                          style: TextStyle(
-                            fontSize: AppTypeScale.caption,
-                            color: context.palette.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-        icon: KapyIcon(
-          KapyIcons.chevronDownRounded,
-          size: SettingsMetrics.chevronSize,
-          color: context.palette.textTertiary,
-        ),
-      ),
+  Future<void> _editSummaryInstruction(VoicePrefs prefs) async {
+    final asked = await showInstructionSheet(
+      context,
+      title: 'Summary instructions',
+      help:
+          'These instructions apply to every recording. Summaries only use '
+          'the transcript.',
+      hint: defaultSummaryInstruction,
+      initial: prefs.effectiveSummaryInstruction,
+      confirmLabel: 'Save',
+      resetLabel: 'Restore default',
+      resetTo: defaultSummaryInstruction,
     );
-  }
-
-  Widget _localTranscriptionRow(VoicePrefs prefs) {
-    final store = widget.localModels;
-    final speech = store?.catalogue.whereType<LocalSpeechModel>().firstOrNull;
-    return _LocalEngineRow(
-      key: const ValueKey('local-transcription-row'),
-      icon: KapyIcons.audioWaveRounded,
-      title: 'Local transcription',
-      store: store,
-      model: speech,
-      // Ready without a download of ours: the platform's own recogniser,
-      // which is the ordinary case on Apple.
-      builtIn: _deviceTranscriptState == TranscriberReadiness.ready,
-      builtInNote: 'Built in and processed only on this device',
-      unavailableNote: switch (_deviceTranscriptState) {
-        TranscriberReadiness.preparing => 'Preparing language support',
-        TranscriberReadiness.needsSystemFeature =>
-          'Allow Speech Recognition in system settings',
-        _ => 'Unavailable on this device',
-      },
-      blockedReason: speech == null ? null : _downloadBlockedReason(speech),
-      on: prefs.transcriptEngine == TranscriptEngine.device,
-      exclusive: true,
-      onChanged: (value) {
-        if (!value || prefs.transcriptEngine == TranscriptEngine.device) {
-          return;
-        }
-        setState(() => prefs.transcriptEngine = TranscriptEngine.device);
-        widget.onTranscriptionReady?.call();
-      },
-      onDownload: speech == null || store == null
-          ? null
-          : () => unawaited(_startDownload(store, speech)),
-    );
-  }
-
-  /// The local alternative sits with the recording choices it affects, so a
-  /// user can decide how a recording is handled without jumping sections.
-  Widget _localSummaryRow(VoicePrefs prefs) {
-    final store = widget.localModels;
-    final summary = store?.catalogue.whereType<LocalSummaryModel>().firstOrNull;
-    return _LocalEngineRow(
-      key: const ValueKey('local-summary-row'),
-      icon: KapyIcons.magicOutlined,
-      title: 'Local summaries',
-      store: store,
-      model: summary,
-      builtIn: _deviceSummaryState == SummarizerReadiness.ready,
-      builtInNote: 'Processed here with Apple Intelligence',
-      unavailableNote: switch (_deviceSummaryState) {
-        SummarizerReadiness.needsSystemFeature =>
-          'Turn on Apple Intelligence in System Settings',
-        SummarizerReadiness.preparing =>
-          'Apple Intelligence is still preparing',
-        _ => 'Unavailable on this device',
-      },
-      blockedReason: summary == null ? null : _downloadBlockedReason(summary),
-      on: prefs.summaryEngine == SummaryEngine.device,
-      onChanged: (value) => setState(() {
-        prefs.summaryEngine = value
-            ? SummaryEngine.device
-            : SummaryEngine.cloud;
-      }),
-      onDownload: summary == null || store == null
-          ? null
-          : () => unawaited(_startDownload(store, summary)),
-    );
-  }
-
-  List<DownloadableModel> get _localModelCredits {
-    final catalogue = widget.localModels?.catalogue;
-    if (catalogue == null) return const [];
-    return <DownloadableModel>[
-      ?catalogue.whereType<LocalSpeechModel>().firstOrNull,
-      ?catalogue.whereType<LocalSummaryModel>().firstOrNull,
-    ];
+    if (asked == null || !mounted) return;
+    prefs.summaryInstruction = asked;
   }
 
   /// Asks the device summariser whether it could work here.
@@ -807,11 +726,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     );
   }
 
-  /// Asks the device recogniser whether it could work here.
-  ///
-  /// Every time this opens rather than once at launch, for the same reason as
-  /// the summariser: a model can be downloaded, and a locale fetched, while
-  /// the app is running.
+  /// Asks the device recogniser whether it could work here, for the same
+  /// reason: a model can be downloaded, and a locale fetched, while the app
+  /// is running.
   void _loadDeviceTranscriptState() {
     final transcriber = widget.deviceTranscriber;
     if (transcriber == null) return;
@@ -852,6 +769,22 @@ class _SettingsDialogState extends State<SettingsDialog>
     unawaited(store.download(model));
   }
 
+  /// Whether a device engine can run now: the platform's own, or a model
+  /// that has finished downloading.
+  bool _deviceReady(DownloadableModel? model, {required bool builtIn}) =>
+      builtIn ||
+      (model != null &&
+          widget.localModels?.stateOf(model).status == LocalModelStatus.ready);
+
+  List<DownloadableModel> get _localModelCredits {
+    final catalogue = widget.localModels?.catalogue;
+    if (catalogue == null) return const [];
+    return <DownloadableModel>[
+      ?catalogue.whereType<LocalSpeechModel>().firstOrNull,
+      ?catalogue.whereType<LocalSummaryModel>().firstOrNull,
+    ];
+  }
+
   void _openSheetSection(SettingsSection section) =>
       setState(() => _sheetSection = section);
 
@@ -862,8 +795,13 @@ class _SettingsDialogState extends State<SettingsDialog>
   }
 
   void _showSection(SettingsSection section) {
-    if (section == _section) return;
-    setState(() => _section = section);
+    if (section == _section && !_showingChanged) return;
+    setState(() {
+      _section = section;
+      _showingChanged = false;
+      _recording = null;
+      _swap = null;
+    });
     // A pane the user has not seen should start at its top, not wherever the
     // previous one was scrolled to.
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
@@ -876,6 +814,16 @@ class _SettingsDialogState extends State<SettingsDialog>
     _showSection(section);
   }
 
+  void _showChanged() {
+    _search.clear();
+    setState(() {
+      _showingChanged = true;
+      _recording = null;
+      _swap = null;
+    });
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
+
   /// Where a search result goes: its category, scrolled to its row, with the
   /// row lit for a moment so the eye does not have to hunt for it again.
   ///
@@ -883,6 +831,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// thing on screen. The sheet keeps it: the results are the page under the
   /// one it pushed, and going back should land on them.
   void _openResult(SettingsSearchEntry<SettingsSection> entry) {
+    if (entry.elsewhere != null) return;
     if (widget.asSheet) {
       FocusManager.instance.primaryFocus?.unfocus();
       _openSheetSection(entry.section);
@@ -897,9 +846,19 @@ class _SettingsDialogState extends State<SettingsDialog>
     );
   }
 
-  void _openFirstResult() {
-    final results = searchSettings(_searchIndex(), _query);
-    if (results.isNotEmpty) _openResult(results.first);
+  List<SettingsSearchEntry<SettingsSection>> get _results =>
+      searchSettings(_searchIndex(), _query);
+
+  void _openMarkedResult() {
+    final results = _results;
+    if (results.isEmpty) return;
+    _openResult(results[_resultIndex.clamp(0, results.length - 1)]);
+  }
+
+  void _moveResult(int delta) {
+    final count = _results.length;
+    if (count == 0) return;
+    setState(() => _resultIndex = (_resultIndex + delta).clamp(0, count - 1));
   }
 
   Future<void> _reveal(Key target) async {
@@ -926,7 +885,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   }
 
   /// The element under [root] whose widget carries [key]: the same search a
-  /// test's `find.byKey` does, done once, on a tap.
+  /// test's find.byKey does, done once, on a tap.
   static Element? _findKeyed(BuildContext? root, Key key) {
     if (root is! Element) return null;
     Element? found;
@@ -950,115 +909,221 @@ class _SettingsDialogState extends State<SettingsDialog>
     autofocus: autofocus,
     // On a phone the keyboard's Search key only puts the keyboard away: the
     // results are already there, and the thumb picks one.
-    onSubmitted: widget.asSheet ? _searchFocus.unfocus : _openFirstResult,
+    onSubmitted: widget.asSheet ? _searchFocus.unfocus : _openMarkedResult,
+    onMove: widget.asSheet ? null : _moveResult,
   );
 
   Widget _searchResults() => SettingsSearchResults<SettingsSection>(
     key: const ValueKey('settings-search-results'),
     query: _query,
-    results: searchSettings(_searchIndex(), _query),
+    results: _results,
+    marked: widget.asSheet ? null : _resultIndex,
     onOpen: _openResult,
   );
 
-  Future<void> _recordShortcut(ShortcutAction action) async {
-    final current = widget.shortcuts.bindingFor(action);
-    final choice = await showDialog<ShortcutChoice>(
-      context: context,
-      builder: (context) =>
-          _ShortcutRecorderDialog(action: action, current: current),
-    );
-    // Nothing came back at all: the dialog was dismissed.
-    if (!mounted || choice == null) return;
-    final candidate = choice.binding;
-    // Or it came back with what the action already had.
-    if (candidate == current) return;
+  // ---------------------------------------------------------------------------
+  // Shortcuts
 
-    // Nothing can collide with a shortcut that is being taken away.
-    if (candidate != null) {
-      final conflict = widget.shortcuts.conflictFor(action, candidate);
-      if (conflict != null) {
-        setState(() {
-          _shortcutError =
-              '${candidate.displayLabel} is already used for ${conflict.label.toLowerCase()}.';
-        });
-        return;
-      }
-    }
-
-    // Told to the OS first either way: a system-wide chord has to be handed
-    // back before the preference forgets which one it was.
-    if (action.isGlobal && widget.desktopIntegration != null) {
+  /// Hands [changes] to the OS first, where a system-wide chord has to be
+  /// given back before the preference forgets which one it was, then keeps
+  /// them. Nothing is kept unless everything is.
+  Future<bool> _applyShortcuts(
+    Map<ShortcutAction, ShortcutBinding?> changes,
+  ) async {
+    final integration = widget.desktopIntegration;
+    final global = changes.keys.where((action) => action.isGlobal).toList();
+    if (integration != null && global.isNotEmpty) {
       final progress = Toast.showProgress(context, 'Updating shortcut…');
-      final error = await widget.desktopIntegration!.trySystemShortcut(
-        action,
-        candidate,
-      );
-      if (!mounted) {
-        progress.dismiss();
-        return;
-      }
-      if (error != null) {
-        setState(() => _shortcutError = error);
+      final done = <ShortcutAction>[];
+      for (final action in global) {
+        final error = await integration.trySystemShortcut(
+          action,
+          changes[action],
+        );
+        if (error == null) {
+          done.add(action);
+          continue;
+        }
+        for (final undo in done) {
+          await integration.trySystemShortcut(
+            undo,
+            widget.shortcuts.bindingFor(undo),
+          );
+        }
+        if (mounted) setState(() => _shortcutError = error);
         progress.error(error);
-        return;
+        return false;
       }
       progress.success('Shortcut updated');
     }
-
-    if (candidate == null) {
-      widget.shortcuts.clear(action);
-    } else {
-      widget.shortcuts.update(action, candidate);
+    for (final MapEntry(key: action, value: binding) in changes.entries) {
+      if (binding == null) {
+        widget.shortcuts.clear(action);
+      } else {
+        widget.shortcuts.update(action, binding);
+      }
     }
     if (mounted) setState(() => _shortcutError = null);
+    return true;
   }
 
-  Future<void> _restoreShortcutDefaults() async {
-    final integration = widget.desktopIntegration;
-    final progress = integration == null
-        ? null
-        : Toast.showProgress(context, 'Restoring shortcuts…');
-    if (integration != null) {
-      final restored = <ShortcutAction>[];
-      for (final action in ShortcutAction.values.where(
-        (action) => action.isGlobal,
-      )) {
-        final error = await integration.trySystemShortcut(
-          action,
-          ShortcutPrefs.defaultFor(action),
-        );
-        if (error == null) {
-          restored.add(action);
-          continue;
-        }
-        // Nothing is restored unless everything is. Whatever went back before
-        // the refusal has to come forward again, or this pane would name one
-        // shortcut while the system answered another.
-        for (final done in restored) {
-          await integration.trySystemShortcut(
-            done,
-            widget.shortcuts.bindingFor(done),
-          );
-        }
-        if (!mounted) {
-          progress?.dismiss();
-          return;
-        }
-        setState(() => _shortcutError = error);
-        progress?.error(error);
-        return;
-      }
+  void _startRecording(ShortcutAction action) {
+    setState(() {
+      _recording = action;
+      _swap = null;
+      _recordError = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _recordingFocus.requestFocus(),
+    );
+  }
+
+  void _stopRecording() => setState(() {
+    _recording = null;
+    _swap = null;
+    _recordError = null;
+  });
+
+  /// Keys pressed while a row is listening. Escape lets go, Backspace on its
+  /// own takes the shortcut away — what the same key does in macOS's own
+  /// shortcut editor — and a chord that belongs to something else waits for
+  /// Return to swap the two.
+  KeyEventResult _onRecordingKey(FocusNode node, KeyEvent event) {
+    final action = _recording;
+    if (action == null) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent) return KeyEventResult.handled;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape) {
+      _stopRecording();
+      return KeyEventResult.handled;
     }
-    widget.shortcuts.resetAll();
-    if (mounted) {
-      setState(() => _shortcutError = null);
-      if (progress == null) {
-        Toast.show(context, 'Shortcuts restored');
-      } else {
-        progress.success('Shortcuts restored');
+    final swap = _swap;
+    if (swap != null &&
+        (key == LogicalKeyboardKey.enter ||
+            key == LogicalKeyboardKey.numpadEnter)) {
+      _stopRecording();
+      unawaited(
+        _applyShortcuts({
+          swap.holder: widget.shortcuts.bindingFor(swap.action),
+          swap.action: swap.binding,
+        }),
+      );
+      return KeyEventResult.handled;
+    }
+    final binding = _chordFrom(event);
+    if (binding == null) return KeyEventResult.handled;
+    if (!binding.hasModifier) {
+      if (key == LogicalKeyboardKey.backspace ||
+          key == LogicalKeyboardKey.delete) {
+        _stopRecording();
+        unawaited(_applyShortcuts({action: null}));
+        return KeyEventResult.handled;
       }
-    } else {
-      progress?.dismiss();
+      setState(() {
+        _swap = null;
+        _recordError = AppPlatform.isMacOS
+            ? 'Include Command, Control, Option or Shift.'
+            : 'Include Ctrl, Alt, Shift or Windows.';
+      });
+      return KeyEventResult.handled;
+    }
+    if (binding == widget.shortcuts.bindingFor(action)) {
+      _stopRecording();
+      return KeyEventResult.handled;
+    }
+    final holder = widget.shortcuts.conflictFor(action, binding);
+    if (holder != null) {
+      setState(() {
+        _swap = (action: action, binding: binding, holder: holder);
+        _recordError = null;
+      });
+      return KeyEventResult.handled;
+    }
+    _stopRecording();
+    unawaited(_applyShortcuts({action: binding}));
+    return KeyEventResult.handled;
+  }
+
+  /// The chord [event] makes with the modifiers held, or null for a lone
+  /// modifier, which only starts one.
+  static ShortcutBinding? _chordFrom(KeyEvent event) {
+    if (_modifierKeys.contains(event.logicalKey)) return null;
+    final keyboard = HardwareKeyboard.instance;
+    return ShortcutBinding(
+      logicalKey: event.logicalKey,
+      physicalKey: event.physicalKey,
+      meta: keyboard.isMetaPressed,
+      control: keyboard.isControlPressed,
+      alt: keyboard.isAltPressed,
+      shift: keyboard.isShiftPressed,
+    );
+  }
+
+  static final Set<LogicalKeyboardKey> _modifierKeys = {
+    LogicalKeyboardKey.altLeft,
+    LogicalKeyboardKey.altRight,
+    LogicalKeyboardKey.controlLeft,
+    LogicalKeyboardKey.controlRight,
+    LogicalKeyboardKey.metaLeft,
+    LogicalKeyboardKey.metaRight,
+    LogicalKeyboardKey.shiftLeft,
+    LogicalKeyboardKey.shiftRight,
+  };
+
+  /// "Press keys": the next chord fills the filter with its name, so the
+  /// shortcut somebody half remembers finds itself.
+  KeyEventResult _onPressKeys(FocusNode node, KeyEvent event) {
+    if (!_pressingKeys) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent) return KeyEventResult.handled;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      setState(() => _pressingKeys = false);
+      return KeyEventResult.handled;
+    }
+    final binding = _chordFrom(event);
+    if (binding == null) return KeyEventResult.handled;
+    setState(() => _pressingKeys = false);
+    _shortcutFilter.text = binding.displayLabel;
+    return KeyEventResult.handled;
+  }
+
+  int get _changedShortcuts => ShortcutAction.values
+      .where(
+        (action) =>
+            widget.shortcuts.bindingFor(action) !=
+            ShortcutPrefs.defaultFor(action),
+      )
+      .length;
+
+  Future<void> _restoreShortcutDefaults() async {
+    final restore = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Restore all shortcuts?'),
+        content: const Text(
+          'Every shortcut goes back to the keys it came with.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('restore-shortcuts-confirm'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Restore'),
+          ),
+        ],
+      ),
+    );
+    if (restore != true || !mounted) return;
+    final changes = {
+      for (final action in ShortcutAction.values)
+        if (widget.shortcuts.bindingFor(action) !=
+            ShortcutPrefs.defaultFor(action))
+          action: ShortcutPrefs.defaultFor(action),
+    };
+    if (await _applyShortcuts(changes) && mounted) {
+      Toast.show(context, 'Shortcuts restored');
     }
   }
 
@@ -1122,6 +1187,31 @@ class _SettingsDialogState extends State<SettingsDialog>
     widget.layoutPrefs.defaultNoteId = selected.isEmpty ? null : selected;
   }
 
+  Future<void> _changePin() async {
+    final gate = widget.hiddenNotes;
+    if (gate == null) return;
+    if (await gate.changePin(context) && mounted) {
+      Toast.show(context, 'PIN changed', icon: KapyIcons.checkRounded);
+    }
+  }
+
+  Future<void> _openRates() async {
+    final url = widget.rates.attributionUrl;
+    var opened = false;
+    try {
+      opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (opened || !mounted) return;
+    Toast.show(
+      context,
+      'Could not open ${url.host}',
+      icon: KapyIcons.errorOutlined,
+      isError: true,
+    );
+  }
+
   String get _defaultNoteLabel {
     final id = widget.layoutPrefs.defaultNoteId;
     final note = id == null ? null : widget.notes.byId(id);
@@ -1130,17 +1220,993 @@ class _SettingsDialogState extends State<SettingsDialog>
         : note.title;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.layoutPrefs,
-      builder: (context, _) => ListenableBuilder(
-        listenable: widget.shortcuts,
-        builder: (context, _) =>
-            widget.asSheet ? _buildSheet(context) : _buildDialog(context),
+  String _keys(ShortcutAction action) =>
+      widget.shortcuts.bindingFor(action)?.displayLabel ?? '';
+
+  // ---------------------------------------------------------------------------
+  // The settings themselves
+
+  _Setting _toggle(
+    String id,
+    String title,
+    String subtitle, {
+    required bool value,
+    required ValueChanged<bool>? onChanged,
+    bool? byDefault,
+    String? tag,
+    List<String> keywords = const [],
+  }) {
+    final changed = byDefault != null && value != byDefault;
+    final reset = onChanged == null || byDefault == null
+        ? null
+        : () => onChanged(byDefault);
+    return _Setting(
+      id,
+      title,
+      subtitle: subtitle,
+      tag: tag,
+      keywords: keywords,
+      value: value ? 'On' : 'Off',
+      changed: changed,
+      onReset: reset,
+      row: SettingsToggleRow(
+        title: title,
+        subtitle: subtitle,
+        tag: tag,
+        value: value,
+        onChanged: onChanged,
+        changed: changed,
+        onReset: reset,
       ),
     );
   }
+
+  _Setting _choice<T extends Enum>(
+    String id,
+    String title,
+    String subtitle, {
+    required List<T> options,
+    required T selected,
+    required String Function(T option) label,
+    required ValueChanged<T> onSelected,
+    required String keyPrefix,
+    T? byDefault,
+    TextStyle Function(T option)? styleFor,
+    bool Function(T option)? enabledFor,
+    Widget? below,
+    List<String> keywords = const [],
+  }) {
+    final changed = byDefault != null && selected != byDefault;
+    return _Setting(
+      id,
+      title,
+      subtitle: subtitle,
+      keywords: keywords,
+      value: label(selected),
+      changed: changed,
+      onReset: byDefault == null ? null : () => onSelected(byDefault),
+      wide: true,
+      below: below,
+      control: SettingsSegmented<T>(
+        options: options,
+        selected: selected,
+        labelFor: label,
+        keyFor: (option) => ValueKey('$keyPrefix-${option.name}'),
+        onSelected: onSelected,
+        styleFor: styleFor,
+        enabledFor: enabledFor,
+      ),
+    );
+  }
+
+  List<_Group> _groupsFor(SettingsSection section) => switch (section) {
+    SettingsSection.appearance => _appearanceGroups(),
+    SettingsSection.notes => _notesGroups(),
+    SettingsSection.voice => _voiceGroups(),
+    SettingsSection.window => _windowGroups(),
+    SettingsSection.shortcuts => _shortcutGroups(),
+    SettingsSection.about => _aboutGroups(),
+    SettingsSection.account => const [],
+  };
+
+  /// The slider's left end is Off, and the rest of it is the amount from its
+  /// subtlest to its clearest, so "on, at the subtlest" never reads as off.
+  static const double _transparencyFloor = 0.08;
+
+  List<_Group> _appearanceGroups() {
+    final prefs = widget.layoutPrefs;
+    final scale = prefs.editorTextScale;
+    final percent = '${(scale * 100).round()}%';
+    final transparency = prefs.transparencyEnabled
+        ? _transparencyFloor +
+              (1 - _transparencyFloor) * prefs.transparencyAmount
+        : 0.0;
+    final textKeys = [
+      ShortcutAction.increaseEditorTextSize,
+      ShortcutAction.decreaseEditorTextSize,
+      ShortcutAction.resetEditorTextSize,
+    ].map(_keys).where((keys) => keys.isNotEmpty).join(' ');
+    return [
+      _Group('Look', [
+        _choice<AppearanceMode>(
+          'theme-setting',
+          'Theme',
+          'Colours for the whole app',
+          options: AppearanceMode.values,
+          selected: prefs.appearance,
+          label: (mode) => mode.label,
+          onSelected: (mode) => prefs.appearance = mode,
+          byDefault: AppearanceMode.system,
+          keyPrefix: 'appearance',
+          keywords: ['dark mode', 'light mode', 'night', 'colour', 'color'],
+        ),
+        _choice<PaperStyle>(
+          'paper-setting',
+          'Paper',
+          'The background behind your writing',
+          options: PaperStyle.values,
+          selected: prefs.paperStyle,
+          label: (paper) => paper.label,
+          onSelected: (paper) => prefs.paperStyle = paper,
+          byDefault: PaperStyle.plain,
+          keyPrefix: 'paper-style',
+          keywords: ['ruled', 'lined', 'notepad', 'plain', 'texture'],
+        ),
+        if (LayoutPrefs.supportsTransparency)
+          _Setting(
+            'transparency-setting',
+            'Transparency',
+            subtitle: 'Let the desktop show through the window',
+            tag: 'Mac and Windows',
+            keywords: [
+              'blur',
+              'glass',
+              'translucent',
+              'see-through',
+              'opacity',
+            ],
+            value: prefs.transparencyEnabled ? 'On' : 'Off',
+            changed: prefs.transparencyEnabled,
+            onReset: () => prefs.transparencyEnabled = false,
+            wide: true,
+            control: _TransparencySlider(
+              value: transparency,
+              onChanged: (value) {
+                prefs.transparencyEnabled = value >= _transparencyFloor / 2;
+                if (!prefs.transparencyEnabled) return;
+                prefs.transparencyAmount =
+                    ((value - _transparencyFloor) / (1 - _transparencyFloor))
+                        .clamp(0.0, 1.0);
+              },
+            ),
+          ),
+      ]),
+      _Group('Text', [
+        _choice<WritingFont>(
+          'writing-font-setting',
+          'Writing font',
+          'The font your notes are written in',
+          options: WritingFont.values,
+          selected: prefs.writingFont,
+          label: (font) => font == WritingFont.monospace ? 'Mono' : font.label,
+          onSelected: (font) => prefs.writingFont = font,
+          byDefault: WritingFont.clean,
+          keyPrefix: 'writing-font',
+          styleFor: (font) {
+            // Mixed is named in the type its numbers are set in.
+            final shown = font == WritingFont.mixed
+                ? WritingFont.monospace
+                : font;
+            return TextStyle(
+              fontFamily: shown.fontFamily,
+              fontFamilyFallback: shown.fontFamilyFallback,
+              fontVariations: shown.fontVariations,
+            );
+          },
+          keywords: ['font', 'typeface', 'handwritten', 'mono', 'clean'],
+        ),
+        _Setting(
+          'note-text-size-setting',
+          'Note text size',
+          subtitle: textKeys.isEmpty
+              ? 'Text inside notes'
+              : 'Text inside notes · $textKeys',
+          keywords: ['zoom', 'bigger text', 'larger', 'smaller', 'font size'],
+          value: percent,
+          changed: scale != LayoutPrefs.defaultEditorTextScale,
+          onReset: prefs.resetEditorTextSize,
+          control: SettingsStepper(
+            label: percent,
+            onDecrease: scale > LayoutPrefs.minEditorTextScale
+                ? prefs.decreaseEditorTextSize
+                : null,
+            onIncrease: scale < LayoutPrefs.maxEditorTextScale
+                ? prefs.increaseEditorTextSize
+                : null,
+          ),
+        ),
+        _choice<AppTextSize>(
+          'app-text-size-setting',
+          'Interface text size',
+          'Menus, lists and labels',
+          options: AppTextSize.values,
+          selected: prefs.appTextSize,
+          label: (size) => size.label,
+          onSelected: (size) => prefs.appTextSize = size,
+          byDefault: AppTextSize.standard,
+          keyPrefix: 'app-text-size',
+          keywords: ['font size', 'ui scale', 'zoom', 'bigger text', 'larger'],
+        ),
+      ]),
+    ];
+  }
+
+  List<_Group> _notesGroups() {
+    final prefs = widget.layoutPrefs;
+    final rates = widget.rates;
+    final hiddenKeys = _keys(ShortcutAction.toggleHiddenFolder);
+    final zone =
+        '${AppTimeZones.displayName(prefs.timeZoneId)} · '
+        '${AppTimeZones.offsetLabel(prefs.timeZoneId)}';
+    return [
+      _Group('Opening', [
+        _Setting(
+          'default-note-setting',
+          'Note opened at launch',
+          subtitle: 'Which note is open when Kapy Notes starts',
+          keywords: ['default note', 'startup', 'start'],
+          value: _defaultNoteLabel,
+          changed: prefs.defaultNoteId != null,
+          onReset: () => prefs.defaultNoteId = null,
+          control: SettingsMenuButton(
+            label: _defaultNoteLabel,
+            onPressed: _chooseDefaultNote,
+          ),
+          onTap: _chooseDefaultNote,
+        ),
+        _toggle(
+          'ready-to-type-on-open-toggle',
+          'Ready to type on open',
+          'Put the cursor back where you left it',
+          value: prefs.readyToTypeOnOpen,
+          onChanged: (value) => prefs.readyToTypeOnOpen = value,
+          byDefault: true,
+          keywords: ['cursor', 'caret', 'focus', 'keyboard', 'resume'],
+        ),
+      ]),
+      _Group(
+        'Typing and calculations',
+        [
+          _toggle(
+            'markdown-toggle',
+            'Markdown',
+            '# for a heading, - for a list, [] for a checkbox',
+            value: prefs.markdownEnabled,
+            onChanged: (value) => prefs.markdownEnabled = value,
+            byDefault: false,
+            keywords: ['md', 'syntax', 'headings', 'bold', 'lists', 'checkbox'],
+          ),
+          _toggle(
+            'spell-check-toggle',
+            'Check spelling',
+            'Underline words that may be misspelled',
+            value: prefs.spellCheckEnabled,
+            onChanged: (value) => prefs.spellCheckEnabled = value,
+            byDefault: true,
+            keywords: ['spellcheck', 'spell check', 'typos', 'dictionary'],
+          ),
+          _toggle(
+            'daily-separators-toggle',
+            'Daily separators',
+            'Add a dated line when a new day begins',
+            value: prefs.dailySeparatorsEnabled,
+            onChanged: (value) => prefs.dailySeparatorsEnabled = value,
+            byDefault: true,
+            keywords: ['date', 'day', 'dated line', 'divider'],
+          ),
+          _Setting(
+            'time-zone-setting',
+            'Time zone for dates',
+            subtitle: 'Used by separators and “Edited” times',
+            keywords: ['timezone', 'clock', 'utc', 'gmt', 'offset'],
+            value: AppTimeZones.displayName(prefs.timeZoneId),
+            changed: prefs.timeZoneId != null,
+            onReset: () => prefs.timeZoneId = null,
+            control: SettingsMenuButton(
+              label: zone,
+              onPressed: _chooseTimeZone,
+            ),
+            onTap: _chooseTimeZone,
+          ),
+          _choice<NumberSystem>(
+            'number-format-setting',
+            'Number format',
+            rates.refreshedDate.isEmpty
+                ? 'Exchange rates refresh on their own'
+                : 'Exchange rates updated ${rates.refreshedDate}',
+            options: NumberSystem.values,
+            selected: prefs.numberSystem,
+            label: (system) => system.label,
+            onSelected: (system) => prefs.numberSystem = system,
+            byDefault: NumberSystem.auto,
+            keyPrefix: 'number-system',
+            keywords: [
+              'digits',
+              'grouping',
+              'commas',
+              'lakh',
+              'exchange rates',
+              'currency',
+            ],
+          ),
+        ],
+        after: [_RatesCredit(label: rates.attributionLabel, onTap: _openRates)],
+      ),
+      _Group('Backup', [
+        _Setting(
+          'export-notes',
+          'Export all notes',
+          subtitle: 'One Markdown .zip. It isn’t encrypted once saved',
+          keywords: ['backup', 'download', 'save', 'zip', 'markdown'],
+          control: SettingsRowButton(
+            key: const ValueKey('export-notes-button'),
+            label: 'Export…',
+            onPressed: () => unawaited(_exportNotes()),
+          ),
+        ),
+        _Setting(
+          'import-notes',
+          'Import from an export',
+          subtitle: 'Shows what changes before anything is imported',
+          keywords: ['restore', 'upload', 'zip', 'markdown'],
+          control: SettingsRowButton(
+            key: const ValueKey('import-notes-button'),
+            label: 'Import…',
+            onPressed: () => unawaited(runImport(context, widget.notes)),
+          ),
+        ),
+      ]),
+      if (AppPlatform.isDesktop || _usesPin)
+        _Group('Hidden Notes', [
+          if (AppPlatform.isDesktop)
+            _toggle(
+              'hidden-notes-sidebar-toggle',
+              'Hidden Notes',
+              'Show the protected folder · ${hiddenKeys.isEmpty ? 'Settings only' : hiddenKeys}',
+              value: widget.layoutPrefs.hiddenFolderVisible,
+              onChanged: (value) =>
+                  widget.layoutPrefs.hiddenFolderVisible = value,
+              byDefault: true,
+              keywords: ['hidden', 'private', 'protected', 'folder', 'sidebar'],
+            ),
+          if (_usesPin)
+            _Setting(
+              'change-pin',
+              'Change PIN',
+              subtitle: 'The PIN that unlocks Hidden Notes on this computer',
+              keywords: ['hidden', 'private', 'lock', 'password', 'passcode'],
+              control: SettingsRowButton(
+                key: const ValueKey('change-pin-button'),
+                label: 'Change PIN…',
+                onPressed: () => unawaited(_changePin()),
+              ),
+            ),
+        ]),
+    ];
+  }
+
+  List<_Group> _voiceGroups() {
+    final prefs = widget.voicePrefs;
+    if (prefs == null) return const [];
+    final signedIn = widget.account?.speech != null;
+    final access = widget.cloudAccess;
+    final store = widget.localModels;
+    final speechModel = store?.catalogue
+        .whereType<LocalSpeechModel>()
+        .firstOrNull;
+    final summaryModel = store?.catalogue
+        .whereType<LocalSummaryModel>()
+        .firstOrNull;
+    final builtInSpeech = _deviceTranscriptState == TranscriberReadiness.ready;
+    final builtInSummary = _deviceSummaryState == SummarizerReadiness.ready;
+    final consented = _speechConsent?.isAccepted ?? false;
+    final transcription = access?.transcription;
+    final summaries = access?.summaries;
+    // What runs, said as the choice: the plan's answer where there is one,
+    // and the device wherever the cloud cannot run yet — signed out, or
+    // before consent.
+    final cloudTranscribes =
+        signedIn &&
+        consented &&
+        (transcription?.engine ?? prefs.transcriptEngine) ==
+            TranscriptEngine.cloud;
+    final cloudSummarises =
+        signedIn &&
+        (summaries?.engine ?? prefs.summaryEngine) == SummaryEngine.cloud;
+    String engineLabel(Enum engine) =>
+        engine.name == 'cloud' ? 'Cloud' : 'This device';
+    return [
+      _Group('Voice notes', [
+        _toggle(
+          'voice-summary-toggle',
+          'Make a summary',
+          'A title and key points after each recording',
+          value: prefs.summarize,
+          onChanged: (value) => prefs.summarize = value,
+          byDefault: true,
+          keywords: ['summarise', 'summarize', 'recording', 'voice note'],
+        ),
+        _Setting(
+          'voice-language-row',
+          'Language',
+          subtitle: 'The language you speak in recordings',
+          keywords: ['speech', 'transcription language', 'detect'],
+          value: _languageName(prefs.language),
+          changed: prefs.language != null,
+          onReset: () => prefs.language = null,
+          control: SettingsMenuButton(
+            key: const ValueKey('voice-language-menu'),
+            label: _languageName(prefs.language),
+            onPressed: () => unawaited(_pickSpeechLanguage(prefs)),
+          ),
+          onTap: () => unawaited(_pickSpeechLanguage(prefs)),
+        ),
+      ]),
+      _Group(
+        'Transcription',
+        [
+          _Setting(
+            'transcribe-with',
+            'Transcribe with',
+            subtitle:
+                transcription?.note ??
+                (signedIn
+                    ? 'Cloud is quicker. This device works offline'
+                    : 'Cloud needs you signed in. This device works offline'),
+            keywords: [
+              'transcribe',
+              'transcript',
+              'speech to text',
+              'dictation',
+              'cloud',
+              'offline',
+              'local',
+            ],
+            value: cloudTranscribes ? 'Cloud' : 'This device',
+            wide: true,
+            control: SettingsSegmented<TranscriptEngine>(
+              options: TranscriptEngine.values,
+              selected: cloudTranscribes
+                  ? TranscriptEngine.cloud
+                  : TranscriptEngine.device,
+              labelFor: engineLabel,
+              keyFor: (engine) => ValueKey('transcribe-with-${engine.name}'),
+              enabledFor: (engine) => engine == TranscriptEngine.cloud
+                  ? signedIn &&
+                        !_speechBusy &&
+                        (transcription?.cloudSelectable ?? true)
+                  : _deviceReady(speechModel, builtIn: builtInSpeech),
+              onSelected: (engine) {
+                if (engine == TranscriptEngine.cloud) {
+                  unawaited(_selectCloudTranscription(prefs));
+                  return;
+                }
+                prefs.transcriptEngine = TranscriptEngine.device;
+                widget.onTranscriptionReady?.call();
+              },
+            ),
+            below: builtInSpeech
+                ? null
+                : _DeviceEngineLine(
+                    key: const ValueKey('local-transcription-line'),
+                    store: store,
+                    model: speechModel,
+                    unavailableNote: switch (_deviceTranscriptState) {
+                      TranscriberReadiness.preparing =>
+                        'Preparing language support',
+                      TranscriberReadiness.needsSystemFeature =>
+                        'Allow Speech Recognition in system settings',
+                      _ => null,
+                    },
+                    onDownload: speechModel == null || store == null
+                        ? null
+                        : () => unawaited(_startDownload(store, speechModel)),
+                  ),
+          ),
+        ],
+        after: [
+          if (consented && signedIn)
+            _ConsentNote(
+              busy: _speechBusy,
+              onWithdraw: () => unawaited(_setTranscription(false)),
+            ),
+          if (_speechError case final error?)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(3, 8, 3, 0),
+              child: Text(
+                error,
+                style: TextStyle(
+                  fontSize: AppTypeScale.small,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
+        ],
+      ),
+      _Group(
+        'Summaries',
+        [
+          _Setting(
+            'summarise-with',
+            'Summarise with',
+            subtitle:
+                summaries?.note ??
+                ((AppPlatform.isMacOS || AppPlatform.isIOS)
+                    ? 'This device uses Apple Intelligence or a downloaded model'
+                    : 'This device uses a downloaded model'),
+            keywords: ['summary', 'apple intelligence', 'offline', 'local'],
+            value: cloudSummarises ? 'Cloud' : 'This device',
+            wide: true,
+            control: SettingsSegmented<SummaryEngine>(
+              options: SummaryEngine.values,
+              selected: cloudSummarises
+                  ? SummaryEngine.cloud
+                  : SummaryEngine.device,
+              labelFor: engineLabel,
+              keyFor: (engine) => ValueKey('summarise-with-${engine.name}'),
+              enabledFor: (engine) => engine == SummaryEngine.cloud
+                  ? signedIn && (summaries?.cloudSelectable ?? true)
+                  : _deviceReady(summaryModel, builtIn: builtInSummary),
+              onSelected: (engine) => prefs.summaryEngine = engine,
+            ),
+            below: builtInSummary
+                ? null
+                : _DeviceEngineLine(
+                    key: const ValueKey('local-summary-line'),
+                    store: store,
+                    model: summaryModel,
+                    blockedReason: summaryModel == null
+                        ? null
+                        : _downloadBlockedReason(summaryModel),
+                    unavailableNote: switch (_deviceSummaryState) {
+                      SummarizerReadiness.needsSystemFeature =>
+                        'Turn on Apple Intelligence in System Settings',
+                      SummarizerReadiness.preparing =>
+                        'Apple Intelligence is still preparing',
+                      _ => null,
+                    },
+                    onDownload: summaryModel == null || store == null
+                        ? null
+                        : () => unawaited(_startDownload(store, summaryModel)),
+                  ),
+          ),
+          _Setting(
+            'summary-instructions',
+            'Summary instructions',
+            subtitle: 'What a summary should focus on',
+            keywords: ['prompt', 'instructions', 'focus', 'summary style'],
+            value: prefs.summaryInstruction == null ? 'Default' : 'Your own',
+            changed: prefs.summaryInstruction != null,
+            onReset: () => prefs.summaryInstruction = null,
+            control: SettingsValue(
+              prefs.summaryInstruction == null ? 'Default' : 'Your own',
+            ),
+            onTap: () => unawaited(_editSummaryInstruction(prefs)),
+          ),
+        ],
+        after: [
+          if (_localModelCredits.isNotEmpty)
+            _ModelCredits(models: _localModelCredits),
+        ],
+      ),
+    ];
+  }
+
+  List<_Group> _windowGroups() {
+    final prefs = widget.layoutPrefs;
+    final integration = widget.desktopIntegration;
+    String withKeys(String line, ShortcutAction action) {
+      final keys = _keys(action);
+      return keys.isEmpty ? line : '$line · $keys';
+    }
+
+    return [
+      _Group('In the window', [
+        _toggle(
+          'sidebar-toggle',
+          'Show the notes list',
+          withKeys('Your notes beside the page', ShortcutAction.toggleSidebar),
+          value: prefs.sidebarVisible,
+          onChanged: (_) => prefs.toggleSidebar(),
+          keywords: ['sidebar', 'notes list', 'show', 'hide'],
+        ),
+        _toggle(
+          'always-on-top-toggle',
+          'Keep window on top',
+          withKeys(
+            'Above every other window',
+            ShortcutAction.toggleAlwaysOnTop,
+          ),
+          value: prefs.alwaysOnTop,
+          onChanged: (value) => prefs.alwaysOnTop = value,
+          byDefault: false,
+          keywords: ['pin', 'float', 'always on top', 'above'],
+        ),
+      ]),
+      _Group(
+        'Running',
+        [
+          _toggle(
+            'keep-running-toggle',
+            AppPlatform.isMacOS
+                ? 'Keep running in the menu bar'
+                : 'Keep running in the tray',
+            AppPlatform.isMacOS
+                ? 'Open, write or quit from the menu bar'
+                : 'Shortcuts keep working after the window closes',
+            value: prefs.keepRunningInBackground,
+            onChanged: _setKeepRunning,
+            byDefault: true,
+            keywords: ['background', 'menu bar', 'tray', 'close', 'quit'],
+          ),
+          // Absent rather than disabled where the OS has no mechanism this
+          // app is allowed to use: macOS 12 predates the one the sandbox
+          // permits.
+          if (integration != null && integration.loginItemSupported)
+            _toggle(
+              'login-item-toggle',
+              'Open at login',
+              'Start when you sign in to this computer',
+              value: integration.loginItemEnabled,
+              onChanged: (value) => unawaited(_setLoginItem(value)),
+              byDefault: true,
+              keywords: ['startup', 'launch at login', 'login item', 'boot'],
+            ),
+          _Setting(
+            'panel-widths-setting',
+            'Panel widths',
+            subtitle: 'Put the notes list back to its first width',
+            keywords: ['reset', 'resize', 'sidebar width'],
+            control: SettingsRowButton(
+              key: const ValueKey('reset-panel-widths'),
+              label: 'Reset',
+              onPressed: prefs.resetPanelWidths,
+            ),
+          ),
+        ],
+        after: [
+          if (_loginItemError case final error?)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(3, 8, 3, 0),
+              child: Text(
+                error,
+                key: const ValueKey('login-item-error'),
+                style: TextStyle(
+                  fontSize: AppTypeScale.caption,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
+        ],
+      ),
+    ];
+  }
+
+  /// Every key, under what it acts on. The system-wide pair leads: they are
+  /// the ones that reach the app from outside it, the ones another app can
+  /// refuse, and what people come here to change.
+  List<_Group> _shortcutGroups({bool filtered = true}) {
+    final filter = filtered ? _shortcutFilter.text.trim().toLowerCase() : '';
+    bool shows(ShortcutAction action) =>
+        filter.isEmpty ||
+        action.label.toLowerCase().contains(filter) ||
+        _keys(action).toLowerCase() == filter;
+    return [
+      for (final group in _ShortcutGroup.values)
+        if (ShortcutAction.values
+                .where((action) => action.group == group && shows(action))
+                .toList()
+            case final actions when actions.isNotEmpty)
+          _Group(
+            group.title,
+            [for (final action in actions) _shortcut(action)],
+            detail: group == _ShortcutGroup.fromAnywhere
+                ? 'Work even when another app is in front'
+                : null,
+          ),
+    ];
+  }
+
+  _Setting _shortcut(ShortcutAction action) {
+    final binding = widget.shortcuts.bindingFor(action);
+    final standard = ShortcutPrefs.defaultFor(action);
+    final changed = binding != standard;
+    final recording = _recording == action;
+    final swap = recording ? _swap : null;
+    void reset() => unawaited(_applyShortcuts({action: standard}));
+    return _Setting(
+      'shortcut-row-${action.name}',
+      action.label,
+      subtitle: action.description,
+      keywords: ['shortcut', 'hotkey', 'keyboard', ?binding?.displayLabel],
+      value: binding?.displayLabel ?? 'None',
+      changed: changed,
+      onReset: reset,
+      row: _ShortcutRow(
+        action: action,
+        binding: swap?.binding ?? binding,
+        recording: recording,
+        changed: changed,
+        onReset: reset,
+        onPressed: () => recording ? _stopRecording() : _startRecording(action),
+        onKey: _onRecordingKey,
+        focusNode: _recordingFocus,
+        swap: swap == null
+            ? null
+            : (
+                keys: swap.binding.displayLabel,
+                holder: swap.holder.label,
+                given: binding?.displayLabel,
+              ),
+        error: recording ? _recordError : null,
+      ),
+    );
+  }
+
+  List<_Group> _aboutGroups() {
+    final updates = widget.updates;
+    if (updates == null) return const [];
+    return [
+      _Group(
+        'Kapy Notes',
+        [
+          _Setting(
+            'app-version',
+            'Version',
+            keywords: ['build', 'about', 'release'],
+            value: updates.currentVersion,
+            row: _VersionRow(updates: updates),
+          ),
+          _Setting(
+            'update-row',
+            'Check for updates',
+            keywords: ['update', 'upgrade', 'new version'],
+            row: _UpdateRow(updates: updates),
+          ),
+          _toggle(
+            'update-auto-download',
+            'Download updates automatically',
+            'So updating takes one click',
+            value: updates.autoDownload,
+            onChanged: (value) => updates.autoDownload = value,
+            byDefault: true,
+            keywords: ['auto update', 'automatic', 'background', 'restart'],
+          ),
+        ],
+        after: [SettingsNote(_updatesNote(updates))],
+      ),
+    ];
+  }
+
+  /// When the update actually happens, which is not the same on the two
+  /// platforms: Sparkle installs a downloaded release whenever the app quits,
+  /// and the Windows installer only runs when asked.
+  static String _updatesNote(UpdateChecker updates) {
+    if (!updates.autoDownload) {
+      return 'Checks for updates daily. Nothing downloads until you choose '
+          'Download.';
+    }
+    return AppPlatform.isMacOS
+        ? 'Checks for updates daily and downloads them in the background. A '
+              'downloaded update installs when you restart or quit.'
+        : 'Checks for updates daily and downloads them in the background. A '
+              'downloaded update installs when you choose Update and restart.';
+  }
+
+  // ---------------------------------------------------------------------------
+  // The search, and what has changed
+
+  SettingsSearchEntry<SettingsSection> _entry(
+    SettingsSection section,
+    String? group,
+    _Setting setting,
+  ) => SettingsSearchEntry(
+    section: section,
+    sectionLabel: section.label,
+    title: setting.title,
+    icon: section.icon,
+    target: setting.id,
+    group: group,
+    keywords: setting.keywords,
+    description: setting.subtitle,
+    value: setting.value,
+    changed: setting.changed,
+    onReset: setting.onReset,
+  );
+
+  /// Everything a search can reach: every row of every pane, read from the
+  /// same settings the panes draw, so a row can never be on screen and not
+  /// findable, or findable and gone. A test opens every entry and checks its
+  /// row is there.
+  List<SettingsSearchEntry<SettingsSection>> _searchIndex() {
+    final sections = _sections;
+    final results = _keys(ShortcutAction.toggleResults);
+    return [
+      // The categories themselves, for somebody who types the name of one.
+      for (final section in sections)
+        SettingsSearchEntry(
+          section: section,
+          sectionLabel: section.label,
+          title: section.label,
+          icon: section.icon,
+          description: section.summary,
+        ),
+      for (final section in sections)
+        for (final group
+            in section == SettingsSection.shortcuts
+                ? _shortcutGroups(filtered: false)
+                : _groupsFor(section))
+          for (final setting in group.settings)
+            _entry(section, group.title, setting),
+      if (sections.contains(SettingsSection.shortcuts))
+        SettingsSearchEntry(
+          section: SettingsSection.shortcuts,
+          sectionLabel: SettingsSection.shortcuts.label,
+          title: 'Restore all shortcuts',
+          icon: SettingsSection.shortcuts.icon,
+          target: 'restore-shortcut-defaults',
+          keywords: const ['reset', 'defaults', 'keys', 'hotkeys'],
+        ),
+      if (sections.contains(SettingsSection.about))
+        SettingsSearchEntry(
+          section: SettingsSection.about,
+          sectionLabel: SettingsSection.about.label,
+          title: 'Release notes',
+          icon: SettingsSection.about.icon,
+          target: 'changelog',
+          keywords: const ['changelog', 'what’s new', 'versions', 'history'],
+        ),
+      if (sections.contains(SettingsSection.account))
+        ..._accountSearchEntries(widget.account!),
+      // Settings that live where they are used. Found here, and said where.
+      SettingsSearchEntry(
+        section: SettingsSection.notes,
+        sectionLabel: SettingsSection.notes.label,
+        title: 'Calculation results',
+        icon: SettingsSection.notes.icon,
+        keywords: const ['answers', 'results column', 'show results', 'hide'],
+        elsewhere: results.isEmpty
+            ? 'From the page’s More menu'
+            : 'Press $results on the page',
+      ),
+      SettingsSearchEntry(
+        section: SettingsSection.notes,
+        sectionLabel: SettingsSection.notes.label,
+        title: 'Notes as cards or a list',
+        icon: SettingsSection.notes.icon,
+        keywords: const ['cards', 'list view', 'rows', 'layout'],
+        elsewhere: 'The view button above your notes',
+      ),
+      if (widget.voicePrefs != null)
+        SettingsSearchEntry(
+          section: SettingsSection.voice,
+          sectionLabel: SettingsSection.voice.label,
+          title: 'Playback speed',
+          icon: SettingsSection.voice.icon,
+          keywords: const ['speed', 'faster', 'slower', 'play', 'voice note'],
+          elsewhere: 'In a voice note’s player, which remembers it',
+        ),
+    ];
+  }
+
+  /// The account's rows change with where the account stands, so its
+  /// entries do too: a signed-out account has a form, not a Sign out button.
+  List<SettingsSearchEntry<SettingsSection>> _accountSearchEntries(
+    Account account,
+  ) {
+    const section = SettingsSection.account;
+    SettingsSearchEntry<SettingsSection> entry(
+      String title, {
+      String? target,
+      String? group,
+      List<String> keywords = const [],
+    }) => SettingsSearchEntry(
+      section: section,
+      sectionLabel: section.label,
+      title: title,
+      icon: section.icon,
+      target: target,
+      group: group,
+      keywords: keywords,
+    );
+    final sharing = account.sharing;
+    return switch (account.state) {
+      AccountState.ready => [
+        entry(
+          'Your name and picture',
+          target: 'profile-card',
+          keywords: ['profile', 'display name', 'photo', 'avatar', 'email'],
+        ),
+        entry(
+          'Sync',
+          target: 'sync-status',
+          keywords: ['sync now', 'status', 'devices', 'cloud'],
+        ),
+        entry(
+          'Plan',
+          target: 'plan-current',
+          group: 'Plan',
+          keywords: ['pro', 'free', 'trial', 'subscription', 'upgrade'],
+        ),
+        entry(
+          'Storage',
+          target: 'plan-storage-usage',
+          group: 'Plan',
+          keywords: ['space', 'attachments', 'usage', 'quota', 'limit'],
+        ),
+        if (sharing != null) ...[
+          entry(
+            'Shared spaces',
+            target: 'sharing-group',
+            group: 'Sharing',
+            keywords: ['sharing', 'share', 'collaborate', 'invitations'],
+          ),
+          entry(
+            'Join with an invitation',
+            target: 'join-row',
+            group: 'Sharing',
+            keywords: ['invite', 'invitation', 'link', 'code', 'join'],
+          ),
+          if (sharing.blocks.isNotEmpty)
+            entry(
+              'Blocked people',
+              target: 'blocked-people',
+              group: 'Sharing',
+              keywords: ['unblock', 'block'],
+            ),
+        ],
+        entry(
+          'Sign out',
+          target: 'sign-out-row',
+          group: 'Sign out or delete',
+          keywords: ['log out', 'logout', 'account'],
+        ),
+        entry(
+          'Delete account',
+          target: 'delete-account',
+          group: 'Sign out or delete',
+          keywords: ['remove account', 'close account', 'erase'],
+        ),
+      ],
+      // The form that signs in is the whole pane, so the pane is the place.
+      AccountState.signedOut => [
+        entry(
+          'Sign in',
+          keywords: ['log in', 'login', 'create account', 'sign up', 'sync'],
+        ),
+      ],
+      _ => [
+        entry('Account', keywords: ['passphrase', 'unlock', 'profile', 'sync']),
+      ],
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Layout
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([
+      widget.layoutPrefs,
+      widget.shortcuts,
+      ?widget.voicePrefs,
+      ?widget.cloudAccess,
+      ?widget.localModels,
+      ?widget.updates,
+    ]),
+    builder: (context, _) =>
+        widget.asSheet ? _buildSheet(context) : _buildDialog(context),
+  );
 
   Widget _buildDialog(BuildContext context) {
     final media = MediaQuery.sizeOf(context);
@@ -1174,13 +2240,13 @@ class _SettingsDialogState extends State<SettingsDialog>
           boxShadow: [
             BoxShadow(
               color: palette.shadowAt(0x80),
-              offset: Offset(0, 30),
+              offset: const Offset(0, 30),
               blurRadius: 60,
               spreadRadius: -24,
             ),
             BoxShadow(
               color: palette.shadowAt(0x59),
-              offset: Offset(0, 2),
+              offset: const Offset(0, 2),
               blurRadius: 8,
             ),
           ],
@@ -1212,6 +2278,7 @@ class _SettingsDialogState extends State<SettingsDialog>
               children: [
                 Text(
                   title,
+                  key: const ValueKey('settings-pane-title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1249,13 +2316,16 @@ class _SettingsDialogState extends State<SettingsDialog>
   }
 
   /// [pane] under the pane's heading, fading out at its foot so the last
-  /// row reads as more to scroll to rather than as cut off.
+  /// row reads as more to scroll to rather than as cut off, over a [footer]
+  /// that stays put.
   Widget _paneColumn({
     required String title,
     required String summary,
     required Widget pane,
+    Widget? footer,
   }) {
-    final surface = context.palette.surfaceBackground;
+    final palette = context.palette;
+    final surface = palette.surfaceBackground;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1285,6 +2355,15 @@ class _SettingsDialogState extends State<SettingsDialog>
             ],
           ),
         ),
+        if (footer != null)
+          Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: palette.paneEdge)),
+            ),
+            child: footer,
+          ),
       ],
     );
   }
@@ -1302,6 +2381,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     // typed into.
     final keyboard = media.viewInsets.bottom;
     final section = _sheetSection;
+    final bottomInset = keyboard > 0 ? 0.0 : media.padding.bottom;
 
     return Padding(
       // Lifted clear of the keyboard, and shortened by the same amount so the
@@ -1323,10 +2403,10 @@ class _SettingsDialogState extends State<SettingsDialog>
               children: [
                 const _SheetGrabber(),
                 Expanded(
-                  // The pages below are their own stack, so a back gesture steps
-                  // out of a category before it closes the sheet. The hero
-                  // controller above belongs to the app's navigator and cannot
-                  // be shared with this one.
+                  // The pages below are their own stack, so a back gesture
+                  // steps out of a category before it closes the sheet. The
+                  // hero controller above belongs to the app's navigator and
+                  // cannot be shared with this one.
                   child: HeroControllerScope.none(
                     child: NavigatorPopHandler(
                       onPopWithResult: (_) =>
@@ -1339,15 +2419,13 @@ class _SettingsDialogState extends State<SettingsDialog>
                         pages: [
                           MaterialPage<void>(
                             key: _sheetIndexKey,
-                            // Nothing here is worth keeping alive under a pane,
-                            // and one live page at a time keeps 'Done' meaning
-                            // one button.
+                            // Nothing here is worth keeping alive under a
+                            // pane, and one live page at a time keeps 'Done'
+                            // meaning one button.
                             maintainState: false,
                             child: _SheetPage(
                               title: 'Settings',
-                              bottomInset: keyboard > 0
-                                  ? 0
-                                  : media.padding.bottom,
+                              bottomInset: bottomInset,
                               children: [
                                 // No autofocus: a keyboard that rises the
                                 // moment settings opens would cover the very
@@ -1359,6 +2437,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                                 else
                                   _CategoryList(
                                     sections: _sections,
+                                    changed: _changedSections,
                                     account: widget.account,
                                     onSelect: _openSheetSection,
                                   ),
@@ -1371,9 +2450,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                               child: _SheetPage(
                                 title: section.label,
                                 onBack: _closeSheetSection,
-                                bottomInset: keyboard > 0
-                                    ? 0
-                                    : media.padding.bottom,
+                                bottomInset: bottomInset,
                                 flashTarget: _flashTarget,
                                 flash: _flash,
                                 children: _paneFor(section),
@@ -1392,12 +2469,40 @@ class _SettingsDialogState extends State<SettingsDialog>
     );
   }
 
+  /// Every entry that is off its default.
+  List<SettingsSearchEntry<SettingsSection>> get _changedEntries => [
+    for (final entry in _searchIndex())
+      if (entry.changed) entry,
+  ];
+
+  Set<SettingsSection> get _changedSections => {
+    for (final entry in _changedEntries) entry.section,
+  };
+
+  static String _count(int count, String one) => switch (count) {
+    0 => 'No ${one}s',
+    1 => '1 $one',
+    _ => '$count ${one}s',
+  };
+
   /// The search sits over the rail, where a list of categories is looked
   /// down for something and a field that finds it saves the looking. Its
   /// results take the pane's place, so the rail stays a way back out.
   Widget _buildPaned(BuildContext context) {
     final palette = context.palette;
     final section = _section;
+    final changed = _changedEntries;
+    final (title, summary) = _searching
+        ? (
+            '${_count(_results.length, 'setting')} for “$_query”',
+            'Found by name, by everyday words and by what each one changes',
+          )
+        : _showingChanged
+        ? (
+            '${_count(changed.length, 'setting')} changed',
+            'Everything set differently from how Kapy Notes came',
+          )
+        : (section.label, section.summary);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1419,10 +2524,10 @@ class _SettingsDialogState extends State<SettingsDialog>
                   'Settings',
                   style: TextStyle(
                     fontFamily: 'Shantell Sans',
-                    fontSize: 17,
+                    fontSize: 18,
                     fontWeight: FontWeight.w600,
-                    height: 22 / 17,
-                    color: palette.textHeading,
+                    height: 22 / 18,
+                    color: palette.textPrimary,
                   ),
                 ),
               ),
@@ -1433,53 +2538,67 @@ class _SettingsDialogState extends State<SettingsDialog>
               const SizedBox(height: 14),
               Expanded(
                 child: _SettingsRail(
-                  sections: _railSections,
+                  sections: _sections,
+                  changed: {for (final entry in changed) entry.section},
                   // No category is the one on show while results are.
-                  selected: _searching ? null : section,
+                  selected: _searching || _showingChanged ? null : section,
                   onSelect: _selectFromRail,
                 ),
               ),
-              if (widget.updates case final updates?)
-                ListenableBuilder(
-                  listenable: updates,
-                  builder: (context, _) => _VersionStatus(updates: updates),
+              if (changed.isNotEmpty)
+                _RailItem(
+                  key: const ValueKey('settings-changed'),
+                  icon: KapyIcons.undoRounded,
+                  label: 'Changed from default',
+                  count: changed.length,
+                  selected: _showingChanged && !_searching,
+                  onTap: _showChanged,
                 ),
+              if (widget.updates case final updates?) ...[
+                const SizedBox(height: 8),
+                _VersionStatus(updates: updates),
+              ],
             ],
           ),
         ),
         Expanded(
           child: _paneColumn(
-            title: _searching ? 'Search' : section.label,
-            summary: _searching
-                ? 'Settings that match “$_query”'
-                : section.summary,
+            title: title,
+            summary: summary,
             pane: _ScrollingPane(
               key: _paneKey,
               controller: _scrollController,
               flashTarget: _flashTarget,
               flash: _flash,
-              children: _searching ? [_searchResults()] : _paneFor(section),
+              children: _searching
+                  ? [_searchResults()]
+                  : _showingChanged
+                  ? [_changedList(changed)]
+                  : _paneFor(section),
             ),
+            footer: _searching
+                ? const _SearchHints()
+                : !_showingChanged && section == SettingsSection.shortcuts
+                ? _shortcutsFooter()
+                : null,
           ),
         ),
       ],
     );
   }
 
-  /// The rail's order: the account sections, then the two that shape the
-  /// writing, then the keys and the app itself.
-  List<SettingsSection> get _railSections => [
-    for (final section in const [
-      SettingsSection.general,
-      SettingsSection.sync,
-      SettingsSection.plan,
-      SettingsSection.voice,
-      SettingsSection.appearance,
-      SettingsSection.shortcuts,
-      SettingsSection.updates,
-    ])
-      if (_sections.contains(section)) section,
-  ];
+  Widget _changedList(List<SettingsSearchEntry<SettingsSection>> changed) {
+    if (changed.isEmpty) {
+      return const SettingsNote('Everything is as Kapy Notes came.');
+    }
+    return SettingsSearchResults<SettingsSection>(
+      key: const ValueKey('settings-changed-list'),
+      query: '',
+      results: changed,
+      onOpen: _openResult,
+      resets: true,
+    );
+  }
 
   Widget _buildStacked(BuildContext context) {
     return _paneColumn(
@@ -1503,8 +2622,12 @@ class _SettingsDialogState extends State<SettingsDialog>
                   : [
                       for (final section in _sections) ...[
                         if (section != _sections.first)
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 28),
                         ..._paneFor(section),
+                        if (section == SettingsSection.shortcuts) ...[
+                          const SizedBox(height: 12),
+                          _shortcutsFooter(),
+                        ],
                       ],
                     ],
             ),
@@ -1514,1024 +2637,142 @@ class _SettingsDialogState extends State<SettingsDialog>
     );
   }
 
+  List<Widget> _fromGroups(List<_Group> groups) => [
+    for (final group in groups) ...[
+      if (group != groups.first) SizedBox(height: SettingsMetrics.groupGap),
+      SettingsLabel(group.title, detail: group.detail),
+      SettingsGroup(
+        children: [for (final setting in group.settings) setting.build()],
+      ),
+      ...group.after,
+    ],
+  ];
+
   List<Widget> _paneFor(SettingsSection section) => switch (section) {
-    SettingsSection.general => _generalPane(),
-    SettingsSection.sync => [
-      SyncPane(account: widget.account!, includeDeleteAccount: false),
-      // The gap between two panes, borrowed from the stacked layout: the
-      // panel titles do the separating, and a rule between them would only
-      // put back the boundary this section exists to remove.
-      const SizedBox(height: 20),
-      SharingPane(account: widget.account!),
-      const SizedBox(height: 20),
-      DeleteAccountSettings(account: widget.account!),
+    SettingsSection.appearance => [
+      _AppearancePreview(prefs: widget.layoutPrefs),
+      SizedBox(height: SettingsMetrics.groupGap),
+      ..._fromGroups(_appearanceGroups()),
     ],
-    SettingsSection.plan => [_PlanUsagePane(account: widget.account!)],
-    SettingsSection.voice => _voicePane(),
-    SettingsSection.appearance => _appearancePane(),
     SettingsSection.shortcuts => _shortcutsPane(),
-    SettingsSection.updates => _updatesPane(),
-  };
-
-  /// Everything a search can reach, written beside the panes that draw it.
-  ///
-  /// An entry finds its row by the key the row already carries, and names it
-  /// the way the row does, plus the other words people reach for — nobody
-  /// searching for "dark mode" should need to know it is filed under Theme.
-  /// Entries follow the same conditions as their rows, so a search never
-  /// offers what this build or this account does not have. A test opens
-  /// every entry and checks its row is there, so a row renamed or removed
-  /// without its entry fails there rather than in somebody's hands.
-  List<SettingsSearchEntry<SettingsSection>> _searchIndex() {
-    SettingsSearchEntry<SettingsSection> entry(
-      SettingsSection section,
-      String title, {
-      required KapyIconData icon,
-      String? target,
-      String? group,
-      List<String> keywords = const [],
-      String? description,
-    }) => SettingsSearchEntry(
-      section: section,
-      sectionLabel: section.label,
-      title: title,
-      icon: icon,
-      target: target,
-      group: group,
-      keywords: keywords,
-      description: description,
-    );
-
-    const general = SettingsSection.general;
-    const plan = SettingsSection.plan;
-    const appearance = SettingsSection.appearance;
-    const voice = SettingsSection.voice;
-    const shortcuts = SettingsSection.shortcuts;
-    const updates = SettingsSection.updates;
-    final prefs = widget.layoutPrefs;
-    final account = widget.account;
-
-    final entries = [
-      // The categories themselves, for somebody who types the name of one.
-      for (final section in _sections)
-        entry(
-          section,
-          section.label,
-          icon: section.icon,
-          description: section.summary,
-        ),
-
-      entry(
-        general,
-        'Note opened at launch',
-        group: 'Opening',
-        icon: KapyIcons.noteOutlined,
-        target: 'default-note-setting',
-        keywords: ['default note', 'startup', 'start'],
-      ),
-      entry(
-        general,
-        'Ready to type on open',
-        group: 'Opening',
-        icon: KapyIcons.keyboardOutlined,
-        target: 'ready-to-type-on-open-toggle',
-        keywords: ['cursor', 'caret', 'focus', 'keyboard', 'resume'],
-      ),
-      entry(
-        general,
-        'Daily separators',
-        group: 'Writing',
-        icon: KapyIcons.calendarOutlined,
-        target: 'daily-separators-toggle',
-        keywords: ['date', 'day', 'dated line', 'divider', 'session'],
-      ),
-      entry(
-        general,
-        'Time zone',
-        group: 'Writing',
-        icon: KapyIcons.publicRounded,
-        target: 'time-zone-setting',
-        keywords: ['timezone', 'clock', 'utc', 'gmt', 'offset'],
-      ),
-      entry(
-        general,
-        'Check spelling',
-        group: 'Writing',
-        icon: KapyIcons.spellcheckRounded,
-        target: 'spell-check-toggle',
-        keywords: ['spellcheck', 'spell check', 'typos', 'dictionary'],
-        description: 'Underline possible misspellings',
-      ),
-      entry(
-        general,
-        'Markdown in notes',
-        group: 'Writing',
-        icon: KapyIcons.tagRounded,
-        target: 'markdown-toggle',
-        keywords: [
-          'markdown',
-          'md',
-          'commonmark',
-          'syntax',
-          'headings',
-          'bold',
-          'code',
-          'formatting',
-          'lists',
-          'checkbox',
-          'tables',
-        ],
-        description: 'Type # for a heading, - for a list, [] for a checkbox',
-      ),
-      entry(
-        general,
-        'Export all notes',
-        group: 'Your notes',
-        icon: KapyIcons.shareRounded,
-        target: 'export-notes',
-        keywords: ['backup', 'download', 'save', 'zip', 'markdown'],
-      ),
-      entry(
-        general,
-        'Import from an export',
-        group: 'Your notes',
-        icon: KapyIcons.downloadRounded,
-        target: 'import-notes',
-        keywords: ['restore', 'upload', 'zip', 'markdown'],
-      ),
-      if (AppPlatform.isDesktop) ...[
-        entry(
-          general,
-          'Notes list',
-          group: 'Window',
-          icon: KapyIcons.viewSidebarOutlined,
-          target: 'sidebar-toggle',
-          keywords: ['sidebar', 'show', 'hide'],
-        ),
-        entry(
-          general,
-          'Hidden Notes',
-          group: 'Window',
-          icon: KapyIcons.lockRounded,
-          target: 'hidden-notes-sidebar-toggle',
-          keywords: [
-            'hidden',
-            'private',
-            'protected',
-            'sidebar',
-            'show',
-            'hide',
-            'cmd h',
-            'ctrl h',
-          ],
-          description: 'Show or hide the protected folder in the notes list',
-        ),
-        entry(
-          general,
-          AppPlatform.isMacOS
-              ? 'Keep running in the menu bar'
-              : 'Keep running in the tray',
-          group: 'Window',
-          icon: KapyIcons.closeFullscreenRounded,
-          target: 'keep-running-toggle',
-          keywords: ['background', 'menu bar', 'tray', 'close', 'quit'],
-        ),
-        if (widget.desktopIntegration?.loginItemSupported ?? false)
-          entry(
-            general,
-            'Open at login',
-            group: 'Window',
-            icon: KapyIcons.loginRounded,
-            target: 'login-item-toggle',
-            keywords: ['startup', 'launch at login', 'login item', 'boot'],
-          ),
-        entry(
-          general,
-          'Panel widths',
-          group: 'Window',
-          icon: KapyIcons.viewColumnOutlined,
-          target: 'panel-widths-setting',
-          keywords: ['reset', 'resize', 'sidebar width'],
-        ),
-      ],
-
-      entry(
-        appearance,
-        'Theme',
-        group: 'Theme',
-        icon: KapyIcons.appearanceOutlined,
-        target: 'theme-setting',
-        keywords: ['dark mode', 'light mode', 'night', 'colour', 'color'],
-      ),
-      entry(
-        appearance,
-        'Paper',
-        group: 'Theme',
-        icon: KapyIcons.textureRounded,
-        target: 'paper-setting',
-        keywords: ['ruled', 'lined', 'notepad', 'plain', 'grain', 'texture'],
-      ),
-      entry(
-        appearance,
-        'App text size',
-        group: 'Theme',
-        icon: KapyIcons.textFieldsRounded,
-        target: 'app-text-size-setting',
-        keywords: ['font size', 'interface size', 'ui scale', 'zoom', 'larger'],
-        description: prefs.appTextSize.description,
-      ),
-      if (LayoutPrefs.supportsTransparency) ...[
-        entry(
-          appearance,
-          'Transparency',
-          group: 'Theme',
-          icon: KapyIcons.blurRounded,
-          target: 'transparency-toggle',
-          keywords: ['blur', 'glass', 'translucent', 'see-through'],
-        ),
-        if (prefs.transparencyEnabled)
-          entry(
-            appearance,
-            'Transparency amount',
-            group: 'Theme',
-            icon: KapyIcons.opacityRounded,
-            target: 'transparency-amount',
-            keywords: ['blur', 'opacity'],
-          ),
-      ],
-      for (final font in WritingFont.values)
-        entry(
-          appearance,
-          font.label,
-          group: 'Writing font',
-          icon: KapyIcons.textFieldsRounded,
-          target: 'writing-font-${font.name}',
-          keywords: ['font', 'typeface', 'writing font'],
-          description: font.description,
-        ),
-      for (final system in NumberSystem.values)
-        entry(
-          appearance,
-          system.label,
-          group: 'Numbers',
-          icon: KapyIcons.numbersRounded,
-          target: 'number-system-${system.name}',
-          keywords: ['number format', 'digits', 'grouping', 'commas'],
-          description: system.description,
-        ),
-      entry(
-        appearance,
-        'Exchange rates',
-        group: 'Numbers',
-        icon: KapyIcons.currencyExchangeRounded,
-        target: 'rate-attribution',
-        keywords: ['currency', 'conversion', 'forex'],
-      ),
-
-      if (account != null) ...[
-        entry(
-          plan,
-          'Current plan',
-          group: 'Plan',
-          icon: KapyIcons.verifiedOutlined,
-          target: 'plan-current',
-          keywords: ['pro', 'free', 'subscription', 'account plan'],
-        ),
-        entry(
-          plan,
-          'Transcription minutes',
-          group: 'Usage',
-          icon: KapyIcons.scheduleRounded,
-          target: 'plan-transcription-usage',
-          keywords: ['voice', 'cloud', 'usage', 'quota', 'limit'],
-        ),
-        entry(
-          plan,
-          'AI summaries',
-          group: 'Usage',
-          icon: KapyIcons.magicOutlined,
-          target: 'plan-summary-usage',
-          keywords: ['rewrite', 'cloud', 'usage', 'quota', 'limit'],
-        ),
-        entry(
-          plan,
-          'Storage',
-          group: 'Usage',
-          icon: KapyIcons.backupRestoreRounded,
-          target: 'plan-storage-usage',
-          keywords: ['space', 'attachments', 'usage', 'quota', 'limit'],
-        ),
-      ],
-
-      if (widget.voicePrefs != null) ...[
-        entry(
-          voice,
-          'Cloud transcription',
-          group: 'Transcription',
-          icon: KapyIcons.micRounded,
-          target: 'cloud-transcription-row',
-          keywords: ['transcribe', 'transcript', 'speech to text', 'dictation'],
-        ),
-        entry(
-          voice,
-          'Transcription model',
-          group: 'Transcription',
-          icon: KapyIcons.magicOutlined,
-          target: 'voice-transcription-model-row',
-          keywords: [
-            'soniox',
-            'stt-async-v5',
-            'microsoft',
-            'mai transcribe',
-            'nvidia',
-            'nemotron',
-            'openrouter',
-          ],
-          description: widget.voicePrefs!.cloudTranscriptionModel.title,
-        ),
-        entry(
-          voice,
-          'Local transcription',
-          group: 'Transcription',
-          icon: KapyIcons.audioWaveRounded,
-          target: 'local-transcription-row',
-          keywords: ['offline', 'local', 'private', 'model', 'download'],
-        ),
-        entry(
-          voice,
-          'Make a summary',
-          group: 'Recordings & summaries',
-          icon: KapyIcons.subjectRounded,
-          target: 'voice-summary-toggle',
-          keywords: ['summarise', 'summarize', 'recording', 'voice note'],
-        ),
-        entry(
-          voice,
-          'Language',
-          group: 'Recordings & summaries',
-          icon: KapyIcons.translateRounded,
-          target: 'voice-language-row',
-          keywords: ['speech', 'transcription language', 'detect'],
-        ),
-        entry(
-          voice,
-          'Local summaries',
-          group: 'Recordings & summaries',
-          icon: KapyIcons.magicOutlined,
-          target: 'local-summary-row',
-          keywords: ['offline', 'local', 'private', 'apple intelligence'],
-        ),
-      ],
-
-      for (final action in ShortcutAction.values)
-        entry(
-          shortcuts,
-          action.label,
-          group: switch (action.group) {
-            null => 'System-wide',
-            final group => group.title,
-          },
-          icon: KapyIcons.keyboardOutlined,
-          target: 'shortcut-row-${action.name}',
-          keywords: [
-            'shortcut',
-            'hotkey',
-            'keyboard',
-            ?widget.shortcuts.bindingFor(action)?.displayLabel,
-          ],
-          description: action.description,
-        ),
-      entry(
-        shortcuts,
-        'Restore shortcut defaults',
-        icon: KapyIcons.backupRestoreRounded,
-        target: 'restore-shortcut-defaults',
-        keywords: ['reset', 'shortcuts'],
-      ),
-
-      entry(
-        updates,
-        'Version',
-        icon: KapyIcons.infoOutlined,
-        target: 'app-version',
-        keywords: ['build', 'about', 'release'],
-      ),
-      entry(
-        updates,
-        'Check for updates',
-        icon: KapyIcons.systemUpdateRounded,
-        target: 'update-row',
-        keywords: ['update', 'upgrade', 'new version', 'release notes'],
-      ),
-      entry(
-        updates,
-        'Download updates automatically',
-        icon: KapyIcons.downloadRounded,
-        target: 'update-auto-download',
-        keywords: ['auto update', 'automatic', 'background', 'restart'],
-      ),
-      entry(
-        updates,
-        'Release notes',
-        icon: KapyIcons.historyRounded,
-        target: 'changelog',
-        keywords: ['changelog', "what's new", 'versions', 'history', 'changes'],
-      ),
-
-      if (account != null) ..._accountSearchEntries(account, entry),
-    ];
-    return [
-      for (final candidate in entries)
-        if (_isAvailable(candidate.section)) candidate,
-    ];
-  }
-
-  /// The account's rows change with where the account stands, so its
-  /// entries do too: a signed-out account has a form, not a Sign out button.
-  List<SettingsSearchEntry<SettingsSection>> _accountSearchEntries(
-    Account account,
-    SettingsSearchEntry<SettingsSection> Function(
-      SettingsSection section,
-      String title, {
-      required KapyIconData icon,
-      String? target,
-      String? group,
-      List<String> keywords,
-      String? description,
-    })
-    entry,
-  ) {
-    const sync = SettingsSection.sync;
-    final sharing = account.sharing;
-    return switch (account.state) {
-      AccountState.ready => [
-        entry(
-          sync,
-          'Your name and picture',
-          group: 'Profile',
-          icon: KapyIcons.accountCircleOutlined,
-          target: 'profile-card',
-          keywords: ['profile', 'display name', 'photo', 'avatar'],
-        ),
-        entry(
-          sync,
-          'Sync',
-          group: 'Account',
-          icon: KapyIcons.syncRounded,
-          target: 'sync-status',
-          keywords: ['sync now', 'status', 'devices', 'cloud'],
-        ),
-        entry(
-          sync,
-          'Sign out',
-          group: 'Account',
-          icon: KapyIcons.logoutRounded,
-          target: 'sign-out-row',
-          keywords: ['log out', 'logout', 'account', 'email'],
-        ),
-        entry(
-          sync,
-          'Delete account',
-          group: 'Account',
-          icon: KapyIcons.deleteForeverOutlined,
-          target: 'delete-account',
-          keywords: ['remove account', 'close account', 'erase'],
-        ),
-        if (sharing != null) ...[
-          entry(
-            sync,
-            'Shared spaces',
-            group: 'Sharing',
-            icon: KapyIcons.peopleOutlined,
-            target: 'sharing-group',
-            keywords: ['sharing', 'share', 'collaborate', 'invitations'],
-          ),
-          entry(
-            sync,
-            'Join with an invitation',
-            group: 'Sharing',
-            icon: KapyIcons.linkRounded,
-            target: 'join-code',
-            keywords: ['invite', 'invitation', 'link', 'code', 'join'],
-          ),
-          if (sharing.blocks.isNotEmpty)
-            entry(
-              sync,
-              'Blocked people',
-              group: 'Blocked',
-              icon: KapyIcons.blockedRounded,
-              target: 'block-${sharing.blocks.first.email}',
-              keywords: ['unblock', 'block'],
-            ),
-        ],
-      ],
-      // The form that signs in is the whole pane, so the pane is the place.
-      AccountState.signedOut => [
-        entry(
-          sync,
-          'Sign in',
-          icon: KapyIcons.loginRounded,
-          keywords: ['log in', 'login', 'create account', 'sign up', 'sync'],
-        ),
-      ],
-      _ => [
-        entry(
-          sync,
-          'Account',
-          icon: KapyIcons.accountCircleOutlined,
-          keywords: ['passphrase', 'unlock', 'profile', 'sync'],
-        ),
-      ],
-    };
-  }
-
-  /// Grouped by the question somebody comes here with: what happens when a
-  /// note opens, how writing behaves, what can be done with the notes, and —
-  /// on a desktop — how the window behaves.
-  ///
-  /// It used to be one "Notes" card holding five switches that had little to
-  /// do with each other, a time zone that went by its value instead of its
-  /// name, and a button loose under the last card. Now every row says what it
-  /// is, next to the rows it is read with.
-  List<Widget> _generalPane() => [
-    const SettingsLabel('Opening'),
-    SettingsGroup(
-      children: [
-        SettingsNavigationRow(
-          key: const ValueKey('default-note-setting'),
-          icon: KapyIcons.noteOutlined,
-          title: 'Note opened at launch',
-          subtitle: _defaultNoteLabel,
-          onTap: _chooseDefaultNote,
-        ),
-        SettingsToggleRow(
-          key: const ValueKey('ready-to-type-on-open-toggle'),
-          icon: KapyIcons.textCursorOutlined,
-          title: 'Ready to type on open',
-          subtitle: 'Restore your cursor or start a new dated line',
-          value: widget.layoutPrefs.readyToTypeOnOpen,
-          onChanged: (value) => widget.layoutPrefs.readyToTypeOnOpen = value,
-        ),
-      ],
-    ),
-    SizedBox(height: SettingsMetrics.groupGap),
-    // The time zone sits under the separators because they are what it
-    // dates: a row further down, under a heading of its own, read as a
-    // setting for the whole computer.
-    const SettingsLabel('Writing'),
-    SettingsGroup(
-      children: [
-        SettingsToggleRow(
-          key: const ValueKey('daily-separators-toggle'),
-          icon: KapyIcons.calendarOutlined,
-          title: 'Daily separators',
-          subtitle: 'Add a dated line when a new day begins',
-          value: widget.layoutPrefs.dailySeparatorsEnabled,
-          onChanged: (value) =>
-              widget.layoutPrefs.dailySeparatorsEnabled = value,
-        ),
-        SettingsNavigationRow(
-          key: const ValueKey('time-zone-setting'),
-          icon: KapyIcons.publicRounded,
-          title: 'Time zone',
-          subtitle:
-              '${AppTimeZones.displayName(widget.layoutPrefs.timeZoneId)} · '
-              '${AppTimeZones.offsetLabel(widget.layoutPrefs.timeZoneId)}',
-          onTap: _chooseTimeZone,
-        ),
-        SettingsToggleRow(
-          key: const ValueKey('spell-check-toggle'),
-          icon: KapyIcons.spellCheckOutlined,
-          title: 'Check spelling',
-          subtitle: 'Underline possible misspellings',
-          value: widget.layoutPrefs.spellCheckEnabled,
-          onChanged: (value) => widget.layoutPrefs.spellCheckEnabled = value,
-        ),
-        // Beside spelling because both are about how the words are read as
-        // they are typed. Nothing in a note is converted either way.
-        SettingsToggleRow(
-          key: const ValueKey('markdown-toggle'),
-          icon: KapyIcons.hashtagOutlined,
-          title: 'Markdown in notes',
-          subtitle: 'Use # headings, - lists, and [] checkboxes',
-          value: widget.layoutPrefs.markdownEnabled,
-          onChanged: (value) => widget.layoutPrefs.markdownEnabled = value,
-        ),
-      ],
-    ),
-    SizedBox(height: SettingsMetrics.groupGap),
-    const SettingsLabel('Your notes'),
-    SettingsGroup(
-      children: [
-        SettingsNavigationRow(
-          key: const ValueKey('export-notes'),
-          icon: KapyIcons.uploadOutlined,
-          title: 'Export all notes',
-          // The one-line warning the plaintext deserves, at the moment it
-          // matters. Not called a backup, because nothing here runs on its own.
-          subtitle: 'One Markdown .zip · Unencrypted after export',
-          onTap: () => unawaited(_exportNotes()),
-        ),
-        SettingsNavigationRow(
-          key: const ValueKey('import-notes'),
-          icon: KapyIcons.downloadRounded,
-          title: 'Import from an export',
-          subtitle: 'Preview changes before importing a .zip',
-          onTap: () => unawaited(runImport(context, widget.notes)),
-        ),
-      ],
-    ),
-    if (AppPlatform.isDesktop) ...[
-      SizedBox(height: SettingsMetrics.groupGap),
-      // Everything about the window as a thing on the desktop: what is in it,
-      // whether it outlives being closed, and the one reset. The reset is a
-      // row like the others rather than a button under the card, which read
-      // as belonging to the whole pane.
-      const SettingsLabel('Window'),
-      SettingsGroup(
-        children: [
-          SettingsToggleRow(
-            key: const ValueKey('sidebar-toggle'),
-            icon: KapyIcons.menuOpenRounded,
-            // Named the way the shortcut that toggles it is named.
-            title: 'Notes list',
-            subtitle: 'Show the notes list beside your editor',
-            value: widget.layoutPrefs.sidebarVisible,
-            onChanged: (_) => widget.layoutPrefs.toggleSidebar(),
-          ),
-          SettingsToggleRow(
-            key: const ValueKey('hidden-notes-sidebar-toggle'),
-            icon: KapyIcons.lockKeyOutlined,
-            title: 'Hidden Notes',
-            subtitle:
-                'Show the protected folder · '
-                '${widget.shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)?.displayLabel ?? 'Settings only'}',
-            value: widget.layoutPrefs.hiddenFolderVisible,
-            onChanged: (value) =>
-                widget.layoutPrefs.hiddenFolderVisible = value,
-          ),
-          SettingsToggleRow(
-            key: const ValueKey('keep-running-toggle'),
-            icon: KapyIcons.computerOutlined,
-            title: AppPlatform.isMacOS
-                ? 'Keep running in the menu bar'
-                : 'Keep running in the tray',
-            subtitle: AppPlatform.isMacOS
-                ? 'Open, write, or quit from the menu bar'
-                : 'Keep shortcuts active after closing the window',
-            value: widget.layoutPrefs.keepRunningInBackground,
-            onChanged: _setKeepRunning,
-          ),
-          // Absent rather than disabled where the OS has no mechanism this
-          // app is allowed to use: macOS 12 predates the one the sandbox
-          // permits.
-          if (widget.desktopIntegration?.loginItemSupported ?? false)
-            SettingsToggleRow(
-              key: const ValueKey('login-item-toggle'),
-              icon: KapyIcons.loginRounded,
-              title: 'Open at login',
-              subtitle: 'Launch when you sign in to this computer',
-              value: widget.desktopIntegration!.loginItemEnabled,
-              onChanged: (value) => unawaited(_setLoginItem(value)),
-            ),
-          SettingsRow(
-            key: const ValueKey('panel-widths-setting'),
-            icon: KapyIcons.panelColumnsOutlined,
-            title: 'Panel widths',
-            subtitle: 'Reset the notes list to its default width',
-            trailing: SettingsRowButton(
-              key: const ValueKey('reset-panel-widths'),
-              label: 'Reset',
-              onPressed: widget.layoutPrefs.resetPanelWidths,
-            ),
-          ),
-        ],
-      ),
-      if (_loginItemError != null) ...[
-        const SizedBox(height: 8),
-        Text(
-          _loginItemError!,
-          key: const ValueKey('login-item-error'),
-          style: TextStyle(
-            fontSize: AppTypeScale.caption,
-            color: Theme.of(context).colorScheme.error,
-          ),
-        ),
-      ],
-    ],
-  ];
-
-  /// Everything that decides how the app looks and how what is in it reads.
-  ///
-  /// Numbers used to be a rail item of its own, holding one choice and an
-  /// attribution line. How a thousand is punctuated is a display choice like
-  /// any other here, and a category somebody visits once is a category that
-  /// costs a click every time they are looking for something else.
-  ///
-  /// Three groups: the look of the window and the page, the font written in,
-  /// and numbers. Theme and paper are a word each, so they are segmented rows
-  /// rather than a radio list apiece — six rows and six sentences that told
-  /// the reader nothing the word had not. The writing fonts keep their list,
-  /// because each one is shown in itself, and that is the point of it.
-  List<Widget> _appearancePane() => [
-    const SettingsLabel('Theme'),
-    SettingsGroup(
-      children: [
-        _SegmentedRow<AppearanceMode>(
-          key: const ValueKey('theme-setting'),
-          icon: KapyIcons.appearanceOutlined,
-          title: 'Theme',
-          subtitle: widget.layoutPrefs.appearance.description,
-          options: AppearanceMode.values,
-          selected: widget.layoutPrefs.appearance,
-          labelFor: (mode) => switch (mode) {
-            AppearanceMode.system => 'System',
-            AppearanceMode.light => 'Light',
-            AppearanceMode.dark => 'Dark',
-          },
-          keyFor: (mode) => ValueKey('appearance-${mode.name}'),
-          onSelected: (mode) => widget.layoutPrefs.appearance = mode,
-        ),
-        _SegmentedRow<PaperStyle>(
-          key: const ValueKey('paper-setting'),
-          icon: KapyIcons.textureRounded,
-          title: 'Paper',
-          subtitle: widget.layoutPrefs.paperStyle.description,
-          options: PaperStyle.values,
-          selected: widget.layoutPrefs.paperStyle,
-          labelFor: (paper) => paper.label,
-          keyFor: (paper) => ValueKey('paper-style-${paper.name}'),
-          onSelected: (paper) => widget.layoutPrefs.paperStyle = paper,
-        ),
-        _SegmentedRow<AppTextSize>(
-          key: const ValueKey('app-text-size-setting'),
-          icon: KapyIcons.textFieldsRounded,
-          title: 'App text size',
-          subtitle: widget.layoutPrefs.appTextSize.description,
-          options: AppTextSize.values,
-          selected: widget.layoutPrefs.appTextSize,
-          labelFor: (size) => size.label,
-          keyFor: (size) => ValueKey('app-text-size-${size.name}'),
-          onSelected: (size) => widget.layoutPrefs.appTextSize = size,
-        ),
-        if (LayoutPrefs.supportsTransparency) ...[
-          SettingsToggleRow(
-            key: const ValueKey('transparency-toggle'),
-            icon: KapyIcons.blurRounded,
-            title: 'Transparency',
-            subtitle: 'Blur the desktop behind your notes',
-            value: widget.layoutPrefs.transparencyEnabled,
-            onChanged: (value) =>
-                widget.layoutPrefs.transparencyEnabled = value,
-          ),
-          if (widget.layoutPrefs.transparencyEnabled)
-            _SliderRow(
-              key: const ValueKey('transparency-amount'),
-              icon: KapyIcons.opacityRounded,
-              title: 'Amount',
-              subtitle: 'Choose how much desktop shows through',
-              minLabel: 'Subtle',
-              maxLabel: 'Clear',
-              value: widget.layoutPrefs.transparencyAmount,
-              onChanged: (value) =>
-                  widget.layoutPrefs.transparencyAmount = value,
-            ),
-        ],
-      ],
-    ),
-    SizedBox(height: SettingsMetrics.groupGap),
-    const SettingsLabel('Writing font'),
-    SettingsGroup(
-      children: [
-        for (final font in WritingFont.values)
-          _ChoiceRow(
-            key: ValueKey('writing-font-${font.name}'),
-            title: font.label,
-            subtitle: font.description,
-            trailing: font.preview,
-            trailingStyle: TextStyle(
-              fontFamily: font.fontFamily,
-              fontFamilyFallback: font.fontFamilyFallback,
-              fontVariations: font.fontVariations,
-              fontSize: font == WritingFont.handwritten ? 16 : 12.5,
-              height: 1,
-              letterSpacing: 0,
-            ),
-            trailingSpans: font == WritingFont.mixed
-                ? [
-                    TextSpan(
-                      text: 'Ideas',
-                      style: TextStyle(
-                        fontFamily: WritingFont.handwritten.fontFamily,
-                        fontFamilyFallback:
-                            WritingFont.handwritten.fontFamilyFallback,
-                        fontVariations: WritingFont.handwritten.fontVariations,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const TextSpan(text: ' 42'),
-                  ]
-                : null,
-            selected: widget.layoutPrefs.writingFont == font,
-            onTap: () => widget.layoutPrefs.writingFont = font,
-          ),
-      ],
-    ),
-    const SettingsNote(
-      'Applies only to notes. Menus and controls keep the app font.',
-    ),
-    SizedBox(height: SettingsMetrics.groupGap),
-    // How numbers are written and where the currency rates behind them come
-    // from, together: the credit used to be a heading of its own over one row,
-    // which read as one more thing to set.
-    const SettingsLabel('Numbers'),
-    SettingsGroup(
-      children: [
-        for (final system in NumberSystem.values)
-          _ChoiceRow(
-            key: ValueKey('number-system-${system.name}'),
-            title: system.label,
-            subtitle: system.description,
-            trailing: widget.layoutPrefs.exampleFor(system),
-            selected: widget.layoutPrefs.numberSystem == system,
-            onTap: () => widget.layoutPrefs.numberSystem = system,
-          ),
-        _RateAttributionRow(rates: widget.rates),
-      ],
-    ),
-  ];
-
-  /// The system-wide pair leads: they are the ones that reach the app from
-  /// outside it, they are the ones another app can refuse, and they are what
-  /// people come here to change. Then the in-app keys, grouped by what they
-  /// act on — the list of notes, the window, what goes into a note and how it
-  /// is formatted — where most of them used to be one long card of eleven.
-  ///
-  /// Only the system-wide pair keeps a line of explanation. An in-app row
-  /// that says "New note" over "Create and focus a blank note" says it twice.
-  List<Widget> _shortcutsPane() => [
-    // The one thing to know before anything here is useful, so it leads.
-    Padding(
-      padding: const EdgeInsets.fromLTRB(3, 0, 3, 12),
-      child: Text(
-        'Click a shortcut, then press the keys you want instead.',
-        style: TextStyle(
-          fontSize: AppTypeScale.caption,
-          height: AppPlatform.isWindows ? 1.4 : null,
-          color: AppPlatform.isWindows
-              ? context.palette.textSecondary
-              : context.palette.textTertiary,
-        ),
-      ),
-    ),
-    const SettingsLabel('System-wide'),
-    SettingsGroup(
-      children: [
-        for (final action in ShortcutAction.values.where(
-          (action) => action.isGlobal,
-        ))
-          _ShortcutRow(
-            key: ValueKey('shortcut-row-${action.name}'),
-            action: action,
-            binding: widget.shortcuts.bindingFor(action),
-            onPressed: () => _recordShortcut(action),
-            detailed: true,
-          ),
-      ],
-    ),
-    for (final group in _ShortcutGroup.values) ...[
-      SizedBox(height: SettingsMetrics.groupGap),
-      SettingsLabel(group.title),
-      SettingsGroup(
-        children: [
-          for (final action in ShortcutAction.values.where(
-            (action) => action.group == group,
-          ))
-            _ShortcutRow(
-              key: ValueKey('shortcut-row-${action.name}'),
-              action: action,
-              binding: widget.shortcuts.bindingFor(action),
-              onPressed: () => _recordShortcut(action),
-            ),
+    SettingsSection.account => [
+      SyncPane(
+        account: widget.account!,
+        middle: [
+          PlanGroup(account: widget.account!, cloudAccess: widget.cloudAccess),
+          SharingPane(account: widget.account!),
         ],
       ),
     ],
-    if (_shortcutError != null) ...[
-      const SizedBox(height: 8),
-      Text(
-        _shortcutError!,
-        key: const ValueKey('shortcut-error'),
-        style: TextStyle(
-          fontSize: AppTypeScale.caption,
-          color: Theme.of(context).colorScheme.error,
-        ),
-      ),
-    ],
-    const SizedBox(height: 12),
-    _WideButton(
-      key: const ValueKey('restore-shortcut-defaults'),
-      onPressed: _restoreShortcutDefaults,
-      icon: KapyIcons.backupRestoreRounded,
-      label: 'Restore shortcut defaults',
-    ),
-  ];
-
-  /// Everything the app knows about its own release, in the one place a
-  /// person would look for it: which build is running, whether a newer one
-  /// exists, how far its download has got, and the button for whatever comes
-  /// next. One card: two headings over one row each said less than the rows
-  /// did.
-  List<Widget> _updatesPane() {
-    final updates = widget.updates!;
-    return [
-      const SettingsLabel('Kapy Notes'),
-      ListenableBuilder(
-        listenable: updates,
-        builder: (context, _) => SettingsGroup(
-          children: [
-            _VersionRow(updates: updates),
-            _UpdateRow(key: const ValueKey('update-row'), updates: updates),
-            SettingsToggleRow(
-              key: const ValueKey('update-auto-download'),
-              icon: KapyIcons.downloadRounded,
-              title: 'Download updates automatically',
-              subtitle: 'So updating takes one click',
-              value: updates.autoDownload,
-              onChanged: (value) => updates.autoDownload = value,
-            ),
-          ],
-        ),
-      ),
-      ListenableBuilder(
-        listenable: updates,
-        builder: (context, _) => SettingsNote(_updatesNote(updates)),
-      ),
+    SettingsSection.about => [
+      ..._fromGroups(_aboutGroups()),
       SizedBox(height: SettingsMetrics.groupGap),
       // Keyed here rather than on the group below it: a search result scrolls
       // to what it lands on and lights it, and the group is taller than the
       // window by a dozen releases.
-      ListenableBuilder(
-        listenable: updates,
-        builder: (context, _) => SettingsLabel(
-          updates.hasUpdate ? "What's new" : 'Release notes',
-          key: const ValueKey('changelog'),
-        ),
+      SettingsLabel(
+        widget.updates!.hasUpdate ? "What's new" : 'Release notes',
+        key: const ValueKey('changelog'),
       ),
-      _ChangelogGroup(updates: updates),
+      _ChangelogGroup(updates: widget.updates!),
+    ],
+    _ => _fromGroups(_groupsFor(section)),
+  };
+
+  List<Widget> _shortcutsPane() {
+    final groups = _shortcutGroups();
+    return [
+      _ShortcutFilter(
+        controller: _shortcutFilter,
+        focusNode: _shortcutFilterFocus,
+        pressing: _pressingKeys,
+        onPressKeys: () {
+          setState(() => _pressingKeys = !_pressingKeys);
+          if (_pressingKeys) _shortcutFilterFocus.requestFocus();
+        },
+        onKey: _onPressKeys,
+      ),
+      const SizedBox(height: 14),
+      if (groups.isEmpty)
+        SettingsNote(
+          'No shortcut is called or set to “${_shortcutFilter.text}”.',
+        )
+      else
+        ..._fromGroups(groups),
+      if (_shortcutError case final error?)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(3, 8, 3, 0),
+          child: Text(
+            error,
+            key: const ValueKey('shortcut-error'),
+            style: TextStyle(
+              fontSize: AppTypeScale.caption,
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ),
+        ),
     ];
   }
 
-  /// When the update actually happens, which is not the same on the two
-  /// platforms: Sparkle installs a downloaded release whenever the app quits,
-  /// and the Windows installer only runs when asked.
-  static String _updatesNote(UpdateChecker updates) {
-    if (!updates.autoDownload) {
-      return 'Checks for updates daily. Nothing downloads until you choose '
-          'Download.';
-    }
-    return AppPlatform.isMacOS
-        ? 'Checks for updates daily and downloads them in the background. A '
-              'downloaded update installs when you restart or quit.'
-        : 'Checks for updates daily and downloads them in the background. A '
-              'downloaded update installs when you choose Update and restart.';
+  Widget _shortcutsFooter() {
+    final changed = _changedShortcuts;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            changed == 0
+                ? 'Every shortcut is as it came'
+                : '${_count(changed, 'shortcut')} changed',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: context.palette.textDescription,
+            ),
+          ),
+        ),
+        SettingsRowButton(
+          key: const ValueKey('restore-shortcut-defaults'),
+          label: 'Restore all shortcuts…',
+          onPressed: changed == 0
+              ? null
+              : () => unawaited(_restoreShortcutDefaults()),
+        ),
+      ],
+    );
   }
 }
 
-/// The in-app shortcuts, by what they act on.
+/// The keys, by what they act on.
 enum _ShortcutGroup {
-  notes('NOTES'),
-  splitView('SPLIT VIEW'),
-  window('WINDOW'),
-  editor('EDITOR'),
-  insert('INSERT'),
-  formatting('FORMATTING');
+  fromAnywhere('From anywhere'),
+  notesAndSearch('Notes and search'),
+  panes('Panes'),
+  window('Window'),
+  writing('Writing'),
+  formatting('Formatting');
 
-  const _ShortcutGroup(this.label);
+  const _ShortcutGroup(this.title);
 
-  final String label;
-
-  /// The heading as a search result names it: in words, not small capitals.
-  String get title => label[0] + label.substring(1).toLowerCase();
+  final String title;
 }
 
 extension on ShortcutAction {
-  /// Null for the system-wide pair, which have their own group at the top.
   /// Exhaustive on purpose: a new action does not compile until it has been
   /// given a place here.
-  _ShortcutGroup? get group => switch (this) {
-    ShortcutAction.openApp || ShortcutAction.newNoteAnywhere => null,
+  _ShortcutGroup get group => switch (this) {
+    ShortcutAction.openApp ||
+    ShortcutAction.newNoteAnywhere => _ShortcutGroup.fromAnywhere,
     ShortcutAction.newNote ||
     ShortcutAction.findNotes ||
     ShortcutAction.newTask ||
     ShortcutAction.newDrawing ||
     ShortcutAction.nextNote ||
     ShortcutAction.previousNote ||
-    ShortcutAction.deleteNote => _ShortcutGroup.notes,
+    ShortcutAction.deleteNote => _ShortcutGroup.notesAndSearch,
     ShortcutAction.splitEditor ||
     ShortcutAction.closePane ||
     ShortcutAction.focusFirstPane ||
     ShortcutAction.focusSecondPane ||
-    ShortcutAction.focusThirdPane => _ShortcutGroup.splitView,
+    ShortcutAction.focusThirdPane => _ShortcutGroup.panes,
     ShortcutAction.showNotes ||
     ShortcutAction.showTasks ||
     ShortcutAction.showDrawings ||
@@ -2545,11 +2786,11 @@ extension on ShortcutAction {
     ShortcutAction.increaseEditorTextSize ||
     ShortcutAction.decreaseEditorTextSize ||
     ShortcutAction.resetEditorTextSize ||
-    ShortcutAction.pasteAsPlainText => _ShortcutGroup.editor,
+    ShortcutAction.pasteAsPlainText ||
     ShortcutAction.insertImage ||
     ShortcutAction.insertVideo ||
     ShortcutAction.insertFile ||
-    ShortcutAction.recordVoiceNote => _ShortcutGroup.insert,
+    ShortcutAction.recordVoiceNote => _ShortcutGroup.writing,
     ShortcutAction.cycleTextStyle ||
     ShortcutAction.formatBold ||
     ShortcutAction.formatItalic ||
@@ -2559,6 +2800,663 @@ extension on ShortcutAction {
     ShortcutAction.formatBullets ||
     ShortcutAction.formatChecklist => _ShortcutGroup.formatting,
   };
+}
+
+/// A note as it would look with what is chosen: the theme, the paper, the
+/// writing font, the note text size and the number format, changing as each
+/// is chosen.
+class _AppearancePreview extends StatelessWidget {
+  const _AppearancePreview({required this.prefs});
+
+  final LayoutPrefs prefs;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final font = prefs.writingFont;
+    final scale = prefs.editorTextScale;
+    final body = TextStyle(
+      fontFamily: font.fontFamily,
+      fontFamilyFallback: font.fontFamilyFallback,
+      fontVariations: font.fontVariations,
+      fontSize: 14 * scale,
+      height: 1.45,
+      color: palette.textPrimary,
+    );
+    final heading = font == WritingFont.clean || font == WritingFont.monospace
+        ? font
+        : WritingFont.handwritten;
+    final caption = TextStyle(fontSize: 11, color: palette.textTertiary);
+    return Container(
+      key: const ValueKey('appearance-preview'),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: palette.wellBackground,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: palette.controlBorder),
+      ),
+      child: NotebookPaper(
+        style: prefs.paperStyle,
+        lineHeight: body.fontSize! * body.height!,
+        topInset: 18,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Trip budget',
+                      style: body.copyWith(
+                        fontFamily: heading.fontFamily,
+                        fontFamilyFallback: heading.fontFamilyFallback,
+                        fontVariations: heading.fontVariations,
+                        fontSize: 20 * scale,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Flights are booked. The hotel is still open.',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: body,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'saved = 12345678',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: body,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: palette.tonalBackground,
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                          child: Text(
+                            ResultFormatter.sample(prefs.digitGrouping),
+                            style: TextStyle(
+                              fontFamily: AppPlatform.monoFontFallback.first,
+                              fontFamilyFallback: AppPlatform.monoFontFallback,
+                              fontSize: 12.5,
+                              color: palette.tonalForeground,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // A phone is too narrow to label the preview beside the note.
+              if (AppPlatform.hasPointer) ...[
+                const SizedBox(width: 24),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('Preview', style: caption),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Changes as you choose',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: palette.textDescription,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Transparency as one slider whose left end is Off.
+class _TransparencySlider extends StatelessWidget {
+  const _TransparencySlider({required this.value, required this.onChanged});
+
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final end = TextStyle(fontSize: 12, color: palette.textTertiary);
+    final slider = SliderTheme(
+      data: SliderThemeData(
+        trackHeight: 4,
+        activeTrackColor: Theme.of(context).colorScheme.primary,
+        inactiveTrackColor: palette.switchTrackOff,
+        thumbColor: palette.switchThumb,
+        overlayColor: Colors.transparent,
+        thumbShape: const RoundSliderThumbShape(
+          enabledThumbRadius: 8,
+          elevation: 1.5,
+        ),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+        trackShape: const RoundedRectSliderTrackShape(),
+      ),
+      child: Slider(
+        key: const ValueKey('transparency-slider'),
+        value: value,
+        onChanged: onChanged,
+        semanticFormatterCallback: (value) =>
+            value <= 0 ? 'Off' : '${(value * 100).round()}%',
+      ),
+    );
+    return Row(
+      mainAxisSize: AppPlatform.hasPointer
+          ? MainAxisSize.min
+          : MainAxisSize.max,
+      children: [
+        Text('Off', style: end),
+        const SizedBox(width: 4),
+        if (AppPlatform.hasPointer)
+          SizedBox(width: 160, child: slider)
+        else
+          Expanded(child: slider),
+        const SizedBox(width: 4),
+        Text('More', style: end),
+      ],
+    );
+  }
+}
+
+/// What the device half of an engine needs before it can be chosen — a
+/// download, a permission, more memory — said under the choice, with the
+/// button that gets it. Says nothing once the device is ready and there is
+/// nothing to manage.
+class _DeviceEngineLine extends StatelessWidget {
+  const _DeviceEngineLine({
+    super.key,
+    required this.store,
+    required this.model,
+    required this.unavailableNote,
+    required this.onDownload,
+    this.blockedReason,
+  });
+
+  final LocalModelStore? store;
+  final DownloadableModel? model;
+
+  /// What is in the way of the platform's own engine, if anything is.
+  final String? unavailableNote;
+  final VoidCallback? onDownload;
+
+  /// Why this machine cannot take the download, if it cannot.
+  final String? blockedReason;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = this.store;
+    final model = this.model;
+    final palette = context.palette;
+    final style = TextStyle(
+      fontSize: SettingsMetrics.subtitleSize,
+      color: palette.textDescription,
+    );
+    if (store == null || model == null) {
+      return Text(
+        unavailableNote ?? 'Not available on this device',
+        style: style,
+      );
+    }
+    final state = store.stateOf(model);
+    final here = state.status == LocalModelStatus.ready;
+    final blocked = blockedReason;
+    final Widget? action = here
+        ? SettingsRowButton(
+            key: ValueKey('local-remove-${model.id}'),
+            label: 'Remove',
+            onPressed: () => unawaited(store.remove(model)),
+          )
+        : blocked != null
+        ? null
+        : switch (state.status) {
+            LocalModelStatus.fetchingRuntime ||
+            LocalModelStatus.downloading => SettingsRowButton(
+              key: ValueKey('local-cancel-${model.id}'),
+              label: 'Cancel',
+              onPressed: () => store.cancel(model),
+            ),
+            // Nothing to press while the hashes are checked: it takes
+            // seconds, and stopping halfway would leave files nothing has
+            // vouched for.
+            LocalModelStatus.verifying => null,
+            LocalModelStatus.failed => SettingsRowButton(
+              key: ValueKey('local-download-${model.id}'),
+              label: 'Try again',
+              onPressed: onDownload,
+            ),
+            _ => SettingsRowButton(
+              key: ValueKey('local-download-${model.id}'),
+              label: state.receivedBytes > 0 ? 'Resume' : 'Download',
+              onPressed: onDownload,
+            ),
+          };
+    final line = here
+        ? '${model.name} · on this device'
+        : blocked ?? '${model.name} · ${fileSize(model.bytes)} download';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(line, style: style)),
+            ?action,
+          ],
+        ),
+        if (state.isBusy || state.error != null) ...[
+          const SizedBox(height: 8),
+          _ModelProgress(state: state),
+        ],
+      ],
+    );
+  }
+}
+
+/// The agreement to send recordings to the cloud, and the way to take it
+/// back: quiet, under the choice it is about.
+class _ConsentNote extends StatelessWidget {
+  const _ConsentNote({required this.busy, required this.onWithdraw});
+
+  final bool busy;
+  final VoidCallback onWithdraw;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontSize: SettingsMetrics.noteSize,
+      height: 1.4,
+      color: context.palette.textTertiary,
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(3, 6, 3, 0),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text('You agreed to cloud transcription. ', style: style),
+          _NoteLink(
+            key: const ValueKey('voice-transcription-off'),
+            label: 'Withdraw',
+            style: style,
+            onTap: busy ? null : onWithdraw,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Who supplies the exchange rates, which their terms ask to be named and
+/// linked.
+class _RatesCredit extends StatelessWidget {
+  const _RatesCredit({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(3, 6, 3, 0),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: _NoteLink(
+        key: const ValueKey('rate-attribution'),
+        label: label,
+        style: TextStyle(
+          fontSize: SettingsMetrics.noteSize,
+          height: 1.4,
+          color: context.palette.textTertiary,
+        ),
+        onTap: onTap,
+      ),
+    ),
+  );
+}
+
+/// A few words in a note that open something, in the sage a link in a note
+/// is drawn in. Nothing in this app is underlined.
+class _NoteLink extends StatelessWidget {
+  const _NoteLink({
+    super.key,
+    required this.label,
+    required this.style,
+    required this.onTap,
+  });
+
+  final String label;
+  final TextStyle style;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    link: true,
+    child: MouseRegion(
+      cursor: onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Text(
+          label,
+          style: style.copyWith(color: context.palette.accentText),
+        ),
+      ),
+    ),
+  );
+}
+
+/// The foot of the search results: the keys that work in them.
+class _SearchHints extends StatelessWidget {
+  const _SearchHints();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    Widget hint(String keys, String what) => Padding(
+      padding: const EdgeInsets.only(right: 18),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _Keycap(keys),
+          const SizedBox(width: 8),
+          Text(
+            what,
+            style: TextStyle(fontSize: 12.5, color: palette.textDescription),
+          ),
+        ],
+      ),
+    );
+    return Row(
+      children: [
+        hint('↵', 'Go to the setting'),
+        hint('↑↓', 'Move'),
+        hint('esc', 'Clear search'),
+      ],
+    );
+  }
+}
+
+/// Keys, as a key cap.
+class _Keycap extends StatelessWidget {
+  const _Keycap(this.keys, {this.recording = false});
+
+  final String keys;
+  final bool recording;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      height: recording ? 26 : 24,
+      constraints: const BoxConstraints(minWidth: 28),
+      padding: EdgeInsets.symmetric(horizontal: recording ? 9 : 8),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: recording ? null : palette.surfaceBackground,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: recording
+              ? Theme.of(context).colorScheme.primary
+              : palette.switchTrackOff,
+          width: recording ? 1.5 : 1,
+        ),
+      ),
+      child: Text(
+        keys,
+        style: TextStyle(
+          fontFamily: AppPlatform.monoFontFallback.first,
+          fontFamilyFallback: AppPlatform.monoFontFallback,
+          fontSize: 12,
+          height: 1.2,
+          color: keys.isEmpty ? palette.textTertiary : palette.textPrimary,
+        ),
+      ),
+    );
+  }
+}
+
+/// The shortcuts pane's own search: a name, or — after Press keys — the keys
+/// somebody remembers.
+class _ShortcutFilter extends StatelessWidget {
+  const _ShortcutFilter({
+    required this.controller,
+    required this.focusNode,
+    required this.pressing,
+    required this.onPressKeys,
+    required this.onKey,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool pressing;
+  final VoidCallback onPressKeys;
+  final FocusOnKeyEventCallback onKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Row(
+      children: [
+        Expanded(
+          child: Focus(
+            canRequestFocus: false,
+            skipTraversal: true,
+            onKeyEvent: onKey,
+            child: SizedBox(
+              height: 34,
+              child: TextField(
+                key: const ValueKey('shortcut-filter'),
+                controller: controller,
+                focusNode: focusNode,
+                readOnly: pressing,
+                autocorrect: false,
+                enableSuggestions: false,
+                style: TextStyle(fontSize: 13, color: palette.textPrimary),
+                decoration: kapyFieldDecoration(
+                  context,
+                  hintText: pressing
+                      ? 'Press the keys…'
+                      : 'Search by name, or press the keys you remember',
+                  hintStyle: TextStyle(
+                    fontSize: 13,
+                    color: palette.textTertiary,
+                  ),
+                  fillColor: palette.surfaceBackground,
+                  borderWidth: 1.5,
+                  radius: 10,
+                  neutralFocus: !pressing,
+                  prefixIcon: Padding(
+                    padding: const EdgeInsets.only(left: 10, right: 8),
+                    child: KapyIcon(
+                      KapyIcons.searchRounded,
+                      size: 15,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                  prefixIconConstraints: const BoxConstraints(minHeight: 31),
+                  contentPadding: const EdgeInsets.only(
+                    right: 10,
+                    top: 8.5,
+                    bottom: 8.5,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        TextButton.icon(
+          key: const ValueKey('shortcut-press-keys'),
+          onPressed: onPressKeys,
+          icon: const KapyIcon(KapyIcons.keyboardOutlined, size: 15),
+          label: const Text('Press keys', style: TextStyle(fontSize: 12.5)),
+          style: TextButton.styleFrom(
+            minimumSize: const Size(0, 34),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            backgroundColor: pressing
+                ? palette.tonalBackground
+                : palette.controlBackground,
+            foregroundColor: pressing
+                ? palette.tonalForeground
+                : palette.textPrimary,
+            side: BorderSide(color: palette.controlBorder),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One shortcut: its name, and its keys, which listen for new ones when
+/// clicked. A clash is settled right here, in a line under the row.
+class _ShortcutRow extends StatelessWidget {
+  const _ShortcutRow({
+    required this.action,
+    required this.binding,
+    required this.recording,
+    required this.changed,
+    required this.onReset,
+    required this.onPressed,
+    required this.onKey,
+    required this.focusNode,
+    required this.swap,
+    required this.error,
+  });
+
+  final ShortcutAction action;
+
+  /// Null where the user has cleared it. The row stays, because it is also
+  /// how the shortcut is given back.
+  final ShortcutBinding? binding;
+  final bool recording;
+  final bool changed;
+  final VoidCallback onReset;
+  final VoidCallback onPressed;
+  final FocusOnKeyEventCallback onKey;
+  final FocusNode focusNode;
+
+  /// The keys pressed, who has them now, and what that one would get.
+  final ({String keys, String holder, String? given})? swap;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final swap = this.swap;
+    final note = TextStyle(fontSize: 12, color: palette.textDescription);
+    final keys = Semantics(
+      button: true,
+      label: 'Change ${action.label} shortcut',
+      child: InkWell(
+        key: ValueKey('shortcut-${action.name}'),
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(6),
+        child: _Keycap(
+          binding?.displayLabel ?? (recording ? 'Press keys' : 'None'),
+          recording: recording,
+        ),
+      ),
+    );
+    return Container(
+      color: recording
+          ? Color.alphaBlend(
+              palette.tonalBackground.withValues(alpha: 0.7),
+              palette.cardBackground,
+            )
+          : null,
+      constraints: const BoxConstraints(minHeight: 44),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: SettingsRowCopy(title: action.label, changed: changed),
+              ),
+              if (changed && !recording) ...[
+                SettingsResetButton(onPressed: onReset),
+                const SizedBox(width: 4),
+              ],
+              if (recording)
+                Focus(focusNode: focusNode, onKeyEvent: onKey, child: keys)
+              else
+                keys,
+            ],
+          ),
+          if (recording) ...[
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (swap != null || error != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1, right: 8),
+                    child: KapyIcon(
+                      KapyIcons.warningRounded,
+                      size: 14,
+                      color: palette.clay,
+                    ),
+                  ),
+                ],
+                Expanded(
+                  child: swap == null
+                      ? Text(
+                          error ??
+                              'Press the new keys. ⌫ takes it away, esc keeps '
+                                  'it as it was.',
+                          key: const ValueKey('shortcut-recording-note'),
+                          style: note,
+                        )
+                      : Text.rich(
+                          key: const ValueKey('shortcut-swap-note'),
+                          TextSpan(
+                            children: [
+                              TextSpan(text: '${swap.keys} is already '),
+                              TextSpan(
+                                text: swap.holder,
+                                style: TextStyle(color: palette.textPrimary),
+                              ),
+                              TextSpan(
+                                text: swap.given == null
+                                    ? '. ↵ swaps them, so ${swap.holder} has no '
+                                          'keys. esc keeps both as they were.'
+                                    : '. ↵ swaps them, so ${swap.holder} gets '
+                                          '${swap.given}. esc keeps both as '
+                                          'they were.',
+                              ),
+                            ],
+                          ),
+                          style: note,
+                        ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 /// The handle that says the sheet can be pulled back down.
@@ -2578,6 +3476,272 @@ class _SheetGrabber extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// The list the sheet opens on: every category, what is inside it, and the
+/// chevron that goes there.
+class _CategoryList extends StatelessWidget {
+  const _CategoryList({
+    required this.sections,
+    required this.changed,
+    required this.account,
+    required this.onSelect,
+  });
+
+  final List<SettingsSection> sections;
+
+  /// The categories holding a setting off its default.
+  final Set<SettingsSection> changed;
+  final Account? account;
+  final ValueChanged<SettingsSection> onSelect;
+
+  /// The account is the one category whose contents depend on where you
+  /// already stand in it, so its line answers that before it is opened.
+  String _summaryFor(SettingsSection section) {
+    final account = this.account;
+    if (section != SettingsSection.account || account == null) {
+      return section.summary;
+    }
+    return switch (account.state) {
+      AccountState.restoring => 'Checking your account',
+      AccountState.signedOut => 'Sign in to sync and share notes',
+      AccountState.needsProfile => 'Choose the name people will see',
+      AccountState.needsPassphrase => 'Save your passphrase to start syncing',
+      AccountState.locked => 'Unlock to read these notes here',
+      AccountState.needsAccountDecision => 'Choose what happens to local notes',
+      AccountState.ready => account.user?.displayName ?? 'Signed in',
+    };
+  }
+
+  Widget _card() => SettingsGroup(
+    children: [
+      for (final section in sections)
+        _CategoryRow(
+          key: ValueKey('settings-section-${section.name}'),
+          section: section,
+          summary: _summaryFor(section),
+          changed: changed.contains(section),
+          onTap: () => onSelect(section),
+        ),
+    ],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final account = this.account;
+    if (account == null) return _card();
+    return ListenableBuilder(
+      listenable: account,
+      builder: (context, _) => _card(),
+    );
+  }
+}
+
+/// One category on that list.
+class _CategoryRow extends StatelessWidget {
+  const _CategoryRow({
+    super.key,
+    required this.section,
+    required this.summary,
+    required this.changed,
+    required this.onTap,
+  });
+
+  final SettingsSection section;
+  final String summary;
+  final bool changed;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final accent = Theme.of(context).colorScheme.primary;
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+          child: Row(
+            children: [
+              // A tinted tile: on the way back, a category is found by shape
+              // and colour long before its label is read again.
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: KapyIcon(section.icon, size: 18, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SettingsRowCopy(
+                  title: section.label,
+                  subtitle: summary,
+                  changed: changed,
+                ),
+              ),
+              const SizedBox(width: 8),
+              KapyIcon(
+                KapyIcons.chevronRightRounded,
+                size: SettingsMetrics.chevronSize,
+                color: palette.textTertiary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The category list down the left of the wide dialog.
+class _SettingsRail extends StatelessWidget {
+  const _SettingsRail({
+    required this.sections,
+    required this.changed,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final List<SettingsSection> sections;
+
+  /// The categories holding a setting off its default, each marked with a
+  /// dot so what was changed can be found again.
+  final Set<SettingsSection> changed;
+
+  /// Null while the pane is showing search results instead of a category.
+  final SettingsSection? selected;
+  final ValueChanged<SettingsSection> onSelect;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final section in sections)
+          _RailItem(
+            key: ValueKey('settings-section-${section.name}'),
+            icon: section.icon,
+            label: section.label,
+            changed: changed.contains(section),
+            selected: section == selected,
+            onTap: () => onSelect(section),
+          ),
+      ],
+    ),
+  );
+}
+
+class _RailItem extends StatelessWidget {
+  const _RailItem({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.changed = false,
+    this.count,
+  });
+
+  final KapyIconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final bool changed;
+
+  /// A number at the end in place of the dot: how many are changed.
+  final int? count;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    const corners = BorderRadius.all(Radius.circular(9));
+    final count = this.count;
+    final quiet = count != null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Semantics(
+        selected: selected,
+        button: true,
+        child: Material(
+          color: selected ? palette.tonalBackground : Colors.transparent,
+          borderRadius: corners,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: corners,
+            hoverColor: palette.hover,
+            child: Container(
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                children: [
+                  KapyIcon(
+                    icon,
+                    size: 16,
+                    strokeWidth: 1.7,
+                    color: selected
+                        ? palette.tonalForeground
+                        : palette.textTertiary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: quiet ? 13 : 13.5,
+                        height: 16 / 13.5,
+                        color: selected
+                            ? palette.tonalForeground
+                            : quiet
+                            ? palette.textDescription
+                            : palette.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (count != null)
+                    Text(
+                      '$count',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: palette.textTertiary,
+                      ),
+                    )
+                  else if (changed)
+                    const SettingsChangedDot(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Names the build that is actually running: the first thing a bug report
+/// asks for, and the only line in this pane that never depends on the
+/// network.
+class _VersionRow extends StatelessWidget {
+  const _VersionRow({required this.updates});
+
+  final UpdateChecker updates;
+
+  @override
+  Widget build(BuildContext context) {
+    final version = updates.currentVersion;
+    final build = updates.currentBuild;
+    return SettingsRow(
+      title: version.isEmpty ? 'Kapy Notes' : 'Kapy Notes $version',
+      subtitle: build.isEmpty
+          ? 'Reading the installed version'
+          : 'Build $build',
+    );
+  }
 }
 
 /// One screen of the sheet: a bar saying where you are, and the pane under it.
@@ -2633,7 +3797,6 @@ class _SheetPage extends StatelessWidget {
                     title,
                     style: TextStyle(
                       fontSize: 17,
-                      fontWeight: _settingsSemiboldWeight,
                       letterSpacing: -0.2,
                       color: palette.textPrimary,
                     ),
@@ -2644,10 +3807,7 @@ class _SheetPage extends StatelessWidget {
                   key: const ValueKey('settings-sheet-done'),
                   onPressed: () =>
                       Navigator.of(context, rootNavigator: true).pop(),
-                  child: const Text(
-                    'Done',
-                    style: TextStyle(fontWeight: _settingsMediumWeight),
-                  ),
+                  child: const Text('Done'),
                 ),
               ],
             ),
@@ -2667,377 +3827,6 @@ class _SheetPage extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// The account's plan and all server-metered usage in one place.
-///
-/// This listens to both the account and its billing controller. A sign-in made
-/// from the neighbouring pane therefore replaces the free-plan preview with
-/// the real account answer without settings needing to be reopened.
-class _PlanUsagePane extends StatelessWidget {
-  const _PlanUsagePane({required this.account});
-
-  final Account account;
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: account,
-    builder: (context, _) {
-      final billing = account.billing;
-      if (billing == null) {
-        return _contents(context, null);
-      }
-      return ListenableBuilder(
-        listenable: billing,
-        builder: (context, _) => _contents(context, billing),
-      );
-    },
-  );
-
-  Widget _contents(BuildContext context, Billing? billing) {
-    final signedIn = billing?.isSignedIn ?? account.user != null;
-    final current = billing?.entitlements;
-    final shown = current ?? (!signedIn ? Entitlements.freePreview : null);
-    final initialLoad =
-        signedIn && current == null && !(billing?.refreshFailed ?? false);
-    final failed = signedIn && (billing?.refreshFailed ?? false);
-
-    final planTitle = switch ((signedIn, current, billing?.trialRunning)) {
-      (false, _, _) => 'Free plan',
-      (true, _, true) => 'Pro trial',
-      (true, final Entitlements value, _) =>
-        value.isPro ? 'Pro plan' : 'Free plan',
-      _ when failed => 'Plan unavailable',
-      _ => 'Checking your plan',
-    };
-    final planSubtitle = switch ((signedIn, current, billing?.trialDaysLeft)) {
-      (false, _, _) => 'Sign in to see your plan and usage',
-      (true, _, 1) => 'Pro trial ends today',
-      (true, _, final int days) => 'Pro trial ends in $days days',
-      (true, final Entitlements value, _) =>
-        value.isPro
-            ? 'Lifetime access with expanded cloud limits'
-            : 'Your plan and included cloud limits',
-      _ when failed => 'Showing your last saved plan',
-      _ => 'Loading plan and usage',
-    };
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SettingsLabel('Plan'),
-        SettingsGroup(
-          children: [
-            SettingsRow(
-              key: const ValueKey('plan-current'),
-              icon: KapyIcons.verifiedOutlined,
-              title: planTitle,
-              subtitle: planSubtitle,
-              onTap: billing != null && billing.canPurchase
-                  ? () => unawaited(showProSheet(context, billing: billing))
-                  : null,
-              trailing: signedIn && billing != null
-                  ? billing.refreshing
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 1.5),
-                          )
-                        : SettingsRowButton(
-                            key: const ValueKey('plan-refresh'),
-                            label: 'Refresh',
-                            onPressed: () => unawaited(billing.refresh()),
-                          )
-                  : null,
-            ),
-          ],
-        ),
-        if (failed && current != null)
-          const SettingsNote(
-            'Showing last saved totals. Refresh when you are online.',
-            icon: KapyIcons.warningRounded,
-          ),
-        SizedBox(height: SettingsMetrics.groupGap),
-        SettingsLabel(signedIn ? 'Usage' : 'Free plan limits'),
-        SettingsGroup(
-          children: [
-            _PlanUsageRow(
-              key: const ValueKey('plan-transcription-usage'),
-              icon: KapyIcons.scheduleRounded,
-              title: 'Transcription minutes',
-              subtitle: shown == null
-                  ? _unavailableLine(initialLoad)
-                  : '${_minutes(shown.speechSecondsUsedThisMonth)} of '
-                        '${_minutes(shown.speechSecondsPerMonth)} minutes used'
-                        '${_creditLine(shown.speechCreditSeconds)}',
-              progress: _progress(
-                shown?.speechSecondsUsedThisMonth,
-                shown?.speechSecondsPerMonth,
-              ),
-              loading: initialLoad,
-            ),
-            _PlanUsageRow(
-              key: const ValueKey('plan-summary-usage'),
-              icon: KapyIcons.magicOutlined,
-              title: 'AI summaries',
-              subtitle: shown == null
-                  ? _unavailableLine(initialLoad)
-                  : '${shown.summaryGenerationsUsedThisMonth} of '
-                        '${shown.summaryGenerationsPerMonth} used',
-              progress: _progress(
-                shown?.summaryGenerationsUsedThisMonth,
-                shown?.summaryGenerationsPerMonth,
-              ),
-              loading: initialLoad,
-            ),
-            _PlanUsageRow(
-              key: const ValueKey('plan-storage-usage'),
-              icon: KapyIcons.backupRestoreRounded,
-              title: 'Storage',
-              subtitle: shown == null
-                  ? _unavailableLine(initialLoad)
-                  : '${_bytes(shown.storageUsedBytes)} of '
-                        '${_bytes(shown.storageBytes)} used',
-              progress: _progress(shown?.storageUsedBytes, shown?.storageBytes),
-              loading: initialLoad,
-            ),
-          ],
-        ),
-        SettingsNote(
-          signedIn && shown != null
-              ? 'Cloud limits reset ${_resetLine(shown.speechResetsAt)}. '
-                    'Summaries and rewrites share one limit. Local processing '
-                    'is unlimited.'
-              : 'Sign in for cloud transcription and summaries. Local '
-                    'processing is unlimited and stays on this device.',
-        ),
-      ],
-    );
-  }
-
-  static String _unavailableLine(bool loading) =>
-      loading ? 'Loading usage…' : 'Usage unavailable';
-
-  static double _progress(int? used, int? limit) {
-    if (used == null || limit == null || limit <= 0) return 0;
-    return (used / limit).clamp(0.0, 1.0);
-  }
-
-  static String _minutes(int seconds) {
-    final minutes = seconds / 60;
-    return minutes == minutes.roundToDouble()
-        ? '${minutes.round()}'
-        : minutes.toStringAsFixed(1);
-  }
-
-  static String _creditLine(int seconds) =>
-      seconds <= 0 ? '' : ' · ${_minutes(seconds)} extra';
-
-  static String _bytes(int bytes) {
-    const kb = 1024;
-    const mb = kb * 1024;
-    const gb = mb * 1024;
-    if (bytes < kb) return '$bytes B';
-    if (bytes < mb) return '${_compact(bytes / kb)} KB';
-    if (bytes < gb) return '${_compact(bytes / mb)} MB';
-    return '${_compact(bytes / gb)} GB';
-  }
-
-  static String _compact(double value) {
-    if (value >= 100 || value == value.roundToDouble()) {
-      return '${value.round()}';
-    }
-    return value.toStringAsFixed(1);
-  }
-
-  static String _resetLine(DateTime? at) {
-    if (at == null) return 'each month';
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return 'on ${at.day} ${months[at.month - 1]}';
-  }
-}
-
-/// One usage total, with the number and the proportion visible at a glance.
-class _PlanUsageRow extends StatelessWidget {
-  const _PlanUsageRow({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.progress,
-    required this.loading,
-  });
-
-  final KapyIconData icon;
-  final String title;
-  final String subtitle;
-  final double progress;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
-    return Semantics(
-      label: '$title, $subtitle',
-      child: Padding(
-        padding: SettingsMetrics.padding,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: SettingsMetrics.iconSlot,
-              child: KapyIcon(
-                icon,
-                size: SettingsMetrics.iconSize,
-                color: palette.textSecondary,
-              ),
-            ),
-            SizedBox(width: SettingsMetrics.gap),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SettingsRowCopy(title: title, subtitle: subtitle),
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(99),
-                    child: LinearProgressIndicator(
-                      minHeight: 3,
-                      value: loading ? null : progress,
-                      backgroundColor: palette.separator,
-                      color: accent,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The list the sheet opens on: every category, what is inside it, and the
-/// chevron that goes there.
-class _CategoryList extends StatelessWidget {
-  const _CategoryList({
-    required this.sections,
-    required this.account,
-    required this.onSelect,
-  });
-
-  final List<SettingsSection> sections;
-  final Account? account;
-  final ValueChanged<SettingsSection> onSelect;
-
-  /// Sync is the one category whose contents depend on where you already
-  /// stand in it, so its line answers that before it is opened.
-  String _summaryFor(SettingsSection section) {
-    final account = this.account;
-    if (section != SettingsSection.sync || account == null) {
-      return section.summary;
-    }
-    return switch (account.state) {
-      AccountState.restoring => 'Checking your account',
-      AccountState.signedOut => 'Sign in to sync and share notes',
-      AccountState.needsProfile => 'Choose the name people will see',
-      AccountState.needsPassphrase => 'Save your passphrase to start syncing',
-      AccountState.locked => 'Unlock to read these notes here',
-      AccountState.needsAccountDecision => 'Choose what happens to local notes',
-      AccountState.ready => account.user?.displayName ?? 'Signed in',
-    };
-  }
-
-  Widget _card() => SettingsGroup(
-    children: [
-      for (final section in sections)
-        _CategoryRow(
-          key: ValueKey('settings-section-${section.name}'),
-          section: section,
-          summary: _summaryFor(section),
-          onTap: () => onSelect(section),
-        ),
-    ],
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    final account = this.account;
-    if (account == null) return _card();
-    return ListenableBuilder(
-      listenable: account,
-      builder: (context, _) => _card(),
-    );
-  }
-}
-
-/// One category on that list.
-class _CategoryRow extends StatelessWidget {
-  const _CategoryRow({
-    super.key,
-    required this.section,
-    required this.summary,
-    required this.onTap,
-  });
-
-  final SettingsSection section;
-  final String summary;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
-    return Semantics(
-      button: true,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
-          child: Row(
-            children: [
-              // A tinted tile: on the way back, a category is found by shape
-              // and colour long before its label is read again.
-              Container(
-                width: 32,
-                height: 32,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: KapyIcon(section.icon, size: 18, color: accent),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SettingsRowCopy(title: section.label, subtitle: summary),
-              ),
-              const SizedBox(width: 8),
-              KapyIcon(
-                KapyIcons.chevronRightRounded,
-                size: SettingsMetrics.chevronSize,
-                color: palette.textTertiary,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -3102,106 +3891,6 @@ Widget _withFlash(
   );
 }
 
-/// The category list down the left of the wide dialog.
-class _SettingsRail extends StatelessWidget {
-  const _SettingsRail({
-    required this.sections,
-    required this.selected,
-    required this.onSelect,
-  });
-
-  final List<SettingsSection> sections;
-
-  /// Null while the pane is showing search results instead of a category.
-  final SettingsSection? selected;
-  final ValueChanged<SettingsSection> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final section in sections)
-            _RailItem(
-              section: section,
-              selected: section == selected,
-              onTap: () => onSelect(section),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RailItem extends StatelessWidget {
-  const _RailItem({
-    required this.section,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final SettingsSection section;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    const corners = BorderRadius.all(Radius.circular(AppRadii.control));
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Semantics(
-        selected: selected,
-        button: true,
-        child: Material(
-          color: selected ? palette.tonalBackground : Colors.transparent,
-          borderRadius: corners,
-          child: InkWell(
-            key: ValueKey('settings-section-${section.name}'),
-            onTap: onTap,
-            borderRadius: corners,
-            hoverColor: palette.hover,
-            child: Container(
-              height: 32,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(
-                children: [
-                  KapyIcon(
-                    section.railIcon,
-                    size: 16,
-                    strokeWidth: 1.7,
-                    color: selected
-                        ? palette.tonalForeground
-                        : palette.textTertiary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      section.label,
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        height: 16 / 13.5,
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                        color: selected
-                            ? palette.tonalForeground
-                            : palette.textMuted,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// The installed version at the foot of the rail, with a dot that says
 /// whether there is a newer one.
 class _VersionStatus extends StatelessWidget {
@@ -3249,328 +3938,6 @@ class _VersionStatus extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-/// A full-width, low-emphasis action at the foot of a pane.
-class _WideButton extends StatelessWidget {
-  const _WideButton({
-    super.key,
-    required this.onPressed,
-    required this.icon,
-    required this.label,
-  });
-
-  final VoidCallback onPressed;
-  final KapyIconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return SizedBox(
-      width: double.infinity,
-      child: TextButton.icon(
-        onPressed: onPressed,
-        icon: KapyIcon(icon, size: 15),
-        label: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12.5,
-            fontWeight: _settingsMediumWeight,
-          ),
-        ),
-        style: TextButton.styleFrom(
-          minimumSize: const Size.fromHeight(34),
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          backgroundColor: palette.controlBackground,
-          foregroundColor: palette.textSecondary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      ),
-    );
-  }
-}
-
-/// One of the two places that can transcribe a recording.
-class _EngineChoiceRow extends StatelessWidget {
-  const _EngineChoiceRow({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.selected,
-    required this.enabled,
-    required this.onSelect,
-    this.action,
-  });
-
-  final KapyIconData icon;
-  final String title;
-  final String subtitle;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback? onSelect;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    final action = this.action;
-    final row = Padding(
-      padding: SettingsMetrics.padding,
-      child: Row(
-        children: [
-          SizedBox(
-            width: SettingsMetrics.iconSlot,
-            child: KapyIcon(
-              icon,
-              size: SettingsMetrics.iconSize,
-              color: enabled
-                  ? context.palette.textSecondary
-                  : context.palette.textTertiary,
-            ),
-          ),
-          SizedBox(width: SettingsMetrics.gap),
-          Expanded(
-            child: SettingsRowCopy(title: title, subtitle: subtitle),
-          ),
-          if (action != null) ...[const SizedBox(width: 10), action],
-          const SizedBox(width: 10),
-          _EngineChoiceIndicator(selected: selected, enabled: enabled),
-        ],
-      ),
-    );
-    final onSelect = enabled ? this.onSelect : null;
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      selected: selected,
-      inMutuallyExclusiveGroup: true,
-      child: onSelect == null ? row : InkWell(onTap: onSelect, child: row),
-    );
-  }
-}
-
-class _EngineChoiceIndicator extends StatelessWidget {
-  const _EngineChoiceIndicator({required this.selected, required this.enabled});
-
-  final bool selected;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) => KapyIcon(
-    selected ? KapyIcons.radioCheckedRounded : KapyIcons.radioUncheckedRounded,
-    key: const ValueKey('engine-choice-indicator'),
-    size: SettingsMetrics.iconSize,
-    color: selected
-        ? Theme.of(context).colorScheme.primary
-        : context.palette.textTertiary.withValues(alpha: enabled ? 1 : 0.45),
-  );
-}
-
-/// One local engine that could run on this machine: not here yet, on its way,
-/// or ready to choose.
-class _LocalEngineRow extends StatelessWidget {
-  const _LocalEngineRow({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.store,
-    required this.model,
-    required this.builtIn,
-    required this.builtInNote,
-    required this.unavailableNote,
-    required this.blockedReason,
-    required this.on,
-    required this.onChanged,
-    required this.onDownload,
-    this.exclusive = false,
-  });
-
-  final KapyIconData icon;
-  final String title;
-
-  /// Null in a build carrying nothing to download for this job — which on
-  /// Apple is the ordinary case for speech, where the OS has a recogniser of
-  /// its own and the 670 MB one is not offered.
-  final LocalModelStore? store;
-  final DownloadableModel? model;
-
-  /// Whether the platform's own engine is ready and needs no download.
-  final bool builtIn;
-  final String builtInNote;
-
-  /// What to say when neither is true, which is where the reason goes: a
-  /// locale still coming down, a permission not given, or nothing at all.
-  final String unavailableNote;
-
-  /// Why this machine cannot take the download, if it cannot. Replaces the
-  /// button, because a download that will be killed on load is not an offer.
-  final String? blockedReason;
-
-  /// The preference: whether this engine is the one that runs.
-  final bool on;
-
-  /// Transcription is a choice between cloud and local, so its ready state is
-  /// a radio. Summary remains an independent on-device switch.
-  final bool exclusive;
-
-  /// Null where there is nothing to remember the answer in.
-  final ValueChanged<bool>? onChanged;
-  final VoidCallback? onDownload;
-
-  @override
-  Widget build(BuildContext context) {
-    final store = this.store;
-    final model = this.model;
-    // Without a model there is no download to watch, so nothing to listen to.
-    if (store == null || model == null) return _shell(context, null);
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) => _shell(context, store.stateOf(model)),
-    );
-  }
-
-  Widget _shell(BuildContext context, LocalModelState? state) {
-    final here = state?.status == LocalModelStatus.ready;
-    final usable = here || builtIn;
-    final onChanged = this.onChanged;
-    final shows = state != null && (state.isBusy || state.error != null);
-
-    final row = Padding(
-      padding: SettingsMetrics.padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              SizedBox(
-                width: SettingsMetrics.iconSlot,
-                child: KapyIcon(
-                  icon,
-                  size: SettingsMetrics.iconSize,
-                  color: context.palette.textSecondary,
-                ),
-              ),
-              SizedBox(width: SettingsMetrics.gap),
-              Expanded(
-                child: SettingsRowCopy(
-                  title: title,
-                  subtitle: _subtitle(here: here),
-                ),
-              ),
-              if (_trailing(here: here, usable: usable)
-                  case final trailing?) ...[
-                const SizedBox(width: 10),
-                trailing,
-              ],
-            ],
-          ),
-          // The bar carries the numbers, so the subtitle goes on saying what
-          // is being downloaded rather than repeating how far along it is.
-          if (shows) ...[
-            const SizedBox(height: 10),
-            _ModelProgress(state: state),
-          ],
-        ],
-      ),
-    );
-
-    if (!usable || onChanged == null) {
-      final offersDownload =
-          model != null && store != null && blockedReason == null;
-      if (!exclusive || offersDownload) return row;
-      return Semantics(
-        button: true,
-        enabled: false,
-        selected: false,
-        inMutuallyExclusiveGroup: true,
-        child: row,
-      );
-    }
-    if (exclusive) {
-      return Semantics(
-        button: true,
-        enabled: true,
-        selected: on,
-        inMutuallyExclusiveGroup: true,
-        child: InkWell(onTap: () => onChanged(true), child: row),
-      );
-    }
-    return Semantics(
-      toggled: on,
-      button: true,
-      child: InkWell(onTap: () => onChanged(!on), child: row),
-    );
-  }
-
-  String _subtitle({required bool here}) {
-    final model = this.model;
-    if (here) return '${model!.name} · never leaves this device';
-    if (builtIn) return builtInNote;
-    if (model == null) return unavailableNote;
-    if (blockedReason case final blocked?) return blocked;
-    // What it is and what it costs. The cards that used to stand here also
-    // carried four benchmark figures and a paragraph; a row that has to sit
-    // beside a switch has room for the name and the download size, which are
-    // the two anybody weighs.
-    return '${model.name} · ${fileSize(model.bytes)}';
-  }
-
-  Widget? _trailing({required bool here, required bool usable}) {
-    final model = this.model;
-    final store = this.store;
-    if (usable) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Six hundred megabytes deserves a way back that is not a menu.
-          if (here && store != null) ...[
-            SettingsRowButton(
-              key: ValueKey('local-remove-${model!.id}'),
-              label: 'Remove',
-              onPressed: () => unawaited(store.remove(model)),
-            ),
-            const SizedBox(width: 8),
-          ],
-          ExcludeSemantics(
-            child: exclusive
-                ? _EngineChoiceIndicator(selected: on, enabled: true)
-                : SettingsSwitch(value: on),
-          ),
-        ],
-      );
-    }
-    if (model == null || store == null || blockedReason != null) {
-      return exclusive
-          ? const _EngineChoiceIndicator(selected: false, enabled: false)
-          : null;
-    }
-    final state = store.stateOf(model);
-    return switch (state.status) {
-      LocalModelStatus.fetchingRuntime ||
-      LocalModelStatus.downloading => SettingsRowButton(
-        key: ValueKey('local-cancel-${model.id}'),
-        label: 'Cancel',
-        onPressed: () => store.cancel(model),
-      ),
-      // Nothing to press while the hashes are checked: it takes seconds, and
-      // stopping halfway would leave files nothing has vouched for.
-      LocalModelStatus.verifying => null,
-      LocalModelStatus.failed => SettingsRowButton(
-        key: ValueKey('local-download-${model.id}'),
-        label: 'Try again',
-        prominent: true,
-        onPressed: onDownload,
-      ),
-      _ => SettingsRowButton(
-        key: ValueKey('local-download-${model.id}'),
-        label: state.receivedBytes > 0 ? 'Resume' : 'Download',
-        prominent: true,
-        onPressed: onDownload,
-      ),
-    };
   }
 }
 
@@ -3643,245 +4010,6 @@ class _ModelCredits extends StatelessWidget {
       'Could not open ${url.host}',
       icon: KapyIcons.errorOutlined,
       isError: true,
-    );
-  }
-}
-
-/// A choice between a few options a word can name — Light or Dark, Plain or
-/// Ruled — set side by side under the row's copy.
-///
-/// A radio list spent a row and a sentence on each of these, which made the
-/// pane long without making the choice any clearer. The chosen option's
-/// sentence is kept: it is the row's subtitle, and changes with the choice.
-class _SegmentedRow<T> extends StatelessWidget {
-  const _SegmentedRow({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.options,
-    required this.selected,
-    required this.labelFor,
-    required this.keyFor,
-    required this.onSelected,
-  });
-
-  final KapyIconData icon;
-  final String title;
-  final String subtitle;
-  final List<T> options;
-  final T selected;
-  final String Function(T option) labelFor;
-
-  /// Each option gets a key of its own, so a test can pick one by name the
-  /// way it could pick the radio row it replaced.
-  final Key Function(T option) keyFor;
-  final ValueChanged<T> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
-    return Padding(
-      padding: SettingsMetrics.padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              SizedBox(
-                width: SettingsMetrics.iconSlot,
-                child: KapyIcon(
-                  icon,
-                  size: SettingsMetrics.iconSize,
-                  color: palette.textSecondary,
-                ),
-              ),
-              SizedBox(width: SettingsMetrics.gap),
-              Expanded(
-                child: SettingsRowCopy(title: title, subtitle: subtitle),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: EdgeInsets.only(
-              left: SettingsMetrics.iconSlot + SettingsMetrics.gap,
-            ),
-            child: Container(
-              height: AppPlatform.hasPointer ? 26 : 34,
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: palette.surfaceBackground,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: palette.controlBorder, width: 0.5),
-              ),
-              child: Row(
-                children: [
-                  for (final option in options)
-                    Expanded(
-                      child: _Segment(
-                        key: keyFor(option),
-                        label: labelFor(option),
-                        selected: option == selected,
-                        accent: accent,
-                        onTap: () => onSelected(option),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Segment extends StatelessWidget {
-  const _Segment({
-    super.key,
-    required this.label,
-    required this.selected,
-    required this.accent,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final Color accent;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Semantics(
-      button: true,
-      selected: selected,
-      inMutuallyExclusiveGroup: true,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          decoration: BoxDecoration(
-            color: selected
-                ? Color.alphaBlend(
-                    accent.withValues(alpha: 0.16),
-                    palette.controlBackground,
-                  )
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: SettingsMetrics.titleSize - 1,
-              fontWeight: selected
-                  ? _settingsMediumWeight
-                  : _settingsRegularWeight,
-              color: selected ? accent : palette.textSecondary,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A row whose control is a slider under the copy rather than a switch
-/// beside it: the track needs the width, and a label at each end says which
-/// way is which without a number nobody would read as anything.
-class _SliderRow extends StatelessWidget {
-  const _SliderRow({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.minLabel,
-    required this.maxLabel,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final KapyIconData icon;
-  final String title;
-  final String subtitle;
-  final String minLabel;
-  final String maxLabel;
-  final double value;
-  final ValueChanged<double> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final scheme = Theme.of(context).colorScheme;
-    final endLabel = TextStyle(
-      fontSize: AppTypeScale.caption,
-      color: palette.textTertiary,
-    );
-    return Padding(
-      padding: SettingsMetrics.padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              SizedBox(
-                width: SettingsMetrics.iconSlot,
-                child: KapyIcon(
-                  icon,
-                  size: SettingsMetrics.iconSize,
-                  color: palette.textSecondary,
-                ),
-              ),
-              SizedBox(width: SettingsMetrics.gap),
-              Expanded(
-                child: SettingsRowCopy(title: title, subtitle: subtitle),
-              ),
-            ],
-          ),
-          Padding(
-            padding: EdgeInsets.only(
-              left: SettingsMetrics.iconSlot + SettingsMetrics.gap,
-              top: 2,
-            ),
-            child: Row(
-              children: [
-                Text(minLabel, style: endLabel),
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderThemeData(
-                      trackHeight: 3,
-                      activeTrackColor: scheme.primary,
-                      inactiveTrackColor: palette.controlBorder,
-                      thumbColor: scheme.primary,
-                      overlayColor: scheme.primary.withValues(alpha: 0.12),
-                      thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 7,
-                      ),
-                      overlayShape: const RoundSliderOverlayShape(
-                        overlayRadius: 14,
-                      ),
-                    ),
-                    child: Slider(
-                      value: value,
-                      onChanged: onChanged,
-                      label: title,
-                    ),
-                  ),
-                ),
-                Text(maxLabel, style: endLabel),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -3963,209 +4091,11 @@ class _ModelProgress extends StatelessWidget {
   }
 }
 
-class _ChoiceRow extends StatelessWidget {
-  const _ChoiceRow({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.trailing,
-    this.trailingStyle,
-    this.trailingSpans,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
-  final String trailing;
-  final TextStyle? trailingStyle;
-  final List<InlineSpan>? trailingSpans;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
-    return Semantics(
-      inMutuallyExclusiveGroup: true,
-      selected: selected,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: SettingsMetrics.choicePadding,
-          child: Row(
-            children: [
-              SizedBox(
-                width: SettingsMetrics.iconSlot,
-                child: KapyIcon(
-                  selected
-                      ? KapyIcons.radioCheckedRounded
-                      : KapyIcons.radioUncheckedRounded,
-                  size: SettingsMetrics.iconSize,
-                  color: selected ? accent : palette.textTertiary,
-                ),
-              ),
-              SizedBox(width: SettingsMetrics.gap),
-              Expanded(
-                child: SettingsRowCopy(title: title, subtitle: subtitle),
-              ),
-              const SizedBox(width: 10),
-              Text.rich(
-                TextSpan(
-                  text: trailingSpans == null ? trailing : null,
-                  children: trailingSpans,
-                ),
-                style:
-                    (trailingStyle ??
-                            TextStyle(
-                              fontFamily: AppPlatform.monoFontFallback.first,
-                              fontFamilyFallback: AppPlatform.monoFontFallback,
-                              fontSize: AppTypeScale.caption,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                            ))
-                        .copyWith(
-                          color: selected ? accent : palette.textTertiary,
-                        ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Credits the service that supplied the active exchange-rate snapshot.
-///
-/// Before the first download this points to the primary provider. Persisting
-/// the source with each snapshot keeps fallback and legacy cache attribution
-/// accurate while the app is offline.
-class _RateAttributionRow extends StatelessWidget {
-  const _RateAttributionRow({required this.rates});
-
-  final RatesRepository rates;
-
-  Future<void> _open(BuildContext context) async {
-    final url = rates.attributionUrl;
-    var opened = false;
-    try {
-      opened = await launchUrl(url, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      opened = false;
-    }
-    if (opened || !context.mounted) return;
-    Toast.show(
-      context,
-      'Could not open ${url.host}',
-      icon: KapyIcons.errorOutlined,
-      isError: true,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return ListenableBuilder(
-      listenable: rates,
-      builder: (context, _) {
-        final date = rates.refreshedDate;
-        return Semantics(
-          link: true,
-          child: InkWell(
-            key: const ValueKey('rate-attribution'),
-            onTap: () => _open(context),
-            child: Padding(
-              padding: SettingsMetrics.padding,
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: SettingsMetrics.iconSlot,
-                    child: KapyIcon(
-                      KapyIcons.currencyExchangeRounded,
-                      size: SettingsMetrics.iconSize,
-                      color: palette.textSecondary,
-                    ),
-                  ),
-                  SizedBox(width: SettingsMetrics.gap),
-                  Expanded(
-                    child: SettingsRowCopy(
-                      title: rates.attributionLabel,
-                      subtitle: date.isEmpty
-                          ? 'Currency rates refresh automatically'
-                          : 'Currency rates refreshed $date',
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  KapyIcon(
-                    KapyIcons.openExternalRounded,
-                    size: 15,
-                    color: palette.textTertiary,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Names the build that is actually running.
-///
-/// Worth a row of its own: it is the first thing a bug report asks for, and
-/// the only line in this pane that never depends on the network.
-class _VersionRow extends StatelessWidget {
-  const _VersionRow({required this.updates});
-
-  final UpdateChecker updates;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return ListenableBuilder(
-      listenable: updates,
-      builder: (context, _) {
-        final version = updates.currentVersion;
-        final build = updates.currentBuild;
-        return Padding(
-          key: const ValueKey('app-version'),
-          padding: SettingsMetrics.padding,
-          child: Row(
-            children: [
-              SizedBox(
-                width: SettingsMetrics.iconSlot,
-                child: KapyIcon(
-                  KapyIcons.infoOutlined,
-                  size: SettingsMetrics.iconSize,
-                  color: palette.textSecondary,
-                ),
-              ),
-              SizedBox(width: SettingsMetrics.gap),
-              Expanded(
-                child: SettingsRowCopy(
-                  title: version.isEmpty ? 'Kapy Notes' : 'Kapy Notes $version',
-                  subtitle: build.isEmpty
-                      ? 'Reading the installed version'
-                      : 'Build $build',
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
 /// The only place the update state is spelled out: what the daily check
 /// found, how far the download has got, and the button for whatever is next
 /// — a check, a download, or the restart that installs it.
 class _UpdateRow extends StatelessWidget {
-  const _UpdateRow({super.key, required this.updates});
+  const _UpdateRow({required this.updates});
 
   final UpdateChecker updates;
 
@@ -4284,19 +4214,6 @@ class _UpdateRow extends StatelessWidget {
           padding: SettingsMetrics.padding,
           child: Row(
             children: [
-              SizedBox(
-                width: SettingsMetrics.iconSlot,
-                child: KapyIcon(
-                  available != null || ready
-                      ? KapyIcons.systemUpdateRounded
-                      : KapyIcons.verifiedOutlined,
-                  size: SettingsMetrics.iconSize,
-                  color: available != null || ready
-                      ? palette.chipCurrency
-                      : palette.textSecondary,
-                ),
-              ),
-              SizedBox(width: SettingsMetrics.gap),
               Expanded(
                 child: SettingsRowCopy(title: _title(), subtitle: _subtitle()),
               ),
@@ -4333,10 +4250,7 @@ class _UpdateRow extends StatelessWidget {
                 ),
                 child: Text(
                   label,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.caption,
-                    fontWeight: _settingsMediumWeight,
-                  ),
+                  style: TextStyle(fontSize: AppTypeScale.caption),
                 ),
               ),
             ],
@@ -4466,9 +4380,6 @@ class _ChangelogStatusRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SettingsRow(
-    icon: history.hasFailed
-        ? KapyIcons.cloudOffRounded
-        : KapyIcons.historyOffRounded,
     title: history.hasFailed
         ? 'Could not read the changelog'
         : 'Reading the release notes',
@@ -4540,7 +4451,7 @@ class _ReleaseRow extends StatelessWidget {
               child: Row(
                 children: [
                   SizedBox(
-                    width: SettingsMetrics.iconSlot,
+                    width: SettingsMetrics.chevronSize,
                     child: AnimatedRotation(
                       duration: const Duration(milliseconds: 140),
                       curve: Curves.easeOutCubic,
@@ -4565,7 +4476,6 @@ class _ReleaseRow extends StatelessWidget {
                       'Installed',
                       style: TextStyle(
                         fontSize: SettingsMetrics.subtitleSize,
-                        fontWeight: _settingsMediumWeight,
                         color: palette.textTertiary,
                       ),
                     ),
@@ -4578,7 +4488,7 @@ class _ReleaseRow extends StatelessWidget {
         if (open)
           Padding(
             padding: EdgeInsets.only(
-              left: SettingsMetrics.iconSlot + SettingsMetrics.gap,
+              left: SettingsMetrics.chevronSize + SettingsMetrics.gap,
               right: SettingsMetrics.padding.right,
               bottom: 12,
             ),
@@ -4647,15 +4557,6 @@ class _ChangelogLinkRow extends StatelessWidget {
           padding: SettingsMetrics.padding,
           child: Row(
             children: [
-              SizedBox(
-                width: SettingsMetrics.iconSlot,
-                child: KapyIcon(
-                  KapyIcons.articleOutlined,
-                  size: SettingsMetrics.iconSize,
-                  color: palette.textSecondary,
-                ),
-              ),
-              SizedBox(width: SettingsMetrics.gap),
               const Expanded(
                 child: SettingsRowCopy(
                   title: 'Changelog',
@@ -4676,71 +4577,6 @@ class _ChangelogLinkRow extends StatelessWidget {
   }
 }
 
-class _ShortcutRow extends StatelessWidget {
-  const _ShortcutRow({
-    super.key,
-    required this.action,
-    required this.binding,
-    required this.onPressed,
-    this.detailed = false,
-  });
-
-  final ShortcutAction action;
-
-  /// Null where the user has cleared it. The row stays, because it is also
-  /// how the shortcut is given back.
-  final ShortcutBinding? binding;
-  final VoidCallback onPressed;
-
-  /// Whether the row carries its line of explanation. Only the system-wide
-  /// shortcuts need one; the rest are named for what they do.
-  final bool detailed;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Padding(
-      padding: detailed
-          ? const EdgeInsets.fromLTRB(13, 8, 9, 8)
-          : const EdgeInsets.fromLTRB(13, 5, 9, 5),
-      child: Row(
-        children: [
-          Expanded(
-            child: SettingsRowCopy(
-              title: action.label,
-              subtitle: detailed ? action.description : null,
-            ),
-          ),
-          const SizedBox(width: 12),
-          TextButton(
-            key: ValueKey('shortcut-${action.name}'),
-            onPressed: onPressed,
-            style: TextButton.styleFrom(
-              minimumSize: const Size(88, 30),
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              backgroundColor: palette.selectedBackground,
-              foregroundColor: palette.textPrimary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(7),
-              ),
-            ),
-            child: Text(
-              binding?.displayLabel ?? 'None',
-              style: TextStyle(
-                fontSize: AppTypeScale.caption,
-                fontWeight: _settingsMediumWeight,
-                // Dimmed rather than absent: an empty button would look
-                // broken, and this one still opens the recorder.
-                color: binding == null ? palette.textTertiary : null,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _DefaultNotePickerDialog extends StatelessWidget {
   const _DefaultNotePickerDialog({
     required this.notes,
@@ -4754,10 +4590,7 @@ class _DefaultNotePickerDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final media = MediaQuery.sizeOf(context);
     return AlertDialog(
-      title: const Text(
-        'Note opened at launch',
-        style: TextStyle(fontWeight: _settingsSemiboldWeight),
-      ),
+      title: const Text('Note opened at launch'),
       contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
       content: SizedBox(
@@ -4807,10 +4640,7 @@ class _DefaultNotePickerDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text(
-            'Cancel',
-            style: TextStyle(fontWeight: _settingsMediumWeight),
-          ),
+          child: const Text('Cancel'),
         ),
       ],
     );
@@ -4841,10 +4671,7 @@ class _TimeZonePickerDialogState extends State<_TimeZonePickerDialog> {
     final options = <String?>[if (systemMatches) null, ...matches];
 
     return AlertDialog(
-      title: const Text(
-        'Time zone',
-        style: TextStyle(fontWeight: _settingsSemiboldWeight),
-      ),
+      title: const Text('Time zone'),
       contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
       content: SizedBox(
@@ -4913,10 +4740,7 @@ class _TimeZonePickerDialogState extends State<_TimeZonePickerDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text(
-            'Cancel',
-            style: TextStyle(fontWeight: _settingsMediumWeight),
-          ),
+          child: const Text('Cancel'),
         ),
       ],
     );
@@ -4967,188 +4791,6 @@ class _TimeZoneOption extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// What the recorder came back with.
-///
-/// A record rather than a bare binding because there are three answers, not
-/// two: bind this chord, leave the action with no key at all, or nothing —
-/// the dialog was dismissed. Only the last is a null result.
-typedef ShortcutChoice = ({ShortcutBinding? binding});
-
-class _ShortcutRecorderDialog extends StatefulWidget {
-  const _ShortcutRecorderDialog({required this.action, required this.current});
-
-  final ShortcutAction action;
-
-  /// Null when the action has already been cleared.
-  final ShortcutBinding? current;
-
-  @override
-  State<_ShortcutRecorderDialog> createState() =>
-      _ShortcutRecorderDialogState();
-}
-
-class _ShortcutRecorderDialogState extends State<_ShortcutRecorderDialog> {
-  String? _error;
-
-  void _clear() => Navigator.of(context).pop<ShortcutChoice>((binding: null));
-
-  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.handled;
-    if (event.logicalKey == LogicalKeyboardKey.escape) {
-      Navigator.of(context).pop();
-      return KeyEventResult.handled;
-    }
-    if (_isModifier(event.logicalKey)) return KeyEventResult.handled;
-
-    final keyboard = HardwareKeyboard.instance;
-    // Backspace on its own takes the shortcut away, which is what the same
-    // key does in macOS's own shortcut editor. Nothing is lost by spending it
-    // here: a chord that binds must carry a modifier, so a bare Backspace
-    // could never have been recorded anyway.
-    if (!_hasModifier(keyboard) &&
-        (event.logicalKey == LogicalKeyboardKey.backspace ||
-            event.logicalKey == LogicalKeyboardKey.delete)) {
-      _clear();
-      return KeyEventResult.handled;
-    }
-
-    final binding = ShortcutBinding(
-      logicalKey: event.logicalKey,
-      physicalKey: event.physicalKey,
-      meta: keyboard.isMetaPressed,
-      control: keyboard.isControlPressed,
-      alt: keyboard.isAltPressed,
-      shift: keyboard.isShiftPressed,
-    );
-    if (!binding.hasModifier) {
-      setState(() {
-        _error = AppPlatform.isMacOS
-            ? 'Include Command, Control, Option, or Shift.'
-            : 'Include Ctrl, Alt, Shift, or Windows.';
-      });
-      return KeyEventResult.handled;
-    }
-
-    Navigator.of(context).pop<ShortcutChoice>((binding: binding));
-    return KeyEventResult.handled;
-  }
-
-  static bool _hasModifier(HardwareKeyboard keyboard) =>
-      keyboard.isMetaPressed ||
-      keyboard.isControlPressed ||
-      keyboard.isAltPressed ||
-      keyboard.isShiftPressed;
-
-  static bool _isModifier(LogicalKeyboardKey key) => {
-    LogicalKeyboardKey.altLeft,
-    LogicalKeyboardKey.altRight,
-    LogicalKeyboardKey.controlLeft,
-    LogicalKeyboardKey.controlRight,
-    LogicalKeyboardKey.metaLeft,
-    LogicalKeyboardKey.metaRight,
-    LogicalKeyboardKey.shiftLeft,
-    LogicalKeyboardKey.shiftRight,
-  }.contains(key);
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Focus(
-      autofocus: true,
-      onKeyEvent: _onKeyEvent,
-      child: AlertDialog(
-        title: Text(
-          'Set ${widget.action.label.toLowerCase()}',
-          style: const TextStyle(fontWeight: _settingsSemiboldWeight),
-        ),
-        content: SizedBox(
-          width: 300,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 20,
-                ),
-                decoration: BoxDecoration(
-                  color: palette.controlBackground,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: palette.controlBorder, width: 0.5),
-                ),
-                child: Column(
-                  children: [
-                    KapyIcon(
-                      KapyIcons.keyboardOutlined,
-                      size: 21,
-                      color: palette.textSecondary,
-                    ),
-                    const SizedBox(height: 9),
-                    Text(
-                      'Press your new shortcut',
-                      style: TextStyle(
-                        fontSize: AppTypeScale.control,
-                        fontWeight: _settingsMediumWeight,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      widget.current == null
-                          ? 'Currently not set'
-                          : 'Current: ${widget.current!.displayLabel}',
-                      style: TextStyle(
-                        fontSize: AppTypeScale.caption,
-                        color: palette.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  _error!,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.caption,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          // Only where there is something to take away. Offering it against
-          // an action that already has no key would be a button that does
-          // nothing, which is worse than no button.
-          if (widget.current != null)
-            TextButton(
-              key: const ValueKey('shortcut-remove'),
-              onPressed: _clear,
-              // Styled like Cancel rather than in the error colour. The light
-              // theme's accent is a terracotta a shade off that red, so the
-              // emphasis would only read in the dark one — and taking a
-              // shortcut away is a click to undo, not a deletion.
-              child: const Text(
-                'Remove',
-                style: TextStyle(fontWeight: _settingsMediumWeight),
-              ),
-            ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(fontWeight: _settingsMediumWeight),
-            ),
-          ),
-        ],
       ),
     );
   }
