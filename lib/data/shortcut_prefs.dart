@@ -20,6 +20,7 @@ enum ShortcutAction {
   toggleHiddenFolder,
   toggleResults,
   toggleAlwaysOnTop,
+  toggleKapyAi,
   deleteNote,
   openSettings,
   increaseEditorTextSize,
@@ -57,6 +58,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.toggleHiddenFolder => 'Show Hidden Notes',
     ShortcutAction.toggleResults => 'Toggle results',
     ShortcutAction.toggleAlwaysOnTop => 'Keep window on top',
+    ShortcutAction.toggleKapyAi => 'Open or close Kapy AI',
     ShortcutAction.deleteNote => 'Archive current note',
     ShortcutAction.openSettings => 'Open settings',
     ShortcutAction.increaseEditorTextSize => 'Increase editor text',
@@ -101,6 +103,8 @@ extension ShortcutActionCopy on ShortcutAction {
       'Show or hide the results at the ends of calculating lines',
     ShortcutAction.toggleAlwaysOnTop =>
       'Float the window over other apps, or let it fall behind again',
+    ShortcutAction.toggleKapyAi =>
+      'Ask about your notes in a panel beside the page, or put it away',
     ShortcutAction.deleteNote =>
       'Move the note you are editing to Archived Notes, or delete it for good '
           'if it is already there',
@@ -613,6 +617,14 @@ class ShortcutPrefs extends ChangeNotifier {
         meta: useMeta,
         control: !useMeta,
         shift: true,
+      ),
+      // J sits under the right hand beside K, which ⌘K's search takes, and
+      // nothing here or in the editor binds it.
+      ShortcutAction.toggleKapyAi => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyJ,
+        physicalKey: PhysicalKeyboardKey.keyJ,
+        meta: useMeta,
+        control: !useMeta,
       ),
       // What the machine itself uses to take a row out of a list: Cmd+Delete
       // in the Finder and in Apple's own Notes, Shift+Delete in Explorer.

@@ -26,6 +26,7 @@ class NoteToolbar extends StatelessWidget {
     required this.onCreate,
     this.onSettingsPressed,
     this.onShare,
+    this.assistant,
     this.sidebarVisible = true,
     this.sidebarShortcut,
     this.settingsShortcut,
@@ -50,6 +51,10 @@ class NoteToolbar extends StatelessWidget {
   /// leaves the action in place but greyed rather than moving the ones beside
   /// it every time the selection changes.
   final VoidCallback? onShare;
+
+  /// Kapy AI's button, first of the note's actions. It keeps its own gap, so
+  /// it can hide while Kapy AI is off without leaving one behind.
+  final Widget? assistant;
 
   final bool sidebarVisible;
 
@@ -291,6 +296,7 @@ class NoteToolbar extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (updates != null) UpdateRestartButton(updates: updates, wide: wide),
+        ?assistant,
         _ToolbarButton(
           icon: KapyIcons.addRounded,
           tooltip: ['New note', ?newNoteShortcut].join('  '),

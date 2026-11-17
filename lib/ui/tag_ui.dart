@@ -212,8 +212,8 @@ class _TagPickerState extends State<TagPicker> {
   }
 
   /// A name another tag has, in any case, picks that tag. One the lists
-  /// leave out, found only on Hidden notes while Hidden is
-  /// locked, is neither picked nor shown by its name.
+  /// leave out, found only on Hidden notes while Hidden is locked, is
+  /// neither picked nor shown by its name.
   void _create() {
     final existing = _store.named(_query.text);
     if (existing != null &&
