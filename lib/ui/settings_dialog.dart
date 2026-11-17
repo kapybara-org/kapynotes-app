@@ -1547,7 +1547,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             '# for a heading, - for a list, [] for a checkbox',
             value: prefs.markdownEnabled,
             onChanged: (value) => prefs.markdownEnabled = value,
-            byDefault: false,
+            byDefault: true,
             keywords: ['md', 'syntax', 'headings', 'bold', 'lists', 'checkbox'],
           ),
           _toggle(

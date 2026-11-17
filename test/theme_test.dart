@@ -212,6 +212,7 @@ void main() {
       'totalPillBackground': (p) => p.totalPillBackground,
       'totalPillText': (p) => p.totalPillText,
       'clay': (p) => p.clay,
+      'clayText': (p) => p.clayText,
     };
     const marker = Color(0xFF123456);
     final copied = dark.copyWith();

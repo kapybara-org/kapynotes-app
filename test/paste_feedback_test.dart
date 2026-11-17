@@ -10,10 +10,12 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/images/image_clipboard.dart';
 import 'package:kapy_notes/paste/clipboard_snapshot.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/paste_feedback.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'kapy_icon_finder.dart';
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 /// Paper's list, copied from a page: its markup, and the plain text the
@@ -120,16 +122,14 @@ Future<void> _paste(
   await tester.pump();
 }
 
-EditableTextState _field(WidgetTester tester) =>
-    tester.state<EditableTextState>(find.byType(EditableText));
-
-String _note(WidgetTester tester) => _field(tester).textEditingValue.text;
+String _note(WidgetTester tester) => NoteDriver(tester).value.text;
 
 /// The caret at [offset], on screen.
 Rect _caretAt(WidgetTester tester, int offset) {
-  final editable = _field(tester).renderEditable;
-  final caret = editable.getLocalRectForCaret(TextPosition(offset: offset));
-  return caret.shift(editable.localToGlobal(Offset.zero));
+  final note = NoteDriver(tester);
+  return note
+      .caretRect(TextPosition(offset: offset))
+      .shift(note.toGlobal(Offset.zero));
 }
 
 /// What the wash paints now, on screen: its shape and colour, or null when
@@ -270,7 +270,7 @@ void main() {
     expect(_menu, findsNothing);
     expect(_note(tester), formatted);
     // The chip was part of the note, so the note kept its caret.
-    expect(_field(tester).widget.focusNode.hasFocus, isTrue);
+    expect(tester.widget<NoteField>(noteField).focusNode.hasFocus, isTrue);
     await _finish(tester);
   });
 
@@ -289,7 +289,7 @@ void main() {
     await tester.pump();
     expect(_note(tester), _plain);
     expect(
-      _field(tester).textEditingValue.selection,
+      NoteDriver(tester).value.selection,
       const TextSelection.collapsed(offset: _plain.length),
     );
     expect(_chip, findsNothing);
@@ -341,7 +341,7 @@ void main() {
     // From the first row the paste wrote to its last, a little beyond them.
     final first = _caretAt(tester, 0);
     final last = _caretAt(tester, note.length);
-    final column = _field(tester).renderEditable.localToGlobal(Offset.zero);
+    final column = NoteDriver(tester).toGlobal(Offset.zero);
     expect(full.shape.left, moreOrLessEquals(column.dx - 8));
     expect(full.shape.top, lessThan(first.top));
     expect(full.shape.bottom, greaterThan(last.bottom));
@@ -371,7 +371,6 @@ void main() {
       await _paste(tester, editor);
       await tester.tap(_chip);
       await tester.pump();
-
       await expectLater(
         find.byType(NoteEditor),
         matchesGoldenFile('goldens/paste_feedback_${brightness.name}.png'),

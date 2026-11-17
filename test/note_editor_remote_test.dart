@@ -9,7 +9,9 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/editor_formatting.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 /// The editor learning about a note that changed under it — another device,
@@ -83,8 +85,8 @@ Widget harness(
   );
 }
 
-EditableTextState _editable(WidgetTester tester) =>
-    tester.state<EditableTextState>(find.byType(EditableText));
+NoteFieldState _editable(WidgetTester tester) =>
+    tester.state<NoteFieldState>(noteField);
 
 /// What the keyboard hands the field: the text, the caret, and the word it
 /// is still composing, if any.
@@ -176,7 +178,7 @@ void main() {
     );
     await tester.pump();
 
-    final value = _editable(tester).textEditingValue;
+    final value = _editable(tester).widget.controller.value;
     expect(value.text, 'milk 2\ncoffee 4\ntea 3');
     // Seven characters landed above the caret; it is still after "tea".
     expect(value.selection.baseOffset, 19);
@@ -244,7 +246,7 @@ void main() {
     // The page rebuilt for some other reason; the note did not change.
     await tester.pumpWidget(harness('same', onBodyChanged: sent.add));
     await tester.pump();
-    expect(_editable(tester).textEditingValue.selection.baseOffset, 2);
+    expect(_editable(tester).widget.controller.value.selection.baseOffset, 2);
     expect(sent, isEmpty);
   });
 
@@ -268,7 +270,7 @@ void main() {
     await tester.pumpWidget(harness('REMOTE\nhel'));
     await tester.pump();
     // Held back: replacing the text under a composition confuses the IME.
-    expect(_editable(tester).textEditingValue.text, 'hel');
+    expect(_editable(tester).widget.controller.value.text, 'hel');
 
     // The word is committed.
     _editable(tester).userUpdateTextEditingValue(
@@ -279,7 +281,7 @@ void main() {
       SelectionChangedCause.keyboard,
     );
     await tester.pump();
-    expect(_editable(tester).textEditingValue.text, 'REMOTE\nhel');
+    expect(_editable(tester).widget.controller.value.text, 'REMOTE\nhel');
   });
 
   group('an edit made before the editor has shown what arrived', () {
@@ -289,13 +291,18 @@ void main() {
       final store = StoreStandIn('hel');
       await tester.pumpWidget(harness(store.body, store: store));
       await tester.pumpAndSettle();
-      _type(tester, 'hel', caret: 3, composing: const TextRange(start: 0, end: 3));
+      _type(
+        tester,
+        'hel',
+        caret: 3,
+        composing: const TextRange(start: 0, end: 3),
+      );
       await tester.pump();
       store.body = 'REMOTE\nhel';
       await tester.pumpWidget(harness(store.body, store: store));
       await tester.pump();
       expect(
-        _editable(tester).textEditingValue.text,
+        _editable(tester).widget.controller.value.text,
         'hel',
         reason: 'held back while the word is composed',
       );
@@ -307,7 +314,12 @@ void main() {
     ) async {
       final store = await composingUnderRemote(tester);
 
-      _type(tester, 'hell', caret: 4, composing: const TextRange(start: 0, end: 4));
+      _type(
+        tester,
+        'hell',
+        caret: 4,
+        composing: const TextRange(start: 0, end: 4),
+      );
       await tester.pump();
 
       expect(store.body, 'REMOTE\nhell');
@@ -323,7 +335,7 @@ void main() {
       await tester.pump();
 
       expect(store.body, 'REMOTE\nhel ');
-      final value = _editable(tester).textEditingValue;
+      final value = _editable(tester).widget.controller.value;
       expect(value.text, 'REMOTE\nhel ');
       expect(value.selection.baseOffset, 11);
     });
@@ -333,12 +345,22 @@ void main() {
       final sent = <String>[];
       await tester.pumpWidget(harness('hel', onBodyChanged: sent.add));
       await tester.pumpAndSettle();
-      _type(tester, 'hel', caret: 3, composing: const TextRange(start: 0, end: 3));
+      _type(
+        tester,
+        'hel',
+        caret: 3,
+        composing: const TextRange(start: 0, end: 3),
+      );
       await tester.pump();
       await tester.pumpWidget(harness('REMOTE\nhel', onBodyChanged: sent.add));
       await tester.pump();
 
-      _type(tester, 'hell', caret: 4, composing: const TextRange(start: 0, end: 4));
+      _type(
+        tester,
+        'hell',
+        caret: 4,
+        composing: const TextRange(start: 0, end: 4),
+      );
       await tester.pump();
       expect(sent.last, 'REMOTE\nhell');
 
@@ -346,7 +368,7 @@ void main() {
       _type(tester, 'hell ', caret: 5);
       await tester.pump();
       expect(sent.last, 'REMOTE\nhell ');
-      expect(_editable(tester).textEditingValue.text, 'REMOTE\nhell ');
+      expect(_editable(tester).widget.controller.value.text, 'REMOTE\nhell ');
     });
 
     testWidgets('a keystroke in the frame before the page rebuilds is '
@@ -365,7 +387,7 @@ void main() {
 
       await tester.pumpWidget(harness(store.body, store: store));
       await tester.pump();
-      final value = _editable(tester).textEditingValue;
+      final value = _editable(tester).widget.controller.value;
       expect(value.text, 'X\na\nbc');
       expect(value.selection.baseOffset, 6);
     });
@@ -380,7 +402,7 @@ void main() {
       store.body = 'X\na\nb';
       await tester.pumpWidget(harness(store.body, store: store));
       await tester.pump();
-      expect(_editable(tester).textEditingValue.text, 'X\na\nb');
+      expect(_editable(tester).widget.controller.value.text, 'X\na\nb');
 
       // A keystroke the platform applied to its own copy of the text before
       // the new text reached it: built on "a\nb", not on what is shown.
@@ -392,7 +414,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(_editable(tester).textEditingValue.text, 'X\na\nbc');
+      expect(_editable(tester).widget.controller.value.text, 'X\na\nbc');
       expect(store.body, 'X\na\nbc');
     });
   });

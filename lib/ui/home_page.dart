@@ -499,6 +499,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
       _selectedEditor?.beginAppendSession();
     });
+    // An idle app draws no frame of its own to run that in.
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   /// The half of a widget tap that is not the note it opened.
@@ -2990,6 +2992,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final pinned =
                 selected != null &&
                 widget.notes.pinnedNoteIds.contains(selected.id);
+            final unloaded = [
+              for (final ref in selected?.attachments ?? const [])
+                if (ref case NoteImageRef(src: _?, isPreparing: false)) ref,
+            ];
             final taskBoard = _taskController?.read();
             final tasks = _tasksMode ? _taskController : null;
             return Row(
@@ -3209,6 +3215,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         noteOpen: selected != null,
                                         syncStatus:
                                             widget.account?.sync?.status,
+                                        unloadedPictures: unloaded.length,
+                                        onShowUnloadedPicture: unloaded.isEmpty
+                                            ? null
+                                            : () => _selectedEditor
+                                                  ?.showAttachment(
+                                                    unloaded.first.offset,
+                                                  ),
                                         members: _selectedMembers,
                                         present: _selectedPresence,
                                         currentUserId:

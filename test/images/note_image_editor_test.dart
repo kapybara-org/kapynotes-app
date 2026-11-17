@@ -27,6 +27,7 @@ import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/paste/clipboard_snapshot.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/note_image_view.dart';
 import 'package:kapy_notes/ui/editor/file_chip.dart';
 import 'package:kapy_notes/ui/editor/note_video_view.dart';
@@ -37,6 +38,7 @@ import 'package:kapy_notes/video/video_ingest.dart';
 import 'package:kapy_notes/video/video_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../support/note_driver.dart';
 import '../test_fonts.dart';
 
 const anchor = NoteAttachmentRef.placeholder;
@@ -271,11 +273,8 @@ Widget harness(
 /// The render box itself is no use here: the field expands to fill the pane,
 /// so its height is the viewport's whatever the note contains. Caret geometry
 /// is what actually moves when a line grows to hold a picture.
-double lineTop(WidgetTester tester, int offset) => tester
-    .state<EditableTextState>(find.byType(EditableText))
-    .renderEditable
-    .getLocalRectForCaret(TextPosition(offset: offset))
-    .top;
+double lineTop(WidgetTester tester, int offset) =>
+    NoteDriver(tester).caretRect(TextPosition(offset: offset)).top;
 
 void main() {
   setUpAll(() async {
@@ -373,7 +372,7 @@ void main() {
     await tester.pump();
     expect(find.byType(NoteImageView), findsOneWidget);
 
-    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    final state = tester.state<NoteFieldState>(noteField);
     state.updateEditingValue(
       const TextEditingValue(
         text: 'ab',
@@ -400,7 +399,7 @@ void main() {
     await tester.pump();
 
     // Caret in the middle of the word, which the insert must not split around.
-    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    final state = tester.state<NoteFieldState>(noteField);
     state.updateEditingValue(
       const TextEditingValue(
         text: 'a note',
@@ -415,8 +414,10 @@ void main() {
     expect(reported, hasLength(2));
     expect(find.byType(NoteImageView), findsNWidgets(2));
     final text = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .textEditingValue
+        .state<NoteFieldState>(noteField)
+        .widget
+        .controller
+        .value
         .text;
     expect(text, 'a n\n$anchor$anchor\note');
   });
@@ -437,7 +438,7 @@ void main() {
 
     // The caret is beside the picture and a letter arrives, the way the
     // keyboard delivers one.
-    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    final state = tester.state<NoteFieldState>(noteField);
     state.updateEditingValue(
       TextEditingValue(
         text: '${anchor}h',
@@ -447,8 +448,10 @@ void main() {
     await tester.pump();
 
     final value = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .textEditingValue;
+        .state<NoteFieldState>(noteField)
+        .widget
+        .controller
+        .value;
     expect(value.text, '$anchor\nh');
     // The caret went with the letter, so typing simply continues.
     expect(value.selection.baseOffset, 3);
@@ -463,7 +466,7 @@ void main() {
     await tester.pumpWidget(harness(anchor, attachments: [at(0)]));
     await tester.pump();
 
-    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    final state = tester.state<NoteFieldState>(noteField);
     state.updateEditingValue(
       TextEditingValue(
         text: 'h$anchor',
@@ -473,8 +476,10 @@ void main() {
     await tester.pump();
 
     final value = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .textEditingValue;
+        .state<NoteFieldState>(noteField)
+        .widget
+        .controller
+        .value;
     expect(value.text, 'h\n$anchor');
     expect(value.selection.baseOffset, 1);
     expect(find.byType(NoteImageView), findsOneWidget);
@@ -486,7 +491,7 @@ void main() {
 
     // Backspace at the start of the line below, which would otherwise put the
     // words on the picture's own row.
-    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    final state = tester.state<NoteFieldState>(noteField);
     state.updateEditingValue(
       TextEditingValue(
         text: '${anchor}words',
@@ -496,8 +501,10 @@ void main() {
     await tester.pump();
 
     final value = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .textEditingValue;
+        .state<NoteFieldState>(noteField)
+        .widget
+        .controller
+        .value;
     expect(value.text, '$anchor\nwords');
     expect(find.byType(NoteImageView), findsOneWidget);
   });
@@ -961,7 +968,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(EditableText));
+    await tester.tap(noteField);
     await tester.pump();
 
     await sendShortcut(
@@ -1018,10 +1025,12 @@ void main() {
         expect(find.byType(NoteImageViewer), findsOneWidget);
         expect(
           tester
-              .state<EditableTextState>(
-                find.byType(EditableText, skipOffstage: false),
+              .state<NoteFieldState>(
+                find.byType(NoteField, skipOffstage: false),
               )
-              .textEditingValue
+              .widget
+              .controller
+              .value
               .selection,
           const TextSelection(baseOffset: 7, extentOffset: 8),
         );
@@ -1109,9 +1118,7 @@ void main() {
       );
       await tester.pump();
       editorKey.currentState!.focusAtEnd();
-      final controller = tester
-          .widget<TextField>(find.byType(TextField))
-          .controller!;
+      final controller = tester.widget<NoteField>(noteField).controller;
       controller.selection = TextSelection(
         baseOffset: 0,
         extentOffset: body.length,
@@ -1147,9 +1154,7 @@ void main() {
       );
       await tester.pump();
       editorKey.currentState!.focusAtEnd();
-      final controller = tester
-          .widget<TextField>(find.byType(TextField))
-          .controller!;
+      final controller = tester.widget<NoteField>(noteField).controller;
       controller.selection = TextSelection(
         baseOffset: 0,
         extentOffset: body.length,
@@ -1332,9 +1337,7 @@ void main() {
       );
       await tester.pump();
       expect(find.byType(NoteImageView), findsNothing);
-      final editable = tester.state<EditableTextState>(
-        find.byType(EditableText),
-      );
+      final editable = tester.state<NoteFieldState>(noteField);
       expect(editable.widget.focusNode.hasFocus, isTrue);
 
       await tester.sendKeyDownEvent(
@@ -1449,7 +1452,7 @@ void main() {
     // editor, and it is the condition `_restoreUndone` matches on.
 
     Future<void> restore(WidgetTester tester, String text) async {
-      await tester.enterText(find.byType(EditableText), text);
+      await tester.enterNote(text);
       await tester.pump();
     }
 
@@ -1630,9 +1633,7 @@ void main() {
       TextSelection selection,
     ) async {
       editorKey.currentState!.focusAtEnd();
-      final controller = tester
-          .widget<TextField>(find.byType(TextField))
-          .controller!;
+      final controller = tester.widget<NoteField>(noteField).controller;
       controller.selection = selection;
       await tester.pump();
       return controller;
@@ -1929,10 +1930,8 @@ void main() {
             targetKey.currentState!.handlePaste(SelectionChangedCause.keyboard),
       );
       await tester.pump();
-      final editable = tester.state<EditableTextState>(
-        find.byType(EditableText),
-      );
-      expect(editable.textEditingValue.text, 'before $body');
+      final editable = tester.state<NoteFieldState>(noteField);
+      expect(editable.widget.controller.value.text, 'before $body');
       expect(formats, const [
         NoteFormatRange(start: 7, end: 11, format: NoteFormat.heading),
         NoteFormatRange(start: 18, end: 22, format: NoteFormat.bold),
@@ -1957,7 +1956,7 @@ void main() {
 
       await tester.pump(const Duration(milliseconds: 600));
       await pressWithControl(tester, LogicalKeyboardKey.keyZ);
-      expect(editable.textEditingValue.text, 'before ');
+      expect(editable.widget.controller.value.text, 'before ');
       expect(attachments, isEmpty);
       await tester.pump(const Duration(seconds: 5));
     }, variant: windows);
@@ -2034,10 +2033,7 @@ void main() {
         );
         await tester.pump();
         expect(
-          tester
-              .state<EditableTextState>(find.byType(EditableText))
-              .textEditingValue
-              .text,
+          tester.state<NoteFieldState>(noteField).widget.controller.value.text,
           markdown,
         );
         final image = attachments!.single as NoteImageRef;
@@ -2090,10 +2086,7 @@ void main() {
       );
       await tester.pump();
       expect(
-        tester
-            .state<EditableTextState>(find.byType(EditableText))
-            .textEditingValue
-            .text,
+        tester.state<NoteFieldState>(noteField).widget.controller.value.text,
         'Trip\n\n$anchor\n\n• go',
       );
       expect(formats, const [
@@ -2136,10 +2129,7 @@ void main() {
       );
       await tester.pump();
       expect(
-        tester
-            .state<EditableTextState>(find.byType(EditableText))
-            .textEditingValue
-            .text,
+        tester.state<NoteFieldState>(noteField).widget.controller.value.text,
         '# Trip\n\n- go',
       );
     }, variant: windows);
@@ -2162,17 +2152,15 @@ void main() {
     );
     await tester.pumpAndSettle();
     // A tap first, as a person would make, so the field has its overlay.
-    await tester.tap(find.byType(TextField));
+    await tester.tap(noteField);
     await tester.pump(kDoubleTapTimeout);
     await tester.pumpAndSettle();
-    final controller = tester
-        .widget<TextField>(find.byType(TextField))
-        .controller!;
+    final controller = tester.widget<NoteField>(noteField).controller;
     controller.selection = const TextSelection(baseOffset: 0, extentOffset: 6);
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
 
-    tester.state<EditableTextState>(find.byType(EditableText)).showToolbar();
+    tester.state<NoteFieldState>(noteField).showToolbar();
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('editor-context-action-Copy')));
     await tester.runAsync(
@@ -2221,13 +2209,11 @@ void main() {
           editorKey: editorKey,
         ),
       );
-      await tester.tap(find.byType(TextField));
+      await tester.tap(noteField);
       await tester.pump(kDoubleTapTimeout);
       await tester.pumpAndSettle();
-      final editable = tester.state<EditableTextState>(
-        find.byType(EditableText),
-      );
-      final beforePaste = editable.textEditingValue;
+      final editable = tester.state<NoteFieldState>(noteField);
+      final beforePaste = editable.widget.controller.value;
       expect(beforePaste.selection.isCollapsed, isTrue);
       final expected = beforePaste.text.replaceRange(
         beforePaste.selection.start,
@@ -2238,7 +2224,7 @@ void main() {
       await tester.tap(find.text('Paste Text').hitTestable());
       await tester.pumpAndSettle();
 
-      expect(editable.textEditingValue.text, expected);
+      expect(editable.widget.controller.value.text, expected);
       expect(find.byType(NoteImageView), findsNothing);
     });
 
@@ -2292,8 +2278,10 @@ void main() {
         await tester.pump();
 
         final text = tester
-            .state<EditableTextState>(find.byType(EditableText))
-            .textEditingValue
+            .state<NoteFieldState>(noteField)
+            .widget
+            .controller
+            .value
             .text;
         expect(text, 'before $fragmentBody');
         expect(clipboard.reads, 0);
@@ -2330,8 +2318,10 @@ void main() {
       expect(clipboard.reads, 1);
       expect(find.byType(NoteImageView), findsOneWidget);
       final text = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .textEditingValue
+          .state<NoteFieldState>(noteField)
+          .widget
+          .controller
+          .value
           .text;
       expect(text, contains(anchor));
     });
@@ -2371,8 +2361,10 @@ void main() {
       await tester.pump();
 
       final text = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .textEditingValue
+          .state<NoteFieldState>(noteField)
+          .widget
+          .controller
+          .value
           .text;
       expect(text, '# Title\n\n- **one**\n\n$anchor\n\nafter');
       expect(reported, hasLength(1));
@@ -2415,8 +2407,10 @@ void main() {
       await tester.pump();
 
       final text = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .textEditingValue
+          .state<NoteFieldState>(noteField)
+          .widget
+          .controller
+          .value
           .text;
       expect(text, 'Before\n\n$anchor\n\nAfter');
       final ref = reported!.single as NoteImageRef;
@@ -2512,8 +2506,10 @@ void main() {
       expect(find.byType(NoteImageView), findsNothing);
       // The note is untouched: nothing was on the clipboard to paste.
       final text = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .textEditingValue
+          .state<NoteFieldState>(noteField)
+          .widget
+          .controller
+          .value
           .text;
       expect(text, 'before');
     });
@@ -2573,8 +2569,10 @@ void main() {
       expect(textReads, 1);
       expect(clipboard.reads, 1);
       final text = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .textEditingValue
+          .state<NoteFieldState>(noteField)
+          .widget
+          .controller
+          .value
           .text;
       expect(text, 'before dictated words');
     });
@@ -2629,8 +2627,10 @@ void main() {
       await tester.pump();
 
       final text = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .textEditingValue
+          .state<NoteFieldState>(noteField)
+          .widget
+          .controller
+          .value
           .text;
       expect(text, 'before dictated words');
       expect(find.byType(NoteImageView), findsNothing);
@@ -2680,7 +2680,7 @@ void main() {
         ),
       );
       await tester.pump();
-      controller = tester.widget<TextField>(find.byType(TextField)).controller!;
+      controller = tester.widget<NoteField>(noteField).controller;
       editorKey.currentState!.focusAtEnd();
       await tester.pump();
       controller.selection = const TextSelection.collapsed(offset: 7);
