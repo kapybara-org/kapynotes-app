@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/rendering.dart';
+import 'package:flutter/rendering.dart' show PipelineOwner;
 import 'package:material_ui/material_ui.dart';
 
 import '../../crdt/text_diff.dart';
 import '../../core/theme.dart';
 import '../../sync/presence.dart';
 import '../collaborator_colors.dart';
+import 'note_field.dart';
 
 /// Other people's carets and selections, drawn over the note as they move.
 ///
@@ -28,7 +29,7 @@ class RemoteCaretLayer extends StatefulWidget {
     required this.source,
     required this.controller,
     required this.scroll,
-    required this.editable,
+    required this.field,
     required this.hover,
     this.tableCaretRect,
     this.tableSelectionRects,
@@ -41,12 +42,11 @@ class RemoteCaretLayer extends StatefulWidget {
   final TextEditingController controller;
   final ScrollController scroll;
 
-  /// The field's render object, looked up when it is needed rather than held:
-  /// the field rebuilds it whenever it likes.
-  final RenderEditable? Function() editable;
+  /// The field, looked up when it is needed rather than held.
+  final NoteFieldState? Function() field;
 
-  /// A caret inside hidden table source has no useful rect in
-  /// [RenderEditable]. The editor supplies its painted cell rect instead, in
+  /// A caret inside hidden table source has no useful rect in the field.
+  /// The editor supplies its painted cell rect instead, in
   /// global coordinates.
   final Rect? Function(int offset)? tableCaretRect;
 
@@ -162,7 +162,7 @@ class _RemoteCaretLayerState extends State<RemoteCaretLayer> {
         controller: widget.controller,
         scroll: widget.scroll,
         hover: widget.hover,
-        editable: widget.editable,
+        field: widget.field,
         tableCaretRect: widget.tableCaretRect,
         tableSelectionRects: widget.tableSelectionRects,
         brightness: Theme.of(context).brightness,
@@ -189,7 +189,7 @@ class _RemoteCaretPaint extends LeafRenderObjectWidget {
     required this.controller,
     required this.scroll,
     required this.hover,
-    required this.editable,
+    required this.field,
     required this.tableCaretRect,
     required this.tableSelectionRects,
     required this.brightness,
@@ -202,7 +202,7 @@ class _RemoteCaretPaint extends LeafRenderObjectWidget {
   final TextEditingController controller;
   final ScrollController scroll;
   final ValueListenable<Offset?> hover;
-  final RenderEditable? Function() editable;
+  final NoteFieldState? Function() field;
   final Rect? Function(int offset)? tableCaretRect;
   final Iterable<Rect> Function(int start, int end)? tableSelectionRects;
   final Brightness brightness;
@@ -216,7 +216,7 @@ class _RemoteCaretPaint extends LeafRenderObjectWidget {
     controller: controller,
     scroll: scroll,
     hover: hover,
-    editable: editable,
+    field: field,
     tableCaretRect: tableCaretRect,
     tableSelectionRects: tableSelectionRects,
     brightness: brightness,
@@ -235,7 +235,7 @@ class _RemoteCaretPaint extends LeafRenderObjectWidget {
       ..controller = controller
       ..scroll = scroll
       ..hover = hover
-      ..editable = editable
+      ..field = field
       ..tableCaretRect = tableCaretRect
       ..tableSelectionRects = tableSelectionRects
       ..brightness = brightness
@@ -251,7 +251,7 @@ class _RenderRemoteCarets extends RenderBox {
     required TextEditingController controller,
     required ScrollController scroll,
     required ValueListenable<Offset?> hover,
-    required this.editable,
+    required this.field,
     required Rect? Function(int offset)? tableCaretRect,
     required Iterable<Rect> Function(int start, int end)? tableSelectionRects,
     required Brightness brightness,
@@ -268,7 +268,7 @@ class _RenderRemoteCarets extends RenderBox {
        _labelStyle = labelStyle,
        _textDirection = textDirection;
 
-  RenderEditable? Function() editable;
+  NoteFieldState? Function() field;
 
   Rect? Function(int offset)? _tableCaretRect;
   set tableCaretRect(Rect? Function(int offset)? value) {
@@ -410,8 +410,9 @@ class _RenderRemoteCarets extends RenderBox {
   void paint(PaintingContext context, Offset offset) {
     final carets = _carets.carets;
     if (carets.isEmpty) return;
-    final field = editable();
-    if (field == null || !field.attached || !field.hasSize) return;
+    final field = this.field();
+    final box = field?.box;
+    if (field == null || box == null) return;
 
     final text = _controller.text;
     final edit = _carets.text == text ? null : diffTexts(_carets.text, text);
@@ -420,8 +421,8 @@ class _RenderRemoteCarets extends RenderBox {
 
     // Everything below is in this layer's coordinates. The field's own rects
     // already account for its scroll offset.
-    final origin = globalToLocal(field.localToGlobal(Offset.zero));
-    final visible = origin & field.size;
+    final origin = globalToLocal(box.localToGlobal(Offset.zero));
+    final visible = origin & box.size;
     final pointedAt = _hover.value;
     final pointer = pointedAt == null ? null : globalToLocal(pointedAt);
     Rect localFromGlobal(Rect rect) => Rect.fromPoints(
@@ -446,10 +447,10 @@ class _RenderRemoteCarets extends RenderBox {
           caret.userId,
           on: _brightness,
         ).withValues(alpha: caret.leaving ? 0.1 : 0.22);
-      for (final box in field.getBoxesForSelection(
+      for (final selected in field.boxesFor(
         TextSelection(baseOffset: start, extentOffset: end),
       )) {
-        canvas.drawRect(box.toRect().shift(origin), fill);
+        canvas.drawRect(selected.toRect().shift(origin), fill);
       }
       for (final rect
           in _tableSelectionRects?.call(start, end) ?? const <Rect>[]) {
@@ -462,8 +463,9 @@ class _RenderRemoteCarets extends RenderBox {
       final at = place(caret.extent);
       final tableRect = _tableCaretRect?.call(at);
       final rect = tableRect == null
-          ? field.getLocalRectForCaret(TextPosition(offset: at)).shift(origin)
+          ? field.caretRectAt(TextPosition(offset: at))?.shift(origin)
           : localFromGlobal(tableRect);
+      if (rect == null) continue;
       if (rect.bottom <= visible.top || rect.top >= visible.bottom) continue;
       final color = collaboratorColor(
         caret.userId,

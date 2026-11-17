@@ -29,6 +29,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
 import 'fake_update_installer.dart';
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 const _body = '''
@@ -536,7 +537,7 @@ void main() {
     );
     final editor = find.descendant(
       of: find.byType(NoteEditor),
-      matching: find.byType(TextField),
+      matching: noteField,
     );
     final bounds = tester.getRect(editor);
     await tester.tapAt(
@@ -917,29 +918,20 @@ void main() {
       brightness: Brightness.dark,
       sidebarVisible: false,
     );
-    final editor = find.descendant(
-      of: find.byType(NoteEditor),
-      matching: find.byType(TextField),
+    final note = NoteDriver(
+      tester,
+      find.descendant(of: find.byType(NoteEditor), matching: noteField),
     );
-    final field = tester.widget<TextField>(editor);
-    final editable = tester
-        .state<EditableTextState>(
-          find.descendant(
-            of: find.byType(NoteEditor),
-            matching: find.byType(EditableText),
-          ),
-        )
-        .renderEditable;
     final targetStart = _body.indexOf('Hotel');
-    final wordBox = editable
-        .getBoxesForSelection(
+    final wordBox = note
+        .boxesFor(
           TextSelection(
             baseOffset: targetStart,
             extentOffset: targetStart + 'Hotel'.length,
           ),
         )
         .first;
-    final start = editable.localToGlobal(
+    final start = note.toGlobal(
       Offset(wordBox.left + 1, (wordBox.top + wordBox.bottom) / 2),
     );
     final mouse = await tester.startGesture(
@@ -956,7 +948,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
-    expect(field.controller!.selection.isCollapsed, isFalse);
+    expect(note.value.selection.isCollapsed, isFalse);
     final bubble = tester.getRect(
       find.byKey(const ValueKey('selection-bubble')),
     );

@@ -17,9 +17,11 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../support/note_driver.dart';
 import '../test_fonts.dart';
 
 const anchor = NoteAttachmentRef.placeholder;
@@ -125,12 +127,11 @@ Widget harness(
   ),
 );
 
-EditableTextState field(WidgetTester tester) =>
-    tester.state<EditableTextState>(find.byType(EditableText));
+NoteFieldState field(WidgetTester tester) =>
+    tester.state<NoteFieldState>(noteField);
 
-Rect caretFor(WidgetTester tester, int offset) => field(
-  tester,
-).renderEditable.getLocalRectForCaret(TextPosition(offset: offset));
+Rect caretFor(WidgetTester tester, int offset) =>
+    NoteDriver(tester).caretRect(TextPosition(offset: offset));
 
 void main() {
   setUpAll(() async {
@@ -161,7 +162,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final chip = tester.getRect(find.byType(NoteVoiceChip));
-      final editable = tester.getRect(find.byType(EditableText));
+      final editable = tester.getRect(noteField);
       final caret = caretFor(tester, 2);
 
       // The behaviour below follows from this, and only from this. Without it
@@ -196,7 +197,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(field(tester).textEditingValue.selection.baseOffset, 2);
+      expect(field(tester).widget.controller.value.selection.baseOffset, 2);
     });
 
     testWidgets('is still there under a picture', (tester) async {
@@ -276,12 +277,12 @@ void main() {
         SystemMouseCursors.click,
       );
 
-      final editable = field(tester).renderEditable;
+      final editable = NoteDriver(tester);
       expect(
         await cursorAt(
           tester,
           gesture,
-          editable.localToGlobal(caretFor(tester, 4).center),
+          editable.toGlobal(caretFor(tester, 4).center),
         ),
         SystemMouseCursors.text,
         reason: 'the line under the chip is still ordinary text',

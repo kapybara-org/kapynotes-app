@@ -16,16 +16,18 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/time_zones.dart';
-import 'package:kapy_notes/ui/editor/blank_line_highlight.dart';
 import 'package:kapy_notes/ui/editor/editor_formatting.dart';
-import 'package:kapy_notes/ui/editor/inline_results.dart';
+import 'package:kapy_notes/ui/editor/note_sliver.dart'
+    show RenderNoteLine, lineTrailingGap;
 import 'package:kapy_notes/ui/celebrate.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
 import 'package:kapy_notes/ui/editor/editor_context_menu.dart';
 
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 const _rates = <String, double>{'EUR': 0.86, 'GBP': 0.74};
@@ -48,16 +50,14 @@ class _MemoryStore extends LocalStore {
 
 /// The middle of a substring's first line, in global coordinates.
 Offset _centerOf(WidgetTester tester, String body, String linkText) {
-  final editable = tester
-      .state<EditableTextState>(find.byType(EditableText))
-      .renderEditable;
+  final editable = NoteDriver(tester);
   final start = body.indexOf(linkText);
   final box = editable
-      .getBoxesForSelection(
+      .boxesFor(
         TextSelection(baseOffset: start, extentOffset: start + linkText.length),
       )
       .first;
-  return editable.localToGlobal(
+  return editable.toGlobal(
     Offset((box.left + box.right) / 2, (box.top + box.bottom) / 2),
   );
 }
@@ -145,16 +145,14 @@ Widget harness(
 Rect lineRect(WidgetTester tester, String body, int index) {
   final start = startOfLine(body, index);
   final line = body.split('\n')[index];
-  final editable = tester
-      .state<EditableTextState>(find.byType(EditableText))
-      .renderEditable;
+  final editable = NoteDriver(tester);
   // The field sets selectionHeightStyle to strut, so these are full line
   // boxes rather than tight glyph bounds.
-  final boxes = editable.getBoxesForSelection(
+  final boxes = editable.boxesFor(
     TextSelection(baseOffset: start, extentOffset: start + line.length),
   );
   expect(boxes, isNotEmpty, reason: 'line $index has no text box');
-  final box = tester.renderObject<RenderBox>(find.byType(EditableText));
+  final box = tester.renderObject<RenderBox>(noteField);
   final first = boxes.first;
   final origin = box.localToGlobal(Offset(first.left, first.top));
   return origin & Size(first.right - first.left, first.bottom - first.top);
@@ -165,10 +163,8 @@ Rect lineRect(WidgetTester tester, String body, int index) {
 Rect lastRowRect(WidgetTester tester, String body, int index) {
   final start = startOfLine(body, index);
   final line = body.split('\n')[index];
-  final editable = tester
-      .state<EditableTextState>(find.byType(EditableText))
-      .renderEditable;
-  final boxes = editable.getBoxesForSelection(
+  final editable = NoteDriver(tester);
+  final boxes = editable.boxesFor(
     TextSelection(baseOffset: start, extentOffset: start + line.length),
   );
   expect(boxes, isNotEmpty, reason: 'line $index has no text box');
@@ -177,7 +173,7 @@ Rect lastRowRect(WidgetTester tester, String body, int index) {
     for (final box in boxes)
       if ((box.top - last.top).abs() < 0.5) box.toRect(),
   ].reduce((a, b) => a.expandToInclude(b));
-  final box = tester.renderObject<RenderBox>(find.byType(EditableText));
+  final box = tester.renderObject<RenderBox>(noteField);
   return row.shift(box.localToGlobal(Offset.zero));
 }
 
@@ -250,15 +246,13 @@ void main() {
     await tester.pumpWidget(harness('A note without a box', autofocus: true));
     await tester.pumpAndSettle();
 
-    final decoration = tester
-        .widget<TextField>(find.byType(TextField))
-        .decoration!;
-    expect(decoration.border, InputBorder.none);
-    expect(decoration.enabledBorder, InputBorder.none);
-    expect(decoration.focusedBorder, InputBorder.none);
-    expect(decoration.disabledBorder, InputBorder.none);
-    expect(decoration.errorBorder, InputBorder.none);
-    expect(decoration.focusedErrorBorder, InputBorder.none);
+    expect(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(InputDecorator),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('works out what the note says to the semantics tree once', (
@@ -270,10 +264,7 @@ void main() {
 
     // The field asks again whenever its semantics are marked dirty, which it
     // does for every widget it takes in, and each answer walks the note.
-    final text = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .renderEditable
-        .text!;
+    final text = NoteDriver(tester).span;
     final semantics = text.getSemanticsInformation();
     expect(semantics.map((info) => info.text).join(), body);
     expect(text.getSemanticsInformation(), same(semantics));
@@ -284,7 +275,7 @@ void main() {
   ) async {
     await tester.pumpWidget(harness('☐ milk\n☐ bread', autofocus: true));
     await tester.pumpAndSettle();
-    final topLeft = tester.getTopLeft(find.byType(EditableText));
+    final topLeft = tester.getTopLeft(noteField);
 
     // First box: a burst, and no finale — there is still one left.
     await tester.tapAt(topLeft + const Offset(6, 14));
@@ -308,7 +299,7 @@ void main() {
     const body = '☑ milk\n☐ bread';
     await tester.pumpWidget(harness(body, autofocus: true));
     await tester.pumpAndSettle();
-    final topLeft = tester.getTopLeft(find.byType(EditableText));
+    final topLeft = tester.getTopLeft(noteField);
 
     await tester.tapAt(
       Offset(topLeft.dx + 6, lineRect(tester, body, 1).center.dy),
@@ -327,7 +318,7 @@ void main() {
   testWidgets('a single box on its own is not a finished list', (tester) async {
     await tester.pumpWidget(harness('☐ milk', autofocus: true));
     await tester.pumpAndSettle();
-    final topLeft = tester.getTopLeft(find.byType(EditableText));
+    final topLeft = tester.getTopLeft(noteField);
 
     await tester.tapAt(topLeft + const Offset(6, 14));
     await tester.pump();
@@ -351,14 +342,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(tester.widget<TextField>(find.byType(TextField)).readOnly, isTrue);
+    expect(tester.widget<NoteField>(noteField).readOnly, isTrue);
     expect(
       find.byKey(const ValueKey('note-formatting-controls')),
       findsNothing,
     );
     expect(find.byKey(const ValueKey('view-only-status')), findsOneWidget);
 
-    final topLeft = tester.getTopLeft(find.byType(EditableText));
+    final topLeft = tester.getTopLeft(noteField);
     await tester.tapAt(topLeft + const Offset(6, 14));
     await tester.pump();
     tester
@@ -367,10 +358,7 @@ void main() {
     await tester.pump();
 
     expect(
-      tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .textEditingValue
-          .text,
+      tester.state<NoteFieldState>(noteField).widget.controller.value.text,
       body,
     );
     expect(changed, isFalse);
@@ -385,7 +373,7 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
     expect(find.byKey(KapyCursorPeek.overlayKey), findsNothing);
 
-    await tester.enterText(find.byType(TextField), 'A quiet note with an edit');
+    await tester.enterNote('A quiet note with an edit');
     await tester.pump();
     await tester.pump(const Duration(seconds: 4));
     expect(find.byKey(KapyCursorPeek.overlayKey), findsNothing);
@@ -415,7 +403,7 @@ void main() {
       harness('first line\nsecond line', autofocus: true),
     );
     await tester.pumpAndSettle();
-    final topLeft = tester.getTopLeft(find.byType(EditableText));
+    final topLeft = tester.getTopLeft(noteField);
 
     await tester.pump(const Duration(seconds: 4));
     await tester.tapAt(topLeft + const Offset(40, 43));
@@ -440,15 +428,13 @@ void main() {
 
     // The middle of the blank line's own row, which on the page sits under
     // the room for the title's meta row.
-    final editable = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .renderEditable;
-    final row = editable.getLocalRectForCaret(
+    final editable = NoteDriver(tester);
+    final row = editable.caretRect(
       TextPosition(offset: body.indexOf('\n') + 1),
     );
     final blank = Offset(
       lineRect(tester, body, 0).center.dx,
-      editable.localToGlobal(row.center).dy,
+      editable.toGlobal(row.center).dy,
     );
 
     await tester.tapAt(blank);
@@ -457,8 +443,10 @@ void main() {
     await tester.pumpAndSettle();
 
     final selection = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .textEditingValue
+        .state<NoteFieldState>(noteField)
+        .widget
+        .controller
+        .value
         .selection;
     expect(selection.isCollapsed, isTrue);
     expect(selection.baseOffset, body.indexOf('\n') + 1);
@@ -468,24 +456,24 @@ void main() {
     /// The middle of ruled row [row], counting the first line of the note as
     /// row 0 — the point a reader aims at when they click an empty line.
     Offset rowCenter(WidgetTester tester, int row) {
-      final editable = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .renderEditable;
-      final origin = editable.localToGlobal(Offset.zero);
+      final editable = NoteDriver(tester);
+      final origin = editable.toGlobal(Offset.zero);
       return Offset(
         origin.dx + 40,
-        origin.dy + (row + 0.5) * editable.preferredLineHeight,
+        origin.dy + (row + 0.5) * editable.rowHeight,
       );
     }
 
     /// Which ruled row the caret is drawn on.
     int caretRow(WidgetTester tester) {
-      final state = tester.state<EditableTextState>(find.byType(EditableText));
-      final editable = state.renderEditable;
-      final rect = editable.getLocalRectForCaret(
-        TextPosition(offset: state.textEditingValue.selection.baseOffset),
+      final state = tester.state<NoteFieldState>(noteField);
+      final editable = NoteDriver(tester);
+      final rect = editable.caretRect(
+        TextPosition(
+          offset: state.widget.controller.value.selection.baseOffset,
+        ),
       );
-      return (rect.center.dy / editable.preferredLineHeight).floor();
+      return (rect.center.dy / editable.rowHeight).floor();
     }
 
     Future<void> pumpEditor(
@@ -518,11 +506,7 @@ void main() {
       expect(caretRow(tester), 8);
       expect(saved, 'one\ntwo\nthree\n\n\n\n\n\n');
       expect(
-        tester
-            .state<EditableTextState>(find.byType(EditableText))
-            .widget
-            .focusNode
-            .hasFocus,
+        tester.state<NoteFieldState>(noteField).widget.focusNode.hasFocus,
         isTrue,
       );
     });
@@ -596,17 +580,17 @@ void main() {
     await tester.pumpWidget(harness(body, autofocus: true));
     await tester.pumpAndSettle();
 
-    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    final state = tester.state<NoteFieldState>(noteField);
     // Straddles the blank line on the way to real text.
     state.userUpdateTextEditingValue(
-      state.textEditingValue.copyWith(
+      state.widget.controller.value.copyWith(
         selection: const TextSelection(baseOffset: 4, extentOffset: 12),
       ),
       SelectionChangedCause.drag,
     );
     await tester.pumpAndSettle();
 
-    final selection = state.textEditingValue.selection;
+    final selection = state.widget.controller.value.selection;
     expect(selection.isCollapsed, isFalse);
     expect(selection.extentOffset, 12);
   });
@@ -618,9 +602,9 @@ void main() {
     await tester.pumpWidget(harness(body, autofocus: true, onEdit: edits.add));
     await tester.pumpAndSettle();
 
-    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    final state = tester.state<NoteFieldState>(noteField);
     state.userUpdateTextEditingValue(
-      state.textEditingValue.copyWith(
+      state.widget.controller.value.copyWith(
         selection: const TextSelection(baseOffset: 19, extentOffset: 30),
       ),
       SelectionChangedCause.drag,
@@ -644,36 +628,40 @@ void main() {
 
     /// A point on the line [offset] starts, a little in from its edge.
     Offset onLineOf(WidgetTester tester, int offset) {
-      final editable = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .renderEditable;
-      final caret = editable.getLocalRectForCaret(TextPosition(offset: offset));
-      return editable.localToGlobal(caret.center + const Offset(20, 0));
+      final editable = NoteDriver(tester);
+      final caret = editable.caretRect(TextPosition(offset: offset));
+      return editable.toGlobal(caret.center + const Offset(20, 0));
     }
 
     TextSelection selectionOf(WidgetTester tester) => tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .textEditingValue
+        .state<NoteFieldState>(noteField)
+        .widget
+        .controller
+        .value
         .selection;
 
     /// What the blank-line highlight paints, in global coordinates.
     List<({Rect rect, Color color})> blankLineBlocks(WidgetTester tester) {
-      final layer = tester.renderObject<RenderBox>(
-        find.byType(BlankLineHighlight),
-      );
-      final canvas = TestRecordingCanvas();
-      layer.paint(TestRecordingPaintingContext(canvas), Offset.zero);
-      final origin = layer.localToGlobal(Offset.zero);
-      return [
-        for (final call in canvas.invocations)
-          if (call.invocation.memberName == #drawRect)
-            (
-              rect: (call.invocation.positionalArguments[0] as Rect).shift(
-                origin,
-              ),
-              color: (call.invocation.positionalArguments[1] as Paint).color,
+      final lines = NoteDriver(tester).state.lines;
+      final blocks = <({Rect rect, Color color})>[];
+      // Each line once: several elements can stand over one render object.
+      for (final drawn
+          in tester.allRenderObjects.whereType<RenderNoteLine>().toSet()) {
+        if (lines[drawn.line].isNotEmpty) continue;
+        final canvas = TestRecordingCanvas();
+        drawn.paint(TestRecordingPaintingContext(canvas), Offset.zero);
+        final origin = drawn.localToGlobal(Offset.zero);
+        for (final call in canvas.invocations) {
+          if (call.invocation.memberName != #drawRect) continue;
+          blocks.add((
+            rect: (call.invocation.positionalArguments[0] as Rect).shift(
+              origin,
             ),
-      ];
+            color: (call.invocation.positionalArguments[1] as Paint).color,
+          ));
+        }
+      }
+      return blocks..sort((a, b) => a.rect.top.compareTo(b.rect.top));
     }
 
     // Every selection made only of line breaks used to collapse to a caret.
@@ -708,9 +696,9 @@ void main() {
         harness(body, autofocus: true, onBodyChanged: (text) => saved = text),
       );
       await tester.pumpAndSettle();
-      final state = tester.state<EditableTextState>(find.byType(EditableText));
+      final state = tester.state<NoteFieldState>(noteField);
       state.userUpdateTextEditingValue(
-        state.textEditingValue.copyWith(
+        state.widget.controller.value.copyWith(
           selection: const TextSelection.collapsed(offset: 4),
         ),
         SelectionChangedCause.tap,
@@ -805,36 +793,34 @@ void main() {
     ) async {
       await tester.pumpWidget(harness(body, autofocus: true));
       await tester.pumpAndSettle();
-      final state = tester.state<EditableTextState>(find.byType(EditableText));
+      final state = tester.state<NoteFieldState>(noteField);
       state.userUpdateTextEditingValue(
-        state.textEditingValue.copyWith(
+        state.widget.controller.value.copyWith(
           selection: const TextSelection(baseOffset: 4, extentOffset: 7),
         ),
         SelectionChangedCause.drag,
       );
       await tester.pumpAndSettle();
 
-      final editable = state.renderEditable;
+      final editable = NoteDriver(tester);
       final blocks = blankLineBlocks(tester);
       // The break at 7 ends the selection rather than sitting in it.
       expect(blocks, hasLength(3));
       for (final (index, block) in blocks.indexed) {
-        final line = editable
-            .getBoxesForSelection(
-              TextSelection(baseOffset: 4 + index, extentOffset: 5 + index),
-            )
-            .single;
-        final lineOrigin = editable.localToGlobal(Offset(line.left, line.top));
+        final top = editable.state.lineTop(
+          editable.state.lines.lineAt(4 + index),
+        )!;
+        final lineOrigin = editable.toGlobal(Offset(0, top));
         expect(block.rect.left, moreOrLessEquals(lineOrigin.dx));
         expect(block.rect.top, moreOrLessEquals(lineOrigin.dy));
-        expect(block.rect.height, moreOrLessEquals(line.bottom - line.top));
+        expect(block.rect.height, moreOrLessEquals(editable.rowHeight));
         expect(block.rect.width, greaterThan(2));
         expect(block.color, isSameColorAs(editable.selectionColor!));
       }
 
       // Lines holding text are the field's own business.
       state.userUpdateTextEditingValue(
-        state.textEditingValue.copyWith(
+        state.widget.controller.value.copyWith(
           selection: const TextSelection(baseOffset: 0, extentOffset: 3),
         ),
         SelectionChangedCause.drag,
@@ -844,7 +830,7 @@ void main() {
 
       // And like the field's highlight, it goes with the focus.
       state.userUpdateTextEditingValue(
-        state.textEditingValue.copyWith(
+        state.widget.controller.value.copyWith(
           selection: const TextSelection(baseOffset: 4, extentOffset: 7),
         ),
         SelectionChangedCause.drag,
@@ -876,21 +862,21 @@ void main() {
       baseOffset: start,
       extentOffset: body.length,
     );
-    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    final state = tester.state<NoteFieldState>(noteField);
     state.userUpdateTextEditingValue(
-      state.textEditingValue.copyWith(selection: selection),
+      state.widget.controller.value.copyWith(selection: selection),
       SelectionChangedCause.drag,
     );
     await tester.pumpAndSettle();
 
-    final editable = state.renderEditable;
-    final highlight = editable.getBoxesForSelection(selection);
+    final editable = NoteDriver(tester);
+    final highlight = editable.boxesFor(selection);
     expect(highlight, hasLength(2), reason: 'one highlight per selected line');
     // The first line is the one that used to be padded: its line break falls
     // inside the selection, and the line above it is far longer.
     for (final index in [1, 2]) {
       final text = editable
-          .getBoxesForSelection(
+          .boxesFor(
             TextSelection(
               baseOffset: startOfLine(body, index),
               extentOffset:
@@ -1003,12 +989,7 @@ void main() {
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
 
-    final rendered =
-        tester
-                .state<EditableTextState>(find.byType(EditableText))
-                .renderEditable
-                .text!
-            as TextSpan;
+    final rendered = NoteDriver(tester).span;
     final comment = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text?.contains('//') ?? false,
     );
@@ -1054,14 +1035,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 181));
       await tester.pump();
 
-      final field = tester.widget<TextField>(find.byType(TextField));
-      expect(field.spellCheckConfiguration?.spellCheckEnabled, isFalse);
-      final rendered =
-          tester
-                  .state<EditableTextState>(find.byType(EditableText))
-                  .renderEditable
-                  .text!
-              as TextSpan;
+      final rendered = NoteDriver(tester).span;
       final textSpans = rendered.children!.whereType<TextSpan>();
       final misspelling = textSpans.firstWhere((span) => span.text == 'smple');
       final number = textSpans.firstWhere((span) => span.text == '2');
@@ -1078,7 +1052,7 @@ void main() {
       );
       expect(
         misspelling.style!.decorationColor,
-        Theme.of(tester.element(find.byType(TextField))).colorScheme.error,
+        Theme.of(tester.element(noteField)).colorScheme.error,
       );
       expect(number.style!.color, KapyTheme.darkPalette.number);
     },
@@ -1108,13 +1082,13 @@ void main() {
     await tester.pumpWidget(harness('smple note', autofocus: true));
     await tester.pump(const Duration(milliseconds: 181));
     await tester.pump();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection.collapsed(offset: 2);
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 2);
     await tester.pump();
 
     // No pointer went near the word, so nothing asked the system for its
     // corrections ahead of time: the menu opens and then fills itself in.
-    final editable = tester.state<EditableTextState>(find.byType(EditableText));
+    final editable = tester.state<NoteFieldState>(noteField);
     expect(editable.showToolbar(), isTrue);
     await tester.pump();
     expect(find.text('sample'), findsNothing);
@@ -1124,9 +1098,9 @@ void main() {
 
     await tester.tap(find.text('sample'));
     await tester.pump();
-    expect(field.controller!.text, 'sample note');
+    expect(field.controller.text, 'sample note');
     expect(
-      field.controller!.selection,
+      field.controller.selection,
       const TextSelection.collapsed(offset: 6),
     );
   });
@@ -1175,9 +1149,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final field = tester.widget<TextField>(find.byType(TextField));
+    final field = tester.widget<NoteField>(noteField);
     expect(
-      field.controller!.selection,
+      field.controller.selection,
       const TextSelection(baseOffset: 0, extentOffset: 5),
     );
     expect(find.byKey(const ValueKey('editor-context-menu')), findsOneWidget);
@@ -1191,7 +1165,7 @@ void main() {
 
     await tester.tap(find.text('simple'));
     await tester.pumpAndSettle();
-    expect(field.controller!.text, 'simple note');
+    expect(field.controller.text, 'simple note');
     expect(asked, contains('suggest'));
     // Before the harness checks it, rather than in the tear-down that runs
     // after: a leaked platform override fails the test on its way out.
@@ -1228,8 +1202,8 @@ void main() {
     await tester.pump();
     // Windows leaves the caret where it was when the menu opens; here that is
     // the end of the note, a word away from the underline.
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection.collapsed(offset: 10);
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 10);
     await tester.pump();
 
     await tester.tapAt(
@@ -1243,7 +1217,7 @@ void main() {
 
     await tester.tap(find.text('sample'));
     await tester.pumpAndSettle();
-    expect(field.controller!.text, 'sample note');
+    expect(field.controller.text, 'sample note');
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -1295,7 +1269,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(revealFactor(), 1);
 
-    await mouse.moveTo(tester.getCenter(find.byType(TextField)));
+    await mouse.moveTo(tester.getCenter(noteField));
     await tester.pumpAndSettle();
     expect(
       revealFactor(),
@@ -1378,8 +1352,8 @@ void main() {
       harness('Format me', onFormatsChanged: changes.add),
     );
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection(
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection(
       baseOffset: 0,
       extentOffset: 6,
     );
@@ -1391,17 +1365,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('format-italic')));
     await tester.pumpAndSettle();
 
-    expect(field.controller!.text, 'Format me');
+    expect(field.controller.text, 'Format me');
     expect(changes.last, const [
       NoteFormatRange(start: 0, end: 6, format: NoteFormat.bold),
       NoteFormatRange(start: 0, end: 6, format: NoteFormat.italic),
     ]);
-    final rendered =
-        tester
-                .state<EditableTextState>(find.byType(EditableText))
-                .renderEditable
-                .text!
-            as TextSpan;
+    final rendered = NoteDriver(tester).span;
     final formatted = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Format',
     );
@@ -1423,12 +1392,7 @@ void main() {
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
 
-    final rendered =
-        tester
-                .state<EditableTextState>(find.byType(EditableText))
-                .renderEditable
-                .text!
-            as TextSpan;
+    final rendered = NoteDriver(tester).span;
     var offset = 0;
     var sawLinkRun = false;
     var sawTrailingPeriod = false;
@@ -1439,7 +1403,7 @@ void main() {
         sawLinkRun = true;
         expect(
           span.style!.color,
-          Theme.of(tester.element(find.byType(TextField))).colorScheme.primary,
+          Theme.of(tester.element(noteField)).colorScheme.primary,
         );
         expect(
           span.style?.decoration?.contains(TextDecoration.underline) ?? false,
@@ -1447,7 +1411,7 @@ void main() {
         );
         expect(
           span.style?.fontWeight,
-          tester.widget<TextField>(find.byType(TextField)).style!.fontWeight,
+          tester.widget<NoteField>(noteField).style.fontWeight,
         );
       }
       if (offset == linkEnd && text == '.') {
@@ -1463,10 +1427,7 @@ void main() {
 
     expect(sawLinkRun, isTrue);
     expect(sawTrailingPeriod, isTrue);
-    expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
-      body,
-    );
+    expect(tester.widget<NoteField>(noteField).controller.text, body);
   });
 
   testWidgets('a link inside a comment keeps the comment colour', (
@@ -1486,12 +1447,7 @@ void main() {
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
 
-    final rendered =
-        tester
-                .state<EditableTextState>(find.byType(EditableText))
-                .renderEditable
-                .text!
-            as TextSpan;
+    final rendered = NoteDriver(tester).span;
     // Every run of [text], however the highlighter happened to cut it.
     List<TextSpan> runsOf(String text) {
       final start = body.indexOf(text);
@@ -1522,7 +1478,7 @@ void main() {
     for (final run in runsOf('https://example.com/docs')) {
       expect(
         run.style!.color,
-        Theme.of(tester.element(find.byType(TextField))).colorScheme.primary,
+        Theme.of(tester.element(noteField)).colorScheme.primary,
       );
     }
 
@@ -1546,8 +1502,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection(
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection(
       baseOffset: 2,
       extentOffset: 7,
     );
@@ -1560,12 +1516,7 @@ void main() {
     expect(changes.last, const [
       NoteFormatRange(start: 0, end: 13, format: NoteFormat.heading),
     ]);
-    final rendered =
-        tester
-                .state<EditableTextState>(find.byType(EditableText))
-                .renderEditable
-                .text!
-            as TextSpan;
+    final rendered = NoteDriver(tester).span;
     final heading = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Project title',
     );
@@ -1606,23 +1557,18 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection.collapsed(offset: 13);
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 13);
     await tester.pump();
 
-    await tester.enterText(find.byType(TextField), 'Project title\nBody');
+    await tester.enterNote('Project title\nBody');
     await tester.pumpAndSettle();
 
     expect(changes.last, const [
       NoteFormatRange(start: 0, end: 13, format: NoteFormat.heading),
       NoteFormatRange(start: 14, end: 18, format: NoteFormat.subtitle),
     ]);
-    final rendered =
-        tester
-                .state<EditableTextState>(find.byType(EditableText))
-                .renderEditable
-                .text!
-            as TextSpan;
+    final rendered = NoteDriver(tester).span;
     final body = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text?.contains('Body') ?? false,
     );
@@ -1630,7 +1576,7 @@ void main() {
     expect(body.style!.fontWeight, FontWeight.w500);
     expect(body.style!.fontStyle, FontStyle.italic);
 
-    field.controller!.value = const TextEditingValue(
+    field.controller.value = const TextEditingValue(
       text: 'Project title\nBody\nMore',
       selection: TextSelection.collapsed(offset: 23),
     );
@@ -1656,7 +1602,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('format-style')));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Project title');
+    await tester.enterNote('Project title');
     await tester.pumpAndSettle();
 
     expect(changes.last, const [
@@ -1688,15 +1634,15 @@ void main() {
 
     await tester.pumpWidget(harness(body, autofocus: true));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = TextSelection(
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = TextSelection(
       baseOffset: body.indexOf('example'),
       extentOffset: body.indexOf('.com'),
     );
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
 
-    tester.state<EditableTextState>(find.byType(EditableText)).showToolbar();
+    tester.state<NoteFieldState>(noteField).showToolbar();
     await tester.pumpAndSettle();
     expect(find.text('Open link'), findsOneWidget);
     expect(find.text('Copy link'), findsOneWidget);
@@ -1714,7 +1660,7 @@ void main() {
         [for (var i = 1; i <= 80; i++) 'line$i = $i * 2'].join('\n');
 
     ScrollController fieldScroll(WidgetTester tester) =>
-        tester.widget<TextField>(find.byType(TextField)).scrollController!;
+        tester.widget<NoteField>(noteField).scrollController;
 
     testWidgets('a drag over the gutter scrolls the note', (tester) async {
       // The gutter is a sibling of the field, not part of it, so a drag here
@@ -1854,19 +1800,17 @@ void main() {
 
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
-    final editable = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .renderEditable;
+    final editable = NoteDriver(tester);
     final start = body.indexOf(linkText);
     final box = editable
-        .getBoxesForSelection(
+        .boxesFor(
           TextSelection(
             baseOffset: start,
             extentOffset: start + linkText.length,
           ),
         )
         .first;
-    final tapPosition = editable.localToGlobal(
+    final tapPosition = editable.toGlobal(
       Offset((box.left + box.right) / 2, (box.top + box.bottom) / 2),
     );
 
@@ -1931,10 +1875,7 @@ void main() {
         find.text('Converts the value to another unit or currency.'),
         findsOneWidget,
       );
-      expect(
-        tester.widget<TextField>(find.byType(TextField)).controller!.text,
-        body,
-      );
+      expect(tester.widget<NoteField>(noteField).controller.text, body);
 
       await tester.tapAt(_centerOf(tester, body, 'over'));
       await tester.pumpAndSettle();
@@ -1943,14 +1884,9 @@ void main() {
         find.text('Divides the value on the left by the value on the right.'),
         findsOneWidget,
       );
-      expect(
-        tester.widget<TextField>(find.byType(TextField)).controller!.text,
-        body,
-      );
+      expect(tester.widget<NoteField>(noteField).controller.text, body);
 
-      final controller = tester
-          .widget<TextField>(find.byType(TextField))
-          .controller!;
+      final controller = tester.widget<NoteField>(noteField).controller;
       final keywordSelection = controller.selection;
       await tester.tapAt(_centerOf(tester, body, '12'));
       await tester.pumpAndSettle();
@@ -2014,8 +1950,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('link-popover')), findsNothing);
-      final field = tester.widget<TextField>(find.byType(TextField));
-      final caret = field.controller!.selection.baseOffset;
+      final field = tester.widget<NoteField>(noteField);
+      final caret = field.controller.selection.baseOffset;
       expect(caret, greaterThanOrEqualTo(body.indexOf('writing')));
       expect(
         caret,
@@ -2076,10 +2012,10 @@ void main() {
 
     await tester.pumpWidget(harness(body, autofocus: true));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection.collapsed(offset: 3);
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 3);
     await tester.pumpAndSettle();
-    tester.state<EditableTextState>(find.byType(EditableText)).showToolbar();
+    tester.state<NoteFieldState>(noteField).showToolbar();
     await tester.pumpAndSettle();
 
     final contextMenu = find.byKey(const ValueKey('editor-context-menu'));
@@ -2123,15 +2059,15 @@ void main() {
 
     await tester.pumpWidget(harness(body, autofocus: true));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = TextSelection(
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = TextSelection(
       baseOffset: 0,
       extentOffset: body.indexOf('\n'),
     );
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
 
-    tester.state<EditableTextState>(find.byType(EditableText)).showToolbar();
+    tester.state<NoteFieldState>(noteField).showToolbar();
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('editor-context-menu')), findsOneWidget);
     await tester.tap(find.text('Copy plain text'));
@@ -2149,7 +2085,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('link-popover')), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField), '$body!');
+    await tester.enterNote('$body!');
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('link-popover')), findsNothing);
@@ -2180,19 +2116,17 @@ void main() {
 
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
-    final editable = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .renderEditable;
+    final editable = NoteDriver(tester);
     final start = body.indexOf(linkText);
     final box = editable
-        .getBoxesForSelection(
+        .boxesFor(
           TextSelection(
             baseOffset: start,
             extentOffset: start + linkText.length,
           ),
         )
         .first;
-    final clickPosition = editable.localToGlobal(
+    final clickPosition = editable.toGlobal(
       Offset((box.left + box.right) / 2, (box.top + box.bottom) / 2),
     );
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
@@ -2235,9 +2169,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
+    final field = tester.widget<NoteField>(noteField);
     Future<void> turnInto(String block) async {
-      field.controller!.selection = const TextSelection(
+      field.controller.selection = const TextSelection(
         baseOffset: 2,
         extentOffset: 12,
       );
@@ -2259,7 +2193,7 @@ void main() {
     ]);
     await turnInto('Text');
     expect(changes.last, isEmpty);
-    expect(field.controller!.text, 'A supporting thought');
+    expect(field.controller.text, 'A supporting thought');
   });
 
   testWidgets('Text style preserves independent bold and italic controls', (
@@ -2279,8 +2213,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection(
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection(
       baseOffset: 0,
       extentOffset: 13,
     );
@@ -2294,12 +2228,7 @@ void main() {
       NoteFormatRange(start: 0, end: 4, format: NoteFormat.bold),
       NoteFormatRange(start: 5, end: 13, format: NoteFormat.italic),
     ]);
-    final rendered =
-        tester
-                .state<EditableTextState>(find.byType(EditableText))
-                .renderEditable
-                .text!
-            as TextSpan;
+    final rendered = NoteDriver(tester).span;
     final bold = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Keep',
     );
@@ -2318,8 +2247,8 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(harness('www.example.com', autofocus: true));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection(
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection(
       baseOffset: 4,
       extentOffset: 11,
     );
@@ -2350,14 +2279,14 @@ void main() {
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(harness('A', onFormatsChanged: changes.add));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection.collapsed(offset: 1);
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 1);
     await tester.pump();
     await revealFormatting(tester);
 
     await tester.tap(find.byKey(const ValueKey('format-bold')));
     await tester.pump();
-    field.controller!.value = const TextEditingValue(
+    field.controller.value = const TextEditingValue(
       text: 'AB',
       selection: TextSelection.collapsed(offset: 2),
     );
@@ -2376,8 +2305,8 @@ void main() {
       harness('Shortcut', autofocus: true, onFormatsChanged: changes.add),
     );
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection(
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection(
       baseOffset: 0,
       extentOffset: 8,
     );
@@ -2436,8 +2365,8 @@ void main() {
       harness('Task', autofocus: true, onFormatsChanged: changes.add),
     );
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection(
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection(
       baseOffset: 0,
       extentOffset: 4,
     );
@@ -2471,14 +2400,14 @@ void main() {
       shortcutPrefs.bindingFor(ShortcutAction.formatBullets)!,
     );
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '${bulletPrefix}Task');
+    expect(field.controller.text, '${bulletPrefix}Task');
 
     await sendShortcut(
       tester,
       shortcutPrefs.bindingFor(ShortcutAction.formatChecklist)!,
     );
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '${uncheckedPrefix}Task');
+    expect(field.controller.text, '${uncheckedPrefix}Task');
   });
 
   testWidgets('footer hints and actions follow a changed shortcut live', (
@@ -2530,14 +2459,14 @@ void main() {
       find.byTooltip('Bulleted list · ${replacement.displayLabel}'),
       findsOneWidget,
     );
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection(
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection(
       baseOffset: 0,
       extentOffset: 4,
     );
     await sendShortcut(tester, replacement);
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '${bulletPrefix}Task');
+    expect(field.controller.text, '${bulletPrefix}Task');
   });
 
   testWidgets('creates, completes, and removes a checklist item', (
@@ -2546,24 +2475,20 @@ void main() {
     _onPhone();
     await tester.pumpWidget(harness('Task'));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection.collapsed(offset: 4);
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 4);
     await tester.pump();
     await revealFormatting(tester);
 
     await tester.tap(find.byKey(const ValueKey('format-checklist')));
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '☐ Task');
+    expect(field.controller.text, '☐ Task');
 
-    final editable = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .renderEditable;
+    final editable = NoteDriver(tester);
     final checkbox = editable
-        .getBoxesForSelection(
-          const TextSelection(baseOffset: 0, extentOffset: 1),
-        )
+        .boxesFor(const TextSelection(baseOffset: 0, extentOffset: 1))
         .single;
-    final checkboxCenter = editable.localToGlobal(
+    final checkboxCenter = editable.toGlobal(
       Offset(
         (checkbox.left + checkbox.right) / 2,
         (checkbox.top + checkbox.bottom) / 2,
@@ -2571,8 +2496,8 @@ void main() {
     );
     await tester.tapAt(checkboxCenter);
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '☑ Task');
-    final rendered = editable.text! as TextSpan;
+    expect(field.controller.text, '☑ Task');
+    final rendered = editable.span;
     final completed = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Task',
     );
@@ -2580,23 +2505,23 @@ void main() {
 
     await tester.tapAt(checkboxCenter);
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '☐ Task');
+    expect(field.controller.text, '☐ Task');
 
     await tester.tap(find.byKey(const ValueKey('format-checklist')));
     await tester.pumpAndSettle();
-    expect(field.controller!.text, 'Task');
+    expect(field.controller.text, 'Task');
   });
 
   testWidgets('Enter keeps a nested item at its own depth', (tester) async {
     await tester.pumpWidget(harness('• one\n  • two'));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection.collapsed(offset: 13);
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 13);
     await tester.pump();
 
-    await tester.enterText(find.byType(TextField), '• one\n  • two\n');
+    await tester.enterNote('• one\n  • two\n');
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '• one\n  • two\n  • ');
+    expect(field.controller.text, '• one\n  • two\n  • ');
   });
 
   testWidgets('Enter on an empty nested item steps out one level at a time', (
@@ -2604,23 +2529,23 @@ void main() {
   ) async {
     await tester.pumpWidget(harness('• one\n    ▪ '));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection.collapsed(offset: 12);
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 12);
     await tester.pump();
 
     // Stepping out a level takes that level's bullet with it.
-    await tester.enterText(find.byType(TextField), '• one\n    ▪ \n');
+    await tester.enterNote('• one\n    ▪ \n');
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '• one\n  ◦ ');
+    expect(field.controller.text, '• one\n  ◦ ');
 
-    await tester.enterText(find.byType(TextField), '• one\n  ◦ \n');
+    await tester.enterNote('• one\n  ◦ \n');
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '• one\n• ');
+    expect(field.controller.text, '• one\n• ');
 
     // Back at the margin, the next Enter leaves the list, as it always did.
-    await tester.enterText(find.byType(TextField), '• one\n• \n');
+    await tester.enterNote('• one\n• \n');
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '• one\n');
+    expect(field.controller.text, '• one\n');
   });
 
   testWidgets('typing "- " at the start of a line makes a bullet', (
@@ -2628,30 +2553,30 @@ void main() {
   ) async {
     await tester.pumpWidget(harness(''));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
+    final field = tester.widget<NoteField>(noteField);
 
-    await tester.enterText(find.byType(TextField), '-');
+    await tester.enterNote('-');
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '- ');
+    await tester.enterNote('- ');
     await tester.pumpAndSettle();
 
     // The typed space is spent on the marker rather than added after it.
-    expect(field.controller!.text, '• ');
-    expect(field.controller!.selection.baseOffset, 2);
+    expect(field.controller.text, '• ');
+    expect(field.controller.selection.baseOffset, 2);
   });
 
   testWidgets('typing "[] " and "[ ] " both make a checkbox', (tester) async {
     for (final shorthand in ['[]', '[ ]']) {
       await tester.pumpWidget(harness(''));
       await tester.pumpAndSettle();
-      final field = tester.widget<TextField>(find.byType(TextField));
+      final field = tester.widget<NoteField>(noteField);
 
-      await tester.enterText(find.byType(TextField), shorthand);
+      await tester.enterNote(shorthand);
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), '$shorthand ');
+      await tester.enterNote('$shorthand ');
       await tester.pumpAndSettle();
 
-      expect(field.controller!.text, '☐ ', reason: 'from "$shorthand "');
+      expect(field.controller.text, '☐ ', reason: 'from "$shorthand "');
     }
   });
 
@@ -2660,14 +2585,14 @@ void main() {
   ) async {
     await tester.pumpWidget(harness('• one\n  '));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
+    final field = tester.widget<NoteField>(noteField);
 
-    await tester.enterText(find.byType(TextField), '• one\n  -');
+    await tester.enterNote('• one\n  -');
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '• one\n  - ');
+    await tester.enterNote('• one\n  - ');
     await tester.pumpAndSettle();
 
-    expect(field.controller!.text, '• one\n  ◦ ');
+    expect(field.controller.text, '• one\n  ◦ ');
   });
 
   testWidgets('a minus that is not shorthand is left as arithmetic', (
@@ -2675,20 +2600,20 @@ void main() {
   ) async {
     await tester.pumpWidget(harness(''));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
+    final field = tester.widget<NoteField>(noteField);
 
     // No space after the minus, so this stays the negative number the engine
     // evaluates rather than becoming a bullet.
-    await tester.enterText(find.byType(TextField), '-5');
+    await tester.enterNote('-5');
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '-5');
+    expect(field.controller.text, '-5');
 
     // And mid-line the shorthand does not apply at all.
-    await tester.enterText(find.byType(TextField), '12 -');
+    await tester.enterNote('12 -');
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '12 - ');
+    await tester.enterNote('12 - ');
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '12 - ');
+    expect(field.controller.text, '12 - ');
   });
 
   testWidgets('Tab nests the current item and Shift+Tab lifts it out', (
@@ -2696,19 +2621,19 @@ void main() {
   ) async {
     await tester.pumpWidget(harness('• one', autofocus: true));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection.collapsed(offset: 5);
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 5);
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '  ◦ one');
+    expect(field.controller.text, '  ◦ one');
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '• one');
+    expect(field.controller.text, '• one');
   });
 
   testWidgets('Tab is left to move focus when the caret is not on a list', (
@@ -2716,13 +2641,13 @@ void main() {
   ) async {
     await tester.pumpWidget(harness('just prose', autofocus: true));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection.collapsed(offset: 4);
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 4);
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pumpAndSettle();
-    expect(field.controller!.text, 'just prose');
+    expect(field.controller.text, 'just prose');
   });
 
   testWidgets('the nesting controls appear only for a list line', (
@@ -2731,13 +2656,13 @@ void main() {
     _onPhone();
     await tester.pumpWidget(harness('plain\n• item', autofocus: true));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
+    final field = tester.widget<NoteField>(noteField);
 
-    field.controller!.selection = const TextSelection.collapsed(offset: 2);
+    field.controller.selection = const TextSelection.collapsed(offset: 2);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('format-indent')), findsNothing);
 
-    field.controller!.selection = const TextSelection.collapsed(offset: 9);
+    field.controller.selection = const TextSelection.collapsed(offset: 9);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('format-indent')), findsOneWidget);
     // Already at the margin, so there is nowhere to step out to.
@@ -2753,17 +2678,17 @@ void main() {
   testWidgets('continues and exits a checklist with Enter', (tester) async {
     await tester.pumpWidget(harness('☐ Task'));
     await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection.collapsed(offset: 6);
+    final field = tester.widget<NoteField>(noteField);
+    field.controller.selection = const TextSelection.collapsed(offset: 6);
     await tester.pump();
 
-    await tester.enterText(find.byType(TextField), '☐ Task\n');
+    await tester.enterNote('☐ Task\n');
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '☐ Task\n☐ ');
+    expect(field.controller.text, '☐ Task\n☐ ');
 
-    await tester.enterText(find.byType(TextField), '☐ Task\n☐ \n');
+    await tester.enterNote('☐ Task\n☐ \n');
     await tester.pumpAndSettle();
-    expect(field.controller!.text, '☐ Task\n');
+    expect(field.controller.text, '☐ Task\n');
   });
 
   testWidgets('aligns a line that only wraps because of the caret margin', (
@@ -2775,11 +2700,9 @@ void main() {
     //
     // That window is narrower than one monospace glyph, so rather than
     // stretch the line to fit it, the test sizes the field around the line.
-    double fieldWidth(WidgetTester tester) => tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .renderEditable
-        .size
-        .width;
+    /// The writing, and the room each row keeps after it for the caret.
+    double fieldWidth(WidgetTester tester) =>
+        NoteDriver(tester).columnWidth + EditorMetrics.caretMargin;
 
     const baseEditor = 600.0;
     await tester.pumpWidget(
@@ -2848,11 +2771,7 @@ void main() {
     await tester.pumpWidget(harness('2 + 2'));
     await tester.pumpAndSettle();
 
-    final rendered = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .renderEditable
-        .text!
-        .style!;
+    final rendered = NoteDriver(tester).span.style!;
     final expected = EditorMetrics.textStyle(
       const Color(0xFF000000),
       WritingFont.handwritten,
@@ -2877,7 +2796,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(
-      tester.widget<TextField>(find.byType(TextField)).style?.fontFamily,
+      tester.widget<NoteField>(noteField).style.fontFamily,
       'Shantell Sans',
     );
 
@@ -2885,7 +2804,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      tester.widget<TextField>(find.byType(TextField)).style?.fontFamily,
+      tester.widget<NoteField>(noteField).style.fontFamily,
       WritingFont.monospace.fontFamily,
     );
     expect(
@@ -2907,15 +2826,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // Handwritten for the title and headings, clean for the writing.
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.style?.fontFamily, WritingFont.mixed.fontFamily);
+    final field = tester.widget<NoteField>(noteField);
+    expect(field.style.fontFamily, WritingFont.mixed.fontFamily);
 
-    final rendered =
-        tester
-                .state<EditableTextState>(find.byType(EditableText))
-                .renderEditable
-                .text!
-            as TextSpan;
+    final rendered = NoteDriver(tester).span;
     // Its last letter is drawn by the placeholder under the title.
     final heading = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Nightly cos',
@@ -2946,17 +2860,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final scaledField = tester.widget<TextField>(find.byType(TextField));
+    final scaledField = tester.widget<NoteField>(noteField);
     expect(
-      scaledField.style?.fontSize,
+      scaledField.style.fontSize,
       closeTo(WritingFont.mixed.editorSize * 1.4, 0.001),
     );
-    final scaledRendered =
-        tester
-                .state<EditableTextState>(find.byType(EditableText))
-                .renderEditable
-                .text!
-            as TextSpan;
+    final scaledRendered = NoteDriver(tester).span;
     final scaledHeading = scaledRendered.children!
         .whereType<TextSpan>()
         .firstWhere((span) => span.text == 'Nightly cos');
@@ -2982,14 +2891,11 @@ void main() {
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
 
-    expect(find.byType(InlineResults), findsOneWidget);
+    expect(find.byType(ResultLeader), findsWidgets);
     expect(find.byType(ResultsGutter), findsNothing);
-    final editable = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .renderEditable;
+    final editable = NoteDriver(tester);
     final columnRight =
-        editable.localToGlobal(Offset.zero).dx +
-        EditorMetrics.textLayoutWidth(editable.size.width);
+        editable.toGlobal(Offset.zero).dx + editable.columnWidth;
 
     for (final entry in {
       1: '129.00 USD',
@@ -3009,8 +2915,8 @@ void main() {
       final leader = tester.getRect(
         find.byKey(ValueKey('result-leader-${entry.key}')),
       );
-      expect(leader.left, closeTo(row.right + InlineResults.gap, 1));
-      expect(leader.right, closeTo(pill.left - InlineResults.gap, 1));
+      expect(leader.left, closeTo(row.right + lineTrailingGap, 1));
+      expect(leader.right, closeTo(pill.left - lineTrailingGap, 1));
       expect(leader.center.dy, closeTo(row.center.dy, 1.5));
     }
   });
@@ -3053,10 +2959,8 @@ void main() {
       harness('seed', writingFont: WritingFont.monospace),
     );
     await tester.pumpAndSettle();
-    var editable = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .renderEditable;
-    final width = EditorMetrics.textLayoutWidth(editable.size.width);
+    var editable = NoteDriver(tester);
+    final width = editable.columnWidth;
     final probe = TextPainter(
       text: TextSpan(
         text: 'x',
@@ -3080,15 +2984,13 @@ void main() {
     final body = '\n${'x' * chars}$tail';
     await tester.pumpWidget(harness(body, writingFont: WritingFont.monospace));
     await tester.pumpAndSettle();
-    editable = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .renderEditable;
-    final columnRight = editable.localToGlobal(Offset.zero).dx + width;
+    editable = NoteDriver(tester);
+    final columnRight = editable.toGlobal(Offset.zero).dx + width;
 
     final row = lastRowRect(tester, body, 1);
     expect(row.top, lineRect(tester, body, 1).top, reason: 'one row only');
     final pill = tester.getRect(chipWithText('42'));
-    expect(pill.left, closeTo(row.right + InlineResults.gap, 1));
+    expect(pill.left, closeTo(row.right + lineTrailingGap, 1));
     expect(pill.right, greaterThan(columnRight));
     expect(
       pill.right,
@@ -3143,13 +3045,10 @@ void main() {
     expect(chipWithText('1,200.00 USD'), findsOneWidget);
     expect(chipWithText('14,400.00 USD'), findsOneWidget);
 
-    final field = tester.state<EditableTextState>(find.byType(EditableText));
-    final controller = tester
-        .widget<TextField>(find.byType(TextField))
-        .controller!;
+    final controller = tester.widget<NoteField>(noteField).controller;
     expect(controller.text, body);
     // What the field lays out and paints is the note and nothing more.
-    expect(field.renderEditable.text!.toPlainText(), body);
+    expect(NoteDriver(tester).span.toPlainText(), body);
 
     // Copying all of it copies the note alone, and pasting it back adds the
     // note alone.
@@ -3170,10 +3069,7 @@ void main() {
     // An edit at the end of a calculating line goes into the line, its pill
     // follows it live, and undo takes it back out.
     await tester.pump(const Duration(milliseconds: 600));
-    await tester.enterText(
-      find.byType(TextField),
-      'rent = 1300 usd\nrent * 12',
-    );
+    await tester.enterNote('rent = 1300 usd\nrent * 12');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
     expect(controller.text, 'rent = 1300 usd\nrent * 12');
@@ -3216,14 +3112,14 @@ void main() {
     await tester.pumpWidget(harness('Budget\n6 * 7'));
     await tester.pumpAndSettle();
     expect(chipWithText('42'), findsOneWidget);
-    final shown = tester.getSize(find.byType(EditableText)).width;
+    final shown = tester.getSize(noteField).width;
 
     await tester.pumpWidget(harness('Budget\n6 * 7', resultsVisible: false));
     await tester.pumpAndSettle();
 
     expect(find.byType(ResultChip), findsNothing);
-    expect(find.byType(InlineResults), findsNothing);
-    expect(tester.getSize(find.byType(EditableText)).width, shown);
+    expect(find.byType(ResultLeader), findsNothing);
+    expect(tester.getSize(noteField).width, shown);
   });
 
   testWidgets('a phone keeps its results in a column beside the text', (
@@ -3233,7 +3129,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ResultsGutter), findsOneWidget);
-    expect(find.byType(InlineResults), findsNothing);
+    expect(find.byType(ResultLeader), findsNothing);
     expect(
       tester.getCenter(chipWithText('42')).dy,
       closeTo(lineRect(tester, 'Budget\n6 * 7', 1).center.dy, 1.5),
@@ -3252,7 +3148,7 @@ void main() {
     final lineBefore = lineRect(tester, body, 9).center.dy;
     expect(before, closeTo(lineBefore, 1.5));
 
-    await tester.drag(find.byType(TextField), const Offset(0, -120));
+    await tester.drag(noteField, const Offset(0, -120));
     await tester.pumpAndSettle();
 
     final after = tester.getRect(chipWithText('100')).center.dy;
@@ -3295,9 +3191,9 @@ total to usd''';
     );
     await tester.pumpAndSettle();
 
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.controller!.text, '$body\n\n');
-    final scroll = field.scrollController!;
+    final field = tester.widget<NoteField>(noteField);
+    expect(field.controller.text, '$body\n\n');
+    final scroll = field.scrollController;
     expect(scroll.offset, greaterThan(0));
     for (final entry in {
       4: '479.07 USD',
@@ -3326,20 +3222,20 @@ total to usd''';
     );
     await tester.pumpAndSettle();
 
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.focusNode!.hasFocus, isTrue);
+    final field = tester.widget<NoteField>(noteField);
+    expect(field.focusNode.hasFocus, isTrue);
     expect(tester.testTextInput.isVisible, isTrue);
-    final scrollBefore = field.scrollController!.offset;
+    final scrollBefore = field.scrollController.offset;
     expect(scrollBefore, greaterThan(0));
 
     // The app opens at the end ready to type. Pulling the page down moves
     // towards the earlier writing while making the whole viewport available.
-    await tester.drag(find.byType(TextField), const Offset(0, 140));
+    await tester.drag(noteField, const Offset(0, 140));
     await tester.pumpAndSettle();
 
-    expect(field.focusNode!.hasFocus, isFalse);
+    expect(field.focusNode.hasFocus, isFalse);
     expect(tester.testTextInput.isVisible, isFalse);
-    expect(field.scrollController!.offset, lessThan(scrollBefore));
+    expect(field.scrollController.offset, lessThan(scrollBefore));
   });
 
   testWidgets('recalculates as the user types', (tester) async {
@@ -3354,7 +3250,7 @@ total to usd''';
       'Total: 4',
     );
 
-    await tester.enterText(find.byType(TextField), '2 + 2\n40 + 2');
+    await tester.enterNote('2 + 2\n40 + 2');
     await tester.pumpAndSettle();
 
     expect(chipWithText('4'), findsOneWidget);
@@ -3375,10 +3271,7 @@ total to usd''';
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('note-total')), findsNothing);
 
-    await tester.enterText(
-      find.byType(TextField),
-      'Groceries for the weekend\n12 + 30',
-    );
+    await tester.enterNote('Groceries for the weekend\n12 + 30');
     await tester.pumpAndSettle();
     expect(
       tester
@@ -3420,7 +3313,7 @@ total to usd''';
     expect(subtitle.style!.fontStyle, FontStyle.italic);
     expect(find.byKey(const ValueKey('note-total')), findsNothing);
 
-    await tester.enterText(find.byType(TextField), '1');
+    await tester.enterNote('1');
     await tester.pumpAndSettle();
     expect(find.textContaining('Start typing'), findsNothing);
     expect(
@@ -3449,11 +3342,11 @@ total to usd''';
     );
     await tester.pumpAndSettle();
 
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.controller!.text, 'Yesterday\n\n');
-    expect(field.controller!.selection.baseOffset, 'Yesterday\n\n'.length);
+    final field = tester.widget<NoteField>(noteField);
+    expect(field.controller.text, 'Yesterday\n\n');
+    expect(field.controller.selection.baseOffset, 'Yesterday\n\n'.length);
     expect(changes, isEmpty);
-    expect(field.controller!.text, isNot(contains('// ─')));
+    expect(field.controller.text, isNot(contains('// ─')));
   });
 
   testWidgets('same-day reopen starts after one empty line', (tester) async {
@@ -3469,12 +3362,12 @@ total to usd''';
     );
     await tester.pumpAndSettle();
 
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.controller!.text, 'Earlier today\n\n');
+    final field = tester.widget<NoteField>(noteField);
+    expect(field.controller.text, 'Earlier today\n\n');
 
-    await tester.enterText(find.byType(TextField), 'Earlier today\n\nMore');
+    await tester.enterNote('Earlier today\n\nMore');
     await tester.pumpAndSettle();
-    expect(field.controller!.text, 'Earlier today\n\nMore');
+    expect(field.controller.text, 'Earlier today\n\nMore');
   });
 
   testWidgets('starts a dated section only on the first new-day append', (
@@ -3492,13 +3385,13 @@ total to usd''';
     );
     await tester.pumpAndSettle();
 
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.controller!.text, 'Yesterday\n\n');
+    final field = tester.widget<NoteField>(noteField);
+    expect(field.controller.text, 'Yesterday\n\n');
 
-    await tester.enterText(find.byType(TextField), 'Yesterday\n\nT');
+    await tester.enterNote('Yesterday\n\nT');
     await tester.pumpAndSettle();
 
-    expect(field.controller!.text, 'Yesterday\n\n// ─ 1 Sep · 21:42 ─\nT');
+    expect(field.controller.text, 'Yesterday\n\n// ─ 1 Sep · 21:42 ─\nT');
   });
 
   testWidgets('uses the selected time zone for a new-day append', (
@@ -3517,11 +3410,11 @@ total to usd''';
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'Late entry\n\nN');
+    await tester.enterNote('Late entry\n\nN');
     await tester.pumpAndSettle();
 
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.controller!.text, 'Late entry\n\n// ─ 1 Sep · 23:30 ─\nN');
+    final field = tester.widget<NoteField>(noteField);
+    expect(field.controller.text, 'Late entry\n\n// ─ 1 Sep · 23:30 ─\nN');
   });
 
   testWidgets('skipped days produce only one separator when typing resumes', (
@@ -3538,13 +3431,10 @@ total to usd''';
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'Last entry\n\nBack again');
+    await tester.enterNote('Last entry\n\nBack again');
     await tester.pumpAndSettle();
 
-    final text = tester
-        .widget<TextField>(find.byType(TextField))
-        .controller!
-        .text;
+    final text = tester.widget<NoteField>(noteField).controller.text;
     expect(text, 'Last entry\n\n// ─ 1 Sep · 21:42 ─\nBack again');
     expect(RegExp(r'^// ─', multiLine: true).allMatches(text), hasLength(1));
   });
@@ -3569,15 +3459,15 @@ total to usd''';
     );
     await tester.pumpAndSettle();
 
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.controller!.text, 'Ideas\n\n');
+    final field = tester.widget<NoteField>(noteField);
+    expect(field.controller.text, 'Ideas\n\n');
     expect(changes, isEmpty);
 
-    await tester.enterText(find.byType(TextField), 'Ideas\n\nNext idea');
+    await tester.enterNote('Ideas\n\nNext idea');
     await tester.pumpAndSettle();
 
-    expect(field.controller!.text, 'Ideas\n\n// ─ 1 Sep · 21:42 ─\nNext idea');
-    expect(changes.single, field.controller!.text);
+    expect(field.controller.text, 'Ideas\n\n// ─ 1 Sep · 21:42 ─\nNext idea');
+    expect(changes.single, field.controller.text);
   });
 
   testWidgets('retries the startup keyboard request after the first frame', (
@@ -3633,10 +3523,7 @@ total to usd''';
       // and whether that run stops on its own is half of what is under test.
       await tester.pump();
       await tester.pump();
-      return tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .widget
-          .focusNode;
+      return tester.state<NoteFieldState>(noteField).widget.focusNode;
     }
 
     Future<void> setKeyboard(WidgetTester tester, double height) async {
@@ -3704,9 +3591,7 @@ total to usd''';
         await tester.pumpAndSettle();
         expect(tester.getRect(dismiss), pinned);
 
-        final focus = tester
-            .widget<TextField>(find.byType(TextField))
-            .focusNode!;
+        final focus = tester.widget<NoteField>(noteField).focusNode;
         expect(focus.hasFocus, isTrue);
         tester.testTextInput.log.clear();
         await tester.tap(dismiss);
@@ -3966,8 +3851,8 @@ total to usd''';
     }
 
     Future<void> selectFirstWord(WidgetTester tester) async {
-      final field = tester.widget<TextField>(find.byType(TextField));
-      field.controller!.selection = const TextSelection(
+      final field = tester.widget<NoteField>(noteField);
+      field.controller.selection = const TextSelection(
         baseOffset: 0,
         extentOffset: 6,
       );
