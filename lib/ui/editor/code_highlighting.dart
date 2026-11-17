@@ -41,6 +41,9 @@ import 'markdown_syntax.dart';
 /// What a stretch of code is, as far as colouring it goes.
 enum CodeTokenKind {
   keyword,
+
+  /// A function or value the language provides: Python's \`len\`.
+  builtIn,
   string,
   number,
   comment,
@@ -199,8 +202,8 @@ class _Tokens implements HighlightRenderer {
     if (scope == null) return null;
     if (scope.startsWith('title.class')) return CodeTokenKind.type;
     return switch (scope.split('.').first) {
+      'built_in' => CodeTokenKind.builtIn,
       'keyword' ||
-      'built_in' ||
       'literal' ||
       'name' ||
       'selector-tag' ||

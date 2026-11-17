@@ -14,24 +14,32 @@ import 'table_geometry.dart';
 class MarkdownBackdropColors {
   const MarkdownBackdropColors({
     required this.quiet,
-    required this.faint,
+    required this.rule,
+    required this.quoteBar,
     required this.panel,
     required this.panelBorder,
+    required this.codePanel,
+    required this.codeChip,
     required this.accent,
     required this.onAccent,
     required this.box,
     required this.chip,
   });
 
-  /// Bullets, a quote's bar, and an unticked box off the page.
+  /// Bullets, and an unticked box off the page.
   final Color quiet;
 
-  /// Rules and a table's lines.
-  final Color faint;
+  /// A rule across the column.
+  final Color rule;
+  final Color quoteBar;
 
-  /// Behind a code block, and the pill behind inline code.
+  /// A table's header row, and the edges of a table and a code block.
   final Color panel;
   final Color panelBorder;
+
+  /// Behind a code block, and the pill behind inline code.
+  final Color codePanel;
+  final Color codeChip;
 
   /// A ticked box, and the tick in it.
   final Color accent;
@@ -45,9 +53,12 @@ class MarkdownBackdropColors {
   bool operator ==(Object other) =>
       other is MarkdownBackdropColors &&
       other.quiet == quiet &&
-      other.faint == faint &&
+      other.rule == rule &&
+      other.quoteBar == quoteBar &&
       other.panel == panel &&
       other.panelBorder == panelBorder &&
+      other.codePanel == codePanel &&
+      other.codeChip == codeChip &&
       other.accent == accent &&
       other.onAccent == onAccent &&
       other.box == box &&
@@ -56,9 +67,12 @@ class MarkdownBackdropColors {
   @override
   int get hashCode => Object.hash(
     quiet,
-    faint,
+    rule,
+    quoteBar,
     panel,
     panelBorder,
+    codePanel,
+    codeChip,
     accent,
     onAccent,
     box,
@@ -73,8 +87,8 @@ class MarkdownBackdropColors {
 /// field laid out the characters they stand in for, read from the field as it
 /// paints. The panel under a code block, a quote's bar and a rule cover the
 /// rows their lines take up, from the same line measurement the results
-/// gutter uses. A table the caret is not in is drawn as a grid over its own
-/// text, which the field leaves invisible but in place.
+/// gutter uses. A table is drawn as a grid over its own text, which the
+/// field leaves invisible but in place. Paper's p-5-0 draws all of them.
 ///
 /// Everything here is under the field, so its selection highlight still
 /// shows over a checkbox or a code pill the way it does over words.
@@ -294,43 +308,29 @@ class RenderMarkdownBackdrop extends RenderBox {
       final bottom = rowY(rows.$2);
       switch (block.kind) {
         case MarkdownBlockKind.code:
-          final panel = RRect.fromLTRBR(
-            left - 8,
-            top + 2,
-            right + 6,
-            bottom - 2,
-            const Radius.circular(6),
-          );
-          canvas
-            ..drawRRect(panel, Paint()..color = colors.panel)
-            ..drawRRect(
-              panel,
-              Paint()
-                ..color = colors.panelBorder
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = 0.5,
-            );
+          _paintCode(canvas, block, left, right, top, bottom, rowY);
         case MarkdownBlockKind.quote:
-          final x = math.max(2.0, left - 12);
+          // Out in the margin, so a quote's words line up with the rest.
+          final x = left - _quoteIndent;
           canvas.drawRRect(
             RRect.fromLTRBR(
               x,
-              top + 4,
+              top,
               x + 3,
-              bottom - 4,
-              const Radius.circular(1.5),
+              bottom - _rowGap,
+              const Radius.circular(2),
             ),
-            Paint()..color = colors.quiet.withValues(alpha: 0.55),
+            Paint()..color = colors.quoteBar,
           );
         case MarkdownBlockKind.rule:
-          // Not through its own `---` while that is shown as written.
-          if (!_hidden(block.start, block.end)) continue;
-          final y = ((top + bottom) / 2).roundToDouble() + 0.5;
+          // Not through its own \`---\` while that is shown as written.
+          if (!concealment.hides(block.start, block.end)) continue;
+          final y = ((top + bottom - _rowGap) / 2).roundToDouble() + 0.5;
           canvas.drawLine(
             Offset(left, y),
             Offset(right, y),
             Paint()
-              ..color = colors.faint
+              ..color = colors.rule
               ..strokeWidth = 1,
           );
       }
@@ -398,19 +398,23 @@ class RenderMarkdownBackdrop extends RenderBox {
         case MarkdownOrnamentKind.checkbox:
           _paintCheckbox(canvas, boxes.first.toRect().shift(origin), ornament);
         case MarkdownOrnamentKind.codeSpan:
+          // On the page the field already spaced the last character out by
+          // the pill's reach; see `HighlightingController`.
+          final page = EditorMetrics.page;
+          final reach = page ? EditorMetrics.codeChipReach : 3.0;
           for (final box in boxes) {
             final rect = box.toRect().shift(origin);
             if (rect.width <= 0) continue;
             final height = math.min(rect.height - 6, 22.0);
             canvas.drawRRect(
               RRect.fromLTRBR(
-                rect.left - 3,
+                rect.left - reach,
                 rect.center.dy - height / 2,
-                rect.right + 3,
+                rect.right + (page ? 0 : reach),
                 rect.center.dy + height / 2,
-                const Radius.circular(4),
+                const Radius.circular(6),
               ),
-              Paint()..color = colors.panel,
+              Paint()..color = colors.codeChip,
             );
           }
       }
@@ -424,22 +428,62 @@ class RenderMarkdownBackdrop extends RenderBox {
     canvas.restore();
   }
 
-  /// Whether all of [start, end) is hidden right now.
-  bool _hidden(int start, int end) {
-    final hidden = concealment.hidden;
-    var low = 0;
-    var high = hidden.length;
-    while (low < high) {
-      final middle = (low + high) >> 1;
-      if (hidden[middle].end <= start) {
-        low = middle + 1;
-      } else {
-        high = middle;
-      }
-    }
-    return low < hidden.length &&
-        hidden[low].start <= start &&
-        hidden[low].end >= end;
+  /// The 3 at the bottom of every row that keeps one from the next.
+  static const double _rowGap = 3;
+
+  /// How far a quote's bar and a code block's panel reach out from the
+  /// writing: Paper's 3px bar and the 14 after it, and the 14 a code block's
+  /// panel has around its code.
+  static const double _quoteIndent = 17;
+  static const double _codeInset = 14;
+
+  /// Paper's code block: a panel a step below the page reaching [_codeInset]
+  /// past the code, and over a fenced block whose fence is hidden, the row
+  /// that fence keeps ruled off as a header, where the editor puts the
+  /// language and Copy. Closed and hidden, the closing fence's row gives the
+  /// panel no more than Paper's 10 under the code.
+  void _paintCode(
+    Canvas canvas,
+    MarkdownBlock block,
+    double left,
+    double right,
+    double top,
+    double bottom,
+    double Function(double) rowY,
+  ) {
+    final fences = _analysis.fencesOf(block);
+    final close = fences?.close;
+    final closeRows = close != null && concealment.hides(close.start, close.end)
+        ? _rows(close.start, close.end)
+        : null;
+    final panel = RRect.fromLTRBR(
+      left - _codeInset,
+      top,
+      right + _codeInset,
+      closeRows == null ? bottom - _rowGap : rowY(closeRows.$1) + 10 - _rowGap,
+      const Radius.circular(10),
+    );
+    canvas
+      ..drawRRect(panel, Paint()..color = colors.codePanel)
+      ..drawRRect(
+        panel.deflate(0.5),
+        Paint()
+          ..color = colors.panelBorder
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
+      );
+    final open = fences?.open;
+    if (open == null || !concealment.hides(open.start, open.end)) return;
+    final header = _rows(open.start, open.end);
+    if (header == null) return;
+    final y = rowY(header.$2).roundToDouble() - _rowGap + 0.5;
+    canvas.drawLine(
+      Offset(panel.left, y),
+      Offset(panel.right, y),
+      Paint()
+        ..color = colors.panelBorder
+        ..strokeWidth = 1,
+    );
   }
 
   /// A task's box: how far in from where its item starts, and how big.
@@ -451,22 +495,23 @@ class RenderMarkdownBackdrop extends RenderBox {
   /// Paper's link chip is 28 tall.
   static const double _chipHeight = 28;
 
+  /// Paper's bullets: a 6px dot, a 6px ring, then a 5px square.
   void _paintBullet(Canvas canvas, Offset center, MarkdownOrnament bullet) {
     final paint = Paint()..color = colors.quiet;
     switch (bullet.depth % 3) {
       case 0:
-        canvas.drawCircle(center, 2.6, paint);
+        canvas.drawCircle(center, 3, paint);
       case 1:
         canvas.drawCircle(
           center,
-          2.4,
+          2.5,
           paint
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.2,
+            ..strokeWidth = 1,
         );
       default:
         canvas.drawRect(
-          Rect.fromCenter(center: center, width: 4.4, height: 4.4),
+          Rect.fromCenter(center: center, width: 5, height: 5),
           paint,
         );
     }
@@ -532,13 +577,15 @@ class RenderMarkdownBackdrop extends RenderBox {
     }
     if (bands.isEmpty) return;
 
-    final top = bands.first.top + 2;
-    final bottom = bands.last.bottom - 2;
+    // Paper's table: rows ruled across with no lines between columns, the
+    // header on a panel, all in a rounded edge.
+    final top = bands.first.top;
+    final bottom = bands.last.bottom - _rowGap;
     final width = geometry.width;
     final grid = Rect.fromLTRB(left, top, left + width, bottom);
-    final outline = RRect.fromRectAndRadius(grid, const Radius.circular(6));
+    final outline = RRect.fromRectAndRadius(grid, const Radius.circular(10));
     final lines = Paint()
-      ..color = colors.faint
+      ..color = colors.panelBorder
       ..strokeWidth = 1;
 
     canvas
@@ -577,16 +624,13 @@ class RenderMarkdownBackdrop extends RenderBox {
           );
         }
         x += cellWidth;
-        if (c < geometry.columns.length - 1) {
-          canvas.drawLine(Offset(x, top), Offset(x, bottom), lines);
-        }
       }
     }
     canvas.restore();
     canvas.drawRRect(
       outline.deflate(0.5),
       Paint()
-        ..color = colors.faint
+        ..color = colors.panelBorder
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
     );
