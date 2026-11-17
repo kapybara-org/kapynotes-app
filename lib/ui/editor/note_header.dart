@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
 import '../../sync/presence.dart';
+import '../checklist_pie.dart';
 import '../collaborator_colors.dart';
 import 'note_footer.dart' show typingStatusText;
 
@@ -83,7 +84,6 @@ class NoteMetaRow extends StatelessWidget {
   final VoidCallback? onReadOnlyPressed;
 
   static const double _gap = 10;
-  static const _progressKey = ValueKey('note-progress');
 
   @override
   Widget build(BuildContext context) {
@@ -104,29 +104,25 @@ class NoteMetaRow extends StatelessWidget {
     final typingText = typingStatusText([for (final p in typing) p.name]);
     final items = <Widget>[
       Text(edited, key: const ValueKey('note-edited'), style: quiet),
-      if (tasks > 0) ...[
-        Container(
-          key: _progressKey,
-          width: 96,
-          height: 6,
-          alignment: Alignment.centerLeft,
-          decoration: BoxDecoration(
-            color: palette.cardBackground,
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: FractionallySizedBox(
-            widthFactor: done / tasks,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                borderRadius: BorderRadius.circular(3),
+      if (tasks > 0)
+        Semantics(
+          label: '$done of $tasks done',
+          excludeSemantics: true,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ChecklistPie(
+                key: const ValueKey('note-progress'),
+                done: done,
+                total: tasks,
+                fill: Theme.of(context).colorScheme.primary,
+                check: palette.paperColor,
               ),
-              child: const SizedBox(height: 6),
-            ),
+              const SizedBox(width: 6),
+              Text('$done of $tasks done', style: strong),
+            ],
           ),
         ),
-        Text('$done of $tasks done', style: strong),
-      ],
       if (total case final total?)
         Text.rich(
           key: const ValueKey('note-total'),
@@ -179,8 +175,8 @@ class NoteMetaRow extends StatelessWidget {
       child: Row(
         children: [
           for (final (index, item) in items.indexed) ...[
-            if (index > 0) const SizedBox(width: _gap),
-            if (index > 0 && items[index - 1].key != _progressKey) ...[
+            if (index > 0) ...[
+              const SizedBox(width: _gap),
               dot,
               const SizedBox(width: _gap),
             ],

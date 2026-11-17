@@ -8,6 +8,7 @@ enum ShortcutAction {
   openApp,
   newNoteAnywhere,
   newNote,
+  newDrawing,
   findNotes,
   nextNote,
   previousNote,
@@ -40,6 +41,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.openApp => 'Open Kapy Notes',
     ShortcutAction.newNoteAnywhere => 'New note from anywhere',
     ShortcutAction.newNote => 'New note',
+    ShortcutAction.newDrawing => 'New drawing',
     ShortcutAction.findNotes => 'Global search',
     ShortcutAction.nextNote => 'Next note',
     ShortcutAction.previousNote => 'Previous note',
@@ -71,6 +73,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.openApp => 'Show or hide Kapy Notes from anywhere',
     ShortcutAction.newNoteAnywhere => 'Open a blank note from anywhere',
     ShortcutAction.newNote => 'Create and focus a blank note',
+    ShortcutAction.newDrawing => 'Start a blank drawing',
     ShortcutAction.findNotes =>
       'Search titles, nested content, and voice notes from the sidebar',
     ShortcutAction.nextNote => 'Switch forward through recently used notes',
@@ -496,6 +499,13 @@ class ShortcutPrefs extends ChangeNotifier {
         physicalKey: PhysicalKeyboardKey.keyN,
         meta: useMeta,
         control: !useMeta,
+      ),
+      ShortcutAction.newDrawing => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyD,
+        physicalKey: PhysicalKeyboardKey.keyD,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
       ),
       ShortcutAction.findNotes => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyF,

@@ -3,62 +3,134 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../floating_surface.dart';
 import 'slash_commands.dart';
 
+enum _CommandGroup {
+  insert('Insert'),
+  write('Write'),
+  blocks('Blocks');
+
+  const _CommandGroup(this.label);
+
+  final String label;
+}
+
 class _SlashCommandDefinition {
   const _SlashCommandDefinition({
     required this.type,
+    required this.group,
     required this.label,
     required this.description,
     required this.icon,
+    this.trigger,
     this.aliases = const [],
     this.requiresMarkdown = false,
   });
 
   final SlashCommandType type;
+  final _CommandGroup group;
   final String label;
+
+  /// Read to assistive technology after the label; the row shows the label
+  /// alone.
   final String description;
   final KapyIconData icon;
+
+  /// What typed at the start of a line does the same, shown where the
+  /// command has no key of its own.
+  final String? trigger;
   final List<String> aliases;
   final bool requiresMarkdown;
 
-  String get searchText => '$label ${aliases.join(' ')}'.toLowerCase();
+  String get searchText =>
+      '$label ${group.label} ${aliases.join(' ')}'.toLowerCase();
 }
 
+/// In the order the menu lists them, a group at a time.
 const _definitions = [
   _SlashCommandDefinition(
-    type: SlashCommandType.checklist,
-    label: 'Checklist',
-    description: 'Tasks with checkboxes',
-    icon: KapyIcons.checklistRounded,
-    aliases: ['todo', 'task'],
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.bulletedList,
-    label: 'Bulleted list',
-    description: 'Start an unordered list',
-    icon: KapyIcons.bulletedListRounded,
-    aliases: ['bullet', 'unordered'],
-  ),
-  _SlashCommandDefinition(
     type: SlashCommandType.image,
+    group: _CommandGroup.insert,
     label: 'Image',
     description: 'Take or choose a picture',
     icon: KapyIcons.imageOutlined,
     aliases: ['photo', 'picture', 'camera'],
   ),
   _SlashCommandDefinition(
+    type: SlashCommandType.video,
+    group: _CommandGroup.insert,
+    label: 'Video',
+    description: 'Choose a video',
+    icon: KapyIcons.videoOutlined,
+    aliases: ['movie'],
+  ),
+  _SlashCommandDefinition(
     type: SlashCommandType.voiceNote,
+    group: _CommandGroup.insert,
     label: 'Voice note',
     description: 'Record audio here',
     icon: KapyIcons.micRounded,
     aliases: ['voice', 'audio', 'record'],
   ),
   _SlashCommandDefinition(
+    type: SlashCommandType.drawing,
+    group: _CommandGroup.insert,
+    label: 'Drawing',
+    description: 'Start a new drawing',
+    icon: KapyIcons.penRounded,
+    aliases: ['sketch', 'draw', 'pen'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.file,
+    group: _CommandGroup.insert,
+    label: 'File',
+    description: 'Attach any file to open on your other devices',
+    icon: KapyIcons.attachFileRounded,
+    aliases: ['attach', 'attachment', 'upload', 'document', 'pdf'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.checklist,
+    group: _CommandGroup.write,
+    label: 'Checklist',
+    description: 'Tasks with checkboxes',
+    icon: KapyIcons.checklistRounded,
+    trigger: '[ ]',
+    aliases: ['todo', 'task'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.bulletedList,
+    group: _CommandGroup.write,
+    label: 'Bulleted list',
+    description: 'Start an unordered list',
+    icon: KapyIcons.bulletedListRounded,
+    trigger: '-',
+    aliases: ['bullet', 'unordered'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.numberedList,
+    group: _CommandGroup.write,
+    label: 'Numbered list',
+    description: 'Start an ordered list',
+    icon: KapyIcons.numberedListRounded,
+    trigger: '1.',
+    aliases: ['number', 'ordered'],
+    requiresMarkdown: true,
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.quote,
+    group: _CommandGroup.write,
+    label: 'Quote',
+    description: 'Set text apart as a quote',
+    icon: KapyIcons.quoteRounded,
+    trigger: '>',
+    aliases: ['blockquote'],
+    requiresMarkdown: true,
+  ),
+  _SlashCommandDefinition(
     type: SlashCommandType.table,
+    group: _CommandGroup.blocks,
     label: 'Table',
     description: 'Simple rows and columns',
     icon: KapyIcons.tableRounded,
@@ -66,47 +138,21 @@ const _definitions = [
   ),
   _SlashCommandDefinition(
     type: SlashCommandType.divider,
+    group: _CommandGroup.blocks,
     label: 'Divider',
     description: 'Separate sections with a line',
     icon: KapyIcons.dividerRounded,
+    trigger: '---',
     aliases: ['rule', 'separator', 'line'],
     requiresMarkdown: true,
   ),
   _SlashCommandDefinition(
-    type: SlashCommandType.video,
-    label: 'Video',
-    description: 'Choose a video',
-    icon: KapyIcons.videoOutlined,
-    aliases: ['movie'],
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.file,
-    label: 'File',
-    description: 'Attach any file to open on your other devices',
-    icon: KapyIcons.attachFileRounded,
-    aliases: ['attach', 'attachment', 'upload', 'document', 'pdf'],
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.numberedList,
-    label: 'Numbered list',
-    description: 'Start an ordered list',
-    icon: KapyIcons.numberedListRounded,
-    aliases: ['number', 'ordered'],
-    requiresMarkdown: true,
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.quote,
-    label: 'Quote',
-    description: 'Set text apart as a quote',
-    icon: KapyIcons.quoteRounded,
-    aliases: ['blockquote'],
-    requiresMarkdown: true,
-  ),
-  _SlashCommandDefinition(
     type: SlashCommandType.codeBlock,
+    group: _CommandGroup.blocks,
     label: 'Code block',
     description: 'A fenced block of code',
     icon: KapyIcons.codeRounded,
+    trigger: '```',
     aliases: ['code', 'snippet'],
     requiresMarkdown: true,
   ),
@@ -122,6 +168,7 @@ class SlashCommandMenuController extends ChangeNotifier {
   Rect _anchor = Rect.zero;
   String _query = '';
   Set<SlashCommandType> _available = const {};
+  Map<SlashCommandType, String> _hints = const {};
   bool _markdownEnabled = false;
   bool _choosingTable = false;
   int _selectedIndex = 0;
@@ -159,6 +206,7 @@ class SlashCommandMenuController extends ChangeNotifier {
     required String query,
     required Set<SlashCommandType> available,
     required bool markdownEnabled,
+    Map<SlashCommandType, String> hints = const {},
     required ValueChanged<SlashCommandChoice> onSelected,
     required ValueChanged<bool> onDismissed,
   }) {
@@ -169,6 +217,7 @@ class SlashCommandMenuController extends ChangeNotifier {
     _anchor = anchor;
     _query = query;
     _available = Set.unmodifiable(available);
+    _hints = hints;
     _markdownEnabled = markdownEnabled;
     _onSelected = onSelected;
     _onDismissed = onDismissed;
@@ -352,9 +401,11 @@ class _SlashCommandOverlayState extends State<_SlashCommandOverlay>
     if (!mounted || !_scroll.hasClients || widget.controller.choosingTable) {
       return;
     }
-    const rowHeight = 54.0;
-    final top = widget.controller.selectedIndex * rowHeight;
-    final bottom = top + rowHeight;
+    final top = _CommandList.rowTop(
+      widget.controller._commands,
+      widget.controller.selectedIndex,
+    );
+    final bottom = top + _CommandList.rowHeight;
     final position = _scroll.position;
     if (top < position.pixels) {
       _scroll.animateTo(
@@ -431,100 +482,96 @@ class _CommandList extends StatelessWidget {
   final SlashCommandMenuController controller;
   final ScrollController scroll;
 
+  static const double rowHeight = 32;
+  static const double headerHeight = 26;
+
+  /// Where row [index] of [commands] starts in the list, past the group
+  /// headers above it.
+  static double rowTop(List<_SlashCommandDefinition> commands, int index) {
+    var top = 0.0;
+    for (var i = 0; i <= index && i < commands.length; i++) {
+      if (i == 0 || commands[i - 1].group != commands[i].group) {
+        top += headerHeight;
+      }
+      if (i < index) top += rowHeight;
+    }
+    return top;
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final commands = controller._commands;
+    final heading = TextStyle(
+      color: palette.textTertiary,
+      fontSize: AppTypeScale.small,
+      fontWeight: FontWeight.w600,
+    );
+    if (commands.isEmpty) {
+      return SizedBox(
+        width: 260,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
+          child: Text(
+            'No matching commands',
+            key: const ValueKey('slash-command-empty'),
+            style: TextStyle(
+              color: palette.textSecondary,
+              fontSize: AppTypeScale.control,
+            ),
+          ),
+        ),
+      );
+    }
     return SizedBox(
-      width: 324,
+      width: 260,
       child: LayoutBuilder(
-        builder: (context, constraints) {
-          const headerHeight = 35.0;
-          final availableListHeight = math.max(
-            0.0,
-            constraints.maxHeight - headerHeight,
-          );
-          final listHeight = math.min(
-            378.0,
-            math.min(commands.length * 54.0, availableListHeight),
-          );
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        builder: (context, constraints) => ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: math.min(400.0, constraints.maxHeight),
+          ),
+          child: ListView(
+            key: const ValueKey('slash-command-list'),
+            controller: scroll,
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
             children: [
-              SizedBox(
-                height: headerHeight,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 9),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Insert',
-                          style: TextStyle(
-                            color: palette.textSecondary,
-                            fontSize: AppTypeScale.caption,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      if (!AppPlatform.isMobile)
-                        Text(
-                          '↑↓  Return',
-                          style: TextStyle(
-                            color: palette.textTertiary,
-                            fontSize: AppTypeScale.small,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              if (commands.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 16, 10, 18),
-                  child: Text(
-                    'No matching commands',
-                    key: const ValueKey('slash-command-empty'),
-                    style: TextStyle(
-                      color: palette.textSecondary,
-                      fontSize: AppTypeScale.control,
+              for (final (index, command) in commands.indexed) ...[
+                if (index == 0 || commands[index - 1].group != command.group)
+                  Container(
+                    height: headerHeight,
+                    alignment: Alignment.bottomLeft,
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 5),
+                    child: Semantics(
+                      header: true,
+                      child: Text(command.group.label, style: heading),
                     ),
                   ),
-                )
-              else
-                SizedBox(
-                  height: listHeight,
-                  child: ListView.builder(
-                    key: const ValueKey('slash-command-list'),
-                    controller: scroll,
-                    padding: EdgeInsets.zero,
-                    itemExtent: 54,
-                    itemCount: commands.length,
-                    itemBuilder: (context, index) => _CommandRow(
-                      key: ValueKey(
-                        'slash-command-${commands[index].type.name}',
-                      ),
-                      command: commands[index],
-                      selected: index == controller.selectedIndex,
-                      markdownEnabled: controller.markdownEnabled,
-                      onHover: () => controller.selectIndex(index),
-                      onPressed: () => controller.activateIndex(index),
-                    ),
-                  ),
+                _CommandRow(
+                  key: ValueKey('slash-command-${command.type.name}'),
+                  command: command,
+                  hint: controller._hints[command.type] ?? command.trigger,
+                  selected: index == controller.selectedIndex,
+                  markdownEnabled: controller.markdownEnabled,
+                  onHover: () => controller.selectIndex(index),
+                  onPressed: () => controller.activateIndex(index),
                 ),
+              ],
             ],
-          );
-        },
+          ),
+        ),
       ),
     );
   }
 }
 
+/// One command on one line: its icon and name, and on the right the key
+/// that does the same, or what typed at the start of a line does.
 class _CommandRow extends StatelessWidget {
   const _CommandRow({
     super.key,
     required this.command,
+    required this.hint,
     required this.selected,
     required this.markdownEnabled,
     required this.onHover,
@@ -532,6 +579,7 @@ class _CommandRow extends StatelessWidget {
   });
 
   final _SlashCommandDefinition command;
+  final String? hint;
   final bool selected;
   final bool markdownEnabled;
   final VoidCallback onHover;
@@ -541,89 +589,64 @@ class _CommandRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final requiresMarkdown = command.requiresMarkdown && !markdownEnabled;
+    final hint = requiresMarkdown ? 'Markdown' : this.hint;
     return Semantics(
       button: true,
       selected: selected,
       label: command.label,
       hint: requiresMarkdown ? 'Requires Markdown' : command.description,
+      excludeSemantics: true,
+      onTap: onPressed,
       child: MouseRegion(
         onEnter: (_) => onHover(),
         cursor: SystemMouseCursors.click,
         child: Material(
           color: selected ? palette.selectedBackground : Colors.transparent,
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(6),
           child: InkWell(
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(6),
             onTap: onPressed,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 9),
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: palette.controlBackground,
-                      borderRadius: BorderRadius.circular(7),
-                      border: Border.all(color: palette.controlBorder),
-                    ),
-                    child: KapyIcon(
+            child: SizedBox(
+              height: _CommandList.rowHeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    KapyIcon(
                       command.icon,
-                      size: AppControlMetrics.iconAction,
+                      size: 16,
                       color: selected
                           ? palette.textPrimary
                           : palette.textSecondary,
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          command.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: palette.textPrimary,
-                            fontSize: AppTypeScale.control,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        Text(
-                          command.description,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: palette.textTertiary,
-                            fontSize: AppTypeScale.small,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (requiresMarkdown)
-                    Container(
-                      margin: const EdgeInsets.only(left: 8),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: palette.controlBackground,
-                        borderRadius: BorderRadius.circular(5),
-                      ),
+                    const SizedBox(width: 10),
+                    Expanded(
                       child: Text(
-                        'Markdown',
+                        command.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: palette.textPrimary,
+                          fontSize: AppTypeScale.control,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (hint != null)
+                      Text(
+                        hint,
+                        maxLines: 1,
                         style: TextStyle(
                           color: palette.textTertiary,
+                          fontFamily: requiresMarkdown ? null : AppFonts.mono,
+                          fontFamilyFallback: requiresMarkdown
+                              ? null
+                              : AppFonts.monoFallback,
                           fontSize: AppTypeScale.small,
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

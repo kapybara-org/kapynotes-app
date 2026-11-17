@@ -50,10 +50,8 @@ import 'markdown_syntax.dart';
 import 'table_cell_editor.dart';
 import 'table_geometry.dart';
 import 'note_footer.dart';
-import 'insert_bar.dart';
 import 'note_header.dart';
 import '../sidebar_timestamp.dart';
-import '../context_menu.dart';
 import '../../data/note_attachment.dart';
 import 'package:file_selector/file_selector.dart';
 
@@ -3062,6 +3060,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     SlashCommandType.divider,
     if (widget.images != null && !_videoActionBusy) SlashCommandType.video,
     if (widget.images != null && !_fileActionBusy) SlashCommandType.file,
+    if (widget.onNewDrawing != null) SlashCommandType.drawing,
     SlashCommandType.numberedList,
     SlashCommandType.quote,
     SlashCommandType.codeBlock,
@@ -3138,6 +3137,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       query: query,
       available: _availableSlashCommands,
       markdownEnabled: widget.markdownEnabled,
+      hints: {
+        for (final (command, action) in const [
+          (SlashCommandType.image, ShortcutAction.insertImage),
+          (SlashCommandType.voiceNote, ShortcutAction.recordVoiceNote),
+          (SlashCommandType.drawing, ShortcutAction.newDrawing),
+          (SlashCommandType.checklist, ShortcutAction.formatChecklist),
+          (SlashCommandType.bulletedList, ShortcutAction.formatBullets),
+        ])
+          if (widget.shortcuts.bindingFor(action) case final binding?)
+            command: binding.displayLabel,
+      },
       onSelected: (choice) => unawaited(_runSlashCommand(choice)),
       onDismissed: _slashCommandMenuDismissed,
     );
@@ -3365,6 +3375,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       case SlashCommandType.voiceNote:
         if (typed) _consumeSlashCommand(range);
         widget.onRecordVoice?.call();
+        break;
+      case SlashCommandType.drawing:
+        if (typed) _consumeSlashCommand(range);
+        widget.onNewDrawing?.call();
         break;
     }
   }
@@ -5925,102 +5939,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
-  Widget _insertBar() => InsertBar(
-    onImage: widget.images == null
-        ? null
-        : () => unawaited(pickAndInsertImages()),
-    onVideo: widget.images == null
-        ? null
-        : () => unawaited(pickAndInsertVideos()),
-    onVoice: widget.onRecordVoice,
-    imageBusy: _imageActionBusy,
-    videoBusy: _videoActionBusy,
-    voiceBusy: widget.voiceActionBusy,
-    onDrawing: widget.onNewDrawing,
-    imageHint: widget.shortcuts
-        .bindingFor(ShortcutAction.insertImage)
-        ?.displayLabel,
-    voiceHint: widget.shortcuts
-        .bindingFor(ShortcutAction.recordVoiceNote)
-        ?.displayLabel,
-    formatActions: _formatActions(),
-    onFormat: _format,
-    onCommands: _showInsertMenu,
-  );
-
-  /// What the insert bar's Format offers: what the old footer's buttons did.
-  List<KapyMenuAction> _formatActions() {
-    String? hint(ShortcutAction action) =>
-        widget.shortcuts.bindingFor(action)?.displayLabel;
-    return [
-      KapyMenuAction(
-        value: 'style',
-        label: 'Text style',
-        icon: KapyIcons.textFormatRounded,
-        hint: hint(ShortcutAction.cycleTextStyle),
-      ),
-      KapyMenuAction(
-        value: 'bold',
-        label: 'Bold',
-        icon: KapyIcons.formatBoldRounded,
-        hint: hint(ShortcutAction.formatBold),
-      ),
-      KapyMenuAction(
-        value: 'italic',
-        label: 'Italic',
-        icon: KapyIcons.formatItalicRounded,
-        hint: hint(ShortcutAction.formatItalic),
-      ),
-      KapyMenuAction(
-        value: 'bullets',
-        label: 'Bulleted list',
-        icon: KapyIcons.bulletedListRounded,
-        hint: hint(ShortcutAction.formatBullets),
-      ),
-      KapyMenuAction(
-        value: 'checklist',
-        label: 'Checklist',
-        icon: KapyIcons.checklistRounded,
-        hint: hint(ShortcutAction.formatChecklist),
-      ),
-      if (_showIndentControls) ...[
-        KapyMenuAction(
-          value: 'indent',
-          label: 'Move in',
-          icon: KapyIcons.indentIncreaseRounded,
-          hint: 'Tab',
-          enabled: _canIndent(outdent: false),
-        ),
-        KapyMenuAction(
-          value: 'outdent',
-          label: 'Move out',
-          icon: KapyIcons.indentDecreaseRounded,
-          hint: 'Shift + Tab',
-          enabled: _canIndent(outdent: true),
-        ),
-      ],
-    ];
-  }
-
-  void _format(String value) {
-    switch (value) {
-      case 'style':
-        _cycleParagraphStyle();
-      case 'bold':
-        _toggleInlineFormat(NoteFormat.bold);
-      case 'italic':
-        _toggleInlineFormat(NoteFormat.italic);
-      case 'bullets':
-        _toggleBullets();
-      case 'checklist':
-        _toggleChecklist();
-      case 'indent':
-        _indentList(outdent: false);
-      case 'outdent':
-        _indentList(outdent: true);
-    }
-  }
-
   Map<int, NoteImageSpan> _tableRowSpacers({
     required MarkdownAnalysis? markdown,
     required double rowHeight,
@@ -6258,8 +6176,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     : 0.0;
                 final textPaneWidth = constraints.maxWidth - gutterWidth;
 
-                // The page centres a column of [EditorMetrics.columnWidth],
-                // and clears the insert bar floating over its foot.
+                // The page centres a column of [EditorMetrics.columnWidth].
                 final side = EditorMetrics.page
                     ? math.max(
                         basePadding.left,
@@ -6268,12 +6185,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     : null;
                 final padding = side == null
                     ? basePadding
-                    : EdgeInsets.fromLTRB(
-                        side,
-                        basePadding.top,
-                        side,
-                        InsertBar.clearance,
-                      );
+                    : basePadding.copyWith(left: side, right: side);
 
                 // Must match the text field's own content box exactly, right
                 // down to the sliver it holds back for the caret.
@@ -6565,7 +6477,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           columnWidth: contentWidth,
                         ),
                       ),
-                    if (EditorMetrics.page) ...[
+                    // Only where there is room for it beside the writing.
+                    if (EditorMetrics.page &&
+                        textPaneWidth >= EditorMetrics.columnWidth + 120)
                       Positioned(
                         right: -6,
                         bottom: 0,
@@ -6579,14 +6493,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           ),
                         ),
                       ),
-                      if (!widget.readOnly && _liveSession == null)
-                        Positioned(
-                          left: 16,
-                          right: 16,
-                          bottom: InsertBar.bottom,
-                          child: Center(child: _insertBar()),
-                        ),
-                    ],
                   ],
                 );
               },

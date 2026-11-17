@@ -2502,6 +2502,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             focusNode: _desktopShortcutFocus,
             shortcuts: widget.shortcuts,
             onNewNote: _createInSpace,
+            onNewDrawing: () => _createNote(drawing: true),
             onFindNotes: _focusGlobalSearch,
             onNextNote: () => _cycleNote(1),
             onPreviousNote: () => _cycleNote(-1),
@@ -3406,6 +3407,7 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.child,
     required this.focusNode,
     required this.onNewNote,
+    required this.onNewDrawing,
     required this.onFindNotes,
     required this.onNextNote,
     required this.onPreviousNote,
@@ -3430,6 +3432,7 @@ class _DesktopShortcuts extends StatelessWidget {
   final Widget child;
   final FocusNode focusNode;
   final VoidCallback onNewNote;
+  final VoidCallback onNewDrawing;
   final VoidCallback onFindNotes;
   final VoidCallback onNextNote;
   final VoidCallback onPreviousNote;
@@ -3459,6 +3462,8 @@ class _DesktopShortcuts extends StatelessWidget {
     return CallbackShortcuts(
       bindings: {
         ?shortcuts.bindingFor(ShortcutAction.newNote)?.activator: onNewNote,
+        ?shortcuts.bindingFor(ShortcutAction.newDrawing)?.activator:
+            onNewDrawing,
         ?shortcuts.bindingFor(ShortcutAction.findNotes)?.activator: onFindNotes,
         ?shortcuts.bindingFor(ShortcutAction.nextNote)?.activator: onNextNote,
         ?shortcuts.bindingFor(ShortcutAction.previousNote)?.activator:

@@ -2532,6 +2532,7 @@ extension on ShortcutAction {
   _ShortcutGroup? get group => switch (this) {
     ShortcutAction.openApp || ShortcutAction.newNoteAnywhere => null,
     ShortcutAction.newNote ||
+    ShortcutAction.newDrawing ||
     ShortcutAction.findNotes ||
     ShortcutAction.nextNote ||
     ShortcutAction.previousNote ||

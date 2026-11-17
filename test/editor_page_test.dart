@@ -139,6 +139,10 @@ void main() {
     expect(secondLine - firstLine, EditorMetrics.lineHeight);
     expect(find.text('Edited today, 15:38'), findsOneWidget);
     expect(find.text('1 of 3 done'), findsOneWidget);
+    final semantics = tester.ensureSemantics();
+    await tester.pump();
+    expect(find.bySemanticsLabel('1 of 3 done'), findsOneWidget);
+    semantics.dispose();
     expect(find.byKey(const ValueKey('note-title-underline')), findsOneWidget);
     // The meta row stands in the room under the title, and the body starts
     // below it. Line positions are where a caret's top goes, a few pixels

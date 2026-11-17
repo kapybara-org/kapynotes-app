@@ -9,6 +9,7 @@ import '../core/theme.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/note_drawing.dart';
+import 'checklist_pie.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
 
@@ -412,38 +413,38 @@ class NoteCardFace extends StatelessWidget {
                     },
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
                   children: [
                     if (glance.boxes > 0) ...[
-                      _Progress(done: glance.done, of: glance.boxes),
-                      const SizedBox(height: 6),
+                      ChecklistPie(
+                        done: glance.done,
+                        total: glance.boxes,
+                        fill: palette.selectedBorder,
+                        check: tint,
+                      ),
+                      const SizedBox(width: 6),
                     ],
-                    Row(
-                      children: [
-                        for (final mark in marks) ...[
-                          KapyIcon(
-                            mark,
-                            size: 13,
-                            strokeWidth: 1.8,
-                            color: palette.textMuted,
-                          ),
-                          const SizedBox(width: 5),
-                        ],
-                        Flexible(
-                          child: Text(
-                            date,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: _figtree(
-                              AppTypeScale.caption,
-                              14,
-                              FontWeight.w600,
-                              palette.textMuted,
-                            ),
-                          ),
+                    for (final mark in marks) ...[
+                      KapyIcon(
+                        mark,
+                        size: 13,
+                        strokeWidth: 1.8,
+                        color: palette.textMuted,
+                      ),
+                      const SizedBox(width: 5),
+                    ],
+                    Flexible(
+                      child: Text(
+                        date,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: _figtree(
+                          AppTypeScale.caption,
+                          14,
+                          FontWeight.w600,
+                          palette.textMuted,
                         ),
-                      ],
+                      ),
                     ),
                   ],
                 ),
@@ -452,36 +453,6 @@ class NoteCardFace extends StatelessWidget {
             if (picking != null)
               Positioned(top: 0, right: 0, child: _PickBox(checked: picking)),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Progress extends StatelessWidget {
-  const _Progress({required this.done, required this.of});
-
-  final int done;
-  final int of;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Container(
-      height: 4,
-      decoration: BoxDecoration(
-        color: palette.textPrimary.withValues(alpha: 0x1F / 0xFF),
-        borderRadius: BorderRadius.circular(2),
-      ),
-      alignment: Alignment.centerLeft,
-      child: FractionallySizedBox(
-        widthFactor: done / of,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: palette.selectedBorder,
-            borderRadius: BorderRadius.circular(2),
-          ),
-          child: const SizedBox.expand(),
         ),
       ),
     );
