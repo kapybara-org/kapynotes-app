@@ -38,7 +38,7 @@ void main() {
     const title = 'SnowSEO Issues backlog for the launch';
     await pumpWindow(tester, ['$title\n☑ crawl\n☐ fix titles']);
 
-    // The cards lean, so this measures inside the card rather than on screen.
+    // The open card leans, so this measures inside the card, not on screen.
     final card = tester.renderObject<RenderBox>(
       find.byWidgetPredicate(
         (widget) => widget is NoteCardFace && widget.note.title == title,
@@ -51,8 +51,8 @@ void main() {
 
     final heading = inCard(onCard(title, find.text(title)));
     final pie = inCard(onCard(title, find.byType(ChecklistPie)));
-    // The pie is shorter than the bar was, so the title may take two lines.
-    expect(heading.height, anyOf(18, 36), reason: 'whole lines');
+    // Every card keeps three fixed lines, so the title takes one.
+    expect(heading.height, 18);
     expect(pie.top - heading.bottom, greaterThanOrEqualTo(6));
   });
 

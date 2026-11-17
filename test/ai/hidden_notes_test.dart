@@ -152,7 +152,7 @@ void main() {
   test('Codex: the bytes on stdin', () async {
     final cli = await FakeCli.create();
     addTearDown(cli.dispose);
-    final ai = await build(pro: false, codex: CodexCli(executable: cli.path));
+    final ai = await build(pro: false, codex: codexCli(executable: cli.path));
     ai.pickModel(
       const KapyModel(kind: KapyModelKind.codex, id: 'm', label: 'M'),
     );
