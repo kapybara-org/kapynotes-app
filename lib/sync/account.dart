@@ -7,6 +7,7 @@ import '../billing/note_limit.dart';
 import '../billing/plan_terms.dart';
 import '../data/local_store.dart';
 import '../data/notes_store.dart';
+import '../data/tags.dart';
 import '../data/task_library.dart';
 import 'auth_api.dart';
 import 'key_bundle.dart';
@@ -65,6 +66,7 @@ class Account extends ChangeNotifier {
     required SyncState state,
     required LocalStore store,
     required TaskLibrary tasks,
+    required TagStore tags,
     SyncService Function({
       required SyncApi api,
       required Vault vault,
@@ -78,6 +80,7 @@ class Account extends ChangeNotifier {
        _state = state,
        _store = store,
        _tasks = tasks,
+       _tags = tags,
        _syncServiceFactory = syncServiceFactory;
 
   final AuthApi _auth;
@@ -140,6 +143,9 @@ class Account extends ChangeNotifier {
   /// The task index and the notes' documents, which sync keeps while it
   /// runs and the library itself keeps the rest of the time.
   final TaskLibrary _tasks;
+
+  /// The person's tags and which notes carry them, synced while signed in.
+  final TagStore _tags;
   SyncService? _sync;
   Sharing? _sharing;
   Joining? _joining;
@@ -196,6 +202,12 @@ class Account extends ChangeNotifier {
   Future<void> restore() async {
     // Loads the sync state with the documents, whose replica comes from it.
     await _tasks.load();
+    // A build from before tags read the record stream past any tag records
+    // without keeping them, so the first time this one runs it reads the
+    // stream again from the start. Tasks merge again to no effect.
+    if (!await _tags.load() && _tasks.index.cursor > 0) {
+      _tasks.index.recordCursor(0);
+    }
     final token = await _keys.readToken();
     if (token == null) return _moveTo(AccountState.signedOut);
 
@@ -457,7 +469,10 @@ class Account extends ChangeNotifier {
   /// the new account, or let go of them.
   Future<void> resolveAccountSwitch({required bool keepLocalNotes}) async {
     if (_accountState != AccountState.needsAccountDecision) return;
-    if (!keepLocalNotes) _notes.forgetEverything();
+    if (!keepLocalNotes) {
+      _notes.forgetEverything();
+      _tags.clear();
+    }
     _state.adopt(_user!.id);
     await _resume();
   }
@@ -485,8 +500,13 @@ class Account extends ChangeNotifier {
             api: api,
             vault: vault,
             index: _tasks.index,
+            tags: _tags,
             docs: docs,
             noteIsLive: (noteId) => _notes.byId(noteId) != null,
+            deletedNotes: () => [
+              for (final stone in _notes.tombstones)
+                if (_notes.byId(stone.id) == null) stone.id,
+            ],
           ),
           vault: vault,
         );
@@ -550,6 +570,7 @@ class Account extends ChangeNotifier {
     // Its ids and its seal are the account's; the next account pulls its own,
     // and until then the library rebuilds the index from the documents.
     _tasks.index.clear();
+    _tags.forgetAccount();
     await _keys.clear();
     if (token != null) await _auth.signOut(token);
     _moveTo(AccountState.signedOut);
@@ -619,6 +640,7 @@ class Account extends ChangeNotifier {
     _lastError = null;
     _state.clearCursor();
     _tasks.index.clear();
+    _tags.forgetAccount();
     await _keys.clear();
     _moveTo(AccountState.signedOut);
     return true;

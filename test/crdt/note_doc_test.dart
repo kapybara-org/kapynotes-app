@@ -587,5 +587,16 @@ void main() {
         throwsFormatException,
       );
     });
+
+    test('a document that takes over from a discarded one never mints the '
+        'ids the old one gave out', () {
+      final old = NoteDoc(replica: 'a');
+      type(old, 'Buy oats');
+      final gone = old.anchorAt(1);
+      final next = NoteDoc.after(old);
+      type(next, 'Buy oats and milk');
+      expect(next.knows(gone), isFalse);
+      expect(next.clock['a'], greaterThan(old.clock['a']!));
+    });
   });
 }

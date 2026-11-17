@@ -104,14 +104,15 @@ class DefaultHiddenNotesGate implements HiddenNotesGate {
        _pinDeriver = pinDeriver ?? _derivePin,
        _useSystemAuthentication =
            useSystemAuthentication ?? AppPlatform.isMobile,
-       _attempts = _PinAttempts(now ?? DateTime.now);
+       _now = now ?? DateTime.now;
 
   static const String credentialKey = 'kapynotes.hiddenNotesCredential';
   final SecureStore _store;
   final DeviceAuthenticator _deviceAuthenticator;
   final Future<Uint8List> Function(String pin, Uint8List salt) _pinDeriver;
   final bool _useSystemAuthentication;
-  final _PinAttempts _attempts;
+  final DateTime Function() _now;
+  late final _PinAttempts _attempts = _PinAttempts(_store, _now);
 
   @override
   Future<bool> ensureConfigured(BuildContext context) async {
@@ -232,19 +233,22 @@ class DefaultHiddenNotesGate implements HiddenNotesGate {
   Future<bool> _checkPin(
     BuildContext context,
     _PinCredential credential,
-  ) async =>
-      await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => _UnlockPinDialog(
-          attempts: _attempts,
-          verify: (pin) async => _constantTimeEquals(
-            await _pinDeriver(pin, credential.salt),
-            credential.verifier,
+  ) async {
+    await _attempts.load();
+    if (!context.mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => _UnlockPinDialog(
+            attempts: _attempts,
+            verify: (pin) async => _constantTimeEquals(
+              await _pinDeriver(pin, credential.salt),
+              credential.verifier,
+            ),
           ),
-        ),
-      ) ??
-      false;
+        ) ??
+        false;
+  }
 
   Future<_ReadResult> _read(BuildContext context) async {
     try {
@@ -401,33 +405,83 @@ bool _constantTimeEquals(Uint8List left, Uint8List right) {
   return difference == 0;
 }
 
-/// Wrong PIN guesses for the life of the gate, shared by every PIN prompt so
-/// closing and reopening the dialog does not reset the wait.
+/// Wrong PIN guesses on this device, shared by every PIN prompt and kept in
+/// the secure store beside the credential, so neither closing the dialog nor
+/// quitting the app resets the wait. Each five wrong in a row wait longer than
+/// the last, up to [_waits]' last; a correct PIN starts again from the first.
+///
+/// A store that cannot be read or written leaves the count in memory for the
+/// run, as it was before it was kept.
 class _PinAttempts {
-  _PinAttempts(this._now);
+  _PinAttempts(this._store, this._now);
 
+  static const String key = 'kapynotes.hiddenNotesAttempts';
   static const int _limit = 5;
-  static const Duration _wait = Duration(seconds: 30);
+  static const List<Duration> _waits = [
+    Duration(seconds: 30),
+    Duration(minutes: 1),
+    Duration(minutes: 5),
+    Duration(minutes: 15),
+  ];
 
+  final SecureStore _store;
   final DateTime Function() _now;
   int _wrong = 0;
+  int _lockouts = 0;
   DateTime? _lockedUntil;
+  bool _loaded = false;
+
+  Duration get _wait => _waits[(_lockouts - 1).clamp(0, _waits.length - 1)];
 
   Duration get remaining {
     final until = _lockedUntil;
     if (until == null) return Duration.zero;
-    final left = until.difference(_now());
+    final now = _now();
+    // A clock set back would otherwise stretch the wait without end.
+    if (until.difference(now) > _wait) _lockedUntil = now.add(_wait);
+    final left = _lockedUntil!.difference(now);
     return left > Duration.zero ? left : Duration.zero;
   }
 
-  void record({required bool correct}) {
+  Future<void> load() async {
+    if (_loaded) return;
+    try {
+      final raw = await _store.read(key);
+      final saved = raw == null ? null : jsonDecode(raw);
+      if (saved is Map) {
+        final wrong = saved['wrong'];
+        final lockouts = saved['lockouts'];
+        final until = saved['until'];
+        _wrong = wrong is int && wrong > 0 ? wrong % _limit : 0;
+        _lockouts = lockouts is int && lockouts > 0 ? lockouts : 0;
+        _lockedUntil = until is int && _lockouts > 0
+            ? DateTime.fromMillisecondsSinceEpoch(until)
+            : null;
+      }
+      _loaded = true;
+    } catch (_) {}
+  }
+
+  Future<void> record({required bool correct}) async {
     if (correct) {
       _wrong = 0;
-      return;
+      _lockouts = 0;
+      _lockedUntil = null;
+    } else if (++_wrong >= _limit) {
+      _wrong = 0;
+      _lockouts++;
+      _lockedUntil = _now().add(_wait);
     }
-    if (++_wrong < _limit) return;
-    _wrong = 0;
-    _lockedUntil = _now().add(_wait);
+    try {
+      await _store.write(
+        key,
+        jsonEncode({
+          'wrong': _wrong,
+          'lockouts': _lockouts,
+          'until': ?_lockedUntil?.millisecondsSinceEpoch,
+        }),
+      );
+    } catch (_) {}
   }
 }
 
@@ -580,7 +634,7 @@ class _UnlockPinDialogState extends State<_UnlockPinDialog> {
       _error = null;
     });
     final correct = await widget.verify(_pin.text);
-    widget.attempts.record(correct: correct);
+    await widget.attempts.record(correct: correct);
     if (!mounted) return;
     if (correct) {
       Navigator.of(context).pop(true);
@@ -598,8 +652,10 @@ class _UnlockPinDialogState extends State<_UnlockPinDialog> {
   Widget build(BuildContext context) {
     final wait = widget.attempts.remaining;
     final locked = wait > Duration.zero;
+    final seconds = (wait.inMilliseconds / 1000).ceil();
     final message = locked
-        ? 'Too many tries. Try again in ${(wait.inMilliseconds / 1000).ceil()} s.'
+        ? 'Too many tries. Try again in '
+              '${seconds <= 60 ? '$seconds s' : '${(seconds / 60).ceil()} min'}.'
         : _error;
     return AlertDialog(
       title: const Text('Unlock Hidden Notes'),

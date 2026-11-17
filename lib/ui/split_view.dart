@@ -32,8 +32,9 @@ class SplitView extends StatefulWidget {
 
   /// Whether the sidebar opens over the body rather than beside it, for a
   /// window with no room for both. The body keeps its whole width, dimmed
-  /// behind the sidebar, and a click on it or Escape hides the sidebar again
-  /// through [onHide]. Nothing of the sidebar is built while it is hidden.
+  /// behind the sidebar, which takes the keyboard from it, and a click on it or
+  /// Escape hides the sidebar again through [onHide]. Nothing of the sidebar is
+  /// built while it is hidden.
   final bool overlay;
   final double minSidebarWidth;
   final double maxSidebarWidth;
@@ -52,10 +53,28 @@ class _SplitViewState extends State<SplitView> {
 
   bool _hovering = false;
 
+  final FocusNode _overlayFocus = FocusNode(debugLabel: 'sidebar-overlay');
+
   /// Where the divider is while it is being dragged.
   double? _dragWidth;
 
   bool get _dragging => _dragWidth != null;
+
+  @override
+  void didUpdateWidget(SplitView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.overlay || !widget.sidebarVisible) return;
+    if (oldWidget.overlay && oldWidget.sidebarVisible) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _overlayFocus.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _overlayFocus.dispose();
+    super.dispose();
+  }
 
   void _endDrag() {
     final width = _dragWidth;
@@ -171,14 +190,20 @@ class _SplitViewState extends State<SplitView> {
                       onInvoke: (_) => widget.onHide(),
                     ),
                   },
-                  child: DecoratedBox(
-                    position: DecorationPosition.foreground,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        right: BorderSide(color: palette.separator, width: 0.5),
+                  child: Focus(
+                    focusNode: _overlayFocus,
+                    child: DecoratedBox(
+                      position: DecorationPosition.foreground,
+                      decoration: BoxDecoration(
+                        border: Border(
+                          right: BorderSide(
+                            color: palette.separator,
+                            width: 0.5,
+                          ),
+                        ),
                       ),
+                      child: widget.sidebar,
                     ),
-                    child: widget.sidebar,
                   ),
                 ),
               ),

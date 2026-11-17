@@ -20,6 +20,7 @@ import 'data/local_store.dart';
 import 'data/notes_store.dart';
 import 'data/rates.dart';
 import 'data/shortcut_prefs.dart';
+import 'data/tags.dart';
 import 'data/task_library.dart';
 import 'data/update_checker.dart';
 import 'speech/speech_api.dart';
@@ -68,6 +69,8 @@ Future<void> main() async {
     store: store,
     state: kSyncEnabled ? syncState : null,
   );
+  // Kept on this device the same way, and synced while signed in.
+  final tags = TagStore(store);
   final account = kSyncEnabled
       ? Account(
           auth: HttpAuthApi(baseUrl: Uri.parse(kApiBaseUrl)),
@@ -81,6 +84,7 @@ Future<void> main() async {
           state: syncState,
           store: store,
           tasks: tasks,
+          tags: tags,
         )
       : null;
   // Built here rather than inside Account so that a build with no
@@ -148,6 +152,7 @@ Future<void> main() async {
       desktopIntegration: desktopIntegration,
       account: account,
       tasks: tasks,
+      tags: tags,
       // Here, where no test runs: see KapyNotesApp.deepLinks.
       deepLinks: DeepLinks.platform(),
     ),
@@ -162,6 +167,7 @@ Future<void> main() async {
     unawaited(desktopIntegration.initialize(shortcuts));
   }
   unawaited(tasks.load());
+  unawaited(tags.load());
 }
 
 Future<void> _configureWindow(LayoutPrefs prefs) async {

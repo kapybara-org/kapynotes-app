@@ -39,6 +39,8 @@ enum Summaries {
         run(call.arguments, result, asSummary: true)
       case "rewrite":
         run(call.arguments, result, asSummary: false)
+      case "answer":
+        answer(call.arguments, result)
       case "physicalMemory":
         // Whether a downloaded model is worth offering at all. Cheap, exact,
         // and the alternative is letting the OS answer by killing us.
@@ -122,6 +124,50 @@ enum Summaries {
                 transcript: text, language: language, instruction: instruction)
               : try await rewrite(transcript: text, instruction: instruction ?? "")
             await MainActor.run { result(answer) }
+          } catch {
+            await MainActor.run {
+              result(
+                FlutterError(
+                  code: "failed",
+                  message: error.localizedDescription,
+                  details: nil))
+            }
+          }
+        }
+        return
+      }
+    #endif
+
+    result(
+      FlutterError(
+        code: "unavailable",
+        message: "Apple Intelligence is not available on this device.",
+        details: nil))
+  }
+
+  /// Kapy AI: a question about the person's notes, answered in free text.
+  ///
+  /// The instructions come from the app whole rather than after
+  /// `groundRules`, which are about a transcript and would have the model
+  /// talk about one. The app has already fitted the notes to the context.
+  private static func answer(_ arguments: Any?, _ result: @escaping FlutterResult) {
+    guard let arguments = arguments as? [String: Any],
+      let instructions = arguments["instructions"] as? String,
+      let prompt = arguments["prompt"] as? String,
+      !prompt.isEmpty
+    else {
+      result(
+        FlutterError(code: "arguments", message: "A prompt is required.", details: nil))
+      return
+    }
+
+    #if canImport(FoundationModels)
+      if #available(iOS 26.0, *) {
+        Task {
+          do {
+            let session = LanguageModelSession(instructions: instructions)
+            let response = try await session.respond(to: prompt)
+            await MainActor.run { result(response.content) }
           } catch {
             await MainActor.run {
               result(
