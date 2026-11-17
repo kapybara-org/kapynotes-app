@@ -22,8 +22,13 @@ class MemoryStore extends LocalStore {
   @override
   Future<void> flush() async {}
 
+  final Map<String, int> puts = {};
+
   @override
-  void put(String key, Object? value) => data[key] = value;
+  void put(String key, Object? value) {
+    puts[key] = (puts[key] ?? 0) + 1;
+    data[key] = value;
+  }
 }
 
 /// One device of the account: its notes, documents, task index and tags, and

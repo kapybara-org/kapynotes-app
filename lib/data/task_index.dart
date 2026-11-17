@@ -281,7 +281,29 @@ class TaskIndex extends ChangeNotifier {
     }
   }
 
+  bool _held = false;
+  bool _pending = false;
+
+  /// Defers the file write until [release], so a pull of many records writes
+  /// once instead of once per record. Listeners are still told of each change.
+  void hold() => _held = true;
+
+  void release() {
+    _held = false;
+    if (_pending) _persist();
+  }
+
   void _save() {
+    if (_held) {
+      _pending = true;
+    } else {
+      _persist();
+    }
+    notifyListeners();
+  }
+
+  void _persist() {
+    _pending = false;
     _store.put(_key, {
       'cursor': _cursor,
       'scanned': _scanned,
@@ -296,7 +318,6 @@ class TaskIndex extends ChangeNotifier {
       ],
       'stones': _stones,
     });
-    notifyListeners();
   }
 
   /// The next `updatedAt` for [id]: now, or one past the last if the clock

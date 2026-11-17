@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
@@ -5,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../calc/engine.dart';
 import '../core/editor_font.dart';
+import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
@@ -1144,8 +1146,8 @@ class NotesListControls extends StatelessWidget {
     this.media,
     this.onMediaChanged,
     required this.onClear,
-    required this.cards,
-    required this.onCardsChanged,
+    this.cards = false,
+    this.onCardsChanged,
     this.tags,
     this.onTagsChanged,
   });
@@ -1175,7 +1177,9 @@ class NotesListControls extends StatelessWidget {
   /// Back to every note: All notes, every kind ticked.
   final VoidCallback onClear;
   final bool cards;
-  final ValueChanged<bool> onCardsChanged;
+
+  /// Null leaves the list/cards switch out, where the list has no cards.
+  final ValueChanged<bool>? onCardsChanged;
 
   /// The tags the list is narrowed to; null where there are no tags.
   final TagFilter? tags;
@@ -1184,7 +1188,8 @@ class NotesListControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    Widget segment(bool forCards) {
+    final onCardsChanged = this.onCardsChanged;
+    Widget segment(bool forCards, ValueChanged<bool> onCardsChanged) {
       final on = cards == forCards;
       return Tooltip(
         message: forCards ? 'Card view' : 'List view',
@@ -1279,19 +1284,38 @@ class NotesListControls extends StatelessWidget {
             ],
           ),
         ),
-        Container(
-          padding: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            color: palette.cardBackground,
-            borderRadius: BorderRadius.circular(9),
+        if (onCardsChanged != null)
+          Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: palette.cardBackground,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Row(
+              children: [
+                segment(false, onCardsChanged),
+                const SizedBox(width: 2),
+                segment(true, onCardsChanged),
+              ],
+            ),
           ),
-          child: Row(
-            children: [segment(false), const SizedBox(width: 2), segment(true)],
-          ),
-        ),
       ],
     );
   }
+}
+
+/// [ticked] after [media] is ticked or unticked, or after All media (null)
+/// is; null when nothing changes. A kind is unticked only while another
+/// stays ticked: a list narrowed to nothing would look like a library that
+/// had lost its notes.
+Set<NoteMedia>? tickedMedia(Set<NoteMedia> ticked, NoteMedia? media) {
+  if (media == null) {
+    return ticked.length < NoteMedia.values.length
+        ? NoteMedia.values.toSet()
+        : null;
+  }
+  if (!ticked.contains(media)) return {...ticked, media};
+  return ticked.length > 1 ? ({...ticked}..remove(media)) : null;
 }
 
 /// The notes filter's button and menu: one choice of which notes, then the
@@ -1357,10 +1381,35 @@ class _NotesFilterState extends State<_NotesFilter> {
     });
   }
 
-  void _toggle() => setState(() {
-    _tagsOpen = false;
-    _menu.isShowing ? _menu.hide() : _menu.show();
-  });
+  void _toggle() {
+    if (AppPlatform.isMobile) return unawaited(_openSheet());
+    setState(() {
+      _tagsOpen = false;
+      _menu.isShowing ? _menu.hide() : _menu.show();
+    });
+  }
+
+  /// Nested menus don't work with touch, so on a phone the same choices
+  /// are a sheet.
+  Future<void> _openSheet() => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Theme.of(context).drawerTheme.scrimColor,
+    builder: (_) => _FilterSheet(
+      show: widget.show,
+      offersShow: widget.offersShow,
+      onShowChanged: widget.onShowChanged,
+      hiddenListed: widget.hiddenListed,
+      archivedCount: widget.archivedCount,
+      everything: widget.everything,
+      media: widget.media,
+      onMediaChanged: widget.onMediaChanged,
+      tags: widget.tags,
+      onTagsChanged: widget.onTagsChanged,
+      shelf: TagShelf.maybeOf(context),
+    ),
+  );
 
   void _close() {
     if (_menu.isShowing) setState(_menu.hide);
@@ -1374,19 +1423,8 @@ class _NotesFilterState extends State<_NotesFilter> {
   /// A kind is unticked only while another stays ticked: a list narrowed to
   /// nothing would look like a library that had lost its notes.
   void _tick(NoteMedia? media) {
-    final ticked = widget.media!;
-    final onChanged = widget.onMediaChanged!;
-    if (media == null) {
-      if (ticked.length < NoteMedia.values.length) {
-        onChanged(NoteMedia.values.toSet());
-      }
-      return;
-    }
-    if (!ticked.contains(media)) {
-      onChanged({...ticked, media});
-    } else if (ticked.length > 1) {
-      onChanged({...ticked}..remove(media));
-    }
+    final ticked = tickedMedia(widget.media!, media);
+    if (ticked != null) widget.onMediaChanged!(ticked);
   }
 
   /// What the button says: one narrowed group names itself ("Archive",
@@ -2275,6 +2313,510 @@ class _TagFilterRowState extends State<_TagFilterRow> {
                 _PickBox(checked: widget.ticked),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The notes filter on a phone (SF5-0): Show, Media and a Tags row, which
+/// pushes a second page with the same tag list as the menu's submenu. Every
+/// choice applies at once, so Done only closes it; choosing what to show
+/// closes it too, as the menu does.
+class _FilterSheet extends StatefulWidget {
+  const _FilterSheet({
+    required this.show,
+    required this.offersShow,
+    required this.onShowChanged,
+    required this.hiddenListed,
+    required this.archivedCount,
+    required this.everything,
+    required this.media,
+    required this.onMediaChanged,
+    required this.tags,
+    required this.onTagsChanged,
+    required this.shelf,
+  });
+
+  final NotesShow show;
+  final bool offersShow;
+  final ValueChanged<NotesShow> onShowChanged;
+  final bool hiddenListed;
+  final int archivedCount;
+  final String everything;
+  final Set<NoteMedia>? media;
+  final ValueChanged<Set<NoteMedia>>? onMediaChanged;
+  final TagFilter? tags;
+  final ValueChanged<TagFilter>? onTagsChanged;
+
+  /// The tags the sheet lists: the route it sits in is above the app's own
+  /// shelf, so it brings it along.
+  final TagShelf? shelf;
+
+  @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  late Set<NoteMedia>? _media = widget.media;
+  late TagFilter? _tags = widget.tags;
+  bool _tagsPage = false;
+
+  void _tick(NoteMedia? media) {
+    final ticked = tickedMedia(_media!, media);
+    if (ticked == null) return;
+    setState(() => _media = ticked);
+    widget.onMediaChanged!(ticked);
+  }
+
+  void _setTags(TagFilter tags) {
+    setState(() => _tags = tags);
+    widget.onTagsChanged!(tags);
+  }
+
+  void _choose(NotesShow show) {
+    Navigator.of(context).pop();
+    if (show != widget.show) widget.onShowChanged(show);
+  }
+
+  Widget _row({
+    required Key key,
+    required Widget leading,
+    required String label,
+    required VoidCallback onTap,
+    Widget? trailing,
+    bool chosen = false,
+  }) {
+    final palette = context.palette;
+    return Semantics(
+      selected: chosen,
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+        key: key,
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: chosen ? palette.separator : null,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            spacing: 12,
+            children: [
+              leading,
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _figtree(
+                    AppTypeScale.control,
+                    20,
+                    chosen ? FontWeight.w600 : FontWeight.w500,
+                    chosen ? palette.textPrimary : palette.textSubheading,
+                  ),
+                ),
+              ),
+              ?trailing,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _quiet(String text) => Text(
+    text,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    style: _figtree(
+      AppTypeScale.small,
+      16,
+      FontWeight.w400,
+      context.palette.textTertiary,
+    ),
+  );
+
+  Widget _heading(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
+    child: Text(
+      text,
+      style: _figtree(12, 16, FontWeight.w600, context.palette.textTertiary),
+    ),
+  );
+
+  Widget _showRow(NotesShow show, KapyIconData icon, {Widget? trailing}) {
+    final palette = context.palette;
+    final chosen = widget.show == show;
+    return _row(
+      key: ValueKey('notes-filter-${show.name}'),
+      leading: KapyIcon(
+        icon,
+        size: 18,
+        strokeWidth: 1.8,
+        color: chosen ? palette.textPrimary : palette.textSecondary,
+      ),
+      label: show == NotesShow.all ? widget.everything : show.label,
+      chosen: chosen,
+      trailing: chosen
+          ? KapyIcon(
+              KapyIcons.checkRounded,
+              size: 16,
+              strokeWidth: 1.8,
+              color: palette.accentText,
+            )
+          : trailing,
+      onTap: () => _choose(show),
+    );
+  }
+
+  Widget _chip(String label, {required bool on, required VoidCallback onTap}) {
+    final palette = context.palette;
+    return GestureDetector(
+      key: ValueKey('media-filter-$label'),
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: on ? palette.tonalBackground : null,
+          border: Border.all(
+            color: on ? palette.tonalKeyBackground : palette.controlBorder,
+          ),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Center(
+          widthFactor: 1,
+          child: Text(
+            label,
+            style: _figtree(
+              AppTypeScale.control,
+              18,
+              FontWeight.w500,
+              on ? palette.tonalForeground : palette.textSubheading,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mainPage() {
+    final palette = context.palette;
+    final media = _media;
+    final tags = _tags;
+    final ticked = [
+      for (final entry in widget.shelf?.listed() ?? <TagEntry>[])
+        if (tags?.ids.contains(entry.tag.id) ?? false) entry.tag.name.v,
+      if (tags?.none ?? false) 'No tag',
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.offersShow) ...[
+          _heading('Show'),
+          _showRow(
+            NotesShow.all,
+            media == null ? KapyIcons.penRounded : KapyIcons.noteOutlined,
+          ),
+          if (widget.hiddenListed) _showRow(NotesShow.hidden, hiddenIcon),
+          _showRow(
+            NotesShow.archive,
+            archiveIcon,
+            trailing: _quiet('${widget.archivedCount}'),
+          ),
+        ],
+        if (media != null) ...[
+          _heading('Media'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _chip(
+                  'All media',
+                  on: media.length == NoteMedia.values.length,
+                  onTap: () => _tick(null),
+                ),
+                for (final kind in NoteMedia.values)
+                  _chip(
+                    kind.label,
+                    on: media.contains(kind),
+                    onTap: () => _tick(kind),
+                  ),
+              ],
+            ),
+          ),
+        ],
+        if (tags != null) ...[
+          _heading('Tags'),
+          _row(
+            key: const ValueKey('notes-filter-tags'),
+            leading: KapyIcon(
+              KapyIcons.tagRounded,
+              size: 18,
+              strokeWidth: 1.8,
+              color: palette.textSecondary,
+            ),
+            label: 'Tags',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 8,
+              children: [
+                if (ticked.isNotEmpty)
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 160),
+                    child: _quiet(ticked.join(', ')),
+                  ),
+                KapyIcon(
+                  KapyIcons.chevronRightRounded,
+                  size: 14,
+                  strokeWidth: 2,
+                  color: palette.textTertiary,
+                ),
+              ],
+            ),
+            onTap: () => setState(() => _tagsPage = true),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _tagsList() {
+    final palette = context.palette;
+    final filter = _tags!;
+    final shelf = widget.shelf!;
+    final every = shelf.listed();
+    if (every.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+        child: Text(
+          'No tags yet. Open a note and choose + Tag next to its date.',
+          key: const ValueKey('tags-filter-empty'),
+          style: _figtree(
+            AppTypeScale.control,
+            20,
+            FontWeight.w400,
+            palette.textTertiary,
+          ),
+        ),
+      );
+    }
+    Widget match(bool all) {
+      final on = filter.all == all;
+      return GestureDetector(
+        key: ValueKey(all ? 'tag-filter-all' : 'tag-filter-any'),
+        onTap: () => _setTags(filter.copyWith(all: all)),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: on ? palette.segmentSelected : null,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            all ? 'all' : 'any',
+            style: _figtree(
+              AppTypeScale.control,
+              18,
+              on ? FontWeight.w600 : FontWeight.w500,
+              on ? palette.textPrimary : palette.textSecondary,
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget tagRow({
+      required Key key,
+      required Widget dot,
+      required String label,
+      required int count,
+      required bool ticked,
+      required VoidCallback onTap,
+    }) => _row(
+      key: key,
+      leading: SizedBox(width: 18, child: Center(child: dot)),
+      label: label,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 12,
+        children: [
+          _quiet('$count'),
+          _PickBox(checked: ticked),
+        ],
+      ),
+      onTap: onTap,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (filter.ticked >= 2)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: Row(
+              spacing: 12,
+              children: [
+                _quiet('Match'),
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: palette.cardBackground,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [match(false), match(true)],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        for (final entry in every)
+          tagRow(
+            key: ValueKey('tag-filter-${entry.tag.id}'),
+            dot: TagDot(tagColourOf(entry.tag.colour.v), size: 10),
+            label: entry.tag.name.v,
+            count: entry.count,
+            ticked: filter.ids.contains(entry.tag.id),
+            onTap: () => _setTags(
+              filter.copyWith(
+                ids: filter.ids.contains(entry.tag.id)
+                    ? ({...filter.ids}..remove(entry.tag.id))
+                    : {...filter.ids, entry.tag.id},
+              ),
+            ),
+          ),
+        Container(
+          height: 1,
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          color: palette.separator,
+        ),
+        tagRow(
+          key: const ValueKey('tag-filter-none'),
+          dot: const TagDot(null, size: 10),
+          label: 'No tag',
+          count: shelf.untagged(),
+          ticked: filter.none,
+          onTap: () => _setTags(filter.copyWith(none: !filter.none)),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final title = _figtree(
+      AppTypeScale.control,
+      20,
+      FontWeight.w600,
+      palette.textPrimary,
+    );
+    final link = _figtree(
+      AppTypeScale.control,
+      20,
+      FontWeight.w600,
+      palette.accentText,
+    );
+    return DecoratedBox(
+      key: const ValueKey('notes-filter-sheet'),
+      decoration: BoxDecoration(
+        color: palette.surfaceBackground,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  width: 34,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: palette.controlBorder,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 48,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Text(_tagsPage ? 'Tags' : 'Filter', style: title),
+                    if (_tagsPage)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: GestureDetector(
+                          key: const ValueKey('notes-filter-back'),
+                          onTap: () => setState(() => _tagsPage = false),
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              spacing: 4,
+                              children: [
+                                KapyIcon(
+                                  KapyIcons.chevronLeftRounded,
+                                  size: 14,
+                                  strokeWidth: 2,
+                                  color: palette.textSecondary,
+                                ),
+                                Text(
+                                  'Filter',
+                                  style: link.copyWith(
+                                    color: palette.textSecondary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: GestureDetector(
+                        key: const ValueKey('notes-filter-done'),
+                        onTap: () => Navigator.of(context).pop(),
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('Done', style: link),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+                  child: _tagsPage ? _tagsList() : _mainPage(),
+                ),
+              ),
+            ],
           ),
         ),
       ),

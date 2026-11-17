@@ -248,8 +248,15 @@ class TaskSync {
           );
         }
         final result = await _api.pushTasks(records);
-        for (final item in chunk) {
-          if (result.applied.contains(item.id)) item.acknowledge();
+        _index.hold();
+        _tags.hold();
+        try {
+          for (final item in chunk) {
+            if (result.applied.contains(item.id)) item.acknowledge();
+          }
+        } finally {
+          _index.release();
+          _tags.release();
         }
         for (final conflict in result.conflicts) {
           await _take(conflict);
@@ -263,10 +270,17 @@ class TaskSync {
     while (!_disposed) {
       final page = await _api.pullTasks(after: _index.cursor);
       if (!_chatsSync && page.records.isNotEmpty) _chats?.markSkipped();
-      for (final record in page.records) {
-        await _take(record);
+      _index.hold();
+      _tags.hold();
+      try {
+        for (final record in page.records) {
+          await _take(record);
+        }
+        _index.recordCursor(page.cursor);
+      } finally {
+        _index.release();
+        _tags.release();
       }
-      _index.recordCursor(page.cursor);
       if (!page.hasMore) break;
     }
     _tags.settle();
@@ -350,7 +364,7 @@ class TaskSync {
         }
         _chats!.applyRemotePart(part, updatedAt);
       default:
-        _tags.keepUnknown(record.id, decoded, updatedAt);
+        _tags.keepUnknown(record.id, updatedAt);
     }
   }
 
