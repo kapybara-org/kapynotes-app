@@ -515,9 +515,9 @@ class NoteFieldState extends State<NoteField>
   @override
   void updateEditingValue(TextEditingValue value) {
     if (widget.readOnly) return;
-    final remote = _remote;
+    final remote = _remote ?? (start: _window.start, value: _windowValue);
     final previous = _previousRemote;
-    if (remote != null && _holds(remote)) {
+    if (_holds(remote)) {
       _applyRemote(remote, value, fromRemote: true);
     } else if (previous != null && _holds(previous)) {
       _applyRemote(previous, value, fromRemote: false);
