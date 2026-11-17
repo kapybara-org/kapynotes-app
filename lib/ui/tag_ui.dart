@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/theme.dart';
+import '../core/toast.dart';
 import '../data/tags.dart';
 import 'context_menu.dart';
 import 'settings_rows.dart';
@@ -848,14 +849,9 @@ Future<void> showTagActions(
 
 /// Asks once, deletes, and offers Undo, which puts the tag back on the same
 /// notes in the same place.
-Future<void> deleteTag(
-  BuildContext context,
-  TagStore store,
-  TagEntry entry,
-) async {
+Future<void> deleteTag(BuildContext context, TagStore store, TagEntry entry) {
   final name = entry.tag.name.v;
-  final overlay = Overlay.of(context, rootOverlay: true);
-  final sure = await showDialog<bool>(
+  return showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text('Delete “$name”?'),
@@ -865,63 +861,28 @@ Future<void> deleteTag(
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
         TextButton(
           key: const ValueKey('tag-delete-confirm'),
-          onPressed: () => Navigator.of(context).pop(true),
+          // The toast goes up from the dialog, whose overlay outlives the
+          // menu that asked: that menu may close while the dialog is open.
+          onPressed: () {
+            store.delete(entry.tag.id);
+            Toast.show(
+              context,
+              'Deleted “$name”',
+              action: 'Undo',
+              onAction: () => store.restore(entry.tag.id),
+            );
+            Navigator.of(context).pop();
+          },
           child: const Text('Delete'),
         ),
       ],
     ),
   );
-  if (sure != true) return;
-  store.delete(entry.tag.id);
-  late final OverlayEntry toast;
-  final timer = Timer(const Duration(seconds: 6), () => toast.remove());
-  toast = OverlayEntry(
-    builder: (context) {
-      final palette = context.palette;
-      return Positioned(
-        left: 0,
-        right: 0,
-        bottom: 24,
-        child: Center(
-          child: Container(
-            key: const ValueKey('tag-toast'),
-            height: 36,
-            padding: const EdgeInsets.only(left: 14, right: 4),
-            decoration: BoxDecoration(
-              color: palette.textPrimary,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Deleted “$name”',
-                  style: _text(13, FontWeight.w500, palette.paperColor),
-                ),
-                TextButton(
-                  onPressed: () {
-                    timer.cancel();
-                    toast.remove();
-                    store.restore(entry.tag.id);
-                  },
-                  child: Text(
-                    'Undo',
-                    style: _text(13, FontWeight.w600, palette.paperColor),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    },
-  );
-  overlay.insert(toast);
 }
 
 /// Settings › Notes › Tags: Your tags with New tag, then a row per tag to

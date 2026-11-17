@@ -16,6 +16,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/update_checker.dart';
 import 'package:kapy_notes/data/blob_store.dart';
@@ -59,6 +60,7 @@ late LayoutPrefs goldenPrefs;
 /// The notes the image was built from, for the few images that have to change
 /// the list after it is on screen.
 late NotesStore goldenNotes;
+late TagStore goldenTags;
 
 Future<void> pumpForGolden(
   WidgetTester tester, {
@@ -193,6 +195,8 @@ Future<void> pumpForGolden(
   final prefs = LayoutPrefs(store);
   goldenPrefs = prefs;
   goldenNotes = notes;
+  goldenTags = TagStore(store);
+  await goldenTags.load();
   final rates = RatesRepository(store);
   final shortcuts = ShortcutPrefs(store)..load();
 
@@ -227,6 +231,7 @@ Future<void> pumpForGolden(
       prefs: prefs,
       shortcuts: shortcuts,
       updates: updates,
+      tags: goldenTags,
     ),
   );
   if (withImages) {
@@ -799,6 +804,39 @@ void main() {
 
   // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
   // long for one line, See all at the heading's end, and amounts in mono.
+  testWidgets('desktop dark tags', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      withNote: false,
+    );
+    final work = goldenTags.create('Work')!;
+    final money = goldenTags.create('Money')!;
+    final travel = goldenTags.create('Travel')!;
+    for (final (body, tags) in [
+      ('Groceries\nMilk, eggs', <Tag>[]),
+      ('land\n₹75,60,000', [money]),
+      ('Trip budget\n₹28,000', [travel, money]),
+      ('Reading list\nThree books', <Tag>[]),
+      ('SnowSEO Issues\n☑ Crawl\n☐ Fix titles', [work]),
+    ]) {
+      final note = goldenNotes.create(body: body);
+      goldenTags.setTags(note.id, [for (final tag in tags) tag.id]);
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('tag-filter-${work.id}')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_tags.png'),
+    );
+  });
+
   testWidgets('desktop dark pinned cards', (tester) async {
     await pumpForGolden(
       tester,
