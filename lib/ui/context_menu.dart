@@ -229,3 +229,77 @@ class _KapyContextMenuLayout extends SingleChildLayoutDelegate {
       preferredBounds != oldDelegate.preferredBounds ||
       mediaPadding != oldDelegate.mediaPadding;
 }
+
+/// One line of a note's actions menu, wherever it opens: a note's row in the
+/// list, or the page's More button.
+class KapyMenuAction {
+  const KapyMenuAction({
+    required this.value,
+    required this.label,
+    required this.icon,
+    this.hint,
+    this.destructive = false,
+    this.enabled = true,
+  });
+
+  final String value;
+  final String label;
+  final KapyIconData icon;
+  final String? hint;
+  final bool destructive;
+  final bool enabled;
+}
+
+/// A [KapyMenuAction] as drawn in a desktop menu or a touch sheet.
+class KapyMenuActionRow extends StatelessWidget {
+  const KapyMenuActionRow(this.action, {super.key, required this.touch});
+
+  final KapyMenuAction action;
+  final bool touch;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final foreground = !action.enabled
+        ? palette.textTertiary
+        : action.destructive
+        ? Theme.of(context).colorScheme.error
+        : palette.textPrimary;
+    return Row(
+      children: [
+        KapyIcon(
+          action.icon,
+          size: touch
+              ? AppControlMetrics.iconAction
+              : AppControlMetrics.iconControl,
+          color: action.destructive || !action.enabled
+              ? foreground
+              : palette.textSecondary,
+        ),
+        SizedBox(width: touch ? 14 : 10),
+        Expanded(
+          child: Text(
+            action.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: touch ? AppTypeScale.body : AppTypeScale.control,
+              color: foreground,
+            ),
+          ),
+        ),
+        if (action.hint case final hint?) ...[
+          SizedBox(width: touch ? 18 : 10),
+          Text(
+            hint,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: AppTypeScale.control,
+              color: palette.textTertiary,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -34,7 +35,10 @@ Future<_AppFixture> _pumpApp(WidgetTester tester, {String body = ''}) async {
   fixture.shortcuts.load();
   fixture.notes.create(body: body);
 
-  tester.view.physicalSize = const Size(1100, 760);
+  // The animated mark lives in the phone's title bar.
+  AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+  addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+  tester.view.physicalSize = const Size(390, 760);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
