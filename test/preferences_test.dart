@@ -169,7 +169,7 @@ void main() {
     final prefs = LayoutPrefs(store)..load();
     expect(prefs.hiddenFolderVisible, isTrue);
 
-    prefs.toggleHiddenFolder();
+    prefs.hiddenFolderVisible = false;
 
     expect(prefs.hiddenFolderVisible, isFalse);
     expect((LayoutPrefs(store)..load()).hiddenFolderVisible, isFalse);
@@ -354,18 +354,29 @@ void main() {
     expect(reloaded.lastSlashCommand, 'heading2');
   });
 
-  test('markdown in notes starts off, and a yes survives reload', () {
+  test('markdown in notes starts on, and a no survives reload', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();
-    expect(prefs.markdownEnabled, isFalse);
+    expect(prefs.markdownEnabled, isTrue);
 
     var notified = 0;
     prefs.addListener(() => notified++);
-    prefs.markdownEnabled = true;
-    prefs.markdownEnabled = true;
+    prefs.markdownEnabled = false;
+    prefs.markdownEnabled = false;
 
     expect(notified, 1);
-    expect((LayoutPrefs(store)..load()).markdownEnabled, isTrue);
+    expect((LayoutPrefs(store)..load()).markdownEnabled, isFalse);
+  });
+
+  test('markdown in notes follows what this device stored, if anything', () {
+    final never = _MemoryStore();
+    expect((LayoutPrefs(never)..load()).markdownEnabled, isTrue);
+
+    final switchedOff = _MemoryStore()..put('markdownInNotes.v1', false);
+    expect((LayoutPrefs(switchedOff)..load()).markdownEnabled, isFalse);
+
+    final switchedOn = _MemoryStore()..put('markdownInNotes.v1', true);
+    expect((LayoutPrefs(switchedOn)..load()).markdownEnabled, isTrue);
   });
 
   test('time zone selection converts timestamps and survives reload', () {

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- No app sandbox, on purpose: this service exists to run the person's
+	     own Codex or Claude Code, which a sandboxed process cannot find or
+	     sign in with (lib/ai/local_tools.dart). It takes requests only from
+	     the app it is embedded in, signed by our team (Listener.swift), runs
+	     only the exact commands in ToolRunner.swift, and is built with the
+	     hardened runtime. The Mac App Store build never embeds it
+	     (KAPY_TOOL_RUNNER in packaging/release.sh). -->
+</dict>
+</plist>

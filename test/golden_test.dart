@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:image/image.dart' as img;
 
 import 'package:material_ui/material_ui.dart';
@@ -16,6 +17,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
@@ -28,6 +30,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
 import 'fake_update_installer.dart';
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 const _body = '''
@@ -61,6 +64,7 @@ late LayoutPrefs goldenPrefs;
 /// The notes the image was built from, for the few images that have to change
 /// the list after it is on screen.
 late NotesStore goldenNotes;
+late TagStore goldenTags;
 
 /// The task list, for the images that ask for one with `withTasks`.
 late TaskLibrary goldenTasks;
@@ -201,6 +205,8 @@ Future<void> pumpForGolden(
   final prefs = LayoutPrefs(store);
   goldenPrefs = prefs;
   goldenNotes = notes;
+  goldenTags = TagStore(store);
+  await goldenTags.load();
   final rates = RatesRepository(store);
   final shortcuts = ShortcutPrefs(store)..load();
   final tasks = withTasks
@@ -244,6 +250,7 @@ Future<void> pumpForGolden(
       prefs: prefs,
       shortcuts: shortcuts,
       updates: updates,
+      tags: goldenTags,
       tasks: tasks,
     ),
   );
@@ -254,11 +261,17 @@ Future<void> pumpForGolden(
     unawaited(tester.binding.reassembleApplication());
     await tester.pump();
   }
+  // The mark is decoded at the size it is drawn, which is a cache entry of
+  // its own: warming the asset itself leaves the first image to draw it
+  // without one, and so an image that depends on which test ran before.
   await tester.runAsync(
-    () => precacheImage(
-      const AssetImage(AppLogo.assetPath),
-      tester.element(find.byType(KapyNotesApp)),
-    ),
+    () => Future.wait([
+      for (final image in tester.widgetList<Image>(find.byType(Image)))
+        if (image.image case ResizeImage(
+          imageProvider: AssetImage(assetName: AppLogo.assetPath),
+        ))
+          precacheImage(image.image, tester.element(find.byWidget(image))),
+    ]),
   );
   await tester.pumpAndSettle();
 }
@@ -531,7 +544,7 @@ void main() {
     );
     final editor = find.descendant(
       of: find.byType(NoteEditor),
-      matching: find.byType(TextField),
+      matching: noteField,
     );
     final bounds = tester.getRect(editor);
     await tester.tapAt(
@@ -578,7 +591,9 @@ void main() {
       notes.archive(note.id);
     }
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('rail-archive')));
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
     await tester.pumpAndSettle();
   }
 
@@ -815,6 +830,39 @@ void main() {
 
   // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
   // long for one line, See all at the heading's end, and amounts in mono.
+  testWidgets('desktop dark tags', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      withNote: false,
+    );
+    final work = goldenTags.create('Work')!;
+    final money = goldenTags.create('Money')!;
+    final travel = goldenTags.create('Travel')!;
+    for (final (body, tags) in [
+      ('Groceries\nMilk, eggs', <Tag>[]),
+      ('land\n₹75,60,000', [money]),
+      ('Trip budget\n₹28,000', [travel, money]),
+      ('Reading list\nThree books', <Tag>[]),
+      ('SnowSEO Issues\n☑ Crawl\n☐ Fix titles', [work]),
+    ]) {
+      final note = goldenNotes.create(body: body);
+      goldenTags.setTags(note.id, [for (final tag in tags) tag.id]);
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('tag-filter-${work.id}')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_tags.png'),
+    );
+  });
+
   testWidgets('desktop dark pinned cards', (tester) async {
     await pumpForGolden(
       tester,
@@ -877,29 +925,20 @@ void main() {
       brightness: Brightness.dark,
       sidebarVisible: false,
     );
-    final editor = find.descendant(
-      of: find.byType(NoteEditor),
-      matching: find.byType(TextField),
+    final note = NoteDriver(
+      tester,
+      find.descendant(of: find.byType(NoteEditor), matching: noteField),
     );
-    final field = tester.widget<TextField>(editor);
-    final editable = tester
-        .state<EditableTextState>(
-          find.descendant(
-            of: find.byType(NoteEditor),
-            matching: find.byType(EditableText),
-          ),
-        )
-        .renderEditable;
     final targetStart = _body.indexOf('Hotel');
-    final wordBox = editable
-        .getBoxesForSelection(
+    final wordBox = note
+        .boxesFor(
           TextSelection(
             baseOffset: targetStart,
             extentOffset: targetStart + 'Hotel'.length,
           ),
         )
         .first;
-    final start = editable.localToGlobal(
+    final start = note.toGlobal(
       Offset(wordBox.left + 1, (wordBox.top + wordBox.bottom) / 2),
     );
     final mouse = await tester.startGesture(
@@ -916,7 +955,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
-    expect(field.controller!.selection.isCollapsed, isFalse);
+    expect(note.value.selection.isCollapsed, isFalse);
     final bubble = tester.getRect(
       find.byKey(const ValueKey('selection-bubble')),
     );
@@ -1223,6 +1262,104 @@ void main() {
       await expectLater(
         find.byType(KapyNotesApp),
         matchesGoldenFile('goldens/command_menu_light_typing.png'),
+      );
+    });
+
+    /// Work, Money and Travel on the trip notes, as SOW-0 lists them.
+    Future<void> tagTrip(WidgetTester tester) async {
+      final work = goldenTags.create('Work')!;
+      final money = goldenTags.create('Money')!;
+      final travel = goldenTags.create('Travel')!;
+      for (final (title, tags) in [
+        ('Trip budget', [travel, money]),
+        ('Goals - Oct 2026', [work]),
+      ]) {
+        final note = goldenNotes.notes.firstWhere(
+          (note) => note.title == title,
+        );
+        goldenTags.setTags(note.id, [for (final tag in tags) tag.id]);
+      }
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('# filters by tag, dark', (tester) async {
+      await pumpTrip(tester, Brightness.dark);
+      await tagTrip(tester);
+      await openMenu(tester, '#');
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/command_menu_dark_hash.png'),
+      );
+    });
+
+    testWidgets('Tag note…, dark', (tester) async {
+      await pumpTrip(tester, Brightness.dark);
+      await tagTrip(tester);
+      await openMenu(tester, 'tag');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/command_menu_dark_tag_note.png'),
+      );
+    });
+  });
+
+  group('phone filter sheet', () {
+    Future<void> openSheet(WidgetTester tester, Brightness brightness) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(390, 760),
+        brightness: brightness,
+        platform: TargetPlatform.iOS,
+        withNote: false,
+      );
+      final work = goldenTags.create('Work')!;
+      final money = goldenTags.create('Money')!;
+      final travel = goldenTags.create('Travel')!;
+      goldenTags.create('Ideas');
+      for (final (body, tags) in [
+        ('SnowSEO Issues\nAutomate Backlink Outreach', [work]),
+        ('SnowAnalytic Design\nMoodboard, palette, first', [work, money]),
+        ('Trip budget\n₹28,000', [travel, money]),
+        ('Todos\nRenew domain, gym', <Tag>[]),
+      ]) {
+        final note = goldenNotes.create(body: body);
+        goldenTags.setTags(note.id, [for (final tag in tags) tag.id]);
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.pumpAndSettle();
+    }
+
+    for (final (name, brightness) in [
+      ('dark', Brightness.dark),
+      ('light', Brightness.light),
+    ]) {
+      testWidgets('Show, Media and Tags, $name', (tester) async {
+        await openSheet(tester, brightness);
+        await expectLater(
+          find.byType(KapyNotesApp),
+          matchesGoldenFile('goldens/phone_filter_$name.png'),
+        );
+      });
+    }
+
+    testWidgets('the Tags page, dark', (tester) async {
+      await openSheet(tester, Brightness.dark);
+      await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
+      await tester.pumpAndSettle();
+      for (final tag in ['Work', 'Travel']) {
+        await tester.tap(
+          find.byKey(ValueKey('tag-filter-${goldenTags.named(tag)!.id}')),
+        );
+        await tester.pumpAndSettle();
+      }
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/phone_filter_tags_dark.png'),
       );
     });
   });

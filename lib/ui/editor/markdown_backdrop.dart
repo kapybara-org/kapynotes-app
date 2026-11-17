@@ -3,9 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/iconography.dart';
 import '../../core/theme.dart' show EditorMetrics;
-import 'line_metrics.dart';
 import 'markdown_syntax.dart';
+import 'note_field.dart';
 import 'table_geometry.dart';
 
 /// The colours [MarkdownBackdrop] draws with, taken from the theme once per
@@ -24,6 +25,7 @@ class MarkdownBackdropColors {
     required this.onAccent,
     required this.box,
     required this.chip,
+    required this.chipInk,
   });
 
   /// Bullets, and an unticked box off the page.
@@ -48,6 +50,7 @@ class MarkdownBackdropColors {
   /// An unticked box's edge on the page, and the chip under a web address.
   final Color box;
   final Color chip;
+  final Color chipInk;
 
   @override
   bool operator ==(Object other) =>
@@ -62,7 +65,8 @@ class MarkdownBackdropColors {
       other.accent == accent &&
       other.onAccent == onAccent &&
       other.box == box &&
-      other.chip == chip;
+      other.chip == chip &&
+      other.chipInk == chipInk;
 
   @override
   int get hashCode => Object.hash(
@@ -77,6 +81,7 @@ class MarkdownBackdropColors {
     onAccent,
     box,
     chip,
+    chipInk,
   );
 }
 
@@ -98,9 +103,8 @@ class MarkdownBackdrop extends LeafRenderObjectWidget {
     required this.analysis,
     required this.concealment,
     required this.grids,
-    required this.offsets,
     required this.scroll,
-    required this.editable,
+    required this.field,
     required this.colors,
     required this.markerRoom,
     this.checkboxes = const [],
@@ -121,11 +125,10 @@ class MarkdownBackdrop extends LeafRenderObjectWidget {
   /// the room each row reserves, so the two cannot drift apart.
   final Map<MarkdownTable, TableGeometry> grids;
 
-  final LineOffsets offsets;
   final ScrollController scroll;
 
   /// The field whose text this draws behind.
-  final RenderEditable? Function() editable;
+  final NoteFieldState? Function() field;
   final MarkdownBackdropColors colors;
 
   /// The room the field gives a list marker, which a bullet is drawn in. See
@@ -138,9 +141,8 @@ class MarkdownBackdrop extends LeafRenderObjectWidget {
         analysis: analysis,
         concealment: concealment,
         grids: grids,
-        offsets: offsets,
         scroll: scroll,
-        editable: editable,
+        field: field,
         colors: colors,
         markerRoom: markerRoom,
         checkboxes: checkboxes,
@@ -156,9 +158,8 @@ class MarkdownBackdrop extends LeafRenderObjectWidget {
       ..analysis = analysis
       ..concealment = concealment
       ..grids = grids
-      ..offsets = offsets
       ..scroll = scroll
-      ..editable = editable
+      ..field = field
       ..colors = colors
       ..markerRoom = markerRoom
       ..checkboxes = checkboxes
@@ -174,9 +175,8 @@ class RenderMarkdownBackdrop extends RenderBox {
     required MarkdownAnalysis analysis,
     required this.concealment,
     required this.grids,
-    required this.offsets,
     required ScrollController scroll,
-    required this.editable,
+    required this.field,
     required this.colors,
     required this.markerRoom,
     required this.checkboxes,
@@ -185,16 +185,11 @@ class RenderMarkdownBackdrop extends RenderBox {
        _scroll = scroll;
 
   MarkdownAnalysis _analysis;
-  set analysis(MarkdownAnalysis value) {
-    if (identical(value, _analysis)) return;
-    _analysis = value;
-    _lineStarts = null;
-  }
+  set analysis(MarkdownAnalysis value) => _analysis = value;
 
   MarkdownConcealment concealment;
   Map<MarkdownTable, TableGeometry> grids;
-  LineOffsets offsets;
-  RenderEditable? Function() editable;
+  NoteFieldState? Function() field;
   MarkdownBackdropColors colors;
   double markerRoom;
   List<MarkdownOrnament> checkboxes;
@@ -207,8 +202,6 @@ class RenderMarkdownBackdrop extends RenderBox {
     _scroll = value;
     if (attached) _scroll.addListener(markNeedsPaint);
   }
-
-  List<int>? _lineStarts;
 
   @override
   bool get sizedByParent => true;
@@ -235,57 +228,33 @@ class RenderMarkdownBackdrop extends RenderBox {
     super.detach();
   }
 
-  int _lineOf(int offset) {
-    final starts = _lineStarts ??= [
-      0,
-      for (var i = 0; i < _analysis.text.length; i++)
-        if (_analysis.text.codeUnitAt(i) == 0x0A) i + 1,
-    ];
-    var low = 0;
-    var high = starts.length - 1;
-    while (low < high) {
-      final middle = (low + high + 1) >> 1;
-      if (starts[middle] <= offset) {
-        low = middle;
-      } else {
-        high = middle - 1;
-      }
-    }
-    return low;
-  }
-
   /// The top and bottom of the rows the lines from [start] to [end] take, in
-  /// the text's own coordinates.
-  (double, double)? _rows(int start, int end) {
-    final tops = offsets.tops;
-    if (tops.isEmpty) return null;
-    final first = _lineOf(start);
-    final last = _lineOf(math.max(start, end - 1));
-    if (first >= tops.length) return null;
-    final top = tops[first];
-    final bottom = last + 1 < tops.length
-        ? tops[last + 1]
-        : offsets.totalHeight;
+  /// [field]'s coordinates.
+  (double, double)? _rows(NoteFieldState field, int start, int end) {
+    final lines = field.lines;
+    final top = field.lineTop(lines.lineAt(start));
+    final bottom = field.lineTop(lines.lineAt(math.max(start, end - 1)) + 1);
+    if (top == null || bottom == null) return null;
     return bottom > top ? (top, bottom) : null;
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    final field = editable();
-    if (field == null || !field.attached || !field.hasSize) return;
-    // Everything below is in this layer's coordinates. The field's own boxes
-    // already account for its scroll offset; the measured rows do not.
-    final origin = globalToLocal(field.localToGlobal(Offset.zero));
-    final visible = origin & field.size;
-    final scrolled = _scroll.hasClients ? _scroll.offset : 0.0;
-    double rowY(double y) => origin.dy + y - scrolled;
+    final field = this.field();
+    final box = field?.box;
+    if (field == null || box == null) return;
+    // Everything below is in this layer's coordinates. The field's rows and
+    // boxes already account for its scroll offset.
+    final fieldOrigin = box.localToGlobal(Offset.zero);
+    final origin = globalToLocal(fieldOrigin);
+    final visible = origin & box.size;
+    double rowY(double y) => origin.dy + y;
 
     // Only what is on screen. A long note can hold thousands of bullets, and
     // each one asked about below is a layout query.
-    final fieldOrigin = field.localToGlobal(Offset.zero);
-    final firstShown = field.getPositionForPoint(fieldOrigin).offset;
+    final firstShown = field.positionAt(fieldOrigin).offset;
     final lastShown = field
-        .getPositionForPoint(fieldOrigin + field.size.bottomRight(Offset.zero))
+        .positionAt(fieldOrigin + box.size.bottomRight(Offset.zero))
         .offset;
     bool onScreen(int start, int end) =>
         end >= firstShown && start <= lastShown + 1;
@@ -298,26 +267,40 @@ class RenderMarkdownBackdrop extends RenderBox {
       ..clipRect(Rect.fromLTRB(0, visible.top, size.width, visible.bottom));
 
     final left = origin.dx;
-    final right = origin.dx + field.size.width;
+    // Across the writing and the room its rows keep for the caret. On the
+    // page, the column: the field runs on past it for attachments.
+    final width = field.layout.width;
+    final right =
+        origin.dx +
+        (width == null
+            ? box.size.width
+            : EditorMetrics.page
+            ? math.min(width, EditorMetrics.columnWidth)
+            : width + field.layout.caretRoom);
     for (final block in _analysis.blocks) {
       if (!onScreen(block.start, block.end)) continue;
       if (block.kind == MarkdownBlockKind.quote && block.depth > 1) continue;
-      final rows = _rows(block.start, block.end);
+      final rows = _rows(field, block.start, block.end);
       if (rows == null) continue;
       final top = rowY(rows.$1);
       final bottom = rowY(rows.$2);
       switch (block.kind) {
         case MarkdownBlockKind.code:
-          _paintCode(canvas, block, left, right, top, bottom, rowY);
+          _paintCode(canvas, field, block, left, right, top, bottom, rowY);
         case MarkdownBlockKind.quote:
-          // Out in the margin, so a quote's words line up with the rest.
-          final x = left - _quoteIndent;
+          // The page's bar is Paper's: in the column, with the words past
+          // it and 2px of room above and below. A phone's is out in the
+          // margin, so the words line up with the rest.
+          final x = EditorMetrics.page
+              ? left
+              : left - EditorMetrics.quoteIndent;
+          final room = EditorMetrics.page ? 2.0 : 0.0;
           canvas.drawRRect(
             RRect.fromLTRBR(
               x,
-              top,
+              top - room,
               x + 3,
-              bottom - _rowGap,
+              bottom + room,
               const Radius.circular(2),
             ),
             Paint()..color = colors.quoteBar,
@@ -325,7 +308,7 @@ class RenderMarkdownBackdrop extends RenderBox {
         case MarkdownBlockKind.rule:
           // Not through its own \`---\` while that is shown as written.
           if (!concealment.hides(block.start, block.end)) continue;
-          final y = ((top + bottom - _rowGap) / 2).roundToDouble() + 0.5;
+          final y = ((top + bottom) / 2).roundToDouble() + 0.5;
           canvas.drawLine(
             Offset(left, y),
             Offset(right, y),
@@ -338,19 +321,24 @@ class RenderMarkdownBackdrop extends RenderBox {
 
     for (final chip in chips) {
       if (!onScreen(chip.start, chip.end)) continue;
-      for (final box in field.getBoxesForSelection(
+      for (final box in field.boxesFor(
         TextSelection(baseOffset: chip.start, extentOffset: chip.end),
       )) {
         final rect = box.toRect().shift(origin);
+        final left = rect.left - EditorMetrics.linkChipLead;
         canvas.drawRRect(
           RRect.fromLTRBR(
-            rect.left - EditorMetrics.linkChipReach,
+            left,
             rect.center.dy - _chipHeight / 2,
-            rect.right + EditorMetrics.linkChipReach,
+            rect.right + EditorMetrics.linkChipTrail,
             rect.center.dy + _chipHeight / 2,
             const Radius.circular(_chipHeight / 2),
           ),
           Paint()..color = colors.chip,
+        );
+        _paintLink(
+          canvas,
+          Offset(left + 8, rect.center.dy - EditorMetrics.linkChipIcon / 2),
         );
       }
     }
@@ -360,7 +348,7 @@ class RenderMarkdownBackdrop extends RenderBox {
     // does: their glyph and the space after it are spaced out to fill it.
     for (final checkbox in checkboxes) {
       if (!onScreen(checkbox.start, checkbox.end)) continue;
-      final boxes = field.getBoxesForSelection(
+      final boxes = field.boxesFor(
         TextSelection(
           baseOffset: checkbox.start,
           extentOffset: checkbox.end + 1,
@@ -377,7 +365,7 @@ class RenderMarkdownBackdrop extends RenderBox {
     }
     for (final ornament in _analysis.ornaments) {
       if (!onScreen(ornament.start, ornament.end)) continue;
-      final boxes = field.getBoxesForSelection(
+      final boxes = field.boxesFor(
         TextSelection(baseOffset: ornament.start, extentOffset: ornament.end),
       );
       if (boxes.isEmpty) continue;
@@ -422,19 +410,14 @@ class RenderMarkdownBackdrop extends RenderBox {
 
     for (final table in _analysis.tables) {
       if (!onScreen(table.start, table.end)) continue;
-      _paintTable(canvas, table, left, rowY);
+      _paintTable(canvas, field, table, left, rowY);
     }
 
     canvas.restore();
   }
 
-  /// The 3 at the bottom of every row that keeps one from the next.
-  static const double _rowGap = 3;
-
-  /// How far a quote's bar and a code block's panel reach out from the
-  /// writing: Paper's 3px bar and the 14 after it, and the 14 a code block's
-  /// panel has around its code.
-  static const double _quoteIndent = 17;
+  /// How far a code block's panel reaches out from the writing: the 14px
+  /// Paper's panel has around its code.
   static const double _codeInset = 14;
 
   /// Paper's code block: a panel a step below the page reaching [_codeInset]
@@ -444,6 +427,7 @@ class RenderMarkdownBackdrop extends RenderBox {
   /// panel no more than Paper's 10 under the code.
   void _paintCode(
     Canvas canvas,
+    NoteFieldState field,
     MarkdownBlock block,
     double left,
     double right,
@@ -454,13 +438,31 @@ class RenderMarkdownBackdrop extends RenderBox {
     final fences = _analysis.fencesOf(block);
     final close = fences?.close;
     final closeRows = close != null && concealment.hides(close.start, close.end)
-        ? _rows(close.start, close.end)
+        ? _rows(field, close.start, close.end)
         : null;
+    final open = fences?.open;
+    final openRows = open == null
+        ? null
+        : concealment.hides(open.start, open.end)
+        ? _rows(field, open.start, open.end)
+        : null;
+    // The rows a hidden fence keeps are Paper's gap, header and margin or
+    // its panel's foot and gap, at the size the note's text is.
+    final openScale = openRows == null
+        ? 1.0
+        : (openRows.$2 - openRows.$1) / EditorMetrics.codeOpenRow;
+    final closeScale = closeRows == null
+        ? 1.0
+        : (closeRows.$2 - closeRows.$1) / EditorMetrics.codeCloseRow;
     final panel = RRect.fromLTRBR(
       left - _codeInset,
-      top,
+      openRows == null
+          ? top
+          : rowY(openRows.$1) + EditorMetrics.codeGapBefore * openScale,
       right + _codeInset,
-      closeRows == null ? bottom - _rowGap : rowY(closeRows.$1) + 10 - _rowGap,
+      closeRows == null
+          ? bottom
+          : rowY(closeRows.$1) + EditorMetrics.codePanelBottom * closeScale,
       const Radius.circular(10),
     );
     canvas
@@ -472,11 +474,9 @@ class RenderMarkdownBackdrop extends RenderBox {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1,
       );
-    final open = fences?.open;
-    if (open == null || !concealment.hides(open.start, open.end)) return;
-    final header = _rows(open.start, open.end);
-    if (header == null) return;
-    final y = rowY(header.$2).roundToDouble() - _rowGap + 0.5;
+    if (openRows == null) return;
+    final y = (panel.top + EditorMetrics.codeHeader * openScale)
+        .roundToDouble();
     canvas.drawLine(
       Offset(panel.left, y),
       Offset(panel.right, y),
@@ -494,6 +494,56 @@ class RenderMarkdownBackdrop extends RenderBox {
 
   /// Paper's link chip is 28 tall.
   static const double _chipHeight = 28;
+
+  /// The link icon of a chip, with its top left at [at]: the app's own link
+  /// icon, whose paths are all absolute moves, lines and curves in a 24px
+  /// box.
+  static final _pathToken = RegExp(r'[MLC]|-?\d+\.?\d*');
+
+  void _paintLink(Canvas canvas, Offset at) {
+    const side = EditorMetrics.linkChipIcon;
+    const scale = side / 24;
+    final paint = Paint()
+      ..color = colors.chipInk
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 1.5 * scale;
+    for (final element in KapyIcons.linkRounded.paths) {
+      final path = Path();
+      final tokens = [
+        for (final m in _pathToken.allMatches(
+          (element[1] as Map<String, dynamic>)['d'] as String,
+        ))
+          m[0]!,
+      ];
+      var i = 0;
+      Offset point() {
+        final p = Offset(
+          double.parse(tokens[i]) * scale + at.dx,
+          double.parse(tokens[i + 1]) * scale + at.dy,
+        );
+        i += 2;
+        return p;
+      }
+
+      while (i < tokens.length) {
+        switch (tokens[i++]) {
+          case 'M':
+            final p = point();
+            path.moveTo(p.dx, p.dy);
+          case 'L':
+            final p = point();
+            path.lineTo(p.dx, p.dy);
+          default:
+            final a = point();
+            final b = point();
+            final c = point();
+            path.cubicTo(a.dx, a.dy, b.dx, b.dy, c.dx, c.dy);
+        }
+      }
+      canvas.drawPath(path, paint);
+    }
+  }
 
   /// Paper's bullets: a 6px dot, a 6px ring, then a 5px square.
   void _paintBullet(Canvas canvas, Offset center, MarkdownOrnament bullet) {
@@ -558,6 +608,7 @@ class RenderMarkdownBackdrop extends RenderBox {
 
   void _paintTable(
     Canvas canvas,
+    NoteFieldState field,
     MarkdownTable table,
     double left,
     double Function(double) rowY,
@@ -570,8 +621,8 @@ class RenderMarkdownBackdrop extends RenderBox {
     final bands = <({double top, double bottom, MarkdownTableRow row})>[];
     for (final row in table.rows) {
       final rows = row.header
-          ? _rows(row.start, table.delimiterEnd)
-          : _rows(row.start, row.end);
+          ? _rows(field, row.start, table.delimiterEnd)
+          : _rows(field, row.start, row.end);
       if (rows == null) continue;
       bands.add((top: rowY(rows.$1), bottom: rowY(rows.$2), row: row));
     }
@@ -580,7 +631,7 @@ class RenderMarkdownBackdrop extends RenderBox {
     // Paper's table: rows ruled across with no lines between columns, the
     // header on a panel, all in a rounded edge.
     final top = bands.first.top;
-    final bottom = bands.last.bottom - _rowGap;
+    final bottom = bands.last.bottom;
     final width = geometry.width;
     final grid = Rect.fromLTRB(left, top, left + width, bottom);
     final outline = RRect.fromRectAndRadius(grid, const Radius.circular(10));

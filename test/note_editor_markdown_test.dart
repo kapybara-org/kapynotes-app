@@ -14,10 +14,12 @@ import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/celebrate.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
 import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 late CalcEngine engine;
@@ -104,7 +106,7 @@ Future<void> settleWithPageKapy(WidgetTester tester) async {
 }
 
 TextEditingController controllerOf(WidgetTester tester) =>
-    tester.widget<TextField>(find.byType(TextField)).controller!;
+    tester.widget<NoteField>(noteField).controller;
 
 /// The middle of the first box [needle] is drawn in, on screen.
 Offset centerOf(WidgetTester tester, String needle) {
@@ -113,22 +115,18 @@ Offset centerOf(WidgetTester tester, String needle) {
 }
 
 Offset centerOfRange(WidgetTester tester, int start, int end) {
-  final editable = tester
-      .state<EditableTextState>(find.byType(EditableText))
-      .renderEditable;
+  final editable = NoteDriver(tester);
   final box = editable
-      .getBoxesForSelection(TextSelection(baseOffset: start, extentOffset: end))
+      .boxesFor(TextSelection(baseOffset: start, extentOffset: end))
       .first;
-  return editable.localToGlobal(
+  return editable.toGlobal(
     Offset((box.left + box.right) / 2, (box.top + box.bottom) / 2),
   );
 }
 
 /// The style the field draws the first character of [needle] in.
 TextStyle styleOf(WidgetTester tester, String needle) {
-  final editable = tester
-      .state<EditableTextState>(find.byType(EditableText))
-      .renderEditable;
+  final editable = NoteDriver(tester);
   final target = controllerOf(tester).text.indexOf(needle);
   TextStyle? found;
   var offset = 0;
@@ -151,13 +149,13 @@ TextStyle styleOf(WidgetTester tester, String needle) {
     }
   }
 
-  visit(editable.text!, inherited);
+  visit(editable.span, inherited);
   return found!;
 }
 
 /// The weight the note's writing is set in.
 FontWeight? _writingWeight(WidgetTester tester) =>
-    tester.widget<TextField>(find.byType(TextField)).style!.fontWeight;
+    tester.widget<NoteField>(noteField).style.fontWeight;
 
 /// Whether the field draws the first character of [needle] at all.
 bool isHidden(WidgetTester tester, String needle) {
@@ -268,15 +266,10 @@ void main() {
           'List\n- [ ] task\n- bullet\n  - nested\n    - deeper\n1. number';
       await tester.pumpWidget(harness(body));
       await tester.pumpAndSettle();
-      final editable = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .renderEditable;
-      double x(String word) => editable
-          .getLocalRectForCaret(TextPosition(offset: body.indexOf(word)))
-          .left;
-      final margin = editable
-          .getLocalRectForCaret(const TextPosition(offset: 0))
-          .left;
+      final editable = NoteDriver(tester);
+      double x(String word) =>
+          editable.caretRect(TextPosition(offset: body.indexOf(word))).left;
+      final margin = editable.caretRect(const TextPosition(offset: 0)).left;
 
       final column = x('task');
       expect(x('bullet'), moreOrLessEquals(column, epsilon: 0.5));
@@ -352,9 +345,9 @@ void main() {
       await tester.pumpWidget(harness(''));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), '-');
+      await tester.enterNote('-');
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), '- ');
+      await tester.enterNote('- ');
       await tester.pumpAndSettle();
       expect(controllerOf(tester).text, '- ');
     });
@@ -367,11 +360,11 @@ void main() {
       controllerOf(tester).selection = const TextSelection.collapsed(offset: 8);
       await tester.pump();
 
-      await tester.enterText(find.byType(TextField), '1. first\n');
+      await tester.enterNote('1. first\n');
       await tester.pumpAndSettle();
       expect(controllerOf(tester).text, '1. first\n2. ');
 
-      await tester.enterText(find.byType(TextField), '1. first\n2. \n');
+      await tester.enterNote('1. first\n2. \n');
       await tester.pumpAndSettle();
       expect(controllerOf(tester).text, '1. first\n');
     });
@@ -387,10 +380,7 @@ void main() {
       );
       await tester.pump();
 
-      await tester.enterText(
-        find.byType(TextField),
-        '```\n- not a list\n\n```',
-      );
+      await tester.enterNote('```\n- not a list\n\n```');
       await tester.pumpAndSettle();
       expect(controllerOf(tester).text, '```\n- not a list\n\n```');
     });
@@ -403,7 +393,7 @@ void main() {
       controllerOf(tester).selection = const TextSelection.collapsed(offset: 5);
       await tester.pump();
 
-      await tester.enterText(find.byType(TextField), '• one\n');
+      await tester.enterNote('• one\n');
       await tester.pumpAndSettle();
       expect(controllerOf(tester).text, '• one\n• ');
     });
@@ -413,8 +403,8 @@ void main() {
     ) async {
       await tester.pumpWidget(harness(''));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), '[x]');
-      await tester.enterText(find.byType(TextField), '[x] ');
+      await tester.enterNote('[x]');
+      await tester.enterNote('[x] ');
       await tester.pumpAndSettle();
       expect(controllerOf(tester).text, '- [x] ');
 
@@ -592,10 +582,16 @@ void main() {
       await tester.pump();
       expect(controllerOf(tester).text, '[x] ');
 
-      final field = tester.widget<TextField>(find.byType(TextField));
-      expect(field.autocorrect, isFalse);
-      expect(field.smartQuotesType, SmartQuotesType.disabled);
-      expect(field.smartDashesType, SmartDashesType.disabled);
+      final config = tester.testTextInput.setClientArgs!;
+      expect(config['autocorrect'], isFalse);
+      expect(
+        config['smartQuotesType'],
+        SmartQuotesType.disabled.index.toString(),
+      );
+      expect(
+        config['smartDashesType'],
+        SmartDashesType.disabled.index.toString(),
+      );
     });
 
     testWidgets('Tab nests an item under the one above it', (tester) async {
@@ -730,7 +726,7 @@ void main() {
       await tester.pumpWidget(harness('', autofocus: true));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), '/');
+      await tester.enterNote('/');
       await tester.pump();
       await tester.pump();
       expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
@@ -740,7 +736,7 @@ void main() {
       expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
       expect(controllerOf(tester).text, '/');
 
-      await tester.enterText(find.byType(TextField), '/table');
+      await tester.enterNote('/table');
       await tester.pump();
       await tester.pump();
       expect(
@@ -749,12 +745,12 @@ void main() {
         reason: 'Escape leaves this slash literal until it is removed',
       );
 
-      await tester.enterText(find.byType(TextField), '10 / 2');
+      await tester.enterNote('10 / 2');
       await tester.pump();
       await tester.pump();
       expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
 
-      await tester.enterText(find.byType(TextField), 'https://example.com');
+      await tester.enterNote('https://example.com');
       await tester.pump();
       await tester.pump();
       expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
@@ -766,7 +762,7 @@ void main() {
       await tester.pumpWidget(harness('', autofocus: true));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), '/table');
+      await tester.enterNote('/table');
       await tester.pump();
       await tester.pump();
       expect(find.byKey(const ValueKey('slash-command-table')), findsOneWidget);
@@ -816,7 +812,7 @@ void main() {
         await tester.pumpWidget(harness('', autofocus: true));
         await tester.pumpAndSettle();
 
-        await tester.enterText(find.byType(TextField), '/$query');
+        await tester.enterNote('/$query');
         await tester.pump();
         await tester.pump();
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -843,7 +839,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), '/divider');
+      await tester.enterNote('/divider');
       await tester.pump();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -872,7 +868,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), '/table');
+      await tester.enterNote('/table');
       await tester.pump();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -903,7 +899,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), '/todo');
+      await tester.enterNote('/todo');
       await tester.pump();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -920,7 +916,7 @@ void main() {
       await tester.pumpWidget(harness('', autofocus: true));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), '/heading');
+      await tester.enterNote('/heading');
       await tester.pump();
       await tester.pump();
       for (final level in [1, 2, 3]) {
@@ -940,7 +936,7 @@ void main() {
       await tester.pumpWidget(harness('', autofocus: true));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), '/math');
+      await tester.enterNote('/math');
       await tester.pump();
       await tester.pump();
       expect(find.text('math'), findsOneWidget, reason: 'the alias it found');
@@ -962,7 +958,7 @@ void main() {
       await tester.pumpWidget(harness('', autofocus: true));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), '/table');
+      await tester.enterNote('/table');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 600));
       await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
@@ -1013,7 +1009,7 @@ void main() {
       await tester.pumpWidget(harness('', autofocus: true));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), '/table');
+      await tester.enterNote('/table');
       await tester.pump();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -1748,7 +1744,7 @@ void main() {
       final before = tester.getRect(cell);
       final mainField = find.descendant(
         of: find.byType(NoteEditor),
-        matching: find.byType(TextField),
+        matching: noteField,
       );
       await tester.sendEventToBinding(
         PointerScrollEvent(
@@ -1945,11 +1941,9 @@ void main() {
     /// Where the first box [needle] is drawn in sits on screen.
     Rect rectOf(WidgetTester tester, String needle) {
       final start = controllerOf(tester).text.indexOf(needle);
-      final editable = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .renderEditable;
+      final editable = NoteDriver(tester);
       final box = editable
-          .getBoxesForSelection(
+          .boxesFor(
             TextSelection(
               baseOffset: start,
               extentOffset: start + needle.length,
@@ -1957,8 +1951,8 @@ void main() {
           )
           .first;
       return Rect.fromPoints(
-        editable.localToGlobal(Offset(box.left, box.top)),
-        editable.localToGlobal(Offset(box.right, box.bottom)),
+        editable.toGlobal(Offset(box.left, box.top)),
+        editable.toGlobal(Offset(box.right, box.bottom)),
       );
     }
 
@@ -2150,7 +2144,7 @@ void main() {
           r'Click-through is $\frac{clicks}{shows}$, about 3.2% this week.'
           '\n'
           '\$\$\n'
-          r'E[rank] = \sum_i p_i \cdot r_i'
+          r'E[\mathrm{rank}] = \sum\nolimits_i p_i \cdot r_i'
           '\n'
           '\$\$\n'
           '## This week\n'

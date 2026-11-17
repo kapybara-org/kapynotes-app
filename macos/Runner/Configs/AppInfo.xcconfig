@@ -23,3 +23,8 @@ DEVELOPMENT_TEAM = 96V66447C6
 // its keychain access group needs the profile that authorises it.
 KAPY_ENTITLEMENTS = Release
 KAPY_PROFILE =
+
+// Embeds KapyToolRunner.xpc, the unsandboxed helper that runs Codex and
+// Claude Code for the sandboxed app. The Mac App Store build turns it off
+// (packaging/release.sh), since the store accepts no unsandboxed code.
+KAPY_TOOL_RUNNER = YES

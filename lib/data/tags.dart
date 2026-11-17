@@ -93,7 +93,8 @@ class Tag {
 
   /// Null for a payload missing anything this build needs, or sealed for
   /// another tag: a payload names its own id, so one moved or replayed onto
-  /// another record is refused.
+  /// another record is refused. A name past [tagNameMax] runes is cut, so
+  /// every list, merge and save here sees the same name.
   static Tag? fromPayload(String id, Object? raw) {
     if (raw is! Map || raw['id'] != id) return null;
     final name = Stamped.fromJson<String>(raw['name']);
@@ -105,7 +106,10 @@ class Tag {
     }
     return Tag(
       id: id,
-      name: name,
+      name: Stamped(
+        String.fromCharCodes(name.v.runes.take(tagNameMax)),
+        name.at,
+      ),
       colour: colour,
       order: order,
       createdAt: createdAt,
@@ -259,10 +263,10 @@ class TagStore extends ChangeNotifier {
     },
   );
 
-  /// Records of a kind a later build writes, by record id, as the server
-  /// holds them.
-  final Map<String, ({int updatedAt, Map<String, Object?> payload})> _unknown =
-      {};
+  /// Records of a kind a later build writes, by record id, with the
+  /// 'updatedAt' the server orders them by. Only that: what such a record
+  /// holds is never kept, so a stream of them cannot grow this file.
+  final Map<String, int> _unknown = {};
 
   int _stamp() => _now().millisecondsSinceEpoch;
 
@@ -288,12 +292,7 @@ class TagStore extends ChangeNotifier {
         if (item is! Map) continue;
         final id = item['id'];
         final updatedAt = item['updatedAt'];
-        final payload = item['payload'];
-        if (id is! String || updatedAt is! int || payload is! Map) continue;
-        _unknown[id] = (
-          updatedAt: updatedAt,
-          payload: payload.cast<String, Object?>(),
-        );
+        if (id is String && updatedAt is int) _unknown[id] = updatedAt;
       }
     }
     return true;
@@ -304,17 +303,34 @@ class TagStore extends ChangeNotifier {
     'notes': _notes.toJson(),
     'unknown': [
       for (final entry in _unknown.entries)
-        {
-          'id': entry.key,
-          'updatedAt': entry.value.updatedAt,
-          'payload': entry.value.payload,
-        },
+        {'id': entry.key, 'updatedAt': entry.value},
     ],
   };
 
+  bool _held = false;
+  bool _pending = false;
+
+  /// Defers the file write until [release], so a pull of many records writes
+  /// once instead of once per record. Listeners are still told of each change.
+  void hold() => _held = true;
+
+  void release() {
+    _held = false;
+    if (_pending) _persist();
+  }
+
   void _save() {
-    _store.put(_key, _toJson());
+    if (_held) {
+      _pending = true;
+    } else {
+      _persist();
+    }
     notifyListeners();
+  }
+
+  void _persist() {
+    _pending = false;
+    _store.put(_key, _toJson());
   }
 
   // -------------------------------------------------------------------------
@@ -339,7 +355,7 @@ class TagStore extends ChangeNotifier {
   Tag? create(String name) {
     final trimmed = _validName(name);
     if (trimmed == null) return null;
-    final existing = _named(trimmed);
+    final existing = named(trimmed);
     if (existing != null) return existing;
     final now = _stamp();
     final live = tags;
@@ -368,7 +384,7 @@ class TagStore extends ChangeNotifier {
     final tag = _tags.live(id);
     final trimmed = _validName(name);
     if (tag == null || trimmed == null) return false;
-    if (_named(trimmed)?.id case final other? when other != id) return false;
+    if (named(trimmed)?.id case final other? when other != id) return false;
     if (tag.name.v != trimmed) {
       _update(tag.copyWith(name: Stamped(trimmed, _stamp())));
     }
@@ -434,7 +450,8 @@ class TagStore extends ChangeNotifier {
         return byAge != 0 ? byAge : a.id.compareTo(b.id);
       });
 
-  Tag? _named(String name) {
+  /// The live tag called [name], ignoring case and the space around it.
+  Tag? named(String name) {
     final wanted = name.trim().toLowerCase();
     for (final tag in _byAge()) {
       if (tag.name.v.trim().toLowerCase() == wanted) return tag;
@@ -652,10 +669,11 @@ class TagStore extends ChangeNotifier {
     _save();
   }
 
-  /// A record of a kind this build does not know, kept as it is.
-  void keepUnknown(String id, Map<String, Object?> payload, int updatedAt) {
-    if ((_unknown[id]?.updatedAt ?? -1) >= updatedAt) return;
-    _unknown[id] = (updatedAt: updatedAt, payload: payload);
+  /// A record of a kind this build does not know: its id and time, which
+  /// ordering and a later delete need, and nothing it holds.
+  void keepUnknown(String id, int updatedAt) {
+    if ((_unknown[id] ?? -1) >= updatedAt) return;
+    _unknown[id] = updatedAt;
     _save();
   }
 

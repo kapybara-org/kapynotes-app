@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
@@ -5,13 +6,19 @@ import 'package:material_ui/material_ui.dart';
 
 import '../calc/engine.dart';
 import '../core/editor_font.dart';
+import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/note_drawing.dart';
+import '../data/tags.dart';
 import 'checklist_pie.dart';
+import 'compact_icon_button.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
+import 'sidebar.dart' show archiveIcon, hiddenIcon;
+import 'tag_colours.dart';
+import 'tag_ui.dart';
 
 /// What a note can hold besides words, in the order the media filter lists
 /// them.
@@ -135,23 +142,8 @@ class NoteGlance {
   }
 }
 
-/// Which sticky note a card is drawn on, and how far it leans. Both follow
-/// the moment the note was made rather than its place in the list, so a card
-/// keeps its colour as the list reorders around it, and on every device.
-int _stickySeed(Note note) =>
-    (note.createdAt.millisecondsSinceEpoch ~/ 1000 * 2654435761) & 0x7fffffff;
-
-const _stickyTilts = [-1.2, 1.0, 0.8, -0.8, -0.6, 1.1, 0.9, -1.1, -0.9, 0.7];
-
-Color stickyTint(CalcPalette palette, Note note) => [
-  palette.stickyMustard,
-  palette.stickyTeal,
-  palette.stickyOlive,
-  palette.stickyRust,
-][_stickySeed(note) % 4];
-
-double _stickyTilt(Note note) =>
-    _stickyTilts[_stickySeed(note) ~/ 4 % _stickyTilts.length] * math.pi / 180;
+/// How far the open note's card leans; every other card sits straight.
+const _selectedTilt = -math.pi / 180;
 
 const _cardRadius = BorderRadius.only(
   topLeft: Radius.circular(6),
@@ -259,8 +251,9 @@ class _PickBox extends StatelessWidget {
   }
 }
 
-/// A note as a sticky card: its title in the handwriting face, a line of it
-/// or how far its checklist has got, and when it was last changed.
+/// A note as a card of three fixed lines: its title in the handwriting face,
+/// a line of it, and the meta row. It sits on its first tag's colour, or on
+/// the plain card when it has none.
 class NoteCardFace extends StatelessWidget {
   const NoteCardFace({
     super.key,
@@ -269,6 +262,7 @@ class NoteCardFace extends StatelessWidget {
     required this.date,
     required this.selected,
     required this.hovering,
+    this.day,
     this.snippet,
     this.ringed = false,
     this.locked = false,
@@ -284,7 +278,10 @@ class NoteCardFace extends StatelessWidget {
   /// When it was changed, or who is in it right now.
   final String date;
 
-  /// The line a search matched, in place of the card's own preview.
+  /// [date] without its time of day, for a meta row short of room.
+  final String? day;
+
+  /// The line a search matched, in place of the card's own text.
   final String? snippet;
   final bool selected;
   final bool hovering;
@@ -297,165 +294,265 @@ class NoteCardFace extends StatelessWidget {
   /// Ticked or not while the archive is picking notes; null otherwise.
   final bool? picking;
 
+  /// What a card with no line of text says instead, by what the note holds.
+  String get _noText {
+    final media = glance.media;
+    if (note.isEmpty) return 'No text yet';
+    if (note.isDrawing) return 'Drawing';
+    if (media.contains(NoteMedia.voice)) return 'Voice note';
+    if (media.contains(NoteMedia.image)) return 'Image';
+    if (media.contains(NoteMedia.video)) return 'Video';
+    return 'No text yet';
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final blank = note.isEmpty;
-    final title = _handwritten(14, 18, FontWeight.w500, palette.cardTitle);
+    final tags = TagMarks.of(context, note.id);
+    final colour = tags.firstOrNull?.colour;
+    final tint = colour?.card(palette) ?? palette.surfaceBackground;
     final glance = this.glance;
     final result = snippet == null ? glance.amount ?? glance.result : null;
-    final preview =
-        snippet ??
-        (blank ? 'Empty' : glance.line ?? (note.isDrawing ? 'Sketch' : null));
-    final marks = _marksOf(glance.media, locked: locked, shared: shared);
-    final tint = blank ? palette.surfaceBackground : stickyTint(palette, note);
+    final text = snippet ?? glance.line;
     final picking = this.picking;
+    final types = [
+      for (final kind in NoteMedia.values.reversed)
+        if (glance.media.contains(kind)) kind.icon,
+    ].take(2).toList();
 
-    return Transform.rotate(
-      angle: _stickyTilt(note),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
-        decoration: BoxDecoration(
-          color: hovering
-              ? Color.alphaBlend(
-                  palette.textPrimary.withValues(alpha: 0.04),
-                  tint,
-                )
-              : tint,
-          borderRadius: _cardRadius,
-          border: _cardBorder(
-            palette,
-            selected: selected || picking == true,
-            ringed: ringed,
-            resting: blank ? palette.separator : null,
-          ),
-          boxShadow: _cardShadow(palette),
+    final card = Container(
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+      decoration: BoxDecoration(
+        color: hovering
+            ? Color.alphaBlend(
+                palette.textPrimary.withValues(alpha: 0.04),
+                tint,
+              )
+            : tint,
+        borderRadius: _cardRadius,
+        border: _cardBorder(
+          palette,
+          selected: selected || picking == true,
+          ringed: ringed,
+          resting: colour == null ? palette.separator : null,
         ),
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // The title takes two lines where it needs them and the card
-                // has room, and a line of the note follows only under a title
-                // that fits on one. Anything a larger text size pushes past
-                // the card is cut at its edge rather than overflowing it.
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final heading = note.title;
-                      final scaler = MediaQuery.textScalerOf(context);
-                      final painter = TextPainter(
-                        text: TextSpan(text: heading, style: title),
-                        textDirection: Directionality.of(context),
-                        textScaler: scaler,
-                        maxLines: 1,
-                      )..layout(maxWidth: constraints.maxWidth);
-                      final oneLine = !painter.didExceedMaxLines;
-                      painter.dispose();
-                      final roomy =
-                          constraints.maxHeight >= scaler.scale(18 + 3 + 15);
-                      return ClipRect(
-                        child: OverflowBox(
-                          alignment: Alignment.topLeft,
-                          maxHeight: double.infinity,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                heading,
-                                maxLines:
-                                    constraints.maxHeight >=
-                                        scaler.scale(36 + 6)
-                                    ? 2
-                                    : 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: title,
-                              ),
-                              if (oneLine && roomy && glance.boxes == 0) ...[
-                                if (result != null || preview != null)
-                                  const SizedBox(height: 3),
-                                if (result != null)
-                                  Text(
-                                    result,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontFamily: AppFonts.mono,
-                                      fontFamilyFallback: AppFonts.monoFallback,
-                                      fontSize: 12,
-                                      height: 15 / 12,
-                                      leadingDistribution:
-                                          TextLeadingDistribution.even,
-                                      fontWeight: FontWeight.w600,
-                                      color: palette.resultPillText,
-                                    ),
-                                  )
-                                else if (preview != null)
-                                  Text(
-                                    preview,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: _figtree(
-                                      AppTypeScale.caption,
-                                      15,
-                                      FontWeight.w500,
-                                      blank
-                                          ? palette.textTertiary
-                                          : palette.textMuted,
-                                    ),
-                                  ),
-                              ],
-                            ],
+        boxShadow: _cardShadow(palette),
+      ),
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Anything a larger text size pushes past the card is cut at
+              // its edge, so the meta row always keeps its place at the foot.
+              Expanded(
+                child: ClipRect(
+                  child: OverflowBox(
+                    alignment: Alignment.topLeft,
+                    maxHeight: double.infinity,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          note.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _handwritten(
+                            14,
+                            18,
+                            FontWeight.w500,
+                            palette.cardTitle,
                           ),
                         ),
-                      );
-                    },
+                        const SizedBox(height: 3),
+                        Text(
+                          result ?? text ?? _noText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: result != null
+                              ? TextStyle(
+                                  fontFamily: AppFonts.mono,
+                                  fontFamilyFallback: AppFonts.monoFallback,
+                                  fontSize: 12,
+                                  height: 15 / 12,
+                                  leadingDistribution:
+                                      TextLeadingDistribution.even,
+                                  fontWeight: FontWeight.w600,
+                                  color: palette.resultPillText,
+                                )
+                              : _figtree(
+                                  12,
+                                  15,
+                                  FontWeight.w500,
+                                  palette.textMuted,
+                                ).copyWith(
+                                  fontStyle: text == null
+                                      ? FontStyle.italic
+                                      : null,
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                Row(
-                  children: [
-                    if (glance.boxes > 0) ...[
-                      ChecklistPie(
-                        done: glance.done,
-                        total: glance.boxes,
-                        fill: palette.selectedBorder,
-                        check: tint,
-                        size: 12,
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    for (final mark in marks) ...[
-                      KapyIcon(
-                        mark,
-                        size: 13,
-                        strokeWidth: 1.8,
-                        color: palette.textMuted,
-                      ),
-                      const SizedBox(width: 5),
-                    ],
-                    Flexible(
-                      child: Text(
-                        date,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _figtree(
-                          AppTypeScale.caption,
-                          14,
-                          FontWeight.w600,
-                          palette.textMuted,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              ),
+              _MetaRow(
+                date: date,
+                day: day,
+                done: glance.done,
+                boxes: glance.boxes,
+                types: types,
+                locked: locked,
+                shared: shared,
+                tags: tags,
+                ground: tint,
+              ),
+            ],
+          ),
+          if (picking != null)
+            Positioned(top: 0, right: 0, child: _PickBox(checked: picking)),
+        ],
+      ),
+    );
+    return selected
+        ? Transform.rotate(angle: _selectedTilt, child: card)
+        : card;
+  }
+}
+
+/// A card's last line, in the date's quiet style: the checklist's pie and
+/// the date on the left; the note's type glyphs, then its first tag's dot
+/// and name, on the right, with its other tags as dots behind the first.
+///
+/// Short of room it drops the tag's name, then the time, then the second
+/// type glyph, and only then cuts the date short.
+class _MetaRow extends StatelessWidget {
+  const _MetaRow({
+    required this.date,
+    required this.day,
+    required this.types,
+    required this.locked,
+    required this.shared,
+    required this.tags,
+    required this.ground,
+    this.done = 0,
+    this.boxes = 0,
+  });
+
+  final String date;
+  final String? day;
+  final int done;
+  final int boxes;
+
+  /// Up to two glyphs for what the note holds besides words.
+  final List<KapyIconData> types;
+  final bool locked;
+  final bool shared;
+  final List<TagMark> tags;
+  final Color ground;
+
+  static const double _glyph = 13;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final style = DefaultTextStyle.of(
+      context,
+    ).style.merge(_figtree(11.5, 14, FontWeight.w600, palette.textMuted));
+    final direction = Directionality.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    final first = tags.firstOrNull;
+    final flags = [
+      if (locked) KapyIcons.lockRounded,
+      if (shared) KapyIcons.peopleOutlined,
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        double widthOf(String text) {
+          final painter = TextPainter(
+            text: TextSpan(text: text, style: style),
+            textDirection: direction,
+            textScaler: scaler,
+            maxLines: 1,
+          )..layout();
+          final width = painter.width;
+          painter.dispose();
+          return width;
+        }
+
+        var named = first != null;
+        var when = date;
+        var shown = types;
+        bool fits() {
+          final glyphs = shown.length + flags.length;
+          final parts = [
+            if (glyphs > 0) glyphs * _glyph + (glyphs - 1) * 4,
+            if (first != null)
+              TagDots.widthFor(tags.length) +
+                  (named ? 4 + widthOf(first.name) : 0),
+          ];
+          final right = parts.isEmpty
+              ? 0
+              : parts.reduce((a, b) => a + b) + (parts.length - 1) * 4 + 8;
+          return (boxes > 0 ? 12 + 5 : 0) + widthOf(when) + right <=
+              constraints.maxWidth;
+        }
+
+        if (named && !fits()) named = false;
+        if (day != null && !fits()) when = day!;
+        if (shown.length > 1 && !fits()) shown = shown.take(1).toList();
+
+        final right = [
+          for (final glyph in [...shown, ...flags])
+            KapyIcon(
+              glyph,
+              size: _glyph,
+              strokeWidth: 1.8,
+              color: palette.textMuted,
+            ),
+          if (first != null)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TagDots(tags: tags, ground: ground),
+                if (named) ...[
+                  const SizedBox(width: 4),
+                  Text(first.name, maxLines: 1, style: style),
+                ],
               ],
             ),
-            if (picking != null)
-              Positioned(top: 0, right: 0, child: _PickBox(checked: picking)),
+        ];
+        return Row(
+          children: [
+            if (boxes > 0) ...[
+              ChecklistPie(
+                done: done,
+                total: boxes,
+                fill: palette.textMuted,
+                check: ground,
+                size: 12,
+              ),
+              const SizedBox(width: 5),
+            ],
+            Expanded(
+              child: Text(
+                when,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            ),
+            if (right.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              for (final (index, part) in right.indexed) ...[
+                if (index > 0) const SizedBox(width: 4),
+                part,
+              ],
+            ],
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -494,13 +591,15 @@ class NoteListRowFace extends StatelessWidget {
     final summary = snippet ?? (note.isEmpty ? 'Empty' : glance.summary);
     final picking = this.picking;
     final marked = selected || picking == true;
+    final first = TagMarks.of(context, note.id).firstOrNull;
+    final tint = first?.colour?.card(palette) ?? palette.surfaceBackground;
     // The border is always there, clear until the row is open or ringed, so
     // opening a note does not nudge its text.
     return Container(
       padding: const EdgeInsets.all(6.5),
       decoration: BoxDecoration(
         color: marked
-            ? stickyTint(palette, note)
+            ? tint
             : hovering
             ? palette.hover
             : null,
@@ -527,6 +626,17 @@ class NoteListRowFace extends StatelessWidget {
               children: [
                 Row(
                   children: [
+                    // Untagged rows keep the dot's room, so titles line up.
+                    SizedBox(
+                      width: TagDots.size,
+                      child: first == null
+                          ? null
+                          : TagDots(
+                              tags: [first],
+                              ground: marked ? tint : palette.sidebarBackground,
+                            ),
+                    ),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         note.title,
@@ -556,6 +666,7 @@ class NoteListRowFace extends StatelessWidget {
                 const SizedBox(height: 3),
                 Row(
                   children: [
+                    const SizedBox(width: TagDots.size + 8),
                     for (final mark in marks) ...[
                       KapyIcon(
                         mark,
@@ -655,8 +766,9 @@ class _ThumbnailPainter extends CustomPainter {
       old.textStyle != textStyle;
 }
 
-/// A drawing as a card in the Drawings space: a thumbnail of it on the
-/// paper, its title in the handwriting face, and when it was last changed.
+/// A drawing as a card in the Drawings space: a thumbnail of it, its title in
+/// the handwriting face, and the meta row with no type glyph, on its first
+/// tag's colour or the plain card.
 class DrawingCardFace extends StatelessWidget {
   const DrawingCardFace({
     super.key,
@@ -664,6 +776,7 @@ class DrawingCardFace extends StatelessWidget {
     required this.date,
     required this.selected,
     required this.hovering,
+    this.day,
     this.ringed = false,
     this.locked = false,
     this.shared = false,
@@ -674,6 +787,9 @@ class DrawingCardFace extends StatelessWidget {
 
   final Note note;
   final String date;
+
+  /// [date] without its time of day, for a meta row short of room.
+  final String? day;
   final bool selected;
   final bool hovering;
   final bool ringed;
@@ -685,96 +801,81 @@ class DrawingCardFace extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final picking = this.picking;
-    final marks = _marksOf(const {}, locked: locked, shared: shared);
-    return Transform.rotate(
-      angle: _stickyTilt(note),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(6, 6, 6, 10),
-        decoration: BoxDecoration(
-          color: hovering
-              ? Color.alphaBlend(
-                  palette.textPrimary.withValues(alpha: 0.04),
-                  palette.editorBackground,
-                )
-              : palette.editorBackground,
-          borderRadius: _cardRadius,
-          border: _cardBorder(
-            palette,
-            selected: selected || picking == true,
-            ringed: ringed,
-            resting: palette.separator,
-          ),
-          boxShadow: _cardShadow(palette),
+    final tags = TagMarks.of(context, note.id);
+    final colour = tags.firstOrNull?.colour;
+    final tint = colour?.card(palette) ?? palette.editorBackground;
+    final card = Container(
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 10),
+      decoration: BoxDecoration(
+        color: hovering
+            ? Color.alphaBlend(
+                palette.textPrimary.withValues(alpha: 0.04),
+                tint,
+              )
+            : tint,
+        borderRadius: _cardRadius,
+        border: _cardBorder(
+          palette,
+          selected: selected || picking == true,
+          ringed: ringed,
+          resting: colour == null ? palette.separator : null,
         ),
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: ColoredBox(
-                      color: palette.sidebarBackground,
-                      child: DrawingThumbnail(drawing: note.drawing),
+        boxShadow: _cardShadow(palette),
+      ),
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: ColoredBox(
+                    color: palette.sidebarBackground,
+                    child: DrawingThumbnail(drawing: note.drawing),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 7),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      note.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _handwritten(
+                        14,
+                        18,
+                        FontWeight.w500,
+                        palette.cardTitle,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 2),
+                    _MetaRow(
+                      date: date,
+                      day: day,
+                      types: const [],
+                      locked: locked,
+                      shared: shared,
+                      tags: tags,
+                      ground: tint,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 7),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        note.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _handwritten(
-                          14,
-                          18,
-                          FontWeight.w500,
-                          palette.cardTitle,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          for (final mark in marks) ...[
-                            KapyIcon(
-                              mark,
-                              size: 13,
-                              strokeWidth: 1.8,
-                              color: palette.textMuted,
-                            ),
-                            const SizedBox(width: 5),
-                          ],
-                          Flexible(
-                            child: Text(
-                              date,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: _figtree(
-                                AppTypeScale.caption,
-                                14,
-                                FontWeight.w600,
-                                palette.textMuted,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (picking != null)
-              Positioned(top: 4, right: 4, child: _PickBox(checked: picking)),
-          ],
-        ),
+              ),
+            ],
+          ),
+          if (picking != null)
+            Positioned(top: 4, right: 4, child: _PickBox(checked: picking)),
+        ],
       ),
     );
+    return selected
+        ? Transform.rotate(angle: _selectedTilt, child: card)
+        : card;
   }
 }
 
@@ -1016,27 +1117,79 @@ class SeeAllLink extends StatelessWidget {
   }
 }
 
-/// The media filter and the list/cards switch, on one row under the search.
+/// Which notes the list shows: the notes filter's first group. Hidden Notes
+/// and the archive are not places on the rail but this choice, so they combine
+/// with the media ticks and keep the space the list is in.
+enum NotesShow {
+  all,
+  hidden,
+  archive;
+
+  String get label => switch (this) {
+    NotesShow.all => 'All notes',
+    NotesShow.hidden => 'Hidden',
+    NotesShow.archive => 'Archive',
+  };
+}
+
+/// The notes filter and the list/cards switch, on one row under the search,
+/// with the ✕ that clears the filter while anything is narrowed.
 class NotesListControls extends StatelessWidget {
   const NotesListControls({
     super.key,
+    required this.show,
+    this.offersShow = true,
+    required this.onShowChanged,
+    required this.hiddenListed,
+    this.hiddenShortcut,
+    required this.archivedCount,
     this.media,
     this.onMediaChanged,
-    required this.cards,
-    required this.onCardsChanged,
+    required this.onClear,
+    this.cards = false,
+    this.onCardsChanged,
+    this.tags,
+    this.onTagsChanged,
   });
 
-  /// Null leaves the filter out, as in Drawings, where every item is a
+  final NotesShow show;
+
+  /// Whether the menu starts with the choice of which notes. Shared leaves it
+  /// out: Hidden Notes are only ever the person's own, and the archive is
+  /// one place for every note filed away.
+  final bool offersShow;
+  final ValueChanged<NotesShow> onShowChanged;
+
+  /// Whether the menu offers Hidden: while the setting that lists it is on
+  /// and something is in it, and whenever the list is showing it.
+  final bool hiddenListed;
+
+  /// The chord that opens Hidden, named on its row.
+  final String? hiddenShortcut;
+  final int archivedCount;
+
+  /// The kinds the list is narrowed to, every kind when it is not. Null
+  /// leaves the media group out, as in Drawings, where every item is a
   /// drawing.
   final Set<NoteMedia>? media;
   final ValueChanged<Set<NoteMedia>>? onMediaChanged;
+
+  /// Back to every note: All notes, every kind ticked.
+  final VoidCallback onClear;
   final bool cards;
-  final ValueChanged<bool> onCardsChanged;
+
+  /// Null leaves the list/cards switch out, where the list has no cards.
+  final ValueChanged<bool>? onCardsChanged;
+
+  /// The tags the list is narrowed to; null where there are no tags.
+  final TagFilter? tags;
+  final ValueChanged<TagFilter>? onTagsChanged;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    Widget segment(bool forCards) {
+    final onCardsChanged = this.onCardsChanged;
+    Widget segment(bool forCards, ValueChanged<bool> onCardsChanged) {
       final on = cards == forCards;
       return Tooltip(
         message: forCards ? 'Card view' : 'List view',
@@ -1086,179 +1239,342 @@ class NotesListControls extends StatelessWidget {
     }
 
     final media = this.media;
-    final onMediaChanged = this.onMediaChanged;
+    final everything = media == null ? 'All drawings' : NotesShow.all.label;
+    final narrowed =
+        show != NotesShow.all ||
+        (media != null && media.length < NoteMedia.values.length) ||
+        (tags?.narrowed ?? false);
     return Row(
       children: [
-        if (media != null && onMediaChanged != null) ...[
-          Flexible(
-            child: _MediaFilter(ticked: media, onChanged: onMediaChanged),
-          ),
-          const SizedBox(width: 4),
-        ],
-        const Spacer(),
-        Container(
-          padding: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            color: palette.cardBackground,
-            borderRadius: BorderRadius.circular(9),
-          ),
+        Expanded(
           child: Row(
-            children: [segment(false), const SizedBox(width: 2), segment(true)],
+            children: [
+              Flexible(
+                child: _NotesFilter(
+                  show: show,
+                  offersShow: offersShow,
+                  onShowChanged: onShowChanged,
+                  hiddenListed: hiddenListed,
+                  hiddenShortcut: hiddenShortcut,
+                  archivedCount: archivedCount,
+                  media: media,
+                  onMediaChanged: onMediaChanged,
+                  tags: tags,
+                  onTagsChanged: onTagsChanged,
+                  everything: everything,
+                  narrowed: narrowed,
+                ),
+              ),
+              if (narrowed) ...[
+                const SizedBox(width: 4),
+                CompactIconButton(
+                  key: const ValueKey('sidebar-filter-clear'),
+                  tooltip: 'Back to $everything',
+                  extent: 28,
+                  foregroundColor: palette.textSecondary,
+                  onPressed: onClear,
+                  icon: const KapyIcon(
+                    KapyIcons.closeRounded,
+                    size: 14,
+                    strokeWidth: 1.8,
+                  ),
+                ),
+              ],
+              const SizedBox(width: 4),
+            ],
           ),
         ),
+        if (onCardsChanged != null)
+          Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: palette.cardBackground,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Row(
+              children: [
+                segment(false, onCardsChanged),
+                const SizedBox(width: 2),
+                segment(true, onCardsChanged),
+              ],
+            ),
+          ),
       ],
     );
   }
 }
 
-/// One "All media" dropdown: every kind ticked by default, and unticking
-/// kinds narrows the list to notes holding a kind still ticked.
-class _MediaFilter extends StatefulWidget {
-  const _MediaFilter({required this.ticked, required this.onChanged});
-
-  final Set<NoteMedia> ticked;
-  final ValueChanged<Set<NoteMedia>> onChanged;
-
-  @override
-  State<_MediaFilter> createState() => _MediaFilterState();
+/// [ticked] after [media] is ticked or unticked, or after All media (null)
+/// is; null when nothing changes. A kind is unticked only while another
+/// stays ticked: a list narrowed to nothing would look like a library that
+/// had lost its notes.
+Set<NoteMedia>? tickedMedia(Set<NoteMedia> ticked, NoteMedia? media) {
+  if (media == null) {
+    return ticked.length < NoteMedia.values.length
+        ? NoteMedia.values.toSet()
+        : null;
+  }
+  if (!ticked.contains(media)) return {...ticked, media};
+  return ticked.length > 1 ? ({...ticked}..remove(media)) : null;
 }
 
-class _MediaFilterState extends State<_MediaFilter> {
+/// The notes filter's button and menu: one choice of which notes, then the
+/// media ticks. Every kind is ticked by default, and unticking kinds narrows
+/// the list to notes holding a kind still ticked.
+class _NotesFilter extends StatefulWidget {
+  const _NotesFilter({
+    required this.show,
+    required this.offersShow,
+    required this.onShowChanged,
+    required this.hiddenListed,
+    required this.hiddenShortcut,
+    required this.archivedCount,
+    required this.media,
+    required this.onMediaChanged,
+    required this.tags,
+    required this.onTagsChanged,
+    required this.everything,
+    required this.narrowed,
+  });
+
+  final NotesShow show;
+  final bool offersShow;
+  final ValueChanged<NotesShow> onShowChanged;
+  final bool hiddenListed;
+  final String? hiddenShortcut;
+  final int archivedCount;
+  final Set<NoteMedia>? media;
+  final ValueChanged<Set<NoteMedia>>? onMediaChanged;
+  final TagFilter? tags;
+  final ValueChanged<TagFilter>? onTagsChanged;
+
+  /// What the button says while nothing is narrowed.
+  final String everything;
+  final bool narrowed;
+
+  @override
+  State<_NotesFilter> createState() => _NotesFilterState();
+}
+
+class _NotesFilterState extends State<_NotesFilter> {
   final _menu = OverlayPortalController();
   final _link = LayerLink();
+  bool _tagsOpen = false;
+  final _menuKey = GlobalKey();
+  final _tagsRow = GlobalKey();
 
-  bool get _all => widget.ticked.length == NoteMedia.values.length;
+  /// How far down the menu the Tags row sits, which the submenu's top
+  /// lines up with.
+  double _tagsTop = 0;
 
-  void _toggle() => setState(_menu.isShowing ? _menu.hide : _menu.show);
+  void _toggleTags() {
+    final row = _tagsRow.currentContext?.findRenderObject() as RenderBox?;
+    final menu = _menuKey.currentContext?.findRenderObject() as RenderBox?;
+    setState(() {
+      _tagsOpen = !_tagsOpen;
+      if (row != null && menu != null) {
+        _tagsTop = math.max(
+          0,
+          row.localToGlobal(Offset.zero, ancestor: menu).dy - 6,
+        );
+      }
+    });
+  }
+
+  void _toggle() {
+    if (AppPlatform.isMobile) return unawaited(_openSheet());
+    setState(() {
+      _tagsOpen = false;
+      _menu.isShowing ? _menu.hide() : _menu.show();
+    });
+  }
+
+  /// Nested menus don't work with touch, so on a phone the same choices
+  /// are a sheet.
+  Future<void> _openSheet() => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Theme.of(context).drawerTheme.scrimColor,
+    builder: (_) => _FilterSheet(
+      show: widget.show,
+      offersShow: widget.offersShow,
+      onShowChanged: widget.onShowChanged,
+      hiddenListed: widget.hiddenListed,
+      archivedCount: widget.archivedCount,
+      everything: widget.everything,
+      media: widget.media,
+      onMediaChanged: widget.onMediaChanged,
+      tags: widget.tags,
+      onTagsChanged: widget.onTagsChanged,
+      shelf: TagShelf.maybeOf(context),
+    ),
+  );
 
   void _close() {
     if (_menu.isShowing) setState(_menu.hide);
   }
 
+  void _choose(NotesShow show) {
+    _close();
+    if (show != widget.show) widget.onShowChanged(show);
+  }
+
   /// A kind is unticked only while another stays ticked: a list narrowed to
   /// nothing would look like a library that had lost its notes.
   void _tick(NoteMedia? media) {
-    final ticked = widget.ticked;
-    if (media == null) {
-      if (!_all) widget.onChanged(NoteMedia.values.toSet());
-      return;
-    }
-    if (!ticked.contains(media)) {
-      widget.onChanged({...ticked, media});
-    } else if (ticked.length > 1) {
-      widget.onChanged({...ticked}..remove(media));
-    }
+    final ticked = tickedMedia(widget.media!, media);
+    if (ticked != null) widget.onMediaChanged!(ticked);
   }
 
-  Widget _button({
-    required bool open,
-    required bool narrowed,
-    required String label,
-    required Color ink,
-    required bool roomy,
-  }) {
-    final palette = context.palette;
-    return Semantics(
-      button: true,
-      expanded: open,
-      label: 'Media filter, $label',
-      excludeSemantics: true,
-      onTap: _toggle,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          key: const ValueKey('sidebar-media-filter'),
-          onTap: _toggle,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            height: 28,
-            padding: roomy
-                ? const EdgeInsets.only(left: 9, right: 8)
-                : const EdgeInsets.symmetric(horizontal: 6),
-            decoration: BoxDecoration(
-              color: narrowed
-                  ? palette.tonalBackground
-                  : palette.controlBackground,
-              border: Border.all(
-                color: open
-                    ? palette.selectedBorder
-                    : narrowed
-                    ? palette.tonalKeyBackground
-                    : palette.controlBorder,
-              ),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                KapyIcon(
-                  KapyIcons.filterRounded,
-                  size: 14,
-                  strokeWidth: 1.8,
-                  color: narrowed ? ink : palette.textSecondary,
-                ),
-                if (roomy) ...[
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _figtree(
-                        AppTypeScale.body,
-                        16,
-                        FontWeight.w600,
-                        ink,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  KapyIcon(
-                    KapyIcons.chevronDownRounded,
-                    size: 13,
-                    strokeWidth: 2,
-                    color: narrowed
-                        ? palette.tonalKeyText
-                        : palette.textTertiary,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  /// What the button says: one narrowed group names itself ("Archive",
+  /// "Voice, Image", "● Work"); combined, each gives its first choice and
+  /// how many more ("Archive · Voice +1 · Work +2"). Where that runs out of
+  /// [room], the choice of notes goes, since the title over the list
+  /// already names it. The dot is the first tag's, while tags alone narrow.
+  ({String text, Tag? dot}) _label(TextStyle style, double room) {
+    final show = widget.show == NotesShow.all ? null : widget.show.label;
+    final kinds = [
+      for (final media in NoteMedia.values)
+        if (widget.media?.contains(media) ?? false) media.label,
+    ];
+    final tags = widget.tags ?? const TagFilter();
+    final ticked = [
+      for (final entry in TagShelf.maybeOf(context)?.listed() ?? <TagEntry>[])
+        if (tags.ids.contains(entry.tag.id)) entry.tag,
+    ];
+    final groups = [
+      if (show != null) [show],
+      if (widget.media != null && kinds.length < NoteMedia.values.length) kinds,
+      if (tags.narrowed)
+        [for (final tag in ticked) tag.name.v, if (tags.none) 'No tag'],
+    ];
+    if (groups.isEmpty) return (text: widget.everything, dot: null);
+    if (groups.length == 1) {
+      final tagsAlone = tags.narrowed;
+      return (
+        text: groups.single.join(', '),
+        dot: tagsAlone ? ticked.firstOrNull : null,
+      );
+    }
+    String part(List<String> group) =>
+        group.length == 1 ? group.first : '${group.first} +${group.length - 1}';
+    final all = groups.map(part).join(' · ');
+    if (show == null) return (text: all, dot: null);
+    final painter = TextPainter(
+      text: TextSpan(text: all, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout(maxWidth: room);
+    final fits = !painter.didExceedMaxLines;
+    painter.dispose();
+    return (text: fits ? all : groups.skip(1).map(part).join(' · '), dot: null);
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final open = _menu.isShowing;
-    final narrowed = !_all;
-    final label = narrowed
-        ? [
-            for (final media in NoteMedia.values)
-              if (widget.ticked.contains(media)) media.label,
-          ].join(', ')
-        : 'All media';
-    final ink = narrowed ? palette.tonalForeground : palette.textSubheading;
+    final narrowed = widget.narrowed;
+    final style = DefaultTextStyle.of(context).style.merge(
+      _figtree(
+        AppTypeScale.body,
+        16,
+        FontWeight.w600,
+        narrowed ? palette.tonalForeground : palette.textSubheading,
+      ),
+    );
     final button = LayoutBuilder(
       // A list dragged to its narrowest keeps the filter's icon, which still
       // opens the menu and still turns sage when the list is narrowed.
-      builder: (context, constraints) => constraints.maxWidth < 28
-          ? const SizedBox.shrink()
-          : _button(
-              open: open,
-              narrowed: narrowed,
-              label: label,
-              ink: ink,
-              roomy: constraints.maxWidth >= 72,
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 28) return const SizedBox.shrink();
+        final roomy = constraints.maxWidth >= 72;
+        // The padding, border, filter icon and chevron around the label.
+        const chrome = 9 + 8 + 2 + 14 + 6 + 6 + 13;
+        final (:text, :dot) = roomy
+            ? _label(style, constraints.maxWidth - chrome)
+            : (text: widget.everything, dot: null);
+        return Semantics(
+          button: true,
+          expanded: open,
+          label: 'Notes filter, $text',
+          excludeSemantics: true,
+          onTap: _toggle,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              key: const ValueKey('sidebar-notes-filter'),
+              onTap: _toggle,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                height: 28,
+                padding: roomy
+                    ? const EdgeInsets.only(left: 9, right: 8)
+                    : const EdgeInsets.symmetric(horizontal: 6),
+                decoration: BoxDecoration(
+                  color: narrowed
+                      ? palette.tonalBackground
+                      : palette.controlBackground,
+                  border: Border.all(
+                    color: open
+                        ? palette.selectedBorder
+                        : narrowed
+                        ? palette.tonalKeyBackground
+                        : palette.controlBorder,
+                  ),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    KapyIcon(
+                      KapyIcons.filterRounded,
+                      size: 14,
+                      strokeWidth: 1.8,
+                      color: narrowed ? style.color : palette.textSecondary,
+                    ),
+                    if (roomy) ...[
+                      const SizedBox(width: 6),
+                      if (dot != null) ...[
+                        TagDot(tagColourOf(dot.colour.v), size: 7),
+                        const SizedBox(width: 5),
+                      ],
+                      Flexible(
+                        child: Text(
+                          text,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: style,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      KapyIcon(
+                        KapyIcons.chevronDownRounded,
+                        size: 13,
+                        strokeWidth: 2,
+                        color: narrowed
+                            ? palette.tonalKeyText
+                            : palette.textTertiary,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
+          ),
+        );
+      },
     );
 
     return TapRegion(
       groupId: _menu,
-      onTapOutside: (_) => _close(),
+      // A tag's own menu or its delete question sits over the filter's, and
+      // a click there leaves the filter open beneath it.
+      onTapOutside: (_) {
+        if (ModalRoute.of(context)?.isCurrent ?? true) _close();
+      },
       child: CompositedTransformTarget(
         link: _link,
         child: OverlayPortal(
@@ -1277,7 +1593,37 @@ class _MediaFilterState extends State<_MediaFilter> {
                   },
                   child: Focus(
                     autofocus: true,
-                    child: _MediaMenu(ticked: widget.ticked, onTick: _tick),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _FilterMenu(
+                          key: _menuKey,
+                          show: widget.show,
+                          offersShow: widget.offersShow,
+                          onShow: _choose,
+                          hiddenListed: widget.hiddenListed,
+                          hiddenShortcut: widget.hiddenShortcut,
+                          archivedCount: widget.archivedCount,
+                          everything: widget.everything,
+                          media: widget.media,
+                          onTick: _tick,
+                          onTags: widget.tags == null ? null : _toggleTags,
+                          tagsRow: _tagsRow,
+                          tagsTicked: widget.tags?.ticked ?? 0,
+                        ),
+                        if (_tagsOpen && widget.tags != null) ...[
+                          const SizedBox(width: 4),
+                          Padding(
+                            padding: EdgeInsets.only(top: _tagsTop),
+                            child: _TagsMenu(
+                              filter: widget.tags!,
+                              onChanged: widget.onTagsChanged!,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1290,20 +1636,60 @@ class _MediaFilterState extends State<_MediaFilter> {
   }
 }
 
-class _MediaMenu extends StatelessWidget {
-  const _MediaMenu({required this.ticked, required this.onTick});
+class _FilterMenu extends StatelessWidget {
+  const _FilterMenu({
+    required this.show,
+    required this.offersShow,
+    required this.onShow,
+    required this.hiddenListed,
+    required this.hiddenShortcut,
+    required this.archivedCount,
+    required this.everything,
+    required this.media,
+    required this.onTick,
+    super.key,
+    required this.onTags,
+    required this.tagsRow,
+    required this.tagsTicked,
+  });
 
-  final Set<NoteMedia> ticked;
+  final NotesShow show;
+  final bool offersShow;
+  final ValueChanged<NotesShow> onShow;
+  final bool hiddenListed;
+  final String? hiddenShortcut;
+  final int archivedCount;
+  final String everything;
+  final Set<NoteMedia>? media;
 
   /// Null for All media.
   final ValueChanged<NoteMedia?> onTick;
 
+  /// Opens or closes the Tags submenu; null leaves Tags out.
+  final VoidCallback? onTags;
+  final Key tagsRow;
+
+  /// How many of the submenu's rows are ticked, shown before its chevron.
+  final int tagsTicked;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final media = this.media;
+    final hiddenShortcut = this.hiddenShortcut;
+    Widget choice(NotesShow choice, KapyIconData icon, {Widget? trailing}) =>
+        _ShowMenuRow(
+          key: ValueKey('notes-filter-${choice.name}'),
+          label: choice == NotesShow.all ? everything : choice.label,
+          icon: icon,
+          chosen: show == choice,
+          trailing: trailing,
+          onTap: () => onShow(choice),
+        );
+
     return Container(
-      key: const ValueKey('media-filter-menu'),
-      width: 200,
+      key: const ValueKey('notes-filter-menu'),
+      width: 232,
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: palette.controlBackground,
@@ -1322,28 +1708,205 @@ class _MediaMenu extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _MediaMenuRow(
-            key: const ValueKey('media-filter-all'),
-            label: 'All media',
-            ticked: ticked.length == NoteMedia.values.length,
-            onTap: () => onTick(null),
-          ),
-          Container(
-            height: 1,
-            margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            color: palette.separator,
-          ),
-          for (final media in NoteMedia.values) ...[
-            if (media != NoteMedia.values.first) const SizedBox(height: 1),
+          if (offersShow) ...[
+            choice(
+              NotesShow.all,
+              media == null ? KapyIcons.penRounded : KapyIcons.noteOutlined,
+            ),
+            if (hiddenListed) ...[
+              const SizedBox(height: 1),
+              choice(
+                NotesShow.hidden,
+                hiddenIcon,
+                trailing: hiddenShortcut == null
+                    ? null
+                    : Text(
+                        hiddenShortcut,
+                        style: TextStyle(
+                          fontFamily: AppFonts.mono,
+                          fontFamilyFallback: AppFonts.monoFallback,
+                          fontSize: 11,
+                          height: 14 / 11,
+                          color: palette.textTertiary,
+                        ),
+                      ),
+              ),
+            ],
+            const SizedBox(height: 1),
+            choice(
+              NotesShow.archive,
+              archiveIcon,
+              trailing: Text(
+                '$archivedCount',
+                style: _figtree(
+                  AppTypeScale.small,
+                  16,
+                  FontWeight.w400,
+                  palette.textTertiary,
+                ),
+              ),
+            ),
+          ],
+          if (media != null) ...[
+            if (offersShow)
+              Container(
+                height: 1,
+                margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                color: palette.separator,
+              ),
             _MediaMenuRow(
-              key: ValueKey('media-filter-${media.name}'),
-              label: media.label,
-              icon: media.icon,
-              ticked: ticked.contains(media),
-              onTap: () => onTick(media),
+              key: const ValueKey('media-filter-all'),
+              label: 'All media',
+              ticked: media.length == NoteMedia.values.length,
+              onTap: () => onTick(null),
+            ),
+            for (final kind in NoteMedia.values) ...[
+              const SizedBox(height: 1),
+              _MediaMenuRow(
+                key: ValueKey('media-filter-${kind.name}'),
+                label: kind.label,
+                icon: kind.icon,
+                ticked: media.contains(kind),
+                onTap: () => onTick(kind),
+              ),
+            ],
+          ],
+          if (onTags case final onTags?) ...[
+            if (offersShow || media != null)
+              Container(
+                height: 1,
+                margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                color: palette.separator,
+              ),
+            KeyedSubtree(
+              key: tagsRow,
+              child: _ShowMenuRow(
+                key: const ValueKey('notes-filter-tags'),
+                label: 'Tags',
+                icon: KapyIcons.tagRounded,
+                chosen: false,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (tagsTicked > 0) ...[
+                      Text(
+                        '$tagsTicked',
+                        key: const ValueKey('notes-filter-tags-ticked'),
+                        style: _figtree(
+                          AppTypeScale.small,
+                          16,
+                          FontWeight.w400,
+                          palette.textTertiary,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    KapyIcon(
+                      KapyIcons.chevronRightRounded,
+                      size: 13,
+                      strokeWidth: 2,
+                      color: palette.textTertiary,
+                    ),
+                  ],
+                ),
+                onTap: onTags,
+              ),
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// One of the menu's single choice of which notes: the chosen one lit, with
+/// a tick where the others show their shortcut or count.
+class _ShowMenuRow extends StatefulWidget {
+  const _ShowMenuRow({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.chosen,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final String label;
+  final KapyIconData icon;
+  final bool chosen;
+  final VoidCallback onTap;
+  final Widget? trailing;
+
+  @override
+  State<_ShowMenuRow> createState() => _ShowMenuRowState();
+}
+
+class _ShowMenuRowState extends State<_ShowMenuRow> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final chosen = widget.chosen;
+    final trailing = chosen
+        ? KapyIcon(
+            KapyIcons.checkRounded,
+            size: 14,
+            strokeWidth: 1.8,
+            color: palette.accentText,
+          )
+        : widget.trailing;
+    return Semantics(
+      selected: chosen,
+      button: true,
+      label: widget.label,
+      excludeSemantics: true,
+      onTap: widget.onTap,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovering = true),
+        onExit: (_) => setState(() => _hovering = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            height: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: chosen
+                  ? palette.separator
+                  : _hovering
+                  ? palette.hover
+                  : null,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: Row(
+              children: [
+                KapyIcon(
+                  widget.icon,
+                  size: 15,
+                  strokeWidth: 1.8,
+                  color: chosen ? palette.textPrimary : palette.textSecondary,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _figtree(
+                      AppTypeScale.control,
+                      16,
+                      chosen ? FontWeight.w600 : FontWeight.w500,
+                      chosen ? palette.textPrimary : palette.textSubheading,
+                    ),
+                  ),
+                ),
+                if (trailing != null) ...[const SizedBox(width: 9), trailing],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1416,6 +1979,844 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The filter's Tags submenu, beside the Tags row: Match any | all once two
+/// are ticked, then the tags in the person's order with their counts and
+/// boxes, then No tag. Past eight tags a field finds one.
+class _TagsMenu extends StatefulWidget {
+  const _TagsMenu({required this.filter, required this.onChanged});
+
+  final TagFilter filter;
+  final ValueChanged<TagFilter> onChanged;
+
+  @override
+  State<_TagsMenu> createState() => _TagsMenuState();
+}
+
+class _TagsMenuState extends State<_TagsMenu> {
+  final _query = TextEditingController();
+  String? _renaming;
+
+  static const _findPast = 8;
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final shelf = TagShelf.maybeOf(context)!;
+    final filter = widget.filter;
+    final every = shelf.listed();
+    final query = _query.text.trim().toLowerCase();
+    final quiet = _figtree(
+      AppTypeScale.small,
+      16,
+      FontWeight.w400,
+      palette.textTertiary,
+    );
+    Widget match(bool all) {
+      final on = filter.all == all;
+      return GestureDetector(
+        key: ValueKey(all ? 'tag-filter-all' : 'tag-filter-any'),
+        onTap: () => widget.onChanged(filter.copyWith(all: all)),
+        child: Container(
+          height: 20,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: on ? palette.segmentSelected : null,
+            borderRadius: BorderRadius.circular(5),
+          ),
+          child: Text(
+            all ? 'all' : 'any',
+            style: _figtree(
+              AppTypeScale.small,
+              16,
+              on ? FontWeight.w600 : FontWeight.w500,
+              on ? palette.textPrimary : palette.textSecondary,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (every.isEmpty) {
+      return TagPopover(
+        key: const ValueKey('tags-filter-menu'),
+        width: 220,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'No tags yet',
+                style: _figtree(
+                  AppTypeScale.control,
+                  16,
+                  FontWeight.w600,
+                  palette.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Open a note and choose + Tag next to its date.',
+                style: quiet,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return TagPopover(
+      key: const ValueKey('tags-filter-menu'),
+      width: 220,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (filter.ticked >= 2)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 2, 8, 6),
+              child: Row(
+                children: [
+                  Text('Match', style: quiet),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: palette.cardBackground,
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [match(false), match(true)],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (every.length > _findPast)
+            Container(
+              height: 30,
+              margin: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              decoration: BoxDecoration(
+                color: palette.wellBackground,
+                border: Border.all(color: palette.controlBorder),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  KapyIcon(
+                    KapyIcons.searchRounded,
+                    size: 14,
+                    strokeWidth: 1.8,
+                    color: palette.textTertiary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      key: const ValueKey('tag-filter-find'),
+                      controller: _query,
+                      onChanged: (_) => setState(() {}),
+                      style: _figtree(
+                        AppTypeScale.control,
+                        16,
+                        FontWeight.w400,
+                        palette.textPrimary,
+                      ),
+                      decoration: InputDecoration.collapsed(
+                        hintText: 'Find a tag',
+                        hintStyle: quiet,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 30.0 * 8),
+            child: ListView(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              children: [
+                for (final entry in every)
+                  if (entry.tag.name.v.toLowerCase().contains(query))
+                    _TagFilterRow(
+                      key: ValueKey('tag-filter-${entry.tag.id}'),
+                      colour: tagColourOf(entry.tag.colour.v),
+                      label: entry.tag.name.v,
+                      count: entry.count,
+                      ticked: filter.ids.contains(entry.tag.id),
+                      entry: entry,
+                      renaming: _renaming == entry.tag.id,
+                      onTap: () => widget.onChanged(
+                        filter.copyWith(
+                          ids: filter.ids.contains(entry.tag.id)
+                              ? ({...filter.ids}..remove(entry.tag.id))
+                              : {...filter.ids, entry.tag.id},
+                        ),
+                      ),
+                      onRename: (renaming) => setState(
+                        () => _renaming = renaming ? entry.tag.id : null,
+                      ),
+                    ),
+              ],
+            ),
+          ),
+          Container(
+            height: 1,
+            margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            color: palette.separator,
+          ),
+          _TagFilterRow(
+            key: const ValueKey('tag-filter-none'),
+            colour: null,
+            label: 'No tag',
+            count: shelf.untagged(),
+            ticked: filter.none,
+            onTap: () => widget.onChanged(filter.copyWith(none: !filter.none)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A row of the Tags submenu: dot, name, count and its box at the right.
+/// A tag's row trades its count for ⋯ while the pointer is over it, and its
+/// name for a field while it is renamed.
+class _TagFilterRow extends StatefulWidget {
+  const _TagFilterRow({
+    super.key,
+    required this.colour,
+    required this.label,
+    required this.count,
+    required this.ticked,
+    required this.onTap,
+    this.entry,
+    this.renaming = false,
+    this.onRename,
+  });
+
+  final TagColour? colour;
+  final String label;
+  final int count;
+  final bool ticked;
+  final VoidCallback onTap;
+
+  /// Null for No tag, which has nothing to rename, recolour or delete.
+  final TagEntry? entry;
+  final bool renaming;
+  final ValueChanged<bool>? onRename;
+
+  @override
+  State<_TagFilterRow> createState() => _TagFilterRowState();
+}
+
+class _TagFilterRowState extends State<_TagFilterRow> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final entry = widget.entry;
+    final onRename = widget.onRename;
+    final store = TagShelf.maybeOf(context)!.store;
+    return Semantics(
+      checked: widget.ticked,
+      label: widget.label,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovering = true),
+        onExit: (_) => setState(() => _hovering = false),
+        child: GestureDetector(
+          onTap: widget.renaming ? null : widget.onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            height: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: _hovering ? palette.hover : null,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: Row(
+              children: [
+                TagDot(widget.colour, size: 7),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: entry != null && onRename != null && widget.renaming
+                      ? TagNameField(
+                          initial: entry.tag.name.v,
+                          onSubmit: (name) {
+                            final kept = store.rename(entry.tag.id, name);
+                            if (kept) onRename(false);
+                            return kept;
+                          },
+                          onCancel: () => onRename(false),
+                        )
+                      : Text(
+                          widget.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _figtree(
+                            AppTypeScale.control,
+                            16,
+                            FontWeight.w500,
+                            palette.textSubheading,
+                          ),
+                        ),
+                ),
+                const SizedBox(width: 8),
+                if (entry != null &&
+                    onRename != null &&
+                    _hovering &&
+                    !widget.renaming)
+                  GestureDetector(
+                    key: ValueKey('tag-filter-more-${entry.tag.id}'),
+                    onTapUp: (details) => showTagActions(
+                      context,
+                      store: store,
+                      entry: entry,
+                      position: details.globalPosition,
+                      onRename: () => onRename(true),
+                    ),
+                    child: KapyIcon(
+                      KapyIcons.moreRounded,
+                      size: 15,
+                      color: palette.textSecondary,
+                    ),
+                  )
+                else
+                  Text(
+                    '${widget.count}',
+                    style: _figtree(
+                      AppTypeScale.small,
+                      16,
+                      FontWeight.w400,
+                      palette.textTertiary,
+                    ),
+                  ),
+                const SizedBox(width: 9),
+                _PickBox(checked: widget.ticked),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The notes filter on a phone (SF5-0): Show, Media and a Tags row, which
+/// pushes a second page with the same tag list as the menu's submenu. Every
+/// choice applies at once, so Done only closes it; choosing what to show
+/// closes it too, as the menu does.
+class _FilterSheet extends StatefulWidget {
+  const _FilterSheet({
+    required this.show,
+    required this.offersShow,
+    required this.onShowChanged,
+    required this.hiddenListed,
+    required this.archivedCount,
+    required this.everything,
+    required this.media,
+    required this.onMediaChanged,
+    required this.tags,
+    required this.onTagsChanged,
+    required this.shelf,
+  });
+
+  final NotesShow show;
+  final bool offersShow;
+  final ValueChanged<NotesShow> onShowChanged;
+  final bool hiddenListed;
+  final int archivedCount;
+  final String everything;
+  final Set<NoteMedia>? media;
+  final ValueChanged<Set<NoteMedia>>? onMediaChanged;
+  final TagFilter? tags;
+  final ValueChanged<TagFilter>? onTagsChanged;
+
+  /// The tags the sheet lists: the route it sits in is above the app's own
+  /// shelf, so it brings it along.
+  final TagShelf? shelf;
+
+  @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  late Set<NoteMedia>? _media = widget.media;
+  late TagFilter? _tags = widget.tags;
+  bool _tagsPage = false;
+
+  void _tick(NoteMedia? media) {
+    final ticked = tickedMedia(_media!, media);
+    if (ticked == null) return;
+    setState(() => _media = ticked);
+    widget.onMediaChanged!(ticked);
+  }
+
+  void _setTags(TagFilter tags) {
+    setState(() => _tags = tags);
+    widget.onTagsChanged!(tags);
+  }
+
+  void _choose(NotesShow show) {
+    Navigator.of(context).pop();
+    if (show != widget.show) widget.onShowChanged(show);
+  }
+
+  Widget _row({
+    required Key key,
+    required Widget leading,
+    required String label,
+    required VoidCallback onTap,
+    Widget? trailing,
+    bool chosen = false,
+  }) {
+    final palette = context.palette;
+    return Semantics(
+      selected: chosen,
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+        key: key,
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: chosen ? palette.separator : null,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            spacing: 12,
+            children: [
+              leading,
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _figtree(
+                    AppTypeScale.control,
+                    20,
+                    chosen ? FontWeight.w600 : FontWeight.w500,
+                    chosen ? palette.textPrimary : palette.textSubheading,
+                  ),
+                ),
+              ),
+              ?trailing,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _quiet(String text) => Text(
+    text,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    style: _figtree(
+      AppTypeScale.small,
+      16,
+      FontWeight.w400,
+      context.palette.textTertiary,
+    ),
+  );
+
+  Widget _heading(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
+    child: Text(
+      text,
+      style: _figtree(12, 16, FontWeight.w600, context.palette.textTertiary),
+    ),
+  );
+
+  Widget _showRow(NotesShow show, KapyIconData icon, {Widget? trailing}) {
+    final palette = context.palette;
+    final chosen = widget.show == show;
+    return _row(
+      key: ValueKey('notes-filter-${show.name}'),
+      leading: KapyIcon(
+        icon,
+        size: 18,
+        strokeWidth: 1.8,
+        color: chosen ? palette.textPrimary : palette.textSecondary,
+      ),
+      label: show == NotesShow.all ? widget.everything : show.label,
+      chosen: chosen,
+      trailing: chosen
+          ? KapyIcon(
+              KapyIcons.checkRounded,
+              size: 16,
+              strokeWidth: 1.8,
+              color: palette.accentText,
+            )
+          : trailing,
+      onTap: () => _choose(show),
+    );
+  }
+
+  Widget _chip(String label, {required bool on, required VoidCallback onTap}) {
+    final palette = context.palette;
+    return GestureDetector(
+      key: ValueKey('media-filter-$label'),
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: on ? palette.tonalBackground : null,
+          border: Border.all(
+            color: on ? palette.tonalKeyBackground : palette.controlBorder,
+          ),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Center(
+          widthFactor: 1,
+          child: Text(
+            label,
+            style: _figtree(
+              AppTypeScale.control,
+              18,
+              FontWeight.w500,
+              on ? palette.tonalForeground : palette.textSubheading,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mainPage() {
+    final palette = context.palette;
+    final media = _media;
+    final tags = _tags;
+    final ticked = [
+      for (final entry in widget.shelf?.listed() ?? <TagEntry>[])
+        if (tags?.ids.contains(entry.tag.id) ?? false) entry.tag.name.v,
+      if (tags?.none ?? false) 'No tag',
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.offersShow) ...[
+          _heading('Show'),
+          _showRow(
+            NotesShow.all,
+            media == null ? KapyIcons.penRounded : KapyIcons.noteOutlined,
+          ),
+          if (widget.hiddenListed) _showRow(NotesShow.hidden, hiddenIcon),
+          _showRow(
+            NotesShow.archive,
+            archiveIcon,
+            trailing: _quiet('${widget.archivedCount}'),
+          ),
+        ],
+        if (media != null) ...[
+          _heading('Media'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _chip(
+                  'All media',
+                  on: media.length == NoteMedia.values.length,
+                  onTap: () => _tick(null),
+                ),
+                for (final kind in NoteMedia.values)
+                  _chip(
+                    kind.label,
+                    on: media.contains(kind),
+                    onTap: () => _tick(kind),
+                  ),
+              ],
+            ),
+          ),
+        ],
+        if (tags != null) ...[
+          _heading('Tags'),
+          _row(
+            key: const ValueKey('notes-filter-tags'),
+            leading: KapyIcon(
+              KapyIcons.tagRounded,
+              size: 18,
+              strokeWidth: 1.8,
+              color: palette.textSecondary,
+            ),
+            label: 'Tags',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 8,
+              children: [
+                if (ticked.isNotEmpty)
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 160),
+                    child: _quiet(ticked.join(', ')),
+                  ),
+                KapyIcon(
+                  KapyIcons.chevronRightRounded,
+                  size: 14,
+                  strokeWidth: 2,
+                  color: palette.textTertiary,
+                ),
+              ],
+            ),
+            onTap: () => setState(() => _tagsPage = true),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _tagsList() {
+    final palette = context.palette;
+    final filter = _tags!;
+    final shelf = widget.shelf!;
+    final every = shelf.listed();
+    if (every.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+        child: Text(
+          'No tags yet. Open a note and choose + Tag next to its date.',
+          key: const ValueKey('tags-filter-empty'),
+          style: _figtree(
+            AppTypeScale.control,
+            20,
+            FontWeight.w400,
+            palette.textTertiary,
+          ),
+        ),
+      );
+    }
+    Widget match(bool all) {
+      final on = filter.all == all;
+      return GestureDetector(
+        key: ValueKey(all ? 'tag-filter-all' : 'tag-filter-any'),
+        onTap: () => _setTags(filter.copyWith(all: all)),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: on ? palette.segmentSelected : null,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            all ? 'all' : 'any',
+            style: _figtree(
+              AppTypeScale.control,
+              18,
+              on ? FontWeight.w600 : FontWeight.w500,
+              on ? palette.textPrimary : palette.textSecondary,
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget tagRow({
+      required Key key,
+      required Widget dot,
+      required String label,
+      required int count,
+      required bool ticked,
+      required VoidCallback onTap,
+    }) => _row(
+      key: key,
+      leading: SizedBox(width: 18, child: Center(child: dot)),
+      label: label,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 12,
+        children: [
+          _quiet('$count'),
+          _PickBox(checked: ticked),
+        ],
+      ),
+      onTap: onTap,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (filter.ticked >= 2)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: Row(
+              spacing: 12,
+              children: [
+                _quiet('Match'),
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: palette.cardBackground,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [match(false), match(true)],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        for (final entry in every)
+          tagRow(
+            key: ValueKey('tag-filter-${entry.tag.id}'),
+            dot: TagDot(tagColourOf(entry.tag.colour.v), size: 10),
+            label: entry.tag.name.v,
+            count: entry.count,
+            ticked: filter.ids.contains(entry.tag.id),
+            onTap: () => _setTags(
+              filter.copyWith(
+                ids: filter.ids.contains(entry.tag.id)
+                    ? ({...filter.ids}..remove(entry.tag.id))
+                    : {...filter.ids, entry.tag.id},
+              ),
+            ),
+          ),
+        Container(
+          height: 1,
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          color: palette.separator,
+        ),
+        tagRow(
+          key: const ValueKey('tag-filter-none'),
+          dot: const TagDot(null, size: 10),
+          label: 'No tag',
+          count: shelf.untagged(),
+          ticked: filter.none,
+          onTap: () => _setTags(filter.copyWith(none: !filter.none)),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final title = _figtree(
+      AppTypeScale.control,
+      20,
+      FontWeight.w600,
+      palette.textPrimary,
+    );
+    final link = _figtree(
+      AppTypeScale.control,
+      20,
+      FontWeight.w600,
+      palette.accentText,
+    );
+    return DecoratedBox(
+      key: const ValueKey('notes-filter-sheet'),
+      decoration: BoxDecoration(
+        color: palette.surfaceBackground,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  width: 34,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: palette.controlBorder,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 48,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Text(_tagsPage ? 'Tags' : 'Filter', style: title),
+                    if (_tagsPage)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: GestureDetector(
+                          key: const ValueKey('notes-filter-back'),
+                          onTap: () => setState(() => _tagsPage = false),
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              spacing: 4,
+                              children: [
+                                KapyIcon(
+                                  KapyIcons.chevronLeftRounded,
+                                  size: 14,
+                                  strokeWidth: 2,
+                                  color: palette.textSecondary,
+                                ),
+                                Text(
+                                  'Filter',
+                                  style: link.copyWith(
+                                    color: palette.textSecondary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: GestureDetector(
+                        key: const ValueKey('notes-filter-done'),
+                        onTap: () => Navigator.of(context).pop(),
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('Done', style: link),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+                  child: _tagsPage ? _tagsList() : _mainPage(),
+                ),
+              ),
+            ],
           ),
         ),
       ),

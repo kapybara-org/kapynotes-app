@@ -68,13 +68,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color keycapBorder;
   final Color keycapText;
 
-  /// The sticky-note tints a note card can wear.
-  final Color stickyMustard;
-  final Color stickyTeal;
-  final Color stickyOlive;
-  final Color stickyRust;
-  final Color stickySage;
-
   /// What dims the window behind a modal.
   final Color scrim;
 
@@ -86,9 +79,13 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color totalPillText;
 
   /// Riverbank's clay, the one warm mark on the page: a pinned note's pin,
-  /// the note title's hand-drawn underline, the streak's flame and the badge
-  /// that counts invitations.
+  /// the note title's hand-drawn underline, the streak's flame, the badge
+  /// that counts invitations and what marks a picture that didn't load.
   final Color clay;
+
+  /// Clay as words: deeper than [clay] on light paper and paler on dark, so
+  /// it reads as text. What says a note's pictures didn't load.
+  final Color clayText;
 
   /// The type ladder under the primary ink: a window or dialog's own title,
   /// the heading over a group, the label of a row that is not selected, and
@@ -225,10 +222,13 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   Color get codeChip =>
       _dark ? const Color(0xFF2E2A25) : const Color(0xFFEFEADD);
 
-  /// A quote's bar. Paper draws it in light only; the dark one takes the
-  /// same step between the separator and a checkbox's edge.
+  /// The rail's icons and labels at rest. Paper's dark rail is a step
+  /// lighter than the tertiary ink the rest of the app shares.
+  Color get railInk => _dark ? const Color(0xFF8F8778) : textTertiary;
+
+  /// A quote's bar, Paper's.
   Color get quoteBar =>
-      _dark ? const Color(0xFF47423A) : const Color(0xFFD0C8B5);
+      _dark ? const Color(0xFF4A453D) : const Color(0xFFD0C8B5);
 
   /// The same palette with every surface solid: what High Contrast, Reduce
   /// Transparency and a desktop with no blur behind the window all ask for.
@@ -274,17 +274,13 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.keycapBackground,
     required this.keycapBorder,
     required this.keycapText,
-    required this.stickyMustard,
-    required this.stickyTeal,
-    required this.stickyOlive,
-    required this.stickyRust,
-    required this.stickySage,
     required this.scrim,
     required this.resultPillBackground,
     required this.resultPillText,
     required this.totalPillBackground,
     required this.totalPillText,
     required this.clay,
+    required this.clayText,
     required this.textHeading,
     required this.textSubheading,
     required this.textMuted,
@@ -347,17 +343,13 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? keycapBackground,
     Color? keycapBorder,
     Color? keycapText,
-    Color? stickyMustard,
-    Color? stickyTeal,
-    Color? stickyOlive,
-    Color? stickyRust,
-    Color? stickySage,
     Color? scrim,
     Color? resultPillBackground,
     Color? resultPillText,
     Color? totalPillBackground,
     Color? totalPillText,
     Color? clay,
+    Color? clayText,
     Color? textHeading,
     Color? textSubheading,
     Color? textMuted,
@@ -417,17 +409,13 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     keycapBackground: keycapBackground ?? this.keycapBackground,
     keycapBorder: keycapBorder ?? this.keycapBorder,
     keycapText: keycapText ?? this.keycapText,
-    stickyMustard: stickyMustard ?? this.stickyMustard,
-    stickyTeal: stickyTeal ?? this.stickyTeal,
-    stickyOlive: stickyOlive ?? this.stickyOlive,
-    stickyRust: stickyRust ?? this.stickyRust,
-    stickySage: stickySage ?? this.stickySage,
     scrim: scrim ?? this.scrim,
     resultPillBackground: resultPillBackground ?? this.resultPillBackground,
     resultPillText: resultPillText ?? this.resultPillText,
     totalPillBackground: totalPillBackground ?? this.totalPillBackground,
     totalPillText: totalPillText ?? this.totalPillText,
     clay: clay ?? this.clay,
+    clayText: clayText ?? this.clayText,
     textHeading: textHeading ?? this.textHeading,
     textSubheading: textSubheading ?? this.textSubheading,
     textMuted: textMuted ?? this.textMuted,
@@ -493,11 +481,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       keycapBackground: mix(keycapBackground, other.keycapBackground),
       keycapBorder: mix(keycapBorder, other.keycapBorder),
       keycapText: mix(keycapText, other.keycapText),
-      stickyMustard: mix(stickyMustard, other.stickyMustard),
-      stickyTeal: mix(stickyTeal, other.stickyTeal),
-      stickyOlive: mix(stickyOlive, other.stickyOlive),
-      stickyRust: mix(stickyRust, other.stickyRust),
-      stickySage: mix(stickySage, other.stickySage),
       scrim: mix(scrim, other.scrim),
       resultPillBackground: mix(
         resultPillBackground,
@@ -507,6 +490,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       totalPillBackground: mix(totalPillBackground, other.totalPillBackground),
       totalPillText: mix(totalPillText, other.totalPillText),
       clay: mix(clay, other.clay),
+      clayText: mix(clayText, other.clayText),
       textHeading: mix(textHeading, other.textHeading),
       textSubheading: mix(textSubheading, other.textSubheading),
       textMuted: mix(textMuted, other.textMuted),
@@ -543,9 +527,12 @@ class EditorMetrics {
   /// [lineHeight] that may grow. Phones keep their own structure.
   static bool get page => !AppPlatform.isMobile;
 
-  /// One row of writing: Paper's 28px line and the 3px between rows on the
-  /// page, 29 on a phone.
-  static double get lineHeight => page ? 31 : 29;
+  /// How far in a quote's words start on the page, past its 3px bar and the
+  /// 14px after it.
+  static const double quoteIndent = 17;
+
+  /// One row of writing: Paper's 28px line on the page, 29 on a phone.
+  static double get lineHeight => page ? 28 : 29;
 
   /// The writing column on the page. A window narrower than this plus
   /// [padding] gives the column what it has.
@@ -557,25 +544,46 @@ class EditorMetrics {
   static const double titleRow = 48;
   static const double metaGap = 10;
   static const double metaRow = 16;
-  static const double metaBottom = 22;
+  static const double metaBottom = 10;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 
   /// A heading on the page, Paper's p-5-0: 22, 19 and 17 over 16px writing,
   /// each in a 28px line at the bottom of a row of 40 for the first level
-  /// and 36 below it, plus a body row's gap of 3. Set with proportional
-  /// leading, nearly all of what the row adds goes above the words. Deeper
-  /// levels are the writing's own size in the third level's row.
+  /// and 36 below it. Set with proportional leading, nearly all of what the
+  /// row adds goes above the words. Deeper levels are the writing's own size
+  /// in the third level's row.
   static double headingFontSize(int level) => switch (level) {
     <= 1 => 22,
     2 => 19,
     3 => 17,
     _ => 16,
   };
-  static double headingRow(int level) => level <= 1 ? 43 : 39;
+  static double headingRow(int level) => level <= 1 ? 40 : 36;
 
-  /// How far Paper's link chip reaches past the address it holds, and the
-  /// pill under inline code past its words.
-  static const double linkChipReach = 8;
+  /// A fenced code block on the page, Paper's CYZ-0: 24px rows of code in a
+  /// panel under a 30px header and its 6px margin, 8px clear of the writing
+  /// above, with 10px of panel under the code and 8px clear below.
+  static const double codeRow = 24;
+  static const double codeGapBefore = 8;
+  static const double codeHeader = 30;
+  static const double codeHeaderMargin = 6;
+  static const double codePanelBottom = 10;
+  static const double codeGapAfter = 8;
+
+  /// The rows a hidden opening fence and a hidden closing fence keep.
+  static const double codeOpenRow =
+      codeGapBefore + codeHeader + codeHeaderMargin;
+  static const double codeCloseRow = codePanelBottom + codeGapAfter;
+
+  /// A table row on the page, Paper's CYZ-0: 36px and the 1px rule under it.
+  static const double tableRow = 37;
+
+  /// How far Paper's link chip reaches before the address it holds: 8px, a
+  /// 14px link icon and 6px, then after it 12px. And how far the pill under
+  /// inline code reaches past its words.
+  static const double linkChipLead = 28;
+  static const double linkChipTrail = 12;
+  static const double linkChipIcon = 14;
   static const double codeChipReach = 6;
 
   static const EdgeInsets padding = EdgeInsets.symmetric(
@@ -1109,17 +1117,13 @@ class KapyTheme {
     keycapBackground: Color(0xFF2B2823),
     keycapBorder: Color(0xFF36322B),
     keycapText: Color(0xFFA29A8A),
-    stickyMustard: Color(0xFF393425),
-    stickyTeal: Color(0xFF273133),
-    stickyOlive: Color(0xFF2B3125),
-    stickyRust: Color(0xFF372B26),
-    stickySage: Color(0xFF2B3326),
     scrim: Color(0xB30B0A09),
     resultPillBackground: Color(0xFF2B3326),
     resultPillText: Color(0xFFB3C79C),
     totalPillBackground: Color(0xFF7D9468),
     totalPillText: Color(0xFF1C1A17),
     clay: Color(0xFFCF7A57),
+    clayText: Color(0xFFE0A285),
     textHeading: Color(0xFFDAD4C7),
     textSubheading: Color(0xFFD3CCBE),
     textMuted: Color(0xFFB2AA9A),
@@ -1188,17 +1192,13 @@ class KapyTheme {
     keycapBackground: Color(0xFFEFEADD),
     keycapBorder: Color(0xFFD9D2C1),
     keycapText: Color(0xFF6F695C),
-    stickyMustard: Color(0xFFF4EBC8),
-    stickyTeal: Color(0xFFDCE8E6),
-    stickyOlive: Color(0xFFE6EBD5),
-    stickyRust: Color(0xFFF2E0D4),
-    stickySage: Color(0xFFE3EBD8),
     scrim: Color(0x332A2620),
     resultPillBackground: Color(0xFFE3EBD8),
     resultPillText: Color(0xFF445A2F),
     totalPillBackground: Color(0xFF56703C),
     totalPillText: Color(0xFFFCFAF4),
     clay: Color(0xFFD0663B),
+    clayText: Color(0xFFB5552F),
     textHeading: Color(0xFF2A2620),
     textSubheading: Color(0xFF3A352D),
     textMuted: Color(0xFF4A453B),

@@ -8,13 +8,17 @@ import '../core/theme.dart';
 import '../data/note.dart';
 import '../data/notes_store.dart';
 import '../data/shortcut_prefs.dart';
+import '../data/tags.dart';
 import '../data/task_board.dart';
 import 'keycap.dart';
+import 'notes_list.dart' show NotesShow;
 import 'settings_dialog.dart' show SettingsIndex, SettingsSection;
 import 'settings_search.dart';
-import 'sidebar.dart' show archiveIcon;
+import 'sidebar.dart' show archiveIcon, hiddenIcon;
 import 'sidebar_timestamp.dart';
 import 'spaces_rail.dart';
+import 'tag_colours.dart';
+import 'tag_ui.dart';
 import 'tasks/task_marks.dart';
 
 /// What a row of the ⌘K menu asks for. [showCommandMenu] returns it and the
@@ -56,6 +60,18 @@ class GoToChoice extends CommandChoice {
   final LibrarySpace space;
 }
 
+/// My notes with the filter on Hidden or Archive.
+class ShowNotesChoice extends CommandChoice {
+  const ShowNotesChoice(this.show);
+  final NotesShow show;
+}
+
+/// Narrow the Notes filter to a tag, as ticking it does.
+class FilterTagChoice extends CommandChoice {
+  const FilterTagChoice(this.tagId);
+  final String tagId;
+}
+
 class OpenSettingsChoice extends CommandChoice {
   const OpenSettingsChoice();
 }
@@ -89,10 +105,15 @@ class AskKapyAiChoice extends CommandChoice {
 ///
 /// [space] is where it was opened from, which decides what New note's key
 /// says: in Tasks and Drawings that key makes a task or a drawing instead.
-/// [destinations] are the sections Go to lists, in order. Hidden notes are
-/// searched only while [hiddenUnlocked], and [tasks] is null where there is
-/// no task list to search or add to. [askKapyAi] is whether Kapy AI is there
-/// to be asked: it adds the Ask row and Tab, and "Ask Kapy AI" to the field.
+/// [destinations] are the sections Go to lists, in order, before Hidden,
+/// listed only with [showHidden], and Archive. Hidden notes are searched
+/// only while [hiddenUnlocked], and [tasks] is null where there is no task
+/// list to search or add to. With [tags], # lists the tags to filter by, and
+/// [tagNote], the open note, can be tagged from the menu. A result shows the
+/// dot of the first of [marksOf]'s tags for its note: the dialog is a route
+/// of its own, so the page's own marks don't reach it. [askKapyAi] is whether
+/// Kapy AI is there to be asked: it adds the Ask row and Tab, and "Ask Kapy
+/// AI" to the field.
 Future<CommandChoice?> showCommandMenu(
   BuildContext context, {
   required NotesStore notes,
@@ -103,28 +124,38 @@ Future<CommandChoice?> showCommandMenu(
   required DateTime Function(DateTime) displayTime,
   required String Function(Note) taskLabel,
   TaskBoard? tasks,
+  bool showHidden = false,
   bool hiddenUnlocked = false,
   bool askKapyAi = false,
   SettingsHost? settingsIndex,
+  TagShelf? tags,
+  Note? tagNote,
+  List<TagMark> Function(String noteId)? marksOf,
 }) {
   final dark = context.palette.brightness == Brightness.dark;
   return showDialog<CommandChoice>(
     context: context,
     barrierColor: dark ? const Color(0x990C0B09) : const Color(0x402A2620),
-    builder: (context) => CommandMenu(
-      notes: notes,
-      shortcuts: shortcuts,
-      space: space,
-      destinations: destinations,
-      recentIds: recentIds,
-      displayTime: displayTime,
-      taskLabel: taskLabel,
-      tasks: tasks,
-      hiddenUnlocked: hiddenUnlocked,
-      askKapyAi: askKapyAi,
-      settingsIndex: settingsIndex,
-      onChosen: (choice) => Navigator.of(context).pop(choice),
-    ),
+    builder: (context) {
+      final menu = CommandMenu(
+        notes: notes,
+        shortcuts: shortcuts,
+        space: space,
+        destinations: destinations,
+        recentIds: recentIds,
+        displayTime: displayTime,
+        taskLabel: taskLabel,
+        tasks: tasks,
+        showHidden: showHidden,
+        hiddenUnlocked: hiddenUnlocked,
+        askKapyAi: askKapyAi,
+        settingsIndex: settingsIndex,
+        tags: tags,
+        tagNote: tagNote,
+        onChosen: (choice) => Navigator.of(context).pop(choice),
+      );
+      return marksOf == null ? menu : TagMarks(marksOf: marksOf, child: menu);
+    },
   );
 }
 
@@ -140,9 +171,12 @@ class CommandMenu extends StatefulWidget {
     required this.taskLabel,
     required this.onChosen,
     this.tasks,
+    this.showHidden = false,
     this.hiddenUnlocked = false,
     this.askKapyAi = false,
     this.settingsIndex,
+    this.tags,
+    this.tagNote,
   });
 
   final NotesStore notes;
@@ -154,6 +188,7 @@ class CommandMenu extends StatefulWidget {
   final String Function(Note) taskLabel;
   final ValueChanged<CommandChoice> onChosen;
   final TaskBoard? tasks;
+  final bool showHidden;
   final bool hiddenUnlocked;
   final bool askKapyAi;
 
@@ -161,6 +196,12 @@ class CommandMenu extends StatefulWidget {
   /// results come from the same index as settings search. Null leaves them
   /// out.
   final SettingsHost? settingsIndex;
+
+  /// The person's tags, null where there are none to offer.
+  final TagShelf? tags;
+
+  /// The note Tag note... tags: the one open, or null for none.
+  final Note? tagNote;
 
   /// How many of each kind the menu shows.
   static const int perKind = 3;
@@ -173,29 +214,41 @@ class CommandMenu extends StatefulWidget {
 class _Line {
   const _Line.heading(String this.heading)
     : icon = null,
+      leading = null,
       title = '',
       choice = null,
+      action = null,
       detail = null,
       task = null,
       trailing = null,
       keycap = null,
+      noteId = null,
       muted = false;
 
   const _Line.row({
-    required KapyIconData this.icon,
+    this.icon,
+    this.leading,
     required this.title,
-    required CommandChoice this.choice,
+    this.choice,
+    this.action,
     this.detail,
     this.task,
     this.trailing,
     this.keycap,
+    this.noteId,
     this.muted = false,
   }) : heading = null;
 
   final String? heading;
   final KapyIconData? icon;
+
+  /// What stands before the title in place of [icon], as a tag's dot does.
+  final Widget? leading;
   final String title;
   final CommandChoice? choice;
+
+  /// What a row does that stays in the menu instead of choosing.
+  final VoidCallback? action;
 
   /// The line under a note's title that explains why it matched.
   final String? detail;
@@ -204,6 +257,9 @@ class _Line {
   final Note? task;
   final String? trailing;
   final String? keycap;
+
+  /// The note a result opens, whose first tag's dot sits before its date.
+  final String? noteId;
 
   /// In the quieter ink, as the row pointing into Archive is.
   final bool muted;
@@ -218,8 +274,13 @@ class _CommandMenuState extends State<CommandMenu> {
 
   SettingsIndex? _settings;
 
+  /// The tag list for the open note, once Tag note... is chosen: it takes
+  /// the place of the menu's results and of its field.
+  TagPickerController? _picker;
+
   @override
   void dispose() {
+    _picker?.dispose();
     _field.dispose();
     _scroll.dispose();
     super.dispose();
@@ -227,7 +288,7 @@ class _CommandMenuState extends State<CommandMenu> {
 
   List<int> get _rows => [
     for (var index = 0; index < _lines.length; index++)
-      if (_lines[index].choice != null) index,
+      if (_lines[index].heading == null) index,
   ];
 
   String? _keycap(ShortcutAction action) =>
@@ -257,6 +318,7 @@ class _CommandMenuState extends State<CommandMenu> {
     title: note.title,
     detail: detail,
     trailing: _date(note),
+    noteId: note.id,
     choice: OpenNoteChoice(note),
   );
 
@@ -329,8 +391,6 @@ class _CommandMenuState extends State<CommandMenu> {
             LibrarySpace.tasks => KapyIcons.tasksOutlined,
             LibrarySpace.drawings => KapyIcons.penRounded,
             LibrarySpace.shared => KapyIcons.groupOutlined,
-            LibrarySpace.hidden => KapyIcons.lockRounded,
-            LibrarySpace.archive => archiveIcon,
           },
           title: space == LibrarySpace.notes ? 'Notes' : space.title,
           keycap: switch (space) {
@@ -338,11 +398,21 @@ class _CommandMenuState extends State<CommandMenu> {
             LibrarySpace.tasks => _keycap(ShortcutAction.showTasks),
             LibrarySpace.drawings => _keycap(ShortcutAction.showDrawings),
             LibrarySpace.shared => _keycap(ShortcutAction.showShared),
-            LibrarySpace.archive => _keycap(ShortcutAction.showArchive),
-            LibrarySpace.hidden => null,
           },
           choice: GoToChoice(space),
         ),
+      if (widget.showHidden)
+        const _Line.row(
+          icon: hiddenIcon,
+          title: 'Hidden',
+          choice: ShowNotesChoice(NotesShow.hidden),
+        ),
+      _Line.row(
+        icon: archiveIcon,
+        title: 'Archive',
+        keycap: _keycap(ShortcutAction.showArchive),
+        choice: const ShowNotesChoice(NotesShow.archive),
+      ),
       _Line.row(
         icon: KapyIcons.settingsGearOutlined,
         title: 'Settings',
@@ -357,6 +427,8 @@ class _CommandMenuState extends State<CommandMenu> {
   /// while it is unlocked. Up to [CommandMenu.perKind] of each kind, then what
   /// the words can become, then how many more Archive holds.
   List<_Line> _whileTyping(String text) {
+    final tags = widget.tags;
+    if (tags != null && text.startsWith('#')) return _tagLines(tags, text);
     final notes = widget.notes;
     final found = [
       ...notes.search(text),
@@ -378,6 +450,24 @@ class _CommandMenuState extends State<CommandMenu> {
         if (entry.elsewhere == null) entry,
     ].take(CommandMenu.perKind);
     final lowered = text.toLowerCase();
+    final tagNote = widget.tagNote;
+    final actions = [
+      if (tags != null &&
+          tagNote != null &&
+          lowered.length >= 2 &&
+          'tag note'.startsWith(lowered)) ...[
+        const _Line.heading('Actions'),
+        _Line.row(
+          icon: KapyIcons.tagRounded,
+          title: 'Tag note…',
+          trailing: tagNote.title,
+          action: () => setState(
+            () =>
+                _picker = TagPickerController(shelf: tags, noteId: tagNote.id),
+          ),
+        ),
+      ],
+    ];
     final settingsFirst =
         settings.isNotEmpty &&
         settings.first.title.toLowerCase().contains(lowered);
@@ -388,6 +478,7 @@ class _CommandMenuState extends State<CommandMenu> {
       ],
     ];
     return [
+      ...actions,
       if (settingsFirst) ...settingsLines,
       if (written.isNotEmpty) ...[
         const _Line.heading('Notes'),
@@ -440,6 +531,31 @@ class _CommandMenuState extends State<CommandMenu> {
     ];
   }
 
+  /// What # lists: the tags, in the person's order with their counts, whose
+  /// names hold the letters after it.
+  List<_Line> _tagLines(TagShelf tags, String text) {
+    final name = text.substring(1).trim();
+    final matches = [
+      for (final entry in tags.listed())
+        if (entry.tag.name.v.toLowerCase().contains(name.toLowerCase())) entry,
+    ];
+    if (matches.isEmpty) {
+      return [
+        _Line.heading(name.isEmpty ? 'No tags yet' : 'No tag named “$name”'),
+      ];
+    }
+    return [
+      const _Line.heading('Filter by tag'),
+      for (final entry in matches)
+        _Line.row(
+          leading: TagDot(tagColourOf(entry.tag.colour.v)),
+          title: entry.tag.name.v,
+          trailing: '${entry.count}',
+          choice: FilterTagChoice(entry.tag.id),
+        ),
+    ];
+  }
+
   void _search(String query) {
     setState(() {
       _lines = _build(query);
@@ -466,24 +582,31 @@ class _CommandMenuState extends State<CommandMenu> {
   }
 
   /// Whether there is a question to ask: Tab asks it from wherever the
-  /// highlight is.
-  bool get _asking => _field.text.trim().isNotEmpty;
+  /// highlight is. Not while # lists the tags, or while tagging a note.
+  bool get _asking {
+    final text = _field.text.trim();
+    return _picker == null &&
+        text.isNotEmpty &&
+        !(widget.tags != null && text.startsWith('#'));
+  }
 
   void _choose(int index) {
-    final choice = _lines.elementAtOrNull(index)?.choice;
-    if (choice != null) widget.onChosen(choice);
+    final line = _lines.elementAtOrNull(index);
+    if (line?.action case final action?) return action();
+    if (line?.choice case final choice?) widget.onChosen(choice);
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final picker = _picker;
     switch (event.logicalKey) {
       case LogicalKeyboardKey.arrowDown:
-        _move(1);
+        picker == null ? _move(1) : picker.move(1);
       case LogicalKeyboardKey.arrowUp:
-        _move(-1);
+        picker == null ? _move(-1) : picker.move(-1);
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
           when event is KeyDownEvent:
-        _choose(_highlight);
+        picker == null ? _choose(_highlight) : picker.activate();
       case LogicalKeyboardKey.tab
           when widget.askKapyAi && _asking && event is KeyDownEvent:
         widget.onChosen(AskKapyAiChoice(_field.text.trim()));
@@ -538,20 +661,23 @@ class _CommandMenuState extends State<CommandMenu> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _searchField(palette),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (var index = 0; index < _lines.length; index++)
-                            _line(index, terms, palette, dark),
-                        ],
+                  if (_picker case final picker?)
+                    _tagList(picker, palette, dark)
+                  else
+                    Flexible(
+                      child: SingleChildScrollView(
+                        controller: _scroll,
+                        padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (var index = 0; index < _lines.length; index++)
+                              _line(index, terms, palette, dark),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  if (AppPlatform.hasPointer)
+                  if (AppPlatform.hasPointer && _picker == null)
                     _footer(palette, ask: widget.askKapyAi && _asking),
                 ],
               ),
@@ -566,6 +692,7 @@ class _CommandMenuState extends State<CommandMenu> {
   }
 
   Widget _searchField(CalcPalette palette) {
+    final picker = _picker;
     final style = TextStyle(
       fontSize: 16,
       height: 20 / 16,
@@ -586,6 +713,24 @@ class _CommandMenuState extends State<CommandMenu> {
             strokeWidth: 1.8,
             color: palette.textSecondary,
           ),
+          if (picker != null)
+            Container(
+              key: const ValueKey('command-menu-tagging'),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: palette.separator,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'Tag note · ${widget.tagNote!.title}',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 16 / 12,
+                  fontWeight: FontWeight.w600,
+                  color: palette.textPrimary,
+                ),
+              ),
+            ),
           Expanded(
             child: Focus(
               onKeyEvent: _onKey,
@@ -593,14 +738,19 @@ class _CommandMenuState extends State<CommandMenu> {
               canRequestFocus: false,
               child: TextField(
                 key: const ValueKey('command-menu-field'),
-                controller: _field,
+                controller: picker?.query ?? _field,
                 autofocus: true,
-                onChanged: _search,
+                inputFormatters: picker == null
+                    ? null
+                    : [LengthLimitingTextInputFormatter(tagNameMax)],
+                onChanged: picker == null ? _search : (_) => picker.typed(),
                 textInputAction: TextInputAction.go,
                 style: style,
                 cursorHeight: 20,
                 decoration: InputDecoration.collapsed(
-                  hintText: widget.askKapyAi
+                  hintText: picker != null
+                      ? ''
+                      : widget.askKapyAi
                       ? 'Search or Ask Kapy AI…'
                       : 'Search…',
                   hintStyle: style.copyWith(color: palette.textTertiary),
@@ -633,6 +783,9 @@ class _CommandMenuState extends State<CommandMenu> {
       );
     }
     final lit = index == _highlight;
+    final mark = line.noteId == null
+        ? null
+        : TagMarks.of(context, line.noteId!).firstOrNull;
     final detail = line.detail;
     final task = line.task;
     final trailing = line.trailing;
@@ -660,12 +813,13 @@ class _CommandMenuState extends State<CommandMenu> {
           child: Row(
             spacing: 12,
             children: [
-              KapyIcon(
-                line.icon!,
-                size: 16,
-                strokeWidth: 1.7,
-                color: lit ? palette.textPrimary : palette.textSecondary,
-              ),
+              line.leading ??
+                  KapyIcon(
+                    line.icon!,
+                    size: 16,
+                    strokeWidth: 1.7,
+                    color: lit ? palette.textPrimary : palette.textSecondary,
+                  ),
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -736,6 +890,7 @@ class _CommandMenuState extends State<CommandMenu> {
                   ],
                 ),
               ),
+              if (mark != null) TagDot(mark.colour),
               if (trailing != null)
                 Text(
                   trailing,
@@ -794,6 +949,143 @@ class _CommandMenuState extends State<CommandMenu> {
     return TextSpan(style: style, children: spans);
   }
 
+  /// The open note's tags in the menu's own rows: ticks for the ones it
+  /// carries, ↵ to tick or untick, and the same refusals as + Tag.
+  Widget _tagList(TagPickerController picker, CalcPalette palette, bool dark) {
+    return Flexible(
+      child: ListenableBuilder(
+        listenable: Listenable.merge([picker.shelf.store, picker]),
+        builder: (context, _) {
+          final matches = picker.matches();
+          final name = picker.query.text.trim();
+          final problem = picker.problem;
+          Widget row({
+            required Key key,
+            required int index,
+            required Widget leading,
+            required String label,
+            String? count,
+            bool ticked = false,
+            required VoidCallback onTap,
+          }) => MouseRegion(
+            onEnter: (_) => picker.at = index,
+            child: GestureDetector(
+              key: key,
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: index == picker.at
+                      ? (dark ? palette.separator : palette.controlBackground)
+                      : null,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  spacing: 12,
+                  children: [
+                    leading,
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 18 / 14,
+                          fontWeight: FontWeight.w500,
+                          color: palette.textPrimary,
+                        ),
+                      ),
+                    ),
+                    if (count != null)
+                      Text(
+                        count,
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 16 / 12,
+                          color: palette.textTertiary,
+                        ),
+                      ),
+                    SizedBox(
+                      width: 16,
+                      child: ticked
+                          ? KapyIcon(
+                              KapyIcons.checkRounded,
+                              size: 14,
+                              strokeWidth: 1.8,
+                              color: palette.textPrimary,
+                            )
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (picker.shelf.isShared(picker.noteId))
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                    child: Text(
+                      'Shared note: your tags and their colours show only to you.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 16 / 12,
+                        color: palette.textTertiary,
+                      ),
+                    ),
+                  ),
+                for (final (index, entry) in matches.indexed)
+                  row(
+                    key: ValueKey('tag-row-${entry.tag.id}'),
+                    index: index,
+                    leading: TagDot(tagColourOf(entry.tag.colour.v)),
+                    label: entry.tag.name.v,
+                    count: '${entry.count}',
+                    ticked: picker.isOn(entry.tag.id),
+                    onTap: () => picker.toggle(entry.tag.id),
+                  ),
+                if (matches.isEmpty && name.isNotEmpty)
+                  row(
+                    key: const ValueKey('tag-create'),
+                    index: 0,
+                    leading: KapyIcon(
+                      KapyIcons.addRounded,
+                      size: 14,
+                      strokeWidth: 2,
+                      color: palette.textTertiary,
+                    ),
+                    label: 'Create “$name”',
+                    onTap: picker.create,
+                  ),
+                if (problem != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+                    child: Text(
+                      problem,
+                      key: const ValueKey('tag-picker-problem'),
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 16 / 12,
+                        fontWeight: FontWeight.w500,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _footer(CalcPalette palette, {required bool ask}) {
     Widget hint(String key, String label) => Row(
       mainAxisSize: MainAxisSize.min,
@@ -820,12 +1112,11 @@ class _CommandMenuState extends State<CommandMenu> {
         spacing: 16,
         children: [
           hint('↑↓', 'Move'),
-          hint(
-            '↵',
-            _lines.elementAtOrNull(_highlight)?.choice is RevealSettingChoice
-                ? 'Open in Settings'
-                : 'Open',
-          ),
+          hint('↵', switch (_lines.elementAtOrNull(_highlight)?.choice) {
+            RevealSettingChoice() => 'Open in Settings',
+            FilterTagChoice() => 'Filter notes',
+            _ => 'Open',
+          }),
           if (ask) hint('tab', 'Ask Kapy AI'),
           const Spacer(),
           hint('esc', 'Close'),

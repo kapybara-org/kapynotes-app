@@ -9,12 +9,14 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/empty_state.dart';
 import 'package:kapy_notes/ui/kapy_header_mascot.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_test.dart' show MemoryStore;
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 /// Rates the app only has once a refresh has landed. The welcome note has to
@@ -66,11 +68,8 @@ Future<void> pumpLaunch(
   await tester.pumpAndSettle();
 }
 
-TextField _field(WidgetTester tester) => tester.widget<TextField>(
-  find.descendant(
-    of: find.byType(NoteEditor),
-    matching: find.byType(TextField),
-  ),
+NoteField _field(WidgetTester tester) => tester.widget<NoteField>(
+  find.descendant(of: find.byType(NoteEditor), matching: noteField),
 );
 
 void main() {
@@ -195,7 +194,7 @@ void main() {
       await pumpLaunch(tester, MemoryStore());
 
       expect(find.byType(EmptyState), findsNothing);
-      expect(_field(tester).controller!.text, welcomeNoteBody);
+      expect(_field(tester).controller.text, welcomeNoteBody);
     });
 
     testWidgets('shows it from the top, with no cursor and no keyboard', (
@@ -206,8 +205,8 @@ void main() {
       final field = _field(tester);
       // Unfocused, unscrolled and unchanged: no jump to the end, and no dated
       // separator stamped onto a note nobody has written in yet.
-      expect(field.focusNode!.hasFocus, isFalse);
-      expect(field.controller!.text, welcomeNoteBody);
+      expect(field.focusNode.hasFocus, isFalse);
+      expect(field.controller.text, welcomeNoteBody);
       expect(tester.testTextInput.isVisible, isFalse);
     });
 
@@ -230,19 +229,16 @@ void main() {
     ) async {
       await pumpLaunch(tester, MemoryStore(), size: const Size(390, 760));
 
-      await tester.enterText(
-        find.descendant(
-          of: find.byType(NoteEditor),
-          matching: find.byType(TextField),
-        ),
+      await tester.enterNote(
         'Coffee: 20',
+        find.descendant(of: find.byType(NoteEditor), matching: noteField),
       );
       await tester.pumpAndSettle();
 
       // Editing it ends the welcome behaviour: from here it is one of their
       // notes, and the app treats it like one.
-      expect(_field(tester).controller!.text, 'Coffee: 20');
-      expect(_field(tester).focusNode!.hasFocus, isTrue);
+      expect(_field(tester).controller.text, 'Coffee: 20');
+      expect(_field(tester).focusNode.hasFocus, isTrue);
     });
   });
 

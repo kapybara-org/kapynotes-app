@@ -11,6 +11,7 @@ import 'package:kapy_notes/ui/kapy_header_mascot.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_test.dart' show MemoryStore;
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 class _AppFixture {
@@ -60,10 +61,8 @@ KapyHeaderController _controller(WidgetTester tester) =>
 KapyHeaderMascotState _mascotState(WidgetTester tester) =>
     tester.state<KapyHeaderMascotState>(find.byType(KapyHeaderMascot));
 
-Finder _editor() => find.descendant(
-  of: find.byType(NoteEditor),
-  matching: find.byType(TextField),
-);
+Finder _editor() =>
+    find.descendant(of: find.byType(NoteEditor), matching: noteField);
 
 Future<void> _finish(WidgetTester tester, Duration duration) async {
   await tester.pump(duration + const Duration(milliseconds: 1));
@@ -81,25 +80,25 @@ void main() {
     var commands = 0;
     controller.addListener(() => commands++);
 
-    await tester.enterText(_editor(), 'Groceries\nTotal spend');
+    await tester.enterNote('Groceries\nTotal spend', _editor());
     await tester.pump();
 
     expect(controller.lastAnimation, KapyHeaderAnimation.think);
     expect(_mascotState(tester).activeAnimation, KapyHeaderAnimation.emerge);
     expect(commands, 1);
 
-    await tester.enterText(_editor(), 'Groceries\nTotal spend\nCoffee 4');
+    await tester.enterNote('Groceries\nTotal spend\nCoffee 4', _editor());
     await tester.pump();
     expect(commands, 1);
 
-    await tester.enterText(_editor(), 'Groceries\nCoffee 4');
+    await tester.enterNote('Groceries\nCoffee 4', _editor());
     await tester.pump();
     await _finish(tester, KapyHeaderMascot.emergeDuration);
     await _finish(tester, KapyHeaderMascot.thinkDuration);
     await _finish(tester, KapyHeaderMascot.hideDuration);
     expect(_mascotState(tester).restingPose, KapyHeaderRestingPose.logo);
 
-    await tester.enterText(_editor(), 'Groceries\ntotal spend again');
+    await tester.enterNote('Groceries\ntotal spend again', _editor());
     await tester.pump();
     expect(commands, 2);
     expect(_mascotState(tester).activeAnimation, KapyHeaderAnimation.emerge);
@@ -112,7 +111,7 @@ void main() {
     final controller = _controller(tester);
 
     await tester.pump(HomePage.kapyIdleDelay - const Duration(seconds: 10));
-    await tester.enterText(_editor(), 'A quiet note with an edit');
+    await tester.enterNote('A quiet note with an edit', _editor());
     await tester.pump();
     await tester.pump(const Duration(seconds: 20));
     expect(controller.lastAnimation, isNull);

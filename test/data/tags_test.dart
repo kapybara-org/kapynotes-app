@@ -14,8 +14,13 @@ class _MemoryStore extends LocalStore {
   @override
   Future<void> flush() async {}
 
+  int puts = 0;
+
   @override
-  void put(String key, Object? value) => data[key] = value;
+  void put(String key, Object? value) {
+    puts++;
+    data[key] = value;
+  }
 }
 
 const noteId = '0195f0d0-1111-4222-8333-444455556666';
@@ -63,6 +68,16 @@ void main() {
       expect(tags.create('x' * 33), isNull);
       expect(tags.create('x' * 32)!.name.v, hasLength(32));
       expect(tags.tags.map((t) => t.name.v), ['Work', 'x' * 32]);
+    });
+
+    test('a synced name past 32 runes arrives cut to 32', () {
+      final tag = Tag.fromPayload(
+        't1',
+        remoteTag('t1', '🏷' * 40).toPayload(),
+      )!;
+      expect(tag.name.v, '🏷' * 32);
+      tags.applyRemoteTag(tag, 5);
+      expect(tags.byId('t1')!.name.v.runes, hasLength(tagNameMax));
     });
 
     test('a rename to an empty, overlong or taken name changes nothing', () {
@@ -329,18 +344,91 @@ void main() {
       expect(owedPayload('t1')!['icon'], 'briefcase');
       expect(owedPayload('t1')!['kind'], 'tag');
 
-      tags.keepUnknown('r1', {'kind': 'folder', 'name': 'Later'}, 7);
+      tags.keepUnknown('r1', 7);
       final again = TagStore(store, now: tick);
       expect(await again.load(), isTrue);
       again.applyRemoteDelete('r9', 8);
       expect(store.data['tags.v1'], isA<Map>());
       expect(
         jsonEncode((store.data['tags.v1'] as Map)['unknown']),
-        contains('Later'),
+        '[{"id":"r1","updatedAt":7}]',
       );
       again.applyRemoteDelete('r1', 8);
       expect(jsonEncode((store.data['tags.v1'] as Map)['unknown']), '[]');
     });
+
+    test('a record of an unknown kind keeps only its id and time', () async {
+      tags.keepUnknown('r1', 7);
+      tags.keepUnknown('r1', 3);
+      expect(
+        jsonEncode((store.data['tags.v1'] as Map)['unknown']),
+        contains('7'),
+      );
+      tags.keepUnknown('r1', 9);
+      expect((store.data['tags.v1'] as Map)['unknown'], [
+        {'id': 'r1', 'updatedAt': 9},
+      ]);
+    });
+
+    test(
+      'a payload an earlier file kept is dropped on the next save',
+      () async {
+        store.data['tags.v1'] = {
+          'tags': <Object?>[],
+          'notes': <Object?>[],
+          'unknown': [
+            {
+              'id': 'r1',
+              'updatedAt': 3,
+              'payload': {'kind': 'chat', 'text': 'a long conversation'},
+            },
+          ],
+        };
+        final again = TagStore(store, now: tick);
+        await again.load();
+        again.create('Work');
+        final saved = jsonEncode(store.data['tags.v1']);
+        expect(saved, isNot(contains('conversation')));
+        expect(saved, contains('"id":"r1"'));
+        again.applyRemoteDelete('r1', 4);
+        expect(jsonEncode((store.data['tags.v1'] as Map)['unknown']), '[]');
+      },
+    );
+
+    test('held, many records are written once, on release', () {
+      final before = store.puts;
+      tags.hold();
+      for (var i = 0; i < 50; i++) {
+        tags.keepUnknown('r$i', i);
+        tags.applyRemoteTag(remoteTag('t$i', 'Tag $i'), i);
+      }
+      expect(store.puts, before);
+      expect((store.data['tags.v1'] as Map)['unknown'], isEmpty);
+      tags.release();
+      expect(store.puts, before + 1);
+      expect(
+        ((store.data['tags.v1'] as Map)['unknown'] as List),
+        hasLength(50),
+      );
+      tags.hold();
+      tags.release();
+      expect(store.puts, before + 1);
+    });
+
+    test(
+      'a change made while held notifies at once and is written on release',
+      () {
+        var told = 0;
+        tags.addListener(() => told++);
+        tags.hold();
+        tags.create('Held');
+        expect(told, 1);
+        expect(jsonEncode(store.data['tags.v1']), isNot(contains('Held')));
+        tags.release();
+        expect(told, 1);
+        expect(jsonEncode(store.data['tags.v1']), contains('Held'));
+      },
+    );
 
     test('survives a reload, owed records included', () async {
       final work = tags.create('Work')!;
@@ -382,7 +470,7 @@ void main() {
       final gone = tags.create('Gone')!;
       tags.addTag(noteId, work.id);
       tags.delete(gone.id);
-      tags.keepUnknown('r1', {'kind': 'folder'}, 1);
+      tags.keepUnknown('r1', 1);
       acknowledgeAll();
       expect(tags.owed, isEmpty);
 

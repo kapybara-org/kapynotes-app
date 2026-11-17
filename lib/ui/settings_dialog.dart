@@ -21,6 +21,7 @@ import '../data/notes_store.dart';
 import '../data/rates.dart';
 import '../data/release_history.dart';
 import '../data/shortcut_prefs.dart';
+import '../data/tags.dart';
 import '../data/time_zones.dart';
 import '../data/update_checker.dart';
 import '../data/voice_prefs.dart';
@@ -46,6 +47,7 @@ import 'notebook_paper.dart';
 import 'settings_rows.dart';
 import 'settings_search.dart';
 import 'sidebar_timestamp.dart';
+import 'tag_ui.dart';
 import 'tonal_button.dart';
 import 'voice_consent_sheet.dart';
 import 'voice_note_dialog.dart';
@@ -139,6 +141,8 @@ Future<void> showSettings(
   VoidCallback? onTranscriptionReady,
   CloudAccess? cloudAccess,
   HiddenNotesGate? hiddenNotes,
+  TagStore? tags,
+  List<TagEntry> Function()? listedTags,
   KapyAi? kapyAi,
   SettingsSection? section,
   String? reveal,
@@ -159,6 +163,8 @@ Future<void> showSettings(
     onTranscriptionReady: onTranscriptionReady,
     cloudAccess: cloudAccess,
     hiddenNotes: hiddenNotes,
+    tags: tags,
+    listedTags: listedTags,
     kapyAi: kapyAi,
     section: section,
     reveal: reveal,
@@ -211,6 +217,8 @@ class SettingsDialog extends StatefulWidget {
     this.onTranscriptionReady,
     this.cloudAccess,
     this.hiddenNotes,
+    this.tags,
+    this.listedTags,
     this.kapyAi,
     this.section,
     this.reveal,
@@ -253,6 +261,11 @@ class SettingsDialog extends StatefulWidget {
   /// for the PIN a desktop unlocks them with. Null only in isolated settings
   /// tests, which then refuse an export containing them.
   final HiddenNotesGate? hiddenNotes;
+
+  /// The tags Settings › Notes › Tags orders and changes, as the window
+  /// lists them.
+  final TagStore? tags;
+  final List<TagEntry> Function()? listedTags;
   final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
 
@@ -1271,6 +1284,9 @@ class _SettingsDialogState extends State<SettingsDialog>
   String _keys(ShortcutAction action) =>
       widget.shortcuts.bindingFor(action)?.displayLabel ?? '';
 
+  String _keycaps(ShortcutAction action) =>
+      widget.shortcuts.bindingFor(action)?.keycapLabel ?? '';
+
   // ---------------------------------------------------------------------------
   // The settings themselves
 
@@ -1373,7 +1389,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       ShortcutAction.increaseEditorTextSize,
       ShortcutAction.decreaseEditorTextSize,
       ShortcutAction.resetEditorTextSize,
-    ].map(_keys).where((keys) => keys.isNotEmpty).join(' ');
+    ].map(_keycaps).where((keys) => keys.isNotEmpty).join(' ');
     return [
       _Group('Look', [
         _choice<AppearanceMode>(
@@ -1492,7 +1508,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   List<_Group> _notesGroups() {
     final prefs = widget.layoutPrefs;
     final rates = widget.rates;
-    final hiddenKeys = _keys(ShortcutAction.toggleHiddenFolder);
+    final hiddenKeys = _keycaps(ShortcutAction.toggleHiddenFolder);
     final zone =
         '${AppTimeZones.displayName(prefs.timeZoneId)} · '
         '${AppTimeZones.offsetLabel(prefs.timeZoneId)}';
@@ -1531,7 +1547,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             '# for a heading, - for a list, [] for a checkbox',
             value: prefs.markdownEnabled,
             onChanged: (value) => prefs.markdownEnabled = value,
-            byDefault: false,
+            byDefault: true,
             keywords: ['md', 'syntax', 'headings', 'bold', 'lists', 'checkbox'],
           ),
           _toggle(
@@ -1619,13 +1635,15 @@ class _SettingsDialogState extends State<SettingsDialog>
           if (AppPlatform.isDesktop)
             _toggle(
               'hidden-notes-sidebar-toggle',
-              'Hidden Notes',
-              'Show the protected folder · ${hiddenKeys.isEmpty ? 'Settings only' : hiddenKeys}',
+              'Show Hidden in the notes filter',
+              hiddenKeys.isEmpty
+                  ? 'Hidden stays out of the notes filter while this is off'
+                  : '$hiddenKeys opens Hidden either way',
               value: widget.layoutPrefs.hiddenFolderVisible,
               onChanged: (value) =>
                   widget.layoutPrefs.hiddenFolderVisible = value,
               byDefault: true,
-              keywords: ['hidden', 'private', 'protected', 'folder', 'sidebar'],
+              keywords: ['hidden', 'private', 'protected', 'folder', 'filter'],
             ),
           if (_usesPin)
             _Setting(
@@ -1639,6 +1657,15 @@ class _SettingsDialogState extends State<SettingsDialog>
                 onPressed: () => unawaited(_changePin()),
               ),
             ),
+        ]),
+      if ((widget.tags, widget.listedTags) case (final store?, final listed?))
+        _Group('Tags', [
+          _Setting(
+            'tags-setting',
+            'Your tags',
+            keywords: ['tag', 'label', 'colour', 'color', 'order'],
+            row: TagSettings(store: store, listed: listed),
+          ),
         ]),
     ];
   }
@@ -1983,7 +2010,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     final prefs = widget.layoutPrefs;
     final integration = widget.desktopIntegration;
     String withKeys(String line, ShortcutAction action) {
-      final keys = _keys(action);
+      final keys = _keycaps(action);
       return keys.isEmpty ? line : '$line · $keys';
     }
 

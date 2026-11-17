@@ -12,7 +12,6 @@ import '../sync/auth_api.dart';
 import '../sync/sync_service.dart';
 import 'installed_version.dart';
 import 'profile_avatar.dart';
-import 'sidebar.dart' show archiveIcon;
 import 'streak_badge.dart';
 import 'window_drag_area.dart';
 
@@ -21,9 +20,7 @@ enum LibrarySpace {
   notes,
   tasks,
   drawings,
-  shared,
-  hidden,
-  archive;
+  shared;
 
   /// The space's name over the list while it shows the space: the rail's
   /// own word for it, except that the person's notes are "My notes".
@@ -32,8 +29,6 @@ enum LibrarySpace {
     LibrarySpace.tasks => 'Tasks',
     LibrarySpace.drawings => 'Drawings',
     LibrarySpace.shared => 'Shared',
-    LibrarySpace.hidden => 'Hidden',
-    LibrarySpace.archive => 'Archive',
   };
 }
 
@@ -41,9 +36,10 @@ enum LibrarySpace {
 /// show, and at its foot the writing streak, settings and the account.
 ///
 /// It holds what the list used to carry around its notes: the My Notes and
-/// Shared with Me tabs, the Hidden Notes and archive rows, the way into
-/// settings, and the streak from the heading over the list. Each still does
-/// what it did there.
+/// Shared with Me tabs, the way into settings, and the streak from the
+/// heading over the list. Each still does what it did there. Hidden Notes and
+/// the archive are not places of their own: they are the first group of the
+/// notes filter.
 ///
 /// On macOS it starts under the traffic lights, keeping their strip clear and
 /// letting the window be dragged by it. Windows draws its controls in a title
@@ -56,8 +52,6 @@ class SpacesRail extends StatelessWidget {
     required this.onSettingsPressed,
     this.invitations,
     this.openTasks,
-    this.showHidden = false,
-    this.hiddenShortcut,
     this.streak,
     this.settingsShortcut,
     this.updates,
@@ -82,15 +76,6 @@ class SpacesRail extends StatelessWidget {
   /// Tasks off the rail, as a build with no task index has none.
   final int? openTasks;
 
-  /// Whether Hidden Notes has a place on the rail: while the setting that
-  /// shows the folder is on and something is in it, and whenever the list is
-  /// showing it.
-  final bool showHidden;
-
-  /// The chord that shows or hides Hidden Notes' place, taught by its
-  /// tooltip.
-  final ShortcutBinding? hiddenShortcut;
-
   /// The run of days something has been written. Left out while there is no
   /// run to show: a zero would be a reproach rather than a record.
   final WritingStreak? streak;
@@ -101,7 +86,7 @@ class SpacesRail extends StatelessWidget {
   /// an app store owns updates.
   final UpdateChecker? updates;
 
-  /// Opens Profile & sync. Null leaves the account off the rail, as a build
+  /// Opens Account & sync. Null leaves the account off the rail, as a build
   /// with no sync server has no account to show.
   final VoidCallback? onAccountPressed;
 
@@ -122,7 +107,6 @@ class SpacesRail extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final invitations = this.invitations;
-    final hiddenShortcut = this.hiddenShortcut;
     final streak = this.streak;
     final onAccountPressed = this.onAccountPressed;
     final openTasks = this.openTasks;
@@ -131,7 +115,6 @@ class SpacesRail extends StatelessWidget {
       LibrarySpace destination, {
       required KapyIconData icon,
       required String label,
-      String? tooltip,
       String? semanticLabel,
       int badge = 0,
     }) => _RailItem(
@@ -140,7 +123,6 @@ class SpacesRail extends StatelessWidget {
       label: label,
       selected: destination == space,
       onPressed: () => onSelected(destination),
-      tooltip: tooltip,
       semanticLabel: semanticLabel,
       badge: badge,
     );
@@ -217,25 +199,6 @@ class SpacesRail extends StatelessWidget {
                                 badge: invitations,
                               ),
                             ],
-                            if (showHidden) ...[
-                              const SizedBox(height: 4),
-                              destination(
-                                LibrarySpace.hidden,
-                                icon: KapyIcons.lockRounded,
-                                label: 'Hidden',
-                                tooltip: hiddenShortcut == null
-                                    ? 'Hidden Notes'
-                                    : 'Hidden Notes · ${hiddenShortcut.displayLabel}',
-                                semanticLabel: 'Hidden Notes',
-                              ),
-                            ],
-                            const SizedBox(height: 4),
-                            destination(
-                              LibrarySpace.archive,
-                              icon: archiveIcon,
-                              label: 'Archive',
-                              semanticLabel: 'Archived Notes',
-                            ),
                           ],
                         ),
                       ),
@@ -292,7 +255,6 @@ class _RailItem extends StatefulWidget {
     required this.label,
     required this.selected,
     required this.onPressed,
-    this.tooltip,
     this.semanticLabel,
     this.badge = 0,
   });
@@ -301,7 +263,6 @@ class _RailItem extends StatefulWidget {
   final String label;
   final bool selected;
   final VoidCallback onPressed;
-  final String? tooltip;
   final String? semanticLabel;
 
   /// A count on the tile's corner, drawn while it is above zero.
@@ -324,7 +285,7 @@ class _RailItemState extends State<_RailItem> {
         ? palette.tonalForeground
         : lit
         ? palette.textSecondary
-        : palette.textTertiary;
+        : palette.railInk;
     final touch = !AppPlatform.hasPointer;
 
     final tile = AnimatedContainer(
@@ -358,7 +319,7 @@ class _RailItemState extends State<_RailItem> {
       ),
     );
 
-    final item = Semantics(
+    return Semantics(
       container: true,
       button: true,
       selected: selected,
@@ -388,7 +349,7 @@ class _RailItemState extends State<_RailItem> {
                         ? palette.textPrimary
                         : lit
                         ? palette.textSecondary
-                        : palette.textTertiary,
+                        : palette.railInk,
                     strong: selected,
                   ),
                 ),
@@ -398,9 +359,6 @@ class _RailItemState extends State<_RailItem> {
         ),
       ),
     );
-
-    final tooltip = widget.tooltip;
-    return tooltip == null ? item : Tooltip(message: tooltip, child: item);
   }
 }
 
@@ -563,7 +521,7 @@ class _RailSettings extends StatelessWidget {
   }
 }
 
-/// Who is signed in, with a dot that says how sync is doing. Opens Profile
+/// Who is signed in, with a dot that says how sync is doing. Opens Account
 /// & sync.
 class _RailAccount extends StatelessWidget {
   const _RailAccount({required this.onPressed, this.user, this.syncStatus});
@@ -643,11 +601,11 @@ class _RailAccount extends StatelessWidget {
     }
 
     return Tooltip(
-      message: [name.isEmpty ? 'Profile & sync' : name, ?status].join('\n'),
+      message: [name.isEmpty ? 'Account & sync' : name, ?status].join('\n'),
       child: Semantics(
         container: true,
         button: true,
-        label: ['Profile & sync', ?status].join(', '),
+        label: ['Account & sync', ?status].join(', '),
         child: InkWell(
           key: const ValueKey('rail-account'),
           onTap: onPressed,

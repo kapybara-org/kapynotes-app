@@ -206,17 +206,13 @@ void main() {
       'keycapBackground': (p) => p.keycapBackground,
       'keycapBorder': (p) => p.keycapBorder,
       'keycapText': (p) => p.keycapText,
-      'stickyMustard': (p) => p.stickyMustard,
-      'stickyTeal': (p) => p.stickyTeal,
-      'stickyOlive': (p) => p.stickyOlive,
-      'stickyRust': (p) => p.stickyRust,
-      'stickySage': (p) => p.stickySage,
       'scrim': (p) => p.scrim,
       'resultPillBackground': (p) => p.resultPillBackground,
       'resultPillText': (p) => p.resultPillText,
       'totalPillBackground': (p) => p.totalPillBackground,
       'totalPillText': (p) => p.totalPillText,
       'clay': (p) => p.clay,
+      'clayText': (p) => p.clayText,
     };
     const marker = Color(0xFF123456);
     final copied = dark.copyWith();
