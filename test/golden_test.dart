@@ -1159,10 +1159,16 @@ void main() {
       );
       final notes = goldenNotes;
       notes.archive(notes.create(body: 'Sintra in 2024\nThe palace queue').id);
-      notes.create(body: 'Goals - Oct 2026\nSee Sintra and Cascais before December');
+      notes.create(
+        body: 'Goals - Oct 2026\nSee Sintra and Cascais before December',
+      );
       final drawing = notes.create();
       notes.setDrawingMode(drawing.id, drawing: true);
-      notes.updateDrawing(drawing.id, NoteDrawing.empty, title: 'Sintra day route');
+      notes.updateDrawing(
+        drawing.id,
+        NoteDrawing.empty,
+        title: 'Sintra day route',
+      );
       notes.create(
         body:
             'Trip budget\nGo to Sintra on a weekday. The weekend queues are '
@@ -1199,6 +1205,15 @@ void main() {
       await expectLater(
         find.byType(KapyNotesApp),
         matchesGoldenFile('goldens/command_menu_dark_typing.png'),
+      );
+    });
+
+    testWidgets('a setting, dark', (tester) async {
+      await pumpTrip(tester, Brightness.dark);
+      await openMenu(tester, 'text size');
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/command_menu_dark_settings.png'),
       );
     });
 
