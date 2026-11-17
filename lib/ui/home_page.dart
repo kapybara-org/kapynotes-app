@@ -2541,6 +2541,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       taskLabel: _taskNoteLabel,
       tasks: _taskController?.read(),
       hiddenUnlocked: _hiddenMode,
+      settingsIndex: (lend) => SettingsDialog(
+        onIndex: lend,
+        kapyAi: _kapyAi,
+        account: widget.account,
+        notes: widget.notes,
+        layoutPrefs: widget.prefs,
+        shortcuts: widget.shortcuts,
+        rates: widget.rates,
+        updates: widget.updates,
+        desktopIntegration: widget.desktopIntegration,
+        voicePrefs: widget.voicePrefs,
+        localModels: widget.localModels,
+        deviceSummarizer: widget.deviceSummarizer,
+        deviceTranscriber: widget.deviceTranscriber,
+        cloudAccess: widget.cloudAccess,
+        hiddenNotes: widget.hiddenNotesGate,
+      ),
     );
     if (!mounted || choice == null) return;
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
@@ -2570,6 +2587,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _showSpace(space);
       case OpenSettingsChoice():
         _showSettings();
+      case RevealSettingChoice(:final section, :final reveal):
+        _showSettings(section: section, reveal: reveal);
       case SearchArchiveChoice(:final query):
         _showSpace(LibrarySpace.archive);
         setState(() => _archiveQuery = query);
