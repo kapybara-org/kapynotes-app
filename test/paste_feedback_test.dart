@@ -80,7 +80,7 @@ Future<GlobalKey<NoteEditorState>> _pumpEditor(
           resultsVisible: true,
           writingFont: WritingFont.mixed,
           shortcuts: _shortcuts,
-          onDocumentChanged: (_, _, _) {},
+          onDocumentChanged: (_, _, _, _) {},
           onSettingsPressed: () {},
         ),
       ),
