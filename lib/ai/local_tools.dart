@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+
 import '../core/platform.dart';
 import 'answer_engine.dart';
 import 'kapy_ai.dart';
@@ -48,8 +50,13 @@ abstract class LocalTool implements AnswerEngine {
 typedef _Run = ({int exitCode, String stdout});
 
 abstract class _Cli implements LocalTool {
-  _Cli(this._executable, this._timeout, Map<String, String>? environment)
-    : _parent = environment ?? Platform.environment;
+  _Cli(
+    this._executable,
+    this._timeout,
+    Map<String, String>? environment,
+    bool? windows,
+  ) : _parent = environment ?? Platform.environment,
+      _windows = windows ?? Platform.isWindows;
 
   /// The program, when the caller already knows where it is; found on PATH
   /// and in the usual install locations otherwise.
@@ -60,6 +67,10 @@ abstract class _Cli implements LocalTool {
 
   /// The app's own environment, which a run is built from but never given.
   final Map<String, String> _parent;
+
+  /// Whether to look for and start the program the way Windows does. Only
+  /// tests set it.
+  final bool _windows;
   String? _found;
 
   String get _name;
@@ -74,15 +85,19 @@ abstract class _Cli implements LocalTool {
   /// something else, and is stopped rather than read.
   static const int _maxOutput = 64 * 1024;
 
+  /// Codex's model catalogue carries each model's full instructions: 260 KB
+  /// in 0.160.
+  static const int _maxCatalogue = 2 * 1024 * 1024;
+
   /// Where the program may be: the app's PATH and the usual install
   /// locations.
   List<String> get _searchDirs {
     final home = _parent['HOME'] ?? _parent['USERPROFILE'];
     return [
-      ...?_parent['PATH']?.split(Platform.isWindows ? ';' : ':'),
+      ...?_parent['PATH']?.split(_windows ? ';' : ':'),
       if (home != null)
         for (final dir in _homeDirs) '$home/$dir',
-      if (!Platform.isWindows) ...[
+      if (!_windows) ...[
         '/opt/homebrew/bin',
         '/usr/local/bin',
         '/usr/bin',
@@ -97,7 +112,7 @@ abstract class _Cli implements LocalTool {
   /// (keys, tokens, anything a build or a shell put there). [scratch] is its
   /// temporary directory.
   Map<String, String> _childEnvironment(Directory scratch) {
-    final windows = Platform.isWindows;
+    final windows = _windows;
     final keep = {
       'HOME',
       'USER',
@@ -129,10 +144,10 @@ abstract class _Cli implements LocalTool {
     if (_executable != null) {
       return _found = await File(_executable).exists() ? _executable : null;
     }
-    final names = Platform.isWindows ? ['$_name.exe', '$_name.cmd'] : [_name];
+    final names = _windows ? ['$_name.exe', '$_name.cmd'] : [_name];
     for (final dir in _searchDirs) {
       for (final name in names) {
-        final path = '$dir${Platform.pathSeparator}$name';
+        final path = '$dir${_windows ? '\\' : '/'}$name';
         if (await File(path).exists()) return _found = path;
       }
     }
@@ -158,18 +173,58 @@ abstract class _Cli implements LocalTool {
   Future<bool> _signedIn();
   Future<List<KapyModel>> _models();
 
-  /// Runs the program once in a new empty directory, which is deleted
-  /// afterwards whatever happened.
-  Future<_Run> _run(List<String> arguments, {String? stdin}) async {
+  /// What to start to run the program with [arguments].
+  ///
+  /// A Windows `.cmd` or `.bat` shim, which is how npm installs these tools,
+  /// is started through cmd.exe, and cmd.exe reads the arguments a second
+  /// time: `&`, `|`, `^`, `%`, `!` and quotes in them mean something to it,
+  /// and an empty argument can vanish. So the shim is read for the script it
+  /// runs, and node runs that script directly, with the arguments as they
+  /// are. A shim that is not that, or no node to run it with, is a program
+  /// that cannot be run safely.
+  @visibleForTesting
+  Future<({String program, List<String> arguments})> launch(
+    List<String> arguments,
+  ) async {
     final program = _found ?? await _find();
     if (program == null) throw AnswerAccountRejected(kind);
+    final lower = program.toLowerCase();
+    if (!_windows || !(lower.endsWith('.cmd') || lower.endsWith('.bat'))) {
+      return (program: program, arguments: arguments);
+    }
+    final directory = File(program).parent.path;
+    final shim = await File(program).readAsString().catchError((_) => '');
+    final relative = RegExp(
+      r'"%dp0%\\([^"%]+\.(?:js|mjs|cjs))"',
+      caseSensitive: false,
+    ).firstMatch(shim)?[1];
+    if (relative == null) throw AnswerAccountRejected(kind);
+    final script = '$directory/${relative.replaceAll('\\', '/')}';
+    if (!await File(script).exists()) throw AnswerAccountRejected(kind);
+    for (final dir in [directory, ..._searchDirs]) {
+      final node = '$dir/node.exe';
+      if (await File(node).exists()) {
+        return (program: node, arguments: [script, ...arguments]);
+      }
+    }
+    throw AnswerAccountRejected(kind);
+  }
+
+  /// Runs the program once in a new empty directory, which is deleted
+  /// afterwards whatever happened.
+  Future<_Run> _run(
+    List<String> arguments, {
+    String? stdin,
+    int maxOutput = _maxOutput,
+  }) async {
+    final launch = await this.launch(arguments);
     final scratch = await Directory.systemTemp.createTemp('kapy-ai-');
     try {
       final Process process;
       try {
         process = await Process.start(
-          program,
-          arguments,
+          launch.program,
+          launch.arguments,
           workingDirectory: scratch.path,
           environment: _childEnvironment(scratch),
           includeParentEnvironment: false,
@@ -180,7 +235,7 @@ abstract class _Cli implements LocalTool {
       final out = BytesBuilder(copy: false);
       var tooLong = false;
       final reading = process.stdout.listen((chunk) {
-        if (out.length + chunk.length > _maxOutput) {
+        if (out.length + chunk.length > maxOutput) {
           tooLong = true;
           unawaited(_kill(process));
           return;
@@ -258,7 +313,8 @@ class CodexCli extends _Cli {
     String? executable,
     Duration timeout = _Cli.defaultTimeout,
     Map<String, String>? environment,
-  }) : super(executable, timeout, environment);
+    @visibleForTesting bool? windows,
+  }) : super(executable, timeout, environment, windows);
 
   @override
   KapyAccountKind get kind => KapyAccountKind.codex;
@@ -276,15 +332,13 @@ class CodexCli extends _Cli {
     '.npm-global/bin',
   ];
 
-  /// Exits 0 only when signed in.
-  @override
-  Future<bool> _signedIn() async =>
-      (await _run(const ['login', 'status'])).exitCode == 0;
-
   /// The account's own catalogue, as Codex's model picker lists it.
   @override
   Future<List<KapyModel>> _models() async {
-    final run = await _run(const ['debug', 'models']);
+    final run = await _run(const [
+      'debug',
+      'models',
+    ], maxOutput: _Cli._maxCatalogue);
     if (run.exitCode != 0) return const [_fallback];
     final catalogue = jsonDecode(run.stdout);
     final models = [
@@ -318,48 +372,17 @@ class CodexCli extends _Cli {
   /// The shell tool off removes command execution altogether; the read-only
   /// sandbox and an approval policy of never are what is left if a newer
   /// Codex brings one back. Web search, MCP servers, apps, plugins, browser
-  /// and computer use, image tools, sub-agents, memories and hooks are off,
-  /// and the person's own config and rules are not loaded, so nothing there
-  /// can turn any of it back on. Sign-in still comes from Codex's home.
-  static const List<String> lockedDown = [
+  /// and computer use, image tools, sub-agents, memories, hooks, background
+  /// automation and the rest of [_disabled] are off, and the person's own
+  /// config and rules are not loaded, so nothing there can turn any of it
+  /// back on. Sign-in still comes from Codex's home.
+  static final List<String> lockedDown = [
     '--sandbox',
     'read-only',
     '--config',
     'approval_policy="never"',
-    '--config',
-    'web_search="disabled"',
-    '--config',
-    'mcp_servers={}',
-    '--disable',
-    'shell_tool',
-    '--disable',
-    'apps',
-    '--disable',
-    'plugins',
-    '--disable',
-    'browser_use',
-    '--disable',
-    'browser_use_external',
-    '--disable',
-    'in_app_browser',
-    '--disable',
-    'computer_use',
-    '--disable',
-    'code_mode_host',
-    '--disable',
-    'image_generation',
-    '--disable',
-    'view_image',
-    '--disable',
-    'multi_agent',
-    '--disable',
-    'memories',
-    '--disable',
-    'hooks',
-    '--disable',
-    'skill_search',
-    '--disable',
-    'tool_suggest',
+    ..._settings,
+    ..._features,
     '--ignore-user-config',
     '--ignore-rules',
     '--skip-git-repo-check',
@@ -368,10 +391,130 @@ class CodexCli extends _Cli {
     'never',
   ];
 
+  static const List<String> _settings = [
+    '--config',
+    'web_search="disabled"',
+    '--config',
+    'mcp_servers={}',
+  ];
+
+  static const List<String> _disabled = [
+    'shell_tool',
+    'unified_exec',
+    'unified_exec_tty',
+    'unified_exec_zsh_fork',
+    'write_stdin_approval',
+    'sleep_tool',
+    'worktrees',
+    'workspace_dependencies',
+    'in_app_local_automation',
+    'daemon_auto_start',
+    'skill_mcp_dependency_install',
+    'apps',
+    'plugins',
+    'plugin_sharing',
+    'remote_plugin',
+    'goals',
+    'browser_use',
+    'browser_use_external',
+    'browser_use_full_cdp_access',
+    'in_app_browser',
+    'computer_use',
+    'code_mode_host',
+    'image_generation',
+    'view_image',
+    'multi_agent',
+    'memories',
+    'hooks',
+    'skill_search',
+    'tool_suggest',
+  ];
+
+  static final List<String> _features = [
+    for (final feature in _disabled) ...['--disable', feature],
+  ];
+
+  /// What `codex features list` may still show as on once [lockedDown] has
+  /// been applied, each read in 0.160 and none of them able to run a command,
+  /// reach a file, the web or a server, or talk to anyone: the app's own
+  /// screens, request and transcript handling, sign-in prompts, voice, and
+  /// approvals that `never` has already made moot. `unified_exec` is the
+  /// one that is not obviously so: it is how a shell tool runs, Codex ignores
+  /// `--disable` for it, and with `shell_tool` off there is no tool left to
+  /// run, under a read-only sandbox that asks nothing.
+  ///
+  /// A feature on that is not here, a newer one or one that would not turn
+  /// off, has not been read, and Codex is reported unavailable until it is.
+  static const Set<String> _knownEnabled = {
+    'auth_elicitation',
+    'collaboration_modes',
+    'compaction_image_budget',
+    'content_item_kinds',
+    'enable_request_compression',
+    'fast_mode',
+    'guardian_approval',
+    'guardian_reuse_parent_compaction',
+    'in_app_chat',
+    'in_app_dictation',
+    'in_app_updates',
+    'item_ids',
+    'mentions_v2',
+    'realtime_conversation',
+    'resize_all_images',
+    'shell_snapshot',
+    'sqlite',
+    'steer',
+    'system_proxy_fallback',
+    'terminal_resize_reflow',
+    'tool_call_mcp_elicitation',
+    'tool_search_always_defer_mcp_tools',
+    'tui_app_server',
+    'unbounded_connection_retries',
+    'unified_exec',
+  };
+
+  Future<bool>? _featuresKnown;
+
+  /// Whether every feature Codex has on under [lockedDown] is one that was
+  /// read. Asked once per [check], from Codex itself, with the same settings
+  /// and a run's own environment, and a Codex that cannot say is not known.
+  Future<bool> _allFeaturesKnown() => _featuresKnown ??= () async {
+    final run = await _run(['features', 'list', ..._settings, ..._features]);
+    if (run.exitCode != 0) return false;
+    final lines = run.stdout
+        .split('\n')
+        .map((line) => line.trim().split(RegExp(r'\s+')));
+    var any = false;
+    for (final columns in lines) {
+      if (columns.length < 2 || !{'true', 'false'}.contains(columns.last)) {
+        continue;
+      }
+      any = true;
+      if (columns.last == 'true' && !_knownEnabled.contains(columns.first)) {
+        return false;
+      }
+    }
+    return any;
+  }();
+
+  @override
+  Future<LocalToolCheck> check() {
+    _featuresKnown = null;
+    return super.check();
+  }
+
+  /// Exits 0 only when signed in, and not at all when Codex has a feature
+  /// on that was not read.
+  @override
+  Future<bool> _signedIn() async =>
+      await _allFeaturesKnown() &&
+      (await _run(const ['login', 'status'])).exitCode == 0;
+
   /// The prompt goes in on stdin (`-`); Codex prints its progress on stderr
   /// and only the final message on stdout.
   @override
   Future<String?> _answer(KapyModel model, AnswerRequest request) async {
+    if (!await _allFeaturesKnown()) throw AnswerAccountRejected(kind);
     final run = await _run(
       [
         'exec',
@@ -381,7 +524,7 @@ class CodexCli extends _Cli {
       ],
       stdin:
           '${answerInstructions(request.today)}\n\n'
-          '${answerPromptWithHistory(request)}',
+          '${answerPrompt(request)}',
     );
     return run.exitCode == 0 ? run.stdout.trim() : null;
   }
@@ -393,7 +536,8 @@ class ClaudeCodeCli extends _Cli {
     String? executable,
     Duration timeout = _Cli.defaultTimeout,
     Map<String, String>? environment,
-  }) : super(executable, timeout, environment);
+    @visibleForTesting bool? windows,
+  }) : super(executable, timeout, environment, windows);
 
   @override
   KapyAccountKind get kind => KapyAccountKind.claudeCode;
@@ -432,15 +576,17 @@ class ClaudeCodeCli extends _Cli {
     ),
   ];
 
-  /// What turns Claude Code from an agent into a writer, checked against
-  /// `claude --help` (2.1).
+  /// What turns Claude Code from an agent into a writer, every flag read in
+  /// Claude Code's CLI reference and in `claude --help`, and each old enough
+  /// for a 2.1.229 install.
   ///
   /// No built-in tools, none allowed, the dangerous ones denied by name as
   /// well, and a permission mode that refuses whatever was not allowed
-  /// rather than asking. Restricted mode drops the command-running tools and
-  /// the person's settings files; safe mode drops CLAUDE.md, skills,
+  /// rather than asking. Safe mode (2.1.169) drops CLAUDE.md, skills,
   /// plugins, hooks and MCP servers; an empty, strict MCP config makes sure
-  /// of the last. Sign-in is untouched.
+  /// of the last. Sign-in is untouched. `--restricted` is left out: it is
+  /// documented, but only from 2.1.248, and everything it does here is done
+  /// by the flags above it.
   static const List<String> lockedDown = [
     '--tools',
     '',
@@ -451,7 +597,6 @@ class ClaudeCodeCli extends _Cli {
         'WebFetch,WebSearch,Task,Agent,Skill,TodoWrite',
     '--permission-mode',
     'dontAsk',
-    '--restricted',
     '--safe-mode',
     '--strict-mcp-config',
     '--mcp-config',
@@ -473,7 +618,7 @@ class ClaudeCodeCli extends _Cli {
       'json',
       '--system-prompt',
       answerInstructions(request.today),
-    ], stdin: answerPromptWithHistory(request));
+    ], stdin: answerPrompt(request));
     try {
       final body = jsonDecode(run.stdout);
       if (body is Map && body['is_error'] != true && body['result'] is String) {

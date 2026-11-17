@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -328,6 +329,23 @@ void main() {
       device.failure = null;
       await ai.proceed();
       expect(ai.current!.messages.last.text, 'device answer');
+    });
+
+    test('an unexpected error logs its type and nothing it carried', () async {
+      final logs = <String>[];
+      final original = debugPrint;
+      debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
+      addTearDown(() => debugPrint = original);
+      device.failure = const FormatException(
+        'note text: the safe code is 4417',
+      );
+      final ai = await build();
+      await ai.ask('Lisbon?');
+      expect(ai.pending, isA<KapyFailed>());
+      expect(logs.join('\n'), contains('FormatException'));
+      expect(logs.join('\n'), isNot(contains('4417')));
+      expect(logs.join('\n'), isNot(contains('safe code')));
+      expect(logs.join('\n'), isNot(contains('#0')));
     });
   });
 

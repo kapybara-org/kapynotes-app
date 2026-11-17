@@ -134,7 +134,9 @@ class KapyAiController extends KapyAi {
     try {
       await Future.wait([_device.refresh(), _openRouter.load()]);
     } catch (error) {
-      debugPrint('KapyNotes: Kapy AI could not look at its models: $error');
+      debugPrint(
+        'KapyNotes: Kapy AI could not look at its models: ${error.runtimeType}',
+      );
     }
     unawaited(_refreshUsage());
     for (final tool in [_codex, _claudeCode]) {
@@ -625,8 +627,8 @@ class KapyAiController extends KapyAi {
       failed = KapyAccountError(account: rejected.account, model: using);
     } on AnswerFailed catch (failure) {
       failed = KapyFailed(failure.message);
-    } catch (error, stack) {
-      debugPrint('KapyNotes: Kapy AI could not answer: $error\n$stack');
+    } catch (error) {
+      debugPrint('KapyNotes: Kapy AI could not answer: ${error.runtimeType}');
       failed = const KapyFailed('Something went wrong. Try again.');
     } finally {
       _answering = false;

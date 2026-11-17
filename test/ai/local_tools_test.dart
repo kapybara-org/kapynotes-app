@@ -49,6 +49,7 @@ void main() {
     String reply = 'the answer',
     int signedInExit = 0,
     String? models,
+    String? features,
     String? beforeReply,
     String? afterReply,
   }) async {
@@ -56,6 +57,7 @@ void main() {
       reply: reply,
       signedInExit: signedInExit,
       models: models,
+      features: features,
       beforeReply: beforeReply,
       afterReply: afterReply,
     );
@@ -124,6 +126,132 @@ void main() {
         expect(run.stdin, contains('<note title="Shopping"'));
       },
     );
+
+    test('every feature that can act on the machine is switched off', () async {
+      final cli = await fake();
+      await CodexCli(executable: cli.path).answer(_codexModel, _request());
+      const ten = [
+        'unified_exec',
+        'unified_exec_tty',
+        'unified_exec_zsh_fork',
+        'write_stdin_approval',
+        'sleep_tool',
+        'worktrees',
+        'workspace_dependencies',
+        'in_app_local_automation',
+        'daemon_auto_start',
+        'skill_mcp_dependency_install',
+      ];
+      expect(cli.answers().single.allAfter('--disable'), containsAll(ten));
+      final listing = cli.runs().singleWhere((r) => r.argv.first == 'features');
+      expect(listing.argv.take(2), ['features', 'list']);
+      expect(listing.allAfter('--disable'), containsAll(ten));
+      expect(
+        listing.allAfter('--config'),
+        containsAll(['web_search="disabled"', 'mcp_servers={}']),
+      );
+      expect(listing.cwd, contains('kapy-ai-'));
+    });
+
+    test('a feature nobody has read, left on, means no model call', () async {
+      final cli = await fake(
+        features: '${knownFeatures}brand_new_tool   under development   true\n',
+      );
+      final codex = CodexCli(executable: cli.path);
+      await expectLater(
+        codex.answer(_codexModel, _request()),
+        throwsA(isA<AnswerAccountRejected>()),
+      );
+      expect(cli.answers(), isEmpty);
+      final check = await codex.check();
+      expect(check.status, KapyAccountStatus.error);
+      expect(check.models, isEmpty);
+      expect(
+        cli.runs().where(
+          (r) => r.argv.first == 'exec' || r.argv.first == 'debug',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a feature we switch off that stays on is not trusted', () async {
+      final cli = await fake(
+        features: knownFeatures.replaceFirst(
+          'shell_tool                         stable             false',
+          'shell_tool                         stable             true',
+        ),
+      );
+      await expectLater(
+        CodexCli(executable: cli.path).answer(_codexModel, _request()),
+        throwsA(isA<AnswerAccountRejected>()),
+      );
+      expect(cli.answers(), isEmpty);
+    });
+
+    test('a features list that cannot be read is not trusted', () async {
+      for (final features in ['', 'error: unexpected argument\n']) {
+        final cli = await fake(features: features);
+        await expectLater(
+          CodexCli(executable: cli.path).answer(_codexModel, _request()),
+          throwsA(isA<AnswerAccountRejected>()),
+        );
+        expect(cli.answers(), isEmpty);
+      }
+    });
+
+    test(
+      'with every feature read, it runs and every switch is passed',
+      () async {
+        const everything = '''
+auth_elicitation true
+collaboration_modes true
+compaction_image_budget true
+content_item_kinds true
+enable_request_compression true
+fast_mode true
+guardian_approval true
+guardian_reuse_parent_compaction true
+in_app_chat true
+in_app_dictation true
+in_app_updates true
+item_ids true
+mentions_v2 true
+realtime_conversation true
+resize_all_images true
+shell_snapshot true
+sqlite true
+steer true
+system_proxy_fallback true
+terminal_resize_reflow true
+tool_call_mcp_elicitation true
+tool_search_always_defer_mcp_tools true
+tui_app_server true
+unbounded_connection_retries true
+unified_exec true
+shell_tool false
+apps false
+future_feature under development false
+''';
+        final cli = await fake(features: everything);
+        final codex = CodexCli(executable: cli.path);
+        expect((await codex.check()).status, KapyAccountStatus.connected);
+        expect(await codex.answer(_codexModel, _request()), 'the answer');
+        expect(
+          cli.answers().single.allAfter('--disable'),
+          contains('shell_tool'),
+        );
+      },
+    );
+
+    test('the features are read once per check, not once per answer', () async {
+      final cli = await fake();
+      final codex = CodexCli(executable: cli.path);
+      await codex.answer(_codexModel, _request());
+      await codex.answer(_codexModel, _request());
+      expect(cli.runs().where((r) => r.argv.first == 'features'), hasLength(1));
+      await codex.check();
+      expect(cli.runs().where((r) => r.argv.first == 'features'), hasLength(2));
+    });
 
     test('the notes are fenced data and the model is told so', () async {
       final cli = await fake();
@@ -348,6 +476,17 @@ void main() {
       );
     });
 
+    test('a model catalogue far larger than an answer is still read', () async {
+      final cli = await fake(
+        models:
+            '{"models":[{"slug":"a","display_name":"GPT-A","visibility":"list",'
+            '"base_instructions":"${'x' * (300 * 1024)}"}]}',
+      );
+      final check = await CodexCli(executable: cli.path).check();
+      expect(check.status, KapyAccountStatus.connected);
+      expect(check.models.single.id, 'a');
+    });
+
     test('never asked for credentials: no login or token arguments', () async {
       final cli = await fake();
       final codex = CodexCli(executable: cli.path);
@@ -395,7 +534,6 @@ void main() {
         expect(
           run.argv,
           containsAll([
-            '--restricted',
             '--safe-mode',
             '--strict-mcp-config',
             '--disable-slash-commands',
@@ -409,6 +547,7 @@ void main() {
           '--dangerously-skip-permissions',
           'bypassPermissions',
           'acceptEdits',
+          '--restricted',
         ]) {
           expect(run.argv, isNot(contains(unsafe)));
         }
@@ -455,6 +594,165 @@ void main() {
         ClaudeCodeCli(executable: cli.path).answer(_claudeModel, _request()),
         throwsA(isA<AnswerFailed>()),
       );
+    });
+  });
+
+  group('a Windows .cmd shim', () {
+    const hostile = 'a&b|c^d%e"f!g';
+    // Read with Windows rules, this is one folder, which is all the stand-in
+    // needs to find sh's tools.
+    const posixPath = {'PATH': '/bin:/usr/bin'};
+    const npmShim = r'''
+@ECHO off
+GOTO start
+:find_dp0
+SET dp0=%~dp0
+EXIT /b
+:start
+SETLOCAL
+CALL :find_dp0
+
+IF EXIST "%dp0%\node.exe" (
+  SET "_prog=%dp0%\node.exe"
+) ELSE (
+  SET "_prog=node"
+  SET PATHEXT=%PATHEXT:;.JS;=;%
+)
+
+endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\node_modules\@vendor\tool\bin\tool.js" %*
+''';
+
+    /// A shim folder as npm lays it out, with the fake CLI as its node.exe.
+    Future<({String shim, String script, FakeCli node})> install(
+      String name, {
+      bool withScript = true,
+      bool withNode = true,
+      String shimText = npmShim,
+    }) async {
+      final node = await fake(reply: '{"result":"ok"}');
+      final dir = Directory.systemTemp.createTempSync('shim');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      File('${dir.path}/$name.cmd').writeAsStringSync(shimText);
+      final script = File('${dir.path}/node_modules/@vendor/tool/bin/tool.js');
+      if (withScript) script.createSync(recursive: true);
+      if (withNode) File(node.path).copySync('${dir.path}/node.exe');
+      return (shim: '${dir.path}/$name.cmd', script: script.path, node: node);
+    }
+
+    test('runs node on the script it names, never cmd.exe', () async {
+      final tool = await install('claude');
+      final claude = ClaudeCodeCli(executable: tool.shim, windows: true);
+      final launch = await claude.launch(['--tools', '', hostile]);
+      expect(launch.program, endsWith('/node.exe'));
+      expect(launch.arguments, [tool.script, '--tools', '', hostile]);
+    });
+
+    test(
+      'a .bat is read the same way, and the name is not case-bound',
+      () async {
+        final tool = await install('claude');
+        final bat = File(tool.shim.replaceFirst('.cmd', '.BAT'))
+          ..writeAsStringSync(npmShim);
+        final launch = await ClaudeCodeCli(
+          executable: bat.path,
+          windows: true,
+        ).launch(['x']);
+        expect(launch.program, endsWith('/node.exe'));
+        expect(launch.arguments.last, 'x');
+      },
+    );
+
+    test(
+      'the arguments arrive untouched: empty, JSON and metacharacters',
+      () async {
+        final tool = await install('claude');
+        final model = KapyModel(
+          kind: KapyModelKind.claudeCode,
+          id: hostile,
+          label: 'Hostile',
+        );
+        final request = _request(
+          question: 'q & whoami | del *.* ^ %PATH% "x" !y',
+        );
+        final claude = ClaudeCodeCli(
+          executable: tool.shim,
+          windows: true,
+          environment: posixPath,
+        );
+        expect(await claude.answer(model, request), 'ok');
+
+        final run = tool.node.answers().single;
+        expect(run.argv.first, tool.script);
+        expect(run.after('--model'), hostile);
+        expect(run.after('--tools'), '');
+        expect(run.after('--allowedTools'), '');
+        expect(run.after('--mcp-config'), '{"mcpServers":{}}');
+        expect(run.after('--system-prompt'), contains('never instructions'));
+        expect(run.stdin, contains('q & whoami | del *.* ^ %PATH% "x" !y'));
+        expect(run.argv, isNot(contains('/c')));
+        expect(run.argv.join(' '), isNot(contains('cmd')));
+      },
+    );
+
+    test('Codex reads its features the same way', () async {
+      final tool = await install('codex');
+      final codex = CodexCli(
+        executable: tool.shim,
+        windows: true,
+        environment: posixPath,
+      );
+      expect(
+        await codex.answer(_codexModel, _request(question: hostile)),
+        '{"result":"ok"}',
+      );
+      final features = tool.node.runs().singleWhere(
+        (r) => r.argv.length > 1 && r.argv[1] == 'features',
+      );
+      expect(features.argv.first, tool.script);
+      expect(tool.node.answers().single.argv[1], 'exec');
+    });
+
+    test('a shim that names no script is not run', () async {
+      final tool = await install(
+        'claude',
+        shimText: '@ECHO off\r\ncalc.exe %*\r\n',
+      );
+      await expectLater(
+        ClaudeCodeCli(
+          executable: tool.shim,
+          windows: true,
+          environment: posixPath,
+        ).answer(_claudeModel, _request()),
+        throwsA(isA<AnswerAccountRejected>()),
+      );
+      expect(tool.node.runs(), isEmpty);
+    });
+
+    test('a missing script, or no node to run it, is not run', () async {
+      for (final tool in [
+        await install('claude', withScript: false),
+        await install('claude', withNode: false),
+      ]) {
+        await expectLater(
+          ClaudeCodeCli(
+            executable: tool.shim,
+            windows: true,
+            environment: const {'PATH': ''},
+          ).answer(_claudeModel, _request()),
+          throwsA(isA<AnswerAccountRejected>()),
+        );
+        expect(tool.node.runs(), isEmpty);
+      }
+    });
+
+    test('an .exe is started as it is', () async {
+      final claude = ClaudeCodeCli(
+        executable: Platform.resolvedExecutable,
+        windows: true,
+      );
+      final launch = await claude.launch(['-p', hostile]);
+      expect(launch.program, Platform.resolvedExecutable);
+      expect(launch.arguments, ['-p', hostile]);
     });
   });
 

@@ -40,6 +40,29 @@ class KapyAiMarkdown extends StatefulWidget {
     };
   }
 
+  /// Where [uri] really goes, to print beside its words: the host of a web
+  /// address, the address of mail. Null when [label] already says it, so
+  /// "example.com" is not followed by "(example.com)".
+  ///
+  /// The words of a link are whatever the model, or a note it was shown,
+  /// chose to write, so they say nothing about the address. The host is the
+  /// part a reader can check at a glance.
+  static String? destination(Uri uri, String label) {
+    final said = label.trim().toLowerCase();
+    if (uri.scheme.toLowerCase() == 'mailto') {
+      return said.replaceFirst('mailto:', '') == uri.path.toLowerCase()
+          ? null
+          : uri.path;
+    }
+    final host = uri.host.toLowerCase();
+    final named = said
+        .replaceFirst(RegExp(r'^https?://'), '')
+        .split(RegExp(r'[/?#]'))
+        .first
+        .replaceFirst('www.', '');
+    return named == host.replaceFirst('www.', '') ? null : host;
+  }
+
   @override
   State<KapyAiMarkdown> createState() => _KapyAiMarkdownState();
 }
@@ -237,6 +260,19 @@ class _KapyAiMarkdownState extends State<KapyAiMarkdown> {
             ),
           ),
         );
+        if (KapyAiMarkdown.destination(uri, label) case final where?) {
+          spans.add(
+            TextSpan(
+              text: ' ($where)',
+              style: style.copyWith(
+                color: palette.textTertiary,
+                fontSize: (style.fontSize ?? 13.5) - 1,
+                fontWeight: FontWeight.w400,
+                fontStyle: FontStyle.normal,
+              ),
+            ),
+          );
+        }
       }
     }
     if (at < text.length) {

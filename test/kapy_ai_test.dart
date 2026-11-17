@@ -958,6 +958,86 @@ void main() {
       expect(launched, [Uri.parse('https://example.com/a')]);
     });
 
+    testWidgets('a link shows the host it really goes to', (tester) async {
+      await show(
+        tester,
+        'See [the timetable](https://evil.example/login?next=1) and '
+        '[good.com](https://evil.example) and '
+        '[https://good.com/a](https://evil.example/a).',
+      );
+
+      expect(
+        find.textContaining('the timetable (evil.example)', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('good.com (evil.example)', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'https://good.com/a (evil.example)',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a link that already says its host does not repeat it', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        '[example.com](https://example.com/a) and '
+        '[www.example.com/docs](https://example.com/b) and '
+        '[https://example.com](https://www.example.com).',
+      );
+
+      expect(find.textContaining('(', findRichText: true), findsNothing);
+    });
+
+    testWidgets('mail shows its address unless the words are it', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        '[write to Ana](mailto:ana@example.com) and '
+        '[ana@example.com](mailto:ana@example.com).',
+      );
+
+      expect(
+        find.textContaining(
+          'write to Ana (ana@example.com)',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('ana@example.com (', findRichText: true),
+        findsNothing,
+      );
+    });
+
+    testWidgets('words that only look like another host are not trusted', (
+      tester,
+    ) async {
+      await show(tester, '[good.com@evil.example](https://evil.example).');
+
+      expect(
+        find.textContaining(
+          'good.com@evil.example (evil.example)',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a link left as plain words gets no host', (tester) async {
+      await show(tester, '[this](javascript:alert(1)) now.');
+
+      expect(find.textContaining('(', findRichText: true), findsNothing);
+    });
+
     testWidgets('mailto opens when tapped', (tester) async {
       await show(tester, 'Write to [me](mailto:me@example.com).');
 
