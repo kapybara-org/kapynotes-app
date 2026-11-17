@@ -47,6 +47,7 @@ Widget harness(
   bool readOnly = false,
   bool light = false,
   double? width,
+  double editorTextScale = 1,
   WritingFont writingFont = WritingFont.handwritten,
   List<NoteFormatRange> initialFormats = const [],
   ValueChanged<String>? onBodyChanged,
@@ -71,6 +72,7 @@ Widget harness(
           noteId: 'markdown',
           initialBody: body,
           initialFormats: initialFormats,
+          editorTextScale: editorTextScale,
           engine: engine,
           highlighter: Highlighter(engine.registry),
           resultsVisible: true,
@@ -2386,6 +2388,38 @@ void main() {
         expect(last.dx, closeTo(box.right, 0.5));
         expect(box.left, closeTo(inset, 0.5));
       });
+
+      testWidgets(
+        "at 125% zoom the code and the header's language start at the "
+        'same x',
+        (tester) async {
+          tester.view.physicalSize = const Size(900, 600);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            harness(
+              note,
+              editorTextScale: 1.25,
+              writingFont: WritingFont.mixed,
+            ),
+          );
+          await settleWithPageKapy(tester);
+          final field = NoteDriver(tester);
+          final start = at(tester, 'x = 1');
+          final box = field
+              .boxesFor(
+                TextSelection(baseOffset: start, extentOffset: start + 1),
+              )
+              .single;
+          final codeX = field.toGlobal(Offset(box.left, 0)).dx;
+          final labelX = tester.getTopLeft(find.text('python')).dx;
+          expect(labelX, closeTo(codeX, 0.75));
+          expect(
+            codeX - field.toGlobal(Offset.zero).dx,
+            closeTo(inset * 1.25, 0.75),
+          );
+        },
+      );
 
       testWidgets(
         'a long line wraps inside the panel, every row in the inset',

@@ -332,7 +332,14 @@ class NoteLayout {
                   textScaler: scaler,
                 )
               : InsetTextPainter(
-                  inset: scaler.scale(drawn.inset),
+                  // In pixels at the note's own size, so it grows with the
+                  // editor's zoom as a forced row does, then with the text.
+                  inset: scaler.scale(
+                    drawn.inset *
+                        strut.fontSize! *
+                        strut.height! /
+                        EditorMetrics.lineHeight,
+                  ),
                   text: text,
                   textDirection: TextDirection.ltr,
                   strutStyle: strutStyle,
