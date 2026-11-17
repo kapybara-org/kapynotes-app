@@ -160,6 +160,12 @@ class _HiddenGate implements HiddenNotesGate {
     unlockCalls++;
     return allowUnlock;
   }
+
+  @override
+  Future<bool> usesPin() async => false;
+
+  @override
+  Future<bool> changePin(BuildContext context) async => false;
 }
 
 /// The [TextField] of the note the editor is currently showing.
