@@ -80,6 +80,8 @@ Widget harness(
           onSettingsPressed: () {},
           writingFont: WritingFont.handwritten,
           shortcuts: shortcutPrefs,
+          // A fixed clock, so the meta row's "Edited" is the same every run.
+          now: () => DateTime(2026, 9, 1, 15, 38),
         ),
       ),
     ),
@@ -137,6 +139,10 @@ TextStyle styleOf(WidgetTester tester, String needle) {
   visit(editable.text!, inherited);
   return found!;
 }
+
+/// The weight the note's writing is set in.
+FontWeight? _writingWeight(WidgetTester tester) =>
+    tester.widget<TextField>(find.byType(TextField)).style!.fontWeight;
 
 /// Whether the field draws the first character of [needle] at all.
 bool isHidden(WidgetTester tester, String needle) {
@@ -242,7 +248,9 @@ void main() {
     testWidgets('every item\'s words start in one column, nesting a room in', (
       tester,
     ) async {
-      const body = '- [ ] task\n- bullet\n  - nested\n    - deeper\n1. number';
+      // Under a title, so the lines are the writing rather than the title.
+      const body =
+          'List\n- [ ] task\n- bullet\n  - nested\n    - deeper\n1. number';
       await tester.pumpWidget(harness(body));
       await tester.pumpAndSettle();
       final editable = tester
@@ -284,17 +292,19 @@ void main() {
     });
 
     testWidgets('off, the same text is drawn as it always was', (tester) async {
-      await tester.pumpWidget(harness('# Title\n**bold**', markdown: false));
+      await tester.pumpWidget(
+        harness('Note\n# Title\n**bold**', markdown: false),
+      );
       await tester.pumpAndSettle();
 
-      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w400);
-      expect(styleOf(tester, 'Title').fontWeight, FontWeight.w400);
+      expect(styleOf(tester, 'bold').fontWeight, _writingWeight(tester));
+      expect(styleOf(tester, 'Title').fontWeight, _writingWeight(tester));
     });
 
     testWidgets('off, a table is still drawn as a grid', (tester) async {
       await tester.pumpWidget(
         harness(
-          '# Title\n\n| a | b |\n| --- | --- |\n| Tea | 4 |',
+          'Note\n# Title\n\n| a | b |\n| --- | --- |\n| Tea | 4 |',
           markdown: false,
         ),
       );
@@ -305,16 +315,16 @@ void main() {
       expect(isHidden(tester, 'Tea'), isTrue);
 
       // And nothing else markdown does comes along with it.
-      expect(styleOf(tester, 'Title').fontWeight, FontWeight.w400);
+      expect(styleOf(tester, 'Title').fontWeight, _writingWeight(tester));
       expect(isHidden(tester, '#'), isFalse);
     });
 
     testWidgets('switching markdown on redraws the open note', (tester) async {
-      await tester.pumpWidget(harness('**bold**', markdown: false));
+      await tester.pumpWidget(harness('Note\n**bold**', markdown: false));
       await tester.pumpAndSettle();
-      expect(styleOf(tester, 'bold').fontWeight, FontWeight.w400);
+      expect(styleOf(tester, 'bold').fontWeight, _writingWeight(tester));
 
-      await tester.pumpWidget(harness('**bold**'));
+      await tester.pumpWidget(harness('Note\n**bold**'));
       await tester.pumpAndSettle();
       expect(styleOf(tester, 'bold').fontWeight, FontWeight.w700);
     });
@@ -634,6 +644,9 @@ void main() {
     testWidgets('the footer writes headings and lists as markdown', (
       tester,
     ) async {
+      // The footer's tools are a phone's.
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await tester.pumpWidget(harness('Groceries', autofocus: true));
       await tester.pumpAndSettle();
       controllerOf(tester).selection = const TextSelection.collapsed(offset: 9);
@@ -886,17 +899,40 @@ void main() {
       expect(controllerOf(tester).text, '☐ ');
     });
 
-    testWidgets('leaves headings to the text-style control', (tester) async {
+    testWidgets('turns the line into a heading of the chosen level', (
+      tester,
+    ) async {
       await tester.pumpWidget(harness('', autofocus: true));
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), '/heading');
       await tester.pump();
       await tester.pump();
+      for (final level in [1, 2, 3]) {
+        expect(
+          find.byKey(ValueKey('slash-command-heading$level')),
+          findsOneWidget,
+        );
+      }
+      await tester.tap(find.byKey(const ValueKey('slash-command-heading2')));
+      await tester.pumpAndSettle();
+      expect(controllerOf(tester).text, '## ');
+    });
 
-      expect(find.byKey(const ValueKey('slash-command-heading')), findsNothing);
-      expect(find.byKey(const ValueKey('slash-command-empty')), findsOneWidget);
-      expect(controllerOf(tester).text, '/heading');
+    testWidgets('a formula opens as display math around the caret', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '/math');
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('math'), findsOneWidget, reason: 'the alias it found');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(controllerOf(tester).text, '\$\$\n\n\$\$');
+      expect(controllerOf(tester).selection.baseOffset, 3);
     });
 
     testWidgets('table insertion is one undoable editor change', (
@@ -2035,6 +2071,7 @@ void main() {
       tester,
     ) async {
       const body =
+          'Note\n'
           'a <u>under</u> E = mc<sup>2</sup> and H<sub>3</sub>O x<sup>n</sup>';
       await tester.pumpWidget(harness(body));
       await tester.pumpAndSettle();

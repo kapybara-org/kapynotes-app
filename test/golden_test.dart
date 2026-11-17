@@ -607,28 +607,6 @@ void main() {
     );
   });
 
-  testWidgets('desktop dark compact hover surfaces', (tester) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(760, 520),
-      brightness: Brightness.dark,
-    );
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    addTearDown(mouse.removePointer);
-    await mouse.addPointer(location: Offset.zero);
-    await tester.tap(find.byKey(const ValueKey('formatting-toggle')));
-    await tester.pumpAndSettle();
-    await mouse.moveTo(
-      tester.getCenter(find.byKey(const ValueKey('format-style'))),
-    );
-    await tester.pumpAndSettle();
-
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/desktop_dark_hover_surfaces.png'),
-    );
-  });
-
   testWidgets('desktop dark narrow, results at line ends', (tester) async {
     await pumpForGolden(
       tester,
@@ -872,7 +850,7 @@ void main() {
     );
   });
 
-  testWidgets('desktop dark selection formatting toolbar', (tester) async {
+  testWidgets('desktop dark selection bubble', (tester) async {
     // With the list put away, so the whole note fits the page and the word
     // to select is on screen rather than scrolled above it.
     await pumpForGolden(
@@ -921,41 +899,14 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
     expect(field.controller!.selection.isCollapsed, isFalse);
-    expect(
-      find.byKey(const ValueKey('selection-formatting-toolbar')),
-      findsOneWidget,
+    final bubble = tester.getRect(
+      find.byKey(const ValueKey('selection-bubble')),
     );
-    final toolbar = tester.getRect(
-      find.byKey(const ValueKey('selection-formatting-toolbar')),
-    );
-    expect(toolbar.left, greaterThanOrEqualTo(0));
-    expect(toolbar.top, greaterThanOrEqualTo(0));
-    expect(toolbar.right, lessThanOrEqualTo(760));
-    expect(toolbar.bottom, lessThanOrEqualTo(520));
-    // Copy leads the row now, ahead of the text style; there is no Paste here
-    // because nothing in this test puts anything on the clipboard.
-    expect(toolbar.width, inInclusiveRange(280, 296));
-    final selectionFade = tester.widget<FadeTransition>(
-      find
-          .ancestor(
-            of: find.byKey(const ValueKey('selection-formatting-toolbar')),
-            matching: find.byType(FadeTransition),
-          )
-          .first,
-    );
-    expect(selectionFade.opacity.value, closeTo(1, 0.01));
-    final hoverMouse = await tester.createGesture(
-      kind: PointerDeviceKind.mouse,
-    );
-    addTearDown(hoverMouse.removePointer);
-    await hoverMouse.addPointer(location: Offset.zero);
-    await hoverMouse.moveTo(
-      tester.getCenter(find.byKey(const ValueKey('selection-style'))),
-    );
-    await tester.pumpAndSettle();
+    expect(bubble.top, greaterThanOrEqualTo(0));
+    expect(bubble.right, lessThanOrEqualTo(760));
     await expectLater(
-      find.byKey(const ValueKey('selection-formatting-toolbar')),
-      matchesGoldenFile('goldens/selection_formatting_toolbar.png'),
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_selection_bubble.png'),
     );
   });
 

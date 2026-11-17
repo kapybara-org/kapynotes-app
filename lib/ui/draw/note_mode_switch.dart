@@ -29,12 +29,13 @@ class NoteModeSwitch extends StatelessWidget {
         key: const ValueKey('note-mode-switch'),
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
-          color: palette.controlBackground,
+          color: palette.surfaceBackground,
           borderRadius: BorderRadius.circular(AppRadii.control),
           border: Border.all(color: palette.controlBorder),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          spacing: 2,
           children: [
             _Segment(
               key: const ValueKey('note-mode-write'),
@@ -90,16 +91,23 @@ class _Segment extends StatelessWidget {
           hoverColor: palette.hover,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
-            padding: EdgeInsets.symmetric(
-              horizontal: touch ? 12 : 9,
-              vertical: touch ? 8 : 4,
+            height: touch ? 34 : 28,
+            padding: EdgeInsets.only(
+              left: touch ? 12 : 9,
+              right: touch ? 12 : 10,
             ),
             decoration: BoxDecoration(
-              color: selected ? palette.surfaceBackground : Colors.transparent,
+              color: selected ? palette.selectedBackground : Colors.transparent,
               borderRadius: BorderRadius.circular(AppRadii.control - 2),
-              border: Border.all(
-                color: selected ? palette.controlBorder : Colors.transparent,
-              ),
+              boxShadow: selected
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x4D000000),
+                        offset: Offset(0, 1),
+                        blurRadius: 2,
+                      ),
+                    ]
+                  : null,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,

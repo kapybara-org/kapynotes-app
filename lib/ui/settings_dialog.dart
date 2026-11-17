@@ -2551,10 +2551,15 @@ extension on ShortcutAction {
     ShortcutAction.resetEditorTextSize ||
     ShortcutAction.pasteAsPlainText => _ShortcutGroup.editor,
     ShortcutAction.insertImage ||
+    ShortcutAction.insertVideo ||
+    ShortcutAction.insertFile ||
     ShortcutAction.recordVoiceNote => _ShortcutGroup.insert,
     ShortcutAction.cycleTextStyle ||
     ShortcutAction.formatBold ||
     ShortcutAction.formatItalic ||
+    ShortcutAction.formatStrikethrough ||
+    ShortcutAction.formatCode ||
+    ShortcutAction.formatLink ||
     ShortcutAction.formatBullets ||
     ShortcutAction.formatChecklist => _ShortcutGroup.formatting,
   };

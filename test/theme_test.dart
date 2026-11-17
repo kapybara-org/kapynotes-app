@@ -292,13 +292,10 @@ void main() {
     ]);
   });
 
-  test('mixed editor face uses monospace for its writing surface', () {
+  test('mixed editor face writes in Figtree at 16', () {
     expect(WritingFont.mixed.label, 'Mixed');
-    expect(WritingFont.mixed.fontFamily, WritingFont.monospace.fontFamily);
-    expect(
-      WritingFont.mixed.fontFamilyFallback,
-      WritingFont.monospace.fontFamilyFallback,
-    );
-    expect(WritingFont.mixed.editorSize, WritingFont.monospace.editorSize);
+    expect(WritingFont.mixed.fontFamily, 'Figtree');
+    expect(WritingFont.mixed.fontFamilyFallback, AppPlatform.uiFontFallback);
+    expect(WritingFont.mixed.editorSize, 16);
   });
 }

@@ -516,6 +516,30 @@ class KapyIcons {
     0xE06E,
     HugeIcons.strokeRoundedQuoteDown,
   );
+  static const heading1Rounded = KapyIconData(
+    0xE0D6,
+    HugeIcons.strokeRoundedHeading01,
+  );
+  static const heading2Rounded = KapyIconData(
+    0xE0D7,
+    HugeIcons.strokeRoundedHeading02,
+  );
+  static const heading3Rounded = KapyIconData(
+    0xE0D8,
+    HugeIcons.strokeRoundedHeading03,
+  );
+  static const formulaRounded = KapyIconData(
+    0xE0D9,
+    HugeIcons.strokeRoundedFunction,
+  );
+  static const strikethroughRounded = KapyIconData(
+    0xE0DA,
+    HugeIcons.strokeRoundedTextStrikethrough,
+  );
+  static const inlineCodeRounded = KapyIconData(
+    0xE0DB,
+    HugeIcons.strokeRoundedSourceCode,
+  );
   static const dividerRounded = KapyIconData(
     0xE06F,
     HugeIcons.strokeRoundedMinusSign,

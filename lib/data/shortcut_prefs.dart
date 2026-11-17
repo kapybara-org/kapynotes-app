@@ -26,9 +26,14 @@ enum ShortcutAction {
   decreaseEditorTextSize,
   resetEditorTextSize,
   insertImage,
+  insertVideo,
+  insertFile,
   cycleTextStyle,
   formatBold,
   formatItalic,
+  formatStrikethrough,
+  formatCode,
+  formatLink,
   formatBullets,
   formatChecklist,
   recordVoiceNote,
@@ -58,9 +63,14 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.decreaseEditorTextSize => 'Decrease editor text',
     ShortcutAction.resetEditorTextSize => 'Reset editor text size',
     ShortcutAction.insertImage => 'Add an image',
+    ShortcutAction.insertVideo => 'Add a video',
+    ShortcutAction.insertFile => 'Attach a file',
     ShortcutAction.cycleTextStyle => 'Cycle text style',
     ShortcutAction.formatBold => 'Bold',
     ShortcutAction.formatItalic => 'Italic',
+    ShortcutAction.formatStrikethrough => 'Strikethrough',
+    ShortcutAction.formatCode => 'Inline code',
+    ShortcutAction.formatLink => 'Link',
     ShortcutAction.formatBullets => 'Bulleted list',
     ShortcutAction.formatChecklist => 'Checklist',
     ShortcutAction.recordVoiceNote => 'Record a voice note',
@@ -101,10 +111,19 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.resetEditorTextSize =>
       'Return editor writing to its default size',
     ShortcutAction.insertImage => 'Choose a picture or take a photo',
+    ShortcutAction.insertVideo => 'Choose a video to play in the note',
+    ShortcutAction.insertFile =>
+      'Attach any file to open on your other devices',
     ShortcutAction.cycleTextStyle =>
       'Switch between Text, Heading, and Subtitle',
     ShortcutAction.formatBold => 'Toggle bold on the selection or new text',
     ShortcutAction.formatItalic => 'Toggle italic on the selection or new text',
+    ShortcutAction.formatStrikethrough =>
+      'Strike through the selection, in Markdown',
+    ShortcutAction.formatCode =>
+      'Set the selection as inline code, in Markdown',
+    ShortcutAction.formatLink =>
+      'Link the selected words to an address. Only while text is selected',
     ShortcutAction.formatBullets =>
       'Toggle a bulleted list on the current lines',
     ShortcutAction.formatChecklist => 'Toggle a checklist on the current lines',
@@ -126,6 +145,9 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.cycleTextStyle ||
     ShortcutAction.formatBold ||
     ShortcutAction.formatItalic ||
+    ShortcutAction.formatStrikethrough ||
+    ShortcutAction.formatCode ||
+    ShortcutAction.formatLink ||
     ShortcutAction.formatBullets ||
     ShortcutAction.formatChecklist => true,
     _ => false,
@@ -643,6 +665,22 @@ class ShortcutPrefs extends ChangeNotifier {
         control: !useMeta,
         shift: true,
       ),
+      // M for movie: ⌘⇧V is Paste as plain text.
+      ShortcutAction.insertVideo => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyM,
+        physicalKey: PhysicalKeyboardKey.keyM,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      // A for attach: ⌘⇧F is taken by search in most apps.
+      ShortcutAction.insertFile => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyA,
+        physicalKey: PhysicalKeyboardKey.keyA,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
       ShortcutAction.cycleTextStyle => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyT,
         physicalKey: PhysicalKeyboardKey.keyT,
@@ -658,6 +696,26 @@ class ShortcutPrefs extends ChangeNotifier {
       ShortcutAction.formatItalic => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyI,
         physicalKey: PhysicalKeyboardKey.keyI,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      // X for crossed out: ⌘X alone is Cut.
+      ShortcutAction.formatStrikethrough => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyX,
+        physicalKey: PhysicalKeyboardKey.keyX,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      ShortcutAction.formatCode => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyE,
+        physicalKey: PhysicalKeyboardKey.keyE,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      ShortcutAction.formatLink => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyK,
+        physicalKey: PhysicalKeyboardKey.keyK,
         meta: useMeta,
         control: !useMeta,
       ),

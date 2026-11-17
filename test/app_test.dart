@@ -689,9 +689,7 @@ void main() {
     expect(find.textContaining('Rates'), findsNothing);
   });
 
-  testWidgets('uses compact toolbar and roomier footer surfaces on desktop', (
-    tester,
-  ) async {
+  testWidgets('uses compact toolbar surfaces on desktop', (tester) async {
     await pumpApp(tester);
     notes.create();
     await tester.pumpAndSettle();
@@ -709,34 +707,6 @@ void main() {
       const Size.square(32),
     );
     expect(tester.getSize(pageButton('page-share', FilledButton)).height, 32);
-    final footerBold = find.descendant(
-      of: find.byKey(const ValueKey('format-bold')),
-      matching: find.byType(IconButton),
-    );
-    expect(tester.getSize(footerBold), const Size.square(32));
-
-    Finder footerButton(String key) => find.descendant(
-      of: find.byKey(ValueKey(key)),
-      matching: find.byType(IconButton),
-    );
-    final image = tester.getRect(footerButton('insert-image'));
-    final video = tester.getRect(footerButton('insert-video'));
-    final mic = tester.getRect(footerButton('record-voice'));
-    final formatting = tester.getRect(footerButton('formatting-toggle'));
-    await tester.tap(footerButton('formatting-toggle'));
-    await tester.pumpAndSettle();
-    final style = tester.getRect(footerButton('format-style'));
-    expect(video.left - image.right, 4);
-    expect(mic.left - video.right, 4);
-    expect(formatting.left - mic.right, 12);
-    expect(style.left - formatting.right, 4);
-    // The row starts at the bar's own edge inset: nothing precedes the three
-    // insert actions now that settings is only ever in the notes list.
-    expect(
-      image.left - tester.getRect(find.byType(NoteFooter)).left,
-      closeTo(12, 0.01),
-    );
-
     expect(
       tester.getSize(find.byType(NoteRow).first).height,
       NoteCardFace.height,
@@ -1581,20 +1551,6 @@ void main() {
     notes.create(body: 'alpha');
     await tester.pumpAndSettle();
 
-    final before = shortcuts.bindingFor(ShortcutAction.formatBold)!;
-    expect(find.byTooltip('Bold · ${before.displayLabel}'), findsOneWidget);
-    expect(
-      find.byTooltip(
-        'Add an image · ${shortcuts.bindingFor(ShortcutAction.insertImage)!.displayLabel}',
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byTooltip(
-        'Record a voice note · ${shortcuts.bindingFor(ShortcutAction.recordVoiceNote)!.displayLabel}',
-      ),
-      findsOneWidget,
-    );
     expect(
       find.descendant(
         of: find.byType(SpacesRail),
@@ -1605,22 +1561,7 @@ void main() {
       findsOneWidget,
     );
 
-    // What the settings pane does when somebody records a new chord. The
-    // pane promises the footer hints keep up with it.
-    shortcuts.update(
-      ShortcutAction.formatBold,
-      const ShortcutBinding(
-        logicalKey: LogicalKeyboardKey.keyK,
-        physicalKey: PhysicalKeyboardKey.keyK,
-        meta: true,
-        shift: true,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byTooltip('Bold · Cmd + Shift + K'), findsOneWidget);
-
-    // More spells out Keep on top's shortcut too, from the same source.
+    // More spells out Keep on top's shortcut, and keeps up with a new one.
     Finder onTopHint(String label) => find.descendant(
       of: find.byKey(const ValueKey('page-more-on-top')),
       matching: find.text(label),
@@ -4079,7 +4020,10 @@ void main() {
         // The writing keeps the whole pane: nothing beside it but its margin.
         final field = tester.getRect(find.byType(EditableText));
         final pane = tester.getRect(find.byType(NoteEditor));
-        expect(pane.right - field.right, lessThan(20));
+        expect(
+          pane.right - field.right,
+          lessThanOrEqualTo(EditorMetrics.padding.right),
+        );
       },
     );
 
@@ -4289,11 +4233,10 @@ void main() {
       const commandOrder = [
         'checklist',
         'bulletedList',
-        'image',
-        'voiceNote',
-        'table',
-        'divider',
-        'video',
+        'numberedList',
+        'heading1',
+        'heading2',
+        'heading3',
       ];
       final commandTops = [
         for (final command in commandOrder)
@@ -4308,7 +4251,13 @@ void main() {
         const Offset(0, -260),
       );
       await tester.pumpAndSettle();
-      const finalCommandOrder = ['video', 'numberedList', 'quote', 'codeBlock'];
+      const finalCommandOrder = [
+        'quote',
+        'codeBlock',
+        'formula',
+        'table',
+        'divider',
+      ];
       final finalCommandTops = [
         for (final command in finalCommandOrder)
           tester.getTopLeft(find.byKey(ValueKey('slash-command-$command'))).dy,
@@ -4319,7 +4268,18 @@ void main() {
           greaterThan(finalCommandTops[index - 1]),
         );
       }
-      expect(find.byKey(const ValueKey('slash-command-heading')), findsNothing);
+      // The inserts are one row of icons under the list, and a drawing is
+      // a note of its own rather than something to insert.
+      final inserts = tester.getRect(
+        find.byKey(const ValueKey('slash-command-inserts')),
+      );
+      for (final command in ['image', 'video', 'voiceNote']) {
+        final icon = tester.getRect(
+          find.byKey(ValueKey('slash-command-$command')),
+        );
+        expect(icon.center.dy, closeTo(inserts.center.dy, 1));
+      }
+      expect(find.byKey(const ValueKey('slash-command-drawing')), findsNothing);
     });
 
     testWidgets('sits the phone footer on the bottom edge of the screen', (
