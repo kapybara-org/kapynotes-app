@@ -52,6 +52,18 @@ List<TaskLine> taskLines(String text) {
 String anchorKey(NoteDoc doc, TaskLine line) =>
     doc.anchorAt(line.textStart + 1).id!.key;
 
+/// Which of [lines], [taskLines] of [doc]'s text, the task anchored at
+/// [anchor] is on; -1 once its line has gone, or while the anchor names a
+/// character this document has not received yet, or one this build cannot
+/// read.
+int taskLineIndex(NoteDoc doc, List<TaskLine> lines, String anchor) {
+  final parsed = parseAnchor(anchor);
+  if (parsed == null || !doc.knows(parsed)) return -1;
+  final offset = doc.lineOffsetOf(parsed);
+  if (offset == null) return -1;
+  return lines.indexWhere((l) => l.start <= offset && offset <= l.end);
+}
+
 /// The anchor a record names, or null for one this build cannot read.
 Anchor? parseAnchor(String key) {
   final split = key.lastIndexOf(':');

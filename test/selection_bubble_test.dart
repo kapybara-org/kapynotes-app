@@ -49,7 +49,7 @@ Widget _editor(
           resultsVisible: false,
           markdownEnabled: markdown,
           autofocus: true,
-          onDocumentChanged: (body, formats, attachments) =>
+          onDocumentChanged: (body, formats, attachments, _) =>
               onFormatsChanged?.call(formats),
           onSettingsPressed: () {},
           writingFont: WritingFont.handwritten,

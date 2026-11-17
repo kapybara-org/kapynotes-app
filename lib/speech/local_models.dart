@@ -155,7 +155,8 @@ class LocalSpeechModel implements DownloadableModel {
   @override
   final String summary;
 
-  /// Every language it can transcribe, in English, publisher's order.
+  /// Every language it can transcribe, as the ISO-639-1 codes
+  /// `VoicePrefs.language` holds, in the publisher's order.
   final List<String> languages;
 
   /// Word error rate as a percentage — lower is better. English is measured
@@ -254,31 +255,31 @@ const LocalSpeechModel parakeetTdt06bV3Int8 = LocalSpeechModel(
       'Transcribes 25 European languages on the device, with no account, no '
       'minutes, and no recording leaving it.',
   languages: <String>[
-    'Bulgarian',
-    'Croatian',
-    'Czech',
-    'Danish',
-    'Dutch',
-    'English',
-    'Estonian',
-    'Finnish',
-    'French',
-    'German',
-    'Greek',
-    'Hungarian',
-    'Italian',
-    'Latvian',
-    'Lithuanian',
-    'Maltese',
-    'Polish',
-    'Portuguese',
-    'Romanian',
-    'Slovak',
-    'Slovenian',
-    'Spanish',
-    'Swedish',
-    'Russian',
-    'Ukrainian',
+    'bg',
+    'hr',
+    'cs',
+    'da',
+    'nl',
+    'en',
+    'et',
+    'fi',
+    'fr',
+    'de',
+    'el',
+    'hu',
+    'it',
+    'lv',
+    'lt',
+    'mt',
+    'pl',
+    'pt',
+    'ro',
+    'sk',
+    'sl',
+    'es',
+    'sv',
+    'ru',
+    'uk',
   ],
   // 6.34% averaged over the eight datasets of the Open ASR Leaderboard;
   // 11.97% averaged over FLEURS, which is 100-odd languages of read speech

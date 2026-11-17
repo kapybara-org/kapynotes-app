@@ -8,6 +8,7 @@ import '../data/local_store.dart';
 import '../data/note_attachment.dart';
 import '../data/notes_store.dart';
 import '../data/voice_prefs.dart';
+import 'cloud_access.dart';
 import 'cloud_transcriber.dart';
 import 'summarizer.dart';
 import 'transcriber.dart';
@@ -126,6 +127,7 @@ class TranscriptionQueue extends ChangeNotifier {
     required NotesStore notes,
     required BlobStore blobs,
     required VoicePrefs prefs,
+    CloudAccess? cloudAccess,
     SpeechApi? Function()? api,
     Summarizer? Function()? summarizer,
     Transcriber? Function()? transcriber,
@@ -133,6 +135,7 @@ class TranscriptionQueue extends ChangeNotifier {
        _notes = notes,
        _blobs = blobs,
        _prefs = prefs,
+       _cloudAccess = cloudAccess,
        _api = api ?? (() => null),
        _summarizer = summarizer ?? (() => null),
        _transcriber = transcriber ?? _cloudOnly(api ?? (() => null));
@@ -141,6 +144,10 @@ class TranscriptionQueue extends ChangeNotifier {
   final NotesStore _notes;
   final BlobStore _blobs;
   final VoicePrefs _prefs;
+
+  /// Where the plan lets each stage run, which the routers obey. Null in a
+  /// build with no plan to keep to, where the saved choice is the answer.
+  final CloudAccess? _cloudAccess;
   final SpeechApi? Function() _api;
 
   /// Where summaries get written. Null in a build with no summariser wired
@@ -377,15 +384,21 @@ class TranscriptionQueue extends ChangeNotifier {
     }
   }
 
+  /// Where each stage runs: the saved choice, as far as the plan allows it.
+  SummaryEngine get _summaryEngine =>
+      _cloudAccess?.summaries.engine ?? _prefs.summaryEngine;
+  TranscriptEngine get _transcriptEngine =>
+      _cloudAccess?.transcription.engine ?? _prefs.transcriptEngine;
+
   /// Whether [entry]'s remaining work happens on this device.
   ///
-  /// Read off the preference rather than by asking the summariser, because a
+  /// Read off the engine rather than by asking the summariser, because a
   /// chip asks this on every rebuild and readiness is an await. Being wrong
   /// optimistically costs one attempt that fails with a reason; being wrong
   /// the other way would tell somebody to sign in for work needing no account.
   bool _summarizesHere(TranscriptionEntry entry) =>
       entry.stage == TranscriptionStage.summarize &&
-      _prefs.summaryEngine == SummaryEngine.device &&
+      _summaryEngine == SummaryEngine.device &&
       _summarizer() != null;
 
   /// The same question about the other stage.
@@ -395,7 +408,7 @@ class TranscriptionQueue extends ChangeNotifier {
   /// ordinary setting, and so is the reverse.
   bool _transcribesHere(TranscriptionEntry entry) =>
       entry.stage == TranscriptionStage.transcribe &&
-      _prefs.transcriptEngine == TranscriptEngine.device &&
+      _transcriptEngine == TranscriptEngine.device &&
       _transcriber() != null;
 
   /// Whether [entry]'s next step needs nothing but this machine.
@@ -634,7 +647,7 @@ class TranscriptionQueue extends ChangeNotifier {
 
   /// Moves an entry on when the stage it was about is already done.
   void _advance(TranscriptionEntry entry, NoteVoiceRef ref) {
-    final needsJobId = _prefs.summaryEngine != SummaryEngine.device;
+    final needsJobId = _summaryEngine != SummaryEngine.device;
     if (ref.summary != null ||
         !_prefs.summarize ||
         (needsJobId && entry.jobId == null)) {
