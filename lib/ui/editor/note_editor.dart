@@ -1997,6 +1997,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         cause,
         clipboardText: capturedText,
         startingValue: startingValue,
+        clipboardFiles: snapshot.files,
       );
       return;
     }
@@ -2072,6 +2073,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         cause,
         clipboardText: capturedText,
         startingValue: startingValue,
+        clipboardFiles: snapshot.files,
       );
       return;
     }
@@ -2082,6 +2084,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         cause,
         clipboardText: capturedText,
         startingValue: startingValue,
+        clipboardFiles: snapshot.files,
       );
       return;
     }
@@ -2100,6 +2103,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     SelectionChangedCause cause, {
     String? clipboardText,
     TextEditingValue? startingValue,
+    List<String> clipboardFiles = const [],
   }) {
     if (widget.readOnly) return;
     final editable = _editableTextState();
@@ -2152,7 +2156,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
     _focusNode.requestFocus();
     if (store != null && pictures.isNotEmpty) {
-      unawaited(_preparePastedImages(pictures, store));
+      unawaited(_preparePastedImages(pictures, store, clipboardFiles));
     }
 
     // Written as something other than the clipboard's plain text, which a
@@ -2305,8 +2309,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// downloads run side by side, compression one at a time.
   Future<void> _preparePastedImages(
     List<({NoteImageRef ref, PasteImage image})> pictures,
-    BlobStore store,
-  ) async {
+    BlobStore store, [
+    List<String> clipboardFiles = const [],
+  ]) async {
     final fetched = [
       for (final picture in pictures)
         picture.image.hasBytes
@@ -2314,7 +2319,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 bytes: picture.image.bytes!,
                 mime: picture.image.mime ?? 'image/png',
               ))
-            : PastedImageDownloader.shared.fetch(picture.ref.src ?? ''),
+            : PastedImageDownloader.shared.fetch(
+                picture.ref.src ?? '',
+                clipboardFiles: clipboardFiles,
+              ),
     ];
     for (var i = 0; i < pictures.length; i++) {
       final placeholder = pictures[i].ref;

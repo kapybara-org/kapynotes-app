@@ -452,4 +452,130 @@ void main() {
     await tester.pumpAndSettle();
     expect(await changed, isFalse);
   });
+  testWidgets('the wait and the count outlive the app', (tester) async {
+    var now = DateTime(2026, 11, 17);
+    final (context, gate, store, _) = await _pinGate(tester, now: () => now);
+
+    for (var i = 0; i < 4; i++) {
+      expect(await _tryUnlock(tester, gate, context, '0000'), isFalse);
+    }
+    final relaunched = _gateOn(store, () => now);
+    expect(
+      await _lockOut(tester, relaunched, context, tries: 1),
+      'Too many tries. Try again in 30 s.',
+    );
+
+    now = now.add(const Duration(seconds: 10));
+    final again = _gateOn(store, () => now);
+    final unlocked = again.unlock(context);
+    await tester.pumpAndSettle();
+    expect(find.text('Too many tries. Try again in 20 s.'), findsOneWidget);
+    expect(_unlockField(tester).enabled, isFalse);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(await unlocked, isFalse);
+  });
+
+  testWidgets(
+    'each wait is longer up to 15 minutes, and a right PIN resets it',
+    (tester) async {
+      var now = DateTime(2026, 11, 17);
+      final (context, gate, store, _) = await _pinGate(tester, now: () => now);
+
+      for (final wait in ['30 s', '60 s', '5 min', '15 min', '15 min']) {
+        expect(
+          await _lockOut(tester, gate, context),
+          'Too many tries. Try again in $wait.',
+        );
+        now = now.add(const Duration(minutes: 15));
+      }
+      expect(await _tryUnlock(tester, gate, context, '1357'), isTrue);
+      expect(
+        await _lockOut(tester, _gateOn(store, () => now), context),
+        'Too many tries. Try again in 30 s.',
+      );
+    },
+  );
+
+  testWidgets('a clock set back never stretches the wait', (tester) async {
+    var now = DateTime(2026, 11, 17);
+    final (context, gate, _, _) = await _pinGate(tester, now: () => now);
+    expect(
+      await _lockOut(tester, gate, context),
+      'Too many tries. Try again in 30 s.',
+    );
+
+    now = now.subtract(const Duration(days: 1));
+    final unlocked = gate.unlock(context);
+    await tester.pumpAndSettle();
+    expect(find.text('Too many tries. Try again in 30 s.'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(await unlocked, isFalse);
+  });
+
+  testWidgets('an unreadable count is no count, and is written over', (
+    tester,
+  ) async {
+    final (context, gate, store, _) = await _pinGate(tester);
+    await store.write(_attemptsKey, 'not json');
+
+    expect(await _tryUnlock(tester, gate, context, '1357'), isTrue);
+    expect(jsonDecode((await store.read(_attemptsKey))!), {
+      'wrong': 0,
+      'lockouts': 0,
+    });
+  });
+
+  testWidgets('a store that cannot keep the count still waits for the run', (
+    tester,
+  ) async {
+    final (context, gate, store, _) = await _pinGate(tester);
+    store.failWrites = true;
+
+    expect(
+      await _lockOut(tester, gate, context),
+      'Too many tries. Try again in 30 s.',
+    );
+    expect(await store.read(_attemptsKey), isNull);
+  });
+}
+
+const _attemptsKey = 'kapynotes.hiddenNotesAttempts';
+
+DefaultHiddenNotesGate _gateOn(_Store store, DateTime Function() now) =>
+    DefaultHiddenNotesGate(
+      store: store,
+      deviceAuthenticator: _DeviceAuthenticator(const []),
+      useSystemAuthentication: false,
+      pinDeriver: _testPinDeriver,
+      now: now,
+    );
+
+TextField _unlockField(WidgetTester tester) => tester.widget(
+  find.descendant(
+    of: find.byKey(const ValueKey('hidden-pin-unlock')),
+    matching: find.byType(TextField),
+  ),
+);
+
+/// Enters wrong PINs into one prompt until it waits, and returns what it says.
+Future<String> _lockOut(
+  WidgetTester tester,
+  HiddenNotesGate gate,
+  BuildContext context, {
+  int tries = 5,
+}) async {
+  final unlocked = gate.unlock(context);
+  await tester.pumpAndSettle();
+  for (var i = 0; i < tries; i++) {
+    await _enterUnlockPin(tester, '0000');
+  }
+  final message = tester
+      .widget<Text>(find.byKey(const ValueKey('hidden-pin-error')))
+      .data!;
+  await tester.tap(find.text('Cancel'));
+  await tester.pumpAndSettle();
+  expect(await unlocked, isFalse);
+  return message;
 }
