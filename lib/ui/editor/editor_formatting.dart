@@ -89,6 +89,7 @@ TextStyle paragraphTextStyle(
     return _headingStyle(
       base,
       EditorMetrics.page ? _pageHeadingScale(1) : 1.28,
+      1,
       writingFont,
     ).copyWith(color: primaryColor);
   }
@@ -136,13 +137,9 @@ double _pageScale(TextStyle base) =>
     ? 1
     : base.fontSize! * base.height! / EditorMetrics.lineHeight;
 
-/// Paper's section heading is 18 over 16px writing; the levels under it step
-/// down to the writing's own size.
-double _pageHeadingScale(int level) => switch (level) {
-  <= 1 => EditorMetrics.headingFontSize / 16,
-  2 => 17 / 16,
-  _ => 1.0,
-};
+/// A heading's size on the page against 16px writing.
+double _pageHeadingScale(int level) =>
+    EditorMetrics.headingFontSize(level) / 16;
 
 /// The least room a markdown list marker takes, before scaling: a task's
 /// box, and a gap between it and the words. See
@@ -178,6 +175,7 @@ TextStyle markdownHeadingStyle(
   return _headingStyle(
     base,
     scale,
+    level,
     writingFont,
   ).copyWith(color: level >= 5 ? secondaryColor : primaryColor);
 }
@@ -185,12 +183,13 @@ TextStyle markdownHeadingStyle(
 /// A heading at [scale] of [base], bold, in the handwritten face when the
 /// writing font is mixed.
 ///
-/// On a phone it keeps the row its line sits in. On the page it stands in a
-/// row of [EditorMetrics.headingLine], and proportional leading puts nearly
-/// all of what that adds above the words: Paper's room over a heading.
+/// On a phone it keeps the row its line sits in. On the page it stands in
+/// [level]'s row, [EditorMetrics.headingRow], and proportional leading puts
+/// nearly all of what that adds above the words: Paper's room over a heading.
 TextStyle _headingStyle(
   TextStyle base,
   double scale,
+  int level,
   WritingFont? writingFont,
 ) {
   final face = writingFont == WritingFont.mixed
@@ -200,7 +199,7 @@ TextStyle _headingStyle(
   final row = base.fontSize == null || base.height == null
       ? null
       : EditorMetrics.page
-      ? _pageScale(base) * EditorMetrics.headingLine
+      ? _pageScale(base) * EditorMetrics.headingRow(level)
       : base.fontSize! * base.height!;
   return base.copyWith(
     fontFamily: face?.fontFamily,

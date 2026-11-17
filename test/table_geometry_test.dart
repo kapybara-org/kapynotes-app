@@ -186,7 +186,7 @@ void main() {
       ].reduce((a, b) => a > b ? a : b);
       expect(
         geometry.rowHeight(row),
-        closeTo(tallest + TableGeometry.padding * 2, 0.001),
+        closeTo(tallest + TableGeometry.verticalPadding * 2, 0.001),
       );
     });
 
