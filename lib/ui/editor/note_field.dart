@@ -1,12 +1,19 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:cupertino_ui/cupertino_ui.dart'
+    show
+        cupertinoDesktopTextSelectionHandleControls,
+        cupertinoTextSelectionHandleControls;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'highlighting_controller.dart';
+import 'note_gestures.dart';
 import 'note_lines.dart';
 import 'note_sliver.dart';
 
@@ -30,6 +37,13 @@ class NoteField extends StatefulWidget {
     this.autofocus = false,
     this.inputFormatters = const [],
     this.undoController,
+    this.cursorColor,
+    this.cursorWidth = 2,
+    this.cursorHeight,
+    this.cursorRadius,
+    this.mouseCursor = SystemMouseCursors.text,
+    this.contextMenuBuilder,
+    this.magnifierConfiguration,
   });
 
   final HighlightingController controller;
@@ -48,6 +62,30 @@ class NoteField extends StatefulWidget {
 
   final UndoHistoryController? undoController;
 
+  /// The caret's colour: the selection style's, or the theme's, when null.
+  final Color? cursorColor;
+
+  final double cursorWidth;
+
+  /// The caret's height: a row of [style] when null.
+  final double? cursorHeight;
+
+  /// The rounding of the caret's corners: two pixels on Apple's platforms
+  /// when null, as [TextField] has it.
+  final Radius? cursorRadius;
+
+  final MouseCursor mouseCursor;
+
+  /// Builds the toolbar that a secondary click, a long press or a double
+  /// tap opens: the platform's own, with [NoteFieldState]'s editing items,
+  /// when null.
+  final Widget Function(BuildContext context, NoteFieldState field)?
+  contextMenuBuilder;
+
+  /// The magnifier shown while a finger moves the selection: the
+  /// platform's, as [TextField] shows it, when null.
+  final TextMagnifierConfiguration? magnifierConfiguration;
+
   @override
   State<NoteField> createState() => NoteFieldState();
 }
@@ -61,8 +99,23 @@ const _edge = _margin ~/ 4;
 /// What the platform holds, and where it starts in the note.
 typedef _Remote = ({int start, TextEditingValue value});
 
+/// How long the caret is shown, and then hidden, as it blinks.
+const _blinkHalfPeriod = Duration(milliseconds: 500);
+
+bool get _apple => switch (defaultTargetPlatform) {
+  TargetPlatform.iOS || TargetPlatform.macOS => true,
+  _ => false,
+};
+
+bool get _desktop => switch (defaultTargetPlatform) {
+  TargetPlatform.linux ||
+  TargetPlatform.macOS ||
+  TargetPlatform.windows => true,
+  _ => false,
+};
+
 class NoteFieldState extends State<NoteField>
-    with TextInputClient, DeltaTextInputClient
+    with SingleTickerProviderStateMixin, TextInputClient, DeltaTextInputClient
     implements TextLayoutMetrics {
   /// The note as the field lays it out, kept equal to the controller's text.
   late final NoteLines _lines = NoteLines(_text);
@@ -81,8 +134,60 @@ class NoteFieldState extends State<NoteField>
   _Remote? _previousRemote;
 
   TextInputConnection? _connection;
-  bool _geometryScheduled = false;
+  bool _afterFrameScheduled = false;
   bool _revealScheduled = false;
+
+  /// The caret's opacity as it blinks, and what times the blink.
+  late final AnimationController _blink = AnimationController(vsync: this)
+    ..addListener(_mark);
+  Timer? _blinkTimer;
+
+  /// Whether the field's tickers run: the caret stops blinking while they
+  /// don't, as on a route that is covered.
+  bool _tickersEnabled = true;
+
+  /// How the caret and the selection are drawn, from the theme, once built.
+  NoteCaret? _caret;
+  late Color _cursorColor;
+  late Color _selectionColor;
+
+  /// The pointer gestures over the lines.
+  late final NoteGestures _gestures = NoteGestures(this);
+
+  /// Where the last secondary tap went down, which the toolbar it opens
+  /// points at.
+  Offset? lastSecondaryTapDownPosition;
+
+  /// The selection handles, the toolbar and the magnifier, made by the first
+  /// change to the selection after the field gains focus; and what the
+  /// handles and the toolbar follow.
+  SelectionOverlay? _overlay;
+  final _startLink = LayerLink();
+  final _endLink = LayerLink();
+  final _toolbarLink = LayerLink();
+
+  /// Whether the last change to the selection called for the handles. Each
+  /// shows while its end of the selection is in view, and the toolbar while
+  /// either is.
+  bool _handlesWanted = false;
+  final _startHandleShows = ValueNotifier(false);
+  final _endHandleShows = ValueNotifier(false);
+  final _toolbarShows = ValueNotifier(false);
+
+  /// Whether the clipboard holds anything to paste, for the toolbar.
+  final clipboardStatus = ClipboardStatusNotifier();
+
+  /// While a handle is dragged: on Apple's platforms the selection when the
+  /// drag began, whose other end stays put; where the handle is, moved a
+  /// row at a time; and how far the middle of its row is from the pointer.
+  TextSelection? _handleDragStartSelection;
+  double _handleDragY = 0;
+  double _handleDragToRow = 0;
+
+  /// Whether the change under way moved the selection's base by a drag,
+  /// which then shows the base rather than the extent, off Apple's
+  /// platforms.
+  bool _revealBase = false;
 
   /// The caret's distance from the left of its line when a run of up and down
   /// moves began, and the selection the last of them left.
@@ -106,6 +211,7 @@ class NoteFieldState extends State<NoteField>
     super.initState();
     _controller.addListener(_didChangeValue);
     widget.focusNode.addListener(_didChangeFocus);
+    clipboardStatus.addListener(_rebuildOverlay);
     _window = _placeWindow();
   }
 
@@ -113,6 +219,11 @@ class NoteFieldState extends State<NoteField>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _ensureLayout();
+    final tickersEnabled = TickerMode.valuesOf(context).enabled;
+    if (tickersEnabled != _tickersEnabled) {
+      _tickersEnabled = tickersEnabled;
+      _startOrStopBlink();
+    }
   }
 
   @override
@@ -129,6 +240,7 @@ class NoteFieldState extends State<NoteField>
     }
     if (widget.readOnly && !oldWidget.readOnly) _closeConnection();
     if (!widget.readOnly && oldWidget.readOnly) _didChangeFocus();
+    _startOrStopBlink();
     _ensureLayout();
   }
 
@@ -137,6 +249,13 @@ class NoteFieldState extends State<NoteField>
     _controller.removeListener(_didChangeValue);
     widget.focusNode.removeListener(_didChangeFocus);
     _closeConnection();
+    _blinkTimer?.cancel();
+    _blink.dispose();
+    _overlay?.dispose();
+    clipboardStatus.dispose();
+    _startHandleShows.dispose();
+    _endHandleShows.dispose();
+    _toolbarShows.dispose();
     super.dispose();
   }
 
@@ -194,7 +313,9 @@ class NoteFieldState extends State<NoteField>
     _text = text;
     _reconcileWindow();
     _sendIfChanged();
-    _scheduleGeometry();
+    _scheduleAfterFrame();
+    _startOrStopBlink();
+    _rebuildOverlay();
     setState(() {});
   }
 
@@ -428,6 +549,11 @@ class NoteFieldState extends State<NoteField>
     } else {
       _closeConnection();
     }
+    if (!focused) {
+      _overlay?.dispose();
+      _overlay = null;
+    }
+    _startOrStopBlink();
     setState(() {});
   }
 
@@ -462,7 +588,7 @@ class NoteFieldState extends State<NoteField>
     );
     _sendIfChanged();
     connection.show();
-    _scheduleGeometry();
+    _scheduleAfterFrame();
   }
 
   void _closeConnection() {
@@ -472,42 +598,49 @@ class NoteFieldState extends State<NoteField>
     _previousRemote = null;
   }
 
-  /// After every frame while connected, tells the platform where the field
-  /// is and where the selection's start and the composing range are drawn,
-  /// which is where an input method puts its candidates. Scrolling moves
-  /// them too. The connection passes on only what changed.
-  void _scheduleGeometry() {
-    if (_geometryScheduled || !_hasConnection) return;
-    _geometryScheduled = true;
+  /// After every frame while connected, or while the selection overlay is
+  /// up, brings what follows the lines up to date. Scrolling moves the lines
+  /// too.
+  void _scheduleAfterFrame() {
+    if (_afterFrameScheduled || (!_hasConnection && _overlay == null)) return;
+    _afterFrameScheduled = true;
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      _geometryScheduled = false;
-      final connection = _connection;
-      if (!mounted || connection == null || !connection.attached) return;
-      _scheduleGeometry();
+      _afterFrameScheduled = false;
+      if (!mounted) return;
+      _scheduleAfterFrame();
       final box = context.findRenderObject() as RenderBox?;
       if (box == null || !box.hasSize) return;
-      connection.setEditableSizeAndTransform(
-        box.size,
-        box.getTransformTo(null),
-      );
-      final selection = _value.selection;
-      if (!selection.isValid) return;
-      final caret = _caretRect(TextPosition(offset: selection.start));
-      if (caret == null) return;
-      connection.setCaretRect(caret);
-      connection.setComposingRect(_composingRect() ?? caret);
+      _sendGeometry(box);
+      _updateOverlay(box);
     });
+  }
+
+  /// Tells the platform where the field is and where the selection's start
+  /// and the composing range are drawn, which is where an input method puts
+  /// its candidates. The connection passes on only what changed.
+  void _sendGeometry(RenderBox box) {
+    final connection = _connection;
+    if (connection == null || !connection.attached) return;
+    connection.setEditableSizeAndTransform(box.size, box.getTransformTo(null));
+    final selection = _value.selection;
+    if (!selection.isValid) return;
+    final caret = _caretRect(TextPosition(offset: selection.start));
+    if (caret == null) return;
+    connection.setCaretRect(caret);
+    connection.setComposingRect(_composingRect() ?? caret);
   }
 
   // Changes the field makes itself.
 
   /// Takes [value] as if the user had made it, through the input formatters.
+  /// One that changes nothing still focuses the field, as a click where the
+  /// caret already is does.
   void userUpdateTextEditingValue(
     TextEditingValue value,
     SelectionChangedCause? cause,
   ) {
-    if (value == _value) return;
-    _formatAndSetValue(value, cause);
+    if (value != _value) return _formatAndSetValue(value, cause);
+    if (!widget.focusNode.hasFocus) widget.focusNode.requestFocus();
   }
 
   void _formatAndSetValue(
@@ -523,27 +656,676 @@ class NoteFieldState extends State<NoteField>
       );
     }
     final moved = old.selection != value.selection;
+    if (cause == SelectionChangedCause.keyboard && old.text != value.text) {
+      hideToolbar(false);
+    }
     _controller.value = value;
-    if (moved || cause == SelectionChangedCause.keyboard) {
+    if (moved ||
+        cause == SelectionChangedCause.keyboard ||
+        cause == SelectionChangedCause.longPress) {
       if (_verticalRun?.selection != value.selection) _verticalRun = null;
+      _revealBase =
+          cause == SelectionChangedCause.drag &&
+          !_apple &&
+          old.selection.baseOffset != value.selection.baseOffset;
       _scheduleReveal();
+      _selectionChanged(cause);
+    }
+    // Solid while the user types or moves it.
+    if (_caretShows && _blinkTimer != null) {
+      _stopBlink();
+      _startBlink();
     }
   }
 
-  /// Copies the selection, as plain text.
+  // The caret and the selection.
+
+  bool get _caretShows =>
+      widget.focusNode.hasFocus &&
+      !widget.readOnly &&
+      _value.selection.isValid &&
+      _value.selection.isCollapsed;
+
+  /// What a change to the selection does besides moving it, as
+  /// [EditableText] and [TextField] have it: anything but a key focuses the
+  /// field, and the overlay follows, with the handles if the gesture that
+  /// made the change calls for them.
+  void _selectionChanged(SelectionChangedCause? cause) {
+    if (cause != SelectionChangedCause.keyboard) requestKeyboard();
+    _handlesWanted =
+        _gestures.showsHandles &&
+        cause != SelectionChangedCause.keyboard &&
+        !(widget.readOnly && _value.selection.isCollapsed) &&
+        (cause == SelectionChangedCause.longPress || _text.isNotEmpty);
+    _ensureOverlay().showHandles();
+    if (cause == SelectionChangedCause.drag && _desktop) hideToolbar();
+  }
+
+  /// Tells the lines what to draw besides their text, once built.
+  void _mark() {
+    final caret = _caret;
+    if (caret == null) return;
+    layout.marks = (
+      selection: _value.selection,
+      selectionColor: widget.focusNode.hasFocus ? _selectionColor : null,
+      caretColor: _caretShows && _blink.value > 0
+          ? _cursorColor.withValues(
+              alpha: math.min(_cursorColor.a, _blink.value),
+            )
+          : null,
+      caret: caret,
+      handles: _overlay == null ? null : (start: _startLink, end: _endLink),
+    );
+  }
+
+  /// Blinks the caret while it shows, as [EditableText] does: on and off
+  /// each half second, or on iOS fading as UIKit's does.
+  void _startOrStopBlink() {
+    if (!_caretShows || !_tickersEnabled) {
+      _stopBlink();
+    } else if (_blinkTimer == null) {
+      _startBlink();
+    }
+  }
+
+  void _startBlink() {
+    _blinkTimer?.cancel();
+    _blink.value = 1;
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      _blink.animateWith(_CaretBlink()).whenComplete(_blinkTick);
+    } else {
+      _blinkTimer = Timer.periodic(_blinkHalfPeriod, (_) => _blinkTick());
+    }
+  }
+
+  void _blinkTick() {
+    if (defaultTargetPlatform != TargetPlatform.iOS) {
+      _blink.value = _blink.value == 0 ? 1 : 0;
+      return;
+    }
+    // A moment later, so that settling a test's frames doesn't wait on it.
+    _blinkTimer?.cancel();
+    _blinkTimer = Timer(
+      Duration.zero,
+      () => _blink.animateWith(_CaretBlink()).whenComplete(_blinkTick),
+    );
+  }
+
+  void _stopBlink() {
+    _blink.value = 0;
+    _blinkTimer?.cancel();
+    _blinkTimer = null;
+  }
+
+  // Pointer gestures, and the selection they make, as [RenderEditable] makes
+  // it for [TextSelectionGestureDetectorBuilder] (see [NoteGestures]).
+
+  /// The note position under [global], a point on the screen: in the line at
+  /// that height, or in the first or last line above or below the note.
+  TextPosition positionAt(Offset global) {
+    final local = (context.findRenderObject()! as RenderBox).globalToLocal(
+      global,
+    );
+    final heights = layout.heights!;
+    final scroll = widget.scrollController;
+    final y = local.dy + (scroll.hasClients ? scroll.offset : 0.0);
+    final line = heights.lineAt(y);
+    final found = layout
+        .paragraphOf(line)
+        .getPositionForOffset(Offset(local.dx, y - heights.topOf(line)));
+    return TextPosition(
+      offset:
+          _lines.startOf(line) + math.min(found.offset, _lines[line].length),
+      affinity: found.affinity,
+    );
+  }
+
+  void _setSelection(TextSelection selection, SelectionChangedCause cause) =>
+      userUpdateTextEditingValue(_value.copyWith(selection: selection), cause);
+
+  /// Puts the caret at [from], or selects from there to [to].
+  void selectPositionAt({
+    required Offset from,
+    Offset? to,
+    required SelectionChangedCause cause,
+  }) {
+    final base = positionAt(from);
+    final extent = to == null ? base : positionAt(to);
+    _setSelection(
+      TextSelection(
+        baseOffset: base.offset,
+        extentOffset: extent.offset,
+        affinity: base.affinity,
+      ),
+      cause,
+    );
+  }
+
+  /// Selects the word at [from], or the words from there to [to].
+  void selectWordsInRange({
+    required Offset from,
+    Offset? to,
+    required SelectionChangedCause cause,
+  }) {
+    final fromPosition = positionAt(from);
+    final fromWord = _wordAt(fromPosition);
+    final toPosition = to == null ? fromPosition : positionAt(to);
+    final toWord = toPosition == fromPosition ? fromWord : _wordAt(toPosition);
+    final forward = fromWord.start < toWord.end;
+    _setSelection(
+      TextSelection(
+        baseOffset: forward ? fromWord.base.offset : fromWord.extent.offset,
+        extentOffset: forward ? toWord.extent.offset : toWord.base.offset,
+        affinity: fromWord.affinity,
+      ),
+      cause,
+    );
+  }
+
+  /// Puts the caret at whichever end of the word at [at] is nearer.
+  void selectWordEdge(Offset at, SelectionChangedCause cause) {
+    final position = positionAt(at);
+    final word = getWordBoundary(position);
+    _setSelection(
+      position.offset <= word.start
+          ? TextSelection.collapsed(offset: word.start)
+          : TextSelection.collapsed(
+              offset: word.end,
+              affinity: TextAffinity.upstream,
+            ),
+      cause,
+    );
+  }
+
+  /// The word a long press or a double tap at [position] selects, as
+  /// [RenderEditable.getWordAtOffset] finds it. On whitespace, iOS takes the
+  /// word before it, or else the one after, along with the whitespace, and a
+  /// read-only field on Android the word before it.
+  TextSelection _wordAt(TextPosition position) {
+    if (position.offset >= _text.length) {
+      return TextSelection.fromPosition(
+        TextPosition(offset: _text.length, affinity: TextAffinity.upstream),
+      );
+    }
+    final word = getWordBoundary(position);
+    final at = position.affinity == TextAffinity.upstream
+        ? position.offset - 1
+        : position.offset;
+    final iOS = defaultTargetPlatform == TargetPlatform.iOS;
+    final readOnlyAndroid =
+        defaultTargetPlatform == TargetPlatform.android && widget.readOnly;
+    if (at <= 0 ||
+        !TextLayoutMetrics.isWhitespace(_text.codeUnitAt(at)) ||
+        !(iOS || readOnlyAndroid)) {
+      return TextSelection(baseOffset: word.start, extentOffset: word.end);
+    }
+    final previous = _previousWord(word.start);
+    if (previous != null) {
+      return TextSelection(
+        baseOffset: previous.start,
+        extentOffset: position.offset,
+      );
+    }
+    if (readOnlyAndroid) {
+      return TextSelection(
+        baseOffset: position.offset,
+        extentOffset: position.offset + 1,
+      );
+    }
+    final next = _nextWord(word.start);
+    return next == null
+        ? TextSelection.collapsed(offset: position.offset)
+        : TextSelection(baseOffset: position.offset, extentOffset: next.end);
+  }
+
+  /// The nearest word that isn't only whitespace, at [offset] or before it.
+  TextRange? _previousWord(int offset) {
+    var at = offset;
+    while (at >= 0) {
+      final range = getWordBoundary(TextPosition(offset: at));
+      if (!range.isValid || range.isCollapsed) return null;
+      if (!_onlyWhitespace(range)) return range;
+      at = range.start - 1;
+    }
+    return null;
+  }
+
+  /// The nearest word that isn't only whitespace, at [offset] or after it.
+  TextRange? _nextWord(int offset) {
+    var at = offset;
+    while (true) {
+      final range = getWordBoundary(TextPosition(offset: at));
+      if (!range.isValid || range.isCollapsed || range.end <= at) return null;
+      if (!_onlyWhitespace(range)) return range;
+      at = range.end;
+    }
+  }
+
+  bool _onlyWhitespace(TextRange range) {
+    for (var i = range.start; i < range.end; i++) {
+      if (!TextLayoutMetrics.isWhitespace(_text.codeUnitAt(i))) return false;
+    }
+    return true;
+  }
+
+  /// Shows the keyboard, focusing the field first if it hasn't focus.
+  void requestKeyboard() {
+    if (!widget.focusNode.hasFocus) {
+      widget.focusNode.requestFocus();
+    } else if (_hasConnection) {
+      _connection!.show();
+    } else if (!widget.readOnly) {
+      _openConnection();
+    }
+  }
+
+  /// A tap outside the field takes its focus, as from a [TextField]: on
+  /// phones, only when it isn't a finger's.
+  void _tappedOutside(PointerDownEvent event) {
+    if (_desktop || event.kind != PointerDeviceKind.touch) {
+      widget.focusNode.unfocus();
+    }
+  }
+
+  // The selection handles, the toolbar and the magnifier: the framework's
+  // [SelectionOverlay], run as [TextSelectionOverlay] runs it.
+
+  SelectionOverlay _ensureOverlay() {
+    final existing = _overlay;
+    if (existing != null) return existing;
+    final selection = _value.selection.isValid
+        ? _value.selection
+        : TextSelection.collapsed(offset: _text.length);
+    final overlay = _overlay = SelectionOverlay(
+      context: context,
+      debugRequiredFor: widget,
+      startHandleType: _handleType(selection, TextSelectionHandleType.left),
+      lineHeightAtStart: _rowHeightAt(selection.start),
+      startHandlesVisible: _startHandleShows,
+      onStartHandleDragStart: (details) =>
+          _startHandleDrag(details, start: true),
+      onStartHandleDragUpdate: (details) => _dragHandle(details, start: true),
+      onStartHandleDragEnd: _endHandleDrag,
+      endHandleType: _handleType(selection, TextSelectionHandleType.right),
+      lineHeightAtEnd: _rowHeightAt(selection.end),
+      endHandlesVisible: _endHandleShows,
+      onEndHandleDragStart: (details) =>
+          _startHandleDrag(details, start: false),
+      onEndHandleDragUpdate: (details) => _dragHandle(details, start: false),
+      onEndHandleDragEnd: _endHandleDrag,
+      toolbarVisible: _toolbarShows,
+      selectionEndpoints: _endpoints(selection),
+      selectionControls: switch (defaultTargetPlatform) {
+        TargetPlatform.iOS => cupertinoTextSelectionHandleControls,
+        TargetPlatform.macOS => cupertinoDesktopTextSelectionHandleControls,
+        TargetPlatform.android ||
+        TargetPlatform.fuchsia => materialTextSelectionHandleControls,
+        TargetPlatform.linux ||
+        TargetPlatform.windows => desktopTextSelectionHandleControls,
+      },
+      // ignore: deprecated_member_use
+      selectionDelegate: null,
+      clipboardStatus: clipboardStatus,
+      startHandleLayerLink: _startLink,
+      endHandleLayerLink: _endLink,
+      toolbarLayerLink: _toolbarLink,
+      onSelectionHandleTapped: () {
+        if (_value.selection.isCollapsed) toggleToolbar();
+      },
+      magnifierConfiguration:
+          widget.magnifierConfiguration ??
+          TextMagnifier.adaptiveMagnifierConfiguration,
+    );
+    _mark();
+    _scheduleAfterFrame();
+    return overlay;
+  }
+
+  /// Rebuilds the toolbar, whose items follow the note and the clipboard.
+  void _rebuildOverlay() => _overlay?.markNeedsBuild();
+
+  static TextSelectionHandleType _handleType(
+    TextSelection selection,
+    TextSelectionHandleType type,
+  ) => selection.isCollapsed ? TextSelectionHandleType.collapsed : type;
+
+  /// The height of a row of the line holding [offset].
+  double _rowHeightAt(int offset) =>
+      layout.paragraphOf(_lines.lineAt(offset)).preferredLineHeight;
+
+  /// Where the selection handles point, in the field: under the selection's
+  /// first and last boxes, or under the caret.
+  List<TextSelectionPoint> _endpoints(TextSelection selection) {
+    Offset pointAt(int offset, {required bool start}) {
+      final line = _lines.lineAt(offset);
+      final lineStart = _lines.startOf(line);
+      final range = TextSelection(
+        baseOffset: math.max(selection.start, lineStart) - lineStart,
+        extentOffset: math.min(selection.end, _lines.endOf(line)) - lineStart,
+        affinity: selection.affinity,
+      );
+      return handlePointIn(
+            layout.paragraphOf(line),
+            range,
+            start: start,
+            width: layout.width ?? 0,
+          ) +
+          Offset(0, _topOf(line) ?? 0);
+    }
+
+    final start = pointAt(selection.start, start: true);
+    if (selection.isCollapsed) return [TextSelectionPoint(start, null)];
+    return [
+      TextSelectionPoint(start, TextDirection.ltr),
+      TextSelectionPoint(
+        pointAt(selection.end, start: false),
+        TextDirection.ltr,
+      ),
+    ];
+  }
+
+  /// Brings the handles and the toolbar up to date with the selection as it
+  /// is drawn now: each handle shows while its end of the selection is in
+  /// view, and the toolbar while either is, as [RenderEditable] has them.
+  void _updateOverlay(RenderBox box) {
+    final overlay = _overlay;
+    final selection = _value.selection;
+    if (overlay == null || !selection.isValid) return;
+    overlay
+      ..startHandleType = _handleType(selection, TextSelectionHandleType.left)
+      ..endHandleType = _handleType(selection, TextSelectionHandleType.right)
+      ..lineHeightAtStart = _rowHeightAt(selection.start)
+      ..lineHeightAtEnd = _rowHeightAt(selection.end)
+      ..selectionEndpoints = _endpoints(selection);
+    final view = (Offset.zero & box.size).inflate(0.5);
+    bool inView(int offset) {
+      final line = _lines.lineAt(offset);
+      final top = _topOf(line);
+      if (top == null) return false;
+      final caret = layout
+          .paragraphOf(line)
+          .getOffsetForCaret(
+            _local(
+              TextPosition(offset: offset, affinity: selection.affinity),
+              line,
+            ),
+            Rect.zero,
+          );
+      return view.contains(caret.translate(0, top));
+    }
+
+    final start = inView(selection.start);
+    final end = inView(selection.end);
+    _startHandleShows.value = _handlesWanted && start;
+    _endHandleShows.value = _handlesWanted && end;
+    _toolbarShows.value = start || end;
+  }
+
+  void _startHandleDrag(DragStartDetails details, {required bool start}) {
+    final box = context.findRenderObject() as RenderBox?;
+    final overlay = _overlay;
+    if (box == null || !box.attached || overlay == null) return;
+    final selection = _value.selection;
+    final point = start
+        ? overlay.selectionEndpoints.first.point
+        : overlay.selectionEndpoints.last.point;
+    final row = _rowHeightAt(start ? selection.start : selection.end);
+    final middle = box.localToGlobal(Offset(0, point.dy - row / 2)).dy;
+    _handleDragY = details.globalPosition.dy;
+    _handleDragToRow = middle - details.globalPosition.dy;
+    if (_apple) _handleDragStartSelection ??= selection;
+    overlay.showMagnifier(
+      _magnifierInfo(
+        details.globalPosition,
+        positionAt(Offset(details.globalPosition.dx, middle)),
+      ),
+    );
+  }
+
+  /// Moves the dragged handle's end of the selection under the pointer, a
+  /// row at a time. On Apple's platforms the other end stays where it was
+  /// when the drag began, and the ends may cross; elsewhere they may not.
+  void _dragHandle(DragUpdateDetails details, {required bool start}) {
+    final box = context.findRenderObject() as RenderBox?;
+    final overlay = _overlay;
+    if (box == null || !box.attached || overlay == null) return;
+    final selection = _value.selection;
+    final row = _rowHeightAt(start ? selection.start : selection.end);
+    final handle = box.globalToLocal(Offset(0, _handleDragY)).dy;
+    final dragged = box.globalToLocal(details.globalPosition).dy - handle;
+    if (row <= 0 || !dragged.isFinite) return;
+    final rows = dragged.sign * (dragged.abs() / row).floor();
+    _handleDragY = box.localToGlobal(Offset(0, handle + rows * row)).dy;
+    final position = positionAt(
+      Offset(details.globalPosition.dx, _handleDragY + _handleDragToRow),
+    );
+    final from = _handleDragStartSelection;
+    final TextSelection next;
+    if (from?.isCollapsed ?? selection.isCollapsed) {
+      next = TextSelection.fromPosition(position);
+    } else if (from != null) {
+      next = TextSelection(
+        baseOffset: start == (from.extentOffset >= from.baseOffset)
+            ? from.extentOffset
+            : from.baseOffset,
+        extentOffset: position.offset,
+      );
+    } else {
+      next = start
+          ? TextSelection(
+              baseOffset: position.offset,
+              extentOffset: selection.extentOffset,
+            )
+          : TextSelection(
+              baseOffset: selection.baseOffset,
+              extentOffset: position.offset,
+            );
+      if (next.baseOffset >= next.extentOffset) return;
+    }
+    _setSelection(next, SelectionChangedCause.drag);
+    overlay.updateMagnifier(
+      _magnifierInfo(
+        details.globalPosition,
+        start && next.baseOffset < next.extentOffset ? next.base : next.extent,
+      ),
+    );
+  }
+
+  void _endHandleDrag(DragEndDetails details) {
+    final overlay = _overlay;
+    if (!mounted || overlay == null) return;
+    _handleDragStartSelection = null;
+    if (overlay.isDraggingStartHandle || overlay.isDraggingEndHandle) return;
+    overlay.hideMagnifier();
+    if (!_value.selection.isCollapsed) showToolbar();
+  }
+
+  /// What the magnifier shows for a pointer at [global] over the caret at
+  /// [position], in the overlay's coordinates.
+  MagnifierInfo _magnifierInfo(Offset global, TextPosition position) {
+    final box = context.findRenderObject()! as RenderBox;
+    final overlay =
+        Overlay.of(context, rootOverlay: true).context.findRenderObject()
+            as RenderBox?;
+    final toOverlay = box.getTransformTo(overlay);
+    final caret = _caretRect(position) ?? Rect.zero;
+    final row = getLineAtOffset(position);
+    final rowStart = _caretRect(TextPosition(offset: row.baseOffset)) ?? caret;
+    final rowEnd =
+        _caretRect(
+          TextPosition(
+            offset: row.extentOffset,
+            affinity: TextAffinity.upstream,
+          ),
+        ) ??
+        caret;
+    return MagnifierInfo(
+      fieldBounds: MatrixUtils.transformRect(toOverlay, box.paintBounds),
+      globalGesturePosition: overlay?.globalToLocal(global) ?? global,
+      caretRect: MatrixUtils.transformRect(toOverlay, caret),
+      currentLineBoundaries: MatrixUtils.transformRect(
+        toOverlay,
+        Rect.fromPoints(rowStart.topCenter, rowEnd.bottomCenter),
+      ),
+    );
+  }
+
+  /// Shows the toolbar, unless it shows already, and says whether it did.
+  /// The platform asks for it too, after it changes the selection itself.
+  @override
+  bool showToolbar() {
+    final overlay = _ensureOverlay();
+    if (overlay.toolbarIsVisible) return false;
+    clipboardStatus.update();
+    overlay.showToolbar(
+      context: context,
+      contextMenuBuilder: (context) =>
+          (widget.contextMenuBuilder ?? _platformMenu)(context, this),
+    );
+    return true;
+  }
+
+  /// Hides the toolbar, and with [hideHandles] the handles and the magnifier.
+  void hideToolbar([bool hideHandles = true]) {
+    final overlay = _overlay;
+    if (overlay == null) return;
+    if (hideHandles) {
+      overlay.hide();
+    } else if (overlay.toolbarIsVisible) {
+      overlay.hideToolbar();
+    }
+  }
+
+  void toggleToolbar([bool hideHandles = true]) {
+    if (_ensureOverlay().toolbarIsVisible) {
+      hideToolbar(hideHandles);
+    } else {
+      showToolbar();
+    }
+  }
+
+  /// Escape puts the toolbar away while it shows, and otherwise goes on to
+  /// whatever is around the field.
+  Object? _dismissToolbar(DismissIntent intent) {
+    if (_overlay?.toolbarIsVisible ?? false) {
+      hideToolbar(false);
+      return null;
+    }
+    return Actions.invoke(context, intent);
+  }
+
+  /// Shows the magnifier over [global], or moves it there.
+  void showMagnifier(Offset global) {
+    final overlay = _overlay;
+    if (overlay == null) return;
+    final info = _magnifierInfo(global, positionAt(global));
+    if (overlay.magnifierIsVisible) {
+      overlay.updateMagnifier(info);
+    } else {
+      overlay.showMagnifier(info);
+    }
+  }
+
+  void hideMagnifier() => _overlay?.hideMagnifier();
+
+  /// Where the toolbar goes: at the secondary tap that opened it, or else
+  /// above the selection, or below it where there is no room above.
+  TextSelectionToolbarAnchors get contextMenuAnchors {
+    final secondary = lastSecondaryTapDownPosition;
+    if (secondary != null) {
+      return TextSelectionToolbarAnchors(primaryAnchor: secondary);
+    }
+    final selection = _value.selection;
+    return TextSelectionToolbarAnchors.fromSelection(
+      renderBox: context.findRenderObject()! as RenderBox,
+      startGlyphHeight: _rowHeightAt(selection.start),
+      endGlyphHeight: _rowHeightAt(selection.end),
+      selectionEndpoints: _endpoints(selection),
+    );
+  }
+
+  /// The toolbar's editing items, on the platforms [EditableText] offers
+  /// each on.
+  List<ContextMenuButtonItem> get contextMenuButtonItems {
+    final selection = _value.selection;
+    final selected = selection.isValid && !selection.isCollapsed
+        ? selection.textInside(_text)
+        : '';
+    final words = selected.trim().isNotEmpty;
+    final platform = defaultTargetPlatform;
+    const cause = SelectionChangedCause.toolbar;
+    void system(String method) =>
+        unawaited(SystemChannels.platform.invokeMethod<void>(method, selected));
+    final selectAllShows = switch (platform) {
+      TargetPlatform.macOS => false,
+      TargetPlatform.iOS => _text.isNotEmpty && selection.isCollapsed,
+      _ =>
+        _text.isNotEmpty &&
+            !(selection.start == 0 && selection.end == _text.length),
+    };
+    return EditableText.getEditableButtonItems(
+      clipboardStatus: clipboardStatus.value,
+      onCopy: selected.isEmpty ? null : () => copySelection(cause),
+      onCut: selected.isEmpty || widget.readOnly
+          ? null
+          : () => cutSelection(cause),
+      onPaste: widget.readOnly ? null : () => pasteText(cause),
+      onSelectAll: selectAllShows ? () => selectAll(cause) : null,
+      onLookUp: words && platform == TargetPlatform.iOS
+          ? () => system('LookUp.invoke')
+          : null,
+      onSearchWeb: words && platform == TargetPlatform.iOS
+          ? () => system('SearchWeb.invoke')
+          : null,
+      onShare:
+          words &&
+              (platform == TargetPlatform.iOS ||
+                  platform == TargetPlatform.android)
+          ? () => system('Share.invoke')
+          : null,
+      onLiveTextInput: null,
+    );
+  }
+
+  static Widget _platformMenu(BuildContext context, NoteFieldState field) =>
+      AdaptiveTextSelectionToolbar.buttonItems(
+        anchors: field.contextMenuAnchors,
+        buttonItems: field.contextMenuButtonItems,
+      );
+
+  /// Copies the selection, as plain text. From the toolbar, the toolbar
+  /// goes away, and on Android the selection with it.
   void copySelection(SelectionChangedCause cause) {
     final selection = _value.selection;
     if (!selection.isValid || selection.isCollapsed) return;
     unawaited(
       Clipboard.setData(ClipboardData(text: selection.textInside(_text))),
     );
+    if (cause == SelectionChangedCause.toolbar) {
+      hideToolbar(false);
+      if (defaultTargetPlatform
+          case TargetPlatform.android || TargetPlatform.fuchsia) {
+        userUpdateTextEditingValue(
+          TextEditingValue(
+            text: _text,
+            selection: TextSelection.collapsed(offset: selection.end),
+          ),
+          cause,
+        );
+      }
+    }
+    clipboardStatus.update();
   }
 
   void cutSelection(SelectionChangedCause cause) {
     final selection = _value.selection;
     if (widget.readOnly || !selection.isValid || selection.isCollapsed) return;
-    copySelection(cause);
+    unawaited(
+      Clipboard.setData(ClipboardData(text: selection.textInside(_text))),
+    );
     userUpdateTextEditingValue(_value.replaced(selection, ''), cause);
+    if (cause == SelectionChangedCause.toolbar) hideToolbar();
+    clipboardStatus.update();
   }
 
   Future<void> pasteText(SelectionChangedCause cause) async {
@@ -553,14 +1335,18 @@ class NoteFieldState extends State<NoteField>
     final text = data?.text;
     if (!mounted || text == null) return;
     userUpdateTextEditingValue(_value.replaced(_value.selection, text), cause);
+    if (cause == SelectionChangedCause.toolbar) hideToolbar();
   }
 
-  void selectAll(SelectionChangedCause cause) => userUpdateTextEditingValue(
-    _value.copyWith(
-      selection: TextSelection(baseOffset: 0, extentOffset: _text.length),
-    ),
-    cause,
-  );
+  void selectAll(SelectionChangedCause cause) {
+    userUpdateTextEditingValue(
+      _value.copyWith(
+        selection: TextSelection(baseOffset: 0, extentOffset: _text.length),
+      ),
+      cause,
+    );
+    if (cause == SelectionChangedCause.toolbar && _desktop) hideToolbar();
+  }
 
   // Where things are drawn.
 
@@ -569,17 +1355,16 @@ class NoteFieldState extends State<NoteField>
   Rect? _caretRect(TextPosition position) {
     final line = _lines.lineAt(position.offset);
     final top = _topOf(line);
-    if (top == null) return null;
+    final width = _layout?.width;
+    final caret = _caret;
+    if (top == null || width == null || caret == null) return null;
     layout.measure(line);
-    final paragraph = layout.paragraphOf(line);
-    final local = _local(position, line);
-    final offset = paragraph.getOffsetForCaret(local, Rect.zero);
-    return Rect.fromLTWH(
-      offset.dx,
-      top + offset.dy,
-      0,
-      paragraph.getFullHeightForCaret(local, Rect.zero),
-    );
+    return caretRectIn(
+      layout.paragraphOf(line),
+      _local(position, line),
+      caret,
+      width,
+    ).translate(0, top);
   }
 
   /// Around what is being composed, in the line it starts in, in the field's
@@ -629,14 +1414,17 @@ class NoteFieldState extends State<NoteField>
     _revealScheduled = true;
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _revealScheduled = false;
-      if (!mounted || !_value.selection.isValid) return;
-      if (bringIntoView(_value.selection.extent)) _scheduleReveal(attempts - 1);
+      final selection = _value.selection;
+      if (!mounted || !selection.isValid) return;
+      final shown = _revealBase ? selection.base : selection.extent;
+      if (bringIntoView(shown)) _scheduleReveal(attempts - 1);
     });
   }
 
-  /// Scrolls the least distance that shows the caret at [position], and
-  /// says whether it scrolled. The end of the note is landed on exactly,
-  /// measuring the last screenful first.
+  /// Scrolls the least distance that shows the caret at [position] and a
+  /// row's height around it, or centres it when it is taller than the view,
+  /// as [EditableText] does, and says whether it scrolled. The end of the
+  /// note is landed on exactly, measuring the last screenful first.
   bool bringIntoView(TextPosition position) {
     final scroll = widget.scrollController;
     if (!scroll.hasClients) return false;
@@ -650,12 +1438,22 @@ class NoteFieldState extends State<NoteField>
     }
     final caret = _caretRect(position);
     if (caret == null) return false;
+    final shown = Rect.fromCenter(
+      center: caret.center,
+      width: caret.width,
+      height: math.max(
+        caret.height,
+        layout.paragraphOf(_lines.lineAt(position.offset)).preferredLineHeight,
+      ),
+    );
     final viewport = scrollPosition.viewportDimension;
     final double by;
-    if (caret.top < 0 || caret.height >= viewport) {
-      by = caret.top;
-    } else if (caret.bottom > viewport) {
-      by = caret.bottom - viewport;
+    if (shown.height >= viewport) {
+      by = shown.center.dy - viewport / 2;
+    } else if (shown.top < 0) {
+      by = shown.top;
+    } else if (shown.bottom > viewport) {
+      by = shown.bottom - viewport;
     } else {
       return false;
     }
@@ -843,9 +1641,13 @@ class NoteFieldState extends State<NoteField>
     if (!selection.isValid) return;
     final run = _verticalRun;
     final extent = selection.extent;
+    final line = _lines.lineAt(extent.offset);
     final x = run != null && run.selection == selection
         ? run.x
-        : _caretRect(extent)?.left ?? 0;
+        : layout
+              .paragraphOf(line)
+              .getOffsetForCaret(_local(extent, line), Rect.zero)
+              .dx;
     final TextPosition target;
     if (intent is ExtendSelectionVerticallyToAdjacentPageIntent) {
       target = _pageFrom(extent, intent.forward, x);
@@ -917,6 +1719,7 @@ class NoteFieldState extends State<NoteField>
       onInvoke: _updateSelection,
     ),
     DirectionalFocusIntent: DirectionalFocusAction.forTextField(),
+    DismissIntent: CallbackAction<DismissIntent>(onInvoke: _dismissToolbar),
     DeleteCharacterIntent: _overridable(
       _DeleteAction<DeleteCharacterIntent>(
         this,
@@ -1043,6 +1846,26 @@ class NoteFieldState extends State<NoteField>
       composing: _composing ? _value.composing : null,
     );
     layout.restyled();
+    final theme = Theme.of(context);
+    final selectionStyle = DefaultSelectionStyle.of(context);
+    final apple = _apple;
+    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+    _cursorColor =
+        widget.cursorColor ??
+        selectionStyle.cursorColor ??
+        theme.colorScheme.primary;
+    _selectionColor =
+        selectionStyle.selectionColor ??
+        theme.colorScheme.primary.withValues(alpha: 0.4);
+    _caret = (
+      width: widget.cursorWidth,
+      height: widget.cursorHeight,
+      radius: widget.cursorRadius ?? (apple ? const Radius.circular(2) : null),
+      offset: apple ? Offset(-2 / pixelRatio, 0) : Offset.zero,
+      aboveText: apple,
+      pixelRatio: pixelRatio,
+    );
+    _mark();
     return Actions(
       actions: _actions,
       child: UndoHistory<TextEditingValue>(
@@ -1069,12 +1892,30 @@ class NoteFieldState extends State<NoteField>
           focusNode: widget.focusNode,
           autofocus: widget.autofocus,
           includeSemantics: false,
-          child: CustomScrollView(
-            controller: widget.scrollController,
-            scrollBehavior: ScrollConfiguration.of(
-              context,
-            ).copyWith(overscroll: false),
-            slivers: [NoteSliver(layout: layout)],
+          child: TextFieldTapRegion(
+            onTapOutside: widget.focusNode.hasFocus ? _tappedOutside : null,
+            child: MouseRegion(
+              cursor: widget.mouseCursor,
+              child: CompositedTransformTarget(
+                link: _toolbarLink,
+                child: _gestures.build(
+                  child: CustomScrollView(
+                    controller: widget.scrollController,
+                    scrollBehavior: ScrollConfiguration.of(
+                      context,
+                    ).copyWith(overscroll: false),
+                    slivers: [
+                      // Each row keeps room at its end for the caret, as
+                      // [RenderEditable] keeps it.
+                      SliverPadding(
+                        padding: EdgeInsets.only(right: 1 + widget.cursorWidth),
+                        sliver: NoteSliver(layout: layout),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -1299,6 +2140,35 @@ class _NoteWordBoundary extends TextBoundary {
   int? getTrailingTextBoundaryAt(int position) => position >= state._text.length
       ? null
       : _around(position, (words, at) => words.getTrailingTextBoundaryAt(at));
+}
+
+/// The caret's opacity through each second of its blink on iOS: UIKit's
+/// key frames, as [EditableText] has them.
+class _CaretBlink extends Simulation {
+  static const _frames = [
+    (time: 0.0, opacity: 1.0),
+    (time: 0.5, opacity: 1.0),
+    (time: 0.5375, opacity: 0.75),
+    (time: 0.575, opacity: 0.5),
+    (time: 0.6125, opacity: 0.25),
+    (time: 0.65, opacity: 0.0),
+    (time: 0.85, opacity: 0.0),
+    (time: 0.8875, opacity: 0.25),
+    (time: 0.925, opacity: 0.5),
+    (time: 0.9625, opacity: 0.75),
+    (time: 1.0, opacity: 1.0),
+  ];
+
+  @override
+  double x(double time) => _frames
+      .lastWhere((frame) => frame.time <= time, orElse: () => _frames.first)
+      .opacity;
+
+  @override
+  double dx(double time) => 0;
+
+  @override
+  bool isDone(double time) => time >= 1;
 }
 
 bool _isLowSurrogate(int unit) => unit & 0xFC00 == 0xDC00;

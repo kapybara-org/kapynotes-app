@@ -3,6 +3,7 @@
 //
 // The platform side is FakeMacTextInput, which keeps the macOS plugin's model
 // and sends the deltas the plugin sends for an input method and the keyboard.
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
@@ -11,6 +12,7 @@ import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/editor/highlighting_controller.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/editor/note_sliver.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'support/fake_mac_text_input.dart';
@@ -162,6 +164,99 @@ Future<void> _command(
   if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
   await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
   await tester.pump();
+}
+
+/// A clipboard the test keeps, holding [text] to begin with: what is on it.
+String? Function() _clipboard(WidgetTester tester, [String? text]) {
+  var clipboard = text;
+  final messenger = tester.binding.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+    switch (call.method) {
+      case 'Clipboard.setData':
+        clipboard =
+            (call.arguments as Map<Object?, Object?>)['text'] as String?;
+      case 'Clipboard.getData':
+        return <String, Object?>{'text': clipboard};
+      case 'Clipboard.hasStrings':
+        return <String, Object?>{'value': clipboard?.isNotEmpty ?? false};
+    }
+    return null;
+  });
+  addTearDown(
+    () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+  );
+  return () => clipboard;
+}
+
+/// The middle of [line]'s first row on the screen, [dx] in from the
+/// field's left.
+Offset _rowOf(
+  WidgetTester tester,
+  NoteFieldState field,
+  int line, {
+  double dx = 8,
+}) {
+  final top =
+      field.layout.heights!.topOf(line) - field.widget.scrollController.offset;
+  final row = field.layout.paragraphOf(line).preferredLineHeight;
+  return tester.getTopLeft(find.byType(NoteField)) + Offset(dx, top + row / 2);
+}
+
+/// What draws [line].
+RenderNoteLine _drawn(WidgetTester tester, int line) => tester.allRenderObjects
+    .whereType<RenderNoteLine>()
+    .firstWhere((object) => object.line == line);
+
+/// The selection handle at the selection's start or end, following its
+/// line.
+Finder _handle(NoteFieldState field, {required bool start}) {
+  final handles = field.layout.marks.handles!;
+  final link = start ? handles.start : handles.end;
+  return find.byWidgetPredicate(
+    (widget) => widget is CompositedTransformFollower && widget.link == link,
+  );
+}
+
+/// How far [handle] has faded in.
+double _opacity(WidgetTester tester, Finder handle) => tester
+    .widget<FadeTransition>(
+      find.descendant(of: handle, matching: find.byType(FadeTransition)).first,
+    )
+    .opacity
+    .value;
+
+/// A focused field over [text], settled with the caret at the note's start
+/// and its first line at the top.
+Future<NoteFieldState> _pumpFieldAtStart(
+  WidgetTester tester,
+  String text,
+) async {
+  final field = await _pumpField(tester, text);
+  await _select(tester, field, const TextSelection.collapsed(offset: 0));
+  await tester.pumpAndSettle();
+  return field;
+}
+
+/// Clicks [times] in a row at [at] with the mouse's [buttons], then waits
+/// until another click would begin a new run.
+Future<void> _click(
+  WidgetTester tester,
+  Offset at, {
+  int times = 1,
+  int buttons = kPrimaryButton,
+}) async {
+  final mouse = await tester.createGesture(
+    kind: PointerDeviceKind.mouse,
+    buttons: buttons,
+  );
+  for (var i = 0; i < times; i++) {
+    await mouse.down(at);
+    await tester.pump();
+    await mouse.up();
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+  await mouse.removePointer();
+  await tester.pump(kDoubleTapTimeout * 2);
 }
 
 void main() {
@@ -689,12 +784,16 @@ void main() {
 
       await ime.setMarkedText('かんじ');
       await tester.pump();
+      // The caret is drawn two pixels left of where the text goes, as
+      // TextField draws it on Apple's platforms, and the platform is told
+      // where it is drawn.
+      final nudge = 2 / tester.view.devicePixelRatio;
       final marked = _rect(_lastCall(tester, 'TextInput.setMarkedTextRect'));
-      expect(marked.left, moreOrLessEquals(caret.left, epsilon: 0.01));
+      expect(marked.left, moreOrLessEquals(caret.left + nudge, epsilon: 0.01));
       expect(marked.width, greaterThan(0));
       expect(marked.center.dy, inInclusiveRange(caret.top, caret.bottom));
       final after = _rect(_lastCall(tester, 'TextInput.setCaretRect'));
-      expect(after.left, moreOrLessEquals(marked.right, epsilon: 0.01));
+      expect(after.left + nudge, moreOrLessEquals(marked.right, epsilon: 0.01));
     },
     variant: _macOS,
   );
@@ -745,5 +844,274 @@ void main() {
       await tester.pump();
       expect(widget.focusNode.hasFocus, isFalse);
     },
+  );
+
+  testWidgets('a point on the screen finds the note position under it', (
+    tester,
+  ) async {
+    final text = _note(1000);
+    final field = await _pumpField(tester, text);
+    final origin = tester.getTopLeft(find.byType(NoteField));
+    expect(
+      field.positionAt(_rowOf(tester, field, 3, dx: 0)).offset,
+      _lineStart(text, 3),
+    );
+    expect(
+      field.positionAt(_rowOf(tester, field, 3, dx: 600)).offset,
+      _lineStart(text, 4) - 1,
+    );
+    expect(field.positionAt(origin + const Offset(0, -40)).offset, 0);
+
+    await _select(tester, field, TextSelection.collapsed(offset: text.length));
+    await tester.pumpAndSettle();
+    expect(field.widget.scrollController.offset, greaterThan(0));
+    expect(
+      field.positionAt(_rowOf(tester, field, 990, dx: 0)).offset,
+      _lineStart(text, 990),
+    );
+    expect(
+      field.positionAt(origin + const Offset(600, 640)).offset,
+      text.length,
+    );
+  });
+
+  testWidgets(
+    'the caret blinks while the field has focus, and a selection is painted while it has',
+    (tester) async {
+      final text = _note(10);
+      final field = await _pumpField(tester, text);
+      final caret = _lineStart(text, 2) + 4;
+      await _select(tester, field, TextSelection.collapsed(offset: caret));
+      final color = field.layout.marks.caretColor;
+      expect(color, isNotNull);
+      expect(_drawn(tester, 2), paints..rrect(color: color));
+
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(field.layout.marks.caretColor, isNull);
+      expect(_drawn(tester, 2), isNot(paints..rrect()));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(field.layout.marks.caretColor, color);
+
+      // Moving the caret holds it on for another half second.
+      await tester.pump(const Duration(milliseconds: 400));
+      await _select(tester, field, TextSelection.collapsed(offset: caret + 1));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(field.layout.marks.caretColor, color);
+
+      await _select(
+        tester,
+        field,
+        TextSelection(
+          baseOffset: _lineStart(text, 3),
+          extentOffset: _lineStart(text, 5),
+        ),
+      );
+      final selection = field.layout.marks.selectionColor;
+      expect(field.layout.marks.caretColor, isNull);
+      expect(selection, isNotNull);
+      expect(_drawn(tester, 3), paints..rect(color: selection));
+      expect(_drawn(tester, 4), paints..rect(color: selection));
+      expect(_drawn(tester, 5), isNot(paints..rect(color: selection)));
+
+      field.widget.focusNode.unfocus();
+      await tester.pump();
+      expect(field.layout.marks.selectionColor, isNull);
+      expect(_drawn(tester, 3), isNot(paints..rect(color: selection)));
+    },
+    variant: _macOS,
+  );
+
+  testWidgets('on iOS the caret fades out and back in as UIKit fades it', (
+    tester,
+  ) async {
+    final field = await _pumpField(tester, _note(10));
+    await _select(tester, field, const TextSelection.collapsed(offset: 3));
+    double? opacity() => field.layout.marks.caretColor?.a;
+    expect(opacity(), 1);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(opacity(), 1);
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(opacity(), 0.5);
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(opacity(), isNull);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(opacity(), 1);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets(
+    'a click puts the caret down, Shift extends the selection, two clicks select a word and three a line, and a drag selects what it passes over',
+    (tester) async {
+      final text = _note(30);
+      final field = await _pumpFieldAtStart(tester, text);
+      final controller = field.widget.controller;
+      int end(int line) => _lineStart(text, line + 1) - 1;
+
+      await _click(tester, _rowOf(tester, field, 5, dx: 0));
+      expect(
+        controller.selection,
+        TextSelection.collapsed(offset: _lineStart(text, 5)),
+      );
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await _click(tester, _rowOf(tester, field, 7, dx: 600));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      expect(
+        controller.selection,
+        TextSelection(baseOffset: _lineStart(text, 5), extentOffset: end(7)),
+      );
+
+      final word = _lineStart(text, 9);
+      await _click(tester, _rowOf(tester, field, 9), times: 2);
+      expect(
+        controller.selection,
+        TextSelection(baseOffset: word, extentOffset: word + 'Line'.length),
+      );
+      await _click(tester, _rowOf(tester, field, 9), times: 3);
+      expect(
+        controller.selection,
+        TextSelection(baseOffset: word, extentOffset: _lineStart(text, 10)),
+      );
+
+      final mouse = await tester.startGesture(
+        _rowOf(tester, field, 2, dx: 0),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      await mouse.moveTo(_rowOf(tester, field, 3, dx: 300));
+      await tester.pump();
+      await mouse.moveTo(_rowOf(tester, field, 4, dx: 600));
+      await tester.pump();
+      await mouse.up();
+      await mouse.removePointer();
+      await tester.pump(kDoubleTapTimeout * 2);
+      expect(
+        controller.selection,
+        TextSelection(baseOffset: _lineStart(text, 2), extentOffset: end(4)),
+      );
+      expect(find.text('Copy'), findsNothing, reason: 'a mouse shows no menu');
+    },
+    variant: _macOS,
+  );
+
+  testWidgets(
+    'a secondary click selects the word under it and opens the menu, whose items edit the note',
+    (tester) async {
+      final clipboard = _clipboard(tester, 'Hello');
+      final text = _note(30);
+      final field = await _pumpFieldAtStart(tester, text);
+      final controller = field.widget.controller;
+      final start = _lineStart(text, 6);
+      final word = TextSelection(
+        baseOffset: start,
+        extentOffset: start + 'Line'.length,
+      );
+
+      await _click(
+        tester,
+        _rowOf(tester, field, 6),
+        buttons: kSecondaryMouseButton,
+      );
+      expect(controller.selection, word);
+      expect(find.text('Cut'), findsOneWidget);
+      expect(find.text('Copy'), findsOneWidget);
+      expect(find.text('Paste'), findsOneWidget);
+      expect(find.text('Select All'), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(find.text('Copy'), findsNothing);
+      expect(controller.selection, word);
+
+      await _click(
+        tester,
+        _rowOf(tester, field, 6),
+        buttons: kSecondaryMouseButton,
+      );
+      expect(controller.selection, word);
+      await tester.tap(find.text('Paste'));
+      await tester.pumpAndSettle();
+      final pasted = text.replaceRange(start, word.end, 'Hello');
+      expect(controller.text, pasted);
+      expect(find.text('Paste'), findsNothing);
+
+      final next = _lineStart(pasted, 8);
+      await _click(
+        tester,
+        _rowOf(tester, field, 8),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.tap(find.text('Copy'));
+      await tester.pumpAndSettle();
+      expect(clipboard(), 'Line');
+      expect(controller.text, pasted);
+      expect(
+        controller.selection,
+        TextSelection(baseOffset: next, extentOffset: next + 'Line'.length),
+      );
+
+      await _click(
+        tester,
+        _rowOf(tester, field, 8),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.tap(find.text('Cut'));
+      await tester.pumpAndSettle();
+      expect(controller.text, pasted.replaceRange(next, next + 4, ''));
+      expect(controller.selection, TextSelection.collapsed(offset: next));
+      expect(find.text('Cut'), findsNothing);
+    },
+    variant: _macOS,
+  );
+
+  testWidgets(
+    'a long press selects a word with handles and the toolbar, and dragging a handle moves its end',
+    (tester) async {
+      _clipboard(tester, 'Hello');
+      final text = _note(30);
+      final field = await _pumpFieldAtStart(tester, text);
+      final controller = field.widget.controller;
+      final start = _lineStart(text, 5);
+
+      await tester.longPressAt(_rowOf(tester, field, 5));
+      await tester.pumpAndSettle();
+      expect(
+        controller.selection,
+        TextSelection(baseOffset: start, extentOffset: start + 'Line'.length),
+      );
+      expect(find.text('Copy'), findsOneWidget);
+      expect(find.text('Paste'), findsOneWidget);
+      expect(find.text('Select all'), findsOneWidget);
+      final end = _handle(field, start: false);
+      expect(_opacity(tester, _handle(field, start: true)), 1);
+      expect(_opacity(tester, end), 1);
+
+      // Drags the end handle by what it draws, two rows and a bit down.
+      final row = field.layout.paragraphOf(5).preferredLineHeight;
+      final finger = await tester.startGesture(
+        tester.getCenter(
+          find.descendant(of: end, matching: find.byType(CustomPaint)).first,
+        ),
+      );
+      await finger.moveBy(const Offset(0, 40));
+      await tester.pump();
+      await finger.moveBy(Offset(0, row * 2.2));
+      await tester.pump();
+      await finger.up();
+      await tester.pumpAndSettle();
+      expect(controller.selection.baseOffset, start);
+      expect(
+        controller.selection.extentOffset,
+        inInclusiveRange(_lineStart(text, 7), _lineStart(text, 8) - 1),
+      );
+
+      await tester.tapAt(_rowOf(tester, field, 12, dx: 0));
+      await tester.pumpAndSettle();
+      expect(
+        controller.selection,
+        TextSelection.collapsed(offset: _lineStart(text, 12)),
+      );
+      expect(find.text('Copy'), findsNothing);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
   );
 }

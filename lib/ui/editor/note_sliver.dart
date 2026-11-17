@@ -1,5 +1,6 @@
 import 'dart:collection';
 import 'dart:math' as math;
+import 'dart:ui' show BoxHeightStyle;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
@@ -14,6 +15,98 @@ typedef LineSpan = ({
   InlineSpan span,
   List<PlaceholderDimensions> placeholders,
 });
+
+/// How the field draws its caret: [width] wide, [height] tall or a row of
+/// the note's base style, with ends rounded by [radius], moved by [offset],
+/// over the text or under it, and snapped to the pixels of a screen with
+/// [pixelRatio] of them to a point.
+typedef NoteCaret = ({
+  double width,
+  double? height,
+  Radius? radius,
+  Offset offset,
+  bool aboveText,
+  double pixelRatio,
+});
+
+/// What the lines draw besides their text: the selection, in
+/// [selectionColor] while it shows, and the caret, in [caretColor] while it
+/// shows. While [handles] are given, the lines holding the selection's ends
+/// lead them, for the selection handles to follow.
+typedef NoteMarks = ({
+  TextSelection selection,
+  Color? selectionColor,
+  Color? caretColor,
+  NoteCaret caret,
+  ({LayerLink start, LayerLink end})? handles,
+});
+
+/// Where a selection handle points in [paragraph], for the part of the
+/// selection a line holds, [range], in the line's own offsets: under the
+/// first or last box of it, or under the caret where it has none, as
+/// [RenderEditable.getEndpointsForSelection] puts it, on a line [width] wide.
+Offset handlePointIn(
+  TextPainter paragraph,
+  TextSelection range, {
+  required bool start,
+  required double width,
+}) {
+  if (!range.isCollapsed) {
+    final boxes = paragraph.getBoxesForSelection(
+      range,
+      boxHeightStyle: BoxHeightStyle.strut,
+    );
+    if (boxes.isNotEmpty) {
+      final box = start ? boxes.first : boxes.last;
+      return Offset(
+        clampDouble(start ? box.start : box.end, 0, math.max(width, 0)),
+        box.bottom,
+      );
+    }
+  }
+  return paragraph.getOffsetForCaret(
+        start ? range.base : range.extent,
+        Rect.zero,
+      ) +
+      Offset(0, paragraph.preferredLineHeight);
+}
+
+/// Where the caret at [position] in [paragraph] is drawn, in the
+/// paragraph's coordinates, as [RenderEditable.getLocalRectForCaret] puts
+/// it, on a line [width] wide.
+Rect caretRectIn(
+  TextPainter paragraph,
+  TextPosition position,
+  NoteCaret caret,
+  double width,
+) {
+  final height = caret.height ?? paragraph.preferredLineHeight;
+  final apple = switch (defaultTargetPlatform) {
+    TargetPlatform.iOS || TargetPlatform.macOS => true,
+    _ => false,
+  };
+  final prototype = apple
+      ? Rect.fromLTWH(0, 0, caret.width, height + 2)
+      : Rect.fromLTWH(0, 2, caret.width, height - 4);
+  final rect = prototype.shift(
+    paragraph.getOffsetForCaret(position, prototype) + caret.offset,
+  );
+  final left = clampDouble(rect.left, 0, math.max(width, 0));
+  final full = paragraph.getFullHeightForCaret(position, prototype);
+  return apple
+      ? Rect.fromLTWH(
+          left,
+          rect.top + (full - rect.height) / 2,
+          rect.width,
+          rect.height,
+        )
+      : Rect.fromLTWH(
+          left,
+          rect.top - 2 + (full - height) / 2,
+          rect.width,
+          height,
+        );
+}
 
 /// The note laid out a line at a time for [NoteSliver]: each line's
 /// paragraph, made when the line is first shown and kept by what it draws,
@@ -56,6 +149,31 @@ class NoteLayout {
   double? _width;
   LineHeights? _heights;
   RenderNoteSliver? _sliver;
+
+  /// What the lines draw besides their text. Setting it repaints them.
+  NoteMarks get marks => _marks;
+  NoteMarks _marks = (
+    selection: const TextSelection.collapsed(offset: -1),
+    selectionColor: null,
+    caretColor: null,
+    caret: (
+      width: 2,
+      height: null,
+      radius: null,
+      offset: Offset.zero,
+      aboveText: false,
+      pixelRatio: 1,
+    ),
+    handles: null,
+  );
+  set marks(NoteMarks value) {
+    if (value == _marks) return;
+    _marks = value;
+    _sliver?.markNeedsPaint();
+  }
+
+  /// How wide the lines are, once the sliver has been laid out.
+  double? get width => _width;
   bool _toEnd = false;
 
   int get length => lines.length;
@@ -493,8 +611,112 @@ class RenderNoteLine extends RenderBox
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    _paragraph!.paint(context.canvas, offset);
+    final layout = _noteLayout;
+    final marks = layout.marks;
+    final paragraph = _paragraph!;
+    final start = layout.lines.startOf(_line);
+    final end = start + layout.lines[_line].length;
+    final selection = marks.selection;
+    final selectionColor = marks.selectionColor;
+    if (selectionColor != null &&
+        selection.isValid &&
+        selection.start <= end &&
+        selection.end > start) {
+      final from = math.max(selection.start, start) - start;
+      final to = math.min(selection.end, end) - start;
+      // A blank line shows its line break selected as a selected space,
+      // which is how its paragraph is laid out.
+      final range = from < to
+          ? TextSelection(baseOffset: from, extentOffset: to)
+          : start == end && _line < layout.length - 1
+          ? const TextSelection(baseOffset: 0, extentOffset: 1)
+          : null;
+      if (range != null) {
+        final fill = Paint()..color = selectionColor;
+        for (final box in paragraph.getBoxesForSelection(
+          range,
+          boxHeightStyle: BoxHeightStyle.strut,
+        )) {
+          context.canvas.drawRect(box.toRect().shift(offset), fill);
+        }
+      }
+    }
+    final caretColor = marks.caretColor;
+    final extent = selection.extentOffset;
+    final caret =
+        caretColor != null &&
+            selection.isValid &&
+            selection.isCollapsed &&
+            extent >= start &&
+            extent <= end
+        ? caretRectIn(
+            paragraph,
+            TextPosition(offset: extent - start, affinity: selection.affinity),
+            marks.caret,
+            size.width,
+          )
+        : null;
+    if (caret != null && !marks.caret.aboveText) {
+      _paintCaret(context.canvas, caret, offset, marks.caret, caretColor!);
+    }
+    paragraph.paint(context.canvas, offset);
     paintInlineChildren(context, offset);
+    if (caret != null && marks.caret.aboveText) {
+      _paintCaret(context.canvas, caret, offset, marks.caret, caretColor!);
+    }
+    final handles = marks.handles;
+    if (handles == null || !selection.isValid) return;
+    void lead(LayerLink link, {required bool first}) {
+      final range = TextSelection(
+        baseOffset: math.max(selection.start, start) - start,
+        extentOffset: math.min(selection.end, end) - start,
+        affinity: selection.affinity,
+      );
+      context.pushLayer(
+        LeaderLayer(
+          link: link,
+          offset:
+              offset +
+              handlePointIn(paragraph, range, start: first, width: size.width),
+        ),
+        (context, offset) {},
+        Offset.zero,
+      );
+    }
+
+    if (selection.start >= start && selection.start <= end) {
+      lead(handles.start, first: true);
+    }
+    if (selection.end >= start && selection.end <= end) {
+      lead(handles.end, first: false);
+    }
+  }
+
+  /// Draws the caret at [rect], snapped to the screen's pixels as
+  /// [RenderEditable] snaps it.
+  void _paintCaret(
+    Canvas canvas,
+    Rect rect,
+    Offset offset,
+    NoteCaret caret,
+    Color color,
+  ) {
+    final global = localToGlobal(rect.topLeft);
+    final pixel = 1 / caret.pixelRatio;
+    final snapped = rect.shift(
+      offset +
+          Offset(
+            (global.dx / pixel).round() * pixel - global.dx,
+            (global.dy / pixel).round() * pixel - global.dy,
+          ),
+    );
+    final fill = Paint()..color = color;
+    final radius = caret.radius;
+    if (radius == null) {
+      canvas.drawRect(snapped, fill);
+    } else {
+      canvas.drawRRect(RRect.fromRectAndRadius(snapped, radius), fill);
+    }
   }
 
   @override
