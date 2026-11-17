@@ -6333,7 +6333,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 ),
               Positioned(
                 left: padding.left,
-                right: padding.right,
                 top: y + title.row.bottom + EditorMetrics.metaGap * scale,
                 child: meta!,
               ),

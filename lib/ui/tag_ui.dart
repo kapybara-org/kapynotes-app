@@ -562,7 +562,9 @@ class _NoteTagChipsState extends State<NoteTagChips> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Flexible(
+        // Past this the chips scroll, so + Tag stays in reach.
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(

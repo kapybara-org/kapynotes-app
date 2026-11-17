@@ -192,10 +192,7 @@ class NoteMetaRow extends StatelessWidget {
             ],
             item,
           ],
-          if (tags case final tags?) ...[
-            const SizedBox(width: _gap),
-            Flexible(child: tags),
-          ],
+          if (tags case final tags?) ...[const SizedBox(width: _gap), tags],
         ],
       ),
     );
