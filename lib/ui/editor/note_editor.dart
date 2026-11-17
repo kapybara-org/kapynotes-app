@@ -6852,21 +6852,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                         (textPaneWidth - EditorMetrics.columnWidth) / 2,
                       )
                     : null;
-                // The field runs on past the column by what an attachment
-                // gives up to stay clear of the line under it, so that
-                // pictures, tables and formulas are the column wide.
-                final bleed = side == null
-                    ? 0.0
-                    : math.min(noteAttachmentColumnSlack, side - 1);
                 final padding = side == null
                     ? basePadding
-                    : basePadding.copyWith(left: side, right: side - bleed);
+                    : basePadding.copyWith(left: side, right: side);
 
                 // Must match the text field's own content box exactly, right
                 // down to the sliver it holds back for the caret.
                 final trailingGap = side == null
                     ? 16.0
-                    : side - bleed - EditorMetrics.caretMargin;
+                    : side - EditorMetrics.caretMargin;
                 final contentWidth = EditorMetrics.textLayoutWidth(
                   textPaneWidth - padding.left - trailingGap,
                 );
@@ -6883,6 +6877,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   1.0,
                   contentWidth - noteAttachmentColumnSlack,
                 );
+
+                // Paper's attachments fill the column. What the text engine is
+                // told of them stays [attachmentWidth] wide, so the line under
+                // one survives; the attachment itself is drawn the column wide.
+                final drawnWidth = EditorMetrics.page
+                    ? contentWidth
+                    : attachmentWidth;
 
                 final markdown = _controller.markdownFor(_controller.text);
                 // Markdown is shown as written only in a note being edited:
@@ -6920,7 +6921,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       analysis: markdown,
                       base: cellStyle,
                       scaler: textScaler,
-                      fitToWidth: attachmentWidth,
+                      fitToWidth: drawnWidth,
                       fill: page,
                       minRowHeight: page
                           ? textScaler.scale(
@@ -6989,10 +6990,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       scaler: textScaler,
                     ),
                   ),
-                  ..._buildAttachmentSpans(
-                    attachmentWidth,
+                  for (final MapEntry(:key, :value) in _buildAttachmentSpans(
+                    drawnWidth,
                     constraints.maxHeight,
-                  ),
+                  ).entries)
+                    key: (
+                      width: math.min(value.width, attachmentWidth),
+                      height: value.height,
+                      child: value.child,
+                    ),
                 };
                 final layoutKey = (
                   widget.writingFont,
