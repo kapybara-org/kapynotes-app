@@ -401,6 +401,7 @@ class DocStore {
   final Map<String, DocRecord> _records = {};
   final LinkedHashSet<String> _hot = LinkedHashSet<String>();
   final Set<String> _dirty = {};
+  final Set<String> _changed = {};
   Timer? _timer;
   Future<void>? _loading;
   bool _loaded = false;
@@ -455,6 +456,7 @@ class DocStore {
   /// whose history turned out to live on the server already.
   void remove(String noteId) {
     if (_records.remove(noteId) == null) return;
+    _changed.add(noteId);
     _hot.remove(noteId);
     _dirty.remove(noteId);
     unawaited(_storage.delete(noteId));
@@ -462,7 +464,16 @@ class DocStore {
 
   void markDirty(String noteId) {
     _dirty.add(noteId);
+    _changed.add(noteId);
     _timer ??= Timer(writeDelay, () => unawaited(flush()));
+  }
+
+  /// Every note whose record changed or went since the last call, for the
+  /// task index to read its checklist lines again.
+  Set<String> takeChanged() {
+    final taken = {..._changed};
+    _changed.clear();
+    return taken;
   }
 
   /// Asked as each flush begins, for what to run once everything that flush

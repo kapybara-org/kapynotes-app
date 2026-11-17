@@ -202,6 +202,20 @@ class FugueText {
     return null;
   }
 
+  /// Whether a deleted [node] still sits inside a line that stands: no
+  /// deleted newline among the tombstones between it and the nearest visible
+  /// characters on either side. False once the line it was on went with it.
+  bool inStandingLine(FugueNode node) {
+    final at = indexOf(node);
+    for (var i = at; i >= 0 && _order[i].deleted; i--) {
+      if (_order[i].codeUnit == 0x0A) return false;
+    }
+    for (var i = at + 1; i < _order.length && _order[i].deleted; i++) {
+      if (_order[i].codeUnit == 0x0A) return false;
+    }
+    return true;
+  }
+
   /// Where a local insert at visible [offset] hangs, by the Fugue rule.
   ///
   /// Let `a` be the character before the offset (the root at 0). If `a` has
