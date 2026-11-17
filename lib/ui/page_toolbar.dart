@@ -45,6 +45,7 @@ class PageToolbar extends StatelessWidget {
     this.moreActions = const [],
     this.updates,
     this.center,
+    this.actions,
   });
 
   /// The breadcrumb: the space the list is showing, then the open note's
@@ -90,6 +91,10 @@ class PageToolbar extends StatelessWidget {
   /// Centred in the bar's empty middle, such as Write | Draw on a new note,
   /// where its going leaves nothing else to move.
   final Widget? center;
+
+  /// A page that is not a note puts its own actions where a note's saved
+  /// state, Share and Pin go. More stays.
+  final List<Widget>? actions;
 
   static const double height = 56;
 
@@ -160,6 +165,14 @@ class PageToolbar extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (actions case final actions?) ...[
+                    if (updates != null)
+                      UpdateRestartButton(
+                        updates: updates,
+                        wide: constraints.maxWidth >= _updateLabelWidth,
+                      ),
+                    ...actions,
+                  ] else ...[
                   if (members.isNotEmpty)
                     Flexible(
                       child: Padding(
@@ -203,6 +216,7 @@ class PageToolbar extends StatelessWidget {
                       strokeWidth: 1.9,
                     ),
                   ),
+                  ],
                   const SizedBox(width: 6),
                   Builder(
                     builder: (buttonContext) => CompactIconButton(

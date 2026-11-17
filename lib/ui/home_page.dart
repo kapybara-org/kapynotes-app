@@ -67,6 +67,10 @@ import 'mobile_page_swipe.dart';
 import 'notes_list.dart';
 import 'page_card.dart';
 import 'page_toolbar.dart';
+import 'tasks/task_marks.dart';
+import 'tasks/tasks_controller.dart';
+import 'tasks/tasks_page.dart';
+import 'tasks/tasks_sidebar.dart';
 import 'sidebar.dart';
 import 'sidebar_timestamp.dart';
 import 'settings_dialog.dart';
@@ -94,6 +98,7 @@ class HomePage extends StatefulWidget {
     this.updates,
     this.desktopIntegration,
     this.account,
+    this.tasks,
     required this.store,
     this.welcomeNoteId,
     this.launchIntent = LaunchIntent.open,
@@ -122,6 +127,9 @@ class HomePage extends StatefulWidget {
   final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
   final Account? account;
+
+  /// Every checklist line as a task, for Tasks. Null leaves Tasks out.
+  final TaskLibrary? tasks;
   final LocalStore store;
 
   /// The welcome note seeded by this launch, if this launch seeded one.
@@ -283,7 +291,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // The sidebar groups shared notes by space once the account is unlocked,
     // and that is a fact of the account, not of the notes.
     ?widget.account,
+    ?widget.tasks,
   ]);
+
+  /// Tasks, while the rail has it open.
+  bool _tasksMode = false;
+  TaskFilter _taskFilter = const TaskFilter.all();
+  String _taskQuery = '';
+  final FocusNode _taskAddFocus = FocusNode(debugLabel: 'Add a task');
+  final GlobalKey<TasksPageState> _tasksPage = GlobalKey();
+  late final TasksController? _taskController = switch (widget.tasks) {
+    final tasks? => TasksController(
+      notes: widget.notes,
+      library: tasks,
+      canEdit: _canEditNote,
+      now: widget.notes.now,
+    ),
+    null => null,
+  };
 
   /// The welcome note while it is still exactly as it was written.
   ///
@@ -358,6 +383,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _kapyHeader.dispose();
     _searchFocus.dispose();
     _desktopShortcutFocus.dispose();
+    _taskAddFocus.dispose();
+    _taskController?.dispose();
     super.dispose();
   }
 
@@ -1541,7 +1568,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// What New makes in the space on screen: a drawing in Drawings, a note
   /// everywhere else.
-  bool _createInSpace() => _createNote(drawing: _drawingsOnly);
+  bool _createInSpace() {
+    if (!_tasksMode) return _createNote(drawing: _drawingsOnly);
+    _taskAddFocus.requestFocus();
+    return true;
+  }
+
+  /// A note's name on a task's mark, with its space's after it when it is
+  /// shared.
+  String _taskNoteLabel(Note note) {
+    final space = widget.account?.sharing?.spaceById(note.spaceId);
+    return space == null ? note.title : '${note.title} · ${space.name}';
+  }
+
+  /// Opens a task's note where it lives, leaving Tasks.
+  void _openTaskNote(String id) {
+    final note = widget.notes.byId(id);
+    final sharing = widget.account?.sharing;
+    if (note == null) return;
+    _showSpace(
+      sharing != null && sidebarTabOf(note, sharing) == SidebarTab.shared
+          ? LibrarySpace.shared
+          : LibrarySpace.notes,
+    );
+    _select(id);
+  }
 
   bool _createNoteNow({bool drawing = false}) {
     _recordKapyActivity();
@@ -2395,6 +2446,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ? LibrarySpace.archive
       : _hiddenMode
       ? LibrarySpace.hidden
+      : _tasksMode
+      ? LibrarySpace.tasks
       : _drawingsOnly
       ? LibrarySpace.drawings
       : widget.account?.sharing != null && _sidebarTab == SidebarTab.shared
@@ -2418,7 +2471,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _showSpace(LibrarySpace space) {
     if (space == _space) return;
     _pinnedOnly = false;
+    setState(() => _tasksMode = space == LibrarySpace.tasks);
     switch (space) {
+      case LibrarySpace.tasks:
+        if (_archiveMode) _toggleArchive();
+        if (_hiddenMode) _leaveHiddenNotes();
       case LibrarySpace.archive:
         _toggleArchive();
       case LibrarySpace.hidden:
@@ -2503,6 +2560,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             focusNode: _desktopShortcutFocus,
             shortcuts: widget.shortcuts,
             onNewNote: _createInSpace,
+            onCompleteTask: _tasksMode
+                ? () => _tasksPage.currentState?.completeDoNow()
+                : null,
             onFindNotes: _focusGlobalSearch,
             onNextNote: () => _cycleNote(1),
             onPreviousNote: () => _cycleNote(-1),
@@ -2573,6 +2633,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final pinned =
                 selected != null &&
                 widget.notes.pinnedNoteIds.contains(selected.id);
+            final taskBoard = _taskController?.read();
+            final tasks = _tasksMode ? _taskController : null;
             return Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -2580,6 +2642,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   space: space,
                   onSelected: _showSpace,
                   invitations: widget.account?.sharing?.invites.length,
+                  openTasks: taskBoard?.open.length,
                   showHidden:
                       _hiddenMode ||
                       (widget.prefs.hiddenFolderVisible &&
@@ -2609,7 +2672,36 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     onWidthChanged: (value) =>
                         widget.prefs.sidebarWidth = value,
                     onHide: () => _setListShown(false),
-                    sidebar: Sidebar(
+                    sidebar: tasks != null && taskBoard != null
+                        ? TasksSidebar(
+                            board: taskBoard,
+                            filter: _taskFilter,
+                            onFilter: (filter) =>
+                                setState(() => _taskFilter = filter),
+                            labelOf: _taskNoteLabel,
+                            query: _taskQuery,
+                            onQueryChanged: (value) =>
+                                setState(() => _taskQuery = value),
+                            searchFocusNode: _searchFocus,
+                            searchShortcut: widget.shortcuts.bindingFor(
+                              ShortcutAction.findNotes,
+                            ),
+                            windowBar: SidebarWindowBar(
+                              title: space.title,
+                              count: taskBoard.open.length,
+                              countLabel: 'open',
+                              noun: 'task',
+                              onCreate: _createInSpace,
+                              newNoteShortcut: widget.shortcuts.bindingFor(
+                                ShortcutAction.newNote,
+                              ),
+                              onHide: () => _setListShown(false),
+                              hideShortcut: widget.shortcuts.bindingFor(
+                                ShortcutAction.toggleSidebar,
+                              ),
+                            ),
+                          )
+                        : Sidebar(
                       notes: _visibleNotes,
                       pinnedNoteIds: widget.notes.pinnedNoteIds,
                       lockedNoteIds: _noteLimit?.lockedIds ?? const {},
@@ -2720,6 +2812,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
+                                  if (tasks != null)
+                                    ..._buildTasksPage(
+                                      tasks,
+                                      listVisible: listFits && listShown,
+                                    )
+                                  else ...[
                                   PageToolbar(
                                     space: space.title,
                                     section: pinned ? 'Pinned' : null,
@@ -2764,6 +2862,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         : null,
                                   ),
                                   Expanded(child: _buildWideWorkspace()),
+                                  ],
                                 ],
                               ),
                             ),
@@ -2866,6 +2965,84 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       case 'delete':
         unawaited(_deleteNote(note.id));
     }
+  }
+
+  /// Tasks on the page: its own breadcrumb and Pick again over Today, or
+  /// over the Done view.
+  List<Widget> _buildTasksPage(
+    TasksController tasks, {
+    required bool listVisible,
+  }) {
+    final filter = _taskFilter;
+    final note = filter.noteId == null ? null : widget.notes.byId(filter.noteId);
+    final home = note != null && tasks.read().home?.id == note.id;
+    final palette = context.palette;
+    return [
+      PageToolbar(
+        space: LibrarySpace.tasks.title,
+        section: filter.done
+            ? 'Done'
+            : note == null || home
+            ? 'Today'
+            : _taskNoteLabel(note),
+        listVisible: listVisible,
+        onShowList: _toggleList,
+        showListShortcut: _sidebarShortcut,
+        noun: 'task',
+        onCreate: _createInSpace,
+        newNoteShortcut: widget.shortcuts
+            .bindingFor(ShortcutAction.newNote)
+            ?.displayLabel,
+        moreActions: [
+          for (final action in _pageActions(null))
+            if (action.value == 'on-top') action,
+        ],
+        onMore: (action) => _runPageAction(action, null),
+        updates: widget.updates,
+        actions: [
+          if (!filter.done)
+            TextButton.icon(
+              key: const ValueKey('tasks-pick-again'),
+              onPressed: () => _tasksPage.currentState?.pickAgain(),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                foregroundColor: palette.textTertiary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                textStyle: uiStyle(
+                  12.5,
+                  16,
+                  FontWeight.w500,
+                  palette.textTertiary,
+                ),
+              ),
+              icon: KapyIcon(
+                KapyIcons.refreshRounded,
+                size: 15,
+                strokeWidth: 1.8,
+                color: palette.textTertiary,
+              ),
+              label: const Text('Pick again'),
+            ),
+        ],
+      ),
+      Expanded(
+        child: TasksPage(
+          key: _tasksPage,
+          controller: tasks,
+          filter: filter,
+          query: _taskQuery,
+          addFocus: _taskAddFocus,
+          labelOf: _taskNoteLabel,
+          onOpenNote: _openTaskNote,
+          newTaskShortcut: widget.shortcuts
+              .bindingFor(ShortcutAction.newNote)
+              ?.keycapLabel,
+        ),
+      ),
+    ];
   }
 
   Widget _buildWideWorkspace() {
@@ -3435,6 +3612,7 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.child,
     required this.focusNode,
     required this.onNewNote,
+    required this.onCompleteTask,
     required this.onFindNotes,
     required this.onNextNote,
     required this.onPreviousNote,
@@ -3459,6 +3637,9 @@ class _DesktopShortcuts extends StatelessWidget {
   final Widget child;
   final FocusNode focusNode;
   final VoidCallback onNewNote;
+
+  /// Done on Do now, while Tasks is open: ⌘↵, or Ctrl+Enter.
+  final VoidCallback? onCompleteTask;
   final VoidCallback onFindNotes;
   final VoidCallback onNextNote;
   final VoidCallback onPreviousNote;
@@ -3488,6 +3669,11 @@ class _DesktopShortcuts extends StatelessWidget {
     return CallbackShortcuts(
       bindings: {
         ?shortcuts.bindingFor(ShortcutAction.newNote)?.activator: onNewNote,
+        SingleActivator(
+          LogicalKeyboardKey.enter,
+          meta: AppPlatform.isMacOS,
+          control: !AppPlatform.isMacOS,
+        ): ?onCompleteTask,
         ?shortcuts.bindingFor(ShortcutAction.findNotes)?.activator: onFindNotes,
         ?shortcuts.bindingFor(ShortcutAction.nextNote)?.activator: onNextNote,
         ?shortcuts.bindingFor(ShortcutAction.previousNote)?.activator:
