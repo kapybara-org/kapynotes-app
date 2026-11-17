@@ -110,10 +110,7 @@ void main() {
         prefs: VoicePrefs(store)..load(),
       );
 
-      // Local summaries now sit with the recording settings they affect.
-      expect(find.text('Recordings & summaries'), findsOneWidget);
-      expect(find.text('ON THIS DEVICE'), findsNothing);
-      expect(find.text('Gemma 4 E2B · 2.6 GB'), findsOneWidget);
+      expect(find.text('Gemma 4 E2B · 2.6 GB download'), findsOneWidget);
       // The licence has to be named and reachable, not merely implied.
       expect(find.text('Apache-2.0'), findsOneWidget);
       expect(find.textContaining('2B effective parameters'), findsOneWidget);
@@ -131,8 +128,8 @@ void main() {
         prefs: VoicePrefs(store)..load(),
       );
 
-      // The summary row being present must not silently drop the other one.
-      expect(find.byKey(const ValueKey('local-transcription-row')), findsOne);
+      // The summary line being present must not silently drop the other one.
+      expect(find.byKey(const ValueKey('local-transcription-line')), findsOne);
     });
   });
 

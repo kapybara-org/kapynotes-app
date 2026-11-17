@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -19,7 +20,6 @@ import 'package:kapy_notes/speech/local_models.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../kapy_icon_finder.dart';
 
 class MemoryStore extends LocalStore {
   MemoryStore() : super(fileName: 'local-engine-row-test.json');
@@ -173,10 +173,9 @@ void main() {
   testWidgets('a build with no models still shows the shelf', (tester) async {
     await _openVoicePane(tester);
 
-    expect(find.text('Recordings & summaries'), findsOneWidget);
-    expect(find.text('ON THIS DEVICE'), findsNothing);
-    expect(find.byKey(const ValueKey('local-transcription-row')), findsOne);
-    expect(find.byKey(const ValueKey('local-summary-row')), findsOne);
+    expect(find.byKey(const ValueKey('local-transcription-line')), findsOne);
+    expect(find.byKey(const ValueKey('local-summary-line')), findsOne);
+    expect(find.text('Not available on this device'), findsNWidgets(2));
     expect(find.text('Parakeet TDT 0.6B v3'), findsNothing);
     expect(find.text('Download'), findsNothing);
   });
@@ -195,20 +194,14 @@ void main() {
 
     // The name and the size, which are the two anybody weighs, and the
     // attribution the licence asks for.
-    expect(find.text('Parakeet TDT 0.6B v3 · 670 MB'), findsOneWidget);
+    expect(find.text('Parakeet TDT 0.6B v3 · 670 MB download'), findsOneWidget);
     expect(find.text('CC-BY-4.0'), findsOneWidget);
     expect(find.textContaining('600M parameters'), findsOneWidget);
 
-    // Nothing downloaded yet, so the local choice is disabled and the one
+    // Nothing downloaded yet, so this device cannot be chosen and the one
     // available action is to download its engine.
     expect(find.text('Download'), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('local-transcription-row')),
-        matching: findKapyIcon(KapyIcons.radioCheckedRounded),
-      ),
-      findsNothing,
-    );
+    expect(_segment(tester, 'transcribe-with-device').enabled, isFalse);
   });
 
   testWidgets('the row fits the phone sheet as well as the dialog', (
@@ -262,15 +255,9 @@ void main() {
       () => models.stateOf(model).status == LocalModelStatus.ready,
     );
 
-    // Downloaded turns the button into a mutually exclusive engine choice.
+    // Downloaded makes this device one half of the engine choice.
     expect(find.text('Download'), findsNothing);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('local-transcription-row')),
-        matching: findKapyIcon(KapyIcons.radioUncheckedRounded),
-      ),
-      findsOneWidget,
-    );
+    expect(_segment(tester, 'transcribe-with-device').enabled, isTrue);
     // And 670 MB deserves a way back that is not a menu.
     expect(find.byKey(const ValueKey('local-remove-tiny')), findsOneWidget);
   });
@@ -304,3 +291,12 @@ void main() {
     expect(find.text('Try again'), findsOneWidget);
   });
 }
+
+/// What a segment of an engine choice says about itself.
+SemanticsProperties _segment(WidgetTester tester, String key) => tester
+    .widget<Semantics>(
+      find
+          .ancestor(of: find.byKey(ValueKey(key)), matching: find.byType(Semantics))
+          .first,
+    )
+    .properties;

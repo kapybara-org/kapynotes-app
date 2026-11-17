@@ -42,7 +42,6 @@ class SharingPane extends StatelessWidget {
             SettingsGroup(
               children: [
                 SettingsRow(
-                  icon: KapyIcons.peopleOutlined,
                   title: switch (account.state) {
                     AccountState.signedOut =>
                       'Sign in, and unlock your notes, to share them with '
@@ -260,7 +259,6 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
               ),
             if (teams.isEmpty)
               const SettingsRow(
-                icon: KapyIcons.peopleOutlined,
                 title: 'No shared spaces',
                 subtitle: 'Share a note to start a space',
               ),
@@ -275,7 +273,12 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
                   sharing: sharing,
                 ),
               ),
-            _JoinRow(controller: _code, busy: _busy, onJoin: _join),
+            _JoinRow(
+              key: const ValueKey('join-row'),
+              controller: _code,
+              busy: _busy,
+              onJoin: _join,
+            ),
           ],
         ),
         if (_message case final message?)
@@ -299,13 +302,12 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
         ),
         if (sharing.blocks.isNotEmpty) ...[
           SizedBox(height: SettingsMetrics.groupGap),
-          const SettingsLabel('Blocked'),
+          const SettingsLabel('Blocked', key: ValueKey('blocked-people')),
           SettingsGroup(
             children: [
               for (final block in sharing.blocks)
                 SettingsRow(
                   key: ValueKey('block-${block.email}'),
-                  icon: KapyIcons.blockedRounded,
                   title: block.email,
                   trailing: SettingsRowButton(
                     key: ValueKey('unblock-${block.email}'),
@@ -352,6 +354,7 @@ class _SharingPaneBodyState extends State<SharingPaneBody> {
 /// card, since joining is one more way into a shared space.
 class _JoinRow extends StatelessWidget {
   const _JoinRow({
+    super.key,
     required this.controller,
     required this.busy,
     required this.onJoin,
@@ -368,15 +371,6 @@ class _JoinRow extends StatelessWidget {
       padding: SettingsMetrics.padding,
       child: Row(
         children: [
-          SizedBox(
-            width: SettingsMetrics.iconSlot,
-            child: KapyIcon(
-              KapyIcons.linkRounded,
-              size: SettingsMetrics.iconSize,
-              color: palette.textSecondary,
-            ),
-          ),
-          SizedBox(width: SettingsMetrics.gap),
           Expanded(
             child: TextField(
               key: const ValueKey('join-code'),
@@ -470,15 +464,6 @@ class _InviteRow extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: SettingsMetrics.iconSlot,
-                child: KapyIcon(
-                  KapyIcons.mailOutlined,
-                  size: SettingsMetrics.iconSize,
-                  color: palette.textSecondary,
-                ),
-              ),
-              SizedBox(width: SettingsMetrics.gap),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -585,19 +570,14 @@ class _TeamRow extends StatelessWidget {
         padding: SettingsMetrics.padding,
         child: Row(
           children: [
-            SizedBox(
-              width: SettingsMetrics.iconSlot,
-              child: KapyIcon(
-                warnings.isNotEmpty
-                    ? KapyIcons.warningRounded
-                    : KapyIcons.peopleOutlined,
-                size: SettingsMetrics.iconSize,
-                color: warnings.isNotEmpty
-                    ? Theme.of(context).colorScheme.error
-                    : palette.textSecondary,
+            if (warnings.isNotEmpty) ...[
+              KapyIcon(
+                KapyIcons.warningRounded,
+                size: 16,
+                color: Theme.of(context).colorScheme.error,
               ),
-            ),
-            SizedBox(width: SettingsMetrics.gap),
+              SizedBox(width: SettingsMetrics.gap),
+            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

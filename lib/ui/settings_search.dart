@@ -10,7 +10,7 @@ import 'control_surface.dart';
 import 'settings_rows.dart';
 
 /// One setting a search can find: what it is called, what else somebody
-/// might call it, and where it lives.
+/// might call it, where it lives, and what it is set to.
 ///
 /// [S] is whatever settings names its categories with; the search itself only
 /// ever reads the words.
@@ -25,6 +25,10 @@ class SettingsSearchEntry<S> {
     this.group,
     this.keywords = const [],
     this.description,
+    this.value,
+    this.changed = false,
+    this.onReset,
+    this.elsewhere,
   });
 
   final S section;
@@ -42,24 +46,37 @@ class SettingsSearchEntry<S> {
   /// The other words people use for it — "dark mode" for the theme.
   final List<String> keywords;
 
-  /// The row's own line of explanation: searched, never shown.
+  /// The row's own line of explanation.
   final String? description;
 
+  /// What it is set to, in a word, shown at the end of a result.
+  final String? value;
+
+  /// Whether it is off its default, and what puts it back.
+  final bool changed;
+  final VoidCallback? onReset;
+
+  /// Where a setting that is not in settings lives instead — "In a voice
+  /// note's player". Such a result says so and goes nowhere.
+  final String? elsewhere;
+
   /// Stable across searches, for the result row's key.
-  String get id => target ?? 'section-$sectionLabel';
+  String get id => target ?? 'section-$sectionLabel-$title';
 
   /// The line under it in the results: where it lives, in the words its pane
-  /// uses — "General · Writing" — or, for a whole category, what is in it.
-  /// A heading that only repeats the title is left out.
+  /// uses — "Appearance › Text" — and what it is for.
   String get place {
+    if (elsewhere case final where?) return where;
     if (target == null && title == sectionLabel) {
       return description ?? sectionLabel;
     }
     final heading = group;
-    if (heading == null || heading.toLowerCase() == title.toLowerCase()) {
-      return sectionLabel;
-    }
-    return '$sectionLabel · $heading';
+    final path = heading == null || heading.toLowerCase() == title.toLowerCase()
+        ? sectionLabel
+        : '$sectionLabel › $heading';
+    final about = description;
+    if (about == null || about.isEmpty) return path;
+    return '$path · ${about[0].toLowerCase()}${about.substring(1)}';
   }
 }
 
@@ -149,12 +166,16 @@ class SettingsSearchField extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.onSubmitted,
+    this.onMove,
     this.autofocus = false,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final VoidCallback onSubmitted;
+
+  /// The arrow keys, moving which result Return opens. Null on a phone.
+  final ValueChanged<int>? onMove;
   final bool autofocus;
 
   @override
@@ -165,6 +186,19 @@ class SettingsSearchField extends StatelessWidget {
       canRequestFocus: false,
       skipTraversal: true,
       onKeyEvent: (node, event) {
+        final move = onMove;
+        if (move != null &&
+            event is! KeyUpEvent &&
+            controller.text.isNotEmpty) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            move(1);
+            return KeyEventResult.handled;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            move(-1);
+            return KeyEventResult.handled;
+          }
+        }
         if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.escape &&
             controller.text.isNotEmpty) {
@@ -276,11 +310,21 @@ class SettingsSearchResults<S> extends StatelessWidget {
     required this.query,
     required this.results,
     required this.onOpen,
+    this.marked,
+    this.resets = false,
   });
 
   final String query;
   final List<SettingsSearchEntry<S>> results;
   final ValueChanged<SettingsSearchEntry<S>> onOpen;
+
+  /// The result Return opens, lit so a keyboard can see which. Null on a
+  /// phone, where a thumb picks.
+  final int? marked;
+
+  /// Whether each result offers its own reset, as the list of changed
+  /// settings does.
+  final bool resets;
 
   @override
   Widget build(BuildContext context) {
@@ -323,24 +367,37 @@ class SettingsSearchResults<S> extends StatelessWidget {
       );
     }
 
+    final pointer = AppPlatform.hasPointer;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SettingsLabel(
-          results.length == 1 ? '1 setting' : '${results.length} settings',
-        ),
+        // The dialog's heading already counts them; the phone has no heading.
+        if (!pointer)
+          SettingsLabel(
+            results.length == 1 ? '1 setting' : '${results.length} settings',
+          ),
         SettingsGroup(
           children: [
             for (var index = 0; index < results.length; index++)
               _ResultRow(
                 key: ValueKey('settings-search-result-${results[index].id}'),
                 entry: results[index],
-                // Return opens the first result, so a keyboard shows which.
-                marked: index == 0 && AppPlatform.hasPointer,
-                onTap: () => onOpen(results[index]),
+                marked: index == marked,
+                reset: resets ? results[index].onReset : null,
+                onTap: results[index].elsewhere == null
+                    ? () => onOpen(results[index])
+                    : null,
               ),
           ],
         ),
+        if (pointer && !resets)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(3, 16, 3, 0),
+            child: Text(
+              'Also try “dark”, “hotkey”, “backup” or a key like “⌘H”.',
+              style: TextStyle(fontSize: 12.5, color: palette.textDescription),
+            ),
+          ),
       ],
     );
   }
@@ -351,23 +408,80 @@ class _ResultRow extends StatelessWidget {
     super.key,
     required this.entry,
     required this.marked,
+    required this.reset,
     required this.onTap,
   });
 
   final SettingsSearchEntry<Object?> entry;
   final bool marked;
-  final VoidCallback onTap;
+  final VoidCallback? reset;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final row = SettingsNavigationRow(
-      icon: entry.icon,
-      title: entry.title,
-      subtitle: entry.place,
-      onTap: onTap,
+    final value = entry.value;
+    final reset = this.reset;
+    final row = Container(
+      constraints: BoxConstraints(minHeight: SettingsMetrics.minRowHeight),
+      padding: SettingsMetrics.padding,
+      child: Row(
+        children: [
+          KapyIcon(entry.icon, size: 16, color: palette.textTertiary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: SettingsRowCopy(
+              title: entry.title,
+              subtitle: entry.place,
+              changed: entry.changed,
+            ),
+          ),
+          if (value != null && value.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 180),
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: SettingsMetrics.buttonLabelSize,
+                  color: palette.textDescription,
+                ),
+              ),
+            ),
+          ],
+          if (reset != null) ...[
+            const SizedBox(width: 6),
+            SettingsResetButton(onPressed: reset),
+          ],
+          if (marked) ...[
+            const SizedBox(width: 10),
+            Container(
+              height: 20,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: palette.controlBackground,
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(color: palette.controlBorder),
+              ),
+              child: Text(
+                '↵',
+                style: TextStyle(fontSize: 11, color: palette.textSecondary),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
-    return marked ? ColoredBox(color: palette.hover, child: row) : row;
+    final lit = marked ? ColoredBox(color: palette.hover, child: row) : row;
+    final onTap = this.onTap;
+    if (onTap == null) return lit;
+    return Semantics(
+      button: true,
+      child: InkWell(onTap: onTap, child: lit),
+    );
   }
 }
 

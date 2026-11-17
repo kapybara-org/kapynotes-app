@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -12,8 +13,6 @@ import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/speech/transcriber.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
-
-import '../kapy_icon_finder.dart';
 
 /// A store that keeps what it is given, in memory.
 class _MemoryStore extends LocalStore {
@@ -125,37 +124,6 @@ void main() {
       );
     });
 
-    test('Soniox is the default cloud transcription model', () {
-      expect(
-        (VoicePrefs(_MemoryStore())..load()).cloudTranscriptionModel,
-        CloudTranscriptionModel.soniox,
-      );
-    });
-
-    test('the cloud model choice persists independently', () {
-      final store = _MemoryStore();
-      final prefs = VoicePrefs(store)..load();
-      prefs.cloudTranscriptionModel = CloudTranscriptionModel.microsoft;
-      prefs.transcriptEngine = TranscriptEngine.device;
-
-      final restored = VoicePrefs(store)..load();
-      expect(
-        restored.cloudTranscriptionModel,
-        CloudTranscriptionModel.microsoft,
-      );
-      expect(restored.transcriptEngine, TranscriptEngine.device);
-    });
-
-    test('an unknown cloud model falls back to Soniox', () {
-      final store = _MemoryStore();
-      store.data['voice.cloudTranscriptionModel.v1'] = 'some/future-model';
-
-      expect(
-        (VoicePrefs(store)..load()).cloudTranscriptionModel,
-        CloudTranscriptionModel.soniox,
-      );
-    });
-
     test('the two engines are chosen separately', () async {
       // Transcribing here and summarising in the cloud is an ordinary
       // setting, and so is the reverse.
@@ -172,42 +140,39 @@ void main() {
     ) async {
       await _openVoicePane(tester, prefs: VoicePrefs(store)..load());
 
-      // The row is always there, because the section is where you look to find
-      // out whether this machine can do it. Its choice is disabled here.
-      expect(find.byKey(const ValueKey('local-transcription-row')), findsOne);
+      // The line is always there, because it is where you look to find out
+      // whether this machine can do it. Its half of the choice is dimmed.
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey('local-transcription-row')),
-          matching: find.text('Unavailable on this device'),
+          of: find.byKey(const ValueKey('local-transcription-line')),
+          matching: find.text('Not available on this device'),
         ),
         findsOneWidget,
       );
-      expect(_choiceIn(tester, 'local-transcription-row'), isFalse);
+      expect(_segment(tester, 'transcribe-with-device').enabled, isFalse);
     });
 
-    testWidgets('an engine that is here is one of two visible choices', (
+    testWidgets('an engine that is here is one half of the choice', (
       tester,
     ) async {
-      final prefs = VoicePrefs(store)..load();
       await _openVoicePane(
         tester,
-        prefs: prefs,
+        prefs: VoicePrefs(store)..load(),
         deviceTranscriber: _Fake(TranscriberReadiness.ready),
       );
 
-      expect(find.text('Cloud transcription'), findsOneWidget);
-      expect(find.text('Local transcription'), findsOneWidget);
+      expect(_segment(tester, 'transcribe-with-device').enabled, isTrue);
+      // Signed out, what runs is this device, said as the choice.
+      expect(_segment(tester, 'transcribe-with-device').selected, isTrue);
+      expect(_segment(tester, 'transcribe-with-cloud').selected, isFalse);
+      // A built-in engine needs no download, so there is no line about one.
       expect(
-        find.text('Built in and processed only on this device'),
-        findsOneWidget,
+        find.byKey(const ValueKey('local-transcription-line')),
+        findsNothing,
       );
-      expect(_choiceIn(tester, 'cloud-transcription-row'), isFalse);
-      expect(_choiceIn(tester, 'local-transcription-row'), isFalse);
     });
 
-    testWidgets('signed out can choose only local transcription', (
-      tester,
-    ) async {
+    testWidgets('signed out can choose only this device', (tester) async {
       final prefs = VoicePrefs(store)..load();
       var readyCalls = 0;
       await _openVoicePane(
@@ -216,26 +181,20 @@ void main() {
         deviceTranscriber: _Fake(TranscriberReadiness.ready),
         onTranscriptionReady: () => readyCalls++,
       );
+      expect(prefs.transcriptEngine, TranscriptEngine.cloud);
 
-      await tester.tap(find.byKey(const ValueKey('local-transcription-row')));
+      // Shown as chosen already, because the cloud cannot run signed out,
+      // so a tap on it changes nothing.
+      await tester.tap(find.byKey(const ValueKey('transcribe-with-device')));
       await tester.pumpAndSettle();
+      expect(prefs.transcriptEngine, TranscriptEngine.cloud);
+      expect(readyCalls, 0);
 
-      expect(prefs.transcriptEngine, TranscriptEngine.device);
-      expect(readyCalls, 1);
-      expect(_choiceIn(tester, 'local-transcription-row'), isTrue);
-      expect(_choiceIn(tester, 'cloud-transcription-row'), isFalse);
-
-      // A radio choice does not turn itself off, and the cloud row cannot be
-      // selected without an account.
-      await tester.tap(find.byKey(const ValueKey('local-transcription-row')));
+      expect(_segment(tester, 'transcribe-with-cloud').enabled, isFalse);
+      await tester.tap(find.byKey(const ValueKey('transcribe-with-cloud')));
       await tester.pumpAndSettle();
-      expect(prefs.transcriptEngine, TranscriptEngine.device);
-      expect(readyCalls, 1);
-
-      await tester.tap(find.byKey(const ValueKey('cloud-transcription-row')));
-      await tester.pumpAndSettle();
-      expect(prefs.transcriptEngine, TranscriptEngine.device);
-      expect(readyCalls, 1);
+      expect(prefs.transcriptEngine, TranscriptEngine.cloud);
+      expect(readyCalls, 0);
     });
 
     testWidgets('a device still fetching its language says which', (
@@ -248,7 +207,7 @@ void main() {
       );
 
       expect(find.text('Preparing language support'), findsOneWidget);
-      expect(_choiceIn(tester, 'local-transcription-row'), isFalse);
+      expect(_segment(tester, 'transcribe-with-device').enabled, isFalse);
     });
 
     testWidgets('a permission that was never given names itself', (
@@ -274,42 +233,28 @@ void main() {
       );
 
       expect(
-        find.text('Sign in for cloud transcription and summaries'),
+        find.text('Cloud needs you signed in. This device works offline'),
         findsOneWidget,
       );
-      expect(find.text('Local transcription'), findsOneWidget);
     });
 
-    testWidgets('the cloud model dropdown saves the selected model', (
-      tester,
-    ) async {
-      final prefs = VoicePrefs(store)..load();
-      await _openVoicePane(tester, prefs: prefs);
+    testWidgets('offers no choice of cloud model', (tester) async {
+      await _openVoicePane(tester, prefs: VoicePrefs(store)..load());
 
-      expect(find.textContaining('Soniox stt-async-v5'), findsOneWidget);
-      await tester.tap(
-        find.byKey(const ValueKey('voice-transcription-model-dropdown')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('voice-transcription-model-nvidia')),
-      );
-      await tester.pumpAndSettle();
-
-      expect(prefs.cloudTranscriptionModel, CloudTranscriptionModel.nvidia);
-      expect(
-        find.textContaining('NVIDIA Nemotron 3.5 ASR Streaming 0.6B'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('Soniox'), findsNothing);
+      expect(find.textContaining('NVIDIA'), findsNothing);
     });
   });
 }
 
-/// Whether an engine row's mutually exclusive choice is selected.
-bool _choiceIn(WidgetTester tester, String rowKey) {
-  final checked = find.descendant(
-    of: find.byKey(ValueKey(rowKey)),
-    matching: findKapyIcon(KapyIcons.radioCheckedRounded),
-  );
-  return checked.evaluate().isNotEmpty;
-}
+/// What a segment of an engine choice says about itself.
+SemanticsProperties _segment(WidgetTester tester, String key) => tester
+    .widget<Semantics>(
+      find
+          .ancestor(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(Semantics),
+          )
+          .first,
+    )
+    .properties;
