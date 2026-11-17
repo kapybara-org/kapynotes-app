@@ -696,6 +696,38 @@ void main() {
       expect(line('Estimate: 10000 + 18%'), '11,800');
     });
 
+    test('reads words before = as it reads them before a colon', () {
+      expect(line('looker connector = 29 usd'), '29.00 USD');
+      expect(line('outreach seats = 3 × 49 usd'), '147.00 USD');
+      expect(line('monthly rent = 1200 usd'), '1,200.00 USD');
+      expect(line('my budget = 120'), '120');
+    });
+
+    test('words before = name nothing, and a single name still does', () {
+      expect(doc('looker connector = 29 usd\nlooker connector * 12'), {
+        0: '29.00 USD',
+      });
+      expect(doc('ahrefs = 129 usd\nahrefs * 12'), {
+        0: '129.00 USD',
+        1: '1,548.00 USD',
+      });
+      // The colon is read first, so the assignment after it still counts.
+      expect(doc('Q1: revenue = 1000\nrevenue * 4'), {0: '1,000', 1: '4,000'});
+    });
+
+    test("computes Riverbank's sample note as Paper shows it", () {
+      expect(
+        doc(
+          'Tool costs per month\n'
+          'ahrefs = 129 usd\n'
+          'looker connector = 29 usd\n'
+          'outreach seats = 3 × 49 usd\n'
+          'total',
+        ),
+        {1: '129.00 USD', 2: '29.00 USD', 3: '147.00 USD', 4: '305.00 USD'},
+      );
+    });
+
     test('an explicit label does not turn time-like prose into an amount', () {
       expect(line('Meeting at 12:30'), isNull);
       expect(line('Ratio 1:2'), isNull);
