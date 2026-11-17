@@ -2748,7 +2748,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// in view, from its top when it is taller than the note's window.
   void showAttachment(int offset) {
     final field = _field;
-    if (field == null || !_scrollController.hasClients) return;
+    if (field == null ||
+        !_scrollController.hasClients ||
+        offset < 0 ||
+        offset > field.lines.textLength) {
+      return;
+    }
     final line = field.lines.lineAt(offset);
     final shownTop = field.lineTop(line);
     final shownBottom = field.lineTop(line + 1);
@@ -6232,11 +6237,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final key = (words, width, style, scaler, layoutKey);
     if (key == _titleKey) return _title;
     _titleKey = key;
-    final full = _controller.buildTextSpan(
-      context: context,
-      style: style,
-      withComposing: false,
-    );
+    final full = _controller.spansIn(context, style)(0, end).span as TextSpan;
     final runs = <TextSpan>[];
     var at = 0;
     for (final run in full.children ?? const <InlineSpan>[]) {
@@ -6498,8 +6499,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     Positioned(
                       left: padding.left,
                       width: width,
-                      top: padding.top + top,
-                      height: bottom - top - 3,
+                      top:
+                          padding.top +
+                          top +
+                          (bottom - top) *
+                              EditorMetrics.codeGapBefore /
+                              EditorMetrics.codeOpenRow,
+                      height:
+                          (bottom - top) *
+                          EditorMetrics.codeHeader /
+                          EditorMetrics.codeOpenRow,
                       child: _CodeBlockHeader(
                         language: header.fences.language,
                         onCopy: () =>
@@ -6594,12 +6603,19 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _showInsertMenu(search: !AppPlatform.isMobile);
   }
 
+  /// A number in a table's cell: a sign, a currency, digits and a percent.
+  static final _tableNumber = RegExp(r'^[+\-−]?[₹$€£]?\d[\d.,]*%?$');
+
   Map<int, NoteImageSpan> _tableRowSpacers({
     required MarkdownAnalysis? markdown,
     required double rowHeight,
     required double overhead,
   }) {
-    if (markdown == null || _tableGrids.isEmpty) return const {};
+    // The page sets each row's height itself: see
+    // HighlightingController.setTableRowsDuringLayout.
+    if (EditorMetrics.page || markdown == null || _tableGrids.isEmpty) {
+      return const {};
+    }
     final spacers = <int, NoteImageSpan>{};
     for (final table in markdown.tables) {
       final geometry = _tableGrids[table];
@@ -6862,6 +6878,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   contentWidth - noteAttachmentColumnSlack,
                 );
 
+                // Paper's attachments fill the column. What the text engine is
+                // told of them stays [attachmentWidth] wide, so the line under
+                // one survives; the attachment itself is drawn the column wide.
+                final drawnWidth = EditorMetrics.page
+                    ? contentWidth
+                    : attachmentWidth;
+
                 final markdown = _controller.markdownFor(_controller.text);
                 // Markdown is shown as written only in a note being edited:
                 // blocks with the caret in them, inline markers with the
@@ -6882,23 +6905,51 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 final rowHeight = textScaler.scale(
                   EditorMetrics.lineHeight * widget.editorTextScale,
                 );
+                // Paper's cells are 15px words on 20px lines in rows of 36,
+                // and a number in one is set in the mono face at 14.
+                final page = EditorMetrics.page;
+                final cellStyle = page
+                    ? textStyle.copyWith(
+                        fontSize: textStyle.fontSize! * 15 / 16,
+                        height: 20 / 15,
+                      )
+                    : textStyle;
                 _tableGrids = {
                   for (final table in markdown.tables)
                     table: _tableGeometry.of(
                       table: table,
                       analysis: markdown,
-                      base: textStyle,
+                      base: cellStyle,
                       scaler: textScaler,
-                      fitToWidth: attachmentWidth,
-                      fill: EditorMetrics.page,
-                      minRowHeight: rowHeight,
+                      fitToWidth: drawnWidth,
+                      fill: page,
+                      minRowHeight: page
+                          ? textScaler.scale(
+                              EditorMetrics.tableRow * widget.editorTextScale,
+                            )
+                          : rowHeight,
+                      style: (palette, Theme.of(context).colorScheme.primary),
                       runStyle: (base, styles, words) {
-                        final drawn = _controller.markdownRunStyle(
+                        var drawn = _controller.markdownRunStyle(
                           base,
                           styles,
                           Theme.of(context).colorScheme.primary,
                           words: words,
                         );
+                        if (page &&
+                            !styles.contains(MarkdownStyle.tableHeader) &&
+                            _tableNumber.hasMatch(words.trim())) {
+                          drawn = drawn.copyWith(
+                            fontFamily: AppFonts.mono,
+                            fontFamilyFallback: AppFonts.monoFallback,
+                            fontSize: base.fontSize! * 14 / 15,
+                            color: switch (words.trim()[0]) {
+                              '+' => palette.codeString,
+                              '-' || '−' => palette.textSecondary,
+                              _ => drawn.color,
+                            },
+                          );
+                        }
                         // The pill inline code has in the text can be a plain
                         // background in a grid painted behind it: there is no
                         // selection to show over it there. A formula in a cell
@@ -6914,6 +6965,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 };
 
                 _controller.setMathWidthDuringLayout(attachmentWidth);
+                _controller.setTableRowsDuringLayout(
+                  page
+                      ? {
+                          for (final table in markdown.tables)
+                            for (final row in table.rows)
+                              if (_tableGrids[table] case final grid?)
+                                row.start:
+                                    grid.rowHeight(row) /
+                                    textScaler.scale(widget.editorTextScale),
+                        }
+                      : const {},
+                );
                 // A table's rows reserve their room the same way a picture
                 // does, through a placeholder apiece. A real attachment wins any
                 // offset they might share.
@@ -6927,10 +6990,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       scaler: textScaler,
                     ),
                   ),
-                  ..._buildAttachmentSpans(
-                    attachmentWidth,
+                  for (final MapEntry(:key, :value) in _buildAttachmentSpans(
+                    drawnWidth,
                     constraints.maxHeight,
-                  ),
+                  ).entries)
+                    key: (
+                      width: math.min(value.width, attachmentWidth),
+                      height: value.height,
+                      child: value.child,
+                    ),
                 };
                 final layoutKey = (
                   widget.writingFont,
@@ -7079,6 +7147,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                               ).colorScheme.onPrimary,
                                               box: palette.checkboxBorder,
                                               chip: palette.controlBackground,
+                                              chipInk: palette.textMuted,
                                             ),
                                             checkboxes: checkboxes,
                                             chips: chips,

@@ -130,6 +130,21 @@ void main() {
       expect(inView(first), isTrue);
       expect(inView(second), isFalse);
 
+      // An offset the note no longer reaches, as a stale status could hand
+      // over, moves nothing.
+      final editor = tester.state<NoteEditorState>(find.byType(NoteEditor));
+      final length = tester
+          .widget<NoteField>(find.byType(NoteField))
+          .controller
+          .text
+          .length;
+      for (final offset in [-1, length + 1, length + 1000]) {
+        editor.showAttachment(offset);
+      }
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(inView(first), isTrue);
+
       await tester.runAsync(() async {
         tester
             .widget<TonalButton>(

@@ -1,3 +1,4 @@
+import '../core/changed_lines.dart';
 import '../core/note_link.dart';
 import 'engine.dart';
 import 'lexer.dart';
@@ -37,45 +38,131 @@ class HighlightSpan {
 class Highlighter {
   final UnitRegistry registry;
 
-  const Highlighter(this.registry);
+  Highlighter(this.registry);
+
+  /// The document read last, its spans, and how many of its lines assign
+  /// each name. Typing changes a line or two, so the next read starts from
+  /// these and reads again only the lines that changed.
+  String? _body;
+  List<HighlightSpan> _spans = const [];
+  Map<String, int> _assigned = const {};
 
   /// Returns spans over the whole document, in order, covering only the
   /// characters that need colour. Gaps render in the default text colour.
+  ///
+  /// [links] are the document's web addresses as [findNoteLinks] finds them.
+  /// None crosses a line break, so a line's spans are fixed by its text and
+  /// the names the document assigns: while those names stay the same, only
+  /// the lines changed since the last read are read again.
   List<HighlightSpan> spans(String body, {List<NoteLink>? links}) {
-    final knownNames = _assignedNames(body);
     final noteLinks = links ?? findNoteLinks(body);
-    final out = <HighlightSpan>[];
-    var offset = 0;
-
-    for (final line in body.split('\n')) {
-      final commentStart = _commentStart(line, offset, noteLinks);
-      final content = commentStart < 0 ? line : line.substring(0, commentStart);
-      final highlightableContent = _maskLinks(content, offset, noteLinks);
-      final valueStart = _explicitDescriptionValueStart(
-        highlightableContent,
-        knownNames,
-      );
-      final calculatorContent = valueStart == null
-          ? highlightableContent
-          : highlightableContent.substring(valueStart);
-      final calculatorOffset = offset + (valueStart ?? 0);
-      if (calculatorContent.trim().isNotEmpty &&
-          CalcEngine.looksLikeMath(calculatorContent, knownNames)) {
-        _spansForLine(calculatorContent, calculatorOffset, knownNames, out);
+    final before = _body;
+    final changed = before == null ? null : changedLines(before, body);
+    final assigned = Map.of(
+      changed == null ? const <String, int>{} : _assigned,
+    );
+    void count(String text, int by) {
+      for (final line in text.split('\n')) {
+        final name = _assignedName(line);
+        if (name != null) assigned[name] = (assigned[name] ?? 0) + by;
       }
-      if (commentStart >= 0) {
-        // Inline comments are valid after prose as well as calculations. Keep
-        // everything before the delimiter in its normal style and mute only
-        // the comment itself.
-        out.add(
-          HighlightSpan(
-            offset + commentStart,
-            offset + line.length,
-            HighlightKind.comment,
+    }
+
+    if (changed == null) {
+      count(body, 1);
+    } else {
+      count(before!.substring(changed.start, changed.oldEnd), -1);
+      count(body.substring(changed.start, changed.newEnd), 1);
+    }
+    assigned.removeWhere((_, lines) => lines <= 0);
+    final keep =
+        changed != null &&
+        assigned.length == _assigned.length &&
+        assigned.keys.every(_assigned.containsKey);
+    final from = keep ? changed.start : 0;
+    final shift = keep ? changed.newEnd - changed.oldEnd : 0;
+    final knownNames = assigned.keys.toSet();
+    final out = <HighlightSpan>[
+      if (keep)
+        for (final span in _spans)
+          if (span.start < from) span,
+    ];
+    var offset = from;
+    var link = 0;
+    for (final line
+        in body
+            .substring(from, keep ? changed.newEnd : body.length)
+            .split('\n')) {
+      final end = offset + line.length;
+      while (link < noteLinks.length && noteLinks[link].end <= offset) {
+        link++;
+      }
+      for (final span in _lineSpans(line, [
+        for (
+          var i = link;
+          i < noteLinks.length && noteLinks[i].start < end;
+          i++
+        )
+          NoteLink(
+            start: noteLinks[i].start - offset,
+            end: noteLinks[i].end - offset,
+            text: noteLinks[i].text,
+            uri: noteLinks[i].uri,
           ),
+      ], knownNames)) {
+        out.add(
+          HighlightSpan(span.start + offset, span.end + offset, span.kind),
         );
       }
-      offset += line.length + 1;
+      offset = end + 1;
+    }
+    if (keep) {
+      for (final span in _spans) {
+        if (span.start >= changed.oldEnd) {
+          out.add(
+            shift == 0
+                ? span
+                : HighlightSpan(
+                    span.start + shift,
+                    span.end + shift,
+                    span.kind,
+                  ),
+          );
+        }
+      }
+    }
+    _body = body;
+    _spans = out;
+    _assigned = assigned;
+    return out;
+  }
+
+  /// One line's spans, from its own start, given the web addresses in it.
+  List<HighlightSpan> _lineSpans(
+    String line,
+    List<NoteLink> noteLinks,
+    Set<String> knownNames,
+  ) {
+    final out = <HighlightSpan>[];
+    final commentStart = _commentStart(line, 0, noteLinks);
+    final content = commentStart < 0 ? line : line.substring(0, commentStart);
+    final highlightableContent = _maskLinks(content, 0, noteLinks);
+    final valueStart = _explicitDescriptionValueStart(
+      highlightableContent,
+      knownNames,
+    );
+    final calculatorContent = valueStart == null
+        ? highlightableContent
+        : highlightableContent.substring(valueStart);
+    if (calculatorContent.trim().isNotEmpty &&
+        CalcEngine.looksLikeMath(calculatorContent, knownNames)) {
+      _spansForLine(calculatorContent, valueStart ?? 0, knownNames, out);
+    }
+    if (commentStart >= 0) {
+      // Inline comments are valid after prose as well as calculations. Keep
+      // everything before the delimiter in its normal style and mute only
+      // the comment itself.
+      out.add(HighlightSpan(commentStart, line.length, HighlightKind.comment));
     }
     return out;
   }
@@ -261,22 +348,18 @@ class Highlighter {
 
   /// Collects every name the document assigns to, so a variable is coloured
   /// consistently on the lines above its definition too.
-  static Set<String> _assignedNames(String body) {
-    final names = <String>{};
-    for (final line in body.split('\n')) {
-      final tokens = Lexer(
-        line,
-      ).tokenize().where((t) => t.isSignificant).toList();
-      if (tokens.length < 3) continue;
-      final first = tokens[0];
-      final second = tokens[1];
-      if (first.type == TokenType.identifier &&
-          second.type == TokenType.operator &&
-          isAssignableName(first.text, second.text) &&
-          !unitConfigurationNames.contains(first.text.toLowerCase())) {
-        names.add(first.text);
-      }
-    }
-    return names;
+  static String? _assignedName(String line) {
+    final tokens = Lexer(
+      line,
+    ).tokenize().where((t) => t.isSignificant).toList();
+    if (tokens.length < 3) return null;
+    final first = tokens[0];
+    final second = tokens[1];
+    return first.type == TokenType.identifier &&
+            second.type == TokenType.operator &&
+            isAssignableName(first.text, second.text) &&
+            !unitConfigurationNames.contains(first.text.toLowerCase())
+        ? first.text
+        : null;
   }
 }

@@ -775,6 +775,10 @@ void main() {
       final ime = FakeMacTextInput(tester);
       final caret = _lineStart(text, 500);
       await _select(tester, field, TextSelection.collapsed(offset: caret));
+      // The caret moves inside the window, so the window before it, which
+      // a whole value would also fit, is no longer what the platform holds.
+      await _select(tester, field, TextSelection.collapsed(offset: caret + 1));
+      await _select(tester, field, TextSelection.collapsed(offset: caret));
       _expectInSync(field, ime);
 
       controller.value = TextEditingValue(
@@ -792,6 +796,44 @@ void main() {
         'NEW\n${text.replaceFirst('Line 500,', 'Row 500,')}',
       );
       expect(field.currentTextEditingValue, edited);
+    },
+    variant: _macOS,
+  );
+
+  testWidgets(
+    'a whole value that fits both windows the platform was sent is not '
+    'guessed at: the platform is sent the current one again',
+    (tester) async {
+      final text = _note(1000);
+      final field = await _pumpField(tester, text);
+      final controller = field.widget.controller;
+      final ime = FakeMacTextInput(tester);
+      await _select(
+        tester,
+        field,
+        TextSelection.collapsed(offset: _lineStart(text, 500)),
+      );
+      final first = field.currentTextEditingValue;
+      await _select(
+        tester,
+        field,
+        TextSelection.collapsed(offset: _lineStart(text, 10)),
+      );
+      expect(field.currentTextEditingValue.text, isNot(first.text));
+
+      field.updateEditingValue(
+        first.copyWith(text: first.text.replaceFirst('Line 500,', 'Row 500,')),
+      );
+      await tester.pump();
+      expect(controller.text, text);
+      _expectInSync(field, ime);
+
+      final sent = field.currentTextEditingValue;
+      field.updateEditingValue(
+        sent.copyWith(text: sent.text.replaceFirst('Line 10,', 'Row 10,')),
+      );
+      await tester.pump();
+      expect(controller.text, text.replaceFirst('Line 10,', 'Row 10,'));
     },
     variant: _macOS,
   );

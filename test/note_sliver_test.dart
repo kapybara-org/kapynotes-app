@@ -46,6 +46,7 @@ NoteLayout _layout(NoteLines lines) => NoteLayout(
       ),
       placeholders: const [],
       folded: false,
+      row: null,
     );
   },
   style: _style,
@@ -234,7 +235,12 @@ void main() {
         'whole note puts them, $name', (tester) async {
       AppPlatform.debugTargetPlatformOverride = platform;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      const body = '''Groceries and sums
+      // The page sets a code block's rows itself, as no one paragraph can, so
+      // the block is left to the tests of those rows there.
+      final fence = platform == TargetPlatform.macOS
+          ? ''
+          : '```python\ndef score(page):\n    return 1  # one\n```\n';
+      final body = '''Groceries and sums
 ## Monday
 - [ ] milk \$2.50
 - [x] bread
@@ -249,11 +255,7 @@ price = 4 usd
 price * 3 // a comment
 ☐ a box with https://kapynotes.app/help in it
 ☑ done
-```python
-def score(page):
-    return 1  # one
-```
-A line long enough to wrap onto a second row of the column and then a third row as well, because it simply keeps going with more and more words, and **bold** words too, until it is well past the width of the note.
+${fence}A line long enough to wrap onto a second row of the column and then a third row as well, because it simply keeps going with more and more words, and **bold** words too, until it is well past the width of the note.
 
 total''';
       final engine = CalcEngine();
