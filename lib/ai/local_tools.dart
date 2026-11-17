@@ -281,8 +281,10 @@ abstract class _Cli implements LocalTool {
   ///
   /// Each process is stopped (SIGSTOP) before its children are read, so a
   /// program that is still starting children cannot start one between the
-  /// walk and the kill, and none is left to be adopted by init out of the
-  /// walk's reach. Only once the whole tree is stopped is it killed.
+  /// walk and the kill. Only once the whole tree is stopped is it killed. A
+  /// process that exits by itself before the walk reaches it still hands its
+  /// children to launchd, out of reach; only a process group closes that gap,
+  /// as the helper does.
   Future<void> _kill(Process process) async {
     if (Platform.isWindows) {
       await Process.run('taskkill', ['/T', '/F', '/PID', '${process.pid}']);
@@ -290,16 +292,19 @@ abstract class _Cli implements LocalTool {
       return;
     }
     final tree = <int>[process.pid];
-    for (var i = 0; i < tree.length; i++) {
-      Process.killPid(tree[i], ProcessSignal.sigstop);
-      final children = await Process.run('pgrep', ['-P', '${tree[i]}']);
-      tree.addAll([
-        for (final line in '${children.stdout}'.split('\n'))
-          ?int.tryParse(line.trim()),
-      ]);
-    }
-    for (final pid in tree.reversed) {
-      Process.killPid(pid, ProcessSignal.sigkill);
+    try {
+      for (var i = 0; i < tree.length; i++) {
+        Process.killPid(tree[i], ProcessSignal.sigstop);
+        final children = await Process.run('pgrep', ['-P', '${tree[i]}']);
+        tree.addAll([
+          for (final line in '${children.stdout}'.split('\n'))
+            ?int.tryParse(line.trim()),
+        ]);
+      }
+    } finally {
+      for (final pid in tree.reversed) {
+        Process.killPid(pid, ProcessSignal.sigkill);
+      }
     }
     await process.exitCode.timeout(
       const Duration(seconds: 5),
