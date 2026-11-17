@@ -22,7 +22,7 @@ enum DrawTool {
   pan('Hand', 'H', KapyIcons.panRounded),
   pen('Pen', 'P', KapyIcons.penRounded),
   rect('Rectangle', 'R', KapyIcons.rectangleRounded),
-  ellipse('Ellipse', 'O', KapyIcons.circleOutlined),
+  ellipse('Ellipse', 'O', KapyIcons.ellipseRounded),
   arrow('Arrow', 'A', KapyIcons.arrowRounded),
   line('Line', 'L', KapyIcons.lineRounded),
   text('Text', 'T', KapyIcons.textFieldsRounded),
@@ -1052,12 +1052,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
         if (!(touch && tool == DrawTool.pan && !widget.readOnly)) tool,
     ];
     final extent = _DockSurface.buttonExtent;
-    final divider = Container(
-      width: 1,
-      height: 20,
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      color: palette.separator,
-    );
+    final divider = Container(width: 1, height: 20, color: palette.separator);
     Widget button(
       String key,
       KapyIconData icon,
@@ -1066,7 +1061,11 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       bool selected = false,
     }) => CompactIconButton(
       key: ValueKey(key),
-      icon: KapyIcon(icon, size: touch ? null : 17),
+      icon: KapyIcon(
+        icon,
+        size: touch ? null : 17,
+        strokeWidth: touch ? 1.5 : 1.8,
+      ),
       tooltip: tooltip,
       selected: selected,
       onPressed: onPressed,

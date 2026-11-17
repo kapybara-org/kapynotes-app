@@ -67,6 +67,10 @@ class KapyIcons {
     HugeIcons.strokeRoundedCameraAdd01,
   );
   static const addRounded = KapyIconData(0xE003, HugeIcons.strokeRoundedAdd01);
+  static const removeRounded = KapyIconData(
+    0xE0DD,
+    HugeIcons.strokeRoundedRemove01,
+  );
   static const archiveOutlined = KapyIconData(
     0xE090,
     HugeIcons.strokeRoundedArchive03,
@@ -452,10 +456,19 @@ class KapyIcons {
     HugeIcons.strokeRoundedDownloadSquare01,
   );
   static const tagRounded = KapyIconData(0xE05D, HugeIcons.strokeRoundedTag01);
-  static const textFieldsRounded = KapyIconData(
-    0xE05E,
-    HugeIcons.strokeRoundedTextFont,
-  );
+  static const textFieldsRounded = KapyIconData(0xE05E, [
+    [
+      'path',
+      {
+        'key': '0',
+        'd': 'M5 7V5h14v2M12 5v14m-3 0h6',
+        'stroke': 'currentColor',
+        'strokeWidth': '1.5',
+        'strokeLinecap': 'round',
+        'strokeLinejoin': 'round',
+      },
+    ],
+  ]);
   static const textFormatRounded = KapyIconData(
     0xE05F,
     HugeIcons.strokeRoundedText,
@@ -596,18 +609,46 @@ class KapyIcons {
     HugeIcons.strokeRoundedCursor02,
   );
   static const penRounded = KapyIconData(0xE07E, HugeIcons.strokeRoundedPencil);
-  static const rectangleRounded = KapyIconData(
-    0xE07F,
-    HugeIcons.strokeRoundedSquare,
-  );
+  static const rectangleRounded = KapyIconData(0xE07F, [
+    [
+      'path',
+      {
+        'key': '0',
+        'd':
+            'M6.5 5.5h11A2.5 2.5 0 0 1 20 8v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16V8a2.5 2.5 0 0 1 2.5-2.5z',
+        'stroke': 'currentColor',
+        'strokeWidth': '1.5',
+        'strokeLinejoin': 'round',
+      },
+    ],
+  ]);
+  static const ellipseRounded = KapyIconData(0xE0DC, [
+    [
+      'path',
+      {
+        'key': '0',
+        'd': 'M4 12a8 7 0 1 0 16 0a8 7 0 1 0-16 0z',
+        'stroke': 'currentColor',
+        'strokeWidth': '1.5',
+      },
+    ],
+  ]);
   static const arrowRounded = KapyIconData(
     0xE080,
     HugeIcons.strokeRoundedArrowUpRight01,
   );
-  static const lineRounded = KapyIconData(
-    0xE081,
-    HugeIcons.strokeRoundedSolidLine01,
-  );
+  static const lineRounded = KapyIconData(0xE081, [
+    [
+      'path',
+      {
+        'key': '0',
+        'd': 'M5 19L19 5',
+        'stroke': 'currentColor',
+        'strokeWidth': '1.5',
+        'strokeLinecap': 'round',
+      },
+    ],
+  ]);
   static const eraserRounded = KapyIconData(
     0xE082,
     HugeIcons.strokeRoundedEraser,

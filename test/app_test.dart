@@ -3108,7 +3108,7 @@ void main() {
       find.descendant(
         of: toggle,
         matching: find.textContaining(
-          shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)!.displayLabel,
+          shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)!.keycapLabel,
         ),
       ),
       findsOneWidget,

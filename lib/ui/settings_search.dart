@@ -7,6 +7,7 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import 'compact_icon_button.dart';
 import 'control_surface.dart';
+import 'keycap.dart';
 import 'settings_rows.dart';
 
 /// One setting a search can find: what it is called, what else somebody
@@ -267,7 +268,12 @@ class SettingsSearchField extends StatelessWidget {
                       minHeight: AppControlMetrics.fieldAdornmentSlot,
                     ),
               suffixIcon: value.text.isEmpty
-                  ? null
+                  ? (pointer
+                        ? const Padding(
+                            padding: EdgeInsets.only(right: 9),
+                            child: Keycap('/'),
+                          )
+                        : null)
                   : CompactIconButton(
                       key: const ValueKey('settings-search-clear'),
                       tooltip: 'Clear search',
