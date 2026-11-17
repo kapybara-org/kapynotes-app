@@ -267,7 +267,15 @@ class HighlightingController extends TextEditingController {
             ..._pageStretches(source, boxes, links, base, scaler),
           ]
         : _listStretches(analysis, base, scaler);
-    if (page) stretches.sort((a, b) => a.start.compareTo(b.start));
+    if (page) {
+      stretches
+        ..addAll(_codeChipStretches(source, analysis, scaler))
+        ..sort((a, b) => a.start.compareTo(b.start));
+      // A pill straight after a list's number reaches into room it has.
+      for (var i = stretches.length - 1; i > 0; i--) {
+        if (stretches[i].start < stretches[i - 1].end) stretches.removeAt(i);
+      }
+    }
     final formulas = concealment.formulas;
     final code = _codeTokens(analysis);
     final composing = withComposing && value.isComposingRangeValid
@@ -331,7 +339,10 @@ class HighlightingController extends TextEditingController {
     final children = <InlineSpan>[];
     var spanIndex = 0;
     var linkIndex = 0;
-    final linkColor = Theme.of(context).colorScheme.primary;
+    // Paper's sage on the page, a step lighter than the accent in the dark.
+    final linkColor = page
+        ? _palette.accentText
+        : Theme.of(context).colorScheme.primary;
     // Markdown spans nest, so the ones open over a segment are a set rather
     // than a single pointer: everything that has started, less everything
     // that has ended. Every span edge is a cut, so an open span always covers
@@ -557,7 +568,10 @@ class HighlightingController extends TextEditingController {
             ? _linkChipStyle(segmentStyle)
             : segmentStyle.copyWith(
                 color: segmentLinkColor,
-                decoration: TextDecoration.none,
+                decoration: page
+                    ? TextDecoration.underline
+                    : TextDecoration.none,
+                decorationColor: segmentLinkColor,
               );
       }
       if (done) {
@@ -725,6 +739,27 @@ class HighlightingController extends TextEditingController {
     ];
   }
 
+  /// Room for the pill under inline code, which reaches
+  /// [EditorMetrics.codeChipReach] past its words: after the character
+  /// before its hidden backtick, and after its last character, which the
+  /// pill then covers.
+  List<_Stretch> _codeChipStretches(
+    String source,
+    MarkdownAnalysis analysis,
+    TextScaler scaler,
+  ) {
+    final reach = scaler.scale(EditorMetrics.codeChipReach);
+    return [
+      for (final chip in analysis.ornaments)
+        if (chip.kind == MarkdownOrnamentKind.codeSpan &&
+            chip.end > chip.start) ...[
+          if (chip.start >= 2 && source[chip.start - 2] != '\n')
+            (start: chip.start - 2, end: chip.start - 1, spacing: reach),
+          (start: chip.end - 1, end: chip.end, spacing: reach),
+        ],
+    ];
+  }
+
   /// How much bigger a formula is set than the words around it. KaTeX's own
   /// face runs small beside a sans serif at the same size.
   static const double _mathScale = 1.1;
@@ -849,20 +884,25 @@ class HighlightingController extends TextEditingController {
   }
 
   /// Code coloured from the note's own palette, so that it sits in the note
-  /// in light and in dark alike rather than in some editor's theme.
+  /// in light and in dark alike rather than in some editor's theme: Paper's
+  /// clay, sage, ochre and teal, with a function's name in the ink, bold.
   TextStyle _codeTokenStyle(CodeTokenKind kind) => switch (kind) {
-    CodeTokenKind.keyword => TextStyle(color: _palette.keyword),
-    CodeTokenKind.string => TextStyle(color: _palette.chipCurrency),
-    CodeTokenKind.number => TextStyle(color: _palette.number),
+    CodeTokenKind.keyword => TextStyle(color: _palette.codeKeyword),
+    CodeTokenKind.builtIn => TextStyle(color: _palette.codeBuiltIn),
+    CodeTokenKind.string => TextStyle(color: _palette.codeString),
+    CodeTokenKind.number => TextStyle(color: _palette.codeNumber),
     CodeTokenKind.comment => TextStyle(
-      color: _palette.comment,
+      color: _palette.textTertiary,
       fontStyle: FontStyle.italic,
     ),
-    CodeTokenKind.title => TextStyle(color: _palette.function),
+    CodeTokenKind.title => TextStyle(
+      color: _palette.textPrimary,
+      fontWeight: FontWeight.w600,
+    ),
     CodeTokenKind.type ||
-    CodeTokenKind.attribute => TextStyle(color: _palette.unit),
-    CodeTokenKind.variable => TextStyle(color: _palette.variable),
-    CodeTokenKind.punctuation => TextStyle(color: _palette.operator),
+    CodeTokenKind.attribute => TextStyle(color: _palette.codeBuiltIn),
+    CodeTokenKind.variable => TextStyle(color: _palette.textSubheading),
+    CodeTokenKind.punctuation => TextStyle(color: _palette.textTertiary),
   };
 
   @override
@@ -1022,8 +1062,8 @@ class HighlightingController extends TextEditingController {
         marked(MarkdownStyle.math)) {
       // The panel under a code block and the pill under inline code are drawn
       // behind the field, where the selection highlight still shows over them.
-      // A formula's TeX, shown as written, is code too.
-      result = _codeStyle(result);
+      // A formula's TeX, shown as written, is code too, in a step softer ink.
+      result = _codeStyle(result).copyWith(color: _palette.textSubheading);
     }
     return result;
   }
@@ -1105,7 +1145,13 @@ class HighlightingController extends TextEditingController {
     if (marked(MarkdownStyle.link)) {
       result = result.copyWith(color: linkColor);
     }
-    if (marked(MarkdownStyle.listMarker) || marked(MarkdownStyle.taskBox)) {
+    if (marked(MarkdownStyle.listMarker)) {
+      result = result.copyWith(
+        color: _palette.textSecondary,
+        fontWeight: FontWeight.w600,
+      );
+    }
+    if (marked(MarkdownStyle.taskBox)) {
       result = result.copyWith(color: _palette.textSecondary);
     }
     if (marked(MarkdownStyle.html)) {

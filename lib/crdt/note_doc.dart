@@ -110,6 +110,16 @@ class NoteDoc {
     required String replica,
   }) => NoteDoc(replica: replica)..mergeSnapshot(snapshot);
 
+  /// An empty document that takes over from [discarded] as the same replica,
+  /// its counters continuing above the old one's, so no id the old document
+  /// gave out is ever minted again for another character.
+  factory NoteDoc.after(NoteDoc discarded) {
+    final doc = NoteDoc(replica: discarded.replica);
+    final last = discarded._clock[discarded.replica];
+    if (last != null) doc._clock[doc.replica] = last;
+    return doc;
+  }
+
   static const int snapshotVersion = 1;
 
   static const String _fmtKey = 'fmt';
