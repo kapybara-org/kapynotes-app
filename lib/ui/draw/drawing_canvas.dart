@@ -4,12 +4,12 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/editor_font.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/note_drawing.dart';
 import '../../data/notes_store.dart';
 import '../compact_icon_button.dart';
-import '../floating_surface.dart';
 import '../mobile_page_swipe.dart';
 import '../sidebar_swipe.dart';
 import 'drawing_geometry.dart';
@@ -44,18 +44,23 @@ enum DrawTool {
   };
 }
 
-/// Colours that read on the light paper and the dark one alike. Null is the
-/// theme's ink, which is the one that has to flip.
-const List<int?> drawColors = [
-  null,
-  0xFFE03131,
-  0xFFF08C00,
-  0xFF2F9E44,
-  0xFF1971C2,
-  0xFF7048E8,
+/// Riverbank's muted colours, which read on the light paper and the dark one
+/// alike. Null is the theme's ink, which is the one that has to flip. A stroke
+/// keeps the colour it was drawn in, whatever this list later becomes.
+const List<(String, int?)> drawColors = [
+  ('Ink', null),
+  ('Clay', 0xFFD0663B),
+  ('Ochre', 0xFFC49A3A),
+  ('Sage', 0xFF6F8F52),
+  ('River', 0xFF3F8796),
+  ('Plum', 0xFF8E5E8A),
 ];
 
-const List<double> drawWidths = [2, 4, 8];
+const List<(String, double)> drawWidths = [
+  ('Thin', 2),
+  ('Medium', 4),
+  ('Bold', 8),
+];
 
 /// A minimal whiteboard: a title, an endless canvas, and a handful of tools.
 ///
@@ -72,6 +77,7 @@ class DrawingCanvas extends StatefulWidget {
     required this.title,
     required this.onChanged,
     required this.onTitleChanged,
+    this.edited,
     this.readOnly = false,
     this.onSwitchToWrite,
     this.onFocus,
@@ -81,6 +87,10 @@ class DrawingCanvas extends StatefulWidget {
   final String title;
   final ValueChanged<NoteDrawing> onChanged;
   final ValueChanged<String> onTitleChanged;
+
+  /// When the drawing last changed, said under its title beside how many
+  /// shapes it holds.
+  final String? edited;
   final bool readOnly;
 
   /// Offered only while the canvas and its title are both blank.
@@ -146,7 +156,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
 
   DrawTool _tool = DrawTool.pen;
   int? _color;
-  double _width = drawWidths[1];
+  double _width = drawWidths[1].$2;
   bool _styleOpen = false;
 
   Offset _pan = Offset.zero;
@@ -854,7 +864,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
                   pan: _pan,
                   zoom: _zoom,
                   ink: ink,
-                  grid: palette.separator.withValues(alpha: 0.5),
+                  grid: palette.controlBorder,
                   accent: Theme.of(context).colorScheme.primary,
                   textStyle: _textStyle(context),
                 ),
@@ -910,44 +920,79 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   Widget _buildHeader(BuildContext context) {
     final palette = context.palette;
     final touch = !AppPlatform.hasPointer;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(touch ? 16 : 24, 10, 12, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              key: const ValueKey('drawing-title'),
-              controller: _titleController,
-              focusNode: _titleFocus,
-              readOnly: widget.readOnly,
-              maxLines: 1,
-              textInputAction: TextInputAction.done,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: palette.textPrimary,
-                fontWeight: FontWeight.w600,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Untitled drawing',
-                hintStyle: TextStyle(color: palette.textTertiary),
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                filled: false,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
-              ),
-              onChanged: widget.onTitleChanged,
-              onSubmitted: (_) => _canvasFocus.requestFocus(),
+    const handwritten = WritingFont.handwritten;
+    final edited = widget.edited;
+    final shapes = _drawing.elements.length;
+    final title = Row(
+      children: [
+        Expanded(
+          child: TextField(
+            key: const ValueKey('drawing-title'),
+            controller: _titleController,
+            focusNode: _titleFocus,
+            readOnly: widget.readOnly,
+            maxLines: 1,
+            textInputAction: TextInputAction.done,
+            style: touch
+                ? Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: palette.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  )
+                : TextStyle(
+                    fontFamily: handwritten.fontFamily,
+                    fontFamilyFallback: handwritten.fontFamilyFallback,
+                    fontVariations: handwritten.fontVariations,
+                    fontSize: 28,
+                    height: 36 / 28,
+                    fontWeight: FontWeight.w600,
+                    color: palette.textPrimary,
+                  ),
+            decoration: InputDecoration(
+              hintText: 'Untitled drawing',
+              hintStyle: TextStyle(color: palette.textTertiary),
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              filled: false,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
             ),
+            onChanged: widget.onTitleChanged,
+            onSubmitted: (_) => _canvasFocus.requestFocus(),
           ),
-          if (widget.onSwitchToWrite != null &&
-              _drawing.isEmpty &&
-              _titleController.text.trim().isEmpty)
-            NoteModeSwitch(
-              drawing: true,
-              onChanged: (drawing) {
-                if (!drawing) widget.onSwitchToWrite!();
-              },
+        ),
+        if (widget.onSwitchToWrite != null &&
+            _drawing.isEmpty &&
+            _titleController.text.trim().isEmpty)
+          NoteModeSwitch(
+            drawing: true,
+            onChanged: (drawing) {
+              if (!drawing) widget.onSwitchToWrite!();
+            },
+          ),
+      ],
+    );
+    if (touch) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 12, 0),
+        child: title,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(40, 12, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          title,
+          if (edited != null && shapes > 0)
+            Text(
+              '$edited · $shapes ${shapes == 1 ? 'shape' : 'shapes'}',
+              style: TextStyle(
+                fontSize: AppTypeScale.small,
+                height: 16 / 13,
+                fontWeight: FontWeight.w500,
+                color: palette.textTertiary,
+              ),
             ),
         ],
       ),
@@ -1006,57 +1051,110 @@ class DrawingCanvasState extends State<DrawingCanvas> {
               : DrawTool.values)
         if (!(touch && tool == DrawTool.pan && !widget.readOnly)) tool,
     ];
+    final extent = _DockSurface.buttonExtent;
     final divider = Container(
       width: 1,
       height: 20,
       margin: const EdgeInsets.symmetric(horizontal: 4),
       color: palette.separator,
     );
+    Widget button(
+      String key,
+      KapyIconData icon,
+      String tooltip,
+      VoidCallback? onPressed, {
+      bool selected = false,
+    }) => CompactIconButton(
+      key: ValueKey(key),
+      icon: KapyIcon(icon, size: touch ? null : 17),
+      tooltip: tooltip,
+      selected: selected,
+      onPressed: onPressed,
+      extent: extent,
+      radius: 9,
+      foregroundColor: selected ? palette.tonalForeground : null,
+      selectedBackground: palette.tonalBackground,
+      // Each button is already a 44pt target on touch; the padding around
+      // it is what pushed the last tool off a phone.
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
 
     final toolButtons = [
       for (final tool in tools)
-        CompactIconButton(
-          key: ValueKey('draw-tool-${tool.name}'),
-          icon: KapyIcon(tool.icon),
-          tooltip: touch ? tool.label : '${tool.label} · ${tool.key}',
+        button(
+          'draw-tool-${tool.name}',
+          tool.icon,
+          touch ? tool.label : '${tool.label} · ${tool.key}',
+          () => selectTool(tool),
           selected: _tool == tool,
-          onPressed: () => selectTool(tool),
-          // Each button is already a 44pt target on touch; the padding
-          // around it is what pushed the last tool off a phone.
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
     ];
     final actions = [
       if (!widget.readOnly) ...[
-        CompactIconButton(
-          key: const ValueKey('draw-style'),
-          tooltip: 'Colour and size',
-          selected: _styleOpen,
-          onPressed: () => setState(() => _styleOpen = !_styleOpen),
-          icon: _Swatch(
-            color: _color == null ? palette.textPrimary : Color(_color!),
-            size: 6 + _width * 1.2,
+        Tooltip(
+          message: 'Colour and size',
+          child: InkWell(
+            key: const ValueKey('draw-style'),
+            onTap: () => setState(() => _styleOpen = !_styleOpen),
+            borderRadius: BorderRadius.circular(9),
+            child: Container(
+              height: extent,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: _styleOpen
+                  ? BoxDecoration(
+                      color: palette.selectedBackground,
+                      borderRadius: BorderRadius.circular(9),
+                    )
+                  : null,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: _color == null
+                          ? palette.textPrimary
+                          : Color(_color!),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: palette.separator,
+                        width: 1.5,
+                        strokeAlign: BorderSide.strokeAlignOutside,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  KapyIcon(
+                    KapyIcons.chevronDownRounded,
+                    size: 12,
+                    strokeWidth: 2,
+                    color: palette.textSecondary,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         divider,
-        CompactIconButton(
-          key: const ValueKey('draw-undo'),
-          icon: const KapyIcon(KapyIcons.undoRounded),
-          tooltip: 'Undo',
-          onPressed: _undo.isEmpty ? null : undo,
+        button(
+          'draw-undo',
+          KapyIcons.undoRounded,
+          'Undo',
+          _undo.isEmpty ? null : undo,
         ),
-        CompactIconButton(
-          key: const ValueKey('draw-redo'),
-          icon: const KapyIcon(KapyIcons.redoRounded),
-          tooltip: 'Redo',
-          onPressed: _redo.isEmpty ? null : redo,
+        button(
+          'draw-redo',
+          KapyIcons.redoRounded,
+          'Redo',
+          _redo.isEmpty ? null : redo,
         ),
         if (_selected.isNotEmpty)
-          CompactIconButton(
-            key: const ValueKey('draw-delete'),
-            icon: const KapyIcon(KapyIcons.deleteOutlined),
-            tooltip: 'Delete',
-            onPressed: deleteSelection,
+          button(
+            'draw-delete',
+            KapyIcons.deleteOutlined,
+            'Delete',
+            deleteSelection,
           ),
         divider,
       ],
@@ -1066,10 +1164,14 @@ class DrawingCanvasState extends State<DrawingCanvas> {
           key: const ValueKey('draw-zoom'),
           onPressed: fitToContent,
           style: TextButton.styleFrom(
-            minimumSize: Size(52, AppControlMetrics.iconButtonExtent),
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            foregroundColor: palette.textSecondary,
-            textStyle: Theme.of(context).textTheme.labelMedium?.copyWith(
+            minimumSize: Size(52, extent),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            foregroundColor: palette.textPrimary,
+            textStyle: TextStyle(
+              fontFamily: AppFonts.mono,
+              fontFamilyFallback: AppFonts.monoFallback,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
@@ -1078,11 +1180,14 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       ),
     ];
 
-    Widget bar(List<Widget> children) => FloatingSurface(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+    Widget bar(List<Widget> children) => _DockSurface(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: Row(mainAxisSize: MainAxisSize.min, children: children),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 2,
+          children: children,
+        ),
       ),
     );
 
@@ -1091,8 +1196,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final oneRow =
-            constraints.maxWidth >=
-            (tools.length + 6) * AppControlMetrics.iconButtonExtent + 120;
+            constraints.maxWidth >= (tools.length + 6) * extent + 120;
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1119,6 +1223,43 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   }
 }
 
+/// What the dock and its colour and size panel stand on: the insert bar's
+/// raised strip of control colour.
+class _DockSurface extends StatelessWidget {
+  const _DockSurface({required this.child, this.width});
+
+  final Widget child;
+  final double? width;
+
+  /// The dock's buttons: roomier than the toolbars' on a pointer, the
+  /// platform's target on touch.
+  static double get buttonExtent =>
+      AppPlatform.hasPointer ? 34 : AppControlMetrics.iconButtonExtent;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Container(
+      width: width,
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: palette.controlBackground,
+        border: Border.all(color: palette.controlBorder, width: 1.5),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: palette.shadowAt(0x80),
+            offset: const Offset(0, 12),
+            blurRadius: 28,
+            spreadRadius: -14,
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
 class _StylePanel extends StatelessWidget {
   const _StylePanel({
     required this.color,
@@ -1135,71 +1276,134 @@ class _StylePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return FloatingSurface(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      // Wraps rather than overflowing: six colours and three sizes are wider
-      // than a phone.
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        runSpacing: 4,
-        children: [
-          for (final option in drawColors)
-            CompactIconButton(
-              key: ValueKey('draw-color-${option ?? 'ink'}'),
-              tooltip: option == null ? 'Ink' : 'Colour',
-              selected: option == color,
-              onPressed: () => onColor(option),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              icon: _Swatch(
-                color: option == null ? palette.textPrimary : Color(option),
-                size: 14,
+    final label = TextStyle(
+      fontSize: 12,
+      height: 16 / 12,
+      fontWeight: FontWeight.w600,
+      color: palette.textTertiary,
+    );
+    return _DockSurface(
+      width: 262,
+      child: Padding(
+        padding: const EdgeInsets.all(7),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Colour', style: label),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                for (final (name, option) in drawColors)
+                  Tooltip(
+                    message: name,
+                    child: InkWell(
+                      key: ValueKey('draw-color-${option ?? 'ink'}'),
+                      customBorder: const CircleBorder(),
+                      onTap: () => onColor(option),
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        alignment: Alignment.center,
+                        decoration: option == color
+                            ? BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: palette.selectedBorder,
+                                  width: 2,
+                                ),
+                              )
+                            : null,
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: option == null
+                                ? palette.textPrimary
+                                : Color(option),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: SizedBox(
+                height: 1,
+                child: ColoredBox(color: palette.separator),
               ),
             ),
-          Container(
-            width: 1,
-            height: 20,
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            color: palette.separator,
-          ),
-          for (final option in drawWidths)
-            CompactIconButton(
-              key: ValueKey('draw-width-${option.round()}'),
-              tooltip: switch (option) {
-                <= 2 => 'Thin',
-                <= 4 => 'Medium',
-                _ => 'Bold',
-              },
-              selected: option == width,
-              onPressed: () => onWidth(option),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              icon: Container(
-                width: 16,
-                height: option,
-                decoration: BoxDecoration(
-                  color: palette.textPrimary,
-                  borderRadius: BorderRadius.circular(option),
-                ),
+            Text('Size', style: label),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: palette.editorBackground,
+                border: Border.all(color: palette.controlBorder),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Row(
+                spacing: 4,
+                children: [
+                  for (final (name, option) in drawWidths)
+                    Expanded(
+                      child: InkWell(
+                        key: ValueKey('draw-width-${option.round()}'),
+                        onTap: () => onWidth(option),
+                        borderRadius: BorderRadius.circular(7),
+                        child: Container(
+                          height: 30,
+                          decoration: option == width
+                              ? BoxDecoration(
+                                  color: palette.tonalBackground,
+                                  borderRadius: BorderRadius.circular(7),
+                                )
+                              : null,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: option + 3,
+                                height: option + 3,
+                                decoration: BoxDecoration(
+                                  color: option == width
+                                      ? palette.tonalForeground
+                                      : palette.textSecondary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 7),
+                              Flexible(
+                                child: Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: option == width
+                                        ? palette.tonalForeground
+                                        : palette.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
-}
-
-class _Swatch extends StatelessWidget {
-  const _Swatch({required this.color, required this.size});
-
-  final Color color;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-  );
 }
 
 class _EmptyHint extends StatelessWidget {

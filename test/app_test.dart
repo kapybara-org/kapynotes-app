@@ -4866,7 +4866,7 @@ void main() {
       );
     });
 
-    testWidgets('Drawings lists only drawings, until a new note is made', (
+    testWidgets('Drawings lists only drawings, and New there makes one', (
       tester,
     ) async {
       store.data['notes.v1'] = [
@@ -4891,12 +4891,15 @@ void main() {
       expect(rowTitles(tester), unorderedEquals(['Words', 'Sketch']));
       expect(spaceTitle(tester), 'My notes');
 
-      // A new note is not a drawing yet, so the list goes back to show it.
+      // New in Drawings makes a drawing, so the list stays where it is.
       await openSpace(tester, 'drawings');
       await tester.tap(find.byKey(const ValueKey('sidebar-new-note')));
       await tester.pumpAndSettle();
-      expect(spaceTitle(tester), 'My notes');
+      expect(spaceTitle(tester), 'Drawings');
+      expect(spaceCount(tester), '2');
       expect(notes.notes, hasLength(3));
+      expect(notes.notes.where((note) => note.isDrawing), hasLength(2));
+      expect(find.byType(DrawingCanvas), findsOneWidget);
     });
 
     testWidgets('Drawings says so while there are none', (tester) async {
