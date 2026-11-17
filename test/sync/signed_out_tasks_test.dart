@@ -70,6 +70,7 @@ class Device {
   String get personalId => server.personal(api.userId).id;
 
   Future<void> boot() async {
+    await notes.load();
     await library.load();
     api = RecordingApi(server, device: state.deviceId);
     server.seedBundle(api.userId);
