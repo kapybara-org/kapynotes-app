@@ -7,7 +7,6 @@ Plain text, then **bold**, *italic*, <u>underlined</u>, ~~struck through~~ and a
   - Word and Excel
   - Apple Notes
 - Write the release notes
-
 1. Collect fixtures
 2. Write the parser
 3. Review with design
@@ -18,5 +17,5 @@ Send the invoice
 
 ⟦picture 1⟧
 <!--
-picture 1 at 314: image/png 1312 bytes, alt "chart.png", width 1.00
+picture 1 at 313: image/png 1312 bytes, alt "chart.png", width 1.00
 -->

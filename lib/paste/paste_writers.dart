@@ -121,9 +121,14 @@ class _MarkdownWriter {
     for (final block in blocks) {
       final written = _block(block);
       if (written.isEmpty) continue;
-      // A list straight under its item's words is part of the item; a
-      // blank line there would make the whole list loose.
-      final tight = inItem && block is PasteList && previous is PasteParagraph;
+      // A list straight under its item's words is part of the item, and a
+      // list straight after another goes on down the page, as a bulleted
+      // list running into a numbered one does: a blank line in either place
+      // would loosen what the source kept tight.
+      final tight =
+          block is PasteList &&
+          (inItem && previous is PasteParagraph ||
+              previous is PasteList && !block.afterEmptyLine);
       if (lines.isNotEmpty && !tight) lines.add('');
       lines.addAll(written);
       previous = block;

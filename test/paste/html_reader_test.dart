@@ -292,7 +292,7 @@ void main() {
           'mso-list:Ignore">·<span>&nbsp;</span></span><![endif]>Bullet</p>'
           '</body></html>',
         ),
-        '1. One\n2. Two\n\n- Bullet',
+        '1. One\n2. Two\n- Bullet',
       );
     });
   });

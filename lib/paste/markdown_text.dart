@@ -199,7 +199,8 @@ String _withDollarMath(String prose) {
 /// before the markdown is read, since TeX is full of what markdown would
 /// take as its own escapes and emphasis, and comes back as the math it was.
 List<PasteBlock> readNoteMarkdown(String source) {
-  final text = source.replaceAll(_marks, '');
+  final clean = source.replaceAll(_marks, '');
+  final text = _markEmptyLinesBetweenLists(clean);
   final String html;
   try {
     final maths = <({String tex, bool display})>[];
@@ -222,10 +223,12 @@ List<PasteBlock> readNoteMarkdown(String source) {
           return '<span class="$kind" data-latex="${htmlEscape.convert(math.tex)}"></span>';
         })
         .replaceAll(String.fromCharCode(_operator), '*')
-        .replaceAll(_operatorInAddress, '*');
+        .replaceAll(_operatorInAddress, '*')
+        .replaceAll('<p>$_emptyLine</p>', '<p><br></p>')
+        .replaceAll(_breakBeforeBlock, '');
   } on Object {
     return [
-      for (final paragraph in text.split(RegExp(r'\n{2,}')))
+      for (final paragraph in clean.split(RegExp(r'\n{2,}')))
         if (paragraph.trim().isNotEmpty) PasteParagraph([PasteText(paragraph)]),
     ];
   }
@@ -234,11 +237,57 @@ List<PasteBlock> readNoteMarkdown(String source) {
   );
 }
 
+/// [text] with a paragraph of [_emptyLine] where an empty line keeps a list
+/// apart from a list of the other kind after it. Markdown makes two lists
+/// of them either way, so without the mark the empty line would be lost.
+String _markEmptyLinesBetweenLists(String text) {
+  final out = <String>[];
+  bool? ordered;
+  var afterEmptyLine = false;
+  String? fence;
+  for (final line in text.split('\n')) {
+    final trimmed = line.trimLeft();
+    if (fence != null) {
+      if (trimmed.startsWith(fence)) fence = null;
+    } else if (trimmed.isEmpty) {
+      afterEmptyLine = true;
+    } else {
+      if (line.length - trimmed.length < 2) {
+        final item = _listMarker.firstMatch(trimmed);
+        final itemOrdered = item == null ? null : item[1] == null;
+        if (itemOrdered != null &&
+            afterEmptyLine &&
+            ordered != null &&
+            itemOrdered != ordered) {
+          out
+            ..add(_emptyLine)
+            ..add('');
+        }
+        ordered = itemOrdered;
+        fence = _fenceOpen.firstMatch(trimmed)?[1];
+      }
+      afterEmptyLine = false;
+    }
+    out.add(line);
+  }
+  return out.join('\n');
+}
+
+/// A line break the markdown renderer writes between two blocks, which the
+/// note's `pre-line` would otherwise read as an empty line between them.
+final _breakBeforeBlock = RegExp(
+  r'\n(?=</?(?:p|ul|ol|li|h[1-6]|blockquote|pre|table|thead|tbody|tr|th|td|hr)\b)',
+);
+final _listMarker = RegExp(r'^(?:([-*+])|\d{1,9}[.)])(?:[ \t]|$)');
+final _fenceOpen = RegExp(r'^(`{3,}|~{3,})');
+
 /// Private-use characters the text is marked with while it is read: the
-/// ends of a math token, and a `*` that is an operator.
-final _marks = RegExp('[\uE000-\uE002]');
+/// ends of a math token, a `*` that is an operator, and an empty line
+/// between two lists.
+final _marks = RegExp('[\uE000-\uE003]');
 final _mathToken = RegExp('\uE000(\\d+)\uE001');
 const _operator = 0xE002;
+const _emptyLine = '\uE003';
 
 /// [_operator] as an address writes it.
 const _operatorInAddress = '%EE%80%82';

@@ -219,13 +219,13 @@ class HtmlPasteReader {
       case 'ul' || 'ol' || 'menu' || 'dir':
         out.flush();
         final list = _readList(element, inner);
-        if (list.items.isNotEmpty) out.blocks.add(list);
+        if (list.items.isNotEmpty) out.addList(list);
         return;
       case 'li':
         // An item with no list around it: what a selection that starts
         // inside a list serialises as.
         out.flush();
-        out.blocks.add(
+        out.addList(
           PasteList(ordered: false, items: [_readItem(element, inner)]),
         );
         return;
@@ -1747,9 +1747,29 @@ class _Builder {
   final List<PasteBlock> blocks = [];
   final _Line line = _Line();
 
+  /// Whether a line of nothing but breaks and spaces, an empty line on the
+  /// page, has come since the last list.
+  bool _emptyLine = false;
+
   void flush() {
+    final blank = line.isBlank;
     final inlines = line.take();
     if (inlines.isNotEmpty) blocks.add(PasteParagraph(inlines));
+    if (blank) _emptyLine = true;
+  }
+
+  void addList(PasteList list) {
+    blocks.add(
+      _emptyLine
+          ? PasteList(
+              ordered: list.ordered,
+              items: list.items,
+              start: list.start,
+              afterEmptyLine: true,
+            )
+          : list,
+    );
+    _emptyLine = false;
   }
 }
 
@@ -1758,6 +1778,15 @@ class _Builder {
 /// space, and none at all at the start of a line.
 class _Line {
   final List<PasteInline> _inlines = [];
+
+  /// Whether the line holds something, but only breaks and spaces.
+  bool get isBlank =>
+      _inlines.isNotEmpty &&
+      _inlines.every(
+        (inline) =>
+            inline is PasteBreak ||
+            inline is PasteText && inline.text.trim().isEmpty,
+      );
 
   bool get _atLineStart =>
       _inlines.isEmpty ||

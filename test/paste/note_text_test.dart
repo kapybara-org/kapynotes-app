@@ -29,6 +29,7 @@ void main() {
         'Line **bold** *italic* ~~gone~~ <u>under</u> x<sup>ab</sup>\nnext line',
         '[the docs](https://example.com/docs) and <https://a.example>',
         '- a\n- b\n  - nested\n\n3. three\n4. four',
+        '- a\n- b\n  - nested\n3. three\n4. four',
         '- [ ] open\n- [x] done',
         '> quoted\n> lines',
         '```dart\nvoid main() {}\n```',
@@ -143,8 +144,8 @@ void main() {
       final converted = convertNote(note, toMarkdown: true, formats: formats);
       expect(
         converted.text,
-        '# Shopping\n\n- milk\n  - skim\n- [ ] call mom\n- [x] done\n\n'
-        '1. first\n2. second\n\n**rent** 1200 \\*not em\\*\nfood 300',
+        '# Shopping\n\n- milk\n  - skim\n- [ ] call mom\n- [x] done\n1. first\n'
+        '2. second\n\n**rent** 1200 \\*not em\\*\nfood 300',
       );
       expect(converted.formats, isEmpty);
     });

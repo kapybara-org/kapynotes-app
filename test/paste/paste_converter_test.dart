@@ -37,6 +37,30 @@ void main() {
     expect(conversion.output.text, '# Title\n\n- Item');
   });
 
+  test(
+    'lists side by side in HTML paste tight, unless a line kept them apart',
+    () {
+      expect(
+        convertPaste(
+          const ClipboardSnapshot(
+            text: 'one\ntwo',
+            html: '<ul><li>one</li></ul><ol><li>two</li></ol>',
+          ),
+        ).output.text,
+        '- one\n1. two',
+      );
+      expect(
+        convertPaste(
+          const ClipboardSnapshot(
+            text: 'one\n\ntwo',
+            html: '<ul><li>one</li></ul><div><br></div><ol><li>two</li></ol>',
+          ),
+        ).output.text,
+        '- one\n\n1. two',
+      );
+    },
+  );
+
   test('HTML that only wraps the words loses to them', () {
     final conversion = convertPaste(
       const ClipboardSnapshot(

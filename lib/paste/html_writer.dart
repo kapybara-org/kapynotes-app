@@ -31,8 +31,13 @@ class _HtmlWriter {
   final out = StringBuffer();
 
   void blocks(List<PasteBlock> blocks) {
+    PasteBlock? previous;
     for (final block in blocks) {
+      if (block is PasteList && block.afterEmptyLine && previous is PasteList) {
+        out.write('<p><br></p>');
+      }
       _block(block);
+      previous = block;
     }
   }
 

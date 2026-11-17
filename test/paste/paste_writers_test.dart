@@ -92,9 +92,30 @@ void main() {
         '9. nine\n'
         '   - sub\n'
         '10. ten\n'
-        '\n'
         '- [x] done\n'
         '- [ ] open',
+      );
+    });
+
+    test('lists one after another stay tight', () {
+      expect(
+        markdown([
+          PasteList(ordered: false, items: [item('one'), item('two')]),
+          PasteList(ordered: true, items: [item('three')]),
+          PasteList(ordered: false, items: [item('four', checked: false)]),
+          words('after'),
+        ]),
+        '- one\n- two\n1. three\n- [ ] four\n\nafter',
+      );
+    });
+
+    test('an empty line the source had between two lists stays', () {
+      expect(
+        markdown([
+          PasteList(ordered: false, items: [item('one')]),
+          PasteList(ordered: true, items: [item('two')], afterEmptyLine: true),
+        ]),
+        '- one\n\n1. two',
       );
     });
 

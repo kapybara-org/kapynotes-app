@@ -29,13 +29,22 @@ final class PasteHeading extends PasteBlock {
 }
 
 final class PasteList extends PasteBlock {
-  const PasteList({required this.ordered, required this.items, this.start = 1});
+  const PasteList({
+    required this.ordered,
+    required this.items,
+    this.start = 1,
+    this.afterEmptyLine = false,
+  });
 
   final bool ordered;
 
   /// The first item's number, for an ordered list.
   final int start;
   final List<PasteListItem> items;
+
+  /// Whether the source had an empty line just before this list, which
+  /// keeps it apart from a list just before that.
+  final bool afterEmptyLine;
 }
 
 final class PasteListItem {

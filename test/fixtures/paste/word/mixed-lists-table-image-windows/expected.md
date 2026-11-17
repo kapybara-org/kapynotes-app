@@ -7,7 +7,6 @@ Plain text, then **bold**, *italic*, <u>underlined</u> and ***<u>all three</u>**
   - Word and Excel
   - Apple Notes
 - Write the release notes
-
 1. Collect fixtures
 2. Write the parser
 3. Review with design
@@ -19,5 +18,5 @@ Plain text, then **bold**, *italic*, <u>underlined</u> and ***<u>all three</u>**
 
 ⟦picture 1⟧
 <!--
-picture 1 at 427: file:///C:/Users/sample/AppData/Local/Temp/msohtmlclip1/01/clip_image001.png, alt "Bar chart of planned versus shipped work", 200x120, width 0.28
+picture 1 at 426: file:///C:/Users/sample/AppData/Local/Temp/msohtmlclip1/01/clip_image001.png, alt "Bar chart of planned versus shipped work", 200x120, width 0.28
 -->
