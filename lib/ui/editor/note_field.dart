@@ -454,19 +454,41 @@ class NoteFieldState extends State<NoteField>
       base = remote;
     } else if (previous != null &&
         oldText == previous.value.text &&
-        previous.start + oldText.length <= _text.length &&
-        _text.substring(previous.start, previous.start + oldText.length) ==
-            oldText) {
+        _holds(previous)) {
       base = previous;
     } else {
-      _remote = null;
-      _sendIfChanged();
+      _resync();
       return;
     }
     var platform = base.value;
     for (final delta in deltas) {
       platform = delta.apply(platform);
     }
+    _applyRemote(base, platform, fromRemote: fromRemote);
+  }
+
+  /// Whether the note still holds, where [remote] was taken, the text the
+  /// platform was sent.
+  bool _holds(_Remote remote) {
+    final end = remote.start + remote.value.text.length;
+    return end <= _text.length &&
+        _text.substring(remote.start, end) == remote.value.text;
+  }
+
+  /// Drops an edit made to text the note no longer holds, and sends the
+  /// platform the window again.
+  void _resync() {
+    _remote = null;
+    _sendIfChanged();
+  }
+
+  /// Puts [platform], the platform's edit of what [base] sent it, into the
+  /// note in place of the text [base] covers.
+  void _applyRemote(
+    _Remote base,
+    TextEditingValue platform, {
+    required bool fromRemote,
+  }) {
     final start = base.start;
     final end = start + base.value.text.length;
     TextSelection shift(TextSelection selection) => selection.isValid
@@ -493,26 +515,15 @@ class NoteFieldState extends State<NoteField>
   @override
   void updateEditingValue(TextEditingValue value) {
     if (widget.readOnly) return;
-    final start = _window.start;
-    _remote = (start: start, value: value);
-    _formatAndSetValue(
-      TextEditingValue(
-        text: _text.replaceRange(start, _window.end, value.text),
-        selection: value.selection.isValid
-            ? value.selection.copyWith(
-                baseOffset: value.selection.baseOffset + start,
-                extentOffset: value.selection.extentOffset + start,
-              )
-            : _value.selection,
-        composing: value.composing.isValid && !value.composing.isCollapsed
-            ? TextRange(
-                start: value.composing.start + start,
-                end: value.composing.end + start,
-              )
-            : TextRange.empty,
-      ),
-      SelectionChangedCause.keyboard,
-    );
+    final remote = _remote;
+    final previous = _previousRemote;
+    if (remote != null && _holds(remote)) {
+      _applyRemote(remote, value, fromRemote: true);
+    } else if (previous != null && _holds(previous)) {
+      _applyRemote(previous, value, fromRemote: false);
+    } else {
+      _resync();
+    }
   }
 
   @override
@@ -802,6 +813,7 @@ class NoteFieldState extends State<NoteField>
   Widget _semantics(Widget child) {
     final window = _windowValue;
     final start = _window.start;
+    final end = _window.end;
     final selection = _value.selection;
     final focused = widget.focusNode.hasFocus;
     final selected = selection.isValid && !selection.isCollapsed;
@@ -830,13 +842,19 @@ class NoteFieldState extends State<NoteField>
           );
         if (window.selection.isValid) config.textSelection = window.selection;
         if (writable) {
-          config.onSetText = (text) => userUpdateTextEditingValue(
-            TextEditingValue(
-              text: _text.replaceRange(start, _window.end, text),
-              selection: TextSelection.collapsed(offset: start + text.length),
-            ),
-            SelectionChangedCause.keyboard,
-          );
+          config.onSetText = (text) {
+            if (end > _text.length ||
+                _text.substring(start, end) != window.text) {
+              return;
+            }
+            userUpdateTextEditingValue(
+              TextEditingValue(
+                text: _text.replaceRange(start, end, text),
+                selection: TextSelection.collapsed(offset: start + text.length),
+              ),
+              SelectionChangedCause.keyboard,
+            );
+          };
           config.onPaste = () =>
               unawaited(pasteText(SelectionChangedCause.keyboard));
         }

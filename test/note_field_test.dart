@@ -729,6 +729,73 @@ void main() {
     variant: _macOS,
   );
 
+  testWidgets(
+    'what an assistive tool sets is dropped once an edit above the window '
+    'moves the text it was shown',
+    (tester) async {
+      final handle = tester.ensureSemantics();
+      final text = _note(1000);
+      final field = await _pumpField(tester, text);
+      final controller = field.widget.controller;
+      final ime = FakeMacTextInput(tester);
+      final caret = _lineStart(text, 500);
+      await _select(tester, field, TextSelection.collapsed(offset: caret));
+      var node = tester.getSemantics(find.byType(NoteField));
+      var written = node.value.replaceFirst('Line 500,', 'Row 500,');
+
+      controller.value = TextEditingValue(
+        text: 'NEW\n$text',
+        selection: TextSelection.collapsed(offset: caret + 4),
+      );
+      node.owner!.performAction(node.id, SemanticsAction.setText, written);
+      await tester.pump();
+      expect(controller.text, 'NEW\n$text');
+      _expectInSync(field, ime);
+
+      node = tester.getSemantics(find.byType(NoteField));
+      written = node.value.replaceFirst('Line 500,', 'Row 500,');
+      node.owner!.performAction(node.id, SemanticsAction.setText, written);
+      await tester.pump();
+      expect(
+        controller.text,
+        'NEW\n${text.replaceFirst('Line 500,', 'Row 500,')}',
+      );
+      handle.dispose();
+    },
+    variant: _macOS,
+  );
+
+  testWidgets(
+    'a whole value from the platform replaces the text it was sent, after an '
+    'edit above the window too',
+    (tester) async {
+      final text = _note(1000);
+      final field = await _pumpField(tester, text);
+      final controller = field.widget.controller;
+      final ime = FakeMacTextInput(tester);
+      final caret = _lineStart(text, 500);
+      await _select(tester, field, TextSelection.collapsed(offset: caret));
+      _expectInSync(field, ime);
+
+      controller.value = TextEditingValue(
+        text: 'NEW\n$text',
+        selection: TextSelection.collapsed(offset: caret + 4),
+      );
+      final sent = field.currentTextEditingValue;
+      final edited = sent.copyWith(
+        text: sent.text.replaceFirst('Line 500,', 'Row 500,'),
+      );
+      field.updateEditingValue(edited);
+      await tester.pump();
+      expect(
+        controller.text,
+        'NEW\n${text.replaceFirst('Line 500,', 'Row 500,')}',
+      );
+      expect(field.currentTextEditingValue, edited);
+    },
+    variant: _macOS,
+  );
+
   testWidgets('a read-only note is a read-only text field to assistive tools', (
     tester,
   ) async {
