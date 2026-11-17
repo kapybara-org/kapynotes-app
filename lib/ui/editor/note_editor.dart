@@ -704,12 +704,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       );
       _controller.formats = _formats;
     }
-    if (widget.initialBody == _controller.text &&
+    // Taken whenever the store's text is the one this editor's is built on,
+    // even with a blank line opened for typing below it, so a picture that
+    // finishes loading in a note just opened shows up in it.
+    if (widget.initialBody == _storeBase &&
         !listEquals(widget.initialAttachments, _attachments)) {
-      _attachments = normalizeNoteAttachments(
-        widget.initialAttachments,
-        _controller.text,
+      final merge = mergeTexts(
+        base: _storeBase,
+        local: _controller.text,
+        remote: _storeBase,
       );
+      _attachments = normalizeNoteAttachments([
+        for (final ref in widget.initialAttachments)
+          ref.copyWith(offset: merge.mapRemoteStart(ref.offset)),
+      ], _controller.text);
     }
     _dailySeparatorFormatter
       ..enabled = widget.dailySeparatorsEnabled
@@ -2734,6 +2742,32 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _controller.value = value;
     }
     _focusNode.requestFocus();
+  }
+
+  /// Scrolls the note until the line holding the attachment at [offset] is
+  /// in view, from its top when it is taller than the note's window.
+  void showAttachment(int offset) {
+    final field = _field;
+    if (field == null || !_scrollController.hasClients) return;
+    final line = field.lines.lineAt(offset);
+    final shownTop = field.lineTop(line);
+    final shownBottom = field.lineTop(line + 1);
+    if (shownTop == null || shownBottom == null) return;
+    final position = _scrollController.position;
+    var to = position.pixels;
+    final top = shownTop + to;
+    final bottom = shownBottom + to;
+    if (bottom > to + position.viewportDimension) {
+      to = bottom - position.viewportDimension;
+    }
+    if (top < to) to = top;
+    unawaited(
+      _scrollController.animateTo(
+        to.clamp(position.minScrollExtent, position.maxScrollExtent),
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      ),
+    );
   }
 
   /// Opens the device's image entry point, compresses whatever comes back,
