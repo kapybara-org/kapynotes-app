@@ -2627,6 +2627,33 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _focusNode.requestFocus();
   }
 
+  /// Scrolls the note until the line holding the attachment at [offset] is
+  /// in view, from its top when it is taller than the note's window.
+  void showAttachment(int offset) {
+    final offsets = _lineOffsets;
+    if (offsets == null || !_scrollController.hasClients) return;
+    final tops = offsets.tops;
+    final line = _lineIndexOf(offset);
+    if (line >= tops.length) return;
+    final top = tops[line];
+    final bottom = line + 1 < tops.length
+        ? tops[line + 1]
+        : offsets.totalHeight;
+    final position = _scrollController.position;
+    var to = position.pixels;
+    if (bottom > to + position.viewportDimension) {
+      to = bottom - position.viewportDimension;
+    }
+    if (top < to) to = top;
+    unawaited(
+      _scrollController.animateTo(
+        to.clamp(position.minScrollExtent, position.maxScrollExtent),
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+
   /// Opens the device's image entry point, compresses whatever comes back,
   /// and inserts it. Phones ask between the native camera and photo library;
   /// desktop opens its system file dialog.

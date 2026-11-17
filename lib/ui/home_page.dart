@@ -2573,6 +2573,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final pinned =
                 selected != null &&
                 widget.notes.pinnedNoteIds.contains(selected.id);
+            final unloaded = [
+              for (final ref in selected?.attachments ?? const [])
+                if (ref case NoteImageRef(src: _?, isPreparing: false)) ref,
+            ];
             return Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -2735,6 +2739,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         ?.displayLabel,
                                     noteOpen: selected != null,
                                     syncStatus: widget.account?.sync?.status,
+                                    unloadedPictures: unloaded.length,
+                                    onShowUnloadedPicture: unloaded.isEmpty
+                                        ? null
+                                        : () => _selectedEditor?.showAttachment(
+                                            unloaded.first.offset,
+                                          ),
                                     members: _selectedMembers,
                                     present: _selectedPresence,
                                     currentUserId:

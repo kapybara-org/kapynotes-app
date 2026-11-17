@@ -13,6 +13,7 @@ import 'context_menu.dart';
 import 'member_avatars.dart';
 import 'tonal_button.dart';
 import 'toolbar.dart' show UpdateRestartButton;
+import 'unloaded_pictures_status.dart';
 import 'window_drag_area.dart';
 
 /// The bar across the top of the page: where the open note lives, whether it
@@ -35,6 +36,8 @@ class PageToolbar extends StatelessWidget {
     this.newNoteShortcut,
     this.noteOpen = false,
     this.syncStatus,
+    this.unloadedPictures = 0,
+    this.onShowUnloadedPicture,
     this.members = const [],
     this.present = const [],
     this.currentUserId = '',
@@ -67,6 +70,12 @@ class PageToolbar extends StatelessWidget {
   /// Null without an account, where every note is saved on this device alone.
   final SyncStatus? syncStatus;
 
+  /// How many of the open note's pictures didn't load. While there are any,
+  /// the bar counts them in place of Saved, and pressing the count calls
+  /// [onShowUnloadedPicture].
+  final int unloadedPictures;
+  final VoidCallback? onShowUnloadedPicture;
+
   final List<SpaceMember> members;
   final List<Collaborator> present;
   final String currentUserId;
@@ -93,7 +102,8 @@ class PageToolbar extends StatelessWidget {
 
   static const double height = 56;
 
-  /// Narrower than this, Saved steps aside for the breadcrumb.
+  /// Narrower than this, Saved, or the count of pictures that didn't load in
+  /// its place, steps aside for the breadcrumb.
   static const double _savedWidth = 460;
 
   /// Narrower than this, "Update and restart" shortens to "Update".
@@ -178,7 +188,13 @@ class PageToolbar extends StatelessWidget {
                       wide: constraints.maxWidth >= _updateLabelWidth,
                     ),
                   if (noteOpen && constraints.maxWidth >= _savedWidth) ...[
-                    _SaveStatus(syncStatus),
+                    if (unloadedPictures > 0)
+                      UnloadedPicturesStatus(
+                        count: unloadedPictures,
+                        onPressed: onShowUnloadedPicture,
+                      )
+                    else
+                      _SaveStatus(syncStatus),
                     const SizedBox(width: 6),
                   ],
                   TonalButton(
