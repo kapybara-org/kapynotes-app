@@ -42,6 +42,7 @@ class PageToolbar extends StatelessWidget {
     this.onShare,
     this.pinned = false,
     this.onTogglePin,
+    this.assistant,
     this.moreActions = const [],
     this.updates,
     this.center,
@@ -79,6 +80,10 @@ class PageToolbar extends StatelessWidget {
 
   final bool pinned;
   final VoidCallback? onTogglePin;
+
+  /// Kapy AI's button, between Share and the pin. It keeps its own gap, so
+  /// it can hide while Kapy AI is off without leaving one behind.
+  final Widget? assistant;
 
   /// Everything else the page offers, under More.
   final List<KapyMenuAction> moreActions;
@@ -203,6 +208,7 @@ class PageToolbar extends StatelessWidget {
                       onPressed: onShare,
                     ),
                     const SizedBox(width: 6),
+                    ?assistant,
                     CompactIconButton(
                       key: const ValueKey('page-pin'),
                       tooltip: pinned ? 'Unpin note' : 'Pin note',

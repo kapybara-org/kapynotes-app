@@ -46,6 +46,7 @@ import 'voice_note_dialog.dart';
 import '../speech/speech_api.dart';
 import '../speech/speech_errors.dart';
 import 'voice_consent_sheet.dart';
+import '../ai/kapy_ai.dart';
 import '../sync/aead.dart';
 import '../sync/sync_api.dart';
 import '../sync/account.dart';
@@ -66,6 +67,8 @@ import 'billing/pro_sheet.dart';
 import 'empty_state.dart';
 import 'context_menu.dart';
 import 'hidden_notes_gate.dart';
+import 'kapy_ai/kapy_ai_panel.dart';
+import 'kapy_ai/kapy_ai_settings.dart';
 import 'kapy_header_mascot.dart';
 import 'mobile_page_swipe.dart';
 import 'notes_list.dart';
@@ -120,6 +123,7 @@ class HomePage extends StatefulWidget {
     this.imageAcquirer,
     this.lostImageRetriever,
     required this.hiddenNotesGate,
+    this.kapyAi,
   });
 
   /// Kapy settles into sleep after a full minute without local interaction.
@@ -194,6 +198,10 @@ class HomePage extends StatefulWidget {
   final ImageFileAcquirer? imageAcquirer;
   final LostImageRetriever? lostImageRetriever;
   final HiddenNotesGate hiddenNotesGate;
+
+  /// Kapy AI: its panel, its button beside the pin, and ⌘J. Null, or the
+  /// feature not built in, leaves all three out.
+  final KapyAi? kapyAi;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -393,6 +401,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _kapyHeader.dispose();
     _searchFocus.dispose();
     _desktopShortcutFocus.dispose();
+    _kapyPanel.dispose();
     _taskAddFocus.dispose();
     _taskController?.dispose();
     super.dispose();
@@ -2323,23 +2332,126 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     AccountState.ready => 'Sign in first to share this note',
   };
 
+  /// Whether Kapy AI's panel is open, and the note it was opened from.
+  final _kapyPanel = KapyAiPanelController();
+
+  /// Kapy AI, only where the build carries it.
+  KapyAi? get _kapyAi => kapyAiAvailable ? widget.kapyAi : null;
+
+  /// A note's title for the panel, or null for one it may not name: gone,
+  /// or hidden, since Hidden notes never reach Kapy AI.
+  String? _kapyNoteTitle(String id) {
+    final note = widget.notes.byId(id);
+    return note == null || note.isHidden ? null : note.title;
+  }
+
+  /// The button beside the pin and ⌘J: the panel beside the page, or the
+  /// sheet on a phone. Opened from a note, it carries that note's chip.
+  void _toggleKapyAi() {
+    final ai = _kapyAi;
+    if (ai == null || !ai.enabled) return;
+    final noteId = _selectedId != null && _kapyNoteTitle(_selectedId!) != null
+        ? _selectedId
+        : null;
+    if (!_usesCompactLayout) {
+      _kapyPanel.toggle(noteId: noteId);
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    _kapyPanel.open(noteId: noteId);
+    unawaited(
+      showKapyAiSheet(
+        context,
+        panel: (close) => _kapyAiPanel(
+          ai,
+          onClose: close,
+          onOpenNote: (id) {
+            close();
+            _select(id);
+          },
+        ),
+      ).whenComplete(_kapyPanel.close),
+    );
+  }
+
+  Widget _kapyAiPanel(
+    KapyAi ai, {
+    required VoidCallback onClose,
+    required ValueChanged<String> onOpenNote,
+  }) => KapyAiPanel(
+    kapyAi: ai,
+    controller: _kapyPanel,
+    noteTitle: _kapyNoteTitle,
+    onOpenNote: onOpenNote,
+    onManageAccounts: () => _showSettings(
+      section: SettingsSection.voice,
+      reveal: ai.accounts.isEmpty
+          ? 'kapy-ai-toggle'
+          : kapyAccountRowId(ai.accounts.first.kind),
+    ),
+    onClose: onClose,
+    shortcut: AppPlatform.isDesktop
+        ? widget.shortcuts.bindingFor(ShortcutAction.toggleKapyAi)?.keycapLabel
+        : null,
+    now: widget.notes.now,
+  );
+
+  /// The page with Kapy AI's panel beside it or over it, while it is open.
+  Widget _withKapyAi(Widget page) {
+    final ai = _kapyAi;
+    if (ai == null) return page;
+    return KapyAiDock(
+      kapyAi: ai,
+      controller: _kapyPanel,
+      panel: _kapyAiPanel(ai, onClose: _kapyPanel.close, onOpenNote: _select),
+      child: page,
+    );
+  }
+
+  /// The Sparkles button for a toolbar, or null where Kapy AI is not built.
+  Widget? _kapyAiButton({required double extent, required double gap}) {
+    final ai = _kapyAi;
+    if (ai == null) return null;
+    return KapyAiToolbarButton(
+      kapyAi: ai,
+      controller: _kapyPanel,
+      onPressed: _toggleKapyAi,
+      shortcut: widget.shortcuts
+          .bindingFor(ShortcutAction.toggleKapyAi)
+          ?.displayLabel,
+      extent: extent,
+      trailingGap: gap,
+    );
+  }
+
   /// [notice] is said as a toast once settings is on screen, for whatever
-  /// sent the person there rather than their own tap on the gear.
-  void _showSettings({SettingsSection? section, String? notice}) {
+  /// sent the person there rather than their own tap on the gear. [reveal]
+  /// is the row it opens scrolled to.
+  void _showSettings({
+    SettingsSection? section,
+    String? notice,
+    String? reveal,
+  }) {
     if (_settingsOpen) return;
     if (AppPlatform.isMobile) {
       FocusManager.instance.primaryFocus?.unfocus();
       setState(() => _settingsOpen = true);
     }
-    unawaited(_openSettings(section, notice));
+    unawaited(_openSettings(section, notice, reveal));
   }
 
-  Future<void> _openSettings(SettingsSection? section, String? notice) async {
+  Future<void> _openSettings(
+    SettingsSection? section,
+    String? notice,
+    String? reveal,
+  ) async {
     try {
       await showSettings(
         context,
         section: section,
         notice: notice,
+        reveal: reveal,
+        kapyAi: _kapyAi,
         account: widget.account,
         notes: widget.notes,
         layoutPrefs: widget.prefs,
@@ -2607,6 +2719,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ? widget.prefs.toggleAlwaysOnTop
                 : null,
             onDeleteNote: _removeOpenNote,
+            onToggleKapyAi: _kapyAi == null ? null : _toggleKapyAi,
             autofocus: _selectedId == null || !widget.prefs.readyToTypeOnOpen,
             child: content,
           ),
@@ -2808,86 +2921,99 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     body: SafeArea(
                       left: false,
                       bottom: false,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          const Positioned(
-                            left: 0,
-                            top: 0,
-                            right: 0,
-                            height: pageInset,
-                            child: WindowDragArea(child: SizedBox.expand()),
-                          ),
-                          AnimatedPadding(
-                            duration: const Duration(milliseconds: 160),
-                            curve: Curves.easeOutCubic,
-                            padding: EdgeInsets.fromLTRB(
-                              listFits && listShown ? 0 : pageInset,
-                              pageInset,
-                              pageInset,
-                              pageInset,
+                      child: _withKapyAi(
+                        Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            const Positioned(
+                              left: 0,
+                              top: 0,
+                              right: 0,
+                              height: pageInset,
+                              child: WindowDragArea(child: SizedBox.expand()),
                             ),
-                            child: PageCard(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  if (tasks != null)
-                                    ..._buildTasksPage(
-                                      tasks,
-                                      listVisible: listFits && listShown,
-                                    )
-                                  else ...[
-                                    PageToolbar(
-                                      space: space.title,
-                                      section: pinned ? 'Pinned' : null,
-                                      listVisible: listFits && listShown,
-                                      onShowList: _toggleList,
-                                      showListShortcut: _sidebarShortcut,
-                                      noun: space == LibrarySpace.drawings
-                                          ? 'drawing'
-                                          : 'note',
-                                      onCreate: _createInSpace,
-                                      newNoteShortcut: widget.shortcuts
-                                          .bindingFor(ShortcutAction.newNote)
-                                          ?.displayLabel,
-                                      noteOpen: selected != null,
-                                      syncStatus: widget.account?.sync?.status,
-                                      members: _selectedMembers,
-                                      present: _selectedPresence,
-                                      currentUserId:
-                                          widget.account?.sharing?.userId ?? '',
-                                      noteShared: selected?.isShared ?? false,
-                                      onShare: _shareSelected,
-                                      pinned: pinned,
-                                      onTogglePin:
-                                          selected == null || _specialMode
-                                          ? null
-                                          : () =>
-                                                _togglePinnedNote(selected.id),
-                                      moreActions: _pageActions(selected),
-                                      onMore: (action) =>
-                                          _runPageAction(action, selected),
-                                      updates: widget.updates,
-                                      center:
-                                          selected != null &&
-                                              _canChooseMode(selected)
-                                          ? NoteModeSwitch(
-                                              drawing: selected.isDrawing,
-                                              onChanged: (drawing) =>
-                                                  _setDrawingMode(
-                                                    selected.id,
-                                                    drawing: drawing,
-                                                  ),
-                                            )
-                                          : null,
-                                    ),
-                                    Expanded(child: _buildWideWorkspace()),
+                            AnimatedPadding(
+                              duration: const Duration(milliseconds: 160),
+                              curve: Curves.easeOutCubic,
+                              padding: EdgeInsets.fromLTRB(
+                                listFits && listShown ? 0 : pageInset,
+                                pageInset,
+                                pageInset,
+                                pageInset,
+                              ),
+                              child: PageCard(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    if (tasks != null)
+                                      ..._buildTasksPage(
+                                        tasks,
+                                        listVisible: listFits && listShown,
+                                      )
+                                    else ...[
+                                      PageToolbar(
+                                        space: space.title,
+                                        section: pinned ? 'Pinned' : null,
+                                        listVisible: listFits && listShown,
+                                        onShowList: _toggleList,
+                                        showListShortcut: _sidebarShortcut,
+                                        noun: space == LibrarySpace.drawings
+                                            ? 'drawing'
+                                            : 'note',
+                                        onCreate: _createInSpace,
+                                        newNoteShortcut: widget.shortcuts
+                                            .bindingFor(ShortcutAction.newNote)
+                                            ?.displayLabel,
+                                        noteOpen: selected != null,
+                                        syncStatus:
+                                            widget.account?.sync?.status,
+                                        members: _selectedMembers,
+                                        present: _selectedPresence,
+                                        currentUserId:
+                                            widget.account?.sharing?.userId ??
+                                            '',
+                                        noteShared: selected?.isShared ?? false,
+                                        onShare: _shareSelected,
+                                        assistant: _kapyAiButton(
+                                          extent: AppPlatform.hasPointer
+                                              ? 32
+                                              : AppControlMetrics
+                                                    .iconButtonExtent,
+                                          gap: 6,
+                                        ),
+                                        pinned: pinned,
+                                        onTogglePin:
+                                            selected == null || _specialMode
+                                            ? null
+                                            : () => _togglePinnedNote(
+                                                selected.id,
+                                              ),
+                                        moreActions: _pageActions(selected),
+                                        onMore: (action) =>
+                                            _runPageAction(action, selected),
+                                        updates: widget.updates,
+                                        center:
+                                            selected != null &&
+                                                _canChooseMode(selected)
+                                            ? NoteModeSwitch(
+                                                drawing: selected.isDrawing,
+                                                onChanged: (drawing) =>
+                                                    _setDrawingMode(
+                                                      selected.id,
+                                                      drawing: drawing,
+                                                    ),
+                                              )
+                                            : null,
+                                      ),
+                                      Expanded(child: _buildWideWorkspace()),
+                                    ],
                                   ],
-                                ],
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -3273,6 +3399,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 onSettingsPressed: _showSettings,
                 onCreate: _createNote,
                 onShare: _shareSelected,
+                assistant: _kapyAiButton(
+                  extent: AppControlMetrics.iconButtonExtent,
+                  gap: 2,
+                ),
                 members: _selectedMembers,
                 present: _selectedPresence,
                 currentUserId: widget.account?.sharing?.userId ?? '',
@@ -3652,6 +3782,7 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onToggleResults,
     required this.onToggleAlwaysOnTop,
     required this.onDeleteNote,
+    required this.onToggleKapyAi,
     required this.shortcuts,
     required this.autofocus,
   });
@@ -3681,6 +3812,9 @@ class _DesktopShortcuts extends StatelessWidget {
   final VoidCallback onToggleResults;
   final VoidCallback? onToggleAlwaysOnTop;
   final VoidCallback? onDeleteNote;
+
+  /// Null where Kapy AI is not built in, which leaves its chord unbound.
+  final VoidCallback? onToggleKapyAi;
   final ShortcutPrefs shortcuts;
   final bool autofocus;
 
@@ -3732,6 +3866,8 @@ class _DesktopShortcuts extends StatelessWidget {
             ?onToggleAlwaysOnTop,
         ?shortcuts.bindingFor(ShortcutAction.deleteNote)?.activator:
             ?onDeleteNote,
+        ?shortcuts.bindingFor(ShortcutAction.toggleKapyAi)?.activator:
+            ?onToggleKapyAi,
       },
       child: Focus(focusNode: focusNode, autofocus: autofocus, child: child),
     );

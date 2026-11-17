@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
@@ -1554,6 +1555,7 @@ void main() {
     // The rail shows one pane at a time, so the general options are gone.
     expect(find.text('Daily separators'), findsNothing);
     for (final action in ShortcutAction.values) {
+      if (action == ShortcutAction.toggleKapyAi && !kapyAiAvailable) continue;
       expect(find.text(action.label), findsWidgets);
     }
 
