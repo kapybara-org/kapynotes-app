@@ -517,9 +517,18 @@ class NoteFieldState extends State<NoteField>
     if (widget.readOnly) return;
     final remote = _remote ?? (start: _window.start, value: _windowValue);
     final previous = _previousRemote;
+    final holdsPrevious = previous != null && _holds(previous);
     if (_holds(remote)) {
-      _applyRemote(remote, value, fromRemote: true);
-    } else if (previous != null && _holds(previous)) {
+      // Without the text it was made from, a whole value fits either window
+      // the platform was sent, when the window has moved and both are still
+      // in the note. Send the current one again rather than guess. Over the
+      // same start, as after a formatter's edit, the current one is it.
+      if (holdsPrevious && previous.start != remote.start) {
+        _resync();
+      } else {
+        _applyRemote(remote, value, fromRemote: true);
+      }
+    } else if (holdsPrevious) {
       _applyRemote(previous, value, fromRemote: false);
     } else {
       _resync();

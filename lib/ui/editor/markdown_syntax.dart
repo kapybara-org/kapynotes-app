@@ -1051,15 +1051,25 @@ class MarkdownAnalysis {
   ///
   /// An address inside `[words](address)` is the link's destination, not a
   /// second link, and one inside code is not a link at all.
+  ///
+  /// [found] is in the order it starts, as [findNoteLinks] gives it.
   List<NoteLink> linksWith(List<NoteLink> found) {
+    final taken = _merged([
+      ...literals,
+      ...addresses,
+      for (final link in links) TextRange(start: link.start, end: link.end),
+    ]);
+    var next = 0;
+    bool free(NoteLink link) {
+      while (next < taken.length && taken[next].end <= link.start) {
+        next++;
+      }
+      return next == taken.length || taken[next].start >= link.end;
+    }
+
     final result = <NoteLink>[
       for (final link in found)
-        if (!_overlaps(link.start, link.end, literals) &&
-            !_overlaps(link.start, link.end, addresses) &&
-            !links.any(
-              (written) => link.start < written.end && link.end > written.start,
-            ))
-          link,
+        if (free(link)) link,
       for (final link in links)
         if (_launchable(link.destination) case final uri?)
           NoteLink(

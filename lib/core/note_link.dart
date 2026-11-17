@@ -1,3 +1,4 @@
+import 'changed_lines.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -110,6 +111,40 @@ List<NoteLink> findNoteLinks(String source) {
     links.add(NoteLink(start: match.start, end: end, text: text, uri: uri));
   }
   return List.unmodifiable(links);
+}
+
+/// [findNoteLinks] for a note that changes a line at a time. No link crosses
+/// a line break, so only the lines changed since the last call are read
+/// again, and the links around them are kept.
+class NoteLinkFinder {
+  String? _source;
+  List<NoteLink> _links = const [];
+
+  List<NoteLink> find(String source) {
+    final before = _source;
+    _source = source;
+    if (before == null) return _links = findNoteLinks(source);
+    final changed = changedLines(before, source);
+    final shift = changed.newEnd - changed.oldEnd;
+    NoteLink moved(NoteLink link, int by) => by == 0
+        ? link
+        : NoteLink(
+            start: link.start + by,
+            end: link.end + by,
+            text: link.text,
+            uri: link.uri,
+          );
+    return _links = List.unmodifiable([
+      for (final link in _links)
+        if (link.start < changed.start) link,
+      for (final link in findNoteLinks(
+        source.substring(changed.start, changed.newEnd),
+      ))
+        moved(link, changed.start),
+      for (final link in _links)
+        if (link.start >= changed.oldEnd) moved(link, shift),
+    ]);
+  }
 }
 
 bool _isPlausibleBareDomain(String text, Uri uri) {
