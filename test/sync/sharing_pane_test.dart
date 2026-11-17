@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
@@ -30,6 +31,7 @@ class MemoryStore extends LocalStore {
 }) {
   final store = MemoryStore();
   final notes = NotesStore(store);
+  final state = SyncState(store);
   return (
     account: Account(
       auth: FakeAuth(
@@ -41,9 +43,14 @@ class MemoryStore extends LocalStore {
       syncApi: (_) => FakeApi(server, device: 'device-$userId', userId: userId),
       keys: KeyStore(InMemorySecureStore()),
       notes: notes,
-      state: SyncState(store),
+      state: state,
       store: store,
-      docStorage: MemoryDocStorage(),
+      tasks: TaskLibrary(
+        notes: notes,
+        store: store,
+        state: state,
+        storage: MemoryDocStorage(),
+      ),
     ),
     notes: notes,
   );

@@ -18,6 +18,7 @@ import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
@@ -3138,15 +3139,21 @@ void main() {
     (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final syncState = SyncState(store);
       final account = Account(
         auth: FakeAuth(),
         syncApi: (_) =>
             FakeApi(FakeServer(), device: 'device-1', userId: 'user-1'),
         keys: KeyStore(InMemorySecureStore()),
         notes: notes,
-        state: SyncState(store),
+        state: syncState,
         store: store,
-        docStorage: MemoryDocStorage(),
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          state: syncState,
+          storage: MemoryDocStorage(),
+        ),
       );
       addTearDown(account.dispose);
       await tester.runAsync(account.restore);

@@ -76,7 +76,7 @@ Widget _page(
           lastUpdatedAt: _now,
           now: () => _now,
           displayTime: (time) => time,
-          onDocumentChanged: (body, formats, attachments) {
+          onDocumentChanged: (body, formats, attachments, _) {
             onBody?.call(body);
             onFormats?.call(formats);
           },

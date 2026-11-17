@@ -73,7 +73,7 @@ Widget harness(
           readOnly: readOnly,
           onMarkdownEnabledChanged: onMarkdownEnabledChanged,
           autofocus: autofocus,
-          onDocumentChanged: (body, formats, attachments) {
+          onDocumentChanged: (body, formats, attachments, _) {
             onBodyChanged?.call(body);
             onFormatsChanged?.call(formats);
           },

@@ -61,7 +61,7 @@ Widget harness(String body, FakeCaretSource source) => MaterialApp(
       highlighter: Highlighter(engine.registry),
       resultsVisible: true,
       remoteCarets: source,
-      onDocumentChanged: (_, _, _) {},
+      onDocumentChanged: (_, _, _, _) {},
       onSettingsPressed: () {},
       writingFont: WritingFont.handwritten,
       shortcuts: shortcutPrefs,

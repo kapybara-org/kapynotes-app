@@ -7,6 +7,7 @@ import 'package:kapy_notes/billing/purchase_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
@@ -55,14 +56,20 @@ void main() {
       now: () => DateTime.utc(2026, 9, 1).add(Duration(minutes: tick++)),
     );
     await notes.load();
+    final syncState = SyncState(store);
     account = Account(
       auth: FakeAuth(),
       syncApi: (_) => FakeApi(FakeServer()),
       keys: KeyStore(InMemorySecureStore()),
       notes: notes,
-      state: SyncState(store),
+      state: syncState,
       store: store,
-      docStorage: MemoryDocStorage(),
+      tasks: TaskLibrary(
+        notes: notes,
+        store: store,
+        state: syncState,
+        storage: MemoryDocStorage(),
+      ),
     );
     billingApi = FakeBillingApi();
     purchases = FakePurchaseStore();
