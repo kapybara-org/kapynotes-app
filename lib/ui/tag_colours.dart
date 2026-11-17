@@ -81,18 +81,18 @@ typedef TagMark = ({String name, TagColour? colour});
 
 /// Which tags each note carries, in the note's own order, for whatever below
 /// it draws a note: the first one colours it.
-class NoteTags extends InheritedWidget {
-  const NoteTags({super.key, required this.marksOf, required super.child});
+class TagMarks extends InheritedWidget {
+  const TagMarks({super.key, required this.marksOf, required super.child});
 
   final List<TagMark> Function(String noteId) marksOf;
 
   /// [noteId]'s tags; none where nothing above [context] keeps them.
   static List<TagMark> of(BuildContext context, String noteId) =>
-      context.dependOnInheritedWidgetOfExactType<NoteTags>()?.marksOf(noteId) ??
+      context.dependOnInheritedWidgetOfExactType<TagMarks>()?.marksOf(noteId) ??
       const [];
 
   @override
-  bool updateShouldNotify(NoteTags oldWidget) =>
+  bool updateShouldNotify(TagMarks oldWidget) =>
       !identical(oldWidget.marksOf, marksOf);
 }
 

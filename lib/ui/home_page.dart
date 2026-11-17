@@ -78,6 +78,8 @@ import 'tasks/tasks_sidebar.dart';
 import 'sidebar.dart';
 import 'sidebar_timestamp.dart';
 import 'settings_dialog.dart';
+import 'tag_colours.dart';
+import 'tag_ui.dart';
 import 'sidebar_swipe.dart';
 import 'spaces_rail.dart';
 import 'split_view.dart';
@@ -235,6 +237,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The kinds of media the list beside the rail is narrowed to. Not kept
   /// across launches, so a filter left on cannot pass for missing notes.
   Set<NoteMedia> _mediaFilter = NoteMedia.values.toSet();
+
+  /// The tags that list is narrowed to, kept the same way.
+  TagFilter _tagFilter = const TagFilter();
 
   /// Whether that list shows every pinned note, after See all.
   bool _pinnedOnly = false;
@@ -2096,8 +2101,80 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// again on the way out.
   void _clearFilter() {
     _setShow(NotesShow.all);
-    if (_mediaFilter.length == NoteMedia.values.length) return;
-    setState(() => _mediaFilter = NoteMedia.values.toSet());
+    setState(() {
+      _mediaFilter = NoteMedia.values.toSet();
+      _tagFilter = const TagFilter();
+    });
+  }
+
+  /// The tags the lists offer, in the person's order, each with how many
+  /// notes carry it: the archived ones in Archive, and otherwise the rest,
+  /// with Hidden's only while Hidden is open. While it is locked no Hidden
+  /// note counts and a tag found only on Hidden notes is left out, so
+  /// neither gives Hidden away.
+  List<TagEntry> _listedTags() {
+    final store = widget.tags;
+    if (store == null) return const [];
+    final notes = widget.notes;
+    final counted = {
+      for (final note
+          in _archiveMode
+              ? notes.archivedNotes
+              : [...notes.notes, if (_hiddenMode) ...notes.hiddenNotes])
+        note.id,
+    };
+    final open = {
+      ...counted,
+      for (final note in [...notes.notes, ...notes.archivedNotes]) note.id,
+    };
+    final counts = <String, int>{};
+    final seen = <String>{};
+    final shown = <String>{};
+    for (final noteId in store.noteIds) {
+      for (final tag in store.tagsOf(noteId)) {
+        seen.add(tag.id);
+        if (open.contains(noteId)) shown.add(tag.id);
+        if (counted.contains(noteId)) {
+          counts.update(tag.id, (n) => n + 1, ifAbsent: () => 1);
+        }
+      }
+    }
+    return [
+      for (final tag in store.tags)
+        if (!seen.contains(tag.id) || shown.contains(tag.id))
+          (tag: tag, count: counts[tag.id] ?? 0),
+    ];
+  }
+
+  /// The tag filter as far as the listed tags go.
+  TagFilter get _tagsNarrowed =>
+      _tagFilter.within([for (final entry in _listedTags()) entry.tag.id]);
+
+  /// A chip's tap: the list, narrowed to that tag alone.
+  void _filterToTag(String tagId) {
+    setState(() => _tagFilter = TagFilter(ids: {tagId}));
+    if (!_listShown) _setListShown(true);
+  }
+
+  Widget _withTags(Widget child) {
+    final store = widget.tags;
+    if (store == null) return child;
+    return ListenableBuilder(
+      listenable: store,
+      child: child,
+      builder: (context, child) => TagShelf(
+        store: store,
+        listed: _listedTags,
+        isShared: (noteId) => widget.notes.byId(noteId)?.isShared ?? false,
+        onFilter: _filterToTag,
+        child: TagMarks(
+          marksOf: (noteId) => [
+            for (final tag in store.tagsOf(noteId)) tagMarkOf(tag),
+          ],
+          child: child!,
+        ),
+      ),
+    );
   }
 
   /// Whether opening [note] should place the cursor at its end and raise the
@@ -2399,6 +2476,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         onTranscriptionReady: _resumeTranscriptionsFromSettings,
         cloudAccess: widget.cloudAccess,
         hiddenNotes: widget.hiddenNotesGate,
+        tags: widget.tags,
+        listedTags: _listedTags,
       );
     } finally {
       if (mounted && _settingsOpen) setState(() => _settingsOpen = false);
@@ -2522,13 +2601,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// [notes] narrowed to the space and to the media the filter has ticked.
   /// Drawings has no media filter: every item in it is a drawing.
   List<Note> _filtered(List<Note> notes) {
-    final narrowed = _narrowed(notes);
-    if (_drawingsOnly || _mediaFilter.length == NoteMedia.values.length) {
-      return narrowed;
-    }
+    final tags = widget.tags;
+    final byTag = tags == null ? const TagFilter() : _tagsNarrowed;
+    final byMedia =
+        !_drawingsOnly && _mediaFilter.length < NoteMedia.values.length;
     return [
-      for (final note in narrowed)
-        if (NoteMedia.shows(note, _mediaFilter)) note,
+      for (final note in _narrowed(notes))
+        if ((!byMedia || NoteMedia.shows(note, _mediaFilter)) &&
+            (!byTag.narrowed ||
+                byTag.matches([
+                  for (final tag in tags!.tagsOf(note.id)) tag.id,
+                ])))
+          note,
     ];
   }
 
@@ -2598,7 +2682,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       builder: (context, constraints) {
         final compact =
             AppPlatform.isMobile && constraints.maxWidth < kTwoPaneBreakpoint;
-        final page = compact ? _buildCompact(context) : _buildWide(context);
+        final page = _withTags(
+          compact ? _buildCompact(context) : _buildWide(context),
+        );
         final gesturePage = AppPlatform.isDesktop
             ? SidebarSwipe(
                 sidebarVisible: _listShown,
@@ -2838,6 +2924,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               onMediaChanged: (media) =>
                                   setState(() => _mediaFilter = media),
                               onClear: _clearFilter,
+                              tags: widget.tags == null ? null : _tagsNarrowed,
+                              onTagsChanged: (tags) =>
+                                  setState(() => _tagFilter = tags),
                               cards: widget.prefs.noteCards,
                               onCardsChanged: (cards) =>
                                   widget.prefs.noteCards = cards,

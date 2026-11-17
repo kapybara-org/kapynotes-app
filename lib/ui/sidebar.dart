@@ -32,6 +32,7 @@ import 'notes_list.dart';
 import 'safety_dialogs.dart';
 import 'sidebar_timestamp.dart';
 import 'streak_badge.dart';
+import 'tag_ui.dart';
 import 'tonal_button.dart';
 import 'window_drag_area.dart';
 
@@ -2857,6 +2858,13 @@ class _NoteRowState extends State<NoteRow> {
           label: widget.pinned ? 'Unpin note' : 'Pin note',
           icon: widget.pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
         ),
+      if (TagShelf.maybeOf(context) != null)
+        const KapyMenuAction(
+          value: 'tags',
+          label: 'Tags',
+          icon: KapyIcons.tagRounded,
+          hint: '›',
+        ),
       if (widget.onShare != null)
         KapyMenuAction(
           value: 'share',
@@ -3024,6 +3032,9 @@ class _NoteRowState extends State<NoteRow> {
     if (choice == 'share') widget.onShare?.call();
     if (choice == 'pin') widget.onTogglePin?.call();
     if (choice == 'open-side') widget.onOpenToSide?.call();
+    if (choice == 'tags' && context.mounted) {
+      await showTagPickerAt(context, position, widget.note.id);
+    }
   }
 
   /// The desktop list's row or card, with its actions button while the

@@ -73,7 +73,7 @@ class NoteSwatch extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         color:
-            NoteTags.of(context, note.id).firstOrNull?.colour?.dot(palette) ??
+            TagMarks.of(context, note.id).firstOrNull?.colour?.dot(palette) ??
             (palette.brightness == Brightness.dark
                 ? const Color(0xFF3A3530)
                 : const Color(0xFFD9D2C1)),

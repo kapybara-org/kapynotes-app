@@ -68,6 +68,7 @@ class NoteMetaRow extends StatelessWidget {
     this.readOnlyIcon,
     this.onReadOnlyPressed,
     this.today = false,
+    this.tags,
   });
 
   final String edited;
@@ -87,6 +88,9 @@ class NoteMetaRow extends StatelessWidget {
   final String? readOnlyLabel;
   final IconData? readOnlyIcon;
   final VoidCallback? onReadOnlyPressed;
+
+  /// The note's tag chips and + Tag, at the end of the line.
+  final Widget? tags;
 
   static const double _gap = 10;
 
@@ -187,6 +191,10 @@ class NoteMetaRow extends StatelessWidget {
               const SizedBox(width: _gap),
             ],
             item,
+          ],
+          if (tags case final tags?) ...[
+            const SizedBox(width: _gap),
+            Flexible(child: tags),
           ],
         ],
       ),

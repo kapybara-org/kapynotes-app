@@ -34,7 +34,7 @@ void main() {
     MaterialApp(
       theme: KapyTheme.dark(),
       home: Material(
-        child: NoteTags(
+        child: TagMarks(
           marksOf: (_) => tags,
           child: Center(
             child: SizedBox(
@@ -144,7 +144,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: KapyTheme.dark(),
-          home: NoteTags(
+          home: TagMarks(
             marksOf: (_) => tags,
             child: Center(child: NoteSwatch(note: note('Trip budget'))),
           ),

@@ -48,6 +48,7 @@ import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_swipe.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
+import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/page_card.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/toolbar.dart';
@@ -463,6 +464,230 @@ void main() {
     expect(home.account, isNull);
     expect(home.tags, same(relaunched));
     expect(relaunched.tagsOf(note.id).map((t) => t.name.v), ['Travel']);
+  });
+
+  group('tags', () {
+    late TagStore tags;
+
+    setUp(() async {
+      tags = TagStore(store);
+      await tags.load();
+    });
+
+    List<String> namesOn(String noteId) => [
+      for (final tag in tags.tagsOf(noteId)) tag.name.v,
+    ];
+
+    Future<void> openPicker(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('note-add-tag')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> typeAndEnter(WidgetTester tester, String text) async {
+      await tester.enterText(
+        find.byKey(const ValueKey('tag-picker-field')),
+        text,
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> openTagsFilter(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
+      await tester.pumpAndSettle();
+    }
+
+    String countOn(WidgetTester tester, Tag tag) => tester
+        .widget<Text>(
+          find
+              .descendant(
+                of: find.byKey(ValueKey('tag-filter-${tag.id}')),
+                matching: find.byType(Text),
+              )
+              .last,
+        )
+        .data!;
+
+    testWidgets('+ Tag creates a tag, and its name in another case picks it', (
+      tester,
+    ) async {
+      final note = notes.create(body: 'Trip to Kochi');
+      await pumpApp(tester, tags: tags);
+      await openPicker(tester);
+      await typeAndEnter(tester, 'Travel');
+      expect(namesOn(note.id), ['Travel']);
+
+      tags.removeTag(note.id, tags.tags.single.id);
+      await tester.pumpAndSettle();
+      await typeAndEnter(tester, 'TRAVEL');
+      expect(tags.tags, hasLength(1));
+      expect(namesOn(note.id), ['Travel']);
+    });
+
+    testWidgets('a name past 32 characters stops at 32', (tester) async {
+      final note = notes.create(body: 'Long names');
+      await pumpApp(tester, tags: tags);
+      await openPicker(tester);
+      await typeAndEnter(tester, 'x' * 33);
+      expect(namesOn(note.id), ['x' * 32]);
+    });
+
+    testWidgets('a note takes at most 20 tags, and says so', (tester) async {
+      final note = notes.create(body: 'Busy');
+      tags.setTags(note.id, [
+        for (var i = 0; i < noteTagsMax; i++) tags.create('tag $i')!.id,
+      ]);
+      await pumpApp(tester, tags: tags);
+      await openPicker(tester);
+      await typeAndEnter(tester, 'One more');
+      expect(find.text('A note takes at most 20 tags.'), findsOneWidget);
+      expect(tags.tags.map((tag) => tag.name.v), isNot(contains('One more')));
+      expect(tags.tagsOf(note.id), hasLength(noteTagsMax));
+    });
+
+    testWidgets(
+      'while Hidden is locked, no count includes it and no tag gives it away',
+      (tester) async {
+        final hidden = notes.create(body: 'Private');
+        final open = notes.create(body: 'Public');
+        notes.hide(hidden.id);
+        prefs.load();
+        prefs.hiddenFolderVisible = true;
+        final work = tags.create('Work')!;
+        final secret = tags.create('Secret')!;
+        tags.addTag(open.id, work.id);
+        tags.addTag(hidden.id, work.id);
+        tags.addTag(hidden.id, secret.id);
+        await pumpApp(tester, tags: tags, hiddenNotesGate: _HiddenGate());
+
+        await openTagsFilter(tester);
+        expect(countOn(tester, work), '1');
+        expect(find.byKey(ValueKey('tag-filter-${secret.id}')), findsNothing);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        await openPicker(tester);
+        expect(find.byKey(ValueKey('tag-row-${secret.id}')), findsNothing);
+        await typeAndEnter(tester, 'secret');
+        expect(namesOn(open.id), ['Work', 'Secret']);
+        expect(tags.tags, hasLength(2));
+        tags.removeTag(open.id, secret.id);
+        await tester.tapAt(const Offset(1000, 700));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('notes-filter-hidden')));
+        await tester.pumpAndSettle();
+        await openTagsFilter(tester);
+        expect(countOn(tester, work), '2');
+        expect(countOn(tester, secret), '1');
+      },
+    );
+
+    testWidgets('ticked tags narrow the list, any or all', (tester) async {
+      final both = notes.create(body: 'Both');
+      final workOnly = notes.create(body: 'Work only');
+      final bare = notes.create(body: 'Bare');
+      final work = tags.create('Work')!;
+      final home = tags.create('Home')!;
+      tags.setTags(both.id, [work.id, home.id]);
+      tags.setTags(workOnly.id, [work.id]);
+      await pumpApp(tester, tags: tags);
+
+      String count() => spaceCount(tester)!;
+      expect(count(), contains('3'));
+      await openTagsFilter(tester);
+      await tester.tap(find.byKey(ValueKey('tag-filter-${work.id}')));
+      await tester.pumpAndSettle();
+      expect(count(), contains('2'));
+      await tester.tap(find.byKey(ValueKey('tag-filter-${home.id}')));
+      await tester.pumpAndSettle();
+      expect(count(), contains('2'));
+      await tester.tap(find.byKey(const ValueKey('tag-filter-all')));
+      await tester.pumpAndSettle();
+      expect(count(), contains('1'));
+      await tester.tap(find.byKey(const ValueKey('tag-filter-none')));
+      await tester.pumpAndSettle();
+      expect(count(), contains('2'));
+      expect(bare.id, isNotEmpty);
+    });
+
+    testWidgets('delete asks once, and Undo puts the tag back in place', (
+      tester,
+    ) async {
+      final note = notes.create(body: 'Plans');
+      final ideas = tags.create('Ideas')!;
+      final work = tags.create('Work')!;
+      tags.setTags(note.id, [ideas.id, work.id]);
+      await pumpApp(tester, tags: tags);
+
+      unawaited(
+        deleteTag(tester.element(find.byType(HomePage)), tags, (
+          tag: ideas,
+          count: 1,
+        )),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Delete “Ideas”?'), findsOneWidget);
+      expect(
+        find.textContaining("It's on 1 note. The notes stay as they are"),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('tag-delete-confirm')));
+      await tester.pumpAndSettle();
+      expect(namesOn(note.id), ['Work']);
+      expect(find.text('Deleted “Ideas”'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(namesOn(note.id), ['Ideas', 'Work']);
+    });
+
+    testWidgets('Settings › Notes › Tags lists, creates and renames tags', (
+      tester,
+    ) async {
+      final first = notes.create(body: 'One');
+      final second = notes.create(body: 'Two');
+      final work = tags.create('Work')!;
+      tags.addTag(first.id, work.id);
+      tags.addTag(second.id, work.id);
+      await pumpApp(tester, tags: tags);
+      await openSettings(tester, section: SettingsSection.notes);
+
+      final row = find.byKey(ValueKey('settings-tag-${work.id}'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: row, matching: find.text('2 notes')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(ValueKey('settings-tag-more-${work.id}')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('tag-action-rename')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('tag-name-field')),
+        'Office',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(tags.byId(work.id)!.name.v, 'Office');
+
+      await tester.tap(find.byKey(const ValueKey('settings-new-tag')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('tag-name-field')),
+        'office',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(tags.tags, hasLength(1));
+    });
   });
 
   testWidgets('opens on the empty state and builds a note from it', (

@@ -9,12 +9,14 @@ import '../core/theme.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/note_drawing.dart';
+import '../data/tags.dart';
 import 'checklist_pie.dart';
 import 'compact_icon_button.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
 import 'sidebar.dart' show archiveIcon, hiddenIcon;
 import 'tag_colours.dart';
+import 'tag_ui.dart';
 
 /// What a note can hold besides words, in the order the media filter lists
 /// them.
@@ -304,7 +306,7 @@ class NoteCardFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final tags = NoteTags.of(context, note.id);
+    final tags = TagMarks.of(context, note.id);
     final colour = tags.firstOrNull?.colour;
     final tint = colour?.card(palette) ?? palette.surfaceBackground;
     final glance = this.glance;
@@ -587,7 +589,7 @@ class NoteListRowFace extends StatelessWidget {
     final summary = snippet ?? (note.isEmpty ? 'Empty' : glance.summary);
     final picking = this.picking;
     final marked = selected || picking == true;
-    final first = NoteTags.of(context, note.id).firstOrNull;
+    final first = TagMarks.of(context, note.id).firstOrNull;
     final tint = first?.colour?.card(palette) ?? palette.surfaceBackground;
     // The border is always there, clear until the row is open or ringed, so
     // opening a note does not nudge its text.
@@ -797,7 +799,7 @@ class DrawingCardFace extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final picking = this.picking;
-    final tags = NoteTags.of(context, note.id);
+    final tags = TagMarks.of(context, note.id);
     final colour = tags.firstOrNull?.colour;
     final tint = colour?.card(palette) ?? palette.editorBackground;
     final card = Container(
@@ -1144,6 +1146,8 @@ class NotesListControls extends StatelessWidget {
     required this.onClear,
     required this.cards,
     required this.onCardsChanged,
+    this.tags,
+    this.onTagsChanged,
   });
 
   final NotesShow show;
@@ -1172,6 +1176,10 @@ class NotesListControls extends StatelessWidget {
   final VoidCallback onClear;
   final bool cards;
   final ValueChanged<bool> onCardsChanged;
+
+  /// The tags the list is narrowed to; null where there are no tags.
+  final TagFilter? tags;
+  final ValueChanged<TagFilter>? onTagsChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1229,7 +1237,8 @@ class NotesListControls extends StatelessWidget {
     final everything = media == null ? 'All drawings' : NotesShow.all.label;
     final narrowed =
         show != NotesShow.all ||
-        (media != null && media.length < NoteMedia.values.length);
+        (media != null && media.length < NoteMedia.values.length) ||
+        (tags?.narrowed ?? false);
     return Row(
       children: [
         Expanded(
@@ -1245,6 +1254,8 @@ class NotesListControls extends StatelessWidget {
                   archivedCount: archivedCount,
                   media: media,
                   onMediaChanged: onMediaChanged,
+                  tags: tags,
+                  onTagsChanged: onTagsChanged,
                   everything: everything,
                   narrowed: narrowed,
                 ),
@@ -1296,6 +1307,8 @@ class _NotesFilter extends StatefulWidget {
     required this.archivedCount,
     required this.media,
     required this.onMediaChanged,
+    required this.tags,
+    required this.onTagsChanged,
     required this.everything,
     required this.narrowed,
   });
@@ -1308,6 +1321,8 @@ class _NotesFilter extends StatefulWidget {
   final int archivedCount;
   final Set<NoteMedia>? media;
   final ValueChanged<Set<NoteMedia>>? onMediaChanged;
+  final TagFilter? tags;
+  final ValueChanged<TagFilter>? onTagsChanged;
 
   /// What the button says while nothing is narrowed.
   final String everything;
@@ -1320,8 +1335,12 @@ class _NotesFilter extends StatefulWidget {
 class _NotesFilterState extends State<_NotesFilter> {
   final _menu = OverlayPortalController();
   final _link = LayerLink();
+  bool _tagsOpen = false;
 
-  void _toggle() => setState(_menu.isShowing ? _menu.hide : _menu.show);
+  void _toggle() => setState(() {
+    _tagsOpen = false;
+    _menu.isShowing ? _menu.hide() : _menu.show();
+  });
 
   void _close() {
     if (_menu.isShowing) setState(_menu.hide);
@@ -1351,32 +1370,48 @@ class _NotesFilterState extends State<_NotesFilter> {
   }
 
   /// What the button says: one narrowed group names itself ("Archive",
-  /// "Voice, Image"); combined, each gives its first choice and how many
-  /// more ("Archive · Voice +1"). Where that runs out of [room], the choice
-  /// of notes goes, since the title over the list already names it.
-  String _label(TextStyle style, double room) {
+  /// "Voice, Image", "● Work"); combined, each gives its first choice and
+  /// how many more ("Archive · Voice +1 · Work +2"). Where that runs out of
+  /// [room], the choice of notes goes, since the title over the list
+  /// already names it. The dot is the first tag's, while tags alone narrow.
+  ({String text, Tag? dot}) _label(TextStyle style, double room) {
     final show = widget.show == NotesShow.all ? null : widget.show.label;
-    final ticked = [
+    final kinds = [
       for (final media in NoteMedia.values)
         if (widget.media?.contains(media) ?? false) media.label,
     ];
-    if (widget.media == null || ticked.length == NoteMedia.values.length) {
-      return show ?? widget.everything;
+    final tags = widget.tags ?? const TagFilter();
+    final ticked = [
+      for (final entry in TagShelf.maybeOf(context)?.listed() ?? <TagEntry>[])
+        if (tags.ids.contains(entry.tag.id)) entry.tag,
+    ];
+    final groups = [
+      if (show != null) [show],
+      if (widget.media != null && kinds.length < NoteMedia.values.length) kinds,
+      if (tags.narrowed)
+        [for (final tag in ticked) tag.name.v, if (tags.none) 'No tag'],
+    ];
+    if (groups.isEmpty) return (text: widget.everything, dot: null);
+    if (groups.length == 1) {
+      final tagsAlone = tags.narrowed;
+      return (
+        text: groups.single.join(', '),
+        dot: tagsAlone ? ticked.firstOrNull : null,
+      );
     }
-    if (show == null) return ticked.join(', ');
-    final head = ticked.first;
-    final more = ticked.length - 1;
-    final kinds = more == 0 ? head : '$head +$more';
-    final both = '$show · $kinds';
+    String part(List<String> group) =>
+        group.length == 1 ? group.first : '${group.first} +${group.length - 1}';
+    final all = groups.map(part).join(' · ');
+    if (show == null) return (text: all, dot: null);
     final painter = TextPainter(
-      text: TextSpan(text: both, style: style),
+      text: TextSpan(text: all, style: style),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
       maxLines: 1,
     )..layout(maxWidth: room);
     final fits = !painter.didExceedMaxLines;
     painter.dispose();
-    return fits ? both : kinds;
+    return (text: fits ? all : groups.skip(1).map(part).join(' · '), dot: null);
   }
 
   @override
@@ -1400,13 +1435,13 @@ class _NotesFilterState extends State<_NotesFilter> {
         final roomy = constraints.maxWidth >= 72;
         // The padding, border, filter icon and chevron around the label.
         const chrome = 9 + 8 + 2 + 14 + 6 + 6 + 13;
-        final label = roomy
+        final (:text, :dot) = roomy
             ? _label(style, constraints.maxWidth - chrome)
-            : widget.everything;
+            : (text: widget.everything, dot: null);
         return Semantics(
           button: true,
           expanded: open,
-          label: 'Notes filter, $label',
+          label: 'Notes filter, $text',
           excludeSemantics: true,
           onTap: _toggle,
           child: MouseRegion(
@@ -1444,9 +1479,13 @@ class _NotesFilterState extends State<_NotesFilter> {
                     ),
                     if (roomy) ...[
                       const SizedBox(width: 6),
+                      if (dot != null) ...[
+                        TagDot(tagColourOf(dot.colour.v), size: 7),
+                        const SizedBox(width: 5),
+                      ],
                       Flexible(
                         child: Text(
-                          label,
+                          text,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: style,
@@ -1473,7 +1512,11 @@ class _NotesFilterState extends State<_NotesFilter> {
 
     return TapRegion(
       groupId: _menu,
-      onTapOutside: (_) => _close(),
+      // A tag's own menu or its delete question sits over the filter's, and
+      // a click there leaves the filter open beneath it.
+      onTapOutside: (_) {
+        if (ModalRoute.of(context)?.isCurrent ?? true) _close();
+      },
       child: CompositedTransformTarget(
         link: _link,
         child: OverlayPortal(
@@ -1492,16 +1535,32 @@ class _NotesFilterState extends State<_NotesFilter> {
                   },
                   child: Focus(
                     autofocus: true,
-                    child: _FilterMenu(
-                      show: widget.show,
-                      offersShow: widget.offersShow,
-                      onShow: _choose,
-                      hiddenListed: widget.hiddenListed,
-                      hiddenShortcut: widget.hiddenShortcut,
-                      archivedCount: widget.archivedCount,
-                      everything: widget.everything,
-                      media: widget.media,
-                      onTick: _tick,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _FilterMenu(
+                          show: widget.show,
+                          offersShow: widget.offersShow,
+                          onShow: _choose,
+                          hiddenListed: widget.hiddenListed,
+                          hiddenShortcut: widget.hiddenShortcut,
+                          archivedCount: widget.archivedCount,
+                          everything: widget.everything,
+                          media: widget.media,
+                          onTick: _tick,
+                          onTags: widget.tags == null
+                              ? null
+                              : () => setState(() => _tagsOpen = !_tagsOpen),
+                        ),
+                        if (_tagsOpen && widget.tags != null) ...[
+                          const SizedBox(width: 4),
+                          _TagsMenu(
+                            filter: widget.tags!,
+                            onChanged: widget.onTagsChanged!,
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
@@ -1526,6 +1585,7 @@ class _FilterMenu extends StatelessWidget {
     required this.everything,
     required this.media,
     required this.onTick,
+    required this.onTags,
   });
 
   final NotesShow show;
@@ -1539,6 +1599,9 @@ class _FilterMenu extends StatelessWidget {
 
   /// Null for All media.
   final ValueChanged<NoteMedia?> onTick;
+
+  /// Opens or closes the Tags submenu; null leaves Tags out.
+  final VoidCallback? onTags;
 
   @override
   Widget build(BuildContext context) {
@@ -1638,6 +1701,27 @@ class _FilterMenu extends StatelessWidget {
                 onTap: () => onTick(kind),
               ),
             ],
+          ],
+          if (onTags case final onTags?) ...[
+            if (offersShow || media != null)
+              Container(
+                height: 1,
+                margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                color: palette.separator,
+              ),
+            _ShowMenuRow(
+              key: const ValueKey('notes-filter-tags'),
+              label: 'Tags',
+              icon: KapyIcons.tagRounded,
+              chosen: false,
+              trailing: KapyIcon(
+                KapyIcons.chevronRightRounded,
+                size: 13,
+                strokeWidth: 2,
+                color: palette.textTertiary,
+              ),
+              onTap: onTags,
+            ),
           ],
         ],
       ),
@@ -1803,6 +1887,299 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
                     palette.textSubheading,
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The filter's Tags submenu: the tags in the person's order with their
+/// counts and boxes, then No tag, then Match any | all once two are ticked.
+/// Past eight tags a field finds one.
+class _TagsMenu extends StatefulWidget {
+  const _TagsMenu({required this.filter, required this.onChanged});
+
+  final TagFilter filter;
+  final ValueChanged<TagFilter> onChanged;
+
+  @override
+  State<_TagsMenu> createState() => _TagsMenuState();
+}
+
+class _TagsMenuState extends State<_TagsMenu> {
+  final _query = TextEditingController();
+  String? _renaming;
+
+  static const _findPast = 8;
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final shelf = TagShelf.maybeOf(context)!;
+    final filter = widget.filter;
+    final every = shelf.listed();
+    final query = _query.text.trim().toLowerCase();
+    final shown = [
+      for (final entry in every)
+        if (entry.tag.name.v.toLowerCase().contains(query)) entry,
+    ];
+    final quiet = _figtree(
+      AppTypeScale.small,
+      16,
+      FontWeight.w400,
+      palette.textTertiary,
+    );
+    Widget match(bool all) {
+      final on = filter.all == all;
+      return GestureDetector(
+        key: ValueKey(all ? 'tag-filter-all' : 'tag-filter-any'),
+        onTap: () => widget.onChanged(filter.copyWith(all: all)),
+        child: Container(
+          height: 22,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: on ? palette.segmentSelected : null,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            all ? 'all' : 'any',
+            style: _figtree(
+              AppTypeScale.small,
+              16,
+              on ? FontWeight.w600 : FontWeight.w500,
+              on ? palette.textPrimary : palette.textSecondary,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return TagPopover(
+      key: const ValueKey('tags-filter-menu'),
+      child: every.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                'Open a note and choose + Tag next to its date.',
+                style: quiet,
+              ),
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (every.length > _findPast)
+                  Container(
+                    height: 30,
+                    margin: const EdgeInsets.only(bottom: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
+                    decoration: BoxDecoration(
+                      color: palette.wellBackground,
+                      border: Border.all(color: palette.controlBorder),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        KapyIcon(
+                          KapyIcons.searchRounded,
+                          size: 14,
+                          strokeWidth: 1.8,
+                          color: palette.textTertiary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            key: const ValueKey('tag-filter-find'),
+                            controller: _query,
+                            onChanged: (_) => setState(() {}),
+                            style: _figtree(
+                              AppTypeScale.control,
+                              16,
+                              FontWeight.w400,
+                              palette.textPrimary,
+                            ),
+                            decoration: InputDecoration.collapsed(
+                              hintText: 'Find a tag',
+                              hintStyle: quiet,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 31.0 * 9),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (final entry in shown)
+                        _TagFilterRow(
+                          key: ValueKey('tag-filter-${entry.tag.id}'),
+                          entry: entry,
+                          ticked: filter.ids.contains(entry.tag.id),
+                          renaming: _renaming == entry.tag.id,
+                          onTap: () => widget.onChanged(
+                            filter.copyWith(
+                              ids: filter.ids.contains(entry.tag.id)
+                                  ? ({...filter.ids}..remove(entry.tag.id))
+                                  : {...filter.ids, entry.tag.id},
+                            ),
+                          ),
+                          onRename: (renaming) => setState(
+                            () => _renaming = renaming ? entry.tag.id : null,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                _MediaMenuRow(
+                  key: const ValueKey('tag-filter-none'),
+                  label: 'No tag',
+                  ticked: filter.none,
+                  onTap: () =>
+                      widget.onChanged(filter.copyWith(none: !filter.none)),
+                ),
+                if (filter.ticked >= 2) ...[
+                  Container(
+                    height: 1,
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    color: palette.separator,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text('Match', style: quiet)),
+                        match(false),
+                        const SizedBox(width: 2),
+                        match(true),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+    );
+  }
+}
+
+/// A tag in the Tags submenu: its box, dot, name and count, with ⋯ while the
+/// pointer is over it, and a field in its place while it is renamed.
+class _TagFilterRow extends StatefulWidget {
+  const _TagFilterRow({
+    super.key,
+    required this.entry,
+    required this.ticked,
+    required this.renaming,
+    required this.onTap,
+    required this.onRename,
+  });
+
+  final TagEntry entry;
+  final bool ticked;
+  final bool renaming;
+  final VoidCallback onTap;
+  final ValueChanged<bool> onRename;
+
+  @override
+  State<_TagFilterRow> createState() => _TagFilterRowState();
+}
+
+class _TagFilterRowState extends State<_TagFilterRow> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final store = TagShelf.maybeOf(context)!.store;
+    final tag = widget.entry.tag;
+    return Semantics(
+      checked: widget.ticked,
+      label: tag.name.v,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovering = true),
+        onExit: (_) => setState(() => _hovering = false),
+        child: GestureDetector(
+          onTap: widget.renaming ? null : widget.onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            height: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: _hovering ? palette.hover : null,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: Row(
+              children: [
+                _PickBox(checked: widget.ticked),
+                const SizedBox(width: 9),
+                TagDot(tagColourOf(tag.colour.v)),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: widget.renaming
+                      ? TagNameField(
+                          initial: tag.name.v,
+                          onSubmit: (name) {
+                            final kept = store.rename(tag.id, name);
+                            if (kept) widget.onRename(false);
+                            return kept;
+                          },
+                          onCancel: () => widget.onRename(false),
+                        )
+                      : Text(
+                          tag.name.v,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _figtree(
+                            AppTypeScale.control,
+                            16,
+                            FontWeight.w500,
+                            palette.textSubheading,
+                          ),
+                        ),
+                ),
+                const SizedBox(width: 9),
+                if (_hovering && !widget.renaming)
+                  GestureDetector(
+                    key: ValueKey('tag-filter-more-${tag.id}'),
+                    onTapUp: (details) => showTagActions(
+                      context,
+                      store: store,
+                      entry: widget.entry,
+                      position: details.globalPosition,
+                      onRename: () => widget.onRename(true),
+                    ),
+                    child: KapyIcon(
+                      KapyIcons.moreRounded,
+                      size: 15,
+                      color: palette.textSecondary,
+                    ),
+                  )
+                else
+                  Text(
+                    '${widget.entry.count}',
+                    style: _figtree(
+                      AppTypeScale.small,
+                      16,
+                      FontWeight.w400,
+                      palette.textTertiary,
+                    ),
+                  ),
               ],
             ),
           ),

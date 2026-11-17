@@ -53,6 +53,7 @@ import 'table_geometry.dart';
 import 'note_footer.dart';
 import 'note_header.dart';
 import '../sidebar_timestamp.dart';
+import '../tag_ui.dart';
 import '../../data/note_attachment.dart';
 import 'package:file_selector/file_selector.dart';
 
@@ -6332,6 +6333,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 ),
               Positioned(
                 left: padding.left,
+                right: padding.right,
                 top: y + title.row.bottom + EditorMetrics.metaGap * scale,
                 child: meta!,
               ),
@@ -6351,6 +6353,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           readOnlyLabel: widget.readOnly ? widget.readOnlyLabel : null,
           readOnlyIcon: widget.readOnlyIcon,
           onReadOnlyPressed: widget.onReadOnlyPressed,
+          tags: NoteTagChips(noteId: widget.noteId),
         ),
       ),
     );
