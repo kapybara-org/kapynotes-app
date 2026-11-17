@@ -100,6 +100,7 @@ void main() {
     bool hiddenUnlocked = false,
     bool withSettings = false,
     List<String> recentIds = const [],
+    bool askKapyAi = false,
     TagShelf? tags,
     Note? tagNote,
   }) async {
@@ -124,6 +125,7 @@ void main() {
             taskLabel: (note) => note.title,
             tasks: board,
             hiddenUnlocked: hiddenUnlocked,
+            askKapyAi: askKapyAi,
             tags: tags,
             tagNote: tagNote,
             settingsIndex: withSettings
@@ -342,6 +344,123 @@ void main() {
     expect(find.text('Settings'), findsNothing);
   });
 
+  group('Ask Kapy AI', () {
+    testWidgets('is offered only where Kapy AI can be asked', (tester) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester);
+      expect(find.text('Search…'), findsOneWidget);
+      await type(tester, 'sintra');
+
+      expect(row('Ask Kapy AI: sintra'), findsNothing);
+      expect(find.text('Ask Kapy AI'), findsNothing);
+      expect(row('New note: sintra'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await pumpMenu(tester, askKapyAi: true);
+      expect(find.text('Search or Ask Kapy AI…'), findsOneWidget);
+      await type(tester, 'sintra');
+      expect(row('Ask Kapy AI: sintra'), findsOneWidget);
+      expect(keycapOn(tester, 'Ask Kapy AI: sintra'), 'tab');
+      expect(
+        find.descendant(
+          of: row('Ask Kapy AI: sintra'),
+          matching: findKapyIcon(KapyIcons.sparklesOutlined),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('is not there before anything is typed', (tester) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+
+      expect(find.textContaining('Ask Kapy AI:'), findsNothing);
+      expect(find.text('Ask Kapy AI'), findsNothing);
+    });
+
+    testWidgets('the row asks the typed words when it is chosen', (
+      tester,
+    ) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+      await type(tester, 'sintra');
+
+      await tester.tap(row('Ask Kapy AI: sintra'));
+      expect((chosen! as AskKapyAiChoice).text, 'sintra');
+    });
+
+    testWidgets('Return on the highlighted row asks', (tester) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+      await type(tester, 'buy stamps');
+
+      // Nothing matched, so the rows are New task, New note, then Ask.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect((chosen! as AskKapyAiChoice).text, 'buy stamps');
+    });
+
+    testWidgets('Tab asks from anywhere, and says so in the footer', (
+      tester,
+    ) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+      expect(find.text('Ask Kapy AI'), findsNothing);
+
+      await type(tester, '  sintra  ');
+      expect(find.text('Ask Kapy AI'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+
+      expect((chosen! as AskKapyAiChoice).text, 'sintra');
+    });
+
+    testWidgets('Tab with nothing typed, or without Kapy AI, does nothing', (
+      tester,
+    ) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      expect(chosen, isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      await pumpMenu(tester);
+      await type(tester, 'sintra');
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      expect(chosen, isNull);
+    });
+
+    testWidgets('typing with the Ask row, dark', (tester) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+      await type(tester, 'sintra');
+
+      await expectLater(
+        find.byKey(const ValueKey('command-menu')),
+        matchesGoldenFile('goldens/command_menu_dark_ask.png'),
+      );
+    });
+
+    testWidgets('with a setting found, Return opens it and Tab asks', (
+      tester,
+    ) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true, withSettings: true);
+      await type(tester, 'text size');
+
+      expect(find.text('Open in Settings'), findsOneWidget);
+      expect(find.text('Ask Kapy AI'), findsOneWidget);
+      expect(row('Ask Kapy AI: text size'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(chosen, isA<RevealSettingChoice>());
+
+      chosen = null;
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      expect((chosen! as AskKapyAiChoice).text, 'text size');
+    });
+  });
+
   group('tags', () {
     late TagStore store;
     late Tag work;
@@ -525,6 +644,29 @@ void main() {
       await pumpMenu(tester, tags: tags);
       await type(tester, 'tag');
       expect(row('Tag note…'), findsNothing);
+    });
+
+    testWidgets('# and Tag note… never ask Kapy AI', (tester) async {
+      final tags = await shelf(tester);
+      await pumpMenu(tester, tags: tags, tagNote: trip, askKapyAi: true);
+
+      await type(tester, '#tr');
+      expect(find.textContaining('Ask Kapy AI:'), findsNothing);
+      expect(find.text('Ask Kapy AI'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      expect(chosen, isNull);
+
+      await type(tester, 'tag');
+      expect(row('Ask Kapy AI: tag'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('command-menu-tagging')),
+        findsOneWidget,
+      );
+      expect(find.text('Ask Kapy AI'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      expect(chosen, isNull);
     });
   });
 }

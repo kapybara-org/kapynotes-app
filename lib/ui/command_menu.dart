@@ -95,6 +95,12 @@ class SearchArchiveChoice extends CommandChoice {
   final String query;
 }
 
+/// Ask Kapy AI [text] as a new chat's first question.
+class AskKapyAiChoice extends CommandChoice {
+  const AskKapyAiChoice(this.text);
+  final String text;
+}
+
 /// Opens the ⌘K menu over the window: search, create and go to.
 ///
 /// [space] is where it was opened from, which decides what New note's key
@@ -105,7 +111,9 @@ class SearchArchiveChoice extends CommandChoice {
 /// list to search or add to. With [tags], # lists the tags to filter by, and
 /// [tagNote], the open note, can be tagged from the menu. A result shows the
 /// dot of the first of [marksOf]'s tags for its note: the dialog is a route
-/// of its own, so the page's own marks don't reach it.
+/// of its own, so the page's own marks don't reach it. [askKapyAi] is whether
+/// Kapy AI is there to be asked: it adds the Ask row and Tab, and "Ask Kapy
+/// AI" to the field.
 Future<CommandChoice?> showCommandMenu(
   BuildContext context, {
   required NotesStore notes,
@@ -118,6 +126,7 @@ Future<CommandChoice?> showCommandMenu(
   TaskBoard? tasks,
   bool showHidden = false,
   bool hiddenUnlocked = false,
+  bool askKapyAi = false,
   SettingsHost? settingsIndex,
   TagShelf? tags,
   Note? tagNote,
@@ -139,6 +148,7 @@ Future<CommandChoice?> showCommandMenu(
         tasks: tasks,
         showHidden: showHidden,
         hiddenUnlocked: hiddenUnlocked,
+        askKapyAi: askKapyAi,
         settingsIndex: settingsIndex,
         tags: tags,
         tagNote: tagNote,
@@ -163,6 +173,7 @@ class CommandMenu extends StatefulWidget {
     this.tasks,
     this.showHidden = false,
     this.hiddenUnlocked = false,
+    this.askKapyAi = false,
     this.settingsIndex,
     this.tags,
     this.tagNote,
@@ -179,6 +190,7 @@ class CommandMenu extends StatefulWidget {
   final TaskBoard? tasks;
   final bool showHidden;
   final bool hiddenUnlocked;
+  final bool askKapyAi;
 
   /// Builds the invisible settings that lend their search index, so Settings
   /// results come from the same index as settings search. Null leaves them
@@ -488,7 +500,6 @@ class _CommandMenuState extends State<CommandMenu> {
         for (final note in drawings.take(CommandMenu.perKind)) _noteRow(note),
       ],
       if (!settingsFirst) ...settingsLines,
-      // Kapy AI's Ask row joins this section when the panel ships.
       _Line.heading('Use “$text”'),
       if (widget.tasks != null)
         _Line.row(
@@ -503,6 +514,13 @@ class _CommandMenuState extends State<CommandMenu> {
         keycap: _newNoteKey,
         choice: NewNoteChoice(text),
       ),
+      if (widget.askKapyAi)
+        _Line.row(
+          icon: KapyIcons.sparklesOutlined,
+          title: 'Ask Kapy AI: $text',
+          keycap: 'tab',
+          choice: AskKapyAiChoice(text),
+        ),
       if (archived > 0)
         _Line.row(
           icon: archiveIcon,
@@ -563,6 +581,15 @@ class _CommandMenuState extends State<CommandMenu> {
     );
   }
 
+  /// Whether there is a question to ask: Tab asks it from wherever the
+  /// highlight is. Not while # lists the tags, or while tagging a note.
+  bool get _asking {
+    final text = _field.text.trim();
+    return _picker == null &&
+        text.isNotEmpty &&
+        !(widget.tags != null && text.startsWith('#'));
+  }
+
   void _choose(int index) {
     final line = _lines.elementAtOrNull(index);
     if (line?.action case final action?) return action();
@@ -580,6 +607,9 @@ class _CommandMenuState extends State<CommandMenu> {
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
           when event is KeyDownEvent:
         picker == null ? _choose(_highlight) : picker.activate();
+      case LogicalKeyboardKey.tab
+          when widget.askKapyAi && _asking && event is KeyDownEvent:
+        widget.onChosen(AskKapyAiChoice(_field.text.trim()));
       default:
         return KeyEventResult.ignored;
     }
@@ -648,7 +678,7 @@ class _CommandMenuState extends State<CommandMenu> {
                       ),
                     ),
                   if (AppPlatform.hasPointer && _picker == null)
-                    _footer(palette),
+                    _footer(palette, ask: widget.askKapyAi && _asking),
                 ],
               ),
             ),
@@ -718,7 +748,11 @@ class _CommandMenuState extends State<CommandMenu> {
                 style: style,
                 cursorHeight: 20,
                 decoration: InputDecoration.collapsed(
-                  hintText: picker == null ? 'Search…' : '',
+                  hintText: picker != null
+                      ? ''
+                      : widget.askKapyAi
+                      ? 'Search or Ask Kapy AI…'
+                      : 'Search…',
                   hintStyle: style.copyWith(color: palette.textTertiary),
                 ),
               ),
@@ -1052,7 +1086,7 @@ class _CommandMenuState extends State<CommandMenu> {
     );
   }
 
-  Widget _footer(CalcPalette palette) {
+  Widget _footer(CalcPalette palette, {required bool ask}) {
     Widget hint(String key, String label) => Row(
       mainAxisSize: MainAxisSize.min,
       spacing: 6,
@@ -1083,6 +1117,7 @@ class _CommandMenuState extends State<CommandMenu> {
             FilterTagChoice() => 'Filter notes',
             _ => 'Open',
           }),
+          if (ask) hint('tab', 'Ask Kapy AI'),
           const Spacer(),
           hint('esc', 'Close'),
         ],

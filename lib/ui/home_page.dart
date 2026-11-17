@@ -355,6 +355,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _kapyAiWasOn = _kapyAiOn;
+    _kapyAi?.addListener(_onKapyAi);
     _untouchedWelcomeId = widget.welcomeNoteId;
     final openingId =
         widget.prefs.resolveOpeningNoteId(
@@ -408,6 +410,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _kapyIdleTimer?.cancel();
     _kapyHeader.dispose();
     _desktopShortcutFocus.dispose();
+    _kapyAi?.removeListener(_onKapyAi);
     _kapyPanel.dispose();
     _taskAddFocus.dispose();
     _taskController?.dispose();
@@ -2495,13 +2498,45 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The button beside the pin and ⌘J: the panel beside the page, or the
   /// sheet on a phone. Opened from a note, it carries that note's chip.
   void _toggleKapyAi() {
+    if (!_usesCompactLayout && _kapyPanel.isOpen) {
+      _kapyPanel.close();
+      return;
+    }
+    _openKapyAi();
+  }
+
+  /// Whether Kapy AI is there to be asked: in this build, and switched on.
+  bool get _kapyAiOn => _kapyAi?.enabled ?? false;
+
+  bool _kapyAiWasOn = false;
+
+  /// The search fields' words follow the Settings switch, so they are drawn
+  /// again when it changes.
+  void _onKapyAi() {
+    if (_kapyAiOn == _kapyAiWasOn) return;
+    setState(() => _kapyAiWasOn = _kapyAiOn);
+  }
+
+  /// What the search fields read: they offer to ask Kapy AI only while it
+  /// can be asked.
+  String get _searchPlaceholder =>
+      _kapyAiOn ? 'Search or Ask Kapy AI' : 'Search';
+
+  /// Opens the panel, or the phone's sheet, from the note on screen so its
+  /// chip is attached. With [question] it first starts a new chat and asks
+  /// it there, which is how ⌘K's Ask row and its Tab reach Kapy AI.
+  void _openKapyAi({String? question}) {
     final ai = _kapyAi;
     if (ai == null || !ai.enabled) return;
     final noteId = _selectedId != null && _kapyNoteTitle(_selectedId!) != null
         ? _selectedId
         : null;
+    if (question != null && !ai.answering) {
+      ai.newChat();
+      unawaited(ai.ask(question, noteId: noteId));
+    }
     if (!_usesCompactLayout) {
-      _kapyPanel.toggle(noteId: noteId);
+      _kapyPanel.open(noteId: noteId);
       return;
     }
     FocusManager.instance.primaryFocus?.unfocus();
@@ -2715,6 +2750,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       tasks: _taskController?.read(),
       showHidden: _hiddenReachable,
       hiddenUnlocked: _hiddenMode,
+      askKapyAi: _kapyAiOn,
       tags: _tagShelf(const SizedBox.shrink()),
       marksOf: widget.tags == null
           ? null
@@ -2784,6 +2820,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       case SearchArchiveChoice(:final query):
         _showNotes(NotesShow.archive);
         setState(() => _archiveQuery = query);
+      case AskKapyAiChoice(:final text):
+        _openKapyAi(question: text);
     }
   }
 
@@ -3085,6 +3123,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             searchShortcut: widget.shortcuts.bindingFor(
                               ShortcutAction.findNotes,
                             ),
+                            searchPlaceholder: _searchPlaceholder,
                             windowBar: SidebarWindowBar(
                               title: space.title,
                               count: taskBoard.open.length,
@@ -3157,6 +3196,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             searchShortcut: widget.shortcuts.bindingFor(
                               ShortcutAction.findNotes,
                             ),
+                            searchPlaceholder: _searchPlaceholder,
                             archiveShortcut: widget.shortcuts.bindingFor(
                               ShortcutAction.deleteNote,
                             ),
@@ -3632,6 +3672,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       searchShortcut: widget.shortcuts.bindingFor(
                         ShortcutAction.findNotes,
                       ),
+                      searchPlaceholder: _searchPlaceholder,
                       settingsShortcut: widget.shortcuts.bindingFor(
                         ShortcutAction.openSettings,
                       ),

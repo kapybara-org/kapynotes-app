@@ -1881,6 +1881,12 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// Kapy AI, only where the build carries it.
   KapyAi? get _kapyAi => kapyAiAvailable ? widget.kapyAi : null;
 
+  /// What ⌘K is called: it also asks Kapy AI while that is on.
+  String _shortcutLabel(ShortcutAction action) =>
+      action == ShortcutAction.findNotes && (_kapyAi?.enabled ?? false)
+      ? 'Search or Ask Kapy AI'
+      : action.label;
+
   List<_Group> _kapyAiGroups() {
     final ai = _kapyAi;
     if (ai == null) return const [];
@@ -2098,7 +2104,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     bool shows(ShortcutAction action) =>
         (action != ShortcutAction.toggleKapyAi || kapyAiAvailable) &&
         (filter.isEmpty ||
-            action.label.toLowerCase().contains(filter) ||
+            _shortcutLabel(action).toLowerCase().contains(filter) ||
             _keys(action).toLowerCase() == filter);
     return [
       for (final group in _ShortcutGroup.values)
@@ -2125,7 +2131,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     void reset() => unawaited(_applyShortcuts({action: standard}));
     return _Setting(
       'shortcut-row-${action.name}',
-      action.label,
+      _shortcutLabel(action),
       subtitle: action.description,
       keywords: ['shortcut', 'hotkey', 'keyboard', ?binding?.displayLabel],
       value: binding?.displayLabel ?? 'None',
@@ -2133,6 +2139,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       onReset: reset,
       row: _ShortcutRow(
         action: action,
+        label: _shortcutLabel(action),
         binding: swap?.binding ?? binding,
         recording: recording,
         changed: changed,
@@ -2144,7 +2151,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             ? null
             : (
                 keys: swap.binding.displayLabel,
-                holder: swap.holder.label,
+                holder: _shortcutLabel(swap.holder),
                 given: binding?.displayLabel,
               ),
         error: recording ? _recordError : null,
@@ -3534,6 +3541,7 @@ class _ShortcutFilter extends StatelessWidget {
 class _ShortcutRow extends StatelessWidget {
   const _ShortcutRow({
     required this.action,
+    required this.label,
     required this.binding,
     required this.recording,
     required this.changed,
@@ -3546,6 +3554,7 @@ class _ShortcutRow extends StatelessWidget {
   });
 
   final ShortcutAction action;
+  final String label;
 
   /// Null where the user has cleared it. The row stays, because it is also
   /// how the shortcut is given back.
@@ -3568,7 +3577,7 @@ class _ShortcutRow extends StatelessWidget {
     final note = TextStyle(fontSize: 12, color: palette.textDescription);
     final keys = Semantics(
       button: true,
-      label: 'Change ${action.label} shortcut',
+      label: 'Change $label shortcut',
       child: InkWell(
         key: ValueKey('shortcut-${action.name}'),
         onTap: onPressed,
@@ -3595,7 +3604,7 @@ class _ShortcutRow extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: SettingsRowCopy(title: action.label, changed: changed),
+                child: SettingsRowCopy(title: label, changed: changed),
               ),
               if (changed && !recording) ...[
                 SettingsResetButton(onPressed: onReset),

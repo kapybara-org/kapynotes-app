@@ -47,6 +47,7 @@ Future<void> _pump(
   WidgetTester tester, {
   Size size = const Size(1500, 800),
   TargetPlatform platform = TargetPlatform.macOS,
+  bool sidebar = false,
 }) async {
   AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -56,6 +57,7 @@ Future<void> _pump(
   addTearDown(tester.view.reset);
   await notes.load();
   prefs.load();
+  if (prefs.sidebarVisible != sidebar) prefs.toggleSidebar();
   shortcuts.load();
   await tester.pumpWidget(
     KapyNotesApp(
@@ -73,16 +75,19 @@ Future<void> _pump(
 Finder get _button => find.byKey(const ValueKey('page-kapy-ai'));
 Finder get _panel => find.byKey(const ValueKey('kapy-ai-panel'));
 
-Future<void> _toggleWithKeys(WidgetTester tester) async {
+Future<void> _chord(WidgetTester tester, LogicalKeyboardKey letter) async {
   final key = AppPlatform.isMacOS
       ? LogicalKeyboardKey.metaLeft
       : LogicalKeyboardKey.controlLeft;
   await tester.sendKeyDownEvent(key);
-  await tester.sendKeyDownEvent(LogicalKeyboardKey.keyJ);
-  await tester.sendKeyUpEvent(LogicalKeyboardKey.keyJ);
+  await tester.sendKeyDownEvent(letter);
+  await tester.sendKeyUpEvent(letter);
   await tester.sendKeyUpEvent(key);
   await tester.pumpAndSettle();
 }
+
+Future<void> _toggleWithKeys(WidgetTester tester) =>
+    _chord(tester, LogicalKeyboardKey.keyJ);
 
 Future<void> _openSettings(
   WidgetTester tester, {
@@ -249,7 +254,214 @@ void main() {
     });
   });
 
+  group('in ⌘K', () {
+    Finder sidebarField(String words) => find.descendant(
+      of: find.byKey(const ValueKey('sidebar-search-field')),
+      matching: find.text(words),
+    );
+    final menuField = find.byKey(const ValueKey('command-menu-field'));
+    final menu = find.byKey(const ValueKey('command-menu'));
+    final askRow = find.byKey(
+      const ValueKey('command-menu-row-Ask Kapy AI: sintra'),
+    );
+
+    Future<String> openMenuOverNote(WidgetTester tester) async {
+      final note = notes.create(body: 'Trip budget\n900 flights');
+      await _pump(tester, sidebar: true);
+      await _chord(tester, LogicalKeyboardKey.keyK);
+      expect(menu, findsOneWidget);
+      return note.id;
+    }
+
+    Future<void> type(WidgetTester tester, String words) async {
+      await tester.enterText(menuField, words);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the fields offer to ask, and Tab asks with the note’s chip', (
+      tester,
+    ) async {
+      final id = await openMenuOverNote(tester);
+      expect(sidebarField('Search or Ask Kapy AI'), findsOneWidget);
+      expect(find.text('Search or Ask Kapy AI…'), findsOneWidget);
+
+      await type(tester, 'sintra');
+      expect(askRow, findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      expect(menu, findsNothing);
+      expect(_panel, findsOneWidget);
+      expect(ai.calls, ['newChat', 'ask:sintra:$id']);
+      expect(find.text('This note · Trip budget'), findsOneWidget);
+    });
+
+    testWidgets('Return on the Ask row asks the same way', (tester) async {
+      final id = await openMenuOverNote(tester);
+
+      await type(tester, 'sintra');
+      for (var step = 0; step < 3; step++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      }
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(_panel, findsOneWidget);
+      expect(ai.calls, ['newChat', 'ask:sintra:$id']);
+    });
+
+    testWidgets('the row asks with a click', (tester) async {
+      final id = await openMenuOverNote(tester);
+
+      await type(tester, 'sintra');
+      await tester.tap(askRow);
+      await tester.pumpAndSettle();
+
+      expect(ai.calls, ['newChat', 'ask:sintra:$id']);
+    });
+
+    testWidgets('Search, Create and Go to still work with the limit reached', (
+      tester,
+    ) async {
+      ai = FakeKapyAi(pro: true)
+        ..set(
+          cloudUsage: CloudUsage(
+            remaining: 0,
+            limit: 500,
+            resetsAt: DateTime(2026, 12),
+          ),
+          pending: KapyLimitReached(resetsAt: DateTime(2026, 12)),
+        );
+      await openMenuOverNote(tester);
+
+      await type(tester, 'sintra');
+      expect(
+        find.byKey(const ValueKey('command-menu-row-New note: sintra')),
+        findsOneWidget,
+      );
+      expect(askRow, findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('command-menu-row-New note: sintra')),
+      );
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(ai.calls, isEmpty);
+    });
+
+    testWidgets('turned off in Settings, it is only Search', (tester) async {
+      ai.enabled = false;
+      await openMenuOverNote(tester);
+      expect(sidebarField('Search'), findsOneWidget);
+      expect(sidebarField('Search or Ask Kapy AI'), findsNothing);
+      expect(find.text('Search…'), findsOneWidget);
+
+      await type(tester, 'sintra');
+      expect(askRow, findsNothing);
+      expect(find.text('Ask Kapy AI'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(ai.calls, ['enabled:false']);
+      expect(_panel, findsNothing);
+    });
+
+    testWidgets('the fields follow the switch while the app is open', (
+      tester,
+    ) async {
+      notes.create(body: 'Trip budget');
+      await _pump(tester, sidebar: true);
+      expect(sidebarField('Search or Ask Kapy AI'), findsOneWidget);
+
+      ai.enabled = false;
+      await tester.pumpAndSettle();
+      expect(sidebarField('Search'), findsOneWidget);
+    });
+
+    testWidgets('in a build without Kapy AI, ⌘K is exactly as it was', (
+      tester,
+    ) async {
+      kapyAiAvailable = false;
+      await openMenuOverNote(tester);
+      expect(sidebarField('Search'), findsOneWidget);
+      expect(find.text('Search…'), findsOneWidget);
+
+      await type(tester, 'sintra');
+      expect(askRow, findsNothing);
+      expect(find.text('Ask Kapy AI'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(ai.calls, isEmpty);
+      expect(_panel, findsNothing);
+    });
+  });
+
   group('in Settings', () {
+    final searchField = find.byKey(const ValueKey('settings-search'));
+    final searchRow = find.byKey(
+      const ValueKey('settings-search-result-shortcut-row-findNotes'),
+    );
+
+    testWidgets('the Search shortcut says Ask Kapy AI while it is on', (
+      tester,
+    ) async {
+      await _openSettings(
+        tester,
+        kapyAi: ai,
+        section: SettingsSection.shortcuts,
+      );
+      expect(find.text('Search or Ask Kapy AI'), findsOneWidget);
+      expect(find.text('Search'), findsNothing);
+
+      await tester.enterText(searchField, 'ask kapy');
+      await tester.pumpAndSettle();
+      expect(searchRow, findsOneWidget);
+    });
+
+    testWidgets('the Search shortcut is plain Search with the switch off', (
+      tester,
+    ) async {
+      ai.enabled = false;
+      await _openSettings(
+        tester,
+        kapyAi: ai,
+        section: SettingsSection.shortcuts,
+      );
+      expect(find.text('Search'), findsOneWidget);
+      expect(find.text('Search or Ask Kapy AI'), findsNothing);
+
+      await tester.enterText(searchField, 'ask kapy');
+      await tester.pumpAndSettle();
+      expect(searchRow, findsNothing);
+
+      await tester.enterText(searchField, 'search');
+      await tester.pumpAndSettle();
+      expect(searchRow, findsOneWidget);
+    });
+
+    testWidgets('the Search shortcut follows the switch as it is flipped', (
+      tester,
+    ) async {
+      await _openSettings(tester, kapyAi: ai, section: SettingsSection.voice);
+      ai.enabled = false;
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Shortcuts'));
+      await tester.pumpAndSettle();
+      expect(find.text('Search or Ask Kapy AI'), findsNothing);
+      expect(find.text('Search'), findsOneWidget);
+    });
+
+    testWidgets('the Search shortcut is plain Search without Kapy AI', (
+      tester,
+    ) async {
+      kapyAiAvailable = false;
+      await _openSettings(
+        tester,
+        kapyAi: ai,
+        section: SettingsSection.shortcuts,
+      );
+      expect(find.text('Search'), findsOneWidget);
+      expect(find.text('Search or Ask Kapy AI'), findsNothing);
+    });
     testWidgets('Pro: both groups, and their rows', (tester) async {
       ai = FakeKapyAi(
         pro: true,
