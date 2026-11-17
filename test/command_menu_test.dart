@@ -84,6 +84,7 @@ void main() {
     LibrarySpace space = LibrarySpace.notes,
     bool hiddenUnlocked = false,
     List<String> recentIds = const [],
+    bool askKapyAi = false,
   }) async {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -107,6 +108,7 @@ void main() {
             taskLabel: (note) => note.title,
             tasks: board,
             hiddenUnlocked: hiddenUnlocked,
+            askKapyAi: askKapyAi,
             onChosen: (choice) => chosen = choice,
           ),
         ),
@@ -251,5 +253,104 @@ void main() {
     expect(find.text('Notes'), findsNothing);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     expect((chosen! as NewTaskChoice).text, 'buy stamps');
+  });
+
+  group('Ask Kapy AI', () {
+    testWidgets('is offered only where Kapy AI can be asked', (tester) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester);
+      expect(find.text('Search…'), findsOneWidget);
+      await type(tester, 'sintra');
+
+      expect(row('Ask Kapy AI: sintra'), findsNothing);
+      expect(find.text('Ask Kapy AI'), findsNothing);
+      expect(row('New note: sintra'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await pumpMenu(tester, askKapyAi: true);
+      expect(find.text('Search or Ask Kapy AI…'), findsOneWidget);
+      await type(tester, 'sintra');
+      expect(row('Ask Kapy AI: sintra'), findsOneWidget);
+      expect(keycapOn(tester, 'Ask Kapy AI: sintra'), 'tab');
+      expect(
+        find.descendant(
+          of: row('Ask Kapy AI: sintra'),
+          matching: findKapyIcon(KapyIcons.sparklesOutlined),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('is not there before anything is typed', (tester) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+
+      expect(find.textContaining('Ask Kapy AI:'), findsNothing);
+      expect(find.text('Ask Kapy AI'), findsNothing);
+    });
+
+    testWidgets('the row asks the typed words when it is chosen', (
+      tester,
+    ) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+      await type(tester, 'sintra');
+
+      await tester.tap(row('Ask Kapy AI: sintra'));
+      expect((chosen! as AskKapyAiChoice).text, 'sintra');
+    });
+
+    testWidgets('Return on the highlighted row asks', (tester) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+      await type(tester, 'buy stamps');
+
+      // Nothing matched, so the rows are New task, New note, then Ask.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect((chosen! as AskKapyAiChoice).text, 'buy stamps');
+    });
+
+    testWidgets('Tab asks from anywhere, and says so in the footer', (
+      tester,
+    ) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+      expect(find.text('Ask Kapy AI'), findsNothing);
+
+      await type(tester, '  sintra  ');
+      expect(find.text('Ask Kapy AI'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+
+      expect((chosen! as AskKapyAiChoice).text, 'sintra');
+    });
+
+    testWidgets('Tab with nothing typed, or without Kapy AI, does nothing', (
+      tester,
+    ) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      expect(chosen, isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      await pumpMenu(tester);
+      await type(tester, 'sintra');
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      expect(chosen, isNull);
+    });
+
+    testWidgets('typing with the Ask row, dark', (tester) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true);
+      await type(tester, 'sintra');
+
+      await expectLater(
+        find.byKey(const ValueKey('command-menu')),
+        matchesGoldenFile('goldens/command_menu_dark_ask.png'),
+      );
+    });
   });
 }

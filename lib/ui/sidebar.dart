@@ -119,6 +119,7 @@ class Sidebar extends StatelessWidget {
     this.sharing,
     this.onSettingsPressed,
     this.searchShortcut,
+    this.searchPlaceholder = 'Search',
     this.settingsShortcut,
     this.archiveShortcut,
     this.updates,
@@ -162,6 +163,7 @@ class Sidebar extends StatelessWidget {
   /// before one is opened.
   final Set<String> lockedNoteIds;
   final String? selectedId;
+
   /// The search the ⌘K menu carried into Archive, which the list is narrowed
   /// to; empty everywhere else.
   final String query;
@@ -213,6 +215,10 @@ class Sidebar extends StatelessWidget {
   final Sharing? sharing;
   final VoidCallback? onSettingsPressed;
   final ShortcutBinding? searchShortcut;
+
+  /// What the search field reads at rest: "Search", or "Search or Ask Kapy
+  /// AI" where ⌘K can ask.
+  final String searchPlaceholder;
   final ShortcutBinding? settingsShortcut;
 
   /// The key that files the open note away, for the row's menu to name.
@@ -334,6 +340,7 @@ class Sidebar extends StatelessWidget {
               onClear: onClearQuery,
               onCreate: onCreate,
               shortcut: searchShortcut,
+              placeholder: searchPlaceholder,
               belowTabs: _showsTabs,
               besideRail: _besideRail,
             ),
@@ -2429,6 +2436,7 @@ class SidebarSearchField extends StatelessWidget {
     this.onClear,
     this.onCreate,
     this.shortcut,
+    this.placeholder = 'Search',
     this.belowTabs = false,
     this.besideRail = false,
   });
@@ -2448,6 +2456,7 @@ class SidebarSearchField extends StatelessWidget {
   /// The + beside the field. Null leaves it out.
   final VoidCallback? onCreate;
   final ShortcutBinding? shortcut;
+  final String placeholder;
 
   Widget? _end(CalcPalette palette, double extent) {
     final onClear = this.onClear;
@@ -2466,7 +2475,7 @@ class SidebarSearchField extends StatelessWidget {
     final shortcut = this.shortcut;
     if (shortcut == null || !AppPlatform.hasPointer) return null;
     return Tooltip(
-      message: 'Search · ${shortcut.displayLabel}',
+      message: '$placeholder · ${shortcut.displayLabel}',
       child: Semantics(
         label: 'Search shortcut ${shortcut.displayLabel}',
         excludeSemantics: true,
@@ -2485,7 +2494,7 @@ class SidebarSearchField extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
         child: Semantics(
           button: true,
-          label: searching ? 'Search, $query' : 'Search',
+          label: searching ? 'Search, $query' : placeholder,
           child: GestureDetector(
             key: const ValueKey('sidebar-search-field'),
             behavior: HitTestBehavior.opaque,
@@ -2519,7 +2528,7 @@ class SidebarSearchField extends StatelessWidget {
                     const SizedBox(width: 9),
                     Expanded(
                       child: Text(
-                        searching ? query : 'Search',
+                        searching ? query : placeholder,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -2553,7 +2562,7 @@ class SidebarSearchField extends StatelessWidget {
           Expanded(
             child: Semantics(
               button: true,
-              label: searching ? 'Search, $query' : 'Search',
+              label: searching ? 'Search, $query' : placeholder,
               child: GestureDetector(
                 key: const ValueKey('sidebar-search-field'),
                 behavior: HitTestBehavior.opaque,
@@ -2562,7 +2571,7 @@ class SidebarSearchField extends StatelessWidget {
                   isEmpty: !searching,
                   decoration: kapyFieldDecoration(
                     context,
-                    hintText: 'Search',
+                    hintText: placeholder,
                     hintStyle: TextStyle(
                       fontSize: AppTypeScale.control,
                       color: palette.textTertiary,

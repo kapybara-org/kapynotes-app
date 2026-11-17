@@ -64,13 +64,20 @@ class SearchArchiveChoice extends CommandChoice {
   final String query;
 }
 
+/// Ask Kapy AI [text] as a new chat's first question.
+class AskKapyAiChoice extends CommandChoice {
+  const AskKapyAiChoice(this.text);
+  final String text;
+}
+
 /// Opens the ⌘K menu over the window: search, create and go to.
 ///
 /// [space] is where it was opened from, which decides what New note's key
 /// says: in Tasks and Drawings that key makes a task or a drawing instead.
 /// [destinations] are the sections Go to lists, in order. Hidden notes are
 /// searched only while [hiddenUnlocked], and [tasks] is null where there is
-/// no task list to search or add to.
+/// no task list to search or add to. [askKapyAi] is whether Kapy AI is there
+/// to be asked: it adds the Ask row and Tab, and "Ask Kapy AI" to the field.
 Future<CommandChoice?> showCommandMenu(
   BuildContext context, {
   required NotesStore notes,
@@ -82,6 +89,7 @@ Future<CommandChoice?> showCommandMenu(
   required String Function(Note) taskLabel,
   TaskBoard? tasks,
   bool hiddenUnlocked = false,
+  bool askKapyAi = false,
 }) {
   final dark = context.palette.brightness == Brightness.dark;
   return showDialog<CommandChoice>(
@@ -97,6 +105,7 @@ Future<CommandChoice?> showCommandMenu(
       taskLabel: taskLabel,
       tasks: tasks,
       hiddenUnlocked: hiddenUnlocked,
+      askKapyAi: askKapyAi,
       onChosen: (choice) => Navigator.of(context).pop(choice),
     ),
   );
@@ -115,6 +124,7 @@ class CommandMenu extends StatefulWidget {
     required this.onChosen,
     this.tasks,
     this.hiddenUnlocked = false,
+    this.askKapyAi = false,
   });
 
   final NotesStore notes;
@@ -127,6 +137,7 @@ class CommandMenu extends StatefulWidget {
   final ValueChanged<CommandChoice> onChosen;
   final TaskBoard? tasks;
   final bool hiddenUnlocked;
+  final bool askKapyAi;
 
   /// How many of each kind the menu shows.
   static const int perKind = 3;
@@ -331,7 +342,6 @@ class _CommandMenuState extends State<CommandMenu> {
         const _Line.heading('Drawings'),
         for (final note in drawings.take(CommandMenu.perKind)) _noteRow(note),
       ],
-      // Kapy AI's Ask row joins this section when the panel ships.
       _Line.heading('Use “$text”'),
       if (widget.tasks != null)
         _Line.row(
@@ -346,6 +356,13 @@ class _CommandMenuState extends State<CommandMenu> {
         keycap: _newNoteKey,
         choice: NewNoteChoice(text),
       ),
+      if (widget.askKapyAi)
+        _Line.row(
+          icon: KapyIcons.sparklesOutlined,
+          title: 'Ask Kapy AI: $text',
+          keycap: 'tab',
+          choice: AskKapyAiChoice(text),
+        ),
       if (archived > 0)
         _Line.row(
           icon: archiveIcon,
@@ -380,6 +397,10 @@ class _CommandMenuState extends State<CommandMenu> {
     );
   }
 
+  /// Whether there is a question to ask: Tab asks it from wherever the
+  /// highlight is.
+  bool get _asking => _field.text.trim().isNotEmpty;
+
   void _choose(int index) {
     final choice = _lines.elementAtOrNull(index)?.choice;
     if (choice != null) widget.onChosen(choice);
@@ -395,6 +416,9 @@ class _CommandMenuState extends State<CommandMenu> {
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
           when event is KeyDownEvent:
         _choose(_highlight);
+      case LogicalKeyboardKey.tab
+          when widget.askKapyAi && _asking && event is KeyDownEvent:
+        widget.onChosen(AskKapyAiChoice(_field.text.trim()));
       default:
         return KeyEventResult.ignored;
     }
@@ -459,7 +483,8 @@ class _CommandMenuState extends State<CommandMenu> {
                       ),
                     ),
                   ),
-                  if (AppPlatform.hasPointer) _footer(palette),
+                  if (AppPlatform.hasPointer)
+                    _footer(palette, ask: widget.askKapyAi && _asking),
                 ],
               ),
             ),
@@ -504,7 +529,9 @@ class _CommandMenuState extends State<CommandMenu> {
                 style: style,
                 cursorHeight: 20,
                 decoration: InputDecoration.collapsed(
-                  hintText: 'Search…',
+                  hintText: widget.askKapyAi
+                      ? 'Search or Ask Kapy AI…'
+                      : 'Search…',
                   hintStyle: style.copyWith(color: palette.textTertiary),
                 ),
               ),
@@ -694,7 +721,7 @@ class _CommandMenuState extends State<CommandMenu> {
     return TextSpan(style: style, children: spans);
   }
 
-  Widget _footer(CalcPalette palette) {
+  Widget _footer(CalcPalette palette, {required bool ask}) {
     Widget hint(String key, String label) => Row(
       mainAxisSize: MainAxisSize.min,
       spacing: 6,
@@ -721,6 +748,7 @@ class _CommandMenuState extends State<CommandMenu> {
         children: [
           hint('↑↓', 'Move'),
           hint('↵', 'Open'),
+          if (ask) hint('tab', 'Ask Kapy AI'),
           const Spacer(),
           hint('esc', 'Close'),
         ],

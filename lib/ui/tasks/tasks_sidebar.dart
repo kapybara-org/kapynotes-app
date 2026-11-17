@@ -29,6 +29,7 @@ class TasksSidebar extends StatelessWidget {
     required this.windowBar,
     required this.onSearch,
     this.searchShortcut,
+    this.searchPlaceholder = 'Search',
   });
 
   final TaskBoard board;
@@ -40,6 +41,7 @@ class TasksSidebar extends StatelessWidget {
   /// Opens the ⌘K menu, from the field over the filters.
   final VoidCallback onSearch;
   final ShortcutBinding? searchShortcut;
+  final String searchPlaceholder;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +74,7 @@ class TasksSidebar extends StatelessWidget {
             SidebarSearchField(
               onSearch: onSearch,
               shortcut: searchShortcut,
+              placeholder: searchPlaceholder,
               besideRail: true,
             ),
             Expanded(
