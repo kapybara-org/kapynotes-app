@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../core/platform.dart';
 import 'auth_api.dart';
 
 /// Where the master key and the session token live between launches.
@@ -17,53 +19,152 @@ abstract class SecureStore {
   Future<void> delete(String key);
 }
 
+/// The macOS service name every entry is filed under.
+///
+/// The real app uses the plugin's default. A build that is not the real app
+/// names its own at build time, `--dart-define=KAPYNOTES_KEYCHAIN=kapynotes-dev`,
+/// so it never reads, migrates or deletes the installed app's entries.
+const String _service = String.fromEnvironment(
+  'KAPYNOTES_KEYCHAIN',
+  defaultValue: AppleOptions.defaultAccountName,
+);
+
+/// Where macOS keeps the master key and session: the data-protection
+/// keychain, which hands an entry only to apps whose signature carries its
+/// access group.
+///
+/// The app's one group is the keychain access group in DeveloperID.entitlements,
+/// the team prefix and the bundle id (`96V66447C6.com.kapybara.kapynotes` for
+/// the real app), so every entry lands there. macOS honours that entitlement
+/// only when the Developer ID provisioning profile embedded at export
+/// authorises it, so another build, whether ad-hoc, signed by another team or
+/// under another bundle id, can't claim the group and sees nothing. The plugin
+/// ignores `groupId` on macOS, so there is none here: the default group is
+/// the only group.
+///
+/// A build without the profile, which is every local development build, gets
+/// `-34018 errSecMissingEntitlement`, and [ForgivingSecureStore] turns that
+/// into a session that lasts until the app quits.
+const MacOsOptions macOsKeychain = MacOsOptions(
+  usesDataProtectionKeychain: true,
+  accountName: _service,
+);
+
 /// Keychain on Apple platforms, Keystore on Android, libsecret on Linux,
 /// DPAPI on Windows.
 ///
-/// Unguarded on purpose — wrap it in [ForgivingSecureStore], which is what
-/// [defaultSecureStore] does.
+/// Unguarded on purpose: use [platformSecureStore], or [defaultSecureStore]
+/// for the forgiving version.
 class PlatformSecureStore implements SecureStore {
   const PlatformSecureStore([this._storage = const FlutterSecureStorage()]);
 
   final FlutterSecureStorage _storage;
 
-  /// macOS only, and load-bearing.
-  ///
-  /// The plugin defaults to the data-protection keychain, which a sandboxed
-  /// app may only touch if it is in a keychain access group — and claiming one
-  /// needs a `keychain-access-groups` entitlement, which in turn needs the
-  /// target to sign with a team. Without all of that every call comes back
-  /// `-34018 errSecMissingEntitlement`, and because [ForgivingSecureStore]
-  /// swallows it the failure is silent: the session lives in memory for the
-  /// run, sync works, and every launch after the first is signed out.
-  ///
-  /// The file-based keychain has no such requirement and is what a Developer
-  /// ID app without a provisioning profile can actually use.
-  ///
-  /// That keychain is shared by every app of the user's, keyed by service and
-  /// account name, so a development build would read, and on sign-in
-  /// overwrite, the installed app's session and master key. A build that is
-  /// not the real app names its own service at build time:
-  /// `--dart-define=KAPYNOTES_KEYCHAIN=kapynotes-dev`.
-  static const _macOs = MacOsOptions(
-    usesDataProtectionKeychain: false,
-    accountName: String.fromEnvironment(
-      'KAPYNOTES_KEYCHAIN',
-      defaultValue: AppleOptions.defaultAccountName,
-    ),
-  );
-
   @override
-  Future<String?> read(String key) => _storage.read(key: key, mOptions: _macOs);
+  Future<String?> read(String key) =>
+      _storage.read(key: key, mOptions: macOsKeychain);
 
   @override
   Future<void> write(String key, String value) =>
-      _storage.write(key: key, value: value, mOptions: _macOs);
+      _storage.write(key: key, value: value, mOptions: macOsKeychain);
 
   @override
   Future<void> delete(String key) =>
-      _storage.delete(key: key, mOptions: _macOs);
+      _storage.delete(key: key, mOptions: macOsKeychain);
 }
+
+/// Where earlier macOS versions kept them: the file-based login keychain.
+///
+/// Its entries are guarded by a list of trusted apps that grows every time
+/// the user approves a keychain prompt, so any build that asks can end up
+/// reading the session. Only read, to move entries out, and emptied.
+///
+/// Through the app's own channel (FileKeychain.swift) rather than the plugin:
+/// the plugin leaves the keychain choice unset for the file keychain, which in
+/// an app with a keychain access group also reaches the data-protection
+/// keychain, so deleting an old entry deleted its new copy too.
+class FileKeychainStore implements SecureStore {
+  const FileKeychainStore();
+
+  static const MethodChannel _channel = MethodChannel(
+    'kapynotes/file_keychain',
+  );
+
+  @override
+  Future<String?> read(String key) => _channel.invokeMethod<String>('read', {
+    'service': _service,
+    'account': key,
+  });
+
+  @override
+  Future<void> write(String key, String value) =>
+      throw UnsupportedError('The file keychain is only read and emptied.');
+
+  @override
+  Future<void> delete(String key) => _channel.invokeMethod<void>('delete', {
+    'service': _service,
+    'account': key,
+  });
+}
+
+/// Moves each entry out of the store an earlier version wrote it to, the
+/// first time it is read.
+///
+/// The old entry is deleted only once the copy reads back the same. If any
+/// step fails, the old entry stays where it was and is what the read returns,
+/// so the user stays signed in and the next launch tries again.
+///
+/// A write clears the old copy too, but only after the new one is written: a
+/// stale old entry could come back later, and a missing one is worse for the
+/// Hidden Notes PIN, where no entry lets anyone set a new PIN. Deletes clear
+/// both, so a sign-out can't be undone by migrating the old session back on
+/// the next launch.
+class MigratingSecureStore implements SecureStore {
+  const MigratingSecureStore(this._current, this._legacy);
+
+  final SecureStore _current;
+  final SecureStore _legacy;
+
+  @override
+  Future<String?> read(String key) async {
+    final String? current;
+    try {
+      current = await _current.read(key);
+    } catch (error) {
+      debugPrint(
+        'KapyNotes: keystore unreadable, using the old one ($key): $error',
+      );
+      return _legacy.read(key);
+    }
+    if (current != null) return current;
+
+    final legacy = await _legacy.read(key);
+    if (legacy == null) return null;
+    try {
+      await _current.write(key, legacy);
+      if (await _current.read(key) == legacy) await _legacy.delete(key);
+    } catch (error) {
+      debugPrint('KapyNotes: keystore migration failed ($key): $error');
+    }
+    return legacy;
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    await _current.write(key, value);
+    await _legacy.delete(key);
+  }
+
+  @override
+  Future<void> delete(String key) =>
+      Future.wait([_current.delete(key), _legacy.delete(key)]);
+}
+
+/// The platform's store. On macOS it also moves entries out of the
+/// file-based keychain earlier versions used.
+SecureStore platformSecureStore() => AppPlatform.isMacOS
+    ? const MigratingSecureStore(PlatformSecureStore(), FileKeychainStore())
+    : const PlatformSecureStore();
 
 /// Turns a broken keystore into an empty one.
 ///
@@ -108,8 +209,7 @@ class ForgivingSecureStore implements SecureStore {
 }
 
 /// What the app should use.
-SecureStore defaultSecureStore() =>
-    const ForgivingSecureStore(PlatformSecureStore());
+SecureStore defaultSecureStore() => ForgivingSecureStore(platformSecureStore());
 
 /// For tests and for platforms without a keystore. Nothing here outlives the
 /// process, which for a test is the point and for a user means one extra
