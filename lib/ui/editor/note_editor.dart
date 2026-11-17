@@ -2747,17 +2747,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// Scrolls the note until the line holding the attachment at [offset] is
   /// in view, from its top when it is taller than the note's window.
   void showAttachment(int offset) {
-    final offsets = _lineOffsets;
-    if (offsets == null || !_scrollController.hasClients) return;
-    final tops = offsets.tops;
-    final line = _lineIndexOf(offset);
-    if (line >= tops.length) return;
-    final top = tops[line];
-    final bottom = line + 1 < tops.length
-        ? tops[line + 1]
-        : offsets.totalHeight;
+    final field = _field;
+    if (field == null || !_scrollController.hasClients) return;
+    final line = field.lines.lineAt(offset);
+    final shownTop = field.lineTop(line);
+    final shownBottom = field.lineTop(line + 1);
+    if (shownTop == null || shownBottom == null) return;
     final position = _scrollController.position;
     var to = position.pixels;
+    final top = shownTop + to;
+    final bottom = shownBottom + to;
     if (bottom > to + position.viewportDimension) {
       to = bottom - position.viewportDimension;
     }

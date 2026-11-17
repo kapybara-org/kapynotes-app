@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:kapy_notes/app.dart';
@@ -15,6 +14,7 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/note_image_view.dart';
 import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:kapy_notes/ui/unloaded_pictures_status.dart';
@@ -113,21 +113,11 @@ void main() {
       Finder picture(int offset) => find.byWidgetPredicate(
         (widget) => widget is NoteImageView && widget.ref.offset == offset,
       );
-      // Where the field lays the picture out, less how far it has scrolled:
-      // the field paints its pictures shifted by its scroll, which their
-      // transform leaves out, so their global rect is where they'd be
-      // unscrolled.
       bool inView(int offset) {
-        var child = tester.renderObject(picture(offset));
-        while (child.parent is! RenderEditable) {
-          child = child.parent!;
-        }
-        final field = child.parent! as RenderEditable;
-        final top =
-            (child.parentData! as TextParentData).offset!.dy -
-            field.offset.pixels;
-        return top >= 0 &&
-            top + (child as RenderBox).size.height <= field.size.height;
+        if (picture(offset).evaluate().isEmpty) return false;
+        final view = tester.getRect(find.byType(NoteField));
+        final rect = tester.getRect(picture(offset));
+        return rect.top >= view.top && rect.bottom <= view.bottom;
       }
 
       final saved = find.byKey(const ValueKey('page-saved'));
