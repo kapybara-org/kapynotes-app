@@ -13,6 +13,7 @@ import 'package:material_ui/material_ui.dart';
 import '../audio/voice_player.dart';
 import '../audio/voice_recording_controller.dart';
 import '../billing/note_limit.dart';
+import '../crdt/text_diff.dart';
 import '../data/voice_prefs.dart';
 import '../speech/local_model_store.dart';
 import '../speech/summarizer.dart';
@@ -2070,6 +2071,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     String body,
     List<NoteFormatRange> formats,
     List<NoteAttachmentRef> attachments,
+    TextEdit? edit,
   ) {
     if (!_canWriteNote(widget.notes.byId(id))) return;
     _recordKapyActivity();
@@ -2078,7 +2080,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // holding the cursor is already mounted, and nothing on screen changes
     // until it is next built.
     if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
-    widget.notes.updateDocument(id, body, formats, attachments);
+    widget.notes.updateDocument(id, body, formats, attachments, edit);
   }
 
   /// The note as the store holds it this instant. An editor reads it on
@@ -3190,8 +3192,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onReadOnlyPressed: _limitHolds(note)
               ? () => unawaited(_explainNoteLimit(creating: false))
               : null,
-          onDocumentChanged: (body, formats, attachments) =>
-              _updateDocument(note.id, body, formats, attachments),
+          onDocumentChanged: (body, formats, attachments, edit) =>
+              _updateDocument(note.id, body, formats, attachments, edit),
           storedDocument: () => _storedDocument(note.id),
           onSettingsPressed: _showSettings,
         ),
@@ -3288,8 +3290,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onReadOnlyPressed: _limitHolds(note)
               ? () => unawaited(_explainNoteLimit(creating: false))
               : null,
-          onDocumentChanged: (body, formats, attachments) =>
-              _updateDocument(note.id, body, formats, attachments),
+          onDocumentChanged: (body, formats, attachments, edit) =>
+              _updateDocument(note.id, body, formats, attachments, edit),
           storedDocument: () => _storedDocument(note.id),
           onSettingsPressed: _showSettings,
         ),

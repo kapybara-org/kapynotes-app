@@ -1186,6 +1186,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       archivedAt: note.archivedAt,
       hiddenAt: note.hiddenAt,
       now: _now(),
+      near: _notes.takeEdit(note.id),
     );
     record.outbox.add(
       OutboxEntry(
@@ -1209,6 +1210,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       archivedAt: note.archivedAt,
       hiddenAt: note.hiddenAt,
       now: _now(),
+      near: _notes.takeEdit(note.id),
     );
     var changed = false;
     if (record.spaceId != spaceId) {

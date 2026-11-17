@@ -398,10 +398,7 @@ class TaskIndex extends ChangeNotifier {
     for (final entry in mine) {
       final anchor = parseAnchor(entry.anchor);
       if (anchor != null && !doc.knows(anchor)) continue;
-      final offset = anchor == null ? null : doc.lineOffsetOf(anchor);
-      final index = offset == null
-          ? -1
-          : lines.indexWhere((l) => l.start <= offset && offset <= l.end);
+      final index = taskLineIndex(doc, lines, entry.anchor);
       if (index < 0) {
         orphans.add(entry);
         continue;

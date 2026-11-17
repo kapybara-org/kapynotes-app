@@ -118,7 +118,8 @@ Widget harness(
       startAtEnd: startAtEnd,
       writingFont: WritingFont.handwritten,
       shortcuts: shortcutPrefs,
-      onDocumentChanged: (body, formats, refs) => onChanged?.call(body, refs),
+      onDocumentChanged: (body, formats, refs, _) =>
+          onChanged?.call(body, refs),
       onSettingsPressed: () {},
     ),
   ),

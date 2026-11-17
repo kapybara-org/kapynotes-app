@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../crdt/text_diff.dart';
 import 'local_store.dart';
 import 'blob_store.dart';
 import 'note.dart';
@@ -252,15 +253,26 @@ class NotesStore extends ChangeNotifier {
     updateDocument(id, body, const []);
   }
 
+  /// [edit] is where in the body the change happened, when the editor knows;
+  /// see [takeEdit].
   void updateDocument(
     String id,
     String body,
     List<NoteFormatRange> formats, [
     List<NoteAttachmentRef>? attachments,
+    TextEdit? edit,
   ]) {
     final index = indexOf(id);
     if (index < 0) return;
     final existing = _notes[index];
+    if (existing.body != body) {
+      final earlier = _edits[id];
+      if (edit == null) {
+        _edits.remove(id);
+      } else {
+        _edits[id] = earlier == null ? edit : composeEdits(earlier, edit);
+      }
+    }
     final normalized = normalizeNoteFormats(formats, body.length);
     final images = normalizeNoteAttachments(
       attachments ?? existing.attachments,
@@ -282,6 +294,15 @@ class NotesStore extends ChangeNotifier {
     _recordWriting([WritingStreak.dayOf(at)]);
     _replace(index, updatedNote, toFront: true);
   }
+
+  /// Where the edits to each note since its document last took it happened,
+  /// as one stretch covering them all.
+  final Map<String, TextEdit> _edits = {};
+
+  /// Where [id]'s body changed since this was last asked, for the document
+  /// taking the change in to diff inside; see [diffTexts]. Null when some
+  /// change came without one, and the whole body is diffed.
+  TextEdit? takeEdit(String id) => _edits.remove(id);
 
   /// Turns a new note into a drawing, or a blank drawing back into a note.
   ///
