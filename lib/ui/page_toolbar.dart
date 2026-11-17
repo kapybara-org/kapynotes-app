@@ -107,9 +107,12 @@ class PageToolbar extends StatelessWidget {
 
   static const double height = 56;
 
-  /// Narrower than this, Saved, or the count of pictures that didn't load in
-  /// its place, steps aside for the breadcrumb.
+  /// Narrower than this, Saved steps aside for the breadcrumb.
   static const double _savedWidth = 460;
+
+  /// The same for the count of pictures that didn't load, which stands in for
+  /// Saved and is up to 125 wider.
+  static const double _unloadedPicturesWidth = _savedWidth + 125;
 
   /// Narrower than this, "Update and restart" shortens to "Update".
   static const double _updateLabelWidth = 680;
@@ -200,7 +203,11 @@ class PageToolbar extends StatelessWidget {
                         updates: updates,
                         wide: constraints.maxWidth >= _updateLabelWidth,
                       ),
-                    if (noteOpen && constraints.maxWidth >= _savedWidth) ...[
+                    if (noteOpen &&
+                        constraints.maxWidth >=
+                            (unloadedPictures > 0
+                                ? _unloadedPicturesWidth
+                                : _savedWidth)) ...[
                       if (unloadedPictures > 0)
                         UnloadedPicturesStatus(
                           count: unloadedPictures,

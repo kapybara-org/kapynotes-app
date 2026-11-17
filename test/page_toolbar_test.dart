@@ -5,6 +5,7 @@ import 'package:kapy_notes/sync/sync_service.dart' show SyncStatus;
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/page_card.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
+import 'package:kapy_notes/ui/unloaded_pictures_status.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'test_fonts.dart';
@@ -32,6 +33,7 @@ void main() {
     bool listVisible = true,
     bool noteOpen = true,
     SyncStatus? syncStatus,
+    int unloadedPictures = 0,
     String? section = 'Pinned',
     List<KapyMenuAction> moreActions = const [],
     ValueChanged<String>? onMore,
@@ -47,6 +49,7 @@ void main() {
     newNoteShortcut: 'Cmd + N',
     noteOpen: noteOpen,
     syncStatus: syncStatus,
+    unloadedPictures: unloadedPictures,
     onShare: () {},
     pinned: true,
     onTogglePin: () {},
@@ -151,6 +154,28 @@ void main() {
     for (final key in ['page-share', 'page-pin', 'page-more']) {
       expect(find.byKey(ValueKey(key)), findsOneWidget);
     }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets("the count of pictures that didn't load gives way sooner", (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    final count = find.byType(UnloadedPicturesStatus);
+
+    await tester.pumpWidget(harness(toolbar(listVisible: false), width: 560));
+    expect(saved, findsOneWidget);
+
+    await tester.pumpWidget(
+      harness(toolbar(listVisible: false, unloadedPictures: 123), width: 560),
+    );
+    expect(count, findsNothing);
+    expect(saved, findsNothing);
+
+    await tester.pumpWidget(
+      harness(toolbar(listVisible: false, unloadedPictures: 123), width: 632),
+    );
+    expect(count, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
