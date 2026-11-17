@@ -575,6 +575,10 @@ class EditorMetrics {
       codeGapBefore + codeHeader + codeHeaderMargin;
   static const double codeCloseRow = codePanelBottom + codeGapAfter;
 
+  /// How far a code block's lines start in from the panel's edge: its 1px
+  /// border and the 14px of padding inside it, and as much again after.
+  static const double codeInset = 15;
+
   /// A table row on the page, Paper's CYZ-0: 36px and the 1px rule under it.
   static const double tableRow = 37;
 

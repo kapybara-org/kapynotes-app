@@ -293,6 +293,9 @@ class HighlightingController extends TextEditingController {
     final styling = _stylingFor(context, style, composing);
     return (start, end) {
       final (children, formulas) = _spansIn(styling, start, end);
+      final forced = styling.rows
+          .overlapping(start, math.max(end, start + 1))
+          .firstOrNull;
       return (
         span: TextSpan(style: style, children: children),
         placeholders: _placeholdersIn(start, end, formulas),
@@ -301,10 +304,8 @@ class HighlightingController extends TextEditingController {
         folded: styling.formulas
             .overlapping(start, math.max(end, start + 1))
             .any((formula) => formula.start < start && formula.end >= end),
-        row: styling.rows
-            .overlapping(start, math.max(end, start + 1))
-            .firstOrNull
-            ?.row,
+        row: forced?.row,
+        inset: forced?.inset ?? 0,
       );
     };
   }
@@ -412,12 +413,13 @@ class HighlightingController extends TextEditingController {
   /// The rows a code block and a table set by their own measure, which
   /// the note's strut would otherwise round up to a row of writing: a code
   /// block's lines, its fences while they are hidden, and a table's
-  /// delimiter line, which has nothing to show.
-  List<({int start, int end, double row})> _forcedRows(
+  /// delimiter line, which has nothing to show. A code block's lines also
+  /// start [EditorMetrics.codeInset] in from the panel.
+  List<({int start, int end, double row, double inset})> _forcedRows(
     MarkdownAnalysis analysis,
     MarkdownConcealment concealment,
   ) {
-    final rows = <({int start, int end, double row})>[];
+    final rows = <({int start, int end, double row, double inset})>[];
     for (final block in analysis.blocks) {
       if (block.kind != MarkdownBlockKind.code) continue;
       final fences = analysis.fencesOf(block);
@@ -432,25 +434,28 @@ class HighlightingController extends TextEditingController {
           start: open.start,
           end: open.end,
           row: EditorMetrics.codeOpenRow,
+          inset: 0,
         ));
       }
       rows.add((
         start: openHidden ? open.end + 1 : block.start,
         end: closeHidden ? close.start : block.end,
         row: EditorMetrics.codeRow,
+        inset: EditorMetrics.codeInset,
       ));
       if (closeHidden) {
         rows.add((
           start: close.start,
           end: close.end,
           row: EditorMetrics.codeCloseRow,
+          inset: 0,
         ));
       }
     }
     for (final table in analysis.tables) {
       for (final row in table.rows) {
         if (_tableRows[row.start] case final height?) {
-          rows.add((start: row.start, end: row.end, row: height));
+          rows.add((start: row.start, end: row.end, row: height, inset: 0));
         }
       }
       // Hidden, the delimiter line has nothing to show and no row of its own.
@@ -460,6 +465,7 @@ class HighlightingController extends TextEditingController {
           start: table.delimiterStart,
           end: table.delimiterEnd,
           row: 0.01,
+          inset: 0,
         ));
       }
     }
@@ -1542,7 +1548,7 @@ typedef _Styling = ({
   _Sorted<_Stretch> stretches,
   _Sorted<MarkdownMath> formulas,
   _Sorted<CodeToken> code,
-  _Sorted<({int start, int end, double row})> rows,
+  _Sorted<({int start, int end, double row, double inset})> rows,
   Map<int, int> copies,
 });
 

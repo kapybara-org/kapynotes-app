@@ -47,6 +47,7 @@ NoteLayout _layout(NoteLines lines) => NoteLayout(
       placeholders: const [],
       folded: false,
       row: null,
+      inset: 0,
     );
   },
   style: _style,
