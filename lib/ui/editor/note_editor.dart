@@ -6352,7 +6352,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           readOnlyLabel: widget.readOnly ? widget.readOnlyLabel : null,
           readOnlyIcon: widget.readOnlyIcon,
           onReadOnlyPressed: widget.onReadOnlyPressed,
-          tags: NoteTagChips(noteId: widget.noteId),
+          tags: TagShelf.maybeOf(context) == null
+              ? null
+              : NoteTagChips(noteId: widget.noteId),
         ),
       ),
     );
