@@ -6,7 +6,7 @@ import 'markdown_syntax.dart';
 
 /// How a run of a cell's words is drawn, given the markdown over them.
 typedef MarkdownRunStyle =
-    TextStyle Function(TextStyle base, Set<MarkdownStyle> styles);
+    TextStyle Function(TextStyle base, Set<MarkdownStyle> styles, String words);
 
 /// The grid one table is drawn as: how wide each column is, how tall each row
 /// is, and the words of each cell laid out ready to paint.
@@ -28,6 +28,10 @@ typedef MarkdownRunStyle =
 ///   onto as many lines as they need. A phone's writing column is narrower than
 ///   most tables, and hiding half a cell behind an ellipsis is no way to edit
 ///   one.
+///
+/// Either way a `<br>` in a cell starts a new line of it, so a cell has as
+/// many lines as it was written with at the least: one each, cut short one by
+/// one, when the table is its natural size.
 class TableGeometry {
   TableGeometry({
     required this.table,
@@ -52,24 +56,28 @@ class TableGeometry {
       final painters = <TextPainter>[];
       for (var c = 0; c < row.cells.length; c++) {
         final cell = row.cells[c];
+        final words = [
+          for (final run in analysis.runsIn(cell.start, cell.end))
+            TextSpan(
+              text: run.text,
+              style: runStyle(base, {
+                ...run.styles,
+                if (row.header) MarkdownStyle.tableHeader,
+              }, run.text),
+            ),
+        ];
+        final broken = words.any((span) => span.text!.contains('\n'));
         final painter = TextPainter(
           text: TextSpan(
             style: base,
-            children: [
-              for (final run in analysis.runsIn(cell.start, cell.end))
-                TextSpan(
-                  text: run.text,
-                  style: runStyle(base, {
-                    ...run.styles,
-                    if (row.header) MarkdownStyle.tableHeader,
-                  }),
-                ),
-            ],
+            children: fitting || !broken
+                ? words
+                : _cutShort(words, base, scaler, maxCellWidth),
           ),
           textDirection: TextDirection.ltr,
           textScaler: scaler,
-          maxLines: fitting ? null : 1,
-          ellipsis: fitting ? null : '…',
+          maxLines: fitting || broken ? null : 1,
+          ellipsis: fitting || broken ? null : '…',
         )..layout(maxWidth: maxCellWidth);
         natural[c] = math.max(natural[c], painter.width);
         longestWord[c] = math.max(longestWord[c], painter.minIntrinsicWidth);
@@ -216,6 +224,81 @@ class TableGeometry {
     }
     return null;
   }
+
+  /// [words] with each of its lines that is wider than [width] cut short, an
+  /// ellipsis in place of the rest: what a single-line cell gets from its
+  /// painter, done line by line, since a painter only shortens the last line
+  /// it is allowed and wraps every one before it.
+  static List<TextSpan> _cutShort(
+    List<TextSpan> words,
+    TextStyle base,
+    TextScaler scaler,
+    double width,
+  ) {
+    final lines = <List<TextSpan>>[[]];
+    for (final span in words) {
+      final pieces = span.text!.split('\n');
+      for (var i = 0; i < pieces.length; i++) {
+        if (i > 0) lines.add([]);
+        if (pieces[i].isNotEmpty) {
+          lines.last.add(TextSpan(text: pieces[i], style: span.style));
+        }
+      }
+    }
+    double widthOf(List<TextSpan> line) {
+      final painter = TextPainter(
+        text: TextSpan(style: base, children: line),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    List<TextSpan> ellipsized(List<TextSpan> line, int length) {
+      final kept = <TextSpan>[];
+      var left = length;
+      for (final span in line) {
+        final text = span.text!;
+        if (left < text.length) {
+          var end = left;
+          if (end > 0 && _isLeadSurrogate(text.codeUnitAt(end - 1))) end--;
+          kept.add(
+            TextSpan(text: '${text.substring(0, end)}…', style: span.style),
+          );
+          return kept;
+        }
+        kept.add(span);
+        left -= text.length;
+      }
+      return kept;
+    }
+
+    final result = <TextSpan>[];
+    for (var l = 0; l < lines.length; l++) {
+      var line = lines[l];
+      if (widthOf(line) > width) {
+        var low = 0;
+        var high = line.fold<int>(0, (sum, span) => sum + span.text!.length);
+        while (low < high) {
+          final middle = (low + high + 1) ~/ 2;
+          if (widthOf(ellipsized(line, middle)) <= width) {
+            low = middle;
+          } else {
+            high = middle - 1;
+          }
+        }
+        line = ellipsized(line, low);
+      }
+      if (l > 0) result.add(const TextSpan(text: '\n'));
+      result.addAll(line);
+    }
+    return result;
+  }
+
+  static bool _isLeadSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
 
   /// [natural] shrunk to fit [available].
   ///

@@ -5410,15 +5410,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       editorScale: widget.editorTextScale,
     );
     // Only a note that needs a row taller than one line gives up the forced
-    // one: a picture, or a table whose cells wrap onto more lines than that.
-    final holdsTable = _controller
-        .markdownFor(_controller.text)
-        .tables
-        .isNotEmpty;
+    // one: a picture, a table whose cells wrap onto more lines than that, or a
+    // formula, which is as tall as what it writes. Any formula, drawn or shown
+    // as its TeX, so that moving the caret onto one never moves every line.
+    final analysis = _controller.markdownFor(_controller.text);
     final strut = EditorMetrics.strut(
       widget.writingFont,
       allowTallRows:
-          (_attachments.isNotEmpty && widget.images != null) || holdsTable,
+          (_attachments.isNotEmpty && widget.images != null) ||
+          analysis.tables.isNotEmpty ||
+          analysis.maths.isNotEmpty,
       editorScale: widget.editorTextScale,
     );
     final textScaler = MediaQuery.textScalerOf(context);
@@ -5500,16 +5501,19 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       scaler: textScaler,
                       fitToWidth: attachmentWidth,
                       minRowHeight: rowHeight,
-                      runStyle: (base, styles) {
+                      runStyle: (base, styles, words) {
                         final drawn = _controller.markdownRunStyle(
                           base,
                           styles,
                           Theme.of(context).colorScheme.primary,
+                          words: words,
                         );
                         // The pill inline code has in the text can be a plain
                         // background in a grid painted behind it: there is no
-                        // selection to show over it there.
-                        return styles.contains(MarkdownStyle.code)
+                        // selection to show over it there. A formula in a cell
+                        // is drawn as its TeX, which is code too.
+                        return styles.contains(MarkdownStyle.code) ||
+                                styles.contains(MarkdownStyle.math)
                             ? drawn.copyWith(
                                 backgroundColor: palette.controlBackground,
                               )
@@ -5518,6 +5522,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     ),
                 };
 
+                _controller.setMathWidthDuringLayout(attachmentWidth);
                 // A table's rows reserve their room the same way a picture
                 // does, through a placeholder apiece. A real attachment wins any
                 // offset they might share.

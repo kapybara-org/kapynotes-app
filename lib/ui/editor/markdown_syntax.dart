@@ -19,11 +19,25 @@ enum MarkdownStyle {
   emphasis,
   strikethrough,
 
+  /// Words between `<u>` and `</u>`, or `<ins>` and `</ins>`.
+  underline,
+
+  /// Words between `<sup>` and `</sup>`.
+  superscript,
+
+  /// Words between `<sub>` and `</sub>`.
+  subscript,
+
   /// Inline code, its backticks included.
   code,
 
   /// A fenced or indented code block, fences included.
   codeBlock,
+
+  /// A formula in TeX, its dollar signs included. Drawn as the formula it
+  /// writes, and as its TeX in code's face while the caret is at it; see
+  /// [MarkdownMath].
+  math,
 
   /// Everything inside a block quote.
   quote,
@@ -131,6 +145,95 @@ class MarkdownTask {
 
   @override
   int get hashCode => Object.hash(box, checked);
+}
+
+/// A formula written in TeX between dollar signs: `$…$` among words, or
+/// `$$…$$` set apart on lines of its own.
+///
+/// [start] to [end] takes the dollar signs in, and [tex] is what they hold,
+/// trimmed. A formula is literal, the way code is: the calculator does not read
+/// it and spelling leaves it alone.
+@immutable
+class MarkdownMath {
+  const MarkdownMath(this.start, this.end, this.tex, {required this.display});
+
+  final int start;
+  final int end;
+  final String tex;
+
+  /// Set apart on lines of its own rather than written among words.
+  final bool display;
+
+  MarkdownMath _shifted(int by) =>
+      MarkdownMath(start + by, end + by, tex, display: display);
+
+  /// Whether the formula shows its TeX rather than itself, with the selection
+  /// at [selection].
+  ///
+  /// Only in a note being edited, which is what [revealBlocks] says. A caret
+  /// or a selection's end anywhere inside always shows it: that is where the
+  /// TeX is typed. Against its edges, display math shows, as a block's syntax
+  /// does; inline math as inline markers do, so only with [revealEdges] — and
+  /// a formula whose closing `$` has just been typed is drawn at once. A
+  /// selection reaching over the whole of one leaves it drawn.
+  bool revealedAt(
+    TextSelection? selection, {
+    required bool revealBlocks,
+    required bool revealEdges,
+  }) {
+    if (!revealBlocks || selection == null || !selection.isValid) return false;
+    bool inside(int offset) => offset > start && offset < end;
+    if (inside(selection.baseOffset) || inside(selection.extentOffset)) {
+      return true;
+    }
+    if (!selection.isCollapsed) return false;
+    final caret = selection.baseOffset;
+    if (caret != start && caret != end) return false;
+    return display || revealEdges;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is MarkdownMath &&
+      other.start == start &&
+      other.end == end &&
+      other.tex == tex &&
+      other.display == display;
+
+  @override
+  int get hashCode => Object.hash(start, end, tex, display);
+
+  @override
+  String toString() =>
+      'MarkdownMath($start, $end, ${display ? 'display' : 'inline'}: $tex)';
+}
+
+/// A fenced code block whose info string names a language, for colouring the
+/// code the way that language reads.
+@immutable
+class MarkdownCodeBlock {
+  const MarkdownCodeBlock(this.language, this.code);
+
+  /// The info string's first word, as written: `python`, `ts`, `C++`.
+  final String language;
+
+  /// Where the code sits, fences left out. In more than one piece when the
+  /// block is indented or quoted, since a line's indentation or `>` is not
+  /// code.
+  final List<TextRange> code;
+
+  MarkdownCodeBlock _shifted(int by) => MarkdownCodeBlock(language, [
+    for (final range in code) _shift(range, by),
+  ]);
+
+  @override
+  bool operator ==(Object other) =>
+      other is MarkdownCodeBlock &&
+      other.language == language &&
+      listEquals(other.code, code);
+
+  @override
+  int get hashCode => Object.hash(language, Object.hashAll(code));
 }
 
 enum MarkdownBlockKind { code, quote, rule }
@@ -504,12 +607,14 @@ class MarkdownConcealment {
   const MarkdownConcealment._({
     required this.hidden,
     required this.transparent,
+    required this.formulas,
     required this.key,
   });
 
   static const none = MarkdownConcealment._(
     hidden: [],
     transparent: [],
+    formulas: [],
     key: 0,
   );
 
@@ -519,6 +624,11 @@ class MarkdownConcealment {
   /// Laid out as usual but not drawn, because something is drawn in their
   /// place: a bullet, a checkbox, a table's grid. Sorted, never overlapping.
   final List<TextRange> transparent;
+
+  /// The formulas drawn as formulas rather than as their TeX. Each is in
+  /// [hidden] whole; the editor draws the formula in the place of its first
+  /// character. Sorted.
+  final List<MarkdownMath> formulas;
 
   /// Changes whenever what is shown does, for anything that caches a layout.
   final int key;
@@ -564,6 +674,17 @@ class MarkdownAnalysis {
   /// Fenced and indented code blocks, which the calculator does not read.
   List<TextRange> get codeBlocks => _parts.codeBlocks;
 
+  /// The fenced code blocks that name a language, for colouring their code.
+  List<MarkdownCodeBlock> get fencedCode => _parts.fencedCode;
+
+  /// Every formula outside a table, in order. One in a table's cell is drawn
+  /// as its TeX, in the grid.
+  List<MarkdownMath> get maths => _parts.maths;
+
+  /// `<br>` tags, which a table's cell draws as the line break they ask for.
+  /// Anywhere else a tag is shown as written, as any other inline HTML is.
+  List<TextRange> get lineBreaks => _parts.lineBreaks;
+
   /// The rest of what the calculator does not read: struck-through text, and
   /// the `*` and `_` around emphasis — the markers only, not the words.
   List<TextRange> get unread => _parts.unread;
@@ -601,6 +722,9 @@ class MarkdownAnalysis {
   ///   this far: the parser is not shown it as emphasis in the first place.
   /// * Struck-through text is blanked, words and all: crossed out is not
   ///   counted, and `Total ~~12~~ 14` is 14.
+  /// * Formulas are blanked, dollar signs and all. `$x^2 + 1$` is written to
+  ///   be read, not worked out, and a price never gets this far: `$5 and $10`
+  ///   is not a formula, by the rules [MarkdownMath] is read by.
   /// * A table's rows are blanked. `| 2+2 | 4 |` is a row of a grid rather than
   ///   a sum, and a result chip beside a tall wrapped row reads as a mistake.
   late final String calculatorText = _neutralise();
@@ -635,6 +759,9 @@ class MarkdownAnalysis {
   /// The words of [start, end) with every marker in it hidden, trimmed, and
   /// cut wherever their inline markdown changes: what a table's cell shows
   /// when the table is drawn as a grid rather than as its text.
+  ///
+  /// A `<br>` becomes the line break it asks for, the spaces either side of
+  /// it dropped, since a cell has nowhere else to put one.
   List<MarkdownRun> runsIn(int start, int end) {
     final hidden = [
       for (final conceal in conceals)
@@ -647,6 +774,10 @@ class MarkdownAnalysis {
             _runStyles.contains(span.style))
           span,
     ];
+    final breaks = [
+      for (final tag in lineBreaks)
+        if (tag.start >= start && tag.end <= end) tag,
+    ];
     final cuts = <int>{start, end};
     for (final conceal in hidden) {
       cuts
@@ -658,6 +789,11 @@ class MarkdownAnalysis {
         ..add(span.start.clamp(start, end))
         ..add(span.end.clamp(start, end));
     }
+    for (final tag in breaks) {
+      cuts
+        ..add(tag.start)
+        ..add(tag.end);
+    }
     final sorted = cuts.toList()..sort();
 
     final runs = <MarkdownRun>[];
@@ -668,16 +804,29 @@ class MarkdownAnalysis {
           hidden.any((conceal) => conceal.start <= from && to <= conceal.end)) {
         continue;
       }
+      final lineBreak = breaks.any((tag) => tag.start <= from && to <= tag.end);
       final styles = {
         for (final span in styled)
-          if (span.start <= from && to <= span.end) span.style,
+          if (span.start <= from &&
+              to <= span.end &&
+              !(lineBreak && span.style == MarkdownStyle.html))
+            span.style,
       };
-      final words = text.substring(from, to);
+      final words = lineBreak ? '\n' : text.substring(from, to);
       if (runs.isNotEmpty && setEquals(runs.last.styles, styles)) {
         final last = runs.removeLast();
         runs.add((text: last.text + words, styles: styles));
       } else {
         runs.add((text: words, styles: styles));
+      }
+    }
+    if (breaks.isNotEmpty) {
+      for (var i = 0; i < runs.length; i++) {
+        final run = runs[i];
+        runs[i] = (
+          text: run.text.replaceAll(_spacedBreak, '\n'),
+          styles: run.styles,
+        );
       }
     }
 
@@ -695,12 +844,18 @@ class MarkdownAnalysis {
     return runs;
   }
 
+  static final _spacedBreak = RegExp(r'[ \t]*\n[ \t]*');
+
   /// The markdown that styles words wherever they are drawn.
   static const _runStyles = {
     MarkdownStyle.strong,
     MarkdownStyle.emphasis,
     MarkdownStyle.strikethrough,
+    MarkdownStyle.underline,
+    MarkdownStyle.superscript,
+    MarkdownStyle.subscript,
     MarkdownStyle.code,
+    MarkdownStyle.math,
     MarkdownStyle.link,
     MarkdownStyle.html,
   };
@@ -722,10 +877,15 @@ class MarkdownAnalysis {
   /// [revealEdges] is false in the same cases and also while the writer is
   /// typing, so markers they have just completed disappear as they complete
   /// them rather than lingering beside the caret.
+  ///
+  /// A formula is drawn as itself unless [MarkdownMath.revealedAt] says
+  /// otherwise, or [drawable] says it cannot be: TeX the editor cannot draw
+  /// stays in sight as written.
   MarkdownConcealment concealFor(
     TextSelection? selection, {
     required bool revealBlocks,
     required bool revealEdges,
+    bool Function(MarkdownMath math)? drawable,
   }) {
     final valid = selection != null && selection.isValid;
     final caret = valid && selection.isCollapsed ? selection.baseOffset : null;
@@ -782,6 +942,24 @@ class MarkdownAnalysis {
       }
     }
 
+    final formulas = <MarkdownMath>[];
+    for (var i = 0; i < maths.length; i++) {
+      final math = maths[i];
+      final drawn =
+          (drawable?.call(math) ?? true) &&
+          !math.revealedAt(
+            selection,
+            revealBlocks: revealBlocks,
+            revealEdges: revealEdges,
+          );
+      if (drawn) {
+        formulas.add(math);
+        hidden.add(TextRange(start: math.start, end: math.end));
+      } else {
+        key = Object.hash(key, conceals.length + i);
+      }
+    }
+
     final transparent = <TextRange>[
       for (final ornament in ornaments)
         if (ornament.kind != MarkdownOrnamentKind.codeSpan)
@@ -808,6 +986,7 @@ class MarkdownAnalysis {
     return MarkdownConcealment._(
       hidden: _merged(hidden),
       transparent: _merged(transparent),
+      formulas: List.unmodifiable(formulas),
       key: key,
     );
   }
@@ -848,6 +1027,7 @@ class MarkdownAnalysis {
   String _neutralise() {
     if (codeBlocks.isEmpty &&
         unread.isEmpty &&
+        maths.isEmpty &&
         containerMarkers.isEmpty &&
         tables.isEmpty) {
       return text;
@@ -861,7 +1041,11 @@ class MarkdownAnalysis {
         if (unit != 0x0A && unit != 0x0D) units[i] = 0x20;
       }
     }
-    for (final range in [...codeBlocks, ...unread]) {
+    for (final range in [
+      ...codeBlocks,
+      ...unread,
+      for (final math in maths) TextRange(start: math.start, end: math.end),
+    ]) {
       for (var i = range.start; i < range.end && i < units.length; i++) {
         final unit = units[i];
         if (unit != 0x0A && unit != 0x0D) units[i] = 0x20;
@@ -1044,6 +1228,9 @@ class _Parts {
     required this.listItems,
     required this.atomicPrefixes,
     required this.codeBlocks,
+    required this.fencedCode,
+    required this.maths,
+    required this.lineBreaks,
     required this.unread,
     required this.literals,
     required this.addresses,
@@ -1064,6 +1251,9 @@ class _Parts {
     listItems: [],
     atomicPrefixes: [],
     codeBlocks: [],
+    fencedCode: [],
+    maths: [],
+    lineBreaks: [],
     unread: [],
     literals: [],
     addresses: [],
@@ -1081,6 +1271,9 @@ class _Parts {
   final List<MarkdownListItem> listItems;
   final List<TextRange> atomicPrefixes;
   final List<TextRange> codeBlocks;
+  final List<MarkdownCodeBlock> fencedCode;
+  final List<MarkdownMath> maths;
+  final List<TextRange> lineBreaks;
   final List<TextRange> unread;
   final List<TextRange> literals;
   final List<TextRange> addresses;
@@ -1107,6 +1300,9 @@ class _Parts {
       listItems: all((p) => p.listItems, (i, by) => i._shifted(by)),
       atomicPrefixes: all((p) => p.atomicPrefixes, _shift),
       codeBlocks: all((p) => p.codeBlocks, _shift),
+      fencedCode: all((p) => p.fencedCode, (c, by) => c._shifted(by)),
+      maths: all((p) => p.maths, (m, by) => m._shifted(by)),
+      lineBreaks: all((p) => p.lineBreaks, _shift),
       unread: all((p) => p.unread, _shift),
       literals: all((p) => p.literals, _shift),
       addresses: all((p) => p.addresses, _shift),
@@ -1116,7 +1312,8 @@ class _Parts {
   }
 
   /// Just the tables, and only what [MarkdownAnalysis.runsIn] needs to draw
-  /// their cells: the inline styles inside them, and the markers those hide.
+  /// their cells: the inline styles inside them, the markers those hide, and
+  /// the `<br>` tags that break their lines.
   ///
   /// Everything else is dropped rather than emptied by its reader, so that one
   /// answer covers every part of the editor at once — nothing can quietly read
@@ -1146,6 +1343,9 @@ class _Parts {
       listItems: const [],
       atomicPrefixes: const [],
       codeBlocks: const [],
+      fencedCode: const [],
+      maths: const [],
+      lineBreaks: lineBreaks,
       unread: const [],
       literals: const [],
       addresses: const [],
@@ -1332,6 +1532,7 @@ _Parts _parse(String source) {
     // `>>>` quote fence nothing else reads.
     enableEmoji: false,
     enableFencedBlockquote: false,
+    extensions: [const _DisplayMathSyntax(), _InlineMathSyntax(), _WordRun()],
   );
   final List<md.Node> nodes;
   try {
@@ -1372,6 +1573,199 @@ _Tail _tailOf(List<md.Node> nodes) {
   };
 }
 
+const _dollar = 0x24;
+const _backslash = 0x5C;
+
+bool _isWhitespace(int unit) =>
+    unit == 0x20 || unit == 0x09 || unit == 0x0A || unit == 0x0D;
+
+/// Math among words, by pandoc's rules: `$…$`, and `$$…$$`.
+///
+/// The opening `$` of `$…$` has something other than a space after it, and
+/// the closing one something other than a space before it and no digit after
+/// it, which is what keeps `$5 and $10` two prices rather than one formula.
+/// A backslash keeps the character after it, so `\$` inside a formula is a
+/// dollar sign rather than its end, and `\text{…}` may hold dollar signs of
+/// its own. `$$…$$` ends at the next `$$`.
+class _InlineMathSyntax extends md.InlineSyntax {
+  _InlineMathSyntax() : super(RegExp(r'\$'), startCharacter: _dollar);
+
+  @override
+  md.InlineObject? parse(md.InlineParser parser, Match match) {
+    final start = parser.position;
+    final doubled =
+        start + 1 < parser.length && parser.charAt(start + 1) == _dollar;
+    final marker = doubled ? 2 : 1;
+    final close = doubled
+        ? _doubledClose(parser, start + 2)
+        : _close(parser, start + 1);
+    // Left where it was, the parser goes on to read the `$` as text.
+    if (close == null) return null;
+    final markers = parser.consumeBy(marker);
+    final content = parser.consumeBy(close - start - marker);
+    markers.addAll(parser.consumeBy(marker));
+    return md.InlineElement(
+      'math',
+      markers: markers,
+      children: [for (final span in content) md.Text.fromSpan(span)],
+      start: markers.first.start,
+      end: markers.last.end,
+    );
+  }
+
+  static int? _close(md.InlineParser parser, int from) {
+    final length = parser.length;
+    if (from >= length || _isWhitespace(parser.charAt(from))) return null;
+    var i = from;
+    while (i < length) {
+      final unit = parser.charAt(i);
+      if (unit == _dollar) {
+        if (i + 1 < length && _isDigit(parser.charAt(i + 1))) return null;
+        return i;
+      }
+      if (unit == _backslash) {
+        i = _afterEscape(parser, i);
+      } else if (_isWhitespace(unit)) {
+        while (i < length && _isWhitespace(parser.charAt(i))) {
+          i++;
+        }
+        if (i < length && parser.charAt(i) == _dollar) return null;
+      } else {
+        i++;
+      }
+    }
+    return null;
+  }
+
+  static int? _doubledClose(md.InlineParser parser, int from) {
+    final length = parser.length;
+    var blank = true;
+    var i = from;
+    while (i + 1 < length) {
+      final unit = parser.charAt(i);
+      if (unit == _dollar && parser.charAt(i + 1) == _dollar) {
+        return blank ? null : i;
+      }
+      if (!_isWhitespace(unit)) blank = false;
+      i = unit == _backslash ? i + 2 : i + 1;
+    }
+    return null;
+  }
+
+  /// Past the escape at [at]: the backslash and the character after it, or
+  /// a whole `\text{…}` with its braces balanced.
+  static int _afterEscape(md.InlineParser parser, int at) {
+    const text = r'\text{';
+    final length = parser.length;
+    if (at + text.length <= length &&
+        parser.substring(at, at + text.length) == text) {
+      var depth = 0;
+      for (var i = at + text.length - 1; i < length; i++) {
+        final unit = parser.charAt(i);
+        if (unit == _backslash) {
+          i++;
+        } else if (unit == 0x7B) {
+          depth++;
+        } else if (unit == 0x7D && --depth == 0) {
+          return i + 1;
+        }
+      }
+    }
+    return at + 2 < length ? at + 2 : length;
+  }
+
+  static bool _isDigit(int unit) => unit >= 0x30 && unit <= 0x39;
+}
+
+/// Words and the spaces between them, passed over as one run of text.
+///
+/// The parser does this itself until it is given a syntax of its own, and
+/// then goes a word at a time, in case that syntax starts at a space or a
+/// letter, which [_InlineMathSyntax] never does. A word at a time, each word
+/// of a note is cut out as text of its own, placed by counting from the start
+/// of its line, and reading a long note takes more than twice as long.
+class _WordRun extends md.InlineSyntax {
+  _WordRun() : super(RegExp(r'[ \tA-Za-z0-9]*[A-Za-z0-9](?=\s)'));
+
+  @override
+  md.InlineObject? parse(md.InlineParser parser, Match match) {
+    parser.advanceBy(match[0]!.length);
+    return null;
+  }
+}
+
+/// Display math: `$$` at the start of a line, and the TeX up to the `$$`
+/// that closes it at the end of one, the same line or a later one.
+///
+/// Pandoc reads `$$…$$` wherever it is written. Read as a block, the lines
+/// between are TeX rather than markdown, so the `- b` of an aligned equation
+/// stays a line of it rather than starting a list. As in pandoc there is no
+/// blank line inside one. A `$$` closed anywhere but the end of a line, as in
+/// `$$x$$ and more`, is math among words, and left to [_InlineMathSyntax].
+class _DisplayMathSyntax extends md.BlockSyntax {
+  const _DisplayMathSyntax();
+
+  static final _opening = RegExp(r'^ {0,3}\$\$');
+
+  @override
+  RegExp get pattern => _opening;
+
+  @override
+  bool canParse(md.BlockParser parser) => _close(parser) != null;
+
+  @override
+  md.BlockElement? parse(md.BlockParser parser) {
+    final close = _close(parser);
+    if (close == null) return null;
+    final (last, column) = close;
+    final open = _opening.matchAsPrefix(parser.current.content.text)!;
+    final markers = [
+      md.Text.fromSpan(parser.current.content).subText(open.end - 2, open.end),
+    ];
+    final children = <md.Node>[];
+    for (var line = 0; line <= last; line++) {
+      final content = md.Text.fromSpan(parser.current.content);
+      final from = line == 0 ? open.end : 0;
+      final to = line == last ? column : content.length;
+      if (to > from) children.add(content.subText(from, to));
+      if (line == last) markers.add(content.subText(column, column + 2));
+      parser.advance();
+    }
+    return md.BlockElement(
+      'displayMath',
+      markers: markers,
+      children: children,
+      start: markers.first.start,
+      end: markers.last.end,
+    );
+  }
+
+  /// The line, counted from the current one, and the column of the `$$` that
+  /// closes the formula the current line opens, if it opens one.
+  static (int, int)? _close(md.BlockParser parser) {
+    final open = _opening.matchAsPrefix(parser.current.content.text);
+    if (open == null) return null;
+    var blank = true;
+    for (var ahead = 0; ; ahead++) {
+      final line = parser.peek(ahead);
+      if (line == null || (ahead > 0 && line.isBlankLine)) return null;
+      final text = line.content.text;
+      var i = ahead == 0 ? open.end : 0;
+      while (i < text.length) {
+        final unit = text.codeUnitAt(i);
+        if (unit == _dollar &&
+            i + 1 < text.length &&
+            text.codeUnitAt(i + 1) == _dollar) {
+          if (blank || text.substring(i + 2).trim().isNotEmpty) return null;
+          return (ahead, i);
+        }
+        if (!_isWhitespace(unit)) blank = false;
+        i = unit == _backslash ? i + 2 : i + 1;
+      }
+    }
+  }
+}
+
 /// Walks the parser's tree and flattens it into what the editor draws.
 class _Collector {
   _Collector(this.source);
@@ -1386,6 +1780,9 @@ class _Collector {
   final _tables = <MarkdownTable>[];
   final _listItems = <MarkdownListItem>[];
   final _codeBlocks = <TextRange>[];
+  final _fencedCode = <MarkdownCodeBlock>[];
+  final _maths = <MarkdownMath>[];
+  final _lineBreaks = <TextRange>[];
   final _unread = <TextRange>[];
   final _literals = <TextRange>[];
   final _addresses = <TextRange>[];
@@ -1396,6 +1793,9 @@ class _Collector {
   /// over like any other line prefix.
   final _numbers = <TextRange>[];
 
+  /// Where each `<u>`, `<sup>` and the like that is one of a pair starts.
+  final _pairedTags = <int>{};
+
   _Parts finish({required _Tail tail, required bool hasReferences}) {
     _spans.sort((a, b) => a.start.compareTo(b.start));
     _links.sort((a, b) => a.start.compareTo(b.start));
@@ -1405,8 +1805,10 @@ class _Collector {
     _ornaments.sort((a, b) => a.start.compareTo(b.start));
     _tables.sort((a, b) => a.start.compareTo(b.start));
     _listItems.sort((a, b) => a.markerStart.compareTo(b.markerStart));
+    _maths.sort((a, b) => a.start.compareTo(b.start));
     for (final ranges in [
       _codeBlocks,
+      _lineBreaks,
       _unread,
       _literals,
       _addresses,
@@ -1426,6 +1828,9 @@ class _Collector {
       listItems: List.unmodifiable(_listItems),
       atomicPrefixes: List.unmodifiable(_atomicPrefixes()),
       codeBlocks: List.unmodifiable(_codeBlocks),
+      fencedCode: List.unmodifiable(_fencedCode),
+      maths: List.unmodifiable(_maths),
+      lineBreaks: List.unmodifiable(_lineBreaks),
       unread: List.unmodifiable(_unread),
       literals: List.unmodifiable(_literals),
       addresses: List.unmodifiable(_addresses),
@@ -1677,6 +2082,18 @@ class _Collector {
         _style(start, end, MarkdownStyle.codeBlock);
         _record(_codeBlocks, start, end);
         _record(_literals, start, end);
+        final language = node.attributes['language'];
+        if (language != null && language.isNotEmpty) {
+          final code = [
+            for (final line in node.children)
+              ?_range(line.start.offset, line.end.offset),
+          ];
+          if (code.isNotEmpty) {
+            _fencedCode.add(
+              MarkdownCodeBlock(_unmask(language), List.unmodifiable(code)),
+            );
+          }
+        }
         _blocks.add(
           MarkdownBlock(MarkdownBlockKind.code, _clamp(start), _clamp(end)),
         );
@@ -1711,8 +2128,22 @@ class _Collector {
       case 'tableHeadCell':
         _style(start, end, MarkdownStyle.tableHeader);
       case 'htmlBlock' || 'rawHtml':
-        _style(start, end, MarkdownStyle.html);
+        _style(
+          start,
+          end,
+          _pairedTags.contains(start)
+              ? MarkdownStyle.syntax
+              : MarkdownStyle.html,
+        );
         _record(_literals, start, end);
+        if (_inTable(start) &&
+            _lineBreakTag.hasMatch(
+              source.substring(_clamp(start), _clamp(end)),
+            )) {
+          _record(_lineBreaks, start, end);
+        }
+      case 'math' || 'displayMath':
+        _math(node, claimed);
       case 'linkReferenceDefinition':
         // Bookkeeping, not writing: GitHub shows none of it, and neither does
         // this until the caret is on it.
@@ -1844,10 +2275,93 @@ class _Collector {
         );
       }
     }
+    _pairTags(node.children);
     for (final child in node.children) {
       visit(child, quoteDepth: childQuoteDepth, listDepth: childListDepth);
     }
   }
+
+  /// Whether [offset] is in the table being read: a cell's words are drawn by
+  /// its grid, which shows a formula as its TeX and a `<br>` as a line break.
+  bool _inTable(int offset) =>
+      _tables.isNotEmpty &&
+      offset >= _tables.last.start &&
+      offset < _tables.last.end;
+
+  /// A formula: its TeX shown as code with its dollar signs quiet, and
+  /// outside a table the formula itself, which the editor draws in place of
+  /// all of it.
+  void _math(md.Element node, Set<int> claimed) {
+    final start = node.start.offset;
+    final end = node.end.offset;
+    _style(start, end, MarkdownStyle.math);
+    _record(_literals, start, end);
+    for (final marker in node.markers) {
+      claimed.add(marker.start.offset);
+      _style(marker.start.offset, marker.end.offset, MarkdownStyle.syntax);
+    }
+    final range = _range(start, end);
+    if (range == null || _inTable(start)) return;
+    final display = node.type == 'displayMath';
+    final tex = _unmask(
+      node.children.map((piece) => piece.textContent).join(display ? '\n' : ''),
+    ).trim();
+    if (tex.isEmpty) return;
+    _maths.add(MarkdownMath(range.start, range.end, tex, display: display));
+  }
+
+  /// `<u>`, `<ins>`, `<sup>` and `<sub>`, opening and closing among the
+  /// same words. Their words are drawn the way the tags ask, and the tags are
+  /// hidden like any other inline marker. One that crosses another, or is
+  /// never closed, stays the HTML it is written as.
+  void _pairTags(List<md.Node> nodes) {
+    final open = <(String, md.Element)>[];
+    for (final node in nodes) {
+      if (node is! md.Element || node.type != 'rawHtml') continue;
+      final tag = _pairedTag.firstMatch(
+        source.substring(_clamp(node.start.offset), _clamp(node.end.offset)),
+      );
+      if (tag == null) continue;
+      final name = tag[2]!.toLowerCase();
+      if (tag[1]!.isEmpty) {
+        open.add((name, node));
+        continue;
+      }
+      final at = open.lastIndexWhere((opening) => opening.$1 == name);
+      if (at < 0) continue;
+      final opening = open[at].$2;
+      open.removeRange(at, open.length);
+      final scopeStart = opening.start.offset;
+      final scopeEnd = node.end.offset;
+      final innerStart = opening.end.offset;
+      final innerEnd = node.start.offset;
+      _style(innerStart, innerEnd, switch (name) {
+        'sup' => MarkdownStyle.superscript,
+        'sub' => MarkdownStyle.subscript,
+        _ => MarkdownStyle.underline,
+      });
+      for (final marker in [opening, node]) {
+        _pairedTags.add(marker.start.offset);
+        _record(_unread, marker.start.offset, marker.end.offset);
+        _conceal(
+          marker.start.offset,
+          marker.end.offset,
+          MarkdownReveal.edges,
+          scopeStart: scopeStart,
+          scopeEnd: scopeEnd,
+          innerStart: innerStart,
+          innerEnd: innerEnd,
+        );
+      }
+    }
+  }
+
+  static final _pairedTag = RegExp(
+    r'^<(/?)(u|ins|sup|sub)>$',
+    caseSensitive: false,
+  );
+
+  static final _lineBreakTag = RegExp(r'^<br\s*/?>$', caseSensitive: false);
 
   void _listItem(
     md.Element node,

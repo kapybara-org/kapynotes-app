@@ -9,8 +9,10 @@ import '../../core/editor_font.dart';
 import '../../core/note_link.dart';
 import '../../core/theme.dart';
 import '../../data/note_format.dart';
+import 'code_highlighting.dart';
 import 'editor_formatting.dart';
 import 'markdown_syntax.dart';
+import 'note_math.dart';
 
 /// One image, already sized and built, ready to be dropped into the span tree
 /// at its placeholder.
@@ -47,6 +49,10 @@ class HighlightingController extends TextEditingController {
   bool _markdown;
   final MarkdownAnalyzer _markdownAnalyzer = MarkdownAnalyzer();
   Map<int, NoteImageSpan> _imageSpans = const {};
+  final NoteMath _math = NoteMath();
+  final CodeHighlighter _codeHighlighter = CodeHighlighter();
+  double _mathWidth = 0;
+  List<(int, PlaceholderDimensions)> _formulaPlaceholders = const [];
 
   /// Native spelling results currently painted by this rich text controller.
   ///
@@ -139,6 +145,7 @@ class HighlightingController extends TextEditingController {
       selection,
       revealBlocks: markdownReveal.blocks,
       revealEdges: markdownReveal.edges,
+      drawable: (math) => _math.draws(math.tex),
     );
     _concealment = concealment;
     _concealedFor = analysis;
@@ -163,17 +170,30 @@ class HighlightingController extends TextEditingController {
     _imageSpans = value;
   }
 
+  /// Deliberately silent, for the same reason as [setImageSpansDuringLayout].
+  ///
+  /// The width of the writing column a formula is drawn in: display math is
+  /// centred across it, and any formula wider than it is drawn smaller.
+  void setMathWidthDuringLayout(double value) {
+    _mathWidth = value;
+  }
+
   /// The placeholder boxes [TextPainter] must be told about before it can lay
-  /// out a span containing [WidgetSpan]s, in the order they appear.
+  /// out a span containing [WidgetSpan]s, in the order they appear: pictures,
+  /// table rows, and the formulas the last [buildTextSpan] drew.
   List<PlaceholderDimensions> placeholderDimensions() {
-    final offsets = _imageSpans.keys.toList()..sort();
-    return [
-      for (final offset in offsets)
-        PlaceholderDimensions(
-          size: Size(_imageSpans[offset]!.width, _imageSpans[offset]!.height),
-          alignment: PlaceholderAlignment.top,
+    final placeholders = [
+      for (final MapEntry(key: offset, value: image) in _imageSpans.entries)
+        (
+          offset,
+          PlaceholderDimensions(
+            size: Size(image.width, image.height),
+            alignment: PlaceholderAlignment.top,
+          ),
         ),
-    ];
+      ..._formulaPlaceholders,
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    return [for (final (_, dimensions) in placeholders) dimensions];
   }
 
   void _invalidate() {
@@ -235,11 +255,11 @@ class HighlightingController extends TextEditingController {
     final concealment = markdownConcealment();
     final hidden = concealment.hidden;
     final transparent = concealment.transparent;
-    final stretches = _listStretches(
-      analysis,
-      base,
-      MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling,
-    );
+    final scaler =
+        MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
+    final stretches = _listStretches(analysis, base, scaler);
+    final formulas = concealment.formulas;
+    final code = _codeTokens(analysis);
     final composing = withComposing && value.isComposingRangeValid
         ? value.composing
         : null;
@@ -285,6 +305,13 @@ class HighlightingController extends TextEditingController {
       boundaries.add(stretch.start);
       boundaries.add(stretch.end);
     }
+    for (final formula in formulas) {
+      boundaries.add(formula.start + 1);
+    }
+    for (final token in code) {
+      boundaries.add(token.start);
+      boundaries.add(token.end);
+    }
     if (composing != null) {
       boundaries.add(composing.start.clamp(0, source.length));
       boundaries.add(composing.end.clamp(0, source.length));
@@ -306,6 +333,10 @@ class HighlightingController extends TextEditingController {
     var hiddenIndex = 0;
     var transparentIndex = 0;
     var stretchIndex = 0;
+    var formulaIndex = 0;
+    final formulaCopies = <String, int>{};
+    var codeIndex = 0;
+    final placeholders = <(int, PlaceholderDimensions)>[];
 
     for (var i = 0; i < cuts.length - 1; i++) {
       final start = cuts[i];
@@ -356,6 +387,41 @@ class HighlightingController extends TextEditingController {
         continue;
       }
 
+      // A formula drawn as itself stands in the place of its first character,
+      // the way a picture does, with the rest of its TeX hidden after it.
+      while (formulaIndex < formulas.length &&
+          formulas[formulaIndex].end <= start) {
+        formulaIndex++;
+      }
+      final formula =
+          formulaIndex < formulas.length &&
+              formulas[formulaIndex].start <= start
+          ? formulas[formulaIndex]
+          : null;
+      if (formula != null && start == formula.start) {
+        final (span, placeholder) = _formulaSpan(
+          formula,
+          copy: formulaCopies.update(
+            formula.tex,
+            (copy) => copy + 1,
+            ifAbsent: () => 0,
+          ),
+          words: _markdownBlockStyle(
+            base,
+            base,
+            (style) => style != MarkdownStyle.math && marked(style),
+          ),
+          base: base,
+          scaler: scaler,
+          indent: formula.display
+              ? _indent(formula.start, hidden, stretches, base, scaler)
+              : 0,
+        );
+        children.add(span);
+        placeholders.add((formula.start, placeholder));
+        continue;
+      }
+
       while (spanIndex < spans.length && spans[spanIndex].end <= start) {
         spanIndex++;
       }
@@ -399,6 +465,14 @@ class HighlightingController extends TextEditingController {
       if (markdown != 0) {
         segmentStyle = _markdownBlockStyle(segmentStyle, base, marked);
       }
+      while (codeIndex < code.length && code[codeIndex].end <= start) {
+        codeIndex++;
+      }
+      if (codeIndex < code.length && code[codeIndex].start <= start) {
+        segmentStyle = segmentStyle.merge(
+          _codeTokenStyle(code[codeIndex].kind),
+        );
+      }
       final matchingFormats = _formats.where(
         (format) => format.start <= start && format.end >= end,
       );
@@ -427,10 +501,18 @@ class HighlightingController extends TextEditingController {
         };
       }
       if (markdown != 0) {
+        final script = openMarkdown
+            .where(
+              (span) =>
+                  span.style == MarkdownStyle.superscript ||
+                  span.style == MarkdownStyle.subscript,
+            )
+            .lastOrNull;
         segmentStyle = _markdownInlineStyle(
           segmentStyle,
           marked,
           segmentLinkColor,
+          script == null ? '' : source.substring(script.start, script.end),
         );
       }
       final done = checked || marked(MarkdownStyle.doneTask);
@@ -497,12 +579,169 @@ class HighlightingController extends TextEditingController {
         }
       }
 
+      // A line break inside a formula drawn as itself would still break the
+      // line, hidden or not, and leave an empty line under the formula for
+      // each one; the span the field draws is not the note's text, so here it
+      // is a space.
+      final words = source.substring(start, end);
       children.add(
-        TextSpan(text: source.substring(start, end), style: segmentStyle),
+        TextSpan(
+          text: formula == null ? words : words.replaceAll(_lineEnd, ' '),
+          style: segmentStyle,
+        ),
       );
     }
 
-    return TextSpan(style: base, children: children);
+    _formulaPlaceholders = placeholders;
+    return _NoteSpan(style: base, children: children);
+  }
+
+  static final _lineEnd = RegExp('[\r\n]');
+
+  /// How much bigger a formula is set than the words around it. KaTeX's own
+  /// face runs small beside a sans serif at the same size.
+  static const double _mathScale = 1.1;
+
+  /// [formula] as a placeholder, and the box [placeholderDimensions] reports
+  /// for it.
+  ///
+  /// Among words a formula sits on their baseline. Set apart, it is centred
+  /// across what is left of the writing column after [indent], in the middle
+  /// of a line of its own. Both are drawn in the size and colour of the words
+  /// they stand among, in [words].
+  ///
+  /// A placeholder's widget is scaled with the text by the field, so it is
+  /// built at the size the text is before scaling, and the box is reported
+  /// at the size it comes out at. [copy] is which of the formulas drawn with
+  /// the same TeX this one is: see [NoteMath.formula].
+  (WidgetSpan, PlaceholderDimensions) _formulaSpan(
+    MarkdownMath formula, {
+    required int copy,
+    required TextStyle words,
+    required TextStyle base,
+    required TextScaler scaler,
+    required double indent,
+  }) {
+    final size = base.fontSize ?? kDefaultFontSize;
+    final scale = scaler.scale(size) / size;
+    final room = math.max(0.0, _mathWidth - indent) / scale;
+    final drawn = _math.formula(
+      formula.tex,
+      display: formula.display,
+      fontSize: (words.fontSize ?? size) * _mathScale,
+      color: words.color ?? _palette.textPrimary,
+      maxWidth: room,
+      copy: copy,
+    );
+    if (!formula.display) {
+      return (
+        WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: drawn.child,
+        ),
+        PlaceholderDimensions(
+          size: Size(drawn.width * scale, drawn.height * scale),
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          baselineOffset: drawn.baseline * scale,
+        ),
+      );
+    }
+    final width = math.max(room, drawn.width);
+    return (
+      WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: SizedBox(
+          width: width,
+          height: drawn.height,
+          child: Center(child: drawn.child),
+        ),
+      ),
+      PlaceholderDimensions(
+        size: Size(width * scale, drawn.height * scale),
+        alignment: PlaceholderAlignment.middle,
+      ),
+    );
+  }
+
+  /// How far into its line [offset] is drawn: the advance of what is shown
+  /// before it, with the room any list marker there is spaced out to.
+  double _indent(
+    int offset,
+    List<TextRange> hidden,
+    List<_Stretch> stretches,
+    TextStyle base,
+    TextScaler scaler,
+  ) {
+    final source = text;
+    final lineStart = offset == 0
+        ? 0
+        : source.lastIndexOf('\n', offset - 1) + 1;
+    if (lineStart >= offset) return 0;
+    final painter = TextPainter(
+      text: TextSpan(
+        style: base,
+        children: [
+          for (var i = lineStart; i < offset; i++)
+            if (!hidden.any((range) => range.start <= i && i < range.end))
+              TextSpan(
+                text: source[i],
+                style: TextStyle(
+                  letterSpacing: stretches
+                      .where((stretch) => stretch.start <= i && i < stretch.end)
+                      .firstOrNull
+                      ?.spacing,
+                ),
+              ),
+        ],
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    )..layout();
+    final width = painter
+        .getOffsetForCaret(
+          TextPosition(offset: painter.plainText.length),
+          Rect.zero,
+        )
+        .dx;
+    painter.dispose();
+    return width;
+  }
+
+  MarkdownAnalysis? _colouredFor;
+  List<CodeToken> _colouredCode = const [];
+
+  /// The colours of [analysis]'s fenced code, worked out once per analysis.
+  List<CodeToken> _codeTokens(MarkdownAnalysis analysis) {
+    if (identical(analysis, _colouredFor)) return _colouredCode;
+    _colouredFor = analysis;
+    return _colouredCode = analysis.fencedCode.isEmpty
+        ? const []
+        : _codeHighlighter.tokensIn(analysis.text, analysis.fencedCode);
+  }
+
+  /// Code coloured from the note's own palette, so that it sits in the note
+  /// in light and in dark alike rather than in some editor's theme.
+  TextStyle _codeTokenStyle(CodeTokenKind kind) => switch (kind) {
+    CodeTokenKind.keyword => TextStyle(color: _palette.keyword),
+    CodeTokenKind.string => TextStyle(color: _palette.chipCurrency),
+    CodeTokenKind.number => TextStyle(color: _palette.number),
+    CodeTokenKind.comment => TextStyle(
+      color: _palette.comment,
+      fontStyle: FontStyle.italic,
+    ),
+    CodeTokenKind.title => TextStyle(color: _palette.function),
+    CodeTokenKind.type ||
+    CodeTokenKind.attribute => TextStyle(color: _palette.unit),
+    CodeTokenKind.variable => TextStyle(color: _palette.variable),
+    CodeTokenKind.punctuation => TextStyle(color: _palette.operator),
+  };
+
+  @override
+  void dispose() {
+    _math.dispose();
+    super.dispose();
   }
 
   /// The room a list marker takes — a bullet, a box or a number, with the
@@ -649,9 +888,12 @@ class HighlightingController extends TextEditingController {
     if (marked(MarkdownStyle.quote)) {
       result = result.copyWith(color: _palette.textSecondary);
     }
-    if (marked(MarkdownStyle.codeBlock) || marked(MarkdownStyle.code)) {
+    if (marked(MarkdownStyle.codeBlock) ||
+        marked(MarkdownStyle.code) ||
+        marked(MarkdownStyle.math)) {
       // The panel under a code block and the pill under inline code are drawn
       // behind the field, where the selection highlight still shows over them.
+      // A formula's TeX, shown as written, is code too.
       result = _codeStyle(result);
     }
     return result;
@@ -682,26 +924,30 @@ class HighlightingController extends TextEditingController {
     );
   }
 
-  /// How words under [styles] are drawn somewhere other than the field — in
-  /// a table drawn as a grid — in the faces and colours they have in it.
+  /// How [words] under [styles] are drawn somewhere other than the field —
+  /// in a table drawn as a grid — in the faces and colours they have in it.
   TextStyle markdownRunStyle(
     TextStyle base,
     Set<MarkdownStyle> styles,
-    Color linkColor,
-  ) {
+    Color linkColor, {
+    String words = '',
+  }) {
     bool marked(MarkdownStyle style) => styles.contains(style);
     return _markdownInlineStyle(
       _markdownBlockStyle(base, base, marked),
       marked,
       linkColor,
+      words,
     );
   }
 
-  /// The markdown that changes a word rather than a block.
+  /// The markdown that changes a word rather than a block. [script] is all
+  /// of the superscript or subscript the words are part of, if they are.
   TextStyle _markdownInlineStyle(
     TextStyle style,
     bool Function(MarkdownStyle) marked,
     Color linkColor,
+    String script,
   ) {
     var result = style;
     if (marked(MarkdownStyle.strong) || marked(MarkdownStyle.tableHeader)) {
@@ -710,10 +956,21 @@ class HighlightingController extends TextEditingController {
     if (marked(MarkdownStyle.emphasis)) {
       result = result.copyWith(fontStyle: FontStyle.italic);
     }
-    if (marked(MarkdownStyle.strikethrough)) {
+    final lines = [
+      if (marked(MarkdownStyle.underline)) TextDecoration.underline,
+      if (marked(MarkdownStyle.strikethrough)) TextDecoration.lineThrough,
+    ];
+    if (lines.isNotEmpty) {
       result = result.copyWith(
-        decoration: TextDecoration.lineThrough,
+        decoration: TextDecoration.combine(lines),
         decorationColor: result.color,
+      );
+    }
+    if (marked(MarkdownStyle.superscript) || marked(MarkdownStyle.subscript)) {
+      result = _scripted(
+        result,
+        script,
+        superscript: marked(MarkdownStyle.superscript),
       );
     }
     if (marked(MarkdownStyle.link)) {
@@ -727,6 +984,49 @@ class HighlightingController extends TextEditingController {
     }
     return result;
   }
+
+  /// Superscript or subscript: the face's own raised or lowered glyphs where
+  /// it has one for every character of [script], and otherwise the same words
+  /// smaller. A text engine cannot move words off their baseline, and the
+  /// line keeps its height either way.
+  ///
+  /// Which characters a face has these for is known for the faces a note is
+  /// written in: Shantell Sans for digits, the system face on Apple's
+  /// platforms for digits, small letters and `+=()`. Anywhere else the words
+  /// are drawn smaller.
+  TextStyle _scripted(
+    TextStyle style,
+    String script, {
+    required bool superscript,
+  }) {
+    final (feature, drawn) = switch (style.fontFamily) {
+      'Shantell Sans' => (superscript ? 'sups' : 'sinf', _digits),
+      '.AppleSystemUIFont' => (
+        superscript ? 'sups' : 'subs',
+        _appleScriptCharacters,
+      ),
+      _ => (null, const <int>{}),
+    };
+    if (feature != null &&
+        script.trim().isNotEmpty &&
+        script.runes.every((rune) => rune == 0x20 || drawn.contains(rune))) {
+      return style.copyWith(
+        fontFeatures: [...?style.fontFeatures, FontFeature.enable(feature)],
+      );
+    }
+    final size = style.fontSize;
+    final height = style.height;
+    if (size == null) return style;
+    return style.copyWith(
+      fontSize: size * _scriptScale,
+      height: height == null ? null : height / _scriptScale,
+    );
+  }
+
+  static const double _scriptScale = 0.75;
+  static final _digits = '0123456789'.runes.toSet();
+  static final _appleScriptCharacters =
+      '0123456789abcdefghijklmnopqrstuvwxyz+=()'.runes.toSet();
 
   static List<TextRange> _checkedTextRanges(String source) {
     final ranges = <TextRange>[];
@@ -783,3 +1083,21 @@ class HighlightingController extends TextEditingController {
 /// Letter spacing over [start, end): see
 /// [HighlightingController._listStretches].
 typedef _Stretch = ({int start, int end, double spacing});
+
+/// The text the field draws, which works out its semantics information once
+/// and keeps it.
+///
+/// The field works that information out afresh, over every run in the note,
+/// each time its semantics are marked dirty, and taking in a widget marks
+/// them. So without this, opening a note with hundreds of formulas walked the
+/// whole note that many times over whenever the semantics tree was on, and on
+/// macOS it always is, for dictation: see `AccessibilityTree.swift`.
+class _NoteSpan extends TextSpan {
+  _NoteSpan({super.style, super.children});
+
+  late final List<InlineSpanSemanticsInformation> _semantics =
+      List.unmodifiable(super.getSemanticsInformation());
+
+  @override
+  List<InlineSpanSemanticsInformation> getSemanticsInformation() => _semantics;
+}

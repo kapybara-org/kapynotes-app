@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart'
     show PointerDeviceKind, PointerScrollEvent, kSecondaryButton;
 import 'package:flutter/services.dart';
+import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/calc/highlight.dart';
@@ -40,6 +41,7 @@ Widget harness(
   bool markdown = true,
   bool autofocus = false,
   bool readOnly = false,
+  bool light = false,
   double? width,
   List<NoteFormatRange> initialFormats = const [],
   ValueChanged<String>? onBodyChanged,
@@ -56,7 +58,7 @@ Widget harness(
         );
 
   return MaterialApp(
-    theme: KapyTheme.dark(),
+    theme: light ? KapyTheme.light() : KapyTheme.dark(),
     home: Scaffold(
       body: bound(
         NoteEditor(
@@ -1637,6 +1639,269 @@ void main() {
       await tester.pump();
       await typeAtCaret(tester, 'x');
       expect(controllerOf(tester).text, 'say **hi** x');
+    });
+  });
+  group('formulas, code and HTML', () {
+    /// Where the first box [needle] is drawn in sits on screen.
+    Rect rectOf(WidgetTester tester, String needle) {
+      final start = controllerOf(tester).text.indexOf(needle);
+      final editable = tester
+          .state<EditableTextState>(find.byType(EditableText))
+          .renderEditable;
+      final box = editable
+          .getBoxesForSelection(
+            TextSelection(
+              baseOffset: start,
+              extentOffset: start + needle.length,
+            ),
+          )
+          .first;
+      return Rect.fromPoints(
+        editable.localToGlobal(Offset(box.left, box.top)),
+        editable.localToGlobal(Offset(box.right, box.bottom)),
+      );
+    }
+
+    testWidgets('a formula is drawn in place of its TeX, shown with the caret '
+        'in it', (tester) async {
+      const body = r'Area $\pi r^2$ here';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      controllerOf(tester).selection = const TextSelection.collapsed(offset: 0);
+      await tester.pump();
+      expect(find.byType(Math), findsOneWidget);
+      expect(isHidden(tester, r'\pi'), isTrue);
+
+      // The caret inside: the TeX as written, as code, where the formula was.
+      controllerOf(tester).selection = TextSelection.collapsed(
+        offset: body.indexOf('r^2'),
+      );
+      await tester.pump();
+      expect(find.byType(Math), findsNothing);
+      expect(isHidden(tester, r'\pi'), isFalse);
+      expect(
+        styleOf(tester, r'\pi').fontFamily,
+        WritingFont.monospace.fontFamily,
+      );
+
+      // Typed in, it stays as written.
+      await typeAtCaret(tester, '2');
+      expect(controllerOf(tester).text, r'Area $\pi 2r^2$ here');
+      expect(isHidden(tester, r'\pi'), isFalse);
+
+      // Away from it, drawn again.
+      controllerOf(tester).selection = const TextSelection.collapsed(offset: 0);
+      await tester.pump();
+      expect(find.byType(Math), findsOneWidget);
+    });
+
+    testWidgets('arrow keys walk through a formula\'s TeX, and it is drawn '
+        'again past it', (tester) async {
+      await tester.pumpWidget(harness(r'a $x$ b', autofocus: true));
+      await tester.pumpAndSettle();
+      controllerOf(tester).selection = const TextSelection.collapsed(offset: 1);
+      await tester.pump();
+      expect(find.byType(Math), findsOneWidget);
+
+      // Against it and inside it, the caret is never somewhere unseen.
+      for (var offset = 2; offset <= 5; offset++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump();
+        expect(controllerOf(tester).selection.baseOffset, offset);
+        expect(find.byType(Math), findsNothing, reason: 'at $offset');
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      expect(controllerOf(tester).selection.baseOffset, 6);
+      expect(find.byType(Math), findsOneWidget);
+    });
+
+    testWidgets('the same formula twice is drawn twice', (tester) async {
+      // flutter_math_fork keys each line it builds with a GlobalKey, so one
+      // widget shown in two places is a key in two places.
+      await tester.pumpWidget(harness(r'$x^2$ and again $x^2$'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(Math), findsNWidgets(2));
+    });
+
+    testWidgets('TeX it cannot draw stays as written, as code', (tester) async {
+      await tester.pumpWidget(harness(r'bad $\frac{a$ here'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Math), findsNothing);
+      expect(isHidden(tester, r'\frac'), isFalse);
+      expect(
+        styleOf(tester, r'\frac').fontFamily,
+        WritingFont.monospace.fontFamily,
+      );
+    });
+
+    testWidgets('dollar amounts stay words', (tester) async {
+      await tester.pumpWidget(harness(r'Lunch $5 and coffee $10'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Math), findsNothing);
+      expect(isHidden(tester, r'$5'), isFalse);
+      expect(
+        styleOf(tester, r'$5').fontFamily,
+        isNot(WritingFont.monospace.fontFamily),
+      );
+    });
+
+    testWidgets('set apart, a formula takes a line of its own and results '
+        'keep to theirs', (tester) async {
+      const body = '1 + 1\n\$\$\n\\frac{a}{b}\n\$\$\n2 + 2';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+      final formula = tester.getRect(find.byType(Math));
+      final above = rectOf(tester, '1 + 1');
+      final below = rectOf(tester, '2 + 2');
+      expect(formula.top, greaterThanOrEqualTo(above.bottom));
+      expect(formula.bottom, lessThanOrEqualTo(below.top));
+      expect(formula.left, greaterThan(above.right), reason: 'it is centred');
+      expect(
+        tester.getCenter(chipWithText('4')).dy,
+        closeTo(below.center.dy, 2),
+        reason: 'the result is beside the line it belongs to',
+      );
+    });
+
+    testWidgets('fenced code is coloured by its language, from the palette', (
+      tester,
+    ) async {
+      const body =
+          '```python\ndef total(xs):\n    return sum(xs)  # all\n```\n\n'
+          '```nosuchlanguage\ndefine "it" # too\n```';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+      const palette = KapyTheme.darkPalette;
+      expect(styleOf(tester, 'def').color, palette.keyword);
+      expect(styleOf(tester, 'return').color, palette.keyword);
+      expect(styleOf(tester, 'total').color, palette.function);
+      expect(styleOf(tester, '# all').color, palette.comment);
+      expect(styleOf(tester, '# all').fontStyle, FontStyle.italic);
+      // A language it does not know is left as it is written.
+      final plain = styleOf(tester, 'define');
+      expect(styleOf(tester, '"it"').color, plain.color);
+      expect(styleOf(tester, '# too').color, plain.color);
+      expect(styleOf(tester, '# too').fontStyle, plain.fontStyle);
+    });
+
+    testWidgets('underline, superscript and subscript, their tags hidden', (
+      tester,
+    ) async {
+      const body =
+          'a <u>under</u> E = mc<sup>2</sup> and H<sub>3</sub>O x<sup>n</sup>';
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+      expect(isHidden(tester, '<u>'), isTrue);
+      expect(isHidden(tester, '</sup>'), isTrue);
+      expect(styleOf(tester, 'under').decoration, TextDecoration.underline);
+      // The handwritten face has raised and lowered figures of its own.
+      expect(
+        styleOf(tester, '2<').fontFeatures,
+        contains(const FontFeature.enable('sups')),
+      );
+      expect(
+        styleOf(tester, '3<').fontFeatures,
+        contains(const FontFeature.enable('sinf')),
+      );
+      // But not letters, which are drawn smaller instead.
+      expect(
+        styleOf(tester, 'n<').fontSize,
+        lessThan(styleOf(tester, 'x<').fontSize!),
+      );
+    });
+
+    testWidgets('a <br> in a cell gives its row another line', (tester) async {
+      Future<double> afterWith(String cell) async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(harness('| a |\n| --- |\n| $cell |\n\nafter'));
+        await tester.pumpAndSettle();
+        return centerOf(tester, 'after').dy;
+      }
+
+      final one = await afterWith('one two');
+      final two = await afterWith('one<br>two');
+      final three = await afterWith('one<br>two<br>three');
+      expect(two, greaterThan(one));
+      expect(three - two, greaterThan(0));
+      expect(three - two, closeTo(two - one, 1), reason: 'a line apiece');
+    });
+
+    group('as a golden', () {
+      const note =
+          '# Formulas, code and underline\n'
+          '\n'
+          r'The area of a circle is $\pi r^2$, and lunch was $5 or $10.'
+          '\n'
+          '\n'
+          '\$\$\n'
+          r'x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}'
+          '\n'
+          '\$\$\n'
+          '\n'
+          r'TeX that does not parse stays as written: $\frac{a$'
+          '\n'
+          '\n'
+          '<u>Underlined</u>, E = mc<sup>2</sup>, H<sub>2</sub>O and '
+          '2<sup>n</sup>\n'
+          '\n'
+          '```python\n'
+          'def area(r):\n'
+          '    # a circle\n'
+          '    return 3.14159 * r ** 2  # "pi r squared"\n'
+          '```\n'
+          '\n'
+          '| Constant | Value |\n'
+          '| --- | --- |\n'
+          '| Speed of light | 299 792 458<br>metres a second |\n'
+          r'| $c^2$ | <u>squared</u> |'
+          '\n'
+          '\n'
+          '5 + 3';
+
+      Future<void> pumpNote(
+        WidgetTester tester, {
+        bool light = false,
+        bool focused = false,
+      }) async {
+        tester.view.physicalSize = const Size(900, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          harness(note, light: light, autofocus: focused),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('dark', (tester) async {
+        await pumpNote(tester);
+        await expectLater(
+          find.byType(NoteEditor),
+          matchesGoldenFile('goldens/markdown_rendering_dark.png'),
+        );
+      });
+
+      testWidgets('light', (tester) async {
+        await pumpNote(tester, light: true);
+        await expectLater(
+          find.byType(NoteEditor),
+          matchesGoldenFile('goldens/markdown_rendering_light.png'),
+        );
+      });
+
+      testWidgets('dark, the caret in a formula set apart', (tester) async {
+        await pumpNote(tester, focused: true);
+        controllerOf(tester).selection = TextSelection.collapsed(
+          offset: note.indexOf(r'\frac{-b'),
+        );
+        await tester.pumpAndSettle();
+        await expectLater(
+          find.byType(NoteEditor),
+          matchesGoldenFile('goldens/markdown_rendering_revealed_dark.png'),
+        );
+      });
     });
   });
 }
