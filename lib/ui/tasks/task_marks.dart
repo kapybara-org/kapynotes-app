@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/editor_font.dart';
 import '../../core/theme.dart';
 import '../../data/note.dart';
+import '../notes_list.dart';
 
 /// What the Tasks sidebar narrows the page to: every open task, the Done
 /// view, or one note's tasks.
@@ -48,13 +49,7 @@ TextStyle uiStyle(double size, double line, FontWeight weight, Color color) =>
       color: color,
     );
 
-/// A note's colour, for its square on a task's mark, in the add row's
-/// picker and in the sidebar. Notes have no colour of their own yet: tags
-/// will give a note its first tag's (HIS-40). Until then every note gets the
-/// neutral one.
-Color noteColor(CalcPalette palette, Note note) => palette.controlBackground;
-
-/// A note's quiet mark: its colour, as a small square. A dashed one, with
+/// A note's quiet mark: its card's colour, as a small square. A dashed one, with
 /// no colour, stands for no note.
 class NoteSwatch extends StatelessWidget {
   const NoteSwatch({super.key, required this.note, this.size = 10});
@@ -77,7 +72,7 @@ class NoteSwatch extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: noteColor(palette, note),
+        color: stickyTint(palette, note),
         border: Border.all(color: palette.textPrimary.withAlpha(0x24)),
         borderRadius: BorderRadius.circular(radius),
       ),

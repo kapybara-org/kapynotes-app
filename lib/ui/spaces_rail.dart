@@ -164,66 +164,89 @@ class SpacesRail extends StatelessWidget {
                     height: titleBarHeight,
                   ),
                 ),
-              const SizedBox(height: 6),
-              destination(
-                LibrarySpace.notes,
-                icon: KapyIcons.noteOutlined,
-                label: 'Notes',
-              ),
-              if (openTasks != null) ...[
-                const SizedBox(height: 4),
-                destination(
-                  LibrarySpace.tasks,
-                  icon: KapyIcons.tasksOutlined,
-                  label: 'Tasks',
-                  semanticLabel: switch (openTasks) {
-                    0 => 'Tasks',
-                    1 => 'Tasks, 1 open',
-                    _ => 'Tasks, $openTasks open',
-                  },
-                  badge: openTasks,
+              // The spaces scroll rather than overflow in the shortest window,
+              // and the room under them drags the window.
+              Expanded(
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(
+                    context,
+                  ).copyWith(scrollbars: false),
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 6),
+                            destination(
+                              LibrarySpace.notes,
+                              icon: KapyIcons.noteOutlined,
+                              label: 'Notes',
+                            ),
+                            if (openTasks != null) ...[
+                              const SizedBox(height: 4),
+                              destination(
+                                LibrarySpace.tasks,
+                                icon: KapyIcons.tasksOutlined,
+                                label: 'Tasks',
+                                semanticLabel: switch (openTasks) {
+                                  0 => 'Tasks',
+                                  1 => 'Tasks, 1 open',
+                                  _ => 'Tasks, $openTasks open',
+                                },
+                                badge: openTasks,
+                              ),
+                            ],
+                            const SizedBox(height: 4),
+                            destination(
+                              LibrarySpace.drawings,
+                              icon: KapyIcons.penRounded,
+                              label: 'Drawings',
+                            ),
+                            if (invitations != null) ...[
+                              const SizedBox(height: 4),
+                              destination(
+                                LibrarySpace.shared,
+                                icon: KapyIcons.groupOutlined,
+                                label: 'Shared',
+                                semanticLabel: switch (invitations) {
+                                  0 => 'Shared with me',
+                                  1 => 'Shared with me, 1 invitation',
+                                  _ =>
+                                    'Shared with me, $invitations invitations',
+                                },
+                                badge: invitations,
+                              ),
+                            ],
+                            if (showHidden) ...[
+                              const SizedBox(height: 4),
+                              destination(
+                                LibrarySpace.hidden,
+                                icon: KapyIcons.lockRounded,
+                                label: 'Hidden',
+                                tooltip: hiddenShortcut == null
+                                    ? 'Hidden Notes'
+                                    : 'Hidden Notes · ${hiddenShortcut.displayLabel}',
+                                semanticLabel: 'Hidden Notes',
+                              ),
+                            ],
+                            const SizedBox(height: 4),
+                            destination(
+                              LibrarySpace.archive,
+                              icon: archiveIcon,
+                              label: 'Archive',
+                              semanticLabel: 'Archived Notes',
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: WindowDragArea(child: SizedBox.expand()),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-              const SizedBox(height: 4),
-              destination(
-                LibrarySpace.drawings,
-                icon: KapyIcons.penRounded,
-                label: 'Drawings',
               ),
-              if (invitations != null) ...[
-                const SizedBox(height: 4),
-                destination(
-                  LibrarySpace.shared,
-                  icon: KapyIcons.groupOutlined,
-                  label: 'Shared',
-                  semanticLabel: switch (invitations) {
-                    0 => 'Shared with me',
-                    1 => 'Shared with me, 1 invitation',
-                    _ => 'Shared with me, $invitations invitations',
-                  },
-                  badge: invitations,
-                ),
-              ],
-              if (showHidden) ...[
-                const SizedBox(height: 4),
-                destination(
-                  LibrarySpace.hidden,
-                  icon: KapyIcons.lockRounded,
-                  label: 'Hidden',
-                  tooltip: hiddenShortcut == null
-                      ? 'Hidden Notes'
-                      : 'Hidden Notes · ${hiddenShortcut.displayLabel}',
-                  semanticLabel: 'Hidden Notes',
-                ),
-              ],
-              const SizedBox(height: 4),
-              destination(
-                LibrarySpace.archive,
-                icon: archiveIcon,
-                label: 'Archive',
-                semanticLabel: 'Archived Notes',
-              ),
-              const Expanded(child: WindowDragArea(child: SizedBox.expand())),
               if (streak != null && streak.days > 0) ...[
                 _RailStreak(key: const ValueKey('rail-streak'), streak: streak),
                 const SizedBox(height: 7.5),
