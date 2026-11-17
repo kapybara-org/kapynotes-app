@@ -688,4 +688,29 @@ void main() {
       expect(returned.text, '```dart\n');
     });
   });
+
+  group('toggleMarkdownWrap', () {
+    test('wraps the selection and keeps it on the words', () {
+      final wrapped = toggleMarkdownWrap(at('a |word| b'), '~~');
+      expect(wrapped.text, 'a ~~word~~ b');
+      expect(
+        wrapped.selection,
+        const TextSelection(baseOffset: 4, extentOffset: 8),
+      );
+    });
+
+    test('unwraps a selection just inside or around the markers', () {
+      expect(toggleMarkdownWrap(at('a ~~|word|~~ b'), '~~').text, 'a word b');
+      final around = toggleMarkdownWrap(at('a |~~word~~| b'), '~~');
+      expect(around.text, 'a word b');
+      expect(
+        around.selection,
+        const TextSelection(baseOffset: 2, extentOffset: 6),
+      );
+    });
+
+    test('leaves a caret alone', () {
+      expect(toggleMarkdownWrap(at('a wo|rd'), '~~').text, 'a word');
+    });
+  });
 }

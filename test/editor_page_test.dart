@@ -159,26 +159,39 @@ void main() {
     expect(roomBelow, lessThan(EditorMetrics.metaBottom + 10));
   });
 
-  testWidgets('a caret past the end of the title stays at its end', (
-    tester,
-  ) async {
+  testWidgets('an empty line under the title has a row of its own, below '
+      'the meta row', (tester) async {
     window(tester);
-    await tester.pumpWidget(_page(_body));
-    await tester.pumpAndSettle();
-    final field = tester.widget<EditableText>(find.byType(EditableText));
-    const end = 'SnowSEO Issues'.length;
+    // A title and Enter, and a title with a blank line before the writing.
+    for (final body in ['Weekend\n', 'Weekend\n\nBody']) {
+      await tester.pumpWidget(_page(body));
+      await tester.pumpAndSettle();
+      final editable = _editable(tester);
+      final origin = editable.localToGlobal(Offset.zero);
+      final end = editable.getLocalRectForCaret(const TextPosition(offset: 7));
+      final under = editable.getLocalRectForCaret(
+        const TextPosition(offset: 8),
+      );
+      final meta = tester.getRect(find.byType(NoteMetaRow));
 
-    field.controller.selection = const TextSelection.collapsed(
-      offset: end + 1,
-      affinity: TextAffinity.upstream,
-    );
-    await tester.pump();
-    expect(field.controller.selection.baseOffset, end);
+      expect(end.left, greaterThan(100), reason: body);
+      expect(under.left, lessThan(2), reason: body);
+      expect(origin.dy + under.top, greaterThanOrEqualTo(meta.bottom));
+      // What the field draws reads as the note, letter and break included.
+      expect(editable.text!.toPlainText(), body);
 
-    // The line below still starts where it always did.
-    field.controller.selection = const TextSelection.collapsed(offset: end + 1);
-    await tester.pump();
-    expect(field.controller.selection.baseOffset, end + 1);
+      // A click past the end of the title puts the caret at its end.
+      await tester.tapAt(origin + Offset(end.left + 120, end.center.dy));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .controller
+            .selection
+            .baseOffset,
+        7,
+      );
+    }
   });
 
   testWidgets('the writing is a 680px column of Figtree at weight 500', (
@@ -285,6 +298,33 @@ void main() {
     final link = (_spanAt(tester, _body.indexOf('openseo')) as TextSpan).style!;
     expect(link.fontFamily, AppFonts.mono);
     expect(link.fontSize, 12.5);
+  });
+
+  testWidgets('scrolled, the "+" and the hint stay on the caret\'s line', (
+    tester,
+  ) async {
+    window(tester);
+    final long = '$_body\n${List.filled(40, 'more').join('\n')}\n';
+    await tester.pumpWidget(_page(long, slashHint: true));
+    await tester.pumpAndSettle();
+
+    await tester.showKeyboard(find.byType(EditableText));
+    final field = tester.widget<EditableText>(find.byType(EditableText));
+    field.controller.selection = TextSelection.collapsed(offset: long.length);
+    await tester.pumpAndSettle();
+    final scroll = tester.state<ScrollableState>(find.byType(Scrollable).first);
+    expect(scroll.position.pixels, greaterThan(0));
+
+    final editable = _editable(tester);
+    final caret = editable.localToGlobal(
+      editable.getLocalRectForCaret(TextPosition(offset: long.length)).center,
+    );
+    final hint = find.byKey(const ValueKey('slash-hint'));
+    expect(tester.getRect(hint).center.dy, closeTo(caret.dy, 2));
+    expect(
+      tester.getRect(find.byKey(const ValueKey('line-commands'))).center.dy,
+      closeTo(caret.dy, 2),
+    );
   });
 
   testWidgets('no bar: an empty line has the "+" and the hint, which open '

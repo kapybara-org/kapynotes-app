@@ -50,7 +50,8 @@ void main() {
 
     final heading = inCard(onCard(title, find.text(title)));
     final pie = inCard(onCard(title, find.byType(ChecklistPie)));
-    expect(heading.height, 18, reason: 'one line');
+    // The pie is shorter than the bar was, so the title may take two lines.
+    expect(heading.height, anyOf(18, 36), reason: 'whole lines');
     expect(pie.top - heading.bottom, greaterThanOrEqualTo(6));
   });
 

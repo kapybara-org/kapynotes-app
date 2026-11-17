@@ -393,7 +393,12 @@ class HighlightingController extends TextEditingController {
       final image = end == start + 1 ? _imageSpans[start] : null;
       if (image != null) {
         children.add(
-          WidgetSpan(alignment: PlaceholderAlignment.top, child: image.child),
+          source.codeUnitAt(start) != PlaceholderSpan.placeholderCodeUnit
+              ? _StandInSpan(text: source[start], child: image.child)
+              : WidgetSpan(
+                  alignment: PlaceholderAlignment.top,
+                  child: image.child,
+                ),
         );
         continue;
       }
@@ -492,6 +497,8 @@ class HighlightingController extends TextEditingController {
         ...matchingFormats.where((format) => format.format.isInline),
       ];
       for (final format in activeFormats) {
+        // The title is set as one whatever paragraph style its line had.
+        if (start < titleEnd && format.format.isParagraph) continue;
         segmentStyle = switch (format.format) {
           NoteFormat.bold => segmentStyle.copyWith(fontWeight: FontWeight.w700),
           NoteFormat.italic => segmentStyle.copyWith(
@@ -1205,6 +1212,35 @@ class HighlightingController extends TextEditingController {
 /// Letter spacing over [start, end): see
 /// [HighlightingController._listStretches].
 typedef _Stretch = ({int start, int end, double spacing});
+
+/// A placeholder standing in for a character of the note, such as the
+/// title's letter that carries the room under the title, which reads to a
+/// screen reader and copies as that character rather than as an object.
+class _StandInSpan extends WidgetSpan {
+  const _StandInSpan({required this.text, required super.child})
+    : super(alignment: PlaceholderAlignment.top);
+
+  final String text;
+
+  @override
+  void computeToPlainText(
+    StringBuffer buffer, {
+    bool includeSemanticsLabels = true,
+    bool includePlaceholders = true,
+  }) => buffer.write(text);
+
+  @override
+  void computeSemanticsInformation(
+    List<InlineSpanSemanticsInformation> collector,
+  ) => collector.add(InlineSpanSemanticsInformation(text));
+
+  @override
+  bool operator ==(Object other) =>
+      other is _StandInSpan && other.text == text && super == other;
+
+  @override
+  int get hashCode => Object.hash(super.hashCode, text);
+}
 
 /// The text the field draws, which works out its semantics information once
 /// and keeps it.
