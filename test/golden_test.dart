@@ -976,9 +976,9 @@ void main() {
     );
   });
 
-  // The bottom of the merged Appearance pane, where number format and the
-  // rate credit ended up when Numbers stopped being a category of its own.
-  testWidgets('desktop dark settings, appearance scrolled', (tester) async {
+  // The bottom of the Notes pane, where number format and the rates credit
+  // sit.
+  testWidgets('desktop dark settings, notes scrolled', (tester) async {
     await pumpForGolden(
       tester,
       size: const Size(760, 520),
@@ -986,13 +986,13 @@ void main() {
     );
     await tapSettings(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('settings-section-appearance')));
+    await tester.tap(find.byKey(const ValueKey('settings-section-notes')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('rate-attribution')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/desktop_dark_settings_appearance_end.png'),
+      matchesGoldenFile('goldens/desktop_dark_settings_notes_end.png'),
     );
   });
 
@@ -1012,7 +1012,7 @@ void main() {
     );
   });
 
-  testWidgets('desktop dark settings, updates', (tester) async {
+  testWidgets('desktop dark settings, about', (tester) async {
     await pumpForGolden(
       tester,
       size: const Size(760, 520),
@@ -1021,11 +1021,11 @@ void main() {
     );
     await tapSettings(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('settings-section-updates')));
+    await tester.tap(find.byKey(const ValueKey('settings-section-about')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/desktop_dark_settings_updates.png'),
+      matchesGoldenFile('goldens/desktop_dark_settings_about.png'),
     );
   });
 
@@ -1088,11 +1088,11 @@ void main() {
     );
     await tapSettings(tester);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('settings-section-general')));
+    await tester.tap(find.byKey(const ValueKey('settings-section-appearance')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/phone_settings_general.png'),
+      matchesGoldenFile('goldens/phone_settings_appearance.png'),
     );
   });
 

@@ -132,6 +132,11 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// A switch's thumb while it is on, standing on the sage track.
   final Color switchThumb;
 
+  /// The sunken track a segmented choice or a stepper sits in, below the
+  /// card it is on, and the raised segment that is chosen inside it.
+  final Color wellBackground;
+  final Color segmentSelected;
+
   /// What casts every shadow, with its alpha as the strength: black in dark,
   /// the ink at a fraction of that in light, where a black shadow reads as
   /// dirt on the paper.
@@ -274,6 +279,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.pageBorder,
     required this.textDivider,
     required this.switchThumb,
+    required this.wellBackground,
+    required this.segmentSelected,
     required this.shadow,
     this.translucency = 1,
     this.paperTranslucency = 1,
@@ -346,6 +353,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? pageBorder,
     Color? textDivider,
     Color? switchThumb,
+    Color? wellBackground,
+    Color? segmentSelected,
     Color? shadow,
     double? translucency,
     double? paperTranslucency,
@@ -415,6 +424,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     pageBorder: pageBorder ?? this.pageBorder,
     textDivider: textDivider ?? this.textDivider,
     switchThumb: switchThumb ?? this.switchThumb,
+    wellBackground: wellBackground ?? this.wellBackground,
+    segmentSelected: segmentSelected ?? this.segmentSelected,
     shadow: shadow ?? this.shadow,
     translucency: translucency ?? this.translucency,
     paperTranslucency: paperTranslucency ?? this.paperTranslucency,
@@ -493,6 +504,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       pageBorder: mix(pageBorder, other.pageBorder),
       textDivider: mix(textDivider, other.textDivider),
       switchThumb: mix(switchThumb, other.switchThumb),
+      wellBackground: mix(wellBackground, other.wellBackground),
+      segmentSelected: mix(segmentSelected, other.segmentSelected),
       shadow: mix(shadow, other.shadow),
       translucency: translucency + (other.translucency - translucency) * t,
       paperTranslucency:
@@ -1096,6 +1109,8 @@ class KapyTheme {
     pageBorder: Color(0xFF2E2A25),
     textDivider: Color(0xFF554F47),
     switchThumb: Color(0xFFE2DCCF),
+    wellBackground: Color(0xFF1F1D19),
+    segmentSelected: Color(0xFF35312B),
     shadow: Color(0xFF000000),
   );
 
@@ -1174,6 +1189,8 @@ class KapyTheme {
     pageBorder: Color(0xFFE6E0D0),
     textDivider: Color(0xFFBDB6A6),
     switchThumb: Color(0xFFFCFAF4),
+    wellBackground: Color(0xFFEFEADD),
+    segmentSelected: Color(0xFFFCFAF4),
     shadow: Color(0x662A2620),
   );
 
