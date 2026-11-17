@@ -5,6 +5,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
@@ -58,6 +59,7 @@ void main() {
       notes: notes,
       state: syncState,
       store: store,
+      tags: TagStore(store),
       tasks: TaskLibrary(
         notes: notes,
         store: store,

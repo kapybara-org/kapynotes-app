@@ -7,6 +7,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/stamped.dart';
+import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_index.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_bundle.dart';
@@ -63,6 +65,7 @@ void main() {
       replica: state.deviceId.substring(0, 12),
     );
     final tasks = TaskIndex(store);
+    final tags = TagStore(store);
     return (
       notes: notes,
       tasks: tasks,
@@ -80,8 +83,10 @@ void main() {
           api: api,
           vault: vault,
           index: tasks,
+          tags: tags,
           docs: docs,
           noteIsLive: (id) => notes.byId(id) != null,
+          deletedNotes: () => const [],
           delay: const Duration(milliseconds: 50),
         ),
         vault: vault,

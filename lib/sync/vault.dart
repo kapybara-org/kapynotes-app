@@ -146,15 +146,28 @@ class Vault {
   /// which note every task is in. HMAC-SHA256 under a key derived from the
   /// master key for this alone, cut to 128 bits and marked as a version-8
   /// UUID.
-  String taskRecordId(String noteId, String anchor) {
-    final key = _taskIdKey ??= hashes.Hmac(
-      hashes.sha256,
-      _masterKey,
-    ).convert(utf8.encode('kapynotes task record ids v1')).bytes;
+  String taskRecordId(String noteId, String anchor) => _recordId(
+    _taskIdKey ??= _idKey('kapynotes task record ids v1'),
+    '$noteId\n$anchor',
+  );
+
+  List<int>? _taskIdKey;
+
+  /// The id of the record holding which tags [noteId] carries, for the same
+  /// reasons and in the same way as [taskRecordId], under a key of its own.
+  String noteTagsRecordId(String noteId) =>
+      _recordId(_noteTagsIdKey ??= _idKey('kapynotes note tag ids v1'), noteId);
+
+  List<int>? _noteTagsIdKey;
+
+  List<int> _idKey(String label) =>
+      hashes.Hmac(hashes.sha256, _masterKey).convert(utf8.encode(label)).bytes;
+
+  static String _recordId(List<int> key, String message) {
     final digest = hashes.Hmac(
       hashes.sha256,
       key,
-    ).convert(utf8.encode('$noteId\n$anchor')).bytes;
+    ).convert(utf8.encode(message)).bytes;
     final bytes = Uint8List.fromList(digest.sublist(0, 16));
     bytes[6] = (bytes[6] & 0x0f) | 0x80;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
@@ -163,8 +176,6 @@ class Vault {
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
         '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
-
-  List<int>? _taskIdKey;
 
   /// Seals a batch under the master key in a single isolate hop.
   Future<List<SealedBox>> sealAll(List<NotePayload> payloads) =>
