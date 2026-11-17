@@ -375,7 +375,10 @@ class TaskIndex extends ChangeNotifier {
 
   /// Brings a note's tasks into line with its text.
   ///
-  /// Each record of the note is found by its anchor. One whose anchor went
+  /// Each record of the note is found by its anchor, and waits while that
+  /// names a character another device wrote that has not arrived. One of
+  /// this device's own the document does not hold is gone for good, as when
+  /// another device's copy of the note won its seed. One whose anchor went
   /// with its line looks for an unclaimed line with the same words, since an
   /// edit that rewrote a stretch of the note takes every anchor in it along,
   /// and moves to that line's record; failing that it is deleted. Two that
@@ -407,7 +410,11 @@ class TaskIndex extends ChangeNotifier {
       });
     for (final entry in mine) {
       final anchor = parseAnchor(entry.anchor);
-      if (anchor != null && !doc.knows(anchor)) continue;
+      if (anchor != null &&
+          !doc.knows(anchor) &&
+          anchor.id!.replica != doc.replica) {
+        continue;
+      }
       final index = taskLineIndex(doc, lines, entry.anchor);
       if (index < 0) {
         orphans.add(entry);

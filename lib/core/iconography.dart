@@ -152,6 +152,10 @@ class KapyIcons {
     0xE015,
     HugeIcons.strokeRoundedCircle,
   );
+  static const clipboardOutlined = KapyIconData(
+    0xE0DC,
+    HugeIcons.strokeRoundedClipboard,
+  );
   static const closeRounded = KapyIconData(
     0xE016,
     HugeIcons.strokeRoundedCancel01,

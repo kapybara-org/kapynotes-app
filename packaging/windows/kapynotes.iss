@@ -1,6 +1,6 @@
 ; Inno Setup script for the Windows build — the counterpart to the macOS DMG.
 ;
-; Built by .github/workflows/desktop-ci.yml on every push and by
+; Built by .github/workflows/desktop-ci.yml on every pull request and by
 ; desktop-release.yml on a tag, neither of which can run on macOS.
 ; To build by hand on a Windows box, from the repository root:
 ;

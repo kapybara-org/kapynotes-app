@@ -66,7 +66,7 @@ Tags rather than pushes because the artifacts are named after the version and
 served `immutable` for a year: republishing one filename would leave Cloudflare
 edges serving the old bytes indefinitely.
 
-`.github/workflows/desktop-ci.yml` runs on every push instead, building both
+`.github/workflows/desktop-ci.yml` runs on every pull request and every push to main instead, building both
 desktop platforms unsigned and keeping them as artifacts. Windows has to be
 built there — `flutter build windows` needs a Windows host with Visual Studio's
 C++ workload, and macOS does not offer the subcommand at all. Note the billing

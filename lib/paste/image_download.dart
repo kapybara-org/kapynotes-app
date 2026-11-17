@@ -34,10 +34,15 @@ class PastedImageDownloader {
   var _active = 0;
   final _waiting = Queue<Completer<void>>();
 
-  Future<({Uint8List bytes, String mime})?> fetch(String address) async {
+  /// [clipboardFiles] are the paths the clipboard itself offered as files,
+  /// the only ones besides the temporary folder a `file:` address may name.
+  Future<({Uint8List bytes, String mime})?> fetch(
+    String address, {
+    Iterable<String> clipboardFiles = const [],
+  }) async {
     final uri = Uri.tryParse(address);
     if (uri == null) return null;
-    if (uri.scheme == 'file') return _readFile(uri);
+    if (uri.scheme == 'file') return _readFile(uri, clipboardFiles);
     if (uri.scheme != 'https' && uri.scheme != 'http') return null;
     await _acquire();
     try {
@@ -98,12 +103,33 @@ class PastedImageDownloader {
     }
   }
 
-  /// A picture a desktop app left on disk for its clipboard, as Word does.
-  /// Readable only where the app's sandbox allows; otherwise null, like any
-  /// other failed fetch.
-  static Future<({Uint8List bytes, String mime})?> _readFile(Uri uri) async {
+  /// A picture a desktop app left on disk for its clipboard: in the
+  /// temporary folder, as Word does, or a file the clipboard itself offered.
+  /// Markup can name any path, and the picture goes wherever the note goes,
+  /// so any other file is refused and the paste shows a picture that didn't
+  /// load. Readable only where the app's sandbox allows; otherwise null, like
+  /// any other failed fetch.
+  static Future<({Uint8List bytes, String mime})?> _readFile(
+    Uri uri,
+    Iterable<String> clipboardFiles,
+  ) async {
     try {
-      final file = File(uri.toFilePath());
+      final file = File(await File(uri.toFilePath()).resolveSymbolicLinks());
+      final path = _comparable(file.path);
+      final temporary = _comparable(
+        await Directory.systemTemp.resolveSymbolicLinks(),
+      );
+      var allowed = path.startsWith('$temporary${Platform.pathSeparator}');
+      for (final offered in clipboardFiles) {
+        if (allowed) break;
+        try {
+          allowed =
+              _comparable(await File(offered).resolveSymbolicLinks()) == path;
+        } on FileSystemException {
+          continue;
+        }
+      }
+      if (!allowed) return null;
       if (await file.length() > maxBytes) return null;
       final bytes = await file.readAsBytes();
       final mime = mimeForFilename(file.path);
@@ -112,6 +138,15 @@ class PastedImageDownloader {
     } on Object {
       return null;
     }
+  }
+
+  /// [path] as two names for one file compare: without a trailing
+  /// separator, and on Windows in one case.
+  static String _comparable(String path) {
+    final trimmed = path.endsWith(Platform.pathSeparator)
+        ? path.substring(0, path.length - 1)
+        : path;
+    return Platform.isWindows ? trimmed.toLowerCase() : trimmed;
   }
 
   Future<void> _acquire() async {
