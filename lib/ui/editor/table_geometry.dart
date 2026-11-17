@@ -119,6 +119,22 @@ class TableGeometry {
     }
   }
 
+  /// [measured]'s grid for [table], the same words where they stand now. The
+  /// cells' painters stay [measured]'s, and go when it is disposed.
+  TableGeometry._movedTo(this.table, TableGeometry measured)
+    : fitToWidth = measured.fitToWidth,
+      fill = measured.fill,
+      minRowHeight = measured.minRowHeight {
+    columns = measured.columns;
+    for (var i = 0; i < table.rows.length; i++) {
+      final row = measured.table.rows[i];
+      final cells = measured._cells[row];
+      final height = measured._rowHeights[row];
+      if (cells != null) _cells[table.rows[i]] = cells;
+      if (height != null) _rowHeights[table.rows[i]] = height;
+    }
+  }
+
   /// The air between a cell's words and its column's edges, and above and
   /// below them: Paper's 14 across and 36px rows.
   static const double padding = 14;
@@ -436,19 +452,25 @@ double placeholderLineOverhead({
   return _overheads[key] = math.max(0, next - top - asked);
 }
 
-typedef _Key = (int, TextStyle, TextScaler, double?, bool, double);
+typedef _Key = (String, TextStyle, TextScaler, double?, bool, double, Object?);
 
-/// The geometry of a note's tables, kept for as long as the note and the style
-/// it is drawn in stay the same.
+/// The geometry of a note's tables, kept for as long as each table's words
+/// and the style it is drawn in stay the same.
 ///
-/// A table is named by where it starts, which is unique within one analysis, and
-/// measured again whenever anything it depends on changes — the width it is
-/// fitted into included, so that a narrower window never reuses the answer
-/// worked out for a wider one.
+/// A table is named by its source text, so an edit anywhere else in the note,
+/// which only moves it, measures nothing again: the grid measured before is
+/// handed back for the table where it now stands. It is measured again
+/// whenever anything it depends on changes — the width it is fitted into
+/// included, so that a narrower window never reuses the answer worked out for
+/// a wider one. A grid no table asked for while the note was read the last
+/// two times is let go.
 class TableGeometryCache {
-  final Map<_Key, TableGeometry> _geometry = {};
+  Map<_Key, TableGeometry> _geometry = {};
+  Map<_Key, TableGeometry> _previous = {};
   MarkdownAnalysis? _analysis;
 
+  /// [style] names whatever else [runStyle] draws with, such as the theme's
+  /// colours: a grid is measured again when it changes.
   TableGeometry of({
     required MarkdownTable table,
     required MarkdownAnalysis analysis,
@@ -458,33 +480,51 @@ class TableGeometryCache {
     double? fitToWidth,
     bool fill = false,
     double minRowHeight = 0,
+    Object? style,
   }) {
-    // Any edit makes a new analysis, and every offset held here came from the
-    // old one.
     if (!identical(analysis, _analysis)) {
-      forget();
+      _release(_previous);
+      _previous = _geometry;
+      _geometry = {};
       _analysis = analysis;
     }
-    return _geometry.putIfAbsent(
-      (table.start, base, scaler, fitToWidth, fill, minRowHeight),
-      () => TableGeometry(
-        table: table,
-        analysis: analysis,
-        base: base,
-        scaler: scaler,
-        runStyle: runStyle,
-        fitToWidth: fitToWidth,
-        fill: fill,
-        minRowHeight: minRowHeight,
-      ),
+    final key = (
+      analysis.text.substring(table.start, table.end),
+      base,
+      scaler,
+      fitToWidth,
+      fill,
+      minRowHeight,
+      style,
     );
+    final measured = _geometry[key] ??=
+        _previous.remove(key) ??
+        TableGeometry(
+          table: table,
+          analysis: analysis,
+          base: base,
+          scaler: scaler,
+          runStyle: runStyle,
+          fitToWidth: fitToWidth,
+          fill: fill,
+          minRowHeight: minRowHeight,
+        );
+    return identical(measured.table, table)
+        ? measured
+        : TableGeometry._movedTo(table, measured);
+  }
+
+  static void _release(Map<_Key, TableGeometry> geometry) {
+    for (final measured in geometry.values) {
+      measured.dispose();
+    }
+    geometry.clear();
   }
 
   void forget() {
-    for (final geometry in _geometry.values) {
-      geometry.dispose();
-    }
-    _geometry.clear();
+    _release(_geometry);
+    _release(_previous);
+    _analysis = null;
   }
 
   void dispose() => forget();

@@ -2748,7 +2748,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// in view, from its top when it is taller than the note's window.
   void showAttachment(int offset) {
     final field = _field;
-    if (field == null || !_scrollController.hasClients) return;
+    if (field == null ||
+        !_scrollController.hasClients ||
+        offset < 0 ||
+        offset > field.lines.textLength) {
+      return;
+    }
     final line = field.lines.lineAt(offset);
     final shownTop = field.lineTop(line);
     final shownBottom = field.lineTop(line + 1);
@@ -6232,11 +6237,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final key = (words, width, style, scaler, layoutKey);
     if (key == _titleKey) return _title;
     _titleKey = key;
-    final full = _controller.buildTextSpan(
-      context: context,
-      style: style,
-      withComposing: false,
-    );
+    final full = _controller.spansIn(context, style)(0, end).span as TextSpan;
     final runs = <TextSpan>[];
     var at = 0;
     for (final run in full.children ?? const <InlineSpan>[]) {
@@ -6892,6 +6893,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       fitToWidth: attachmentWidth,
                       fill: EditorMetrics.page,
                       minRowHeight: rowHeight,
+                      style: (palette, Theme.of(context).colorScheme.primary),
                       runStyle: (base, styles, words) {
                         final drawn = _controller.markdownRunStyle(
                           base,
