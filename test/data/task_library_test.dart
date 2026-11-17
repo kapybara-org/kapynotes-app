@@ -31,6 +31,7 @@ void main() {
       store: store,
       storage: MemoryDocStorage(),
     );
+    await notes.load();
     await library.load();
   });
 

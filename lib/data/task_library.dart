@@ -75,8 +75,11 @@ class TaskLibrary extends ChangeNotifier {
 
   Future<void> load() => _loading ??= _load();
 
+  /// Reads the store the notes live in, not the notes: whoever loads those
+  /// does, and the first pass waits for them. A pass over a note list not
+  /// read yet would take every document for a deleted note's.
   Future<void> _load() async {
-    await _notes.load();
+    await _store.load();
     var local = _store.data[_localKey];
     if (local is! Map ||
         local['key'] is! String ||
@@ -140,7 +143,7 @@ class TaskLibrary extends ChangeNotifier {
   }
 
   void _keep() {
-    if (_sync != null || !_loaded) return;
+    if (_sync != null || !_loaded || !_notes.isLoaded) return;
     final live = <String, Note>{};
     for (final note in _notes.allNotes) {
       live[note.id] = note;
