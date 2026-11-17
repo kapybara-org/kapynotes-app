@@ -3,6 +3,9 @@ import 'dart:ui' show AppExitResponse;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'ai/device_model.dart';
+import 'ai/kapy_ai.dart';
+import 'ai/kapy_ai_controller.dart';
 import 'core/platform.dart';
 import 'core/popup_keyboard.dart';
 import 'core/appearance.dart';
@@ -31,6 +34,7 @@ import 'core/window_material.dart';
 import 'data/engine_provider.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
+import 'data/tags.dart';
 import 'data/task_library.dart';
 import 'data/notes_store.dart';
 import 'data/onboarding.dart';
@@ -59,7 +63,9 @@ class KapyNotesApp extends StatefulWidget {
     this.desktopIntegration,
     this.account,
     this.tasks,
+    this.tags,
     this.recording,
+    this.kapyAi,
     this.imageAcquirer,
     this.lostImageRetriever,
     this.hiddenNotesGate,
@@ -82,10 +88,17 @@ class KapyNotesApp extends StatefulWidget {
   /// Every checklist line as a task, for Tasks; null leaves Tasks out.
   final TaskLibrary? tasks;
 
+  /// The person's tags and which notes carry them.
+  final TagStore? tags;
+
   /// Owns the microphone. Injectable so a test can hand over a recorder with
   /// no microphone behind it — the real one starts a one-second ticker that
   /// `pumpAndSettle` would wait on forever.
   final VoiceRecordingController? recording;
+
+  /// Kapy AI, for a test to hand over. Left out, a build that carries it
+  /// makes its own.
+  final KapyAi? kapyAi;
 
   /// Native image boundaries, injectable for launch and recovery tests.
   final ImageFileAcquirer? imageAcquirer;
@@ -147,6 +160,10 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// single `File.exists` for it at startup and nothing else.
   TranscriptionQueue? _transcriptions;
   VoicePrefs? _voicePrefs;
+
+  /// Kapy AI, built only in builds that carry it. Held here for the reason
+  /// [_localModels] is: closing the panel must not drop a chat mid-answer.
+  KapyAi? _kapyAi;
 
   /// The speech models on this device. Held here rather than in the settings
   /// dialog so that closing settings does not abandon a download of two
@@ -239,7 +256,25 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     // Apple's model first because it is free and already on the machine;
     // the downloaded one answers for every device Apple does not cover.
     _gemma = GemmaSummarizer(models: _localModels!);
-    _deviceSummarizer = DeviceSummarizer([AppleSummarizer(), _gemma!]);
+    final apple = AppleSummarizer();
+    _deviceSummarizer = DeviceSummarizer([apple, _gemma!]);
+    // Kapy AI answers with the same two models, through the same objects, so
+    // the weights are in memory once whichever feature asked for them.
+    if (widget.kapyAi != null) {
+      _kapyAi = widget.kapyAi;
+    } else if (kapyAiAvailable) {
+      _kapyAi = KapyAiController(
+        store: widget.store,
+        notes: widget.notes,
+        device: PlatformDeviceModel(
+          apple: apple,
+          gemma: _gemma!,
+          models: _localModels!,
+        ),
+        billing: widget.account?.billing,
+        token: () => widget.account?.token,
+      );
+    }
     _summarizer = RoutingSummarizer(
       engineOf: () => _cloudAccess?.summaries.engine ?? SummaryEngine.cloud,
       cloud: CloudSummarizer(() => widget.account?.speech),
@@ -453,6 +488,8 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _transcriptions?.dispose();
     _cloudAccess?.dispose();
     _voicePrefs?.dispose();
+    // Not the injected one: whoever passed it in owns it.
+    if (widget.kapyAi == null) _kapyAi?.dispose();
     _localModels?.dispose();
     unawaited(_gemma?.unload() ?? Future<void>.value());
     _launchController.dispose();
@@ -588,6 +625,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
             desktopIntegration: widget.desktopIntegration,
             account: widget.account,
             tasks: widget.tasks,
+            tags: widget.tags,
             store: widget.store,
             welcomeNoteId: _welcomeNoteId,
             launchIntent: _launchIntent,
@@ -604,6 +642,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
             imageAcquirer: widget.imageAcquirer,
             lostImageRetriever: widget.lostImageRetriever,
             hiddenNotesGate: _hiddenNotesGate,
+            kapyAi: _kapyAi,
           ),
         ),
       ),

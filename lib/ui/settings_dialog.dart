@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../ai/kapy_ai.dart';
 import '../calc/format.dart';
 import '../core/appearance.dart';
 import '../core/desktop_integration.dart';
@@ -38,6 +39,8 @@ import 'account/sync_pane.dart';
 import 'control_surface.dart';
 import 'export_import.dart';
 import 'hidden_notes_gate.dart';
+import 'kapy_ai/kapy_ai_parts.dart';
+import 'kapy_ai/kapy_ai_settings.dart';
 import 'model_terms_sheet.dart';
 import 'notebook_paper.dart';
 import 'settings_rows.dart';
@@ -98,7 +101,10 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.notes =>
       'How notes open, typing and calculations, backup and Hidden Notes',
     SettingsSection.voice =>
-      'Voice notes, transcripts and summaries, and where each one runs',
+      kapyAiAvailable
+          ? 'Voice notes, transcripts, summaries and Kapy AI, and where each '
+                'one runs'
+          : 'Voice notes, transcripts and summaries, and where each one runs',
     SettingsSection.window =>
       'What the window shows, and what happens when it closes',
     SettingsSection.shortcuts =>
@@ -130,7 +136,9 @@ Future<void> showSettings(
   VoidCallback? onTranscriptionReady,
   CloudAccess? cloudAccess,
   HiddenNotesGate? hiddenNotes,
+  KapyAi? kapyAi,
   SettingsSection? section,
+  String? reveal,
   String? notice,
 }) {
   SettingsDialog build({required bool asSheet}) => SettingsDialog(
@@ -148,7 +156,9 @@ Future<void> showSettings(
     onTranscriptionReady: onTranscriptionReady,
     cloudAccess: cloudAccess,
     hiddenNotes: hiddenNotes,
+    kapyAi: kapyAi,
     section: section,
+    reveal: reveal,
     notice: notice,
     asSheet: asSheet,
   );
@@ -198,7 +208,9 @@ class SettingsDialog extends StatefulWidget {
     this.onTranscriptionReady,
     this.cloudAccess,
     this.hiddenNotes,
+    this.kapyAi,
     this.section,
+    this.reveal,
     this.notice,
     this.asSheet = false,
   });
@@ -243,6 +255,14 @@ class SettingsDialog extends StatefulWidget {
   /// The pane to open on, when something outside sent the user here to do one
   /// thing. Null starts where settings always starts.
   final SettingsSection? section;
+
+  /// Kapy AI's chats, models and accounts, for its two groups in Voice & AI.
+  /// Null, or the feature not built in, leaves both out.
+  final KapyAi? kapyAi;
+
+  /// The row [section] opens scrolled to and lit, by its key: "Manage
+  /// accounts…" in Kapy AI lands on Your accounts.
+  final String? reveal;
 
   /// Why whatever sent the user here did so — "Sign in first to share this
   /// note" — said as a toast once this is on screen. Raised here rather than
@@ -323,10 +343,19 @@ class _Setting {
 
 /// A heading and the card of settings under it.
 class _Group {
-  const _Group(this.title, this.settings, {this.detail, this.after = const []});
+  const _Group(
+    this.title,
+    this.settings, {
+    this.detail,
+    this.caption,
+    this.after = const [],
+  });
 
   final String title;
   final String? detail;
+
+  /// A line under the heading, for a group that needs saying what it is.
+  final String? caption;
   final List<_Setting> settings;
 
   /// What is said under the card: a note, an error.
@@ -463,6 +492,11 @@ class _SettingsDialogState extends State<SettingsDialog>
     if (wanted != null && _isAvailable(wanted)) {
       _section = wanted;
       _sheetSection = wanted;
+      if (widget.reveal case final reveal?) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => unawaited(_reveal(ValueKey<String>(reveal))),
+        );
+      }
     }
     final notice = widget.notice;
     if (notice != null) {
@@ -1802,7 +1836,130 @@ class _SettingsDialogState extends State<SettingsDialog>
             _ModelCredits(models: _localModelCredits),
         ],
       ),
+      ..._kapyAiGroups(),
     ];
+  }
+
+  /// Kapy AI, only where the build carries it.
+  KapyAi? get _kapyAi => kapyAiAvailable ? widget.kapyAi : null;
+
+  List<_Group> _kapyAiGroups() {
+    final ai = _kapyAi;
+    if (ai == null) return const [];
+    final word = kapyDeviceWord;
+    final keys = widget.shortcuts
+        .bindingFor(ShortcutAction.toggleKapyAi)
+        ?.keycapLabel;
+    final deviceLine = kapyDeviceModelLine(ai.device);
+    final accounts = [...ai.accounts]
+      ..sort((a, b) => a.kind.index.compareTo(b.kind.index));
+    return [
+      _Group('Kapy AI', [
+        _toggle(
+          'kapy-ai-toggle',
+          'Kapy AI',
+          ai.device.status == DeviceModelStatus.unavailable
+              ? 'No on-device model here. Use an OpenRouter key, or Kapy AI '
+                    'Cloud on Pro'
+              : [
+                  'Answers from your notes in a panel beside the page',
+                  if (keys != null && AppPlatform.isDesktop) '$keys opens it',
+                ].join('. '),
+          value: ai.enabled,
+          onChanged: (value) => ai.enabled = value,
+          byDefault: true,
+          keywords: ['ai', 'assistant', 'ask', 'chat', 'questions', 'answers'],
+        ),
+        _Setting(
+          'kapy-ai-default-model',
+          'Default model',
+          subtitle: ai.isPro
+              ? 'Used for new chats. Each chat can switch in the panel'
+              : 'Kapy AI Cloud is part of Pro',
+          keywords: ['model', 'cloud', 'on this device', 'new chats'],
+          value: kapyDefaultModelLabel(ai.defaultModel),
+          control: KapyDefaultModelButton(kapyAi: ai),
+        ),
+        if (deviceLine != null)
+          _Setting(
+            'kapy-ai-device-model',
+            'On-device model',
+            subtitle: deviceLine,
+            keywords: [
+              'gemma',
+              'apple intelligence',
+              'offline',
+              'local',
+              'download',
+            ],
+            control: kapyDeviceModelControl(ai),
+          ),
+        _Setting(
+          'kapy-ai-clear-history',
+          'Clear chat history',
+          subtitle: ai.isPro
+              ? 'Deletes every Kapy AI chat on all your devices'
+              : 'Deletes every Kapy AI chat on this $word',
+          keywords: ['delete chats', 'history', 'conversations'],
+          control: SettingsRowButton(
+            key: const ValueKey('kapy-ai-clear'),
+            label: 'Clear…',
+            destructive: true,
+            onPressed: () => unawaited(_clearKapyHistory(ai)),
+          ),
+        ),
+      ]),
+      if (accounts.isNotEmpty)
+        _Group(
+          'Your accounts',
+          [
+            for (final account in accounts)
+              _Setting(
+                kapyAccountRowId(account.kind),
+                kapyAccountName(account.kind),
+                subtitle: kapyAccountLine(account),
+                keywords: switch (account.kind) {
+                  KapyAccountKind.codex => ['openai', 'gpt', 'codex cli'],
+                  KapyAccountKind.claudeCode => ['anthropic', 'claude'],
+                  KapyAccountKind.openRouter => ['api key', 'key', 'gemini'],
+                },
+                row: KapyAccountRow(kapyAi: ai, account: account),
+              ),
+          ],
+          caption:
+              'Models from a plan or key you already have. Hidden notes never '
+              'go to them',
+        ),
+    ];
+  }
+
+  /// Asks once: on Pro this reaches every device.
+  Future<void> _clearKapyHistory(KapyAi ai) async {
+    final clear = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear chat history?'),
+        content: Text(
+          ai.isPro
+              ? 'Every Kapy AI chat is deleted on all your devices. This '
+                    'can’t be undone.'
+              : 'Every Kapy AI chat on this $kapyDeviceWord is deleted. This '
+                    'can’t be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('kapy-ai-clear-confirm'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (clear == true) await ai.clearHistory();
   }
 
   List<_Group> _windowGroups() {
@@ -1901,9 +2058,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   List<_Group> _shortcutGroups({bool filtered = true}) {
     final filter = filtered ? _shortcutFilter.text.trim().toLowerCase() : '';
     bool shows(ShortcutAction action) =>
-        filter.isEmpty ||
-        action.label.toLowerCase().contains(filter) ||
-        _keys(action).toLowerCase() == filter;
+        (action != ShortcutAction.toggleKapyAi || kapyAiAvailable) &&
+        (filter.isEmpty ||
+            action.label.toLowerCase().contains(filter) ||
+            _keys(action).toLowerCase() == filter);
     return [
       for (final group in _ShortcutGroup.values)
         if (ShortcutAction.values
@@ -2206,6 +2364,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       ?widget.cloudAccess,
       ?widget.localModels,
       ?widget.updates,
+      ?_kapyAi,
     ]),
     builder: (context, _) =>
         widget.asSheet ? _buildSheet(context) : _buildDialog(context),
@@ -2643,7 +2802,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   List<Widget> _fromGroups(List<_Group> groups) => [
     for (final group in groups) ...[
       if (group != groups.first) SizedBox(height: SettingsMetrics.groupGap),
-      SettingsLabel(group.title, detail: group.detail),
+      SettingsLabel(group.title, detail: group.detail, caption: group.caption),
       SettingsGroup(
         children: [for (final setting in group.settings) setting.build()],
       ),
@@ -2766,14 +2925,22 @@ extension on ShortcutAction {
     ShortcutAction.newNoteAnywhere => _ShortcutGroup.fromAnywhere,
     ShortcutAction.newNote ||
     ShortcutAction.findNotes ||
+    ShortcutAction.newTask ||
+    ShortcutAction.newDrawing ||
     ShortcutAction.nextNote ||
     ShortcutAction.previousNote ||
-    ShortcutAction.deleteNote => _ShortcutGroup.notesAndSearch,
+    ShortcutAction.deleteNote ||
+    ShortcutAction.toggleKapyAi => _ShortcutGroup.notesAndSearch,
     ShortcutAction.splitEditor ||
     ShortcutAction.closePane ||
     ShortcutAction.focusFirstPane ||
     ShortcutAction.focusSecondPane ||
     ShortcutAction.focusThirdPane => _ShortcutGroup.panes,
+    ShortcutAction.showNotes ||
+    ShortcutAction.showTasks ||
+    ShortcutAction.showDrawings ||
+    ShortcutAction.showShared ||
+    ShortcutAction.showArchive ||
     ShortcutAction.toggleSidebar ||
     ShortcutAction.toggleHiddenFolder ||
     ShortcutAction.toggleResults ||

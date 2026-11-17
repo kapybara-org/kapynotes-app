@@ -8,6 +8,7 @@ import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -82,6 +83,7 @@ void main() {
       notes: notes,
       state: syncState,
       store: store,
+      tags: TagStore(store),
       tasks: TaskLibrary(
         notes: notes,
         store: store,

@@ -50,7 +50,6 @@ void main() {
           body: TasksScreen(
             controller: tasks,
             filter: filter,
-            query: '',
             addFocus: addFocus,
             labelOf: (note) => note.title,
             onOpenNote: (_) {},
