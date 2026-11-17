@@ -512,7 +512,6 @@ class Account extends ChangeNotifier {
             tags: _tags,
             chats: _chats,
             chatsOn: () => _billing?.hasPro ?? false,
-            noteIsHidden: (noteId) => _notes.byId(noteId)?.isHidden ?? false,
             docs: docs,
             noteIsLive: (noteId) => _notes.byId(noteId) != null,
             deletedNotes: () => [

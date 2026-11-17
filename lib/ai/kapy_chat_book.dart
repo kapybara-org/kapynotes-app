@@ -56,6 +56,8 @@ class KapyChatBook extends ChangeNotifier {
   List<KapyChat>? _chats;
   Map<String, DateTime> _deleted = {};
   final Map<String, _Known> _known = {};
+  Map<String, String>? _byRecord;
+  String Function(String key)? _recordIdOf;
   final Map<String, int> _synced = {};
   final Map<String, ChatMeta> _meta = {};
   final Map<String, ChatMessagePart> _parked = {};
@@ -75,6 +77,7 @@ class KapyChatBook extends ChangeNotifier {
     _chats = _chatStore.readChats();
     _deleted = _chatStore.readDeleted();
     final raw = _store.read<Map<String, Object?>>(_key);
+    _skipped = true;
     if (raw == null) return;
     for (final item in (raw['known'] as List?) ?? const []) {
       if (item is Map &&
@@ -166,7 +169,9 @@ class KapyChatBook extends ChangeNotifier {
       _deleted[id] = at;
       if (!syncs) {
         _localDeleted.add(id);
-        _known.removeWhere((key, _) => chatOfKey(key) == id);
+        for (final key in _known.keys.toList()) {
+          if (chatOfKey(key) == id) _unlearn(key);
+        }
       }
       _forget(id);
     }
@@ -189,17 +194,25 @@ class KapyChatBook extends ChangeNotifier {
   /// Whether chats sync now, as `TaskSync` last said.
   bool get syncing => _gate?.call() ?? false;
 
-  /// `TaskSync` says whether chats sync, for as long as it runs, and how to
-  /// take in what the account has.
-  void attach(bool Function() gate, Future<void> Function() pull) {
+  /// `TaskSync` says whether chats sync, for as long as it runs, how to take
+  /// in what the account has, and what record id the account gives a key.
+  void attach(
+    bool Function() gate,
+    Future<void> Function() pull,
+    String Function(String key) recordIdOf,
+  ) {
     _gate = gate;
     _pull = pull;
+    _recordIdOf = recordIdOf;
+    _byRecord = null;
     notifyListeners();
   }
 
   void detach() {
     _gate = null;
     _pull = null;
+    _recordIdOf = null;
+    _byRecord = null;
     notifyListeners();
   }
 
@@ -218,9 +231,12 @@ class KapyChatBook extends ChangeNotifier {
   /// The plan changed, and with it perhaps [syncing].
   void refreshGate() => notifyListeners();
 
-  /// Whether a pull went by while chats were off, so their records may have
-  /// been passed over: the stream is read again from the start once they are
-  /// on.
+  /// Whether a pull may have gone by without reading the chats' records, so
+  /// the stream is read again from the start once they are on: one went by
+  /// while chats were off, or none has run here since a build that reads
+  /// them, which an older build's cursor may be past (it keeps them as ids
+  /// only). Held until the first pass that does read them, so a device with
+  /// no ledger yet counts as skipped.
   bool get skipped => _skipped;
 
   void markSkipped() {
@@ -247,15 +263,32 @@ class KapyChatBook extends ChangeNotifier {
     return _deleted.containsKey(id) && !_localDeleted.contains(id);
   }
 
-  /// Every record this device knows the server holds, by key.
-  Iterable<String> get knownKeys => _known.keys.toList();
+  /// The key of the record this device knows the server holds under
+  /// [recordId], from a map that is built once, with each key's id, and
+  /// kept as keys come and go, so a lookup costs no more than one.
+  String? keyOfRecord(String recordId) {
+    _read();
+    final recordIdOf = _recordIdOf;
+    if (recordIdOf == null) return null;
+    return (_byRecord ??= {
+      for (final key in _known.keys) recordIdOf(key): key,
+    })[recordId];
+  }
+
+  void _learn(String key, _Known known) {
+    _known[key] = known;
+    _byRecord?[_recordIdOf!(key)] = key;
+  }
+
+  void _unlearn(String key) {
+    if (_known.remove(key) == null) return;
+    _byRecord?.remove(_recordIdOf!(key));
+  }
 
   /// What the server has not been told, in the order to send it: for each
   /// chat its own record, then its messages; the deleted chats' records
-  /// last. `hidden` says which notes are hidden, whose titles a message's
-  /// list of notes leaves out. A chat with nothing left to send is marked as
-  /// in step.
-  List<OwedChat> owed({bool Function(String noteId)? hidden}) {
+  /// last. A chat with nothing left to send is marked as in step.
+  List<OwedChat> owed() {
     _read();
     final out = <OwedChat>[];
     var room = chatRecordsMax - _known.length;
@@ -280,7 +313,7 @@ class KapyChatBook extends ChangeNotifier {
       }
       for (final message in chat.messages) {
         if (held.contains('${chat.id}:${message.id}')) continue;
-        for (final part in chatMessageParts(chat.id, message, hidden: hidden)) {
+        for (final part in chatMessageParts(chat.id, message)) {
           final payload = part.toPayload();
           mine.add((
             key: part.key,
@@ -326,9 +359,9 @@ class KapyChatBook extends ChangeNotifier {
   /// The server took the record as sent.
   void acknowledge(OwedChat item) {
     if (item.payload == null) {
-      _known.remove(item.key);
+      _unlearn(item.key);
     } else {
-      _known[item.key] = _Known(item.updatedAt, item.sig!);
+      _learn(item.key, _Known(item.updatedAt, item.sig!));
       _synced.remove(chatOfKey(item.key));
     }
     _saveLedger();
@@ -342,7 +375,7 @@ class KapyChatBook extends ChangeNotifier {
       return;
     }
     _meta[id] = _meta[id]?.merge(remote) ?? remote;
-    _known[chatKey(id)] = _Known(updatedAt, chatSig(remote.toPayload()));
+    _learn(chatKey(id), _Known(updatedAt, chatSig(remote.toPayload())));
     final existing = chat(id);
     final merged = existing == null
         ? _meta[id]!
@@ -400,7 +433,7 @@ class KapyChatBook extends ChangeNotifier {
     if (_refuses(part.chatId, part.key, updatedAt, chatSig(part.toPayload()))) {
       return;
     }
-    _known[part.key] = _Known(updatedAt, chatSig(part.toPayload()));
+    _learn(part.key, _Known(updatedAt, chatSig(part.toPayload())));
     if (chat(part.chatId)?.messages.any((m) => m.id == part.messageId) ??
         false) {
       return _finish();
@@ -415,7 +448,7 @@ class KapyChatBook extends ChangeNotifier {
   void applyRemoteDelete(String key, int updatedAt) {
     _read();
     if (!_known.containsKey(key)) return;
-    _known.remove(key);
+    _unlearn(key);
     if (key.startsWith('c:')) {
       final id = chatOfKey(key);
       _remove([id], DateTime.fromMillisecondsSinceEpoch(updatedAt));
@@ -430,7 +463,7 @@ class KapyChatBook extends ChangeNotifier {
   /// deleted for good is known to the server still, and is deleted there.
   bool _refuses(String chatId, String key, int updatedAt, String sig) {
     if (!_deleted.containsKey(chatId)) return false;
-    if (!_localDeleted.contains(chatId)) _known[key] = _Known(updatedAt, sig);
+    if (!_localDeleted.contains(chatId)) _learn(key, _Known(updatedAt, sig));
     _finish();
     return true;
   }
@@ -502,6 +535,7 @@ class KapyChatBook extends ChangeNotifier {
   /// account, whose record ids are its own.
   void forgetAccount() {
     _known.clear();
+    _byRecord = null;
     _synced.clear();
     _meta.clear();
     _parked.clear();

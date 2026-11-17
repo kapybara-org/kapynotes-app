@@ -333,12 +333,16 @@ class FakeServer {
       {};
   final Map<String, int> _taskClocks = {};
 
+  /// The record ids of each push to the task stream, in order.
+  final List<List<String>> taskPushes = [];
+
   TasksPushResult pushTasks(
     String userId,
     String device,
     List<WireTaskRecord> records,
   ) {
     if (!tasksServed) _refuse(404, 'not found');
+    taskPushes.add([for (final record in records) record.id]);
     final mine = tasks.putIfAbsent(userId, () => {});
     final applied = <String>[];
     final conflicts = <WireTaskRecord>[];

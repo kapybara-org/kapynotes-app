@@ -36,7 +36,6 @@ class TaskSync {
     required Iterable<String> Function() deletedNotes,
     KapyChatBook? chats,
     bool Function()? chatsOn,
-    bool Function(String noteId)? noteIsHidden,
     this.delay = const Duration(seconds: 1),
   }) : _api = api,
        _vault = vault,
@@ -46,11 +45,10 @@ class TaskSync {
        _noteIsLive = noteIsLive,
        _deletedNotes = deletedNotes,
        _chats = chats,
-       _chatsOn = chatsOn ?? (() => true),
-       _noteIsHidden = noteIsHidden {
+       _chatsOn = chatsOn ?? (() => true) {
     _tags.addListener(_onTags);
     _chats
-      ?..attach(() => !_disposed && _chatsOn(), run)
+      ?..attach(() => !_disposed && _chatsOn(), run, _chatRecordId)
       ..addListener(_onChats);
   }
 
@@ -62,7 +60,6 @@ class TaskSync {
   final bool Function(String noteId) _noteIsLive;
   final KapyChatBook? _chats;
   final bool Function() _chatsOn;
-  final bool Function(String noteId)? _noteIsHidden;
 
   /// The notes deleted on this device that are gone for good.
   final Iterable<String> Function() _deletedNotes;
@@ -154,7 +151,7 @@ class TaskSync {
   Future<void> _pass() async {
     _rekey();
     final rewind = (_chats?.skipped ?? false) && _chatsSync;
-    if (rewind) {
+    if (rewind && _index.cursor > 0) {
       _index.recordCursor(0);
       _pullOwed = true;
     }
@@ -184,10 +181,13 @@ class TaskSync {
     );
   }
 
-  /// Sends what the task index and the tags owe. A record that loses comes
-  /// back as the server holds it, is merged in with a later `updatedAt`, and
-  /// goes up again: a few rounds at most, since only another device writing
-  /// the same record in the same moment can make one lose twice.
+  /// Sends what the task index and the tags owe, then what the chats owe, in
+  /// chunks of their own: a push over the account's limit is refused whole,
+  /// and a chunk that held a task or a tag with the chats would take it down
+  /// with them. A record that loses comes back as the server holds it, is
+  /// merged in with a later `updatedAt`, and goes up again: a few rounds at
+  /// most, since only another device writing the same record in the same
+  /// moment can make one lose twice.
   Future<void> _push() async {
     for (var round = 0; round < 3 && !_disposed; round++) {
       final owed = [
@@ -205,8 +205,10 @@ class TaskSync {
             payload: item.payload,
             acknowledge: () => _tags.acknowledge(item),
           ),
+      ];
+      final owedChats = [
         if (_chatsSync)
-          for (final item in _chats!.owed(hidden: _noteIsHidden))
+          for (final item in _chats!.owed())
             (
               id: _chatRecordId(item.key),
               updatedAt: item.updatedAt,
@@ -214,12 +216,16 @@ class TaskSync {
               acknowledge: () => _chats.acknowledge(item),
             ),
       ];
-      if (owed.isEmpty) return;
-      for (var i = 0; i < owed.length; i += tasksPushMax) {
-        final chunk = owed.sublist(
-          i,
-          i + tasksPushMax > owed.length ? owed.length : i + tasksPushMax,
-        );
+      if (owed.isEmpty && owedChats.isEmpty) return;
+      final chunks = [
+        for (final list in [owed, owedChats])
+          for (var i = 0; i < list.length; i += tasksPushMax)
+            list.sublist(
+              i,
+              i + tasksPushMax > list.length ? list.length : i + tasksPushMax,
+            ),
+      ];
+      for (final chunk in chunks) {
         final records = <WireTaskRecord>[];
         for (final item in chunk) {
           final at = DateTime.fromMillisecondsSinceEpoch(
@@ -281,8 +287,8 @@ class TaskSync {
         noteId: _noteOfRecord[record.id] ?? _findNoteOf(record.id),
       );
       if (_chatsSync) {
-        final key = _chatKeyOf(record.id);
-        if (key != null) _chats!.applyRemoteDelete(key, updatedAt);
+        final key = _chats!.keyOfRecord(record.id);
+        if (key != null) _chats.applyRemoteDelete(key, updatedAt);
       }
       return;
     }
@@ -354,15 +360,6 @@ class TaskSync {
     return parts[0] == 'c'
         ? _vault.chatRecordId(parts[1])
         : _vault.chatMessageRecordId(parts[1], parts[2], int.parse(parts[3]));
-  }
-
-  /// The key of the chat record this device knows the server holds under
-  /// [recordId].
-  String? _chatKeyOf(String recordId) {
-    for (final key in _chats?.knownKeys ?? const <String>[]) {
-      if (_chatRecordId(key) == recordId) return key;
-    }
-    return null;
   }
 
   String _noteTagsId(String noteId) => _noteTagsIds[noteId] ??= () {

@@ -34,7 +34,8 @@ class Device {
     required this.name,
     int protocol = protocolVersion,
     this.withChats = true,
-  }) {
+    MemoryStore? resume,
+  }) : store = resume ?? MemoryStore() {
     store.data['sync.v1'] = {'deviceId': deviceIdFor(name)};
     notes = NotesStore(store, now: tick);
     state = SyncState(store)..load();
@@ -61,7 +62,6 @@ class Device {
         tags: tags,
         chats: withChats ? chats : null,
         chatsOn: () => pro,
-        noteIsHidden: (id) => notes.byId(id)?.isHidden ?? false,
         docs: docs,
         noteIsLive: (id) => notes.byId(id) != null,
         deletedNotes: () => [
@@ -78,7 +78,7 @@ class Device {
 
   final FakeServer server;
   final String name;
-  final MemoryStore store = MemoryStore();
+  final MemoryStore store;
   late final NotesStore notes;
   late final SyncState state;
   late final FakeApi api;
@@ -99,6 +99,7 @@ class Device {
   Future<void> boot() async {
     await notes.load();
     await docs.load();
+    tasks.load();
     await tags.load();
     await chats.load();
   }

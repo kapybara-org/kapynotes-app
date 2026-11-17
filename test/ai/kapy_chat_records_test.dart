@@ -87,12 +87,12 @@ void main() {
     });
 
     test(
-      'notes it read are cut to a title and dropped from the end rather than crowd out the text',
+      'notes it read are dropped from the end rather than crowd out the text',
       () {
         final read = [
           for (var i = 0; i < 30; i++)
             KapyNoteRef(
-              noteId: 'n$i',
+              noteId: 'note-$i-${'n' * 40}',
               title: 'T' * 400,
               edited: DateTime.utc(2026, 11, 1),
             ),
@@ -105,13 +105,12 @@ void main() {
         expect(_bytes(parts.single), lessThanOrEqualTo(chatPayloadMax));
         expect(parts.single.read, isNotEmpty);
         expect(parts.single.read.length, lessThan(30));
-        expect(parts.single.read.first.title.length, 100);
-        expect(parts.single.read.first.noteId, 'n0');
+        expect(parts.single.read.first.noteId, startsWith('note-0-'));
         expect(parts.single.text, 'Short answer');
       },
     );
 
-    test('a hidden note keeps its id and loses its title', () {
+    test('a note it read goes as its id and edit time, never its title', () {
       final read = [
         KapyNoteRef(
           noteId: 'n1',
@@ -121,18 +120,20 @@ void main() {
         KapyNoteRef(
           noteId: 'n2',
           title: 'Trip',
-          edited: DateTime.utc(2026, 11, 1),
+          edited: DateTime.utc(2026, 11, 2),
         ),
       ];
-      final parts = chatMessageParts(
-        _chatId,
-        _message('x', read: read),
-        hidden: (id) => id == 'n1',
-      );
+      final parts = chatMessageParts(_chatId, _message('x', read: read));
       expect(
-        [for (final n in parts.single.read) (n.noteId, n.title)],
-        [('n1', ''), ('n2', 'Trip')],
+        [for (final n in parts.single.read) (n.noteId, n.title, n.edited)],
+        [
+          ('n1', '', DateTime.utc(2026, 11, 1)),
+          ('n2', '', DateTime.utc(2026, 11, 2)),
+        ],
       );
+      final sent = jsonEncode(parts.single.toPayload());
+      expect(sent, isNot(contains('Therapy')));
+      expect(sent, isNot(contains('Trip')));
     });
 
     test(

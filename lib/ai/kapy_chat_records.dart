@@ -24,10 +24,6 @@ const int chatRecordsMax = 8000;
 /// A chat's title, in characters, as the contract allows.
 const int chatTitleMax = 120;
 
-/// What a note's title is cut to in a message's list of notes it read, so a
-/// handful of them fit in the record beside some of the text.
-const int _readTitleMax = 100;
-
 /// The most that a message's list of notes may take of a record before the
 /// notes at its end are left off, so the text keeps room.
 const int _readBytesMax = 1400;
@@ -233,23 +229,15 @@ class ChatMessagePart {
 }
 
 /// [message] as the parts that carry it, each within [chatPayloadMax]. The
-/// notes it read lose the title of any that [hidden] says is hidden now, and
-/// the ones at the end if they would crowd the text out; text past
-/// [chatMessagePartsMax] parts is left off.
-List<ChatMessagePart> chatMessageParts(
-  String chatId,
-  KapyMessage message, {
-  bool Function(String noteId)? hidden,
-}) {
+/// notes it read go as their id and when they were edited, with no title: a
+/// record never changes, so a title sent now would stay in it after the note
+/// was hidden. Each device names a note from its own notes. The ones at the
+/// end are left off if they would crowd the text out, and so is text past
+/// [chatMessagePartsMax] parts.
+List<ChatMessagePart> chatMessageParts(String chatId, KapyMessage message) {
   var read = [
     for (final note in message.read)
-      KapyNoteRef(
-        noteId: note.noteId,
-        title: hidden?.call(note.noteId) ?? false
-            ? ''
-            : String.fromCharCodes(note.title.runes.take(_readTitleMax)),
-        edited: note.edited,
-      ),
+      KapyNoteRef(noteId: note.noteId, title: '', edited: note.edited),
   ];
   ChatMessagePart head(String text, int parts) => ChatMessagePart(
     chatId: chatId,

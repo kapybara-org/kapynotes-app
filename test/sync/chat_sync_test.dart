@@ -229,7 +229,9 @@ void main() {
         expect(laptop.chats.owed(), isEmpty);
 
         await phone.pass();
-        expect(phone.chats.chats.map(shape), [shape(trip)]);
+        expect(phone.chats.chats.map(shape), [
+          shape(trip).replaceAll('Trip to Kochi', ''),
+        ], reason: 'a note read goes without its title');
         expect(phone.chats.owed(), isEmpty);
         laptop.dispose();
         phone.dispose();
@@ -330,7 +332,7 @@ void main() {
     });
 
     test(
-      'a note hidden since an answer read it loses its title on the way up',
+      'the notes an answer read go up as an id and an edit time, with no title',
       () async {
         final (laptop, phone) = await pair();
         final secret = laptop.notes.create(body: 'Therapy notes\nprivate');
@@ -362,15 +364,16 @@ void main() {
 
         final sent = (await live(chatMessageKind)).last;
         final read = (sent['read'] as List).cast<Map>();
-        expect([for (final n in read) n['title']], ['', 'Trip to Kochi']);
+        expect([for (final n in read) n['noteId']], [secret.id, fine.id]);
+        expect([for (final n in read) n['title']], ['', '']);
         expect(
           jsonEncode(await live(chatMessageKind)),
-          isNot(contains('Therapy')),
+          allOf(isNot(contains('Therapy')), isNot(contains('Kochi'))),
         );
         await phone.pass();
         expect(
-          phone.chats.chats.single.messages.last.read.map((n) => n.title),
-          ['', 'Trip to Kochi'],
+          phone.chats.chats.single.messages.last.read.map((n) => n.noteId),
+          [secret.id, fine.id],
         );
         laptop.dispose();
         phone.dispose();
@@ -499,6 +502,52 @@ void main() {
           {'From the laptop', 'Kept on the phone', 'Another'},
         );
         expect(phone.chats.skipped, isFalse);
+        laptop.dispose();
+        phone.dispose();
+      },
+    );
+
+    test(
+      'a device whose cursor is past chats it never read, from a build that kept them as ids, reads them once',
+      () async {
+        final laptop = Device(server, name: 'laptop');
+        var phone = Device(server, name: 'phone', withChats: false);
+        await laptop.boot();
+        await phone.boot();
+        laptop.chats.put(chat(title: 'From the laptop'));
+        await laptop.pass();
+        await phone.pass();
+        expect(phone.tasks.cursor, greaterThan(0));
+        expect(phone.chats.chats, isEmpty);
+        final store = phone.store;
+        phone.dispose();
+
+        List<String> pulls() => [
+          for (final e in server.log)
+            if (e.device == phone.api.device && e.call.startsWith('pullTasks'))
+              e.call,
+        ];
+
+        phone = Device(server, name: 'phone', resume: store);
+        await phone.boot();
+        expect(phone.tasks.cursor, greaterThan(0), reason: 'past the chats');
+        server.log.clear();
+        await phone.pass();
+        expect(pulls(), contains('pullTasks:0'), reason: 'read from the start');
+        expect(
+          [for (final c in phone.chats.chats) c.title],
+          ['From the laptop'],
+        );
+        expect(phone.chats.skipped, isFalse);
+        phone.dispose();
+
+        phone = Device(server, name: 'phone', resume: store);
+        await phone.boot();
+        server.log.clear();
+        await phone.pass();
+        expect(pulls(), isNotEmpty);
+        expect(pulls(), isNot(contains('pullTasks:0')), reason: 'not again');
+        expect(phone.chats.chats, hasLength(1));
         laptop.dispose();
         phone.dispose();
       },
@@ -1010,6 +1059,87 @@ void main() {
         d.account.dispose();
       },
     );
+  });
+
+  group('finding the record a deletion is for', () {
+    test('costs one lookup, however many chats are known', () async {
+      final book = KapyChatBook(MemoryStore(), now: () => base);
+      await book.load();
+      final chats = [for (var i = 0; i < 300; i++) chat(minute: i)];
+      for (final c in chats) {
+        book.applyRemoteChat(ChatMeta.of(c), 1000);
+      }
+      var calls = 0;
+      String recordId(String key) {
+        calls++;
+        return 'record-for-$key';
+      }
+
+      book.attach(() => true, () async {}, recordId);
+      String idOf(KapyChat c) => 'record-for-${chatKey(c.id)}';
+      expect(book.keyOfRecord(idOf(chats.first)), chatKey(chats.first.id));
+      expect(calls, 300, reason: 'every known key named once');
+
+      calls = 0;
+      for (var i = 0; i < 1000; i++) {
+        expect(
+          book.keyOfRecord(idOf(chats[i % 300])),
+          chatKey(chats[i % 300].id),
+        );
+        expect(book.keyOfRecord('record-for-a-task'), isNull);
+      }
+      expect(calls, 0, reason: 'a lookup names nothing');
+
+      final fresh = chat(minute: 400);
+      book.applyRemoteChat(ChatMeta.of(fresh), 1000);
+      expect(calls, 1, reason: 'a key that joins is named once');
+      expect(book.keyOfRecord(idOf(fresh)), chatKey(fresh.id));
+
+      calls = 0;
+      book.applyRemoteDelete(chatKey(fresh.id), 2000);
+      expect(calls, 1, reason: 'a key that leaves is named once');
+      expect(book.keyOfRecord(idOf(fresh)), isNull);
+      expect(book.keyOfRecord(idOf(chats.first)), chatKey(chats.first.id));
+      expect(calls, 1);
+    });
+  });
+
+  group('what a push holds', () {
+    test('chats go in chunks of their own, after the tasks and tags', () async {
+      final laptop = Device(server, name: 'laptop');
+      await laptop.boot();
+      laptop.tags.create('Work');
+      laptop.tags.create('Travel');
+      laptop.chats.put(chat());
+      laptop.chats.put(chat(title: 'Second', minute: 5));
+      await laptop.pass();
+
+      final kinds = {
+        for (final row in stored().values)
+          row.record.id: (await opened(row.record))?['kind'],
+      };
+      final pushes = [
+        for (final push in server.taskPushes)
+          [
+            for (final id in push)
+              kinds[id] == chatKind || kinds[id] == chatMessageKind,
+          ],
+      ];
+      expect(pushes.expand((push) => push), contains(true));
+      expect(pushes.expand((push) => push), contains(false));
+      for (final push in pushes) {
+        expect(
+          push.toSet(),
+          hasLength(1),
+          reason: 'no push holds chats beside a tag or a task',
+        );
+      }
+      expect(pushes.map((push) => push.first), [
+        false,
+        true,
+      ], reason: 'the chats come last');
+      laptop.dispose();
+    });
   });
 
   group('the cap', () {

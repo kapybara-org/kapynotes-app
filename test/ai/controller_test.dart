@@ -552,7 +552,7 @@ void main() {
         expect(ai.chatsSync, isFalse, reason: 'Pro, but nothing is syncing');
 
         var on = true;
-        book.attach(() => on, () async {});
+        book.attach(() => on, () async {}, (key) => key);
         expect(ai.chatsSync, isTrue);
         expect(told, greaterThan(0));
         on = false;
@@ -619,15 +619,20 @@ void main() {
         ],
       );
       await ai.ask('What is in my Lisbon notes?');
-      book.attach(() => true, () async {});
-      final owed = book.owed(hidden: (id) => id == 'hidden');
+      book.attach(() => true, () async {}, (key) => key);
+      final owed = book.owed();
       expect(ai.current!.messages, hasLength(2), reason: 'it was answered');
       expect(owed, isNotEmpty);
       final sent = jsonEncode([for (final item in owed) item.payload]);
       expect(sent, isNot(contains(secret)));
       expect(sent, isNot(contains('door code')));
       expect(sent, isNot(contains('"hidden"')));
-      expect(sent, contains('Lisbon trip'), reason: 'the open note is listed');
+      expect(
+        sent,
+        contains('"noteId":"lisbon"'),
+        reason: 'the open note is listed',
+      );
+      expect(sent, isNot(contains('"title":"Lisbon trip"')));
     });
 
     test(
