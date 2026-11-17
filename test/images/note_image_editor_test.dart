@@ -30,6 +30,7 @@ import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_image_view.dart';
 import 'package:kapy_notes/ui/editor/file_chip.dart';
 import 'package:kapy_notes/ui/editor/note_video_view.dart';
+import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:kapy_notes/files/file_ingest.dart';
 import 'package:kapy_notes/files/file_opener.dart';
 import 'package:kapy_notes/video/video_ingest.dart';
@@ -2419,11 +2420,69 @@ void main() {
       expect(ref.offset, text.indexOf(anchor));
       expect(ref.src, 'https://example.com/photo.png');
       expect(ref.isPreparing, isFalse);
+      // Nothing holds the note back: it syncs with the address.
+      expect(ref.isUploaded, isTrue);
+      expect(find.text("Couldn't load image from example.com"), findsOneWidget);
       expect(
         find.byKey(const ValueKey('retry-image-download')),
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('open-image-address')), findsOneWidget);
+    });
+
+    testWidgets('Retry fetches a picture that came in as its address', (
+      tester,
+    ) async {
+      // A file stands in for the web, which the test binding answers with 400.
+      final folder = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('kapy_retry_'),
+      ))!;
+      addTearDown(() => folder.delete(recursive: true));
+      final file = File('${folder.path}/photo.png')
+        ..writeAsBytesSync(pngOf(120, 90, seed: 11));
+      final address = file.uri.toString();
+      final arrived = NoteImageRef(
+        offset: 0,
+        hash: BlobStore.hashOf(Uint8List.fromList(utf8.encode(address))),
+        key: Uint8List.fromList(List.generate(32, (i) => i)),
+        mime: 'image/png',
+        width: 360,
+        height: 240,
+        bytes: 0,
+        src: address,
+      );
+      List<NoteAttachmentRef>? reported;
+      await tester.pumpWidget(
+        harness(
+          anchor,
+          attachments: [arrived],
+          onAttachmentsChanged: (attachments) => reported = attachments,
+        ),
+      );
+      await tester.pump();
+
+      NoteImageRef? current() => reported?.single as NoteImageRef?;
+      await tester.runAsync(() async {
+        tester
+            .widget<TonalButton>(
+              find.byKey(const ValueKey('retry-image-download')),
+            )
+            .onPressed!();
+        for (var i = 0; i < 200 && current()?.src != null; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      });
+      await tester.pump();
+
+      final fetched = current()!;
+      expect(fetched.src, isNull);
+      expect(fetched.hash, isNot(arrived.hash));
+      expect(fetched.key, arrived.key);
+      expect(await tester.runAsync(() => store.has(fetched.hash)), isTrue);
+      // An ordinary picture now, which sync uploads like any other.
+      expect(fetched.attachmentId, isNull);
+      expect(find.byKey(const ValueKey('retry-image-download')), findsNothing);
+      await tester.pump(const Duration(seconds: 2));
     });
 
     testWidgets('an empty clipboard falls through to the text paste', (
