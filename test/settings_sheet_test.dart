@@ -93,7 +93,7 @@ void main() {
     await _openSettings(tester);
 
     expect(
-      find.byKey(const ValueKey('settings-section-general')),
+      find.byKey(const ValueKey('settings-section-notes')),
       findsOneWidget,
     );
     expect(
@@ -108,23 +108,23 @@ void main() {
     );
     // Each category says what is behind it before it is opened.
     expect(
-      find.text('Theme, text size, paper, fonts, and numbers'),
+      find.text('How Kapy Notes looks: theme, paper, fonts and text size'),
       findsOneWidget,
     );
 
-    // Shortcuts belong to a keyboard, and phones are updated by their store.
-    expect(
-      find.byKey(const ValueKey('settings-section-shortcuts')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey('settings-section-updates')),
-      findsNothing,
-    );
+    // Shortcuts and the window belong to a desktop, and phones are updated
+    // by their store.
+    for (final section in ['shortcuts', 'window', 'about']) {
+      expect(
+        find.byKey(ValueKey('settings-section-$section')),
+        findsNothing,
+        reason: '$section is not a phone category',
+      );
+    }
 
     // The whole point of the list: none of the panes are on this screen.
     expect(find.text('Daily separators'), findsNothing);
-    expect(find.text('NUMBERS'), findsNothing);
+    expect(find.text('TEXT'), findsNothing);
   });
 
   testWidgets('pushes one category and comes back to the list', (tester) async {
@@ -134,19 +134,16 @@ void main() {
 
     // The title says where you are, and only that category is here.
     expect(find.text('Appearance'), findsOneWidget);
-    expect(find.text('WRITING FONT'), findsOneWidget);
-    expect(find.byKey(const ValueKey('transparency-toggle')), findsNothing);
-    expect(
-      find.byKey(const ValueKey('settings-section-general')),
-      findsNothing,
-    );
+    expect(find.text('TEXT'), findsOneWidget);
+    expect(find.byKey(const ValueKey('transparency-setting')), findsNothing);
+    expect(find.byKey(const ValueKey('settings-section-notes')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('settings-sheet-back')));
     await tester.pumpAndSettle();
 
-    expect(find.text('WRITING FONT'), findsNothing);
+    expect(find.text('TEXT'), findsNothing);
     expect(
-      find.byKey(const ValueKey('settings-section-general')),
+      find.byKey(const ValueKey('settings-section-notes')),
       findsOneWidget,
     );
   });
@@ -156,7 +153,7 @@ void main() {
   ) async {
     await _pumpPhone(tester);
     await _openSettings(tester);
-    await _openCategory(tester, 'general');
+    await _openCategory(tester, 'notes');
 
     expect(prefs.dailySeparatorsEnabled, isTrue);
     await tester.tap(find.byKey(const ValueKey('daily-separators-toggle')));
@@ -170,12 +167,12 @@ void main() {
   ) async {
     await _pumpPhone(tester);
     await _openSettings(tester);
-    await _openCategory(tester, 'general');
+    await _openCategory(tester, 'notes');
 
     final toggle = find.byKey(const ValueKey('markdown-toggle'));
     await tester.scrollUntilVisible(toggle, 200);
     expect(
-      find.descendant(of: toggle, matching: find.text('Markdown in notes')),
+      find.descendant(of: toggle, matching: find.text('Markdown')),
       findsOneWidget,
     );
     expect(prefs.markdownEnabled, isTrue);
@@ -199,7 +196,7 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey('settings-section-general')),
+      find.byKey(const ValueKey('settings-section-notes')),
       findsOneWidget,
       reason: 'the first back is out of the category, not out of settings',
     );
@@ -207,7 +204,7 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey('settings-section-general')),
+      find.byKey(const ValueKey('settings-section-notes')),
       findsNothing,
       reason: 'and the second back is out of settings',
     );
@@ -218,16 +215,13 @@ void main() {
   ) async {
     await _pumpPhone(tester);
     await _openSettings(tester);
-    await _openCategory(tester, 'general');
+    await _openCategory(tester, 'notes');
 
     await tester.tap(find.byKey(const ValueKey('settings-sheet-done')));
     await tester.pumpAndSettle();
 
     expect(find.text('Settings'), findsNothing);
-    expect(
-      find.byKey(const ValueKey('settings-section-general')),
-      findsNothing,
-    );
+    expect(find.byKey(const ValueKey('settings-section-notes')), findsNothing);
   });
 
   testWidgets('gives every row a thumb to aim at', (tester) async {
@@ -237,12 +231,12 @@ void main() {
     // The list itself first.
     expect(
       tester
-          .getSize(find.byKey(const ValueKey('settings-section-general')))
+          .getSize(find.byKey(const ValueKey('settings-section-notes')))
           .height,
       greaterThanOrEqualTo(44),
     );
 
-    await _openCategory(tester, 'general');
+    await _openCategory(tester, 'notes');
     for (final key in ['daily-separators-toggle', 'export-notes']) {
       expect(
         tester.getSize(find.byKey(ValueKey(key))).height,
@@ -275,7 +269,7 @@ void main() {
     );
   });
 
-  testWidgets('narrow Windows settings keeps sections beside their pane', (
+  testWidgets('a narrow Windows window widens for settings, then narrows', (
     tester,
   ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
@@ -293,12 +287,11 @@ void main() {
     addTearDown(() => messenger.setMockMethodCallHandler(windowChannel, null));
     final integration = DesktopIntegration(layoutPrefs: prefs);
     addTearDown(integration.dispose);
-    // Narrower than the old rail breakpoint. Settings on Windows is always a
-    // section rail beside one selected pane, even while the native window is
-    // catching up with the comfortable width requested before it opens.
+    // The native window is widened before the dialog opens, so the view it
+    // lays out in is the widened one.
     await _pumpPhone(
       tester,
-      size: Size(LayoutPrefs.minimumWindowSize.width, 720),
+      size: const Size(1004, 760),
       desktopIntegration: integration,
     );
     await _openSettings(tester);
@@ -310,21 +303,24 @@ void main() {
     expect(
       (nativeCalls.lastWhere((call) => call.method == 'setBounds').arguments
           as Map)['width'],
-      720.0,
+      1004.0,
       reason: 'the Windows host is widened before the dialog is shown',
     );
     expect(
       find.byKey(const ValueKey('settings-dialog-content')),
       findsOneWidget,
     );
-    final general = find.byKey(const ValueKey('settings-section-general'));
-    expect(general, findsOneWidget);
-    expect(find.text('Daily separators'), findsOneWidget);
-    expect(
-      tester.getCenter(general).dx,
-      lessThan(tester.getCenter(find.text('Daily separators')).dx),
+    final appearance = find.byKey(
+      const ValueKey('settings-section-appearance'),
     );
-    expect(find.text('WRITING FONT'), findsNothing);
+    expect(appearance, findsOneWidget);
+    expect(find.text('Writing font'), findsOneWidget);
+    expect(
+      tester.getCenter(appearance).dx,
+      lessThan(tester.getCenter(find.text('Writing font')).dx),
+    );
+    // Headings are written in capitals on a phone only.
+    expect(find.text('TEXT'), findsNothing);
     expect(find.byKey(const ValueKey('settings-sheet-done')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('settings-done')));
@@ -371,90 +367,71 @@ void main() {
     expect(subtitle.overflow, TextOverflow.ellipsis);
   });
 
-  testWidgets('voice notes groups recording and summary choices together', (
-    tester,
-  ) async {
+  testWidgets('voice notes puts each engine choice in one row', (tester) async {
     await _pumpPhone(tester, voicePrefs: VoicePrefs(store)..load());
     await _openSettings(tester);
     await _openCategory(tester, 'voice');
 
-    // The two transcription engines are one mutually exclusive choice, so
-    // they are adjacent rather than split across distant sections.
+    expect(find.text('VOICE NOTES'), findsOneWidget);
     expect(find.text('TRANSCRIPTION'), findsOneWidget);
-    expect(find.text('RECORDINGS & SUMMARIES'), findsOneWidget);
-    expect(find.text('RECORDINGS'), findsNothing);
-    expect(find.text('ON THIS DEVICE'), findsNothing);
-    expect(
-      tester
-          .getTopLeft(find.byKey(const ValueKey('cloud-transcription-row')))
-          .dy,
-      lessThan(
-        tester
-            .getTopLeft(find.byKey(const ValueKey('local-transcription-row')))
-            .dy,
-      ),
+    // The cloud and this device are one mutually exclusive choice, so they
+    // are two halves of one control rather than two rows.
+    for (final key in ['transcribe-with-cloud', 'transcribe-with-device']) {
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('transcribe-with')),
+          matching: find.byKey(ValueKey(key)),
+        ),
+        findsOneWidget,
+      );
+    }
+    // What this device can run is said under the choice, whether or not this
+    // build can offer anything: that line is where you look to find out.
+    expect(find.byKey(const ValueKey('local-transcription-line')), findsOne);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('local-summary-line')),
+      200,
     );
-
-    // One row per engine, both of them, whether or not this build can offer
-    // either: the shelf is where you look to find out.
-    expect(find.byKey(const ValueKey('local-transcription-row')), findsOne);
-    expect(find.byKey(const ValueKey('local-summary-row')), findsOne);
-
-    // Nothing is downloadable here and nothing is built in, so there is no
-    // switch to flip — a switch that cannot move reads as a thing that is
-    // off rather than a thing that is not here.
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('local-transcription-row')),
-        matching: find.byKey(const ValueKey('compact-switch-indicator')),
-      ),
-      findsNothing,
-    );
+    expect(find.text('SUMMARIES'), findsOneWidget);
   });
 
   testWidgets('opens straight on a pane when sent to one', (tester) async {
-    // What a chip that cannot transcribe does: hand the user the pane the
-    // problem lives in, rather than the front of settings.
     await _pumpPhone(tester, voicePrefs: VoicePrefs(store)..load());
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await _openCategory(tester, 'voice');
-    expect(find.text('RECORDINGS & SUMMARIES'), findsOneWidget);
+    expect(find.text('TRANSCRIPTION'), findsOneWidget);
   });
 
-  testWidgets('general settings no longer offers the welcome note', (
-    tester,
-  ) async {
+  testWidgets('notes settings does not offer the welcome note', (tester) async {
     await _pumpPhone(tester, voicePrefs: VoicePrefs(store)..load());
     await _openSettings(tester);
-    await _openCategory(tester, 'general');
+    await _openCategory(tester, 'notes');
 
     expect(find.byKey(const ValueKey('open-welcome-note')), findsNothing);
     expect(find.text('Welcome note'), findsNothing);
   });
 
-  testWidgets(
-    'signed out, cloud explains the account and local remains available',
-    (tester) async {
-      await _pumpPhone(tester, voicePrefs: VoicePrefs(store)..load());
-      await _openSettings(tester);
-      await _openCategory(tester, 'voice');
+  testWidgets('signed out, the cloud says it needs an account', (tester) async {
+    final voice = VoicePrefs(store)..load();
+    await _pumpPhone(tester, voicePrefs: voice);
+    await _openSettings(tester);
+    await _openCategory(tester, 'voice');
 
-      // No account is wired up here, which is what signed out looks like.
-      expect(
-        find.byKey(const ValueKey('cloud-transcription-row')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('voice-sign-in-row')),
-        findsNothing,
-        reason: 'the cloud choice is disabled, not a detour out of Voice',
-      );
-      expect(
-        find.text('Sign in for cloud transcription and summaries'),
-        findsOneWidget,
-      );
-      expect(find.text('Local transcription'), findsOneWidget);
-    },
-  );
+    // No account is wired up here, which is what signed out looks like.
+    expect(
+      find.byKey(const ValueKey('voice-sign-in-row')),
+      findsNothing,
+      reason: 'the cloud choice is disabled, not a detour out of Voice',
+    );
+    expect(
+      find.text('Cloud needs you signed in. This device works offline'),
+      findsOneWidget,
+    );
+    final before = voice.transcriptEngine;
+    await tester.tap(find.byKey(const ValueKey('transcribe-with-cloud')));
+    await tester.pumpAndSettle();
+    expect(voice.transcriptEngine, before);
+    expect(find.byType(BottomSheet), findsOneWidget);
+  });
 }

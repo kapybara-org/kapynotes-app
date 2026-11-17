@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:kapy_notes/billing/billing.dart';
@@ -12,6 +14,9 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/voice_prefs.dart';
+import 'package:kapy_notes/speech/cloud_access.dart';
+import 'package:kapy_notes/speech/transcriber.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
@@ -51,6 +56,19 @@ class _BillingApi implements BillingApi {
   Future<Uri> webCheckout() async => Uri.parse('https://kapynotes.com/buy');
 }
 
+/// A device that can transcribe whatever it is asked to.
+class _ReadyDevice implements Transcriber {
+  @override
+  Future<TranscriberReadiness> readiness() async => TranscriberReadiness.ready;
+
+  @override
+  Future<TranscriptDraft> transcribe({
+    required File audio,
+    required String requestId,
+    String? language,
+  }) async => throw UnimplementedError();
+}
+
 /// Settings, opened with an account that has been signed in and unlocked —
 /// the only state where both halves of an account have anything to show.
 Future<void> pumpSettings(
@@ -59,6 +77,7 @@ Future<void> pumpSettings(
   required bool asSheet,
   SettingsSection? section,
   Entitlements? entitlements,
+  bool withCloudAccess = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -104,6 +123,14 @@ Future<void> pumpSettings(
     await account.signIn(email: 'a@b.co', password: 'x');
     await account.createPassphrase('a good passphrase');
   });
+  final cloudAccess = withCloudAccess
+      ? CloudAccess(
+          prefs: VoicePrefs(store)..load(),
+          device: _ReadyDevice(),
+          billing: account.billing,
+        )
+      : null;
+  if (cloudAccess != null) addTearDown(cloudAccess.dispose);
 
   await tester.pumpWidget(
     MaterialApp(
@@ -115,6 +142,7 @@ Future<void> pumpSettings(
           rates: RatesRepository(store),
           notes: notes,
           account: account,
+          cloudAccess: cloudAccess,
           asSheet: asSheet,
           section: section,
         ),
@@ -125,83 +153,47 @@ Future<void> pumpSettings(
 }
 
 void main() {
-  testWidgets('plan and usage shows the free limits even before sign in', (
-    tester,
-  ) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-
-    final server = FakeServer();
-    final store = _Store();
-    final notes = NotesStore(store);
-    final syncState = SyncState(store);
-    final account = Account(
-      auth: FakeAuth(
-        id: 'user-1',
-        email: server.user('user-1').email,
-        name: server.user('user-1').name,
-        image: server.user('user-1').image,
-      ),
-      syncApi: (_) => FakeApi(server, device: 'device-1', userId: 'user-1'),
-      keys: KeyStore(InMemorySecureStore()),
-      notes: notes,
-      state: syncState,
-      store: store,
-      tasks: TaskLibrary(
-        notes: notes,
-        store: store,
-        state: syncState,
-        storage: MemoryDocStorage(),
-      ),
-    );
-    addTearDown(account.dispose);
-    await notes.load();
-    await account.restore();
-
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: KapyTheme.dark(),
-        home: Scaffold(
-          body: SettingsDialog(
-            layoutPrefs: LayoutPrefs(store)..load(),
-            shortcuts: ShortcutPrefs(store)..load(),
-            rates: RatesRepository(store),
-            notes: notes,
-            account: account,
-            asSheet: true,
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('settings-section-plan')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Free plan'), findsOneWidget);
-    expect(find.textContaining('15 minutes'), findsOneWidget);
-    expect(find.textContaining('0 of 100 used'), findsOneWidget);
-    expect(find.textContaining('100 MB'), findsWidgets);
-    expect(find.textContaining('Sign in'), findsWidgets);
-  });
-
-  testWidgets('sharing sits inside Profile & sync rather than beside it', (
+  testWidgets('a free plan shows only the allowance it can use', (
     tester,
   ) async {
     await pumpSettings(
       tester,
       size: const Size(880, 640),
       asSheet: false,
-      section: SettingsSection.sync,
+      section: SettingsSection.account,
+      entitlements: Entitlements.freePreview,
+      withCloudAccess: true,
+    );
+
+    expect(find.text('Free plan'), findsOneWidget);
+    expect(
+      find.text('Voice notes run on this device. Pro runs them in the cloud'),
+      findsOneWidget,
+    );
+    // Free runs voice on the device, so its cloud minutes and summaries are
+    // nothing it can spend, and are not shown.
+    expect(find.byKey(const ValueKey('plan-transcription-usage')), findsNothing);
+    expect(find.byKey(const ValueKey('plan-summary-usage')), findsNothing);
+    expect(find.text('0 / 100 MB'), findsOneWidget);
+  });
+
+  testWidgets('sharing sits inside Account & sync rather than beside it', (
+    tester,
+  ) async {
+    await pumpSettings(
+      tester,
+      size: const Size(880, 640),
+      asSheet: false,
+      section: SettingsSection.account,
     );
 
     // One account, one category. Sharing stopped being a rail entry of its
     // own: an account is what both halves need, and the pane that asks for
     // one is where the rest of it belongs.
-    expect(find.byKey(const ValueKey('settings-section-sync')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('settings-section-account')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('settings-section-sharing')),
       findsNothing,
@@ -230,7 +222,7 @@ void main() {
       tester,
       size: const Size(880, 640),
       asSheet: false,
-      section: SettingsSection.plan,
+      section: SettingsSection.account,
       entitlements: Entitlements(
         plan: 'pro',
         storageBytes: 1024 * 1024 * 1024,
@@ -246,15 +238,14 @@ void main() {
       ),
     );
 
-    expect(find.text('Pro plan'), findsOneWidget);
-    expect(find.textContaining('7.5 of 120 minutes'), findsOneWidget);
-    expect(find.textContaining('10 extra'), findsOneWidget);
-    expect(find.textContaining('34 of 1000 used'), findsOneWidget);
-    expect(find.textContaining('256 MB of 1 GB'), findsOneWidget);
-    expect(find.textContaining('reset on 1 Oct'), findsOneWidget);
+    expect(find.text('Pro'), findsOneWidget);
+    expect(find.text('7.5 / 120 min'), findsOneWidget);
+    expect(find.text('Resets on 1 Oct · 10 min extra'), findsOneWidget);
+    expect(find.text('34 / 1,000'), findsOneWidget);
+    expect(find.text('0.3 / 1 GB'), findsOneWidget);
   });
 
-  testWidgets('the phone list opens sharing through Profile & sync', (
+  testWidgets('the phone list opens sharing through Account & sync', (
     tester,
   ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
@@ -268,7 +259,7 @@ void main() {
     );
     expect(find.text('SHARING'), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('settings-section-sync')));
+    await tester.tap(find.byKey(const ValueKey('settings-section-account')));
     await tester.pumpAndSettle();
 
     expect(find.text('SHARING'), findsOneWidget);
