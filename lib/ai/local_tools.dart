@@ -466,7 +466,7 @@ class CodexCli extends _Cli {
   /// Some tools come from the catalogue rather than from a feature: in 0.160
   /// a model's `experimental_supported_tools` (`send_user_message_async` and
   /// `clock` on one of today's). A model is offered only when that list is
-  /// empty or holds only tools in [_reviewedTools]. A catalogue that cannot
+  /// empty or holds only tools in [reviewedTools]. A catalogue that cannot
   /// be read, or that leaves nothing to offer, makes Codex unavailable: there
   /// is no "default model" to fall back to, because nobody has read it.
   @override
@@ -498,12 +498,13 @@ class CodexCli extends _Cli {
 
   /// The tools a catalogue entry may bring and still be offered. Empty: none
   /// has been shown to be harmless, and one that reaches a person, a clock
-  /// or anything else is not assumed to be.
-  static const Set<String> _reviewedTools = {};
+  /// or anything else is not assumed to be. The helper keeps its own copy and
+  /// checks it too (`Lockdown.codexReviewedTools`).
+  static const Set<String> reviewedTools = {};
 
   static bool _toolsReviewed(Object? tools) =>
       tools == null ||
-      tools is List && tools.every((tool) => _reviewedTools.contains(tool));
+      tools is List && tools.every((tool) => reviewedTools.contains(tool));
 
   /// What turns Codex from an agent into a writer, checked against
   /// `codex exec --help` and `codex features list` (0.160).
@@ -608,7 +609,7 @@ class CodexCli extends _Cli {
   ///
   /// A feature on that is not here, a newer one or one that would not turn
   /// off, has not been read, and Codex is reported unavailable until it is.
-  static const Set<String> _knownEnabled = {
+  static const Set<String> knownEnabled = {
     'auth_elicitation',
     'collaboration_modes',
     'compaction_image_budget',
@@ -661,7 +662,7 @@ class CodexCli extends _Cli {
         continue;
       }
       any = true;
-      if (columns.last == 'true' && !_knownEnabled.contains(columns.first)) {
+      if (columns.last == 'true' && !knownEnabled.contains(columns.first)) {
         return false;
       }
     }

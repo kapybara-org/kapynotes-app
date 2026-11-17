@@ -34,9 +34,23 @@ final class ToolRunnerTests: XCTestCase {
       #!/bin/sh
       LOG='\(log.path)'
       if [ "$1" = "--version" ]; then
+        echo version >> "$LOG/calls"
         /bin/cat "$LOG/version" 2>/dev/null || echo "tool 1.0.0"
         exit 0
       fi
+      if [ "$1" = "features" ]; then
+        echo features >> "$LOG/calls"
+        printf '%s\n' "$@" > "$LOG/argv_features"
+        /usr/bin/env > "$LOG/env_features"
+        /bin/cat "$LOG/features" 2>/dev/null || printf 'shell_tool  stable  false\nsqlite  stable  true\n'
+        exit 0
+      fi
+      if [ "$1" = "debug" ]; then
+        echo models >> "$LOG/calls"
+        /bin/cat "$LOG/models" 2>/dev/null || echo '{"models":[{"slug":"gpt-x","display_name":"GPT X","visibility":"list"}]}'
+        exit 0
+      fi
+      echo answer >> "$LOG/calls"
       printf '%s\n' "$@" > "$LOG/argv"
       /usr/bin/env > "$LOG/env"
       /bin/pwd -P > "$LOG/cwd"
@@ -69,8 +83,20 @@ final class ToolRunnerTests: XCTestCase {
       maxOutput: maxOutput, freshHome: freshHome, expectedVersion: expectedVersion)
   }
 
-  private func run(_ request: ToolRunner.Request) -> ToolRunner.Response {
-    ToolRunner.run(request, home: home.path, systemDirectories: [])
+  /// With a pin that "tool 1.0.0" meets; the helper's own is nil until the
+  /// canary has passed.
+  private func run(
+    _ request: ToolRunner.Request, pin: (major: Int, minor: Int)? = (major: 1, minor: 0)
+  ) -> ToolRunner.Response {
+    ToolRunner.run(request, home: home.path, systemDirectories: [], codexPin: pin)
+  }
+
+  private func write(_ text: String, to name: String) throws {
+    try text.write(to: log.appendingPathComponent(name), atomically: true, encoding: .utf8)
+  }
+
+  private func calls() -> [String] {
+    (logged("calls") ?? "").split(separator: "\n").map(String.init)
   }
 
   private func survivors(_ pattern: String) -> String {
@@ -194,7 +220,7 @@ final class ToolRunnerTests: XCTestCase {
   func testTheFeatureListGetsAHomeOfItsOwn() throws {
     try install(.codex)
     XCTAssertEqual(run(request(.codex, Self.codexFeatures, freshHome: true)).outcome.rawValue, "ran")
-    let env = try XCTUnwrap(logged("env"))
+    let env = try XCTUnwrap(logged("env_features"))
     let line = try XCTUnwrap(env.split(separator: "\n").first { $0.hasPrefix("CODEX_HOME=") })
     let codexHome = String(line.dropFirst("CODEX_HOME=".count))
     XCTAssertTrue(codexHome.contains("kapy-ai-home-"), codexHome)
@@ -207,6 +233,107 @@ final class ToolRunnerTests: XCTestCase {
     try install(.claude)
     XCTAssertEqual(run(request(.codex, ["--version"])).outcome.rawValue, "notInstalled")
     XCTAssertEqual(run(request(.claude, ["--version"])).outcome.rawValue, "ran")
+  }
+
+  // MARK: What the helper reads for itself before a Codex answer
+
+  func testWithNoPinNoCodexAnswerRunsAndNothingBeyondTheVersionIsStarted() throws {
+    try install(.codex)
+    XCTAssertNil(ToolRunner.codexTestedUpTo, "the pin moves with CodexCli.testedUpTo")
+    let answer = request(.codex, Self.codexAnswer, stdin: "q", expectedVersion: "tool 1.0.0")
+    for pin in [nil, ToolRunner.codexTestedUpTo] as [(major: Int, minor: Int)?] {
+      XCTAssertEqual(run(answer, pin: pin).outcome.rawValue, "refused")
+    }
+    XCTAssertEqual(
+      ToolRunner.run(answer, home: home.path, systemDirectories: []).outcome.rawValue, "refused")
+    XCTAssertEqual(calls(), ["version", "version", "version"])
+    XCTAssertNil(logged("argv"))
+  }
+
+  func testAVersionAboveThePinIsRefusedAndOnesUpToItRun() throws {
+    try install(.codex)
+    let pin = (major: 0, minor: 160)
+    for (said, runs) in [
+      ("codex-cli 0.160.0", true), ("codex-cli 0.159.7", true), ("codex-cli 0.160.12", true),
+      ("codex-cli 0.161.0", false), ("codex-cli 0.200.0", false), ("codex-cli 1.0.0", false),
+      ("codex-cli beta", false), ("", false),
+    ] {
+      try write(said + "\n", to: "version")
+      try? FileManager.default.removeItem(at: log.appendingPathComponent("argv"))
+      let response = run(
+        request(.codex, Self.codexAnswer, stdin: "q", expectedVersion: said), pin: pin)
+      XCTAssertEqual(response.outcome.rawValue, runs ? "ran" : "refused", said)
+      XCTAssertEqual(logged("argv") != nil, runs, said)
+    }
+  }
+
+  func testTheFeaturesAreReadInTheAnswersOwnRequestBeforeItRuns() throws {
+    try install(.codex)
+    let response = run(request(.codex, Self.codexAnswer, stdin: "q", expectedVersion: "tool 1.0.0"))
+    XCTAssertEqual(response.outcome.rawValue, "ran")
+    XCTAssertEqual(calls(), ["version", "features", "models", "answer"])
+    XCTAssertEqual(logged("argv_features"), Self.codexFeatures.joined(separator: "\n") + "\n")
+    let env = try XCTUnwrap(logged("env_features"))
+    let line = try XCTUnwrap(env.split(separator: "\n").first { $0.hasPrefix("CODEX_HOME=") })
+    XCTAssertTrue(line.contains("kapy-ai-home-"), String(line))
+    XCTAssertFalse(line.contains(home.path))
+  }
+
+  func testAFeatureThatWasNotReadStopsTheAnswer() throws {
+    try install(.codex)
+    let answer = request(.codex, Self.codexAnswer, stdin: "q", expectedVersion: "tool 1.0.0")
+    for listing in [
+      "sqlite  stable  true\nbrand_new_tool  experimental  true\n",
+      "shell_tool  stable  true\n",
+      "",
+      "nothing to see here\n",
+    ] {
+      try write(listing, to: "features")
+      try? FileManager.default.removeItem(at: log.appendingPathComponent("calls"))
+      XCTAssertEqual(run(answer).outcome.rawValue, "refused", listing)
+      XCTAssertNil(logged("argv"), listing)
+      XCTAssertEqual(calls(), ["version", "features"], listing)
+    }
+    try write("sqlite  stable  true\nbrand_new_tool  experimental  false\n", to: "features")
+    XCTAssertEqual(run(answer).outcome.rawValue, "ran", "off is fine")
+  }
+
+  func testAModelThatBringsAToolOfItsOwnIsNotRun() throws {
+    try install(.codex)
+    let answer = request(.codex, Self.codexAnswer, stdin: "q", expectedVersion: "tool 1.0.0")
+    func entry(_ extra: String, slug: String = "gpt-x", visibility: String = "list") -> String {
+      #"{"models":[{"slug":"other","display_name":"O","visibility":"list"},{"slug":"\#(slug)","display_name":"X","visibility":"\#(visibility)"\#(extra)}]}"#
+    }
+    for catalogue in [
+      entry(#","experimental_supported_tools":["clock"]"#),
+      entry(#","experimental_supported_tools":["send_user_message_async","clock"]"#),
+      entry(#","experimental_supported_tools":"clock""#),
+      entry("", slug: "gpt-y"),
+      entry("", visibility: "hide"),
+      "not json",
+      #"{"models":"none"}"#,
+      #"{"models":[]}"#,
+    ] {
+      try write(catalogue, to: "models")
+      try? FileManager.default.removeItem(at: log.appendingPathComponent("argv"))
+      XCTAssertEqual(run(answer).outcome.rawValue, "refused", catalogue)
+      XCTAssertNil(logged("argv"), catalogue)
+    }
+    for catalogue in [
+      entry(""), entry(#","experimental_supported_tools":[]"#),
+      entry(#","experimental_supported_tools":null"#),
+    ] {
+      try write(catalogue, to: "models")
+      XCTAssertEqual(run(answer).outcome.rawValue, "ran", catalogue)
+    }
+  }
+
+  func testClaudeCodeHasNoPinAndNoFeatureOrModelListing() throws {
+    try install(.claude)
+    let response = run(
+      request(.claude, Self.claudeAnswer, stdin: "q", expectedVersion: "tool 1.0.0"), pin: nil)
+    XCTAssertEqual(response.outcome.rawValue, "ran")
+    XCTAssertEqual(calls(), ["version", "answer"])
   }
 
   // MARK: The version it was vetted at

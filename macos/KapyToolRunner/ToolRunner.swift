@@ -19,6 +19,17 @@ import Foundation
 /// program has to still say that version, and still be the same file, in
 /// the same request, right before the answer runs: a tool that updated
 /// itself since has not been vetted.
+///
+/// The helper does not take the app's word for what makes Codex safe. A
+/// sandboxed app that was compromised could ask for any version, any model
+/// or any feature set, outside the sandbox. So a Codex answer is only run
+/// when, in the same request, the helper has itself checked that the version
+/// is not newer than `codexTestedUpTo`, that `codex features list`, read
+/// with the answer's own switches and a home of its own, shows nothing on
+/// that is not in `Lockdown.codexKnownEnabled`, and that the model's entry in
+/// `codex debug models` brings no tool of its own. All three mirror
+/// lib/ai/local_tools.dart, and test/ai/tool_runner_swift_test.dart keeps
+/// the copies the same.
 enum ToolRunner {
   enum Tool: String, Decodable {
     case codex
@@ -56,6 +67,11 @@ enum ToolRunner {
   static let longestRun: TimeInterval = 120
   static let largestOutput = 2 * 1024 * 1024
 
+  /// The newest Codex, as major and minor, that is run; nil while no live
+  /// canary has passed, and then no Codex answer is run at all. Mirrors
+  /// `CodexCli.testedUpTo`, and is set only with it.
+  static let codexTestedUpTo: (major: Int, minor: Int)? = nil
+
   /// One request in, one response out, both JSON.
   static func handle(_ data: Data) -> Data {
     let response: Response
@@ -69,7 +85,8 @@ enum ToolRunner {
 
   static func run(
     _ request: Request, home: String = Account.current.home,
-    systemDirectories: [String] = systemDirectories
+    systemDirectories: [String] = systemDirectories,
+    codexPin: (major: Int, minor: Int)? = codexTestedUpTo
   ) -> Response {
     guard check(request) else { return Response(outcome: .refused) }
     let path = searchPath(request.tool, home: home, system: systemDirectories)
@@ -90,6 +107,23 @@ enum ToolRunner {
           .trimmingCharacters(in: .whitespacesAndNewlines) == expected,
         FileIdentity(program) == before
       else { return Response(outcome: .versionChanged) }
+
+      if request.tool == .codex {
+        guard versionAccepted(expected, pin: codexPin) else { return Response(outcome: .refused) }
+        let probe = { (arguments: [String], freshHome: Bool, cap: Int, limit: TimeInterval) in
+          try? spawnInScratch(
+            program, arguments, path: path, home: home, stdin: nil,
+            timeout: min(timeout, limit), cap: cap, freshHome: freshHome)
+        }
+        guard
+          let features = probe(["features", "list"] + Lockdown.codexSwitches, true, 1024 * 1024, 30),
+          features.end == .exited(0), featuresAllowed(features.stdout),
+          let catalogue = probe(["debug", "models"], false, largestOutput, 30),
+          catalogue.end == .exited(0),
+          modelAllowed(request.arguments[2], catalogue: catalogue.stdout),
+          FileIdentity(program) == before
+        else { return Response(outcome: .refused) }
+      }
     }
 
     let result: Spawned
@@ -112,6 +146,62 @@ enum ToolRunner {
         stdout: String(decoding: result.stdout, as: UTF8.self))
     case .signaled:
       return Response(outcome: .failed)
+    }
+  }
+
+  // MARK: What Codex is read to be
+
+  /// Whether `codex --version` (`codex-cli 0.160.0`) is `pin` or older. With
+  /// no pin, or a version that cannot be read, it is not.
+  static func versionAccepted(_ output: String, pin: (major: Int, minor: Int)?) -> Bool {
+    guard let pin,
+      let found = output.range(of: #"\d+\.\d+\.\d+"#, options: .regularExpression)
+    else { return false }
+    let parts = output[found].split(separator: ".").compactMap { Int($0) }
+    guard parts.count == 3 else { return false }
+    return parts[0] < pin.major || (parts[0] == pin.major && parts[1] <= pin.minor)
+  }
+
+  /// Whether `codex features list` shows nothing on that was not read: each
+  /// line is a name, then its state, and one that is on has to be in
+  /// `Lockdown.codexKnownEnabled`. A listing with no features in it is not
+  /// one that was read.
+  static func featuresAllowed(_ listing: Data) -> Bool {
+    var any = false
+    for line in String(decoding: listing, as: UTF8.self).split(separator: "\n") {
+      let columns = line.split(whereSeparator: { $0.isWhitespace })
+      guard columns.count >= 2, columns.last == "true" || columns.last == "false" else {
+        continue
+      }
+      any = true
+      if columns.last == "true", !Lockdown.codexKnownEnabled.contains(String(columns[0])) {
+        return false
+      }
+    }
+    return any
+  }
+
+  /// Whether `codex debug models` lists `model` for picking, with no tool of
+  /// its own that was not reviewed (`Lockdown.codexReviewedTools`, none). A
+  /// catalogue that cannot be read, or that does not hold the model, is not
+  /// one that was read.
+  static func modelAllowed(_ model: String, catalogue: Data) -> Bool {
+    guard let root = (try? JSONSerialization.jsonObject(with: catalogue)) as? [String: Any],
+      let models = root["models"] as? [Any]
+    else { return false }
+    return models.contains { raw in
+      guard let entry = raw as? [String: Any] else { return false }
+      let tools = entry["experimental_supported_tools"]
+      let reviewed: Bool
+      if tools == nil || tools is NSNull {
+        reviewed = true
+      } else if let list = tools as? [Any] {
+        reviewed = list.allSatisfy { Lockdown.codexReviewedTools.contains($0 as? String ?? "") }
+      } else {
+        reviewed = false
+      }
+      return entry["slug"] as? String == model && entry["visibility"] as? String == "list"
+        && entry["display_name"] is String && reviewed
     }
   }
 
@@ -506,6 +596,42 @@ enum Lockdown {
     "--disable", "hooks",
     "--disable", "skill_search",
     "--disable", "tool_suggest",
+  ]
+
+  /// What `codex features list` may still show as on under `codexSwitches`:
+  /// `CodexCli.knownEnabled`, read in 0.160. A feature on that is not here
+  /// has not been read, and no answer is run until it is.
+  static let codexKnownEnabled: [String] = [
+    "auth_elicitation",
+    "collaboration_modes",
+    "compaction_image_budget",
+    "content_item_kinds",
+    "enable_request_compression",
+    "fast_mode",
+    "guardian_approval",
+    "guardian_reuse_parent_compaction",
+    "in_app_chat",
+    "in_app_dictation",
+    "in_app_updates",
+    "item_ids",
+    "mentions_v2",
+    "realtime_conversation",
+    "resize_all_images",
+    "shell_snapshot",
+    "sqlite",
+    "steer",
+    "system_proxy_fallback",
+    "terminal_resize_reflow",
+    "tool_call_mcp_elicitation",
+    "tool_search_always_defer_mcp_tools",
+    "tui_app_server",
+    "unbounded_connection_retries",
+    "unified_exec",
+  ]
+
+  /// The tools a model's catalogue entry may bring and still be run:
+  /// `CodexCli.reviewedTools`. None has been shown to be harmless.
+  static let codexReviewedTools: [String] = [
   ]
 
   static let codexExecHead: [String] = ["--sandbox", "read-only"]

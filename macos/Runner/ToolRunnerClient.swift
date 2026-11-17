@@ -74,7 +74,7 @@ enum ToolRunnerClient {
     let allowed = CharacterSet(
       charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
     guard
-      identifier.hasPrefix("com.kapybara.kapynotes"),
+      identifier.hasPrefix("com.kapybara.kapynotes."),
       identifier.unicodeScalars.allSatisfy(allowed.contains)
     else { return nil }
     return "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\""
