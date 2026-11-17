@@ -7,6 +7,7 @@ import '../core/editor_font.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
+import '../calc/engine.dart';
 import '../data/note.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/update_checker.dart';
@@ -26,6 +27,7 @@ import 'editor_panes.dart';
 import 'installed_version.dart';
 import 'keycap.dart';
 import 'member_avatars.dart';
+import 'notes_list.dart';
 import 'safety_dialogs.dart';
 import 'sidebar_timestamp.dart';
 import 'streak_badge.dart';
@@ -142,6 +144,14 @@ class Sidebar extends StatelessWidget {
     this.onTabChanged,
     this.windowBar,
     this.emptyMessage,
+    this.engine,
+    this.now = DateTime.now,
+    this.cards = false,
+    this.onCardsChanged,
+    this.mediaFilter,
+    this.onMediaFilterChanged,
+    this.pinnedOnly = false,
+    this.onPinnedOnlyChanged,
   });
 
   /// The notes to list, already narrowed to [tab] while the tabs are shown.
@@ -266,9 +276,32 @@ class Sidebar extends StatelessWidget {
   /// still says so.
   final String? emptyMessage;
 
+  /// Works out the sums a card or row shows under a note's title.
+  final CalcEngine? engine;
+
+  /// The clock a note's "Today" and "Sat" are told by.
+  final DateTime Function() now;
+
+  /// Whether the list beside the rail draws sticky cards rather than rows.
+  final bool cards;
+  final ValueChanged<bool>? onCardsChanged;
+
+  /// The kinds of media the list beside the rail is narrowed to, every kind
+  /// when it is not. Null leaves the filter out, as the compact list does.
+  final Set<NoteMedia>? mediaFilter;
+  final ValueChanged<Set<NoteMedia>>? onMediaFilterChanged;
+
+  /// Whether the list is showing every pinned note, after See all, rather
+  /// than the four most recent over the rest.
+  final bool pinnedOnly;
+  final ValueChanged<bool>? onPinnedOnlyChanged;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final mediaFilter = this.mediaFilter;
+    final onMediaFilterChanged = this.onMediaFilterChanged;
+    final onCardsChanged = this.onCardsChanged;
 
     // Solid, rather than the GlassSurface the toolbar and footer use: the
     // notes list stays put whatever the window is doing behind it. See
@@ -298,7 +331,22 @@ class Sidebar extends StatelessWidget {
               focusNode: searchFocusNode,
               shortcut: searchShortcut,
               belowTabs: _showsTabs,
+              besideRail: _besideRail,
+              pinnedOnly: pinnedOnly,
             ),
+            if (_besideRail &&
+                mediaFilter != null &&
+                onMediaFilterChanged != null &&
+                onCardsChanged != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                child: NotesListControls(
+                  media: mediaFilter,
+                  onMediaChanged: onMediaFilterChanged,
+                  cards: cards,
+                  onCardsChanged: onCardsChanged,
+                ),
+              ),
             if (archiveMode && (notes.isNotEmpty || selecting))
               _ArchiveActions(
                 selecting: selecting,
@@ -333,6 +381,8 @@ class Sidebar extends StatelessWidget {
                   archiveShortcut: archiveShortcut,
                   child: notes.isEmpty
                       ? _buildEmpty(context)
+                      : _besideRail
+                      ? _buildBesideRail(context)
                       : _grouped
                       ? _buildGrouped(context)
                       : _buildUngrouped(context),
@@ -541,7 +591,11 @@ extension on Sidebar {
   /// below the current row.
   void _moveSelected(int delta) {
     if (selecting) return;
-    final ordered = _grouped ? _noteGroups.displayOrder : notes;
+    final ordered = _besideRail
+        ? _railOrder
+        : _grouped
+        ? _noteGroups.displayOrder
+        : notes;
     if (ordered.length < 2) return;
     final current = ordered.indexWhere((note) => note.id == selectedId);
     final next = current < 0
@@ -561,9 +615,13 @@ extension on Sidebar {
     Note note, {
     required bool shared,
     bool pinned = false,
+    NoteRowStyle style = NoteRowStyle.compact,
   }) => NoteRow(
     key: ValueKey(note.id),
     note: note,
+    style: style,
+    engine: engine,
+    now: now,
     query: query,
     displayTime: displayTime,
     selected: note.id == selectedId,
@@ -617,6 +675,216 @@ extension on Sidebar {
     specialMode: _specialMode,
     tab: _tabbed ? tab : null,
   );
+
+  /// The pinned notes the list beside the rail shows over the rest: the four
+  /// most recent, unless See all or a search asks for every one.
+  List<Note> _shownPinned(SidebarNoteGroups groups) =>
+      pinnedOnly || query.trim().isNotEmpty
+      ? groups.pinned
+      : groups.pinned.take(_pinnedPreview).toList();
+
+  static const _pinnedPreview = 4;
+
+  List<Note> get _railOrder {
+    final groups = _noteGroups;
+    if (pinnedOnly) return groups.pinned;
+    return [
+      ..._shownPinned(groups),
+      for (final id in groups.spaceOrder) ...groups.bySpace[id]!,
+      ...groups.mine,
+    ];
+  }
+
+  /// The list beside the spaces rail: Pinned, then each shared space, then
+  /// Notes, as sticky cards two to a row or as rows, fading out at the foot.
+  Widget _buildBesideRail(BuildContext context) {
+    final palette = context.palette;
+    final groups = _noteGroups;
+    final pinned = _shownPinned(groups);
+    final rows = <WidgetBuilder>[];
+    final style = cards ? NoteRowStyle.card : NoteRowStyle.row;
+    final onPinnedOnlyChanged = this.onPinnedOnlyChanged;
+
+    void gap(double height) => rows.add((_) => SizedBox(height: height));
+
+    void heading(Widget heading) {
+      if (rows.isNotEmpty) gap(18);
+      rows.add(
+        (_) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: heading,
+        ),
+      );
+      gap(cards ? 12 : 4);
+    }
+
+    void section(Iterable<Note> notes, {bool pinned = false}) {
+      final list = notes.toList();
+      Widget note(Note note) => _row(
+        note,
+        shared: sharing != null && note.isShared,
+        pinned: pinned,
+        style: style,
+      );
+      if (!cards) {
+        for (final (index, each) in list.indexed) {
+          if (index > 0) gap(2);
+          rows.add(
+            (_) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: note(each),
+            ),
+          );
+        }
+        return;
+      }
+      for (var index = 0; index < list.length; index += 2) {
+        if (index > 0) gap(12);
+        final pair = list.skip(index).take(2).toList();
+        rows.add(
+          (context) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: SizedBox(
+              height: AppControlMetrics.scaleBar(context, NoteCardFace.height),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: note(pair.first)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: pair.length > 1 ? note(pair.last) : const SizedBox(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    final pin = KapyIcon(
+      KapyIcons.pinOutlined,
+      size: 15,
+      strokeWidth: 1.9,
+      color: palette.clay,
+    );
+    if (_specialMode) {
+      section(notes);
+    } else if (pinnedOnly) {
+      heading(
+        NotesListHeading(
+          label: 'Pinned',
+          count: groups.pinned.length,
+          height: 22,
+          leading: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CompactIconButton(
+                key: const ValueKey('sidebar-pinned-back'),
+                tooltip: 'Back to all notes',
+                extent: 22,
+                foregroundColor: palette.textSecondary,
+                onPressed: onPinnedOnlyChanged == null
+                    ? null
+                    : () => onPinnedOnlyChanged(false),
+                icon: const KapyIcon(
+                  KapyIcons.chevronLeftRounded,
+                  size: 13,
+                  strokeWidth: 2,
+                ),
+              ),
+              const SizedBox(width: 6),
+              pin,
+            ],
+          ),
+        ),
+      );
+      section(groups.pinned, pinned: true);
+    } else {
+      if (pinned.isNotEmpty) {
+        heading(
+          NotesListHeading(
+            key: const ValueKey('sidebar-pinned-heading'),
+            label: 'Pinned',
+            count: groups.pinned.length,
+            height: 22,
+            leading: pin,
+            trailing:
+                pinned.length < groups.pinned.length &&
+                    onPinnedOnlyChanged != null
+                ? SeeAllLink(
+                    key: const ValueKey('sidebar-see-all-pinned'),
+                    onPressed: () => onPinnedOnlyChanged(true),
+                  )
+                : null,
+          ),
+        );
+        section(pinned, pinned: true);
+      }
+      for (final id in groups.spaceOrder) {
+        heading(
+          _SpaceHeader(
+            key: ValueKey('space-header-$id'),
+            space: sharing?.spaceById(id),
+            currentUserId: sharing?.userId ?? '',
+            present: {
+              for (final note in groups.bySpace[id]!)
+                for (final person in collaborators[note.id] ?? const [])
+                  person.userId,
+            },
+            attention:
+                id != null &&
+                (sharing?.trust.warningsFor(id).isNotEmpty ?? false),
+            onTap: id == null || onOpenSpace == null
+                ? null
+                : () => onOpenSpace!(id),
+          ),
+        );
+        section(groups.bySpace[id]!);
+      }
+      if (groups.mine.isNotEmpty || groups.pinned.isEmpty) {
+        heading(
+          NotesListHeading(
+            key: const ValueKey('sidebar-notes-heading'),
+            label: groups.hasSharedSections && !_tabbed ? 'My notes' : 'Notes',
+            count: groups.mine.length,
+          ),
+        );
+        section(groups.mine);
+      }
+    }
+
+    return Stack(
+      children: [
+        ListView.builder(
+          padding: const EdgeInsets.only(top: 4, bottom: 40),
+          itemCount: rows.length,
+          itemBuilder: (context, index) => rows[index](context),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 64,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    palette.sidebarColor.withValues(alpha: 0),
+                    palette.sidebarColor,
+                  ],
+                  stops: const [0, 0.85],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildGrouped(BuildContext context) {
     final groups = _noteGroups;
@@ -2193,11 +2461,20 @@ class _SearchField extends StatefulWidget {
     this.focusNode,
     this.shortcut,
     this.belowTabs = false,
+    this.besideRail = false,
+    this.pinnedOnly = false,
   });
 
   /// Sits under the tabs rather than the title bar, and needs less room
   /// above it to read as part of the same header.
   final bool belowTabs;
+
+  /// Drawn as the list beside the spaces rail draws it: a deeper field with
+  /// its shortcut on a keycap.
+  final bool besideRail;
+
+  /// Searching the pinned notes only, after See all.
+  final bool pinnedOnly;
 
   final String query;
   final ValueChanged<String> onChanged;
@@ -2236,9 +2513,96 @@ class _SearchFieldState extends State<_SearchField> {
     super.dispose();
   }
 
+  void _clear() {
+    _controller.clear();
+    widget.onChanged('');
+  }
+
+  Widget _buildBesideRail(BuildContext context) {
+    final palette = context.palette;
+    final shortcut = widget.shortcut;
+    final hint = widget.archiveMode
+        ? 'Find in Archive…'
+        : widget.hiddenMode
+        ? 'Find in Hidden…'
+        : widget.pinnedOnly
+        ? 'Find in pinned…'
+        : 'Find a note…';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+      child: Container(
+        key: const ValueKey('sidebar-search-box'),
+        height: 40,
+        padding: const EdgeInsets.only(left: 14, right: 10),
+        decoration: BoxDecoration(
+          color: palette.surfaceBackground,
+          border: Border.all(color: palette.controlBorder, width: 1.5),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x4D000000),
+              offset: Offset(0, 1),
+              blurRadius: 2,
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            KapyIcon(
+              KapyIcons.searchRounded,
+              size: 16,
+              strokeWidth: 1.8,
+              color: palette.textSecondary,
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: TextField(
+                key: const ValueKey('sidebar-search-field'),
+                controller: _controller,
+                focusNode: widget.focusNode,
+                onChanged: widget.onChanged,
+                textInputAction: TextInputAction.search,
+                style: TextStyle(fontSize: 14, color: palette.textPrimary),
+                cursorHeight: 16,
+                decoration: InputDecoration.collapsed(
+                  hintText: hint,
+                  hintStyle: TextStyle(
+                    fontSize: 14,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              ),
+            ),
+            if (widget.query.isNotEmpty)
+              CompactIconButton(
+                tooltip: 'Clear search',
+                extent: 20,
+                foregroundColor: palette.textTertiary,
+                onPressed: _clear,
+                icon: KapyIcon(
+                  KapyIcons.cancelRounded,
+                  size: AppControlMetrics.iconAdornment,
+                ),
+              )
+            else if (shortcut != null)
+              Tooltip(
+                message: 'Global search · ${shortcut.displayLabel}',
+                child: Semantics(
+                  label: 'Global search shortcut ${shortcut.displayLabel}',
+                  excludeSemantics: true,
+                  child: Keycap(shortcut.keycapLabel),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    if (widget.besideRail) return _buildBesideRail(context);
 
     return Padding(
       // On a desktop the field keeps the sidebar's 12pt gutter, the edge the
@@ -2293,10 +2657,7 @@ class _SearchFieldState extends State<_SearchField> {
                         tooltip: 'Clear search',
                         extent: AppControlMetrics.fieldAdornmentSlot,
                         foregroundColor: palette.textTertiary,
-                        onPressed: () {
-                          _controller.clear();
-                          widget.onChanged('');
-                        },
+                        onPressed: _clear,
                         icon: KapyIcon(
                           KapyIcons.cancelRounded,
                           size: AppControlMetrics.iconAdornment,
@@ -2370,6 +2731,10 @@ class _NoteActionChoice {
   final bool destructive;
 }
 
+/// How a [NoteRow] draws its note: the compact list's row, or the desktop
+/// list's row or sticky card beside the spaces rail.
+enum NoteRowStyle { compact, row, card }
+
 /// One row in the note list.
 class NoteRow extends StatefulWidget {
   const NoteRow({
@@ -2398,9 +2763,19 @@ class NoteRow extends StatefulWidget {
     this.selecting = false,
     this.checked = false,
     this.onToggleChecked,
+    this.style = NoteRowStyle.compact,
+    this.engine,
+    this.now = DateTime.now,
   });
 
   final Note note;
+  final NoteRowStyle style;
+
+  /// Works out the sum a card or row shows under the title.
+  final CalcEngine? engine;
+
+  /// The clock the card's date is told by.
+  final DateTime Function() now;
   final String query;
   final DateTime Function(DateTime) displayTime;
   final bool selected;
@@ -2676,7 +3051,14 @@ class _NoteRowState extends State<NoteRow> {
     if (AppPlatform.isMobile) {
       choice = await _showTouchActions(context, actions);
     } else {
-      final row = this.context.findRenderObject() as RenderBox?;
+      // A card is narrower than the menu, so beside the rail the menu keeps
+      // to the whole list rather than to the note it belongs to.
+      final row =
+          (widget.style == NoteRowStyle.compact
+                  ? this.context
+                  : Scrollable.maybeOf(this.context)?.context ?? this.context)
+              .findRenderObject()
+              as RenderBox?;
       final rowOrigin = row?.localToGlobal(Offset.zero);
       final preferredBounds = row == null || rowOrigin == null
           ? null
@@ -2712,6 +3094,71 @@ class _NoteRowState extends State<NoteRow> {
     if (choice == 'open-side') widget.onOpenToSide?.call();
   }
 
+  /// The desktop list's row or card, with its actions button while the
+  /// pointer is over it.
+  Widget _boardFace({required String? snippet, required bool hasMenu}) {
+    final note = widget.note;
+    final people = widget.collaborators;
+    final date = people.isEmpty
+        ? SidebarTimestamp.glance(
+            note.updatedAt,
+            now: widget.now(),
+            displayTime: widget.displayTime,
+            today: widget.style == NoteRowStyle.card,
+          )
+        : typingStatusText([
+                for (final person in people)
+                  if (person.typing) person.name,
+              ]) ??
+              presenceStatusText([for (final person in people) person.name])!;
+    final glance = NoteGlance.of(note, widget.engine);
+    final picking = widget.selecting ? widget.checked : null;
+    final ringed = widget.openElsewhere && !widget.selected;
+    final face = widget.style == NoteRowStyle.card
+        ? NoteCardFace(
+            note: note,
+            glance: glance,
+            date: date,
+            snippet: snippet,
+            selected: widget.selected,
+            hovering: _hovering,
+            ringed: ringed,
+            locked: widget.locked,
+            shared: widget.shared,
+            picking: picking,
+          )
+        : NoteListRowFace(
+            note: note,
+            glance: glance,
+            date: date,
+            snippet: snippet,
+            selected: widget.selected,
+            hovering: _hovering,
+            ringed: ringed,
+            locked: widget.locked,
+            shared: widget.shared,
+            picking: picking,
+          );
+    if (!hasMenu || !_hovering) return face;
+    return Stack(
+      children: [
+        face,
+        Positioned(
+          top: 4,
+          right: 4,
+          child: Builder(
+            builder: (buttonContext) => _RowAction(
+              key: ValueKey('note-actions-${note.id}'),
+              icon: KapyIcons.moreVerticalRounded,
+              tooltip: 'Note actions',
+              onPressed: () => _showActionsFromButton(buttonContext),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   void _showActionsFromButton(BuildContext context) {
     final box = context.findRenderObject() as RenderBox?;
     final position = box == null
@@ -2743,8 +3190,101 @@ class _NoteRowState extends State<NoteRow> {
             widget.onDelete != null ||
             widget.onShare != null);
 
+    final compact = widget.style == NoteRowStyle.compact;
+    final face = compact
+        ? AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(
+              color: widget.selected || (widget.selecting && widget.checked)
+                  ? palette.selectedBackground
+                  : (_hovering ? palette.hover : Colors.transparent),
+              borderRadius: BorderRadius.circular(7),
+            ),
+            // Open in another pane: ringed rather than filled, so it reads
+            // as on screen without competing with the focused note's row.
+            // Painted over the row rather than around it, so nothing moves.
+            foregroundDecoration: widget.openElsewhere && !widget.selected
+                ? BoxDecoration(
+                    border: Border.all(color: palette.selectedBorder),
+                    borderRadius: BorderRadius.circular(7),
+                  )
+                : null,
+            child: Row(
+              children: [
+                if (widget.selecting) ...[
+                  KapyIcon(
+                    widget.checked
+                        ? KapyIcons.checkCircleRounded
+                        : KapyIcons.circleOutlined,
+                    size: AppControlMetrics.iconControl,
+                    color: widget.checked
+                        ? Theme.of(context).colorScheme.primary
+                        : palette.textTertiary,
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        widget.note.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: AppTypeScale.control,
+                          fontWeight: FontWeight.w400,
+                          color: foreground,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      if (snippet != null)
+                        Text(
+                          snippet,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: AppTypeScale.caption,
+                            color: secondary,
+                          ),
+                        )
+                      else
+                        _UpdatedAtMetadata(
+                          updatedAt: widget.note.updatedAt,
+                          displayTime: widget.displayTime,
+                          shared: widget.shared,
+                          locked: widget.locked,
+                          collaborators: widget.collaborators,
+                          sharedWith: widget.sharedWith,
+                          currentUserId: widget.currentUserId,
+                        ),
+                    ],
+                  ),
+                ),
+                // One discoverable affordance owns every secondary action.
+                // It stays visible on every platform; right-click and long
+                // press remain shortcuts to the same labeled choices.
+                if (!widget.selecting && hasMenu) ...[
+                  const SizedBox(width: 4),
+                  Builder(
+                    builder: (buttonContext) => _RowAction(
+                      key: ValueKey('note-actions-${widget.note.id}'),
+                      icon: KapyIcons.moreVerticalRounded,
+                      tooltip: 'Note actions',
+                      onPressed: () => _showActionsFromButton(buttonContext),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          )
+        : _boardFace(snippet: snippet, hasMenu: hasMenu);
+
     final row = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
+      padding: EdgeInsets.symmetric(vertical: compact ? 1 : 0),
       child: MouseRegion(
         // The row is the main click target in the sidebar; matching the
         // settings rows, which are InkWells and already say so.
@@ -2768,95 +3308,7 @@ class _NoteRowState extends State<NoteRow> {
                 : (details) =>
                       _showContextMenu(context, details.globalPosition),
             behavior: HitTestBehavior.opaque,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              curve: Curves.easeOutCubic,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              decoration: BoxDecoration(
-                color: widget.selected || (widget.selecting && widget.checked)
-                    ? palette.selectedBackground
-                    : (_hovering ? palette.hover : Colors.transparent),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              // Open in another pane: ringed rather than filled, so it reads
-              // as on screen without competing with the focused note's row.
-              // Painted over the row rather than around it, so nothing moves.
-              foregroundDecoration: widget.openElsewhere && !widget.selected
-                  ? BoxDecoration(
-                      border: Border.all(color: palette.selectedBorder),
-                      borderRadius: BorderRadius.circular(7),
-                    )
-                  : null,
-              child: Row(
-                children: [
-                  if (widget.selecting) ...[
-                    KapyIcon(
-                      widget.checked
-                          ? KapyIcons.checkCircleRounded
-                          : KapyIcons.circleOutlined,
-                      size: AppControlMetrics.iconControl,
-                      color: widget.checked
-                          ? Theme.of(context).colorScheme.primary
-                          : palette.textTertiary,
-                    ),
-                    const SizedBox(width: 10),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          widget.note.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: AppTypeScale.control,
-                            fontWeight: FontWeight.w400,
-                            color: foreground,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        if (snippet != null)
-                          Text(
-                            snippet,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: AppTypeScale.caption,
-                              color: secondary,
-                            ),
-                          )
-                        else
-                          _UpdatedAtMetadata(
-                            updatedAt: widget.note.updatedAt,
-                            displayTime: widget.displayTime,
-                            shared: widget.shared,
-                            locked: widget.locked,
-                            collaborators: widget.collaborators,
-                            sharedWith: widget.sharedWith,
-                            currentUserId: widget.currentUserId,
-                          ),
-                      ],
-                    ),
-                  ),
-                  // One discoverable affordance owns every secondary action.
-                  // It stays visible on every platform; right-click and long
-                  // press remain shortcuts to the same labeled choices.
-                  if (!widget.selecting && hasMenu) ...[
-                    const SizedBox(width: 4),
-                    Builder(
-                      builder: (buttonContext) => _RowAction(
-                        key: ValueKey('note-actions-${widget.note.id}'),
-                        icon: KapyIcons.moreVerticalRounded,
-                        tooltip: 'Note actions',
-                        onPressed: () => _showActionsFromButton(buttonContext),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+            child: face,
           ),
         ),
       ),

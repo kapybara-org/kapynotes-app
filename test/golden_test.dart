@@ -419,6 +419,12 @@ void main() {
       brightness: Brightness.dark,
     );
     final note = goldenNotes.notes.single;
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(
+      location: tester.getCenter(find.byKey(ValueKey(note.id)).first),
+    );
+    addTearDown(mouse.removePointer);
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(ValueKey('note-actions-${note.id}')));
     await tester.pumpAndSettle();
     await expectLater(

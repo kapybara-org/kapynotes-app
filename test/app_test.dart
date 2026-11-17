@@ -38,6 +38,7 @@ import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
+import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_swipe.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
@@ -222,8 +223,23 @@ Future<void> showNotesList(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// Rests the pointer on a note in the list, where the desktop list shows the
+/// note's actions button.
+Future<TestGesture> hoverNote(WidgetTester tester, String noteId) async {
+  final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+  await mouse.addPointer(
+    location: tester.getCenter(
+      find.byWidgetPredicate((w) => w is NoteRow && w.note.id == noteId),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return mouse;
+}
+
 Future<void> openNoteActions(WidgetTester tester, String noteId) async {
+  final mouse = await hoverNote(tester, noteId);
   await tester.tap(find.byKey(ValueKey('note-actions-$noteId')));
+  await mouse.removePointer();
   await tester.pumpAndSettle();
 }
 
@@ -737,20 +753,9 @@ void main() {
       closeTo(12, 0.01),
     );
 
-    final noteRow = find.byType(NoteRow).first;
-    expect(tester.getSize(noteRow).height, 54);
     expect(
-      tester
-          .getSize(
-            find
-                .descendant(
-                  of: noteRow,
-                  matching: find.byType(AnimatedContainer),
-                )
-                .first,
-          )
-          .height,
-      52,
+      tester.getSize(find.byType(NoteRow).first).height,
+      NoteCardFace.height,
     );
   });
 
@@ -2441,7 +2446,7 @@ void main() {
       findsOneWidget,
     );
     final menuRect = tester.getRect(menu);
-    final rowRect = tester.getRect(find.byType(NoteRow).first);
+    final rowRect = tester.getRect(find.byType(Sidebar));
     expect(menuRect.width, lessThanOrEqualTo(208));
     expect(menuRect.left, greaterThanOrEqualTo(rowRect.left));
     expect(menuRect.right, lessThanOrEqualTo(rowRect.right));
@@ -2560,7 +2565,7 @@ void main() {
       await pumpApp(tester);
 
       final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
-      final search = find.byKey(const ValueKey('sidebar-search-field'));
+      final search = find.byKey(const ValueKey('sidebar-search-box'));
       final field = tester.getRect(search);
       final searchKeycap = find.descendant(
         of: search,
@@ -2579,7 +2584,7 @@ void main() {
       expect(field.right - keycap.right, lessThanOrEqualTo(12));
       expect(keycap.center.dy, closeTo(field.center.dy, 1));
       // The hint used to fill the field and leave the placeholder no width.
-      expect(tester.getSize(find.text('Search notes')).width, greaterThan(40));
+      expect(tester.getSize(find.text('Find a note…')).width, greaterThan(40));
     },
   );
 
@@ -2912,9 +2917,9 @@ void main() {
         .map((row) => row.note.title)
         .toList();
     expect(rowTitles(), ['Latest', 'Older']);
-    expect(find.text('2 Sep 2026 · 08:05'), findsOneWidget);
-    expect(find.text('1 Sep 2026 · 12:00'), findsOneWidget);
-    expect(find.widgetWithText(NoteRow, 'latest details'), findsNothing);
+    expect(find.text('Yesterday'), findsOneWidget);
+    expect(find.text('Tue'), findsOneWidget);
+    expect(find.widgetWithText(NoteRow, 'latest details'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(NoteRow, 'Older'));
     await tester.pumpAndSettle();
@@ -2926,7 +2931,7 @@ void main() {
 
     expect(rowTitles(), ['Older', 'Latest']);
     expect(notes.notes.map((note) => note.id), ['older', 'latest']);
-    expect(find.text('3 Sep 2026 · 09:10'), findsOneWidget);
+    expect(find.text('Today · 09:10'), findsOneWidget);
   });
 
   testWidgets('pins notes into a top section and allows unpinning', (
@@ -4027,7 +4032,9 @@ void main() {
       final note = notes.notes.single;
       expect(find.byKey(ValueKey('delete-note-${note.id}')), findsNothing);
       expect(find.byKey(const ValueKey('archive-delete-all')), findsNothing);
+      final mouse = await hoverNote(tester, note.id);
       expect(find.byKey(ValueKey('note-actions-${note.id}')), findsOneWidget);
+      await mouse.removePointer();
     });
   });
 
@@ -4944,6 +4951,94 @@ void main() {
       );
       expect(find.byTooltip('1-day writing streak'), findsOneWidget);
       expect(find.byKey(const ValueKey('sidebar-streak')), findsNothing);
+    });
+
+    testWidgets(
+      'the media filter keeps the notes holding a kind still ticked',
+      (tester) async {
+        await notes.load();
+        final at = DateTime(2026, 11, 16, 9);
+        notes.importNotes([
+          Note(id: 'plain', body: 'Groceries', createdAt: at, updatedAt: at),
+          Note(
+            id: 'sketch',
+            body: 'Floor plan',
+            drawing: NoteDrawing.empty,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
+        await pumpApp(tester);
+        final filter = find.byKey(const ValueKey('sidebar-media-filter'));
+        Future<void> tick(String kind) async {
+          await tester.tap(find.byKey(ValueKey('media-filter-$kind')));
+          await tester.pumpAndSettle();
+        }
+
+        await tester.tap(filter);
+        await tester.pumpAndSettle();
+        await tick('voice');
+        await tick('video');
+        await tick('image');
+        expect(rowTitles(tester), ['Floor plan']);
+        expect(
+          find.descendant(of: filter, matching: find.text('Drawing')),
+          findsOneWidget,
+        );
+
+        // The last kind ticked stays ticked: nothing ticked would read as a
+        // library that had lost its notes.
+        await tick('drawing');
+        expect(rowTitles(tester), ['Floor plan']);
+
+        await tick('all');
+        expect(rowTitles(tester).toSet(), {'Groceries', 'Floor plan'});
+        expect(
+          find.descendant(of: filter, matching: find.text('All media')),
+          findsOneWidget,
+        );
+        expect(spaceCount(tester), '2');
+      },
+    );
+
+    testWidgets('Pinned shows four notes, and See all the rest', (
+      tester,
+    ) async {
+      await notes.load();
+      for (var i = 1; i <= 6; i++) {
+        notes.togglePinned(notes.create(body: 'Pinned $i').id);
+      }
+      await pumpApp(tester);
+
+      expect(rowTitles(tester), hasLength(4));
+      await tester.tap(find.byKey(const ValueKey('sidebar-see-all-pinned')));
+      await tester.pumpAndSettle();
+      expect(rowTitles(tester), hasLength(6));
+      expect(find.text('Find in pinned…'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-pinned-back')));
+      await tester.pumpAndSettle();
+      expect(rowTitles(tester), hasLength(4));
+      expect(find.text('Find a note…'), findsOneWidget);
+    });
+
+    testWidgets('the list and cards switch holds for the whole list', (
+      tester,
+    ) async {
+      await notes.load();
+      notes.togglePinned(notes.create(body: 'Pinned').id);
+      notes.create(body: 'Loose');
+      await pumpApp(tester);
+      List<NoteRowStyle> styles() => tester
+          .widgetList<NoteRow>(find.byType(NoteRow))
+          .map((row) => row.style)
+          .toList();
+
+      expect(styles(), [NoteRowStyle.card, NoteRowStyle.card]);
+      await tester.tap(find.byKey(const ValueKey('sidebar-view-list')));
+      await tester.pumpAndSettle();
+      expect(styles(), [NoteRowStyle.row, NoteRowStyle.row]);
+      expect(prefs.noteCards, isFalse);
     });
   });
 
