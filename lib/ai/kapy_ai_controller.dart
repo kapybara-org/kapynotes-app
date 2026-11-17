@@ -16,6 +16,7 @@ import 'cloud_client.dart';
 import 'device_model.dart';
 import 'kapy_ai.dart';
 import 'kapy_ai_store.dart';
+import 'kapy_chat_book.dart';
 import 'local_tools.dart';
 import 'open_router.dart';
 import 'retrieval.dart';
@@ -58,6 +59,7 @@ class KapyAiController extends KapyAi {
     required NotesStore notes,
     required DeviceModel device,
     Billing? billing,
+    KapyChatBook? chats,
     String? Function()? token,
     http.Client? client,
     SecureStore? secrets,
@@ -67,6 +69,8 @@ class KapyAiController extends KapyAi {
     DateTime Function()? now,
     Map<String, String>? environment,
   }) : _store = KapyAiStore(store),
+       _book =
+           chats ?? KapyChatBook(store, ready: () => notes.isLoaded, now: now),
        _notes = notes,
        _device = device,
        _billing = billing,
@@ -89,9 +93,11 @@ class KapyAiController extends KapyAi {
     _wasPro = isPro;
     _device.addListener(_onDevice);
     _billing?.addListener(_onBilling);
+    _book.addListener(_notify);
   }
 
   final KapyAiStore _store;
+  final KapyChatBook _book;
   final NotesStore _notes;
   final DeviceModel _device;
   final Billing? _billing;
@@ -103,8 +109,6 @@ class KapyAiController extends KapyAi {
   late final OpenRouterAccount _openRouter;
 
   Future<void>? _started;
-  List<KapyChat>? _chats;
-  Map<String, DateTime> _deleted = {};
   String? _currentId;
 
   /// Picked with no chat open: the model the next new chat starts with.
@@ -162,10 +166,7 @@ class KapyAiController extends KapyAi {
   /// Cloud refuses Free anyway, and a default that falls back for a moment
   /// at launch costs nothing, since the stored choice is never rewritten.
   @override
-  bool get isPro {
-    final plan = _billing?.entitlements;
-    return plan != null && (plan.isPro || _billing!.trialRunning);
-  }
+  bool get isPro => _billing?.hasPro ?? false;
 
   void _onBilling() {
     if (isPro == _wasPro) return;
@@ -393,16 +394,13 @@ class KapyAiController extends KapyAi {
   // -------------------------------------------------------------------------
   // Chats
 
-  List<KapyChat> get _all {
-    if (_chats == null && _notes.isLoaded) {
-      _chats = _store.readChats();
-      _deleted = _store.readDeleted();
-    }
-    return _chats ?? const [];
-  }
+  List<KapyChat> get _all => _book.chats;
 
   @override
   List<KapyChat> get chats => _all;
+
+  @override
+  bool get chatsSync => _book.syncing;
 
   @override
   KapyChat? get current {
@@ -440,61 +438,45 @@ class KapyAiController extends KapyAi {
   @override
   void deleteChat(String id) {
     if (_chat(id) == null) return;
-    _chats = [
-      for (final chat in _all)
-        if (chat.id != id) chat,
-    ];
-    _deleted = {..._deleted, id: _now()};
     if (_currentId == id) {
       _currentId = null;
       _pending = null;
     }
-    _store.writeChats(_all, _deleted);
-    _notify();
+    _book.delete(id);
   }
 
   @override
   Future<void> clearHistory() async {
-    final at = _now();
-    _deleted = {..._deleted, for (final chat in _all) chat.id: at};
-    _chats = const [];
+    await _book.pull();
     _currentId = null;
     _pending = null;
-    _store.clearChats(_deleted);
-    _notify();
+    _book.clear();
   }
 
-  KapyChat? _chat(String id) {
-    for (final chat in _all) {
-      if (chat.id == id) return chat;
-    }
-    return null;
-  }
+  KapyChat? _chat(String id) => _book.chat(id);
 
   /// Puts [chat] in place of the one with its id, at the top: every edit
   /// moves [KapyChat.updatedAt], and the list is newest first.
-  void _replace(KapyChat chat) {
-    _chats = [
-      chat,
-      for (final other in _all)
-        if (other.id != chat.id) other,
-    ];
-    _store.writeChats(_all, _deleted);
-  }
+  void _replace(KapyChat chat) => _book.put(chat);
 
   KapyChat _edit(
     KapyChat chat, {
     String? title,
     KapyModel? model,
     List<KapyMessage>? messages,
-  }) => KapyChat(
-    id: chat.id,
-    title: title ?? chat.title,
-    createdAt: chat.createdAt,
-    updatedAt: _now(),
-    model: model ?? chat.model,
-    messages: messages ?? chat.messages,
-  );
+  }) {
+    final at = _now();
+    return KapyChat(
+      id: chat.id,
+      title: title ?? chat.title,
+      createdAt: chat.createdAt,
+      updatedAt: at,
+      model: model ?? chat.model,
+      messages: messages ?? chat.messages,
+      titleAt: title == null ? chat.titleAt : at,
+      modelAt: model == null ? chat.modelAt : at,
+    );
+  }
 
   /// A chat is named by its first question, on one line and no longer than
   /// a note's title.
@@ -765,6 +747,7 @@ class KapyAiController extends KapyAi {
     _disposed = true;
     _device.removeListener(_onDevice);
     _billing?.removeListener(_onBilling);
+    _book.removeListener(_notify);
     super.dispose();
   }
 }

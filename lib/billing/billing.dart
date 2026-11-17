@@ -161,6 +161,13 @@ class Billing extends ChangeNotifier {
   /// until the first answer arrives on a device that has never had one.
   Entitlements? get entitlements => _entitlements;
 
+  /// Whether the account has Pro or its trial. Unknown counts as no: a
+  /// feature that only Pro syncs waits for the server's answer.
+  bool get hasPro {
+    final plan = _entitlements;
+    return plan != null && (plan.isPro || trialRunning);
+  }
+
   /// Whether this account is trying Pro rather than owning it, right now.
   bool get trialRunning => _entitlements?.trialRunningAt(_now()) ?? false;
 

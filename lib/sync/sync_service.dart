@@ -293,6 +293,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     unawaited(syncNow());
   }
 
+  /// The account's plan changed, which Kapy AI's chats follow.
+  void planChanged() => _tasks?.planChanged();
+
   /// Everyone else with [noteId] open, one entry per person however many of
   /// their devices have it, in the order they arrived.
   List<Collaborator> collaboratorsIn(String noteId) =>

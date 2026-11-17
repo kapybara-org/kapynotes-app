@@ -160,6 +160,22 @@ class Vault {
 
   List<int>? _noteTagsIdKey;
 
+  /// The id of the record holding a Kapy AI chat, in the same way under a key
+  /// of its own. Mirrors `packages/contract/src/chats.ts`.
+  String chatRecordId(String chatId) => _recordId(
+    _chatIdKey ??= _idKey('kapynotes chat record ids v1'),
+    'chat\n$chatId',
+  );
+
+  /// The id of the record holding part [part] of message [messageId] of a chat.
+  String chatMessageRecordId(String chatId, String messageId, int part) =>
+      _recordId(
+        _chatIdKey ??= _idKey('kapynotes chat record ids v1'),
+        'message\n$chatId\n$messageId\n$part',
+      );
+
+  List<int>? _chatIdKey;
+
   List<int> _idKey(String label) =>
       hashes.Hmac(hashes.sha256, _masterKey).convert(utf8.encode(label)).bytes;
 
@@ -171,8 +187,9 @@ class Vault {
     final bytes = Uint8List.fromList(digest.sublist(0, 16));
     bytes[6] = (bytes[6] & 0x0f) | 0x80;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    final hex = [for (final b in bytes) b.toRadixString(16).padLeft(2, '0')]
-        .join();
+    final hex = [
+      for (final b in bytes) b.toRadixString(16).padLeft(2, '0'),
+    ].join();
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
         '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }

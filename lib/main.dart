@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'ai/kapy_chat_book.dart';
 import 'app.dart';
 import 'billing/billing.dart';
 import 'billing/billing_api.dart';
@@ -71,6 +72,8 @@ Future<void> main() async {
   );
   // Kept on this device the same way, and synced while signed in.
   final tags = TagStore(store);
+  // Kapy AI's chats: on this device, and synced while signed in with Pro.
+  final chats = KapyChatBook(store, ready: () => notes.isLoaded);
   final account = kSyncEnabled
       ? Account(
           auth: HttpAuthApi(baseUrl: Uri.parse(kApiBaseUrl)),
@@ -85,6 +88,7 @@ Future<void> main() async {
           store: store,
           tasks: tasks,
           tags: tags,
+          chats: chats,
         )
       : null;
   // Built here rather than inside Account so that a build with no
@@ -153,6 +157,7 @@ Future<void> main() async {
       account: account,
       tasks: tasks,
       tags: tags,
+      chats: chats,
       // Here, where no test runs: see KapyNotesApp.deepLinks.
       deepLinks: DeepLinks.platform(),
     ),

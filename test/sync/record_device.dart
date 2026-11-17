@@ -1,3 +1,4 @@
+import 'package:kapy_notes/ai/kapy_chat_book.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/tags.dart';
@@ -28,7 +29,12 @@ class MemoryStore extends LocalStore {
 /// One device of the account: its notes, documents, task index and tags, and
 /// the shared fake server.
 class Device {
-  Device(this.server, {required this.name, int protocol = protocolVersion}) {
+  Device(
+    this.server, {
+    required this.name,
+    int protocol = protocolVersion,
+    this.withChats = true,
+  }) {
     store.data['sync.v1'] = {'deviceId': deviceIdFor(name)};
     notes = NotesStore(store, now: tick);
     state = SyncState(store)..load();
@@ -37,6 +43,7 @@ class Device {
     docs = DocStore(MemoryDocStorage(), replica: name.padRight(12, '0'));
     tasks = TaskIndex(store, now: tick);
     tags = TagStore(store, now: tick);
+    chats = KapyChatBook(store, now: tick);
     sync = SyncService(
       notes: notes,
       state: state,
@@ -52,6 +59,9 @@ class Device {
         vault: sharedVault(),
         index: tasks,
         tags: tags,
+        chats: withChats ? chats : null,
+        chatsOn: () => pro,
+        noteIsHidden: (id) => notes.byId(id)?.isHidden ?? false,
         docs: docs,
         noteIsLive: (id) => notes.byId(id) != null,
         deletedNotes: () => [
@@ -75,6 +85,12 @@ class Device {
   late final DocStore docs;
   late final TaskIndex tasks;
   late final TagStore tags;
+
+  /// Kapy AI's chats, which this device syncs only while [pro]. Left out of
+  /// the sync by `withChats: false`, which is a build from before them.
+  late final KapyChatBook chats;
+  final bool withChats;
+  bool pro = true;
   late final SyncService sync;
 
   DateTime clock = DateTime.utc(2026, 11, 17, 9);
@@ -84,6 +100,7 @@ class Device {
     await notes.load();
     await docs.load();
     await tags.load();
+    await chats.load();
   }
 
   Future<void> pass() async {

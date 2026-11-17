@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../ai/kapy_chat_book.dart';
 import '../billing/billing.dart';
 import '../billing/note_limit.dart';
 import '../billing/plan_terms.dart';
@@ -67,6 +68,7 @@ class Account extends ChangeNotifier {
     required LocalStore store,
     required TaskLibrary tasks,
     required TagStore tags,
+    KapyChatBook? chats,
     SyncService Function({
       required SyncApi api,
       required Vault vault,
@@ -81,6 +83,7 @@ class Account extends ChangeNotifier {
        _store = store,
        _tasks = tasks,
        _tags = tags,
+       _chats = chats,
        _syncServiceFactory = syncServiceFactory;
 
   final AuthApi _auth;
@@ -123,6 +126,7 @@ class Account extends ChangeNotifier {
     if (coverage == _coverage) return;
     _coverage = coverage;
     _sync?.recheckCoverage();
+    _sync?.planChanged();
   }
 
   final KeyStore _keys;
@@ -146,6 +150,10 @@ class Account extends ChangeNotifier {
 
   /// The person's tags and which notes carry them, synced while signed in.
   final TagStore _tags;
+
+  /// Kapy AI's chats, synced while signed in with Pro; null in a build or a
+  /// test with none.
+  final KapyChatBook? _chats;
   SyncService? _sync;
   Sharing? _sharing;
   Joining? _joining;
@@ -472,6 +480,7 @@ class Account extends ChangeNotifier {
     if (!keepLocalNotes) {
       _notes.forgetEverything();
       _tags.clear();
+      _chats?.forgetEverything();
     }
     _state.adopt(_user!.id);
     await _resume();
@@ -501,6 +510,9 @@ class Account extends ChangeNotifier {
             vault: vault,
             index: _tasks.index,
             tags: _tags,
+            chats: _chats,
+            chatsOn: () => _billing?.hasPro ?? false,
+            noteIsHidden: (noteId) => _notes.byId(noteId)?.isHidden ?? false,
             docs: docs,
             noteIsLive: (noteId) => _notes.byId(noteId) != null,
             deletedNotes: () => [

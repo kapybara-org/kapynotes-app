@@ -149,8 +149,10 @@ class _KapyAiChatsState extends State<KapyAiChats> {
         Padding(
           padding: const EdgeInsets.only(top: 8, bottom: 14),
           child: Text(
-            widget.kapyAi.isPro
+            widget.kapyAi.chatsSync
                 ? 'Chats sync across your devices'
+                : widget.kapyAi.isPro
+                ? 'Kept on this $kapyDeviceWord. Sign in to sync them'
                 : 'Kept on this $kapyDeviceWord. Pro syncs them',
             textAlign: TextAlign.center,
             style: kapyText(11.5, 16, palette.textTertiary),

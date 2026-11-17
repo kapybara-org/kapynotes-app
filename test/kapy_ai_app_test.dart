@@ -478,6 +478,22 @@ void main() {
       expect(find.textContaining('sk-or'), findsNothing);
     });
 
+    testWidgets('Clear history says this device only when chats do not sync', (
+      tester,
+    ) async {
+      ai = FakeKapyAi(pro: true)..syncing = false;
+      await _openSettings(tester, kapyAi: ai, reveal: 'kapy-ai-clear-history');
+
+      expect(
+        find.text('Deletes every Kapy AI chat on all your devices'),
+        findsNothing,
+      );
+      expect(
+        find.text('Deletes every Kapy AI chat on this Mac'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('Clear… asks once before it clears', (tester) async {
       ai = FakeKapyAi(pro: true);
       await _openSettings(tester, kapyAi: ai, reveal: 'kapy-ai-clear-history');
