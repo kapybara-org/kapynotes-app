@@ -199,7 +199,10 @@ void main() {
     });
 
     test('says where a result lives, and what a category holds', () {
-      expect(entries[1].place, 'General · Writing');
+      expect(
+        entries[1].place,
+        'General › Writing · underline possible misspellings',
+      );
       expect(
         _entry('Theme', section: 'Appearance', group: 'Theme').place,
         'Appearance',
@@ -237,11 +240,11 @@ void main() {
 
       await _type(tester, 'dark');
       expect(_resultTargets(tester).first, 'theme-setting');
-      // Where it lives, without repeating a heading that shares its name.
+      // Where it lives, and what it changes.
       expect(
         find.descendant(
           of: _result('theme-setting'),
-          matching: find.text('Appearance'),
+          matching: find.text('Appearance › Look · colours for the whole app'),
         ),
         findsOneWidget,
       );
@@ -261,8 +264,8 @@ void main() {
 
     testWidgets('lights the row it lands on for a moment', (tester) async {
       await _open(tester, platform: TargetPlatform.macOS);
-      await _type(tester, 'shortcut defaults');
-      await tester.tap(_result('restore-shortcut-defaults'));
+      await _type(tester, 'release notes');
+      await tester.tap(_result('changelog'));
       await tester.pump();
 
       // The scroll to it first, then the light.
@@ -276,10 +279,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(light, isNot(paints..rrect()));
       expect(
-        _onScreen(
-          tester,
-          find.byKey(const ValueKey('restore-shortcut-defaults')),
-        ),
+        _onScreen(tester, find.byKey(const ValueKey('changelog'))),
         isTrue,
         reason: 'the last row of a long pane, scrolled into view',
       );
@@ -336,7 +336,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.widget<TextField>(_field).controller!.text, isEmpty);
-      expect(find.text('System-wide'), findsOneWidget);
+      expect(find.text('From anywhere'), findsOneWidget);
     });
 
     testWidgets('⌘F goes back to the field from anywhere in settings', (
@@ -375,11 +375,12 @@ void main() {
       // would, and followed.
       final titles = <String, String>{};
       for (final section in [
-        'General',
         'Appearance',
-        'Voice notes',
+        'Notes',
+        'Voice',
+        'Window',
         'Shortcuts',
-        'Updates',
+        'About',
       ]) {
         await _type(tester, section);
         for (final target in _resultTargets(tester)) {
@@ -434,14 +435,14 @@ void main() {
 
       await _type(tester, 'spell');
       expect(
-        find.byKey(const ValueKey('settings-section-general')),
+        find.byKey(const ValueKey('settings-section-notes')),
         findsNothing,
       );
       await tester.tap(_result('spell-check-toggle'));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('spell-check-toggle')), findsOneWidget);
-      expect(find.text('General'), findsOneWidget);
+      expect(find.text('Notes'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('settings-sheet-back')));
       await tester.pumpAndSettle();

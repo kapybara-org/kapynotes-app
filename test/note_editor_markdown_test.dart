@@ -15,6 +15,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/celebrate.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
+import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'test_fonts.dart';
@@ -43,6 +44,7 @@ Widget harness(
   bool readOnly = false,
   bool light = false,
   double? width,
+  WritingFont writingFont = WritingFont.handwritten,
   List<NoteFormatRange> initialFormats = const [],
   ValueChanged<String>? onBodyChanged,
   ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
@@ -78,7 +80,7 @@ Widget harness(
             onFormatsChanged?.call(formats);
           },
           onSettingsPressed: () {},
-          writingFont: WritingFont.handwritten,
+          writingFont: writingFont,
           shortcuts: shortcutPrefs,
           // A fixed clock, so the meta row's "Edited" is the same every run.
           now: () => DateTime(2026, 9, 1, 15, 38),
@@ -86,6 +88,19 @@ Widget harness(
       ),
     ),
   );
+}
+
+/// Decodes the Kapy in the page's corner before a golden: it loads off the
+/// fake clock, so without this it shows only once an earlier test has cached
+/// it, and the same golden differs alone and in the whole file.
+Future<void> settleWithPageKapy(WidgetTester tester) async {
+  await tester.runAsync(
+    () => precacheImage(
+      const AssetImage(KapyCursorPeek.assetPath),
+      tester.element(find.byType(NoteEditor)),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 TextEditingController controllerOf(WidgetTester tester) =>
@@ -1128,8 +1143,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final theme = Theme.of(tester.element(find.byType(TextField)));
-      expect(styleOf(tester, 'the docs').color, theme.colorScheme.primary);
+      // The page's links are Paper's sage, underlined.
+      expect(
+        styleOf(tester, 'the docs').color,
+        KapyTheme.darkPalette.accentText,
+      );
+      expect(styleOf(tester, 'the docs').decoration, TextDecoration.underline);
       expect(styleOf(tester, 'the guide').color, KapyTheme.darkPalette.comment);
       expect(styleOf(tester, 'the guide').fontStyle, FontStyle.italic);
 
@@ -2055,10 +2074,12 @@ void main() {
       await tester.pumpWidget(harness(body));
       await tester.pumpAndSettle();
       const palette = KapyTheme.darkPalette;
-      expect(styleOf(tester, 'def').color, palette.keyword);
-      expect(styleOf(tester, 'return').color, palette.keyword);
-      expect(styleOf(tester, 'total').color, palette.function);
-      expect(styleOf(tester, '# all').color, palette.comment);
+      expect(styleOf(tester, 'def').color, palette.codeKeyword);
+      expect(styleOf(tester, 'return').color, palette.codeKeyword);
+      expect(styleOf(tester, 'sum').color, palette.codeBuiltIn);
+      expect(styleOf(tester, 'total').color, palette.textPrimary);
+      expect(styleOf(tester, 'total').fontWeight, FontWeight.w600);
+      expect(styleOf(tester, '# all').color, palette.textTertiary);
       expect(styleOf(tester, '# all').fontStyle, FontStyle.italic);
       // A language it does not know is left as it is written.
       final plain = styleOf(tester, 'define');
@@ -2111,6 +2132,132 @@ void main() {
       expect(three - two, closeTo(two - one, 1), reason: 'a line apiece');
     });
 
+    // The blocks artboards: CYZ-0 in dark, and E7F-0's key pieces in light.
+    group('blocks as on Paper', () {
+      const dark =
+          'SnowSEO Issues\n'
+          '# Rank scoring\n'
+          'Runs nightly; the [cron notes](https://cron.example) are in Shared. '
+          'Keep `MAX_PAGES` under 500.\n'
+          '```python\n'
+          'def score(page, keywords):\n'
+          '    # a title hit counts double\n'
+          '    hits = sum(k in page.title for k in keywords) * 2\n'
+          '    return hits + len(page.links) / 100\n'
+          'label = "needs links" if score(p, kw) < 3 else "ok"\n'
+          '```\n'
+          '## Formulas\n'
+          r'Click-through is $\frac{clicks}{shows}$, about 3.2% this week.'
+          '\n'
+          '\$\$\n'
+          r'E[rank] = \sum_i p_i \cdot r_i'
+          '\n'
+          '\$\$\n'
+          '## This week\n'
+          '| Keyword | Rank | Change |\n'
+          '| --- | ---: | ---: |\n'
+          '| kapy notes | 3 | +2 |\n'
+          '| calculator notes app | 11 | −1 |\n'
+          '| markdown notes mac | 7 | +4 |\n'
+          '\n'
+          'Full report: https://app.openseo.so/s/_g7CLGiBVMgNALKe';
+      const light =
+          'Key pieces\n'
+          '# Trip budget\n'
+          'Flights are **booked**, hotels are *still open*. See '
+          '[the shared sheet](https://sheet.example) and `TOTAL`.\n'
+          '## Before we go\n'
+          '- [x] Renew passports\n'
+          '- [ ] Book Lisbon flights under ₹28,000\n'
+          '- Lisbon, 4 nights\n'
+          '  - Alfama walk on day 2\n'
+          '    - Tram 28 early, before the queue\n'
+          '1. Exchange €300\n'
+          '2. Offline maps\n'
+          '\n'
+          '> Pack for rain, it is November.\n'
+          '\n'
+          '---\n'
+          '### Split\n'
+          '```python\n'
+          'def score(page, keywords):\n'
+          '    # a title hit counts double\n'
+          '    hits = sum(k in page.title for k in keywords) * 2\n'
+          '    return hits + len(page.links) / 100\n'
+          'label = "needs links" if score(p, kw) < 3 else "ok"\n'
+          '```';
+
+      Future<void> pumpNote(
+        WidgetTester tester,
+        String note,
+        Size size, {
+        bool light = false,
+      }) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          harness(note, light: light, writingFont: WritingFont.mixed),
+        );
+        await settleWithPageKapy(tester);
+      }
+
+      testWidgets('dark, as CYZ-0', (tester) async {
+        await pumpNote(tester, dark, const Size(1013, 817));
+        await expectLater(
+          find.byType(NoteEditor),
+          matchesGoldenFile('goldens/markdown_blocks_dark.png'),
+        );
+      });
+
+      testWidgets('light, as E7F-0', (tester) async {
+        await pumpNote(tester, light, const Size(720, 900), light: true);
+        await expectLater(
+          find.byType(NoteEditor),
+          matchesGoldenFile('goldens/markdown_blocks_light.png'),
+        );
+      });
+
+      testWidgets("a code block's header names its language and copies its "
+          'code, and goes while the caret is in the block', (tester) async {
+        final copied = <String>[];
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            if (call.method == 'Clipboard.setData') {
+              copied.add((call.arguments as Map)['text'] as String);
+            }
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          ),
+        );
+        const note = 'Note\n```python\nx = 1\nprint(x)\n```\nafter';
+        await pumpNote(tester, note, const Size(900, 600));
+
+        final copy = find.byKey(const ValueKey('code-copy'));
+        expect(find.text('python'), findsOneWidget);
+        expect(copy, findsOneWidget);
+        expect(
+          tester.getRect(copy).bottom,
+          lessThan(centerOf(tester, 'x = 1').dy),
+        );
+
+        await tester.tap(copy);
+        await tester.pump();
+        expect(copied, ['x = 1\nprint(x)']);
+        await tester.pump(const Duration(seconds: 3));
+
+        await tester.tapAt(centerOf(tester, 'x = 1'));
+        await tester.pumpAndSettle();
+        expect(copy, findsNothing);
+      });
+    });
+
     group('as a golden', () {
       const note =
           '# Formulas, code and underline\n'
@@ -2154,7 +2301,7 @@ void main() {
         await tester.pumpWidget(
           harness(note, light: light, autofocus: focused),
         );
-        await tester.pumpAndSettle();
+        await settleWithPageKapy(tester);
       }
 
       testWidgets('dark', (tester) async {

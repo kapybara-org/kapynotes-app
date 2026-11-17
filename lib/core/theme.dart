@@ -128,6 +128,11 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// A switch's thumb while it is on, standing on the sage track.
   final Color switchThumb;
 
+  /// The sunken track a segmented choice or a stepper sits in, below the
+  /// card it is on, and the raised segment that is chosen inside it.
+  final Color wellBackground;
+  final Color segmentSelected;
+
   /// What casts every shadow, with its alpha as the strength: black in dark,
   /// the ink at a fraction of that in light, where a black shadow reads as
   /// dirt on the paper.
@@ -199,6 +204,32 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   Brightness get brightness =>
       ThemeData.estimateBrightnessForColor(editorBackground);
 
+  bool get _dark => brightness == Brightness.dark;
+
+  /// Code in a note, Paper's p-5-0: clay keywords, sage strings, ochre
+  /// numbers and teal built-ins, each a shade deeper in light.
+  Color get codeKeyword =>
+      _dark ? const Color(0xFFCF7A57) : const Color(0xFFB5552F);
+  Color get codeString =>
+      _dark ? const Color(0xFFB3C79C) : const Color(0xFF56703C);
+  Color get codeNumber =>
+      _dark ? const Color(0xFFD4B26A) : const Color(0xFF8A6A1E);
+  Color get codeBuiltIn =>
+      _dark ? const Color(0xFF8FB3B0) : const Color(0xFF3F7470);
+
+  /// The panel under a code block, a step below the page.
+  Color get codePanel =>
+      _dark ? const Color(0xFF1E1C19) : const Color(0xFFF6F2E8);
+
+  /// The pill under inline code and a formula's TeX.
+  Color get codeChip =>
+      _dark ? const Color(0xFF2E2A25) : const Color(0xFFEFEADD);
+
+  /// A quote's bar. Paper draws it in light only; the dark one takes the
+  /// same step between the separator and a checkbox's edge.
+  Color get quoteBar =>
+      _dark ? const Color(0xFF47423A) : const Color(0xFFD0C8B5);
+
   /// The same palette with every surface solid: what High Contrast, Reduce
   /// Transparency and a desktop with no blur behind the window all ask for.
   CalcPalette get opaque =>
@@ -269,6 +300,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.pageBorder,
     required this.textDivider,
     required this.switchThumb,
+    required this.wellBackground,
+    required this.segmentSelected,
     required this.shadow,
     this.translucency = 1,
     this.paperTranslucency = 1,
@@ -340,6 +373,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? pageBorder,
     Color? textDivider,
     Color? switchThumb,
+    Color? wellBackground,
+    Color? segmentSelected,
     Color? shadow,
     double? translucency,
     double? paperTranslucency,
@@ -408,6 +443,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     pageBorder: pageBorder ?? this.pageBorder,
     textDivider: textDivider ?? this.textDivider,
     switchThumb: switchThumb ?? this.switchThumb,
+    wellBackground: wellBackground ?? this.wellBackground,
+    segmentSelected: segmentSelected ?? this.segmentSelected,
     shadow: shadow ?? this.shadow,
     translucency: translucency ?? this.translucency,
     paperTranslucency: paperTranslucency ?? this.paperTranslucency,
@@ -485,6 +522,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       pageBorder: mix(pageBorder, other.pageBorder),
       textDivider: mix(textDivider, other.textDivider),
       switchThumb: mix(switchThumb, other.switchThumb),
+      wellBackground: mix(wellBackground, other.wellBackground),
+      segmentSelected: mix(segmentSelected, other.segmentSelected),
       shadow: mix(shadow, other.shadow),
       translucency: translucency + (other.translucency - translucency) * t,
       paperTranslucency:
@@ -521,14 +560,23 @@ class EditorMetrics {
   static const double metaBottom = 22;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 
-  /// A heading on the page: Paper's 18px heading in its 28px line with 18 of
-  /// room above it. Set with proportional leading, a row of 51 puts the
-  /// baseline where Paper has it; the 3 left over below is a body row's gap.
-  static const double headingFontSize = 18;
-  static const double headingLine = 51;
+  /// A heading on the page, Paper's p-5-0: 22, 19 and 17 over 16px writing,
+  /// each in a 28px line at the bottom of a row of 40 for the first level
+  /// and 36 below it, plus a body row's gap of 3. Set with proportional
+  /// leading, nearly all of what the row adds goes above the words. Deeper
+  /// levels are the writing's own size in the third level's row.
+  static double headingFontSize(int level) => switch (level) {
+    <= 1 => 22,
+    2 => 19,
+    3 => 17,
+    _ => 16,
+  };
+  static double headingRow(int level) => level <= 1 ? 43 : 39;
 
-  /// How far Paper's link chip reaches past the address it holds.
+  /// How far Paper's link chip reaches past the address it holds, and the
+  /// pill under inline code past its words.
   static const double linkChipReach = 8;
+  static const double codeChipReach = 6;
 
   static const EdgeInsets padding = EdgeInsets.symmetric(
     horizontal: 28,
@@ -1087,6 +1135,8 @@ class KapyTheme {
     pageBorder: Color(0xFF2E2A25),
     textDivider: Color(0xFF554F47),
     switchThumb: Color(0xFFE2DCCF),
+    wellBackground: Color(0xFF1F1D19),
+    segmentSelected: Color(0xFF35312B),
     shadow: Color(0xFF000000),
   );
 
@@ -1164,6 +1214,8 @@ class KapyTheme {
     pageBorder: Color(0xFFE6E0D0),
     textDivider: Color(0xFFBDB6A6),
     switchThumb: Color(0xFFFCFAF4),
+    wellBackground: Color(0xFFEFEADD),
+    segmentSelected: Color(0xFFFCFAF4),
     shadow: Color(0x662A2620),
   );
 

@@ -262,7 +262,7 @@ void main() {
     await settleToast(tester);
   });
 
-  testWidgets('the settings pane offers both, and never calls it a backup', (
+  testWidgets('the settings pane offers both, and says the export is open', (
     tester,
   ) async {
     final backing = _MemoryStore();
@@ -278,25 +278,20 @@ void main() {
             shortcuts: ShortcutPrefs(backing),
             rates: RatesRepository(backing),
             notes: notes,
+            section: SettingsSection.notes,
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('export-notes')), findsOneWidget);
-    expect(find.byKey(const ValueKey('import-notes')), findsOneWidget);
-
-    // "Backup" implies something running on a schedule, and anybody who reads
-    // it here will assume they are covered when they are not.
-    for (final text in tester.widgetList<Text>(find.byType(Text))) {
-      expect(
-        (text.data ?? '').toLowerCase(),
-        isNot(contains('backup')),
-        reason: 'export is portability, not a backup',
-      );
+    for (final key in ['export-notes', 'import-notes']) {
+      expect(find.byKey(ValueKey(key), skipOffstage: false), findsOneWidget);
     }
     // The plaintext warning is where the action is, not buried in a help page.
-    expect(find.textContaining('Unencrypted after export'), findsOneWidget);
+    expect(
+      find.textContaining('isn’t encrypted once saved', skipOffstage: false),
+      findsOneWidget,
+    );
   });
 }

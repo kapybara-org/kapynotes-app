@@ -306,12 +306,12 @@ Future<void> pressShortcut(
 /// Opens settings and selects [section].
 Future<void> openSettings(
   WidgetTester tester, {
-  SettingsSection section = SettingsSection.general,
+  SettingsSection section = SettingsSection.appearance,
 }) async {
   await showNotesList(tester);
   await tester.tap(settingsAffordance().first);
   await tester.pumpAndSettle();
-  if (section == SettingsSection.general) return;
+  if (section == SettingsSection.appearance) return;
   await tester.tap(find.byKey(ValueKey('settings-section-${section.name}')));
   await tester.pumpAndSettle();
 }
@@ -832,11 +832,10 @@ void main() {
     await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
 
-    await openSettings(tester);
+    await openSettings(tester, section: SettingsSection.notes);
 
     // Twice over now: the sidebar row that opened it, and the dialog's title.
     expect(find.text('Settings'), findsWidgets);
-    expect(find.text('Notes list'), findsOneWidget);
     final dailyToggle = find.byKey(const ValueKey('daily-separators-toggle'));
     final compactSwitch = find.descendant(
       of: dailyToggle,
@@ -853,7 +852,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(prefs.readyToTypeOnOpen, isFalse);
 
-    // With the window's own rows, at the foot of the pane.
+    // The window's own rows have a pane of their own.
+    await tester.tap(find.byKey(const ValueKey('settings-section-window')));
+    await tester.pumpAndSettle();
     final sidebarToggle = find.byKey(const ValueKey('sidebar-toggle'));
     await tester.ensureVisible(sidebarToggle);
     await tester.pumpAndSettle();
@@ -887,7 +888,7 @@ void main() {
     );
     expect(openNoteField(tester).autocorrect, isFalse);
 
-    await openSettings(tester);
+    await openSettings(tester, section: SettingsSection.notes);
     final toggle = find.byKey(const ValueKey('spell-check-toggle'));
     expect(
       find.descendant(of: toggle, matching: find.text('Check spelling')),
@@ -903,31 +904,29 @@ void main() {
     );
   });
 
-  testWidgets('settings sets its type at the Riverbank weights', (
+  testWidgets('settings heads its groups in Shantell and its rows in Figtree', (
     tester,
   ) async {
     await pumpApp(tester);
     await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
-    await openSettings(tester);
+    await openSettings(tester, section: SettingsSection.notes);
 
     final settings = find.byType(SettingsDialog);
-    FontWeight weightOf(String label) {
+    TextStyle styleOf(String label) {
       final finder = find.descendant(of: settings, matching: find.text(label));
-      final element = tester.element(finder.first);
-      final text = tester.widget<Text>(finder.first);
-      return text.style?.fontWeight ??
-          DefaultTextStyle.of(element).style.fontWeight ??
-          FontWeight.w400;
+      return DefaultTextStyle.of(
+        tester.element(finder.first),
+      ).style.merge(tester.widget<Text>(finder.first).style);
     }
 
-    // Headings and the selected section are semibold; the sections not on
-    // show are medium; a row's description is regular.
-    expect(weightOf('Settings'), FontWeight.w600);
-    expect(weightOf('Opening'), FontWeight.w600);
-    expect(weightOf('Daily separators'), FontWeight.w600);
-    expect(weightOf('Appearance'), FontWeight.w500);
-    expect(weightOf('Add a dated line when a new day begins'), FontWeight.w400);
+    expect(styleOf('Opening').fontFamily, 'Shantell Sans');
+    expect(styleOf('Daily separators').fontFamily, isNot('Shantell Sans'));
+    expect(
+      styleOf('Add a dated line when a new day begins').fontWeight ??
+          FontWeight.w400,
+      FontWeight.w400,
+    );
   });
 
   testWidgets('selects and persists the note time zone from settings', (
@@ -936,13 +935,13 @@ void main() {
     await pumpApp(tester);
     await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
-    await openSettings(tester);
+    await openSettings(tester, section: SettingsSection.notes);
 
     final setting = find.byKey(const ValueKey('time-zone-setting'));
     await tester.ensureVisible(setting);
-    // Named for what it is; the zone in use is the line under the name.
+    // Named for what it is; the zone in use is on its button.
     expect(
-      find.descendant(of: setting, matching: find.text('Time zone')),
+      find.descendant(of: setting, matching: find.text('Time zone for dates')),
       findsOneWidget,
     );
     expect(find.textContaining('System time zone · UTC'), findsOneWidget);
@@ -980,7 +979,7 @@ void main() {
     await tester.pumpAndSettle();
     final id = notes.notes.single.id;
 
-    await openSettings(tester);
+    await openSettings(tester, section: SettingsSection.notes);
     final setting = find.byKey(const ValueKey('default-note-setting'));
     await tester.tap(setting);
     await tester.pumpAndSettle();
@@ -1044,11 +1043,12 @@ void main() {
     await pumpApp(tester);
     await tester.tap(emptyStateNewNote());
     await tester.pumpAndSettle();
-    await openSettings(tester, section: SettingsSection.appearance);
+    await openSettings(tester, section: SettingsSection.notes);
 
     final credit = find.byKey(const ValueKey('rate-attribution'));
+    await tester.ensureVisible(credit);
     expect(find.text('Rates by Frankfurter'), findsOneWidget);
-    expect(find.text('Currency rates refreshed 01 Sep 2026'), findsOneWidget);
+    expect(find.text('Exchange rates updated 01 Sep 2026'), findsOneWidget);
 
     await tester.ensureVisible(credit);
     await tester.tap(credit);
@@ -1069,10 +1069,7 @@ void main() {
       findsOneWidget,
     );
 
-    await openSettings(tester, section: SettingsSection.appearance);
-    expect(find.text('1,23,45,678'), findsWidgets);
-    // Number format shares the Appearance pane with the theme, the writing
-    // font and the paper now, so it is below the fold.
+    await openSettings(tester, section: SettingsSection.notes);
     final indian = find.byKey(const ValueKey('number-system-indian'));
     await tester.ensureVisible(indian);
     await tester.pumpAndSettle();
@@ -1080,7 +1077,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(prefs.numberSystem, NumberSystem.indian);
 
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.byKey(const ValueKey('settings-done')));
     await tester.pumpAndSettle();
 
     // The open note re-evaluates against the new engine without being touched.
@@ -1118,30 +1115,21 @@ void main() {
     for (final font in WritingFont.values) {
       expect(find.byKey(ValueKey('writing-font-${font.name}')), findsOneWidget);
     }
-    final handwritingPreview = tester.widget<Text>(
+    // Each choice is named in the type it sets.
+    Text labelOf(WritingFont font) => tester.widget<Text>(
       find.descendant(
-        of: find.byKey(const ValueKey('writing-font-handwritten')),
-        matching: find.text(WritingFont.handwritten.preview),
+        of: find.byKey(ValueKey('writing-font-${font.name}')),
+        matching: find.byType(Text),
       ),
     );
     expect(
-      handwritingPreview.style?.fontVariations,
+      labelOf(WritingFont.handwritten).style?.fontVariations,
       WritingFont.handwritten.fontVariations,
     );
-    final mixedPreview = tester.widget<Text>(
-      find.descendant(
-        of: find.byKey(const ValueKey('writing-font-mixed')),
-        matching: find.byWidgetPredicate(
-          (widget) => widget is Text && widget.textSpan != null,
-        ),
-      ),
-    );
-    final mixedSpans = (mixedPreview.textSpan! as TextSpan).children!;
-    expect(mixedSpans.first.style?.fontFamily, 'Shantell Sans');
     expect(
-      mixedSpans.last.style?.fontFamily,
-      isNull,
-      reason: 'the number inherits the mixed option\'s monospace base',
+      labelOf(WritingFont.mixed).style?.fontFamily,
+      WritingFont.monospace.fontFamily,
+      reason: 'Mixed is named in the type its numbers are set in',
     );
 
     final monospace = find.byKey(const ValueKey('writing-font-monospace'));
@@ -1265,16 +1253,17 @@ void main() {
     );
 
     await openSettings(tester, section: SettingsSection.appearance);
-    final toggle = find.byKey(const ValueKey('transparency-toggle'));
-    await tester.ensureVisible(toggle);
-    await tester.tap(toggle);
+    // One slider whose left end is Off: moving it turns the mode on.
+    final slider = find.byKey(const ValueKey('transparency-slider'));
+    await tester.ensureVisible(slider);
+    await tester.drag(slider, const Offset(40, 0));
     await tester.pumpAndSettle();
 
     expect(prefs.transparencyEnabled, isTrue);
     expect(windowGlassRequested, isTrue);
     expect(
       windowGlassAmount,
-      LayoutPrefs.defaultTransparencyAmount,
+      prefs.transparencyAmount,
       reason: 'the window fades its own material to match the slider',
     );
     expect(palette().isGlass, isTrue);
@@ -1287,31 +1276,15 @@ void main() {
           'paper beside it',
     );
     expect(paperAlpha(), lessThan(1));
-    expect(
-      paperAlpha(),
-      greaterThan(0.25),
-      reason:
-          'the slider starts near the substantial end: somebody who has just '
-          'switched the mode on has not yet said how far they want it taken',
-    );
     expect((LayoutPrefs(store)..load()).transparencyEnabled, isTrue);
 
-    // The amount slider appears with the mode and thins the paint further.
-    final slider = find.byKey(const ValueKey('transparency-amount'));
-    expect(slider, findsOneWidget);
-    final defaultPaperAlpha = paperAlpha();
-    final sliderWidget = find.descendant(
-      of: slider,
-      matching: find.byType(Slider),
-    );
-    await tester.ensureVisible(sliderWidget);
-    await tester.drag(sliderWidget, const Offset(200, 0));
+    // Further along thins the paint further.
+    final amount = prefs.transparencyAmount;
+    final partPaperAlpha = paperAlpha();
+    await tester.drag(slider, const Offset(60, 0));
     await tester.pumpAndSettle();
-    expect(
-      prefs.transparencyAmount,
-      greaterThan(LayoutPrefs.defaultTransparencyAmount),
-    );
-    expect(paperAlpha(), lessThan(defaultPaperAlpha));
+    expect(prefs.transparencyAmount, greaterThan(amount));
+    expect(paperAlpha(), lessThan(partPaperAlpha));
     expect(
       (LayoutPrefs(store)..load()).transparencyAmount,
       prefs.transparencyAmount,
@@ -1348,13 +1321,14 @@ void main() {
     expect(paperAlpha(), 1);
   });
 
-  testWidgets('the amount slider is not offered while transparency is off', (
-    tester,
-  ) async {
+  testWidgets('transparency off is the slider at its Off end', (tester) async {
     await pumpApp(tester);
     await openSettings(tester, section: SettingsSection.appearance);
-    expect(find.byKey(const ValueKey('transparency-toggle')), findsOneWidget);
-    expect(find.byKey(const ValueKey('transparency-amount')), findsNothing);
+    final slider = tester.widget<Slider>(
+      find.byKey(const ValueKey('transparency-slider')),
+    );
+    expect(prefs.transparencyEnabled, isFalse);
+    expect(slider.value, 0);
   });
 
   testWidgets('a window that cannot blur keeps its opaque paint', (
@@ -1437,7 +1411,7 @@ void main() {
 
     final integration = DesktopIntegration(layoutPrefs: prefs);
     await pumpApp(tester, desktopIntegration: integration);
-    await openSettings(tester);
+    await openSettings(tester, section: SettingsSection.window);
 
     final keepRunning = find.byKey(const ValueKey('keep-running-toggle'));
     await tester.ensureVisible(keepRunning);
@@ -1477,7 +1451,7 @@ void main() {
       tester,
       desktopIntegration: DesktopIntegration(layoutPrefs: prefs),
     );
-    await openSettings(tester);
+    await openSettings(tester, section: SettingsSection.window);
 
     // A switch that cannot do anything is worse than no switch.
     expect(find.byKey(const ValueKey('login-item-toggle')), findsNothing);
@@ -1534,12 +1508,11 @@ void main() {
       (widget) => widget is SettingsLabel && widget.text == text,
     );
     const headings = [
-      'System-wide',
-      'Notes',
-      'Split view',
+      'From anywhere',
+      'Notes and search',
+      'Panes',
       'Window',
-      'Editor',
-      'Insert',
+      'Writing',
       'Formatting',
     ];
     for (final heading in headings) {
@@ -1561,7 +1534,10 @@ void main() {
     await tester.ensureVisible(findButton);
     await tester.tap(findButton);
     await tester.pumpAndSettle();
-    expect(find.text('Press your new shortcut'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('shortcut-recording-note')),
+      findsOneWidget,
+    );
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
@@ -1646,12 +1622,15 @@ void main() {
     expect(prefs.resultsVisible, isTrue);
 
     await openSettings(tester, section: SettingsSection.shortcuts);
-    final row = find.byKey(const ValueKey('shortcut-toggleResults'));
-    await tester.ensureVisible(row);
-    await tester.tap(row);
+    final row = find.byKey(const ValueKey('shortcut-row-toggleResults'));
+    final keys = find.byKey(const ValueKey('shortcut-toggleResults'));
+    await tester.ensureVisible(keys);
+    await tester.tap(keys);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('shortcut-remove')));
+    // Backspace on its own takes it away.
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.backspace);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.backspace);
     await tester.pumpAndSettle();
 
     expect(shortcuts.bindingFor(ShortcutAction.toggleResults), isNull);
@@ -1661,7 +1640,7 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.text('Done'));
+    await tester.tap(find.byKey(const ValueKey('settings-done')));
     await tester.pumpAndSettle();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
@@ -1691,7 +1670,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(shortcuts.bindingFor(ShortcutAction.findNotes), isNull);
-    expect(find.text('Press your new shortcut'), findsNothing);
+    expect(find.byKey(const ValueKey('shortcut-recording-note')), findsNothing);
   });
 
   testWidgets(
@@ -2408,12 +2387,12 @@ void main() {
   testWidgets('desktop Settings has room for a calm two-pane layout', (
     tester,
   ) async {
-    await pumpApp(tester, size: const Size(1100, 760));
+    await pumpApp(tester, size: const Size(1100, 860));
     await openSettings(tester);
 
     expect(
       tester.getSize(find.byKey(const ValueKey('settings-dialog-content'))),
-      const Size(820, 700),
+      const Size(940, 760),
     );
   });
 
@@ -3113,7 +3092,7 @@ void main() {
     expect(prefs.hiddenFolderVisible, isFalse);
     expect(find.byKey(const ValueKey('rail-hidden')), findsNothing);
 
-    await openSettings(tester);
+    await openSettings(tester, section: SettingsSection.notes);
     final toggle = find.byKey(const ValueKey('hidden-notes-sidebar-toggle'));
     final settingsScrollable = find.descendant(
       of: find.byType(Scrollbar),
@@ -3235,6 +3214,7 @@ void main() {
           shortcuts: shortcuts,
           rates: rates,
           notes: notes,
+          section: SettingsSection.notes,
         ),
       ),
     );

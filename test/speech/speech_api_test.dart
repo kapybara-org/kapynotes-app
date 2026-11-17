@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:kapy_notes/speech/speech_api.dart';
-import 'package:kapy_notes/speech/transcriber.dart';
 
 void main() {
   test('transcription sends the selected cloud model to the server', () async {
@@ -19,7 +18,8 @@ void main() {
           jsonEncode({
             'jobId': '11111111-1111-4111-8111-111111111111',
             'lang': 'en',
-            'engine': 'openrouter/${CloudTranscriptionModel.nvidia.id}',
+            'engine':
+                'openrouter/nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
             'segments': [
               {'s': 0, 'e': 800, 't': 'hello'},
             ],
@@ -38,13 +38,19 @@ void main() {
     final result = await api.transcribe(
       audio: Uint8List.fromList([1, 2, 3]),
       requestId: '22222222-2222-4222-8222-222222222222',
-      model: CloudTranscriptionModel.nvidia.id,
+      model: 'nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
     );
 
     expect(sent.url.path, '/speech/transcribe');
-    expect(sent.headers['x-speech-model'], CloudTranscriptionModel.nvidia.id);
+    expect(
+      sent.headers['x-speech-model'],
+      'nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
+    );
     expect(sent.headers['content-type'], 'audio/mp4');
     expect(sent.bodyBytes, [1, 2, 3]);
-    expect(result.engine, 'openrouter/${CloudTranscriptionModel.nvidia.id}');
+    expect(
+      result.engine,
+      'openrouter/nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b',
+    );
   });
 }
