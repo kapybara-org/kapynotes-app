@@ -79,9 +79,13 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color totalPillText;
 
   /// Riverbank's clay, the one warm mark on the page: a pinned note's pin,
-  /// the note title's hand-drawn underline, the streak's flame and the badge
-  /// that counts invitations.
+  /// the note title's hand-drawn underline, the streak's flame, the badge
+  /// that counts invitations and what marks a picture that didn't load.
   final Color clay;
+
+  /// Clay as words: deeper than [clay] on light paper and paler on dark, so
+  /// it reads as text. What says a note's pictures didn't load.
+  final Color clayText;
 
   /// The type ladder under the primary ink: a window or dialog's own title,
   /// the heading over a group, the label of a row that is not selected, and
@@ -273,6 +277,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.totalPillBackground,
     required this.totalPillText,
     required this.clay,
+    required this.clayText,
     required this.textHeading,
     required this.textSubheading,
     required this.textMuted,
@@ -341,6 +346,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? totalPillBackground,
     Color? totalPillText,
     Color? clay,
+    Color? clayText,
     Color? textHeading,
     Color? textSubheading,
     Color? textMuted,
@@ -406,6 +412,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     totalPillBackground: totalPillBackground ?? this.totalPillBackground,
     totalPillText: totalPillText ?? this.totalPillText,
     clay: clay ?? this.clay,
+    clayText: clayText ?? this.clayText,
     textHeading: textHeading ?? this.textHeading,
     textSubheading: textSubheading ?? this.textSubheading,
     textMuted: textMuted ?? this.textMuted,
@@ -480,6 +487,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       totalPillBackground: mix(totalPillBackground, other.totalPillBackground),
       totalPillText: mix(totalPillText, other.totalPillText),
       clay: mix(clay, other.clay),
+      clayText: mix(clayText, other.clayText),
       textHeading: mix(textHeading, other.textHeading),
       textSubheading: mix(textSubheading, other.textSubheading),
       textMuted: mix(textMuted, other.textMuted),
@@ -1088,6 +1096,7 @@ class KapyTheme {
     totalPillBackground: Color(0xFF7D9468),
     totalPillText: Color(0xFF1C1A17),
     clay: Color(0xFFCF7A57),
+    clayText: Color(0xFFE0A285),
     textHeading: Color(0xFFDAD4C7),
     textSubheading: Color(0xFFD3CCBE),
     textMuted: Color(0xFFB2AA9A),
@@ -1162,6 +1171,7 @@ class KapyTheme {
     totalPillBackground: Color(0xFF56703C),
     totalPillText: Color(0xFFFCFAF4),
     clay: Color(0xFFD0663B),
+    clayText: Color(0xFFB5552F),
     textHeading: Color(0xFF2A2620),
     textSubheading: Color(0xFF3A352D),
     textMuted: Color(0xFF4A453B),
