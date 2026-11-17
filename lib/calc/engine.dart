@@ -73,6 +73,19 @@ class _EvaluatedLine {
     required this.result,
     required this.isAggregateReadout,
   });
+
+  /// The same outcome on line [line].
+  _EvaluatedLine at(int line) => _EvaluatedLine(
+    result: LineResult(
+      line: line,
+      value: result.value,
+      text: result.text,
+      copyText: result.copyText,
+      grouping: result.grouping,
+      isTotal: result.isTotal,
+    ),
+    isAggregateReadout: isAggregateReadout,
+  );
 }
 
 /// Evaluates a note, one line at a time, against a scope that carries
@@ -81,6 +94,10 @@ class _EvaluatedLine {
 /// An engine is immutable with respect to its unit table; when exchange rates
 /// change a new engine is built rather than mutated, which keeps evaluation
 /// free of half-updated currency state.
+///
+/// It remembers the lines it reads, each with what it read from the scope,
+/// and reads a line again only when its text or one of those reads changes,
+/// so a keystroke in a long note costs a line or two rather than the note.
 class CalcEngine {
   final UnitRegistry registry;
   final DateTime Function() _now;
@@ -93,6 +110,8 @@ class CalcEngine {
   /// Where separators fall in the results this engine renders. Changing it
   /// means building a new engine, exactly as a rate change does.
   final DigitGrouping grouping;
+
+  final _LineMemo _memo = _LineMemo();
 
   CalcEngine({
     Map<String, double> ratesPerUsd = const {},
@@ -120,10 +139,10 @@ class CalcEngine {
       timeZoneId: timeZoneId,
     );
     final results = <int, LineResult>{};
-    final lines = body.split('\n');
+    final pass = _memo.begin(body);
 
-    for (var i = 0; i < lines.length; i++) {
-      final evaluated = _evaluateLine(lines[i], i, evaluator, scope);
+    for (var i = 0; i < pass.lines.length; i++) {
+      final evaluated = _evaluateLine(pass, i, evaluator, scope);
       if (evaluated != null) {
         results[i] = evaluated.result;
         // Aggregate readouts, including conversions such as `total to usd`,
@@ -133,6 +152,7 @@ class CalcEngine {
         }
       }
     }
+    _memo.end(pass);
     return DocumentEvaluation(
       results: Map<int, LineResult>.unmodifiable(results),
       total: scope.runningSum,
@@ -143,29 +163,41 @@ class CalcEngine {
   /// True when the parsed expression only reads an aggregate, optionally
   /// converting it to another unit or currency for display.
   /// A variable the note named `sum` or `total` is its own value, not a
-  /// readout, which is why [variables] is asked first.
-  static bool _isAggregateReadout(
-    Node node,
-    Map<String, CalcValue> variables,
-  ) => switch (node) {
+  /// readout, which is why [scope] is asked first.
+  static bool _isAggregateReadout(Node node, CalcScope scope) => switch (node) {
     IdentifierNode() =>
-      !variables.containsKey(node.name) &&
+      !scope.defines(node.name) &&
           aggregateNames.contains(node.name.toLowerCase()),
-    ConvertNode() => _isAggregateReadout(node.value, variables),
+    ConvertNode() => _isAggregateReadout(node.value, scope),
     _ => false,
   };
 
   /// The readouts of the running total itself, as against `prev` or `avg`.
-  static bool _isTotalReadout(Node node, Map<String, CalcValue> variables) =>
-      switch (node) {
-        IdentifierNode() =>
-          !variables.containsKey(node.name) &&
-              const {'sum', 'total'}.contains(node.name.toLowerCase()),
-        ConvertNode() => _isTotalReadout(node.value, variables),
-        _ => false,
-      };
+  static bool _isTotalReadout(Node node, CalcScope scope) => switch (node) {
+    IdentifierNode() =>
+      !scope.defines(node.name) &&
+          const {'sum', 'total'}.contains(node.name.toLowerCase()),
+    ConvertNode() => _isTotalReadout(node.value, scope),
+    _ => false,
+  };
 
+  /// Line [index] of [pass]: an earlier reading of the same text where it
+  /// holds in [scope], otherwise a fresh one, remembered for next time.
   _EvaluatedLine? _evaluateLine(
+    _Pass pass,
+    int index,
+    Evaluator evaluator,
+    CalcScope scope,
+  ) {
+    final reading = _memo.reuse(pass, index, scope);
+    if (reading != null) return reading.at(index);
+    scope.beginTrace();
+    final evaluated = _readLine(pass.lines[index], index, evaluator, scope);
+    _memo.remember(pass, index, scope.endTrace(), evaluated);
+    return evaluated;
+  }
+
+  _EvaluatedLine? _readLine(
     String rawLine,
     int index,
     Evaluator evaluator,
@@ -224,16 +256,15 @@ class CalcEngine {
     // when the reading then refuses what it got: `n = Room 12` is a bare
     // number, not an amount. Unless one of them keeps its answer, the name
     // goes back to what it was.
-    final had = scope.variables.containsKey(name.text);
-    final before = scope.variables[name.text];
+    final before = scope[name.text];
     final read =
         _labelledArithmetic(value, index, evaluator, scope, head: head) ??
         _labelledAmount(value, index, evaluator, scope, head: head);
     if (read == null) {
-      if (had) {
-        scope.variables[name.text] = before!;
+      if (before == null) {
+        scope.remove(name.text);
       } else {
-        scope.variables.remove(name.text);
+        scope[name.text] = before;
       }
     }
     return read;
@@ -252,8 +283,7 @@ class CalcEngine {
           const ['+', '-', '*', '/', '^', '×', '÷', '−'].contains(token.text)) {
         return true;
       }
-      if (token.type == TokenType.identifier &&
-          scope.variables.containsKey(token.text)) {
+      if (token.type == TokenType.identifier && scope.defines(token.text)) {
         return true;
       }
       if (_isTimesLetter(token, i + 1 < tokens.length ? tokens[i + 1] : null)) {
@@ -335,7 +365,7 @@ class CalcEngine {
     if (token.type == TokenType.unknown) return true;
     if (token.type != TokenType.identifier) return false;
     final name = token.text.toLowerCase();
-    return !scope.variables.containsKey(token.text) &&
+    return !scope.defines(token.text) &&
         !calcKeywords.contains(name) &&
         !aggregateNames.contains(name) &&
         !mathConstants.contains(name) &&
@@ -354,6 +384,7 @@ class CalcEngine {
     try {
       final temporal = _temporal.evaluate(source);
       if (temporal != null) {
+        scope.markUnrepeatable();
         return _EvaluatedLine(
           result: LineResult(
             line: index,
@@ -368,13 +399,15 @@ class CalcEngine {
       final node = Parser(
         source,
         registry: registry,
-        boundNames: scope.variables.keys
-            .where(
-              (name) => !unitConfigurationNames.contains(name.toLowerCase()),
-            )
-            .toSet(),
+        isBound: (name) =>
+            !unitConfigurationNames.contains(name.toLowerCase()) &&
+            scope.defines(name),
       ).parseLine();
       final value = evaluator.evaluate(node);
+      // Shown in the device's zone, a date reads the zone as it is written.
+      if (value is DateTimeValue && value.timeZoneId == null) {
+        scope.markUnrepeatable();
+      }
       return _EvaluatedLine(
         result: LineResult(
           line: index,
@@ -382,9 +415,9 @@ class CalcEngine {
           text: ResultFormatter.display(value, grouping: grouping),
           copyText: ResultFormatter.copy(value),
           grouping: grouping,
-          isTotal: _isTotalReadout(node, scope.variables),
+          isTotal: _isTotalReadout(node, scope),
         ),
-        isAggregateReadout: _isAggregateReadout(node, scope.variables),
+        isAggregateReadout: _isAggregateReadout(node, scope),
       );
     } on CalcError {
       return null;
@@ -470,7 +503,7 @@ class CalcEngine {
       switch (token.type) {
         case TokenType.identifier:
           final name = token.text.toLowerCase();
-          if (scope.variables.containsKey(token.text) ||
+          if (scope.defines(token.text) ||
               aggregateNames.contains(name) ||
               mathConstants.contains(name) ||
               temporalNames.contains(name) ||
@@ -632,7 +665,7 @@ class CalcEngine {
     // answer where saying nothing was available.
     if (token.text.contains(RegExp(r'[0-9]'))) return false;
     final name = token.text.toLowerCase();
-    return !scope.variables.containsKey(token.text) &&
+    return !scope.defines(token.text) &&
         !calcKeywords.contains(name) &&
         !aggregateNames.contains(name) &&
         !mathConstants.contains(name) &&
@@ -665,15 +698,15 @@ class CalcEngine {
 
     // A line starting with an operator continues the one above it, so a
     // column of `+ 12` reads as a running tally. `-` is excluded because
-    // `-5` on its own is a perfectly good negative number.
-    if (scope.prev != null && line.length > 1) {
-      final first = line[0];
-      if (const ['+', '*', '/', '^', '×', '÷'].contains(first)) {
-        line = 'prev $line';
-      }
+    // `-5` on its own is a perfectly good negative number. Only such a line
+    // asks about the line above, so that no other line depends on it.
+    if (line.length > 1 &&
+        const ['+', '*', '/', '^', '×', '÷'].contains(line[0]) &&
+        scope.prev != null) {
+      line = 'prev $line';
     }
 
-    return looksLikeMath(line, scope.variables.keys.toSet()) ? line : null;
+    return _looksLikeMath(line, scope.defines) ? line : null;
   }
 
   /// Prose and calculations share the document, so the engine only attempts
@@ -682,7 +715,10 @@ class CalcEngine {
   ///
   /// Also used by the highlighter, so colouring and evaluation agree on which
   /// lines are calculations.
-  static bool looksLikeMath(String line, Set<String> knownNames) {
+  static bool looksLikeMath(String line, Set<String> knownNames) =>
+      _looksLikeMath(line, knownNames.contains);
+
+  static bool _looksLikeMath(String line, bool Function(String name) isKnown) {
     final tokens = Lexer(
       line,
     ).tokenize().where((t) => t.isSignificant).toList();
@@ -705,7 +741,7 @@ class CalcEngine {
           hasOperator = true;
         case TokenType.identifier:
           final name = token.text;
-          if (knownNames.contains(name) ||
+          if (isKnown(name) ||
               aggregateNames.contains(name.toLowerCase()) ||
               mathConstants.contains(name.toLowerCase()) ||
               temporalNames.contains(name.toLowerCase()) ||
@@ -719,5 +755,191 @@ class CalcEngine {
       }
     }
     return hasNumber || hasOperator || hasKnownName;
+  }
+}
+
+/// One reading of a line's text in one scope: what the line read and wrote
+/// there, and what it gave.
+class _Reading {
+  final ScopeTrace trace;
+  _EvaluatedLine? outcome;
+
+  /// The last pass that used this reading, which is what [_LineMemo] forgets
+  /// by.
+  int used;
+
+  _Reading(this.trace, this.outcome, this.used);
+
+  /// The outcome, as line [index] of the note.
+  _EvaluatedLine? at(int index) {
+    final outcome = this.outcome;
+    if (outcome == null || outcome.result.line == index) return outcome;
+    return this.outcome = outcome.at(index);
+  }
+}
+
+/// One evaluation of a note: the text of each line, and the reading each
+/// line used. Until a line is evaluated, its reading is the one the same line
+/// used in the earlier pass this one was matched against, if any.
+class _Pass {
+  final int number;
+  final List<String> lines;
+  final List<_Reading?> readings;
+
+  _Pass(this.number, this.lines, this.readings);
+}
+
+/// The lines an engine has read, so that a note is read again only where an
+/// edit could have changed it.
+///
+/// A line's outcome depends on its text and on what it read from the scope,
+/// so each text keeps a [_Reading] for each of the last few scopes it was
+/// read in. Even so, looking every line of a long note up by its text costs
+/// more than the rest of an incremental pass together, so the memo also
+/// keeps the last few passes. A note is matched against the one it shares
+/// most lines with, from its first line down and its last line up, and only
+/// the lines in between are looked up by text.
+class _LineMemo {
+  /// Readings kept, past which all but the most recently used are forgotten,
+  /// leaving fewer than half as many.
+  static const _capacity = 10000;
+
+  /// Readings kept for one text, past which the one used longest ago is
+  /// forgotten. A `total` line under figures that keep changing is read in a
+  /// new scope on every pass, and each reading kept is one more to compare.
+  static const _readingsPerText = 4;
+
+  /// Earlier passes kept to match new ones against.
+  static const _passesKept = 4;
+
+  final Map<String, List<_Reading>> _readings = {};
+  final List<_Pass> _passes = [];
+  int _size = 0;
+  int _count = 0;
+
+  /// Starts a pass over [body]. An earlier pass that shares most of its
+  /// lines with it was an earlier version of the same note, which this pass
+  /// replaces.
+  _Pass begin(String body) {
+    _Pass? earlier;
+    var shared = (head: 0, tail: 0, from: 0, to: body.length);
+    for (final pass in _passes) {
+      final candidate = _shared(body, pass.lines);
+      if (candidate.head + candidate.tail > shared.head + shared.tail) {
+        earlier = pass;
+        shared = candidate;
+      }
+    }
+    final (:head, :tail, :from, :to) = shared;
+    final kept = earlier?.lines.length ?? 0;
+    if ((head + tail) * 2 > kept) _passes.remove(earlier);
+    final changed = from > to
+        ? const <String>[]
+        : body.substring(from, to).split('\n');
+    return _Pass(
+      ++_count,
+      [
+        ...?earlier?.lines.sublist(0, head),
+        ...changed,
+        ...?earlier?.lines.sublist(kept - tail),
+      ],
+      [
+        ...?earlier?.readings.sublist(0, head),
+        for (final _ in changed) null,
+        ...?earlier?.readings.sublist(kept - tail),
+      ],
+    );
+  }
+
+  /// How many of [earlier]'s lines [body] starts with and ends with, and the
+  /// span of [body] between them.
+  static ({int head, int tail, int from, int to}) _shared(
+    String body,
+    List<String> earlier,
+  ) {
+    var head = 0;
+    var from = 0;
+    while (head < earlier.length) {
+      final line = earlier[head];
+      final end = from + line.length;
+      if (end > body.length ||
+          !body.startsWith(line, from) ||
+          (end < body.length && body.codeUnitAt(end) != 0x0A)) {
+        break;
+      }
+      head++;
+      from = end + 1;
+    }
+    var tail = 0;
+    var to = body.length;
+    while (tail < earlier.length - head) {
+      final line = earlier[earlier.length - 1 - tail];
+      final start = to - line.length;
+      if (start < from ||
+          !body.startsWith(line, start) ||
+          (start > 0 && body.codeUnitAt(start - 1) != 0x0A)) {
+        break;
+      }
+      tail++;
+      to = start - 1;
+    }
+    return (head: head, tail: tail, from: from, to: to);
+  }
+
+  /// A reading of line [index] that holds in [scope], already redone there.
+  _Reading? reuse(_Pass pass, int index, CalcScope scope) {
+    final hint = pass.readings[index];
+    if (hint != null && scope.reuse(hint.trace)) {
+      return hint..used = pass.number;
+    }
+    pass.readings[index] = null;
+    for (final reading in _readings[pass.lines[index]] ?? const <_Reading>[]) {
+      if (!identical(reading, hint) && scope.reuse(reading.trace)) {
+        pass.readings[index] = reading;
+        return reading..used = pass.number;
+      }
+    }
+    return null;
+  }
+
+  /// Keeps what line [index] read and gave, unless [trace] is null because
+  /// the line can't be reused.
+  void remember(
+    _Pass pass,
+    int index,
+    ScopeTrace? trace,
+    _EvaluatedLine? outcome,
+  ) {
+    if (trace == null) return;
+    final reading = _Reading(trace, outcome, pass.number);
+    final readings = _readings[pass.lines[index]] ??= [];
+    if (readings.length < _readingsPerText) {
+      _size++;
+    } else {
+      readings.remove(readings.reduce((a, b) => b.used < a.used ? b : a));
+    }
+    readings.add(reading);
+    pass.readings[index] = reading;
+  }
+
+  /// Keeps [pass] to match later ones against, and once there are too many
+  /// readings forgets those used longest ago.
+  void end(_Pass pass) {
+    _passes.insert(0, pass);
+    if (_passes.length > _passesKept) _passes.removeLast();
+    if (_size <= _capacity) return;
+    final used = [
+      for (final readings in _readings.values)
+        for (final reading in readings) reading.used,
+    ]..sort();
+    final oldest = used[used.length - _capacity ~/ 2];
+    _readings.removeWhere((_, readings) {
+      readings.removeWhere((reading) => reading.used <= oldest);
+      return readings.isEmpty;
+    });
+    _size = _readings.values.fold(
+      0,
+      (size, readings) => size + readings.length,
+    );
   }
 }

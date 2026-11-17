@@ -24,6 +24,7 @@
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
 		C1A0B0F10000000000000002 /* RichClipboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F10000000000000001 /* RichClipboardTests.swift */; };
 		C1A0B0F40000000000000002 /* RichClipboardFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F40000000000000001 /* RichClipboardFixtureTests.swift */; };
+		C1A0B0F50000000000000002 /* AccessibilityTextMirrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F50000000000000001 /* AccessibilityTextMirrorTests.swift */; };
 		C1A0B0F30000000000000002 /* paste in Resources */ = {isa = PBXBuildFile; fileRef = C1A0B0F30000000000000001 /* paste */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
@@ -44,6 +45,7 @@
 		C1A0B0090000000000000002 /* WindowPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0090000000000000001 /* WindowPin.swift */; };
 		D5F1EC0A0000000000000002 /* FileKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F1EC0A0000000000000001 /* FileKeychain.swift */; };
 		C1A0B00B0000000000000002 /* AccessibilityText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00B0000000000000001 /* AccessibilityText.swift */; };
+		C1A0B00E0000000000000002 /* AccessibilityTextMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00E0000000000000001 /* AccessibilityTextMirror.swift */; };
 		C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00C0000000000000001 /* SystemRegion.swift */; };
 		C1A0B00D0000000000000002 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00D0000000000000001 /* AppUpdater.swift */; };
 /* End PBXBuildFile section */
@@ -86,6 +88,7 @@
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		C1A0B0F10000000000000001 /* RichClipboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboardTests.swift; sourceTree = "<group>"; };
 		C1A0B0F40000000000000001 /* RichClipboardFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboardFixtureTests.swift; sourceTree = "<group>"; };
+		C1A0B0F50000000000000001 /* AccessibilityTextMirrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTextMirrorTests.swift; sourceTree = "<group>"; };
 		C1A0B0F30000000000000001 /* paste */ = {isa = PBXFileReference; lastKnownFileType = folder; name = paste; path = ../test/fixtures/paste; sourceTree = SOURCE_ROOT; };
 		333000ED22D3DE5D00554162 /* Warnings.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Warnings.xcconfig; sourceTree = "<group>"; };
 		335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GeneratedPluginRegistrant.swift; sourceTree = "<group>"; };
@@ -120,6 +123,7 @@
 		C1A0B0090000000000000001 /* WindowPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPin.swift; sourceTree = "<group>"; };
 		D5F1EC0A0000000000000001 /* FileKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileKeychain.swift; sourceTree = "<group>"; };
 		C1A0B00B0000000000000001 /* AccessibilityText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityText.swift; sourceTree = "<group>"; };
+		C1A0B00E0000000000000001 /* AccessibilityTextMirror.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTextMirror.swift; sourceTree = "<group>"; };
 		C1A0B00C0000000000000001 /* SystemRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemRegion.swift; sourceTree = "<group>"; };
 		C1A0B00D0000000000000001 /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -151,6 +155,7 @@
 				331C80D7294CF71000263BE5 /* RunnerTests.swift */,
 				C1A0B0F10000000000000001 /* RichClipboardTests.swift */,
 				C1A0B0F40000000000000001 /* RichClipboardFixtureTests.swift */,
+				C1A0B0F50000000000000001 /* AccessibilityTextMirrorTests.swift */,
 				C1A0B0F30000000000000001 /* paste */,
 			);
 			path = RunnerTests;
@@ -228,6 +233,7 @@
 				C1A0B0080000000000000001 /* AudioDecode.swift */,
 				C1A0B0050000000000000001 /* AccessibilityTree.swift */,
 				C1A0B00B0000000000000001 /* AccessibilityText.swift */,
+				C1A0B00E0000000000000001 /* AccessibilityTextMirror.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
@@ -512,6 +518,7 @@
 				331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */,
 				C1A0B0F10000000000000002 /* RichClipboardTests.swift in Sources */,
 				C1A0B0F40000000000000002 /* RichClipboardFixtureTests.swift in Sources */,
+				C1A0B0F50000000000000002 /* AccessibilityTextMirrorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -534,6 +541,7 @@
 				C1A0B0080000000000000002 /* AudioDecode.swift in Sources */,
 				C1A0B0050000000000000002 /* AccessibilityTree.swift in Sources */,
 				C1A0B00B0000000000000002 /* AccessibilityText.swift in Sources */,
+				C1A0B00E0000000000000002 /* AccessibilityTextMirror.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
