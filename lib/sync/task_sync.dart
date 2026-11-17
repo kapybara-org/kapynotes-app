@@ -208,10 +208,17 @@ class TaskSync {
   Future<void> _pull() async {
     while (!_disposed) {
       final page = await _api.pullTasks(after: _index.cursor);
-      for (final record in page.records) {
-        await _take(record);
+      _index.hold();
+      _tags.hold();
+      try {
+        for (final record in page.records) {
+          await _take(record);
+        }
+        _index.recordCursor(page.cursor);
+      } finally {
+        _index.release();
+        _tags.release();
       }
-      _index.recordCursor(page.cursor);
       if (!page.hasMore) break;
     }
     _tags.settle();
@@ -269,7 +276,7 @@ class TaskSync {
         }
         _tags.applyRemoteNote(note, updatedAt);
       default:
-        _tags.keepUnknown(record.id, decoded, updatedAt);
+        _tags.keepUnknown(record.id, updatedAt);
     }
   }
 

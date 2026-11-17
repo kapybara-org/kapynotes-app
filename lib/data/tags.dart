@@ -263,10 +263,10 @@ class TagStore extends ChangeNotifier {
     },
   );
 
-  /// Records of a kind a later build writes, by record id, as the server
-  /// holds them.
-  final Map<String, ({int updatedAt, Map<String, Object?> payload})> _unknown =
-      {};
+  /// Records of a kind a later build writes, by record id, with the
+  /// 'updatedAt' the server orders them by. Only that: what such a record
+  /// holds is never kept, so a stream of them cannot grow this file.
+  final Map<String, int> _unknown = {};
 
   int _stamp() => _now().millisecondsSinceEpoch;
 
@@ -292,12 +292,7 @@ class TagStore extends ChangeNotifier {
         if (item is! Map) continue;
         final id = item['id'];
         final updatedAt = item['updatedAt'];
-        final payload = item['payload'];
-        if (id is! String || updatedAt is! int || payload is! Map) continue;
-        _unknown[id] = (
-          updatedAt: updatedAt,
-          payload: payload.cast<String, Object?>(),
-        );
+        if (id is String && updatedAt is int) _unknown[id] = updatedAt;
       }
     }
     return true;
@@ -308,15 +303,28 @@ class TagStore extends ChangeNotifier {
     'notes': _notes.toJson(),
     'unknown': [
       for (final entry in _unknown.entries)
-        {
-          'id': entry.key,
-          'updatedAt': entry.value.updatedAt,
-          'payload': entry.value.payload,
-        },
+        {'id': entry.key, 'updatedAt': entry.value},
     ],
   };
 
+  bool _held = false;
+  bool _pending = false;
+
+  /// Keeps what is changed in memory and unsaved until [release], so a pull
+  /// of many records writes once instead of once per record.
+  void hold() => _held = true;
+
+  void release() {
+    _held = false;
+    if (_pending) _save();
+  }
+
   void _save() {
+    if (_held) {
+      _pending = true;
+      return;
+    }
+    _pending = false;
     _store.put(_key, _toJson());
     notifyListeners();
   }
@@ -657,10 +665,11 @@ class TagStore extends ChangeNotifier {
     _save();
   }
 
-  /// A record of a kind this build does not know, kept as it is.
-  void keepUnknown(String id, Map<String, Object?> payload, int updatedAt) {
-    if ((_unknown[id]?.updatedAt ?? -1) >= updatedAt) return;
-    _unknown[id] = (updatedAt: updatedAt, payload: payload);
+  /// A record of a kind this build does not know: its id and time, which
+  /// ordering and a later delete need, and nothing it holds.
+  void keepUnknown(String id, int updatedAt) {
+    if ((_unknown[id] ?? -1) >= updatedAt) return;
+    _unknown[id] = updatedAt;
     _save();
   }
 

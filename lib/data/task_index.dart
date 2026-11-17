@@ -281,7 +281,24 @@ class TaskIndex extends ChangeNotifier {
     }
   }
 
+  bool _held = false;
+  bool _pending = false;
+
+  /// Keeps what is changed in memory and unsaved until [release], so a pull
+  /// of many records writes once instead of once per record.
+  void hold() => _held = true;
+
+  void release() {
+    _held = false;
+    if (_pending) _save();
+  }
+
   void _save() {
+    if (_held) {
+      _pending = true;
+      return;
+    }
+    _pending = false;
     _store.put(_key, {
       'cursor': _cursor,
       'scanned': _scanned,
