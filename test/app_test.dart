@@ -2721,10 +2721,7 @@ void main() {
     await pressShortcut(tester, binding);
     expect(find.byType(Sidebar), findsOneWidget);
     // The list takes the keyboard, so nothing typed lands in the note under it.
-    expect(
-      FocusManager.instance.primaryFocus?.debugLabel,
-      'sidebar-overlay',
-    );
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'sidebar-overlay');
 
     await pressShortcut(tester, binding);
     expect(find.byType(Sidebar), findsNothing);
@@ -2873,9 +2870,30 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('command-menu')), findsNothing);
       expect(
-        tester.widget<NoteRow>(find.widgetWithText(NoteRow, 'Groceries')).selected,
+        tester
+            .widget<NoteRow>(find.widgetWithText(NoteRow, 'Groceries'))
+            .selected,
         isTrue,
       );
+    });
+
+    testWidgets('a setting it finds opens Settings on that pane', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'text size',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Settings'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+      expect(find.byType(SettingsDialog), findsOneWidget);
     });
 
     testWidgets('its shortcut, and Find\'s, open it over a hidden list, and '
@@ -2922,14 +2940,19 @@ void main() {
       notes.create(body: 'Something else');
       await tester.pumpAndSettle();
 
-      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.findNotes)!);
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.findNotes)!,
+      );
       await search(tester, 'sintra');
       await tester.tap(menuRow('1 more in Archive'));
       await tester.pumpAndSettle();
 
       expect(spaceTitle(tester), 'Archive');
       expect(
-        tester.widgetList<NoteRow>(find.byType(NoteRow)).map((row) => row.note.title),
+        tester
+            .widgetList<NoteRow>(find.byType(NoteRow))
+            .map((row) => row.note.title),
         ['Old Sintra plan'],
       );
       expect(
@@ -2949,7 +2972,10 @@ void main() {
         findsOneWidget,
       );
 
-      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.findNotes)!);
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.findNotes)!,
+      );
       await search(tester, 'Call the garage');
       await tester.tap(menuRow('New note: Call the garage'));
       await tester.pumpAndSettle();
@@ -2972,7 +2998,10 @@ void main() {
       tester.widget<EditableText>(editor).controller.selection =
           const TextSelection(baseOffset: 9, extentOffset: 23);
       await tester.pump();
-      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.findNotes)!);
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.findNotes)!,
+      );
       expect(find.byKey(const ValueKey('command-menu')), findsNothing);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -2980,7 +3009,10 @@ void main() {
       tester.widget<EditableText>(editor).controller.selection =
           const TextSelection.collapsed(offset: 4);
       await tester.pump();
-      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.findNotes)!);
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.findNotes)!,
+      );
       expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
     });
 
@@ -2991,13 +3023,22 @@ void main() {
       notes.create(body: 'Plain note');
       await tester.pumpAndSettle();
 
-      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.newDrawing)!);
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.newDrawing)!,
+      );
       expect(notes.notes.first.isDrawing, isTrue);
       expect(spaceTitle(tester), 'Drawings');
 
-      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.showArchive)!);
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.showArchive)!,
+      );
       expect(spaceTitle(tester), 'Archive');
-      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.showNotes)!);
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.showNotes)!,
+      );
       expect(spaceTitle(tester), 'My notes');
     });
   });
@@ -4948,7 +4989,10 @@ void main() {
 
       expect(find.byType(AppLogo), findsNWidgets(2));
       expect(find.byType(NoteRow), findsNWidgets(2));
-      expect(find.byKey(const ValueKey('sidebar-search-field')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('sidebar-search-field')),
+        findsOneWidget,
+      );
 
       await tester.tap(find.widgetWithText(NoteRow, 'First note'));
       await tester.pumpAndSettle();
