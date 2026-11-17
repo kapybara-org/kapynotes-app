@@ -2531,16 +2531,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final noteId = _selectedId != null && _kapyNoteTitle(_selectedId!) != null
         ? _selectedId
         : null;
-    if (question != null && !ai.answering) {
+    final draft = question != null && ai.answering ? question : null;
+    if (question != null && draft == null) {
       ai.newChat();
       unawaited(ai.ask(question, noteId: noteId));
     }
     if (!_usesCompactLayout) {
-      _kapyPanel.open(noteId: noteId);
+      _kapyPanel.open(noteId: noteId, draft: draft);
       return;
     }
     FocusManager.instance.primaryFocus?.unfocus();
-    _kapyPanel.open(noteId: noteId);
+    _kapyPanel.open(noteId: noteId, draft: draft);
     unawaited(
       showKapyAiSheet(
         context,

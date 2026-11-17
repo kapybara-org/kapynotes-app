@@ -311,6 +311,32 @@ void main() {
       expect(ai.calls, ['newChat', 'ask:sintra:$id']);
     });
 
+    testWidgets('asked while Kapy AI is answering, the question waits in the '
+        'composer', (tester) async {
+      await openMenuOverNote(tester);
+      ai.set(answering: true);
+
+      await type(tester, 'sintra');
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      expect(_panel, findsOneWidget);
+      expect(ai.calls, isNot(contains('newChat')));
+      expect(ai.calls.where((call) => call.startsWith('ask:')), isEmpty);
+      final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('kapy-ai-field')),
+      );
+      expect(field.controller!.text, 'sintra');
+      expect(find.text('Kapy AI is still answering'), findsOneWidget);
+
+      ai.set(answering: false);
+      await tester.pumpAndSettle();
+      expect(find.text('Kapy AI is still answering'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-send')));
+      await tester.pumpAndSettle();
+      expect(ai.calls.last, startsWith('ask:sintra:'));
+    });
+
     testWidgets('the row asks with a click', (tester) async {
       final id = await openMenuOverNote(tester);
 
