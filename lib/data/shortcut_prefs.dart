@@ -9,6 +9,13 @@ enum ShortcutAction {
   newNoteAnywhere,
   newNote,
   findNotes,
+  newTask,
+  newDrawing,
+  showNotes,
+  showTasks,
+  showDrawings,
+  showShared,
+  showArchive,
   nextNote,
   previousNote,
   splitEditor,
@@ -45,7 +52,14 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.openApp => 'Open Kapy Notes',
     ShortcutAction.newNoteAnywhere => 'New note from anywhere',
     ShortcutAction.newNote => 'New note',
-    ShortcutAction.findNotes => 'Global search',
+    ShortcutAction.findNotes => 'Search',
+    ShortcutAction.newTask => 'New task',
+    ShortcutAction.newDrawing => 'New drawing',
+    ShortcutAction.showNotes => 'Go to Notes',
+    ShortcutAction.showTasks => 'Go to Tasks',
+    ShortcutAction.showDrawings => 'Go to Drawings',
+    ShortcutAction.showShared => 'Go to Shared',
+    ShortcutAction.showArchive => 'Go to Archive',
     ShortcutAction.nextNote => 'Next note',
     ShortcutAction.previousNote => 'Previous note',
     ShortcutAction.splitEditor => 'Split view',
@@ -82,7 +96,14 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.newNoteAnywhere => 'Open a blank note from anywhere',
     ShortcutAction.newNote => 'Create and focus a blank note',
     ShortcutAction.findNotes =>
-      'Search titles, nested content, and voice notes from the sidebar',
+      'Find notes, tasks and drawings, or make one, from anywhere',
+    ShortcutAction.newTask => 'Add a task from anywhere',
+    ShortcutAction.newDrawing => 'Start a blank drawing from anywhere',
+    ShortcutAction.showNotes => 'Open your notes',
+    ShortcutAction.showTasks => 'Open Tasks',
+    ShortcutAction.showDrawings => 'Open Drawings',
+    ShortcutAction.showShared => 'Open the notes shared with you',
+    ShortcutAction.showArchive => 'Open Archived Notes',
     ShortcutAction.nextNote => 'Switch forward through recently used notes',
     ShortcutAction.previousNote =>
       'Switch backward through recently used notes',
@@ -398,6 +419,16 @@ class ShortcutPrefs extends ChangeNotifier {
           shift: true,
         ),
       ],
+      // Cmd/Ctrl+F, when this was the sidebar's find field. K is what a
+      // command menu answers to, and F still opens it beside K.
+      ShortcutAction.findNotes => [
+        ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyF,
+          physicalKey: PhysicalKeyboardKey.keyF,
+          meta: useMeta,
+          control: !useMeta,
+        ),
+      ],
       // The first notes-list default. Cmd/Ctrl+S is a better fit because
       // every note saves itself and there is no manual Save to displace.
       ShortcutAction.toggleSidebar => [
@@ -425,10 +456,20 @@ class ShortcutPrefs extends ChangeNotifier {
     ShortcutBinding candidate,
   ) {
     for (final entry in _bindings.entries) {
-      if (entry.key != action && entry.value == candidate) return entry.key;
+      if (entry.key == action || entry.value != candidate) continue;
+      if (sharesChord(action, entry.key)) continue;
+      return entry.key;
     }
     return null;
   }
+
+  /// Link answers only while words are selected, and leaves its chord to
+  /// Search everywhere else, so the two may share one.
+  static bool sharesChord(ShortcutAction a, ShortcutAction? b) =>
+      {a, b}.containsAll(const {
+        ShortcutAction.findNotes,
+        ShortcutAction.formatLink,
+      });
 
   void update(ShortcutAction action, ShortcutBinding binding) {
     if (_bindings[action] == binding) return;
@@ -457,6 +498,16 @@ class ShortcutPrefs extends ChangeNotifier {
     });
     notifyListeners();
   }
+
+  static ShortcutBinding _section(
+    LogicalKeyboardKey logical,
+    PhysicalKeyboardKey physical,
+  ) => ShortcutBinding(
+    logicalKey: logical,
+    physicalKey: physical,
+    meta: AppPlatform.isMacOS,
+    alt: true,
+  );
 
   static ShortcutBinding defaultFor(ShortcutAction action) {
     final useMeta = AppPlatform.isMacOS;
@@ -519,12 +570,37 @@ class ShortcutPrefs extends ChangeNotifier {
         meta: useMeta,
         control: !useMeta,
       ),
+      // K, as every command menu has it. Link keeps it while words are
+      // selected and leaves it here everywhere else; see [conflictFor]. The
+      // F it replaced still opens the menu too, as a fixed second chord.
       ShortcutAction.findNotes => ShortcutBinding(
-        logicalKey: LogicalKeyboardKey.keyF,
-        physicalKey: PhysicalKeyboardKey.keyF,
+        logicalKey: LogicalKeyboardKey.keyK,
+        physicalKey: PhysicalKeyboardKey.keyK,
         meta: useMeta,
         control: !useMeta,
       ),
+      ShortcutAction.newTask => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyN,
+        physicalKey: PhysicalKeyboardKey.keyN,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      ShortcutAction.newDrawing => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyD,
+        physicalKey: PhysicalKeyboardKey.keyD,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      // Option+Cmd and a number on a Mac, beside the Cmd and a number that
+      // focus the panes. Alt and a number elsewhere: Ctrl+Alt is AltGr on
+      // international layouts, where it types ² and ³.
+      ShortcutAction.showNotes => _section(LogicalKeyboardKey.digit1, PhysicalKeyboardKey.digit1),
+      ShortcutAction.showTasks => _section(LogicalKeyboardKey.digit2, PhysicalKeyboardKey.digit2),
+      ShortcutAction.showDrawings => _section(LogicalKeyboardKey.digit3, PhysicalKeyboardKey.digit3),
+      ShortcutAction.showShared => _section(LogicalKeyboardKey.digit4, PhysicalKeyboardKey.digit4),
+      ShortcutAction.showArchive => _section(LogicalKeyboardKey.digit5, PhysicalKeyboardKey.digit5),
       // Control on both platforms, and the one pair of defaults that does not
       // follow [useMeta]. Cmd+Tab is the macOS application switcher: the window
       // server takes it before any app is told a key moved, so a Cmd default

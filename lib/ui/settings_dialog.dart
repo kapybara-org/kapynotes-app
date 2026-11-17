@@ -2533,6 +2533,8 @@ extension on ShortcutAction {
     ShortcutAction.openApp || ShortcutAction.newNoteAnywhere => null,
     ShortcutAction.newNote ||
     ShortcutAction.findNotes ||
+    ShortcutAction.newTask ||
+    ShortcutAction.newDrawing ||
     ShortcutAction.nextNote ||
     ShortcutAction.previousNote ||
     ShortcutAction.deleteNote => _ShortcutGroup.notes,
@@ -2541,6 +2543,11 @@ extension on ShortcutAction {
     ShortcutAction.focusFirstPane ||
     ShortcutAction.focusSecondPane ||
     ShortcutAction.focusThirdPane => _ShortcutGroup.splitView,
+    ShortcutAction.showNotes ||
+    ShortcutAction.showTasks ||
+    ShortcutAction.showDrawings ||
+    ShortcutAction.showShared ||
+    ShortcutAction.showArchive ||
     ShortcutAction.toggleSidebar ||
     ShortcutAction.toggleHiddenFolder ||
     ShortcutAction.toggleResults ||

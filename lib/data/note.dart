@@ -259,7 +259,7 @@ class Note {
   /// and a task from a deeply nested line should still find the note. Quoted
   /// text stays one phrase.
   bool matches(String query) {
-    final terms = _noteSearchTerms(query);
+    final terms = noteSearchTerms(query);
     if (terms.isEmpty) return true;
     final candidates = _searchCandidates().toList(growable: false);
     return terms.every(
@@ -275,7 +275,7 @@ class Note {
   /// takes are included too: all of them are content the user can see inside
   /// the note even though they are stored on its attachment.
   String? matchSnippet(String query) {
-    final terms = _noteSearchTerms(query);
+    final terms = noteSearchTerms(query);
     if (terms.isEmpty) return null;
     final candidates = _searchCandidates().toList(growable: false);
     if (!terms.every(
@@ -483,7 +483,9 @@ class Note {
 final RegExp _noteSearchToken = RegExp(r'"([^"]+)"|(\S+)');
 final RegExp _noteSearchWhitespace = RegExp(r'\s+');
 
-List<String> _noteSearchTerms(String query) {
+/// The words of [query] a note must hold, lowercased: each word on its own,
+/// and quoted text as one phrase.
+List<String> noteSearchTerms(String query) {
   final terms = <String>[];
   for (final match in _noteSearchToken.allMatches(query)) {
     final value = match.group(1) ?? match.group(2)?.replaceAll('"', '');
