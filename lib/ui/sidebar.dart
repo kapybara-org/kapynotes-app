@@ -90,7 +90,7 @@ SidebarTab sidebarTabOf(Note note, Sharing sharing) {
       : SidebarTab.shared;
 }
 
-/// The note list, with search.
+/// The note list, under the field that opens search.
 class Sidebar extends StatelessWidget {
   const Sidebar({
     super.key,
@@ -100,8 +100,9 @@ class Sidebar extends StatelessWidget {
     required this.selectedId,
     required this.query,
     required this.displayTime,
-    required this.onQueryChanged,
+    required this.onSearch,
     required this.onSelect,
+    this.onClearQuery,
     this.onCreate,
     this.onMoveSelect,
     this.onEnterSelected,
@@ -121,7 +122,6 @@ class Sidebar extends StatelessWidget {
     this.settingsShortcut,
     this.archiveShortcut,
     this.updates,
-    this.searchFocusNode,
     this.archiveMode = false,
     this.hiddenMode = false,
     this.archivedCount = 0,
@@ -162,9 +162,16 @@ class Sidebar extends StatelessWidget {
   /// before one is opened.
   final Set<String> lockedNoteIds;
   final String? selectedId;
+  /// The search the ⌘K menu carried into Archive, which the list is narrowed
+  /// to; empty everywhere else.
   final String query;
   final DateTime Function(DateTime) displayTime;
-  final ValueChanged<String> onQueryChanged;
+
+  /// Opens the ⌘K menu, from the field over the list.
+  final VoidCallback onSearch;
+
+  /// Drops [query]. Null leaves the field without its ✕.
+  final VoidCallback? onClearQuery;
   final ValueChanged<String> onSelect;
 
   /// Makes a note from the + beside the search field. Null leaves the + out,
@@ -218,7 +225,6 @@ class Sidebar extends StatelessWidget {
   /// Drives the Update badge beside the installed version. Null where the app
   /// store owns updates; the version still comes from the installed package.
   final UpdateChecker? updates;
-  final FocusNode? searchFocusNode;
   final bool archiveMode;
   final bool hiddenMode;
   final int archivedCount;
@@ -323,17 +329,13 @@ class Sidebar extends StatelessWidget {
                 onChanged: onTabChanged!,
               ),
             SidebarSearchField(
+              onSearch: onSearch,
               query: query,
-              onChanged: onQueryChanged,
+              onClear: onClearQuery,
               onCreate: onCreate,
-              archiveMode: archiveMode,
-              hiddenMode: hiddenMode,
-              focusNode: searchFocusNode,
               shortcut: searchShortcut,
               belowTabs: _showsTabs,
               besideRail: _besideRail,
-              pinnedOnly: pinnedOnly,
-              drawings: drawings,
             ),
             if (_besideRail &&
                 mediaFilter != null &&
@@ -2414,29 +2416,26 @@ class _BelowInvitations extends StatelessWidget {
   }
 }
 
-/// The field at the top of the list that narrows it as you type.
-class SidebarSearchField extends StatefulWidget {
+/// The field at the top of every section's list. It opens the ⌘K menu,
+/// which does the searching; the list itself is never narrowed from here.
+///
+/// The one search a list keeps is the menu's way into Archive, which shows
+/// here as [query] with a ✕ that drops it.
+class SidebarSearchField extends StatelessWidget {
   const SidebarSearchField({
     super.key,
-    required this.query,
-    required this.onChanged,
-    required this.archiveMode,
-    required this.hiddenMode,
+    required this.onSearch,
+    this.query = '',
+    this.onClear,
     this.onCreate,
-    this.focusNode,
     this.shortcut,
     this.belowTabs = false,
     this.besideRail = false,
-    this.pinnedOnly = false,
-    this.drawings = false,
-    this.tasks = false,
   });
 
-  /// Searching the Drawings space.
-  final bool drawings;
-
-  /// Searching the tasks in Tasks.
-  final bool tasks;
+  final VoidCallback onSearch;
+  final String query;
+  final VoidCallback? onClear;
 
   /// Sits under the tabs rather than the title bar, and needs less room
   /// above it to read as part of the same header.
@@ -2446,132 +2445,32 @@ class SidebarSearchField extends StatefulWidget {
   /// its shortcut on a keycap.
   final bool besideRail;
 
-  /// Searching the pinned notes only, after See all.
-  final bool pinnedOnly;
-
-  final String query;
-  final ValueChanged<String> onChanged;
-
   /// The + beside the field. Null leaves it out.
   final VoidCallback? onCreate;
-  final bool archiveMode;
-  final bool hiddenMode;
-  final FocusNode? focusNode;
   final ShortcutBinding? shortcut;
 
-  @override
-  State<SidebarSearchField> createState() => _SidebarSearchFieldState();
-}
-
-class _SidebarSearchFieldState extends State<SidebarSearchField> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.query,
-  );
-
-  @override
-  void didUpdateWidget(SidebarSearchField oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Creating a note clears the search; reflect that in the field.
-    if (widget.query != _controller.text) {
-      _controller.value = TextEditingValue(
-        text: widget.query,
-        selection: TextSelection.collapsed(offset: widget.query.length),
+  Widget? _end(CalcPalette palette, double extent) {
+    final onClear = this.onClear;
+    if (query.isNotEmpty && onClear != null) {
+      return CompactIconButton(
+        tooltip: 'Clear search',
+        extent: extent,
+        foregroundColor: palette.textTertiary,
+        onPressed: onClear,
+        icon: KapyIcon(
+          KapyIcons.cancelRounded,
+          size: AppControlMetrics.iconAdornment,
+        ),
       );
     }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _clear() {
-    _controller.clear();
-    widget.onChanged('');
-  }
-
-  Widget _buildBesideRail(BuildContext context) {
-    final palette = context.palette;
-    final shortcut = widget.shortcut;
-    final hint = widget.archiveMode
-        ? 'Find in Archive…'
-        : widget.hiddenMode
-        ? 'Find in Hidden…'
-        : widget.pinnedOnly
-        ? 'Find in pinned…'
-        : widget.drawings
-        ? 'Find a drawing…'
-        : widget.tasks
-        ? 'Find a task…'
-        : 'Find a note…';
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
-      child: Container(
-        key: const ValueKey('sidebar-search-box'),
-        height: 40,
-        padding: const EdgeInsets.only(left: 14, right: 10),
-        decoration: BoxDecoration(
-          color: palette.surfaceBackground,
-          border: Border.all(color: palette.controlBorder, width: 1.5),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: palette.shadowAt(0x4D),
-              offset: Offset(0, 1),
-              blurRadius: 2,
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            KapyIcon(
-              KapyIcons.searchRounded,
-              size: 16,
-              strokeWidth: 1.8,
-              color: palette.textSecondary,
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: TextField(
-                key: const ValueKey('sidebar-search-field'),
-                controller: _controller,
-                focusNode: widget.focusNode,
-                onChanged: widget.onChanged,
-                textInputAction: TextInputAction.search,
-                style: TextStyle(fontSize: 14, color: palette.textPrimary),
-                cursorHeight: 16,
-                decoration: InputDecoration.collapsed(
-                  hintText: hint,
-                  hintStyle: TextStyle(
-                    fontSize: 14,
-                    color: palette.textTertiary,
-                  ),
-                ),
-              ),
-            ),
-            if (widget.query.isNotEmpty)
-              CompactIconButton(
-                tooltip: 'Clear search',
-                extent: 20,
-                foregroundColor: palette.textTertiary,
-                onPressed: _clear,
-                icon: KapyIcon(
-                  KapyIcons.cancelRounded,
-                  size: AppControlMetrics.iconAdornment,
-                ),
-              )
-            else if (shortcut != null)
-              Tooltip(
-                message: 'Global search · ${shortcut.displayLabel}',
-                child: Semantics(
-                  label: 'Global search shortcut ${shortcut.displayLabel}',
-                  excludeSemantics: true,
-                  child: Keycap(shortcut.keycapLabel),
-                ),
-              ),
-          ],
-        ),
+    final shortcut = this.shortcut;
+    if (shortcut == null || !AppPlatform.hasPointer) return null;
+    return Tooltip(
+      message: 'Search · ${shortcut.displayLabel}',
+      child: Semantics(
+        label: 'Search shortcut ${shortcut.displayLabel}',
+        excludeSemantics: true,
+        child: Keycap(shortcut.keycapLabel),
       ),
     );
   }
@@ -2579,80 +2478,136 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    if (widget.besideRail) return _buildBesideRail(context);
+    final searching = query.isNotEmpty;
+    if (besideRail) {
+      final end = _end(palette, 20);
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+        child: Semantics(
+          button: true,
+          label: searching ? 'Search, $query' : 'Search',
+          child: GestureDetector(
+            key: const ValueKey('sidebar-search-field'),
+            behavior: HitTestBehavior.opaque,
+            onTap: onSearch,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.text,
+              child: Container(
+                key: const ValueKey('sidebar-search-box'),
+                height: 40,
+                padding: const EdgeInsets.only(left: 14, right: 10),
+                decoration: BoxDecoration(
+                  color: palette.surfaceBackground,
+                  border: Border.all(color: palette.controlBorder, width: 1.5),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: palette.shadowAt(0x4D),
+                      offset: Offset(0, 1),
+                      blurRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    KapyIcon(
+                      KapyIcons.searchRounded,
+                      size: 16,
+                      strokeWidth: 1.8,
+                      color: palette.textSecondary,
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        searching ? query : 'Search',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: searching
+                              ? palette.textPrimary
+                              : palette.textTertiary,
+                        ),
+                      ),
+                    ),
+                    ?end,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
+    final end = _end(palette, AppControlMetrics.fieldAdornmentSlot);
     return Padding(
       // On a desktop the field keeps the sidebar's 12pt gutter, the edge the
       // footer and archive actions hold, and the same room under the title
       // bar. The list's own top padding makes up the gap beneath it.
       padding: AppPlatform.hasPointer
-          ? EdgeInsets.fromLTRB(12, widget.belowTabs ? 8 : 12, 12, 8)
-          : EdgeInsets.fromLTRB(10, widget.belowTabs ? 8 : 9, 10, 9),
+          ? EdgeInsets.fromLTRB(12, belowTabs ? 8 : 12, 12, 8)
+          : EdgeInsets.fromLTRB(10, belowTabs ? 8 : 9, 10, 9),
       child: Row(
         children: [
           Expanded(
-            child: TextField(
-              key: const ValueKey('sidebar-search-field'),
-              controller: _controller,
-              focusNode: widget.focusNode,
-              onChanged: widget.onChanged,
-              textInputAction: TextInputAction.search,
-              style: TextStyle(
-                fontSize: AppTypeScale.control,
-                color: palette.textPrimary,
-              ),
-              cursorHeight: AppTypeScale.control + 2,
-              decoration: kapyFieldDecoration(
-                context,
-                hintText: widget.archiveMode
-                    ? 'Search Archived Notes'
-                    : widget.hiddenMode
-                    ? 'Search Hidden Notes'
-                    : widget.tasks
-                    ? 'Search tasks'
-                    : 'Search notes',
-                hintStyle: TextStyle(
-                  fontSize: AppTypeScale.control,
-                  color: palette.textTertiary,
-                ),
-                prefixIcon: Center(
-                  widthFactor: 1,
-                  heightFactor: 1,
-                  child: KapyIcon(
-                    KapyIcons.searchRounded,
-                    size: AppControlMetrics.iconSearch,
-                    color: palette.textTertiary,
-                  ),
-                ),
-                prefixIconConstraints: BoxConstraints(
-                  minWidth: AppControlMetrics.fieldAdornmentSlot + 2,
-                  minHeight: AppControlMetrics.fieldAdornmentSlot,
-                ),
-                suffixIcon: widget.query.isEmpty
-                    ? AppPlatform.hasPointer && widget.shortcut != null
-                          ? _SearchShortcutHint(shortcut: widget.shortcut!)
-                          : null
-                    : CompactIconButton(
-                        tooltip: 'Clear search',
-                        extent: AppControlMetrics.fieldAdornmentSlot,
-                        foregroundColor: palette.textTertiary,
-                        onPressed: _clear,
-                        icon: KapyIcon(
-                          KapyIcons.cancelRounded,
-                          size: AppControlMetrics.iconAdornment,
-                        ),
+            child: Semantics(
+              button: true,
+              label: searching ? 'Search, $query' : 'Search',
+              child: GestureDetector(
+                key: const ValueKey('sidebar-search-field'),
+                behavior: HitTestBehavior.opaque,
+                onTap: onSearch,
+                child: InputDecorator(
+                  isEmpty: !searching,
+                  decoration: kapyFieldDecoration(
+                    context,
+                    hintText: 'Search',
+                    hintStyle: TextStyle(
+                      fontSize: AppTypeScale.control,
+                      color: palette.textTertiary,
+                    ),
+                    prefixIcon: Center(
+                      widthFactor: 1,
+                      heightFactor: 1,
+                      child: KapyIcon(
+                        KapyIcons.searchRounded,
+                        size: AppControlMetrics.iconSearch,
+                        color: palette.textTertiary,
                       ),
-                suffixIconConstraints: BoxConstraints(
-                  minWidth: AppControlMetrics.fieldAdornmentSlot,
-                  minHeight: AppControlMetrics.fieldAdornmentSlot,
-                ),
-                contentPadding: EdgeInsets.symmetric(
-                  vertical: AppControlMetrics.fieldVerticalPadding,
+                    ),
+                    prefixIconConstraints: BoxConstraints(
+                      minWidth: AppControlMetrics.fieldAdornmentSlot + 2,
+                      minHeight: AppControlMetrics.fieldAdornmentSlot,
+                    ),
+                    suffixIcon: end == null || searching
+                        ? end
+                        : Padding(
+                            padding: const EdgeInsetsDirectional.only(end: 8),
+                            child: Center(widthFactor: 1, child: end),
+                          ),
+                    suffixIconConstraints: BoxConstraints(
+                      minWidth: AppControlMetrics.fieldAdornmentSlot,
+                      minHeight: AppControlMetrics.fieldAdornmentSlot,
+                    ),
+                    contentPadding: EdgeInsets.symmetric(
+                      vertical: AppControlMetrics.fieldVerticalPadding,
+                    ),
+                  ),
+                  child: Text(
+                    query,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppTypeScale.control,
+                      color: palette.textPrimary,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-          if (widget.onCreate case final onCreate?) ...[
+          if (onCreate case final onCreate?) ...[
             const SizedBox(width: 6),
             TonalButton(
               key: const ValueKey('sidebar-new-note'),
@@ -2662,33 +2617,6 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _SearchShortcutHint extends StatelessWidget {
-  const _SearchShortcutHint({required this.shortcut});
-
-  final ShortcutBinding shortcut;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = shortcut.displayLabel;
-    // Only as wide as the keycap: a hint that filled the slot would take the
-    // field's width and leave its placeholder no room to be drawn in.
-    return Padding(
-      padding: const EdgeInsetsDirectional.only(end: 8),
-      child: Center(
-        widthFactor: 1,
-        child: Tooltip(
-          message: 'Global search · $label',
-          child: Semantics(
-            label: 'Global search shortcut $label',
-            excludeSemantics: true,
-            child: Keycap(shortcut.keycapLabel),
-          ),
-        ),
       ),
     );
   }

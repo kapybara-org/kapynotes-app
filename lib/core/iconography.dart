@@ -148,6 +148,10 @@ class KapyIcons {
     0xE015,
     HugeIcons.strokeRoundedCircle,
   );
+  static const clipboardOutlined = KapyIconData(
+    0xE0DC,
+    HugeIcons.strokeRoundedClipboard,
+  );
   static const closeRounded = KapyIconData(
     0xE016,
     HugeIcons.strokeRoundedCancel01,
@@ -674,6 +678,31 @@ class KapyIcons {
   static const computerOutlined = KapyIconData(
     0xE0C8,
     HugeIcons.strokeRoundedComputer,
+  );
+  static const sparklesOutlined = KapyIconData(
+    0xE0DC,
+    HugeIcons.strokeRoundedSparkles,
+  );
+  static const chatAddOutlined = KapyIconData(
+    0xE0DD,
+    HugeIcons.strokeRoundedBubbleChatAdd,
+  );
+  static const chatEditOutlined = KapyIconData(
+    0xE0DE,
+    HugeIcons.strokeRoundedBubbleChatEdit,
+  );
+  static const sendRounded = KapyIconData(
+    0xE0DF,
+    HugeIcons.strokeRoundedArrowUp02,
+  );
+  static const commandLineOutlined = KapyIconData(
+    0xE0E0,
+    HugeIcons.strokeRoundedCommandLine,
+  );
+  static const keyOutlined = KapyIconData(0xE0E1, HugeIcons.strokeRoundedKey01);
+  static const wifiOffRounded = KapyIconData(
+    0xE0E2,
+    HugeIcons.strokeRoundedWifiOff01,
   );
   static const panelColumnsOutlined = KapyIconData(0xE0C9, [
     [
