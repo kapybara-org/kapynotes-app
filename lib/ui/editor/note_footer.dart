@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/shortcut_prefs.dart';
 import '../../sync/presence.dart';
@@ -40,7 +39,6 @@ String? typingStatusText(List<String> names) {
 class NoteFooter extends StatelessWidget {
   const NoteFooter({
     super.key,
-    required this.total,
     this.typing = const [],
     this.readOnly = false,
     this.readOnlyLabel = 'View only',
@@ -51,20 +49,12 @@ class NoteFooter extends StatelessWidget {
     required this.italicShortcut,
     required this.bulletsShortcut,
     required this.checklistShortcut,
-    required this.imageShortcut,
-    required this.voiceShortcut,
     required this.onParagraphStylePressed,
     required this.onBoldPressed,
     required this.onItalicPressed,
     required this.onBulletsPressed,
     required this.onChecklistPressed,
     this.onInsertMenuPressed,
-    this.onInsertImagePressed,
-    this.imageBusy = false,
-    this.onInsertVideoPressed,
-    this.videoBusy = false,
-    this.onRecordVoicePressed,
-    this.voiceBusy = false,
     required this.onIndentPressed,
     required this.onOutdentPressed,
     required this.showIndentControls,
@@ -87,8 +77,6 @@ class NoteFooter extends StatelessWidget {
     this.onDismissKeyboardPressed,
   });
 
-  final String? total;
-
   /// Whoever else is typing in the note, by name. Their caret's colour marks
   /// the line, so the words in the footer and the flag in the text read as
   /// the same person.
@@ -105,30 +93,14 @@ class NoteFooter extends StatelessWidget {
   final ShortcutBinding? italicShortcut;
   final ShortcutBinding? bulletsShortcut;
   final ShortcutBinding? checklistShortcut;
-  final ShortcutBinding? imageShortcut;
-  final ShortcutBinding? voiceShortcut;
   final VoidCallback onParagraphStylePressed;
   final VoidCallback onBoldPressed;
   final VoidCallback onItalicPressed;
   final VoidCallback onBulletsPressed;
   final VoidCallback onChecklistPressed;
 
-  /// The compact touch entry point for every insert command. Desktop keeps
-  /// its direct media buttons and uses `/` from the keyboard.
+  /// The one doorway to every insert command.
   final VoidCallback? onInsertMenuPressed;
-
-  /// Null where the editor has no image store to put a picture in, which is
-  /// only ever a test. The button is hidden rather than disabled: a control
-  /// that can never do anything is worse than no control.
-  final VoidCallback? onInsertImagePressed;
-  final bool imageBusy;
-
-  final VoidCallback? onInsertVideoPressed;
-  final bool videoBusy;
-
-  /// Starts a recording, or stops the one running.
-  final VoidCallback? onRecordVoicePressed;
-  final bool voiceBusy;
 
   /// Nesting only appears once the caret is on a list line. The row shares its
   /// width with the total readout, and on a narrow phone two permanent extra
@@ -180,17 +152,13 @@ class NoteFooter extends StatelessWidget {
   /// wider than its glyph, so its optical edge already sits inside its box; a
   /// text run has no such padding and needs the margin spelled out to look
   /// equally inset.
-  static double get _edgeInset => AppPlatform.hasPointer ? 12 : 8;
-  static double get _textEdgeInset => AppPlatform.hasPointer ? 12 : 10;
+  static const double _edgeInset = 8;
+  static const double _textEdgeInset = 10;
 
   /// Between the controls and the readout at the other end. They are
   /// different in kind — one changes the note, the other only reports on it —
   /// and butted together they would read as one row of controls.
-  static double get _groupGap => AppPlatform.hasPointer ? 16 : 14;
-
-  /// Extra distinction between insert actions and text formatting. Proximity
-  /// should reveal the two jobs before somebody has to inspect the tooltips.
-  static double get _formatGroupGap => AppPlatform.hasPointer ? 8 : 0;
+  static const double _groupGap = 14;
 
   /// Trims an available width down to a whole number of buttons.
   ///
@@ -202,20 +170,11 @@ class NoteFooter extends StatelessWidget {
     double available,
     double rowWidth, {
     int leadingButtonCount = 0,
-    double internalGap = 0,
   }) {
     if (available <= 0) return 0;
     if (available >= rowWidth) return available;
     final extent = AppControlMetrics.footerButtonSlotExtent;
     if (extent <= 0 || available <= extent) return available;
-    final leadingWidth = leadingButtonCount * extent;
-    if (internalGap > 0 && available > leadingWidth) {
-      if (available < leadingWidth + internalGap + extent) {
-        return leadingWidth;
-      }
-      return ((available - internalGap) / extent).floor() * extent +
-          internalGap;
-    }
     return (available / extent).floor() * extent;
   }
 
@@ -244,12 +203,6 @@ class NoteFooter extends StatelessWidget {
             padding: EdgeInsets.only(bottom: bottomInset),
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // Wide phones still need the shorter label beside five formatting
-                // controls and a grouped currency value. Desktop keeps its existing
-                // label until the window reaches the genuinely narrow breakpoint.
-                final compactTotal =
-                    constraints.maxWidth < (AppPlatform.isMobile ? 520 : 420);
-
                 // The controls start at the left edge and grow rightward, which is
                 // the whole point of not centring them: the nesting buttons appear
                 // the moment the caret lands on a list line, and a centred row that
@@ -258,15 +211,8 @@ class NoteFooter extends StatelessWidget {
                 // Bold would leave from under the finger that just pressed it.
                 // The formatting revealer plus its five tools, and the insert
                 // buttons when there is somewhere to put their attachments.
-                final compactInsert =
-                    AppPlatform.isMobile && onInsertMenuPressed != null;
-                final insertButtonCount = readOnly
-                    ? 0
-                    : compactInsert
-                    ? 1
-                    : (onInsertImagePressed == null ? 0 : 1) +
-                          (onInsertVideoPressed == null ? 0 : 1) +
-                          (onRecordVoicePressed == null ? 0 : 1);
+                final insertButtonCount =
+                    readOnly || onInsertMenuPressed == null ? 0 : 1;
                 final showTableControls = onAddTableRowPressed != null;
                 final buttonCount = readOnly
                     ? 0
@@ -274,17 +220,9 @@ class NoteFooter extends StatelessWidget {
                           insertButtonCount +
                           (showIndentControls ? 2 : 0) +
                           (showTableControls ? 5 : 0);
-                final insertFormatGap = insertButtonCount == 0
-                    ? 0.0
-                    : _formatGroupGap;
-                final tableGroupGap = showTableControls ? _formatGroupGap : 0.0;
                 final rowWidth =
-                    buttonCount * AppControlMetrics.footerButtonSlotExtent +
-                    insertFormatGap +
-                    tableGroupGap;
-                final dismissKeyboard = AppPlatform.isMobile
-                    ? onDismissKeyboardPressed
-                    : null;
+                    buttonCount * AppControlMetrics.footerButtonSlotExtent;
+                final dismissKeyboard = onDismissKeyboardPressed;
                 final dismissSlot = dismissKeyboard == null
                     ? 0.0
                     : AppControlMetrics.footerButtonSlotExtent + _edgeInset;
@@ -297,12 +235,9 @@ class NoteFooter extends StatelessWidget {
                 // Whatever is genuinely left over, up to a readable maximum. The
                 // floor is what makes the controls scroll instead of the readout
                 // shrinking to nothing on a narrow phone with nesting showing.
-                final readoutSlot =
-                    typingText == null && !readOnly && total == null
+                final readoutSlot = typingText == null && !readOnly
                     ? 0.0
-                    : typingText != null || readOnly
-                    ? (constraints.maxWidth - fixed).clamp(112.0, 220.0)
-                    : (constraints.maxWidth - fixed).clamp(40.0, 180.0);
+                    : (constraints.maxWidth - fixed).clamp(112.0, 220.0);
 
                 return Row(
                   children: [
@@ -322,7 +257,6 @@ class NoteFooter extends StatelessWidget {
                             ),
                             rowWidth,
                             leadingButtonCount: insertButtonCount,
-                            internalGap: insertFormatGap,
                           ),
                         ),
                         // Scrolls only when it cannot fit, which a narrow phone with
@@ -337,10 +271,7 @@ class NoteFooter extends StatelessWidget {
                               key: const ValueKey('note-formatting-controls'),
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                // Touch has one stable doorway to the complete
-                                // insert menu. A pointer keeps the direct media
-                                // actions beside the keyboard's slash command.
-                                if (compactInsert)
+                                if (onInsertMenuPressed != null)
                                   _FormatButton(
                                     key: const ValueKey('insert-menu'),
                                     label: '/',
@@ -348,70 +279,6 @@ class NoteFooter extends StatelessWidget {
                                     active: false,
                                     onPressed: onInsertMenuPressed,
                                   ),
-                                if (!compactInsert &&
-                                    onInsertImagePressed != null) ...[
-                                  _FormatButton(
-                                    key: const ValueKey('insert-image'),
-                                    icon: AppPlatform.isMobile
-                                        ? KapyIcons.cameraOutlined
-                                        : KapyIcons.imageOutlined,
-                                    tooltip: imageBusy
-                                        ? 'Adding photo…'
-                                        : _withShortcut(
-                                            AppPlatform.isMobile
-                                                ? 'Take or choose a photo'
-                                                : 'Add an image',
-                                            imageShortcut,
-                                          ),
-                                    active: false,
-                                    busy: imageBusy,
-                                    progressKey: const ValueKey(
-                                      'insert-image-progress',
-                                    ),
-                                    onPressed: imageBusy
-                                        ? null
-                                        : onInsertImagePressed,
-                                  ),
-                                ],
-                                if (!compactInsert &&
-                                    onInsertVideoPressed != null)
-                                  _FormatButton(
-                                    key: const ValueKey('insert-video'),
-                                    icon: KapyIcons.videoOutlined,
-                                    tooltip: videoBusy
-                                        ? 'Adding video…'
-                                        : 'Add a video',
-                                    active: false,
-                                    busy: videoBusy,
-                                    progressKey: const ValueKey(
-                                      'insert-video-progress',
-                                    ),
-                                    onPressed: videoBusy
-                                        ? null
-                                        : onInsertVideoPressed,
-                                  ),
-                                if (!compactInsert &&
-                                    onRecordVoicePressed != null)
-                                  _FormatButton(
-                                    key: const ValueKey('record-voice'),
-                                    icon: KapyIcons.micRounded,
-                                    tooltip: voiceBusy
-                                        ? 'Starting recording…'
-                                        : _withShortcut(
-                                            'Record a voice note',
-                                            voiceShortcut,
-                                          ),
-                                    active: false,
-                                    busy: voiceBusy,
-                                    progressKey: const ValueKey(
-                                      'record-voice-progress',
-                                    ),
-                                    onPressed: voiceBusy
-                                        ? null
-                                        : onRecordVoicePressed,
-                                  ),
-                                if (insertButtonCount > 0)
-                                  SizedBox(width: _formatGroupGap),
                                 _ExpandableFormattingControls(
                                   paragraphStyle: paragraphStyle,
                                   markdown: markdown,
@@ -439,7 +306,6 @@ class NoteFooter extends StatelessWidget {
                                   checklistActive: checklistActive,
                                 ),
                                 if (showTableControls) ...[
-                                  SizedBox(width: _formatGroupGap),
                                   TapRegion(
                                     groupId: tableTapGroup,
                                     // A tap must not take focus from the cell,
@@ -522,34 +388,6 @@ class NoteFooter extends StatelessWidget {
                           label: readOnlyLabel,
                           icon: readOnlyIcon,
                           onPressed: onReadOnlyPressed,
-                        ),
-                      ),
-                      SizedBox(width: _textEdgeInset),
-                    ] else if (total case final total?) ...[
-                      SizedBox(
-                        width: readoutSlot,
-                        child: Text.rich(
-                          key: const ValueKey('note-total'),
-                          TextSpan(
-                            text: compactTotal ? '\u03a3 ' : 'Total: ',
-                            style: TextStyle(
-                              fontSize: AppTypeScale.caption,
-                              fontWeight: FontWeight.w400,
-                              color: palette.textTertiary,
-                            ),
-                            children: [
-                              TextSpan(
-                                text: total,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w400,
-                                  color: palette.textPrimary,
-                                ),
-                              ),
-                            ],
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.right,
                         ),
                       ),
                       SizedBox(width: _textEdgeInset),
@@ -870,9 +708,7 @@ class _StyleCycleButton extends StatelessWidget {
         icon: Text(
           label,
           style: TextStyle(
-            fontSize: AppPlatform.hasPointer
-                ? AppTypeScale.control
-                : AppTypeScale.caption,
+            fontSize: AppTypeScale.caption,
             fontWeight: FontWeight.w400,
             fontStyle: !markdown && style == NoteParagraphStyle.subtitle
                 ? FontStyle.italic
@@ -892,16 +728,12 @@ class _FormatButton extends StatelessWidget {
     required this.tooltip,
     required this.active,
     required this.onPressed,
-    this.busy = false,
-    this.progressKey,
   }) : assert((icon == null) != (label == null));
 
   final KapyIconData? icon;
   final String? label;
   final String tooltip;
   final bool active;
-  final bool busy;
-  final Key? progressKey;
 
   /// Null disables the button, which is how the nesting controls show that a
   /// list is already at the margin or at the deepest level.
@@ -922,16 +754,7 @@ class _FormatButton extends StatelessWidget {
         selected: active,
         foregroundColor: foreground,
         onPressed: onPressed,
-        icon: busy
-            ? SizedBox.square(
-                key: progressKey,
-                dimension: AppControlMetrics.footerIconAction,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: foreground,
-                ),
-              )
-            : icon != null
+        icon: icon != null
             ? KapyIcon(icon!, size: AppControlMetrics.footerIconAction)
             : Text(
                 label!,

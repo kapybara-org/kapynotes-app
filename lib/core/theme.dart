@@ -106,6 +106,9 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// A switch that is off: the track reads as a slot, not as a control.
   final Color switchTrackOff;
 
+  /// The edge of a checkbox that is not ticked, on the page.
+  final Color checkboxBorder;
+
   /// The title on a note's sticky card or list row, and the sage that marks
   /// a link inside the list, such as See all.
   final Color cardTitle;
@@ -252,6 +255,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.cardBackground,
     required this.paneEdge,
     required this.switchTrackOff,
+    required this.checkboxBorder,
     required this.cardTitle,
     required this.accentText,
     required this.pageBorder,
@@ -320,6 +324,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? cardBackground,
     Color? paneEdge,
     Color? switchTrackOff,
+    Color? checkboxBorder,
     Color? cardTitle,
     Color? accentText,
     Color? pageBorder,
@@ -385,6 +390,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     cardBackground: cardBackground ?? this.cardBackground,
     paneEdge: paneEdge ?? this.paneEdge,
     switchTrackOff: switchTrackOff ?? this.switchTrackOff,
+    checkboxBorder: checkboxBorder ?? this.checkboxBorder,
     cardTitle: cardTitle ?? this.cardTitle,
     accentText: accentText ?? this.accentText,
     pageBorder: pageBorder ?? this.pageBorder,
@@ -459,6 +465,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       cardBackground: mix(cardBackground, other.cardBackground),
       paneEdge: mix(paneEdge, other.paneEdge),
       switchTrackOff: mix(switchTrackOff, other.switchTrackOff),
+      checkboxBorder: mix(checkboxBorder, other.checkboxBorder),
       cardTitle: mix(cardTitle, other.cardTitle),
       accentText: mix(accentText, other.accentText),
       pageBorder: mix(pageBorder, other.pageBorder),
@@ -478,7 +485,37 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
 class EditorMetrics {
   const EditorMetrics._();
 
-  static const double lineHeight = 29;
+  /// Whether the note is laid out as Riverbank's page: a 680px column under
+  /// a title with its meta row, headings with room above them, and rows of
+  /// [lineHeight] that may grow. Phones keep their own structure.
+  static bool get page => !AppPlatform.isMobile;
+
+  /// One row of writing: Paper's 28px line and the 3px between rows on the
+  /// page, 29 on a phone.
+  static double get lineHeight => page ? 31 : 29;
+
+  /// The writing column on the page. A window narrower than this plus
+  /// [padding] gives the column what it has.
+  static const double columnWidth = 680;
+
+  /// The note's first line, its title, on the page: Paper's 40/48, and the
+  /// meta row that sits under it, 10 below the title and 22 above the body.
+  static const double titleFontSize = 40;
+  static const double titleRow = 48;
+  static const double metaGap = 10;
+  static const double metaRow = 16;
+  static const double metaBottom = 22;
+  static double get titleReserve => metaGap + metaRow + metaBottom;
+
+  /// A heading on the page: Paper's 18px heading in its 28px line with 18 of
+  /// room above it. Set with proportional leading, a row of 51 puts the
+  /// baseline where Paper has it; the 3 left over below is a body row's gap.
+  static const double headingFontSize = 18;
+  static const double headingLine = 51;
+
+  /// How far Paper's link chip reaches past the address it holds.
+  static const double linkChipReach = 8;
+
   static const EdgeInsets padding = EdgeInsets.symmetric(
     horizontal: 28,
     vertical: 20,
@@ -511,7 +548,7 @@ class EditorMetrics {
       color: color,
       letterSpacing: 0,
       wordSpacing: 0,
-      fontWeight: FontWeight.w400,
+      fontWeight: FontWeight.w500,
       fontStyle: FontStyle.normal,
       fontVariations: font.fontVariations,
       textBaseline: TextBaseline.alphabetic,
@@ -549,28 +586,18 @@ class EditorMetrics {
   static double textLayoutWidth(double fieldWidth) =>
       math.max(0, fieldWidth - caretMargin);
 
-  /// Forcing the strut makes every line exactly [lineHeight] tall regardless
-  /// of which fallback font supplies a given glyph — the property the gutter
-  /// alignment depends on.
   /// The row geometry of a note.
   ///
-  /// Forcing the strut pins every row to exactly [lineHeight] whatever it
-  /// contains, which is what gives a note its even rhythm and what the results
-  /// gutter was built against. It is the default and it stays the default.
-  ///
-  /// [allowTallRows] lifts that ceiling for the one case that cannot live
-  /// under it: an image is a `WidgetSpan`, and a forced strut clamps a
+  /// On a phone, forcing the strut pins every row to exactly [lineHeight]
+  /// whatever it contains, which is what its results column was built
+  /// against. [allowTallRows] lifts that ceiling for what cannot live under
+  /// it: an image is a `WidgetSpan`, and a forced strut clamps a
   /// placeholder's line box to the height of the text, so a 400px picture
   /// would paint straight through the writing beneath it.
   ///
-  /// It is opt-in per note rather than switched on everywhere, because
-  /// relaxing the strut is not quite free. Flutter takes a line's height as
-  /// the union of the strut's ascent and descent with the run's, and two fonts
-  /// distribute the same 29px differently — so a heading in the mixed writing
-  /// font, which swaps in the handwritten face, comes out about 2px taller
-  /// once the strut stops overruling it. A note with pictures in it can afford
-  /// that. Every other note in the app should not have to pay it, and this way
-  /// none of them do.
+  /// The [page] never forces it: its title, headings and pictures are taller
+  /// than a row by design, and [lineHeight] is only the floor. Results there
+  /// sit on each line's own last row, measured, so nothing needs rows even.
   static StrutStyle strut(
     WritingFont font, {
     bool allowTallRows = false,
@@ -583,7 +610,7 @@ class EditorMetrics {
       fontFamilyFallback: font.fontFamilyFallback,
       fontSize: fontSize,
       height: rowHeight / fontSize,
-      forceStrutHeight: !allowTallRows,
+      forceStrutHeight: !page && !allowTallRows,
       leading: 0,
     );
   }
@@ -1038,6 +1065,7 @@ class KapyTheme {
     cardBackground: Color(0xFF292621),
     paneEdge: Color(0xFF2C2924),
     switchTrackOff: Color(0xFF3A362F),
+    checkboxBorder: Color(0xFF645D51),
     cardTitle: Color(0xFFD9D3C6),
     accentText: Color(0xFF9DB384),
     pageBorder: Color(0xFF2E2A25),
@@ -1112,6 +1140,7 @@ class KapyTheme {
     cardBackground: Color(0xFFF6F2E8),
     paneEdge: Color(0xFFE2DCCB),
     switchTrackOff: Color(0xFFDCD5C4),
+    checkboxBorder: Color(0xFFB1A996),
     cardTitle: Color(0xFF2A2620),
     accentText: Color(0xFF56703C),
     pageBorder: Color(0xFFE6E0D0),

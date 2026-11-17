@@ -1,8 +1,9 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart'
-    show Color, FontStyle, FontWeight, TextStyle;
+    show Color, FontStyle, FontWeight, TextLeadingDistribution, TextStyle;
 
 import '../../core/editor_font.dart';
+import '../../core/theme.dart' show EditorMetrics;
 import '../../data/note_format.dart';
 
 /// The bullet each nesting level is drawn with, cycling once it runs out.
@@ -84,40 +85,73 @@ TextStyle paragraphTextStyle(
   Color? primaryColor,
   Color? secondaryColor,
 }) {
-  final paragraphBase =
-      writingFont == WritingFont.mixed &&
-          paragraphStyle == NoteParagraphStyle.heading
-      ? _mixedHeadingBase(base)
-      : base;
-  final scale = switch (paragraphStyle) {
-    NoteParagraphStyle.heading => 1.28,
-    NoteParagraphStyle.text => 1.0,
-    NoteParagraphStyle.subtitle => 0.92,
-  };
-  return paragraphBase.copyWith(
+  if (paragraphStyle == NoteParagraphStyle.heading) {
+    return _headingStyle(
+      base,
+      EditorMetrics.page ? _pageHeadingScale(1) : 1.28,
+      writingFont,
+    ).copyWith(color: primaryColor);
+  }
+  final scale = paragraphStyle == NoteParagraphStyle.subtitle ? 0.92 : 1.0;
+  return base.copyWith(
     color: paragraphStyle == NoteParagraphStyle.subtitle
-        ? secondaryColor ?? paragraphBase.color
-        : primaryColor ?? paragraphBase.color,
-    fontSize: paragraphBase.fontSize == null
-        ? null
-        : paragraphBase.fontSize! * scale,
-    // Preserve the editor's fixed 29px row while changing visual size.
-    height: paragraphBase.height == null ? null : paragraphBase.height! / scale,
-    fontWeight: switch (paragraphStyle) {
-      NoteParagraphStyle.heading => FontWeight.w700,
-      NoteParagraphStyle.text => FontWeight.w400,
-      NoteParagraphStyle.subtitle => FontWeight.w400,
-    },
+        ? secondaryColor ?? base.color
+        : primaryColor ?? base.color,
+    fontSize: base.fontSize == null ? null : base.fontSize! * scale,
+    // Keep the row the line sits in while changing visual size.
+    height: base.height == null ? null : base.height! / scale,
+    fontWeight: FontWeight.w500,
     fontStyle: paragraphStyle == NoteParagraphStyle.subtitle
         ? FontStyle.italic
         : FontStyle.normal,
   );
 }
 
+/// The note's first line on the page, its title: Paper's 40/48 in bold, in
+/// the handwritten face when the writing font is mixed.
+TextStyle noteTitleStyle(TextStyle base, {WritingFont? writingFont}) {
+  final face = writingFont == WritingFont.mixed
+      ? WritingFont.handwritten
+      : null;
+  final size = base.fontSize == null
+      ? null
+      : _pageScale(base) * EditorMetrics.titleFontSize;
+  return base.copyWith(
+    fontFamily: face?.fontFamily,
+    fontFamilyFallback: face?.fontFamilyFallback,
+    fontVariations: face?.fontVariations,
+    fontSize: size,
+    height: size == null
+        ? null
+        : EditorMetrics.titleRow / EditorMetrics.titleFontSize,
+    leadingDistribution: TextLeadingDistribution.even,
+    fontWeight: FontWeight.w700,
+    fontStyle: FontStyle.normal,
+  );
+}
+
+/// How far the editor's text scale has taken [base] from its unscaled row.
+double _pageScale(TextStyle base) =>
+    base.fontSize == null || base.height == null
+    ? 1
+    : base.fontSize! * base.height! / EditorMetrics.lineHeight;
+
+/// Paper's section heading is 18 over 16px writing; the levels under it step
+/// down to the writing's own size.
+double _pageHeadingScale(int level) => switch (level) {
+  <= 1 => EditorMetrics.headingFontSize / 16,
+  2 => 17 / 16,
+  _ => 1.0,
+};
+
 /// The least room a markdown list marker takes, before scaling: a task's
 /// box, and a gap between it and the words. See
 /// `HighlightingController.markdownMarkerRoom`.
 const double markdownMarkerMinRoom = 23;
+
+/// The same on the page: Paper's 20px box and the 12 between it and the
+/// words.
+const double markdownMarkerPageRoom = 32;
 
 /// A markdown heading at [level], 1 to 6.
 ///
@@ -133,45 +167,52 @@ TextStyle markdownHeadingStyle(
   Color? primaryColor,
   Color? secondaryColor,
 }) {
-  final headingBase = writingFont == WritingFont.mixed
-      ? _mixedHeadingBase(base)
-      : base;
-  final scale = switch (level) {
-    <= 1 => 1.28,
-    2 => 1.18,
-    3 => 1.08,
-    _ => 1.0,
-  };
-  return headingBase.copyWith(
-    color: level >= 5
-        ? secondaryColor ?? headingBase.color
-        : primaryColor ?? headingBase.color,
-    fontSize: headingBase.fontSize == null
-        ? null
-        : headingBase.fontSize! * scale,
-    height: headingBase.height == null ? null : headingBase.height! / scale,
-    fontWeight: FontWeight.w700,
-    fontStyle: FontStyle.normal,
-  );
+  final scale = EditorMetrics.page
+      ? _pageHeadingScale(level)
+      : switch (level) {
+          <= 1 => 1.28,
+          2 => 1.18,
+          3 => 1.08,
+          _ => 1.0,
+        };
+  return _headingStyle(
+    base,
+    scale,
+    writingFont,
+  ).copyWith(color: level >= 5 ? secondaryColor : primaryColor);
 }
 
-/// Mixed notes use the compact monospace face for ordinary writing, then give
-/// headings the warmer handwritten face without changing the fixed row height
-/// that keeps calculated results aligned with their source lines.
-TextStyle _mixedHeadingBase(TextStyle base) {
-  final headingFont = WritingFont.handwritten;
-  final lineHeight = base.fontSize == null || base.height == null
+/// A heading at [scale] of [base], bold, in the handwritten face when the
+/// writing font is mixed.
+///
+/// On a phone it keeps the row its line sits in. On the page it stands in a
+/// row of [EditorMetrics.headingLine], and proportional leading puts nearly
+/// all of what that adds above the words: Paper's room over a heading.
+TextStyle _headingStyle(
+  TextStyle base,
+  double scale,
+  WritingFont? writingFont,
+) {
+  final face = writingFont == WritingFont.mixed
+      ? WritingFont.handwritten
+      : null;
+  final size = base.fontSize == null ? null : base.fontSize! * scale;
+  final row = base.fontSize == null || base.height == null
       ? null
+      : EditorMetrics.page
+      ? _pageScale(base) * EditorMetrics.headingLine
       : base.fontSize! * base.height!;
-  final headingSize = base.fontSize == null
-      ? headingFont.editorSize
-      : base.fontSize! * headingFont.editorSize / WritingFont.mixed.editorSize;
   return base.copyWith(
-    fontFamily: headingFont.fontFamily,
-    fontFamilyFallback: headingFont.fontFamilyFallback,
-    fontSize: headingSize,
-    height: lineHeight == null ? base.height : lineHeight / headingSize,
-    fontVariations: headingFont.fontVariations,
+    fontFamily: face?.fontFamily,
+    fontFamilyFallback: face?.fontFamilyFallback,
+    fontVariations: face?.fontVariations,
+    fontSize: size,
+    height: row == null || size == null ? null : row / size,
+    leadingDistribution: EditorMetrics.page
+        ? TextLeadingDistribution.proportional
+        : null,
+    fontWeight: FontWeight.w700,
+    fontStyle: FontStyle.normal,
   );
 }
 
