@@ -2340,13 +2340,15 @@ void main() {
     await tester.pumpAndSettle();
 
     final binding = shortcuts.bindingFor(ShortcutAction.toggleSidebar)!;
-    final search = find.byKey(const ValueKey('sidebar-search-field'));
     expect(find.byType(Sidebar), findsNothing);
 
     await pressShortcut(tester, binding);
     expect(find.byType(Sidebar), findsOneWidget);
     // The list takes the keyboard, so nothing typed lands in the note under it.
-    expect(tester.widget<TextField>(search).focusNode?.hasFocus, isTrue);
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'sidebar-overlay',
+    );
 
     await pressShortcut(tester, binding);
     expect(find.byType(Sidebar), findsNothing);
@@ -2448,78 +2450,181 @@ void main() {
     expect(menuRect.right, lessThanOrEqualTo(rowRect.right));
   });
 
-  testWidgets('searches note bodies and shows the matching line', (
-    tester,
-  ) async {
-    await pumpApp(tester);
-    notes.create();
-    notes.updateBody(notes.notes.first.id, 'Groceries\nolive oil 12.50');
-    notes.create();
-    notes.updateBody(notes.notes.first.id, 'Car\ntyres 240');
-    await tester.pumpAndSettle();
+  group('search', () {
+    Finder menuField() => find.byKey(const ValueKey('command-menu-field'));
+    Finder menuRow(String title) =>
+        find.byKey(ValueKey('command-menu-row-$title'));
 
-    expect(find.byType(NoteRow), findsNWidgets(2));
-
-    await tester.enterText(find.byType(EditableText).first, 'olive');
-    await tester.pumpAndSettle();
-
-    expect(find.byType(NoteRow), findsOneWidget);
-    // Search temporarily replaces the updated timestamp with the matching
-    // line, so a body-only result still explains why it appeared.
-    expect(find.widgetWithText(NoteRow, 'olive oil 12.50'), findsOneWidget);
-  });
-
-  testWidgets('global search reveals a hidden sidebar and finds nested content', (
-    tester,
-  ) async {
-    await pumpApp(tester, sidebarVisible: false);
-    notes.create(
-      body:
-          '# Launch plan\n- Website\n  - Accessibility\n    - Check contrast tokens',
-    );
-    notes.create(body: 'Weekend errands\n- Buy coffee');
-    await tester.pumpAndSettle();
-
-    final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
-    await pressShortcut(tester, binding);
-
-    expect(prefs.sidebarVisible, isTrue);
-    final search = find.byKey(const ValueKey('sidebar-search-field'));
-    expect(search, findsOneWidget);
-    expect(tester.widget<TextField>(search).focusNode?.hasFocus, isTrue);
-    expect(find.text(binding.keycapLabel), findsOneWidget);
-
-    await tester.enterText(search, 'launch contrast');
-    await tester.pumpAndSettle();
-
-    expect(find.byType(NoteRow), findsOneWidget);
-    expect(
-      find.widgetWithText(NoteRow, '- Check contrast tokens'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets(
-    'global search opens the list over a narrow page and focuses it',
-    (tester) async {
-      await pumpApp(tester, size: const Size(600, 760));
-      notes.create(body: 'Narrow search result');
+    Future<void> search(WidgetTester tester, String text) async {
+      await tester.enterText(menuField(), text);
       await tester.pumpAndSettle();
+    }
+
+    testWidgets('the field opens the menu, and the list is never narrowed', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.create(body: 'Groceries\nolive oil 12.50');
+      notes.create(body: 'Car\ntyres 240');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: menuField(),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is EditableText && widget.focusNode.hasFocus,
+          ),
+        ),
+        findsOneWidget,
+      );
+      await search(tester, 'olive');
+
+      expect(menuRow('Groceries'), findsOneWidget);
+      expect(menuRow('Car'), findsNothing);
+      // The matching line explains a result whose title does not.
+      expect(
+        find.descendant(
+          of: menuRow('Groceries'),
+          matching: find.textContaining('oil 12.50', findRichText: true),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(NoteRow), findsNWidgets(2));
+
+      await tester.tap(menuRow('Groceries'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+      expect(
+        tester.widget<NoteRow>(find.widgetWithText(NoteRow, 'Groceries')).selected,
+        isTrue,
+      );
+    });
+
+    testWidgets('its shortcut, and Find\'s, open it over a hidden list, and '
+        'it finds nested content', (tester) async {
+      await pumpApp(tester, sidebarVisible: false);
+      notes.create(
+        body:
+            '# Launch plan\n- Website\n  - Accessibility\n    - Check contrast tokens',
+      );
+      notes.create(body: 'Weekend errands\n- Buy coffee');
+      await tester.pumpAndSettle();
+
+      final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
+      expect(binding.logicalKey, LogicalKeyboardKey.keyK);
+      await pressShortcut(tester, binding);
+      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+      expect(prefs.sidebarVisible, isFalse);
+
+      await search(tester, 'launch contrast');
+      expect(menuRow('Launch plan'), findsOneWidget);
+      expect(menuRow('Weekend errands'), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
 
       await pressShortcut(
         tester,
-        shortcuts.bindingFor(ShortcutAction.findNotes)!,
+        ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyF,
+          physicalKey: PhysicalKeyboardKey.keyF,
+          meta: binding.meta,
+          control: binding.control,
+        ),
       );
+      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+    });
 
-      final search = find.byKey(const ValueKey('sidebar-search-field'));
-      expect(search, findsOneWidget);
-      expect(tester.widget<TextField>(search).focusNode?.hasFocus, isTrue);
+    testWidgets('the words become a note, or a search Archive keeps', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.archive(notes.create(body: 'Old Sintra plan').id);
+      notes.create(body: 'Something else');
+      await tester.pumpAndSettle();
+
+      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.findNotes)!);
+      await search(tester, 'sintra');
+      await tester.tap(menuRow('1 more in Archive'));
+      await tester.pumpAndSettle();
+
+      expect(spaceTitle(tester), 'Archive');
       expect(
-        find.byKey(const ValueKey('sidebar-overlay-barrier')),
+        tester.widgetList<NoteRow>(find.byType(NoteRow)).map((row) => row.note.title),
+        ['Old Sintra plan'],
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sidebar-search-field')),
+          matching: find.text('sintra'),
+        ),
         findsOneWidget,
       );
-    },
-  );
+      await tester.tap(find.byTooltip('Clear search'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sidebar-search-field')),
+          matching: find.text('Search'),
+        ),
+        findsOneWidget,
+      );
+
+      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.findNotes)!);
+      await search(tester, 'Call the garage');
+      await tester.tap(menuRow('New note: Call the garage'));
+      await tester.pumpAndSettle();
+      expect(notes.notes.first.body, 'Call the garage');
+      expect(notes.notes.first.isArchived, isFalse);
+    });
+
+    testWidgets('with words selected in a note, its key links instead', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.create(body: 'Read the tram timetable');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'Read the tram timetable'));
+      await tester.pumpAndSettle();
+
+      final editor = find.byType(EditableText).last;
+      await tester.tap(editor);
+      await tester.pumpAndSettle();
+      tester.widget<EditableText>(editor).controller.selection =
+          const TextSelection(baseOffset: 9, extentOffset: 23);
+      await tester.pump();
+      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.findNotes)!);
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      tester.widget<EditableText>(editor).controller.selection =
+          const TextSelection.collapsed(offset: 4);
+      await tester.pump();
+      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.findNotes)!);
+      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+    });
+
+    testWidgets('New drawing and the Go to keys work from anywhere', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.create(body: 'Plain note');
+      await tester.pumpAndSettle();
+
+      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.newDrawing)!);
+      expect(notes.notes.first.isDrawing, isTrue);
+      expect(spaceTitle(tester), 'Drawings');
+
+      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.showArchive)!);
+      expect(spaceTitle(tester), 'Archive');
+      await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.showNotes)!);
+      expect(spaceTitle(tester), 'My notes');
+    });
+  });
 
   testWidgets('creates a note from the plus beside search', (tester) async {
     // A phone's notes drawer. Beside the rail, New note sits in the bar over
@@ -2598,7 +2703,7 @@ void main() {
       expect(field.right - keycap.right, lessThanOrEqualTo(12));
       expect(keycap.center.dy, closeTo(field.center.dy, 1));
       // The hint used to fill the field and leave the placeholder no width.
-      expect(tester.getSize(find.text('Find a note…')).width, greaterThan(40));
+      expect(tester.getSize(find.text('Search')).width, greaterThan(40));
     },
   );
 
@@ -3742,16 +3847,19 @@ void main() {
       expect(notes.notes.first.title, 'Third');
     });
 
-    testWidgets('leaves the note alone while the search field has it', (
+    testWidgets('leaves the note alone while search has the keyboard', (
       tester,
     ) async {
       await threeNotes(tester);
       await tester.tap(find.widgetWithText(NoteRow, 'Third'));
       await tester.pumpAndSettle();
 
-      final search = find.byKey(const ValueKey('sidebar-search-field'));
-      await tester.tap(search);
-      await tester.enterText(search, 'Third');
+      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'Third',
+      );
       await tester.pumpAndSettle();
       await tester.sendKeyEvent(LogicalKeyboardKey.delete);
       await tester.pumpAndSettle();
@@ -4478,7 +4586,7 @@ void main() {
 
       expect(find.byType(AppLogo), findsNWidgets(2));
       expect(find.byType(NoteRow), findsNWidgets(2));
-      expect(find.byType(TextField), findsNWidgets(2));
+      expect(find.byKey(const ValueKey('sidebar-search-field')), findsOneWidget);
 
       await tester.tap(find.widgetWithText(NoteRow, 'First note'));
       await tester.pumpAndSettle();
@@ -4772,15 +4880,6 @@ void main() {
       await pumpApp(tester);
 
       expect(spaceTitle(tester), 'My notes');
-      expect(spaceCount(tester), '2');
-
-      // A search narrows the list, not the space.
-      await tester.enterText(
-        find.byKey(const ValueKey('sidebar-search-field')),
-        'Groc',
-      );
-      await tester.pumpAndSettle();
-      expect(rowTitles(tester), ['Groceries']);
       expect(spaceCount(tester), '2');
     });
 
@@ -5131,12 +5230,10 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('sidebar-see-all-pinned')));
       await tester.pumpAndSettle();
       expect(rowTitles(tester), hasLength(6));
-      expect(find.text('Find in pinned…'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('sidebar-pinned-back')));
       await tester.pumpAndSettle();
       expect(rowTitles(tester), hasLength(4));
-      expect(find.text('Find a note…'), findsOneWidget);
     });
 
     testWidgets('the list and cards switch holds for the whole list', (
