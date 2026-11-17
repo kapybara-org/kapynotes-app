@@ -832,18 +832,13 @@ class AppTypeScale {
       ? 13.5
       : 12.5;
 
-  /// The result chip in the gutter.
+  /// A calculation's result: its pill at the end of the line, or a figure in
+  /// a phone's results column.
   ///
-  /// Its own step rather than [body], because it is monospace figures inside a
-  /// fixed column: the width the note gives up to it is a layout decision, so
-  /// the type has to be chosen against that column rather than against the
-  /// prose elsewhere. Touch gains what the column can actually seat without
-  /// pushing the writing area below half the screen.
-  static double get result => _touch
-      ? 14
-      : _windows
-      ? 13
-      : 12.5;
+  /// Its own step rather than [body], because it is monospace figures set
+  /// against the writing rather than prose. Touch gains what a phone's column
+  /// can actually seat without pushing the writing area below half the screen.
+  static double get result => _touch ? 14 : 13;
 
   /// Control labels: buttons, list rows, fields, menu items.
   static double get control => _touch

@@ -238,15 +238,11 @@ Widget harness(
       readOnly: readOnly,
       engine: engine,
       highlighter: Highlighter(engine.registry),
-      gutterWidth: 160,
       resultsVisible: true,
       writingFont: WritingFont.handwritten,
       shortcuts: shortcutPrefs,
       onDocumentChanged: (body, formats, refs) =>
           onAttachmentsChanged?.call(refs),
-      onGutterWidthChanged: (_) {},
-      onResultsVisibilityChanged: (_) {},
-      onGutterWidthReset: () {},
       onSettingsPressed: () {},
     ),
   ),
@@ -318,6 +314,11 @@ void main() {
   });
 
   testWidgets('one image fills the column; three become tiles', (tester) async {
+    // Tall enough that one image fills the column rather than stopping at its
+    // height cap.
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final single = at(0);
     await tester.pumpWidget(harness(anchor, attachments: [single]));
     await tester.pump();

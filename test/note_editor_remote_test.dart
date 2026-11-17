@@ -68,16 +68,12 @@ Widget harness(
         initialFormats: formats,
         engine: engine,
         highlighter: Highlighter(engine.registry),
-        gutterWidth: 200,
         resultsVisible: true,
         onDocumentChanged: (body, formats, attachments) {
           store?.body = body;
           onBodyChanged?.call(body);
         },
         storedDocument: store?.read,
-        onGutterWidthChanged: (_) {},
-        onResultsVisibilityChanged: (_) {},
-        onGutterWidthReset: () {},
         onSettingsPressed: () {},
         writingFont: WritingFont.handwritten,
         shortcuts: shortcutPrefs,

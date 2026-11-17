@@ -30,6 +30,7 @@ import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
+import 'package:kapy_notes/ui/editor/inline_results.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
 import 'package:kapy_notes/ui/editor_panes.dart';
 import 'package:kapy_notes/ui/empty_state.dart';
@@ -808,8 +809,6 @@ void main() {
   testWidgets('opens footer settings and resets desktop panel widths', (
     tester,
   ) async {
-    store.data['gutter.v1'] = 320.0;
-    store.data['resultsVisible.v1'] = false;
     store.data['sidebar.v1'] = 360.0;
     await pumpApp(tester);
     await tester.tap(emptyStateNewNote());
@@ -848,8 +847,6 @@ void main() {
     await tester.ensureVisible(reset);
     await tester.tap(reset);
     await tester.pumpAndSettle();
-    expect(prefs.gutterWidth, LayoutPrefs.defaultGutterWidth);
-    expect(prefs.resultsVisible, isTrue);
     expect(prefs.sidebarWidth, LayoutPrefs.defaultSidebarWidth);
   });
 
@@ -2307,9 +2304,7 @@ void main() {
     expect(panes(), ['Delta', 'Charlie', 'Bravo']);
   });
 
-  testWidgets('the results column has a shortcut like the notes list', (
-    tester,
-  ) async {
+  testWidgets('results have a shortcut like the notes list', (tester) async {
     await pumpApp(tester);
     notes.create(body: '2 + 2');
     await tester.pumpAndSettle();
@@ -2324,18 +2319,17 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    // Cmd+R folds the right-hand column away, leaving the handle that brings
-    // it back; Cmd+S does the same for the list on the left. Notes autosave,
-    // so the conventional save chord is free for the pane itself.
+    // Cmd+R hides the results at the ends of their lines and brings them
+    // back; Cmd+S does the same for the list on the left. Notes autosave, so
+    // the conventional save chord is free for the pane itself.
+    expect(find.widgetWithText(ResultChip, '4'), findsOneWidget);
     await press(LogicalKeyboardKey.keyR);
     expect(prefs.resultsVisible, isFalse);
-    expect(
-      find.byKey(const ValueKey('results-restore-handle')),
-      findsOneWidget,
-    );
+    expect(find.byType(ResultChip), findsNothing);
 
     await press(LogicalKeyboardKey.keyR);
     expect(prefs.resultsVisible, isTrue);
+    expect(find.widgetWithText(ResultChip, '4'), findsOneWidget);
 
     await press(LogicalKeyboardKey.keyS);
     expect(prefs.sidebarVisible, isFalse);
@@ -4065,31 +4059,29 @@ void main() {
   });
 
   group('compact editor', () {
-    testWidgets('keeps the results divider in a narrow desktop window', (
-      tester,
-    ) async {
-      store.data['notes.v1'] = [
-        {
-          'id': 'desktop-compact',
-          'body': 'Compact budget\n6 * 7',
-          'createdAt': 1000,
-          'updatedAt': 1000,
-        },
-      ];
+    testWidgets(
+      'puts results at the ends of lines in a narrow desktop window',
+      (tester) async {
+        store.data['notes.v1'] = [
+          {
+            'id': 'desktop-compact',
+            'body': 'Compact budget\n6 * 7',
+            'createdAt': 1000,
+            'updatedAt': 1000,
+          },
+        ];
 
-      await pumpApp(tester, size: const Size(600, 630));
+        await pumpApp(tester, size: const Size(600, 630));
 
-      expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
-      expect(find.byType(GutterDivider), findsOneWidget);
-      expect(
-        tester
-            .widget<MouseRegion>(
-              find.byKey(const ValueKey('results-divider-hover')),
-            )
-            .cursor,
-        SystemMouseCursors.resizeLeftRight,
-      );
-    });
+        expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
+        expect(find.byType(InlineResults), findsOneWidget);
+        expect(find.byType(ResultsGutter), findsNothing);
+        // The writing keeps the whole pane: nothing beside it but its margin.
+        final field = tester.getRect(find.byType(EditableText));
+        final pane = tester.getRect(find.byType(NoteEditor));
+        expect(pane.right - field.right, lessThan(20));
+      },
+    );
 
     testWidgets(
       'Windows keeps the results shortcut at its minimum client width',
@@ -4112,23 +4104,18 @@ void main() {
           size: Size(LayoutPrefs.minimumWindowSize.width - 12, 630),
         );
 
-        expect(find.byType(GutterDivider), findsOneWidget);
+        expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
         await pressShortcut(
           tester,
           shortcuts.bindingFor(ShortcutAction.toggleResults)!,
         );
 
         expect(prefs.resultsVisible, isFalse);
-        expect(
-          find.byKey(const ValueKey('results-restore-handle')),
-          findsOneWidget,
-        );
+        expect(find.byType(ResultChip), findsNothing);
       },
     );
 
-    testWidgets('keeps the results divider out of phone-sized layouts', (
-      tester,
-    ) async {
+    testWidgets('keeps the results column on phones', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       store.data['notes.v1'] = [
@@ -4143,7 +4130,8 @@ void main() {
       await pumpApp(tester, size: const Size(420, 800));
 
       expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
-      expect(find.byType(GutterDivider), findsNothing);
+      expect(find.byType(ResultsGutter), findsOneWidget);
+      expect(find.byType(InlineResults), findsNothing);
     });
 
     testWidgets('gives prose-only phone notes the full writing width', (
@@ -4188,7 +4176,7 @@ void main() {
       await pumpApp(tester, size: const Size(1100, 760));
 
       expect(find.byType(ResultsGutter), findsNothing);
-      expect(find.byType(GutterDivider), findsNothing);
+      expect(find.byType(InlineResults), findsNothing);
       final field = tester.widget<TextField>(
         find.descendant(
           of: find.byType(NoteEditor),

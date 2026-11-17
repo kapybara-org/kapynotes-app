@@ -64,7 +64,6 @@ void main() {
 
     prefs.rememberWindowBounds(const Rect.fromLTWH(-120, 84, 684, 712));
     prefs.sidebarWidth = 318;
-    prefs.gutterWidth = 224;
     prefs.resultsVisible = false;
     prefs.readyToTypeOnOpen = false;
     prefs.dailySeparatorsEnabled = false;
@@ -79,7 +78,6 @@ void main() {
     expect(restored.windowPosition, const Offset(-120, 84));
     expect(restored.windowBounds, const Rect.fromLTWH(-120, 84, 684, 712));
     expect(restored.sidebarWidth, 318);
-    expect(restored.gutterWidth, 224);
     expect(restored.resultsVisible, isFalse);
     expect(restored.readyToTypeOnOpen, isFalse);
     expect(restored.dailySeparatorsEnabled, isFalse);
@@ -102,24 +100,31 @@ void main() {
     expect((LayoutPrefs(invalid)..load()).windowPosition, isNull);
   });
 
-  test('resetting panel widths also brings a hidden results pane back', () {
-    final prefs = LayoutPrefs(_MemoryStore())..load();
-    prefs.gutterWidth = 320;
+  test('resetting panel widths resets the notes list and nothing else', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    prefs.sidebarWidth = 360;
     prefs.resultsVisible = false;
 
     prefs.resetPanelWidths();
 
-    expect(prefs.gutterWidth, LayoutPrefs.defaultGutterWidth);
-    expect(prefs.resultsVisible, isTrue);
+    expect(prefs.sidebarWidth, LayoutPrefs.defaultSidebarWidth);
+    expect(
+      prefs.resultsVisible,
+      isFalse,
+      reason: 'results have no width to reset, and hiding them is a choice',
+    );
+    expect(
+      (LayoutPrefs(store)..load()).sidebarWidth,
+      LayoutPrefs.defaultSidebarWidth,
+    );
   });
 
   test('panel widths stop at compact usable sizes without hiding', () {
     final prefs = LayoutPrefs(_MemoryStore())..load();
 
-    prefs.gutterWidth = 1;
     prefs.sidebarWidth = 1;
 
-    expect(prefs.gutterWidth, LayoutPrefs.minGutterWidth);
     expect(prefs.sidebarWidth, LayoutPrefs.minSidebarWidth);
     expect(prefs.resultsVisible, isTrue);
     expect(prefs.sidebarVisible, isFalse, reason: 'closed until asked for');
@@ -1087,7 +1092,7 @@ void main() {
     );
   });
 
-  test('the results column remembers being folded away', () {
+  test('hidden results stay hidden after a restart', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();
     expect(prefs.resultsVisible, isTrue);
@@ -1096,6 +1101,13 @@ void main() {
     expect(prefs.resultsVisible, isFalse);
 
     expect((LayoutPrefs(store)..load()).resultsVisible, isFalse);
+  });
+
+  test('results folded away as a column come back at the ends of lines', () {
+    // The column is gone, and with it the handle that brought it back.
+    final store = _MemoryStore()..data['resultsVisible.v1'] = false;
+
+    expect((LayoutPrefs(store)..load()).resultsVisible, isTrue);
   });
 
   test('the pin is off for a new install and survives a restart', () {

@@ -74,6 +74,7 @@ import 'voice_insertion.dart';
 import 'note_image_view.dart';
 import 'note_video_view.dart';
 import 'remote_carets.dart';
+import 'inline_results.dart';
 import 'results_gutter.dart';
 import 'scroll_passthrough.dart';
 import 'selection_formatting_toolbar.dart';
@@ -112,8 +113,8 @@ typedef ImagePrepared =
 typedef AttachmentUploadProgressFor =
     ValueListenable<double?> Function(String hash);
 
-/// The note surface: one syntax-coloured text field with a live results
-/// column pinned to it.
+/// The note surface: one syntax-coloured text field with each line's live
+/// result at the end of that line, or on a phone in a column beside it.
 ///
 /// The two are kept in step by measuring the note's layout with the same
 /// width, style and strut the field uses, and by sharing one scroll
@@ -156,13 +157,10 @@ class NoteEditor extends StatefulWidget {
     this.onReadOnlyPressed,
     required this.engine,
     required this.highlighter,
-    required this.gutterWidth,
+    this.gutterWidth,
     required this.resultsVisible,
     required this.onDocumentChanged,
     this.storedDocument,
-    required this.onGutterWidthChanged,
-    required this.onResultsVisibilityChanged,
-    required this.onGutterWidthReset,
     required this.onSettingsPressed,
     required this.writingFont,
     this.editorTextScale = 1,
@@ -170,8 +168,6 @@ class NoteEditor extends StatefulWidget {
     this.spellCheckEnabled = true,
     this.markdownEnabled = false,
     this.onMarkdownEnabledChanged,
-    this.showDivider = true,
-    this.hideEmptyResults = false,
     this.autofocus = false,
     this.startAtEnd = false,
     this.initialCaret,
@@ -296,7 +292,10 @@ class NoteEditor extends StatefulWidget {
 
   final CalcEngine engine;
   final Highlighter highlighter;
-  final double gutterWidth;
+
+  /// How wide a phone's results gutter is. Null puts each result at the end
+  /// of its own line instead, which takes no width from the writing.
+  final double? gutterWidth;
   final bool resultsVisible;
   final NoteDocumentChanged onDocumentChanged;
 
@@ -306,9 +305,6 @@ class NoteEditor extends StatefulWidget {
   /// never written over words the editor has not shown yet. Null reads this
   /// widget's own fields.
   final StoredNoteDocument? Function()? storedDocument;
-  final ValueChanged<double> onGutterWidthChanged;
-  final ValueChanged<bool> onResultsVisibilityChanged;
-  final VoidCallback onGutterWidthReset;
 
   /// What the open-settings shortcut does. The footer has no gear of its own:
   /// settings live in the notes list, and this is the key that gets there
@@ -331,8 +327,6 @@ class NoteEditor extends StatefulWidget {
   /// Optional for small editor harnesses; production supplies the persisted
   /// preference setter.
   final ValueChanged<bool>? onMarkdownEnabledChanged;
-  final bool showDivider;
-  final bool hideEmptyResults;
   final bool autofocus;
   final bool startAtEnd;
 
@@ -4489,13 +4483,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _totalText = evaluation.totalText;
   }
 
-  void _dragGutter(double width) => widget.onGutterWidthChanged(width);
-
-  void _restoreGutter(double? width) {
-    if (width != null) widget.onGutterWidthChanged(width);
-    widget.onResultsVisibilityChanged(true);
-  }
-
   static DateTime _localTime(DateTime value) => value.toLocal();
 
   /// Sizes and builds every image in this note, keyed by its anchor.
@@ -5448,27 +5435,21 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // Compact and touch layouts reserve the results rail only when
-                // a line calculates, so prose, checklists, and journals keep
-                // the full writing width. Desktop preserves its saved panel.
-                final hasResults = _results.isNotEmpty;
-                final emptyResultsSuppressed =
-                    !hasResults &&
-                    (!widget.showDivider || widget.hideEmptyResults);
+                // Results sit at the ends of their lines and take no width
+                // from the writing. A phone reserves its gutter only when a
+                // line calculates, so prose, checklists, and journals keep the
+                // full writing width.
                 final resultsVisible =
-                    !emptyResultsSuppressed &&
-                    (!widget.showDivider || widget.resultsVisible);
-                final dividerWidth = widget.showDivider && resultsVisible
-                    ? GutterDivider.width
-                    : 0.0;
+                    widget.resultsVisible && _results.isNotEmpty;
+                final inlineResults =
+                    resultsVisible && widget.gutterWidth == null;
                 final gutterWidth = resultsVisible
-                    ? widget.gutterWidth.clamp(
+                    ? (widget.gutterWidth ?? 0).clamp(
                         0.0,
                         (constraints.maxWidth - 160).clamp(0.0, 480.0),
                       )
                     : 0.0;
-                final textPaneWidth =
-                    constraints.maxWidth - gutterWidth - dividerWidth;
+                final textPaneWidth = constraints.maxWidth - gutterWidth;
 
                 // Must match the text field's own content box exactly, right
                 // down to the sliver it holds back for the caret.
@@ -5580,6 +5561,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     concealment.key,
                   ),
                   placeholders: _controller.placeholderDimensions(),
+                  lastRowsOf: inlineResults ? _results.keys : const [],
                 );
                 _lineOffsets = offsets;
 
@@ -5672,15 +5654,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                               ),
                             ),
                           ),
-                          if (widget.showDivider && resultsVisible)
-                            GutterDivider(
-                              gutterWidth: gutterWidth,
-                              onDrag: _dragGutter,
-                              onHide: () =>
-                                  widget.onResultsVisibilityChanged(false),
-                              onReset: widget.onGutterWidthReset,
-                            ),
-                          if (resultsVisible)
+                          if (gutterWidth > 0)
                             SizedBox(
                               width: gutterWidth,
                               // The gutter has no scrollable of its own, so a
@@ -5705,14 +5679,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                         ],
                       ),
                     ),
-                    if (widget.showDivider &&
-                        !resultsVisible &&
-                        !emptyResultsSuppressed)
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: ResultsRestoreHandle(onRestore: _restoreGutter),
+                    if (inlineResults)
+                      Positioned.fill(
+                        child: InlineResults(
+                          results: _results,
+                          offsets: offsets,
+                          scroll: _scrollController,
+                          padding: padding,
+                          columnWidth: contentWidth,
+                        ),
                       ),
                   ],
                 );

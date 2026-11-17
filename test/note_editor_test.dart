@@ -17,6 +17,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/time_zones.dart';
 import 'package:kapy_notes/ui/editor/blank_line_highlight.dart';
 import 'package:kapy_notes/ui/editor/editor_formatting.dart';
+import 'package:kapy_notes/ui/editor/inline_results.dart';
 import 'package:kapy_notes/ui/celebrate.dart';
 import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
@@ -63,8 +64,9 @@ Offset _centerOf(WidgetTester tester, String body, String linkText) {
 Widget harness(
   String body, {
   List<NoteFormatRange> initialFormats = const [],
-  double gutterWidth = 200,
+  double? gutterWidth,
   bool resultsVisible = true,
+  double? width,
   DateTime? lastUpdatedAt,
   bool dailySeparatorsEnabled = false,
   DateTime Function()? now,
@@ -76,50 +78,56 @@ Widget harness(
   TargetPlatform? platform,
   ValueChanged<String>? onBodyChanged,
   ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
-  ValueChanged<double>? onGutterWidthChanged,
-  ValueChanged<bool>? onResultsVisibilityChanged,
-  VoidCallback? onGutterWidthReset,
   VoidCallback? onSettingsPressed,
   VoidCallback? onRecordVoice,
   WritingFont writingFont = WritingFont.handwritten,
   double editorTextScale = 1,
   ShortcutPrefs? shortcuts,
 }) {
+  final editor = NoteEditor(
+    // Keyed by body so re-pumping with different text remounts the editor,
+    // the way switching notes does in the app.
+    key: ValueKey(body),
+    noteId: 'test',
+    initialBody: body,
+    initialFormats: initialFormats,
+    engine: engine,
+    highlighter: Highlighter(engine.registry),
+    gutterWidth: gutterWidth,
+    resultsVisible: resultsVisible,
+    lastUpdatedAt: lastUpdatedAt,
+    dailySeparatorsEnabled: dailySeparatorsEnabled,
+    now: now,
+    displayTime: displayTime,
+    startAtEnd: startAtEnd,
+    autofocus: autofocus,
+    ensureKeyboardVisible: ensureKeyboardVisible,
+    readOnly: readOnly,
+    onDocumentChanged: (body, formats, attachments) {
+      onBodyChanged?.call(body);
+      onFormatsChanged?.call(formats);
+    },
+    onSettingsPressed: onSettingsPressed ?? () {},
+    onRecordVoice: onRecordVoice,
+    writingFont: writingFont,
+    editorTextScale: editorTextScale,
+    shortcuts: shortcuts ?? shortcutPrefs,
+  );
   return MaterialApp(
     theme: KapyTheme.dark().copyWith(platform: platform),
     home: Scaffold(
-      body: NoteEditor(
-        // Keyed by body so re-pumping with different text remounts the
-        // editor, the way switching notes does in the app.
-        key: ValueKey(body),
-        noteId: 'test',
-        initialBody: body,
-        initialFormats: initialFormats,
-        engine: engine,
-        highlighter: Highlighter(engine.registry),
-        gutterWidth: gutterWidth,
-        resultsVisible: resultsVisible,
-        lastUpdatedAt: lastUpdatedAt,
-        dailySeparatorsEnabled: dailySeparatorsEnabled,
-        now: now,
-        displayTime: displayTime,
-        startAtEnd: startAtEnd,
-        autofocus: autofocus,
-        ensureKeyboardVisible: ensureKeyboardVisible,
-        readOnly: readOnly,
-        onDocumentChanged: (body, formats, attachments) {
-          onBodyChanged?.call(body);
-          onFormatsChanged?.call(formats);
-        },
-        onGutterWidthChanged: onGutterWidthChanged ?? (_) {},
-        onResultsVisibilityChanged: onResultsVisibilityChanged ?? (_) {},
-        onGutterWidthReset: onGutterWidthReset ?? () {},
-        onSettingsPressed: onSettingsPressed ?? () {},
-        onRecordVoice: onRecordVoice,
-        writingFont: writingFont,
-        editorTextScale: editorTextScale,
-        shortcuts: shortcuts ?? shortcutPrefs,
-      ),
+      // A narrower editor where a test needs one, with the rest of the
+      // window left empty beside it.
+      body: width == null
+          ? editor
+          : Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: width,
+                height: double.infinity,
+                child: editor,
+              ),
+            ),
     ),
   );
 }
@@ -147,6 +155,27 @@ Rect lineRect(WidgetTester tester, String body, int index) {
   final first = boxes.first;
   final origin = box.localToGlobal(Offset(first.left, first.top));
   return origin & Size(first.right - first.left, first.bottom - first.top);
+}
+
+/// The last row the text field draws line [index] on: the same row as
+/// [lineRect] unless the line wraps.
+Rect lastRowRect(WidgetTester tester, String body, int index) {
+  final start = startOfLine(body, index);
+  final line = body.split('\n')[index];
+  final editable = tester
+      .state<EditableTextState>(find.byType(EditableText))
+      .renderEditable;
+  final boxes = editable.getBoxesForSelection(
+    TextSelection(baseOffset: start, extentOffset: start + line.length),
+  );
+  expect(boxes, isNotEmpty, reason: 'line $index has no text box');
+  final last = boxes.last;
+  final row = [
+    for (final box in boxes)
+      if ((box.top - last.top).abs() < 0.5) box.toRect(),
+  ].reduce((a, b) => a.expandToInclude(b));
+  final box = tester.renderObject<RenderBox>(find.byType(EditableText));
+  return row.shift(box.localToGlobal(Offset.zero));
 }
 
 /// Character offset at which line [index] starts.
@@ -837,28 +866,31 @@ void main() {
     }
   });
 
-  testWidgets('keeps alignment when a line wraps onto two rows', (
-    tester,
-  ) async {
+  testWidgets('puts a wrapped line\'s result on its last row', (tester) async {
     // Long enough to wrap in the narrow text pane, which pushes every
     // following line down by one row.
     const long =
         '1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1';
     const body = 'first\n$long\nafter = 9';
     // The handwriting face is proportionally spaced and fits more of this
-    // expression than the
-    // old mono default, so keep the pane narrow enough to preserve the wrap.
-    await tester.pumpWidget(harness(body, gutterWidth: 320));
+    // expression than the old mono default, so keep the pane narrow enough
+    // to preserve the wrap.
+    await tester.pumpWidget(harness(body, width: 465));
     await tester.pumpAndSettle();
 
     final wrappedLine = lineRect(tester, body, 1);
+    final lastRow = lastRowRect(tester, body, 1);
     final afterLine = lineRect(tester, body, 2);
     // Confirm the line really did wrap before asserting anything about it.
     expect(afterLine.top - wrappedLine.top, greaterThan(wrappedLine.height));
+    expect(lastRow.top, greaterThan(wrappedLine.top));
 
+    final wrapped = tester.getRect(chipWithText('18'));
+    expect(wrapped.center.dy, closeTo(lastRow.center.dy, 1.5));
     expect(
-      tester.getRect(chipWithText('18')).center.dy,
-      closeTo(wrappedLine.center.dy, 1.5),
+      wrapped.left,
+      greaterThan(lastRow.right),
+      reason: 'after the writing on that row, not over it',
     );
     expect(
       tester.getRect(chipWithText('9')).center.dy,
@@ -878,7 +910,7 @@ void main() {
         'daily = 55\n'
         'daily * 7\n'
         'total';
-    await tester.pumpWidget(harness(body, gutterWidth: 320));
+    await tester.pumpWidget(harness(body, width: 465));
     await tester.pumpAndSettle();
 
     final commented = lineRect(tester, body, 0);
@@ -1769,7 +1801,7 @@ void main() {
   group('scrolling from the results gutter', () {
     /// A note long enough that the field has somewhere to scroll to.
     String longBody() =>
-        [for (var i = 1; i <= 80; i++) 'line $i = $i * 2'].join('\n');
+        [for (var i = 1; i <= 80; i++) 'line$i = $i * 2'].join('\n');
 
     ScrollController fieldScroll(WidgetTester tester) =>
         tester.widget<TextField>(find.byType(TextField)).scrollController!;
@@ -1827,6 +1859,33 @@ void main() {
         greaterThan(duringFling),
         reason: 'momentum carries it past where the finger let go',
       );
+    });
+
+    testWidgets('a drag or a wheel over a pill scrolls the note', (
+      tester,
+    ) async {
+      // A pill sits over the field, so the field never sees what lands on it.
+      await tester.pumpWidget(harness(longBody()));
+      await tester.pumpAndSettle();
+
+      final scroll = fieldScroll(tester);
+      final pill = tester.getCenter(find.byType(ResultChip).first);
+      await tester.dragFrom(pill, const Offset(0, -160));
+      await tester.pumpAndSettle();
+      final dragged = scroll.offset;
+      expect(dragged, greaterThan(0));
+
+      // The first pill on screen now: one scrolled half under the top edge
+      // is clipped there and takes no pointer.
+      final wheel = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(
+        wheel.hover(
+          tester.getCenter(find.byType(ResultChip).hitTestable().first),
+        ),
+      );
+      await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
+      await tester.pumpAndSettle();
+      expect(scroll.offset, greaterThan(dragged));
     });
 
     testWidgets('tapping a chip still copies rather than scrolling', (
@@ -2812,13 +2871,9 @@ void main() {
         .size
         .width;
 
-    const baseGutter = 200.0;
+    const baseEditor = 600.0;
     await tester.pumpWidget(
-      harness(
-        'seed',
-        gutterWidth: baseGutter,
-        writingFont: WritingFont.monospace,
-      ),
+      harness('seed', width: baseEditor, writingFont: WritingFont.monospace),
     );
     await tester.pumpAndSettle();
     final baseWidth = fieldWidth(tester);
@@ -2837,16 +2892,16 @@ void main() {
     final advance = probe.width;
     probe.dispose();
 
-    // Widen the gutter just enough that the line lands inside the reserved
+    // Narrow the editor just enough that the line lands inside the reserved
     // sliver: too long for the text area, short enough for the field.
     final chars = (baseWidth / advance).floor();
     final lineWidth = chars * advance;
     final targetWidth = lineWidth + EditorMetrics.caretMargin / 2;
-    final gutter = baseGutter + (baseWidth - targetWidth);
+    final editorWidth = baseEditor - (baseWidth - targetWidth);
 
     final body = '${'a' * chars}\n6 * 7';
     await tester.pumpWidget(
-      harness(body, gutterWidth: gutter, writingFont: WritingFont.monospace),
+      harness(body, width: editorWidth, writingFont: WritingFont.monospace),
     );
     await tester.pumpAndSettle();
 
@@ -3003,180 +3058,273 @@ void main() {
     );
   });
 
-  testWidgets('results divider advertises and reports horizontal dragging', (
+  testWidgets('puts each result at the right-hand end of its own line', (
     tester,
   ) async {
-    final widths = <double>[];
-    final visibility = <bool>[];
-    await tester.pumpWidget(
-      harness(
-        '2 + 2',
-        onGutterWidthChanged: widths.add,
-        onResultsVisibilityChanged: visibility.add,
-      ),
-    );
+    const body =
+        'Tool costs per month\n'
+        'ahrefs = 129 usd\n'
+        'looker = 29 usd\n'
+        'outreach = 3 * 49 usd\n'
+        'total';
+    await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
 
-    final divider = find.byType(GutterDivider);
-    final region = find.byKey(const ValueKey('results-divider-hover'));
-    final gripOpacity = find.byKey(
-      const ValueKey('results-divider-grip-opacity'),
-    );
-    expect(
-      tester.widget<MouseRegion>(region).cursor,
-      SystemMouseCursors.resizeLeftRight,
-    );
-    expect(tester.widget<AnimatedOpacity>(gripOpacity).opacity, 0);
-
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    addTearDown(mouse.removePointer);
-    await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(tester.getCenter(divider));
-    await tester.pumpAndSettle();
-    expect(tester.widget<AnimatedOpacity>(gripOpacity).opacity, 1);
-    await tester.pump(const Duration(milliseconds: 600));
-    await tester.pumpAndSettle();
-    expect(find.text('Drag to resize. Click to hide.'), findsOneWidget);
-    expect(
-      tester.getSize(find.byKey(const ValueKey('results-divider-line'))).width,
-      2,
-    );
-
-    await mouse.down(tester.getCenter(divider));
-    // The first move clears the gesture slop; the second is the resize delta.
-    await mouse.moveBy(const Offset(-20, 0));
-    await tester.pump();
-    await mouse.moveBy(const Offset(-20, 0));
-    await mouse.up();
-    await tester.pumpAndSettle();
-
-    expect(widths, isNotEmpty);
-    expect(widths.last, greaterThan(200));
-
-    widths.clear();
-    await mouse.moveTo(tester.getCenter(divider));
-    await mouse.down(tester.getCenter(divider));
-    await mouse.moveBy(const Offset(20, 0));
-    await tester.pump();
-    await mouse.moveBy(const Offset(20, 0));
-    await mouse.up();
-    await tester.pumpAndSettle();
-
-    expect(widths, isNotEmpty);
-    expect(widths.last, lessThan(200));
-
-    widths.clear();
-    await mouse.moveTo(tester.getCenter(divider));
-    await mouse.down(tester.getCenter(divider));
-    await mouse.moveBy(const Offset(20, 0));
-    await tester.pump();
-    await mouse.moveBy(const Offset(220, 0));
-    await mouse.up();
-    await tester.pumpAndSettle();
-
-    expect(widths, isNotEmpty);
-    expect(widths.last, lessThan(100));
-    expect(
-      visibility,
-      isEmpty,
-      reason: 'dragging only resizes; it never hides the results column',
-    );
-  });
-
-  testWidgets('clicking the results divider collapses to a restore edge', (
-    tester,
-  ) async {
-    final visibility = <bool>[];
-    await tester.pumpWidget(
-      harness('2 + 2', onResultsVisibilityChanged: visibility.add),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('results-divider')));
-    // The divider also reserves double-click for width reset, so its single
-    // click resolves after the platform double-click window.
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(visibility, [false]);
-
-    visibility.clear();
-    await tester.pumpWidget(
-      harness(
-        '2 + 2',
-        resultsVisible: false,
-        onResultsVisibilityChanged: visibility.add,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byType(GutterDivider), findsNothing);
+    expect(find.byType(InlineResults), findsOneWidget);
     expect(find.byType(ResultsGutter), findsNothing);
-    expect(find.byType(ResultsRestoreHandle), findsOneWidget);
-    expect(
-      find.byTooltip('Show results. Drag left to resize.'),
-      findsOneWidget,
-    );
-    expect(
-      tester
-          .widget<MouseRegion>(
-            find.byKey(const ValueKey('results-restore-hover')),
-          )
-          .cursor,
-      SystemMouseCursors.resizeLeftRight,
-    );
+    final editable = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .renderEditable;
+    final columnRight =
+        editable.localToGlobal(Offset.zero).dx +
+        EditorMetrics.textLayoutWidth(editable.size.width);
 
-    final restore = find.byKey(const ValueKey('results-restore-handle'));
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    addTearDown(mouse.removePointer);
-    await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(tester.getCenter(restore));
-    await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<AnimatedOpacity>(
-            find.byKey(const ValueKey('results-restore-grip-opacity')),
-          )
-          .opacity,
-      1,
-    );
-    await tester.pump(const Duration(milliseconds: 600));
-    await tester.pumpAndSettle();
-    expect(find.text('Show results. Drag left to resize.'), findsOneWidget);
+    for (final entry in {
+      1: '129.00 USD',
+      2: '29.00 USD',
+      3: '147.00 USD',
+      4: '305.00 USD',
+    }.entries) {
+      final row = lastRowRect(tester, body, entry.key);
+      final pill = tester.getRect(chipWithText(entry.value));
+      expect(
+        pill.center.dy,
+        closeTo(row.center.dy, 1.5),
+        reason: '"${entry.value}" should sit on line ${entry.key}',
+      );
+      expect(pill.right, closeTo(columnRight, 1));
 
-    await tester.tap(restore);
-    await tester.pump();
-    expect(visibility, [true]);
+      final leader = tester.getRect(
+        find.byKey(ValueKey('result-leader-${entry.key}')),
+      );
+      expect(leader.left, closeTo(row.right + InlineResults.gap, 1));
+      expect(leader.right, closeTo(pill.left - InlineResults.gap, 1));
+      expect(leader.center.dy, closeTo(row.center.dy, 1.5));
+    }
   });
 
-  testWidgets('dragging left from the restore edge chooses its width', (
+  testWidgets('fills in the pill of the line that reads the total', (
     tester,
   ) async {
-    final widths = <double>[];
-    final visibility = <bool>[];
+    await tester.pumpWidget(harness('a = 12\nb = 30\ntotal'));
+    await tester.pumpAndSettle();
+
+    Color fillOf(String text) =>
+        (tester
+                    .widget<AnimatedContainer>(
+                      find.descendant(
+                        of: chipWithText(text),
+                        matching: find.byType(AnimatedContainer),
+                      ),
+                    )
+                    .decoration!
+                as BoxDecoration)
+            .color!;
+    TextStyle styleOf(String text) =>
+        tester.widget<Text>(find.text(text)).style!;
+    const palette = KapyTheme.darkPalette;
+
+    expect(fillOf('42'), palette.totalPillBackground);
+    expect(styleOf('42').color, palette.totalPillText);
+    expect(styleOf('42').fontWeight, FontWeight.w600);
+    for (final text in ['12', '30']) {
+      expect(fillOf(text), palette.resultPillBackground);
+      expect(styleOf(text).color, palette.resultPillText);
+      expect(styleOf(text).fontWeight, FontWeight.w500);
+    }
+  });
+
+  testWidgets('a pill steps past the column rather than cover the writing', (
+    tester,
+  ) async {
     await tester.pumpWidget(
-      harness(
-        '2 + 2',
-        resultsVisible: false,
-        onGutterWidthChanged: widths.add,
-        onResultsVisibilityChanged: visibility.add,
-      ),
+      harness('seed', writingFont: WritingFont.monospace),
     );
     await tester.pumpAndSettle();
+    var editable = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .renderEditable;
+    final width = EditorMetrics.textLayoutWidth(editable.size.width);
+    final probe = TextPainter(
+      text: TextSpan(
+        text: 'x',
+        style: EditorMetrics.textStyle(
+          const Color(0xFF000000),
+          WritingFont.monospace,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      strutStyle: EditorMetrics.strut(WritingFont.monospace),
+    )..layout();
+    final advance = probe.width;
+    probe.dispose();
 
-    final restore = find.byKey(const ValueKey('results-restore-handle'));
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    addTearDown(mouse.removePointer);
-    await mouse.addPointer(location: tester.getCenter(restore));
-    await mouse.down(tester.getCenter(restore));
-    await mouse.moveBy(const Offset(-20, 0));
+    // A calculating line that stops 40px short of the column's edge: too
+    // close for its pill to sit there with a gap before it, with room enough
+    // in the margin to step out into.
+    const tail = ' = 6 * 7';
+    final chars = ((width - 40) / advance).floor() - tail.length;
+    final body = '${'x' * chars}$tail';
+    await tester.pumpWidget(harness(body, writingFont: WritingFont.monospace));
+    await tester.pumpAndSettle();
+    editable = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .renderEditable;
+    final columnRight = editable.localToGlobal(Offset.zero).dx + width;
+
+    final row = lastRowRect(tester, body, 0);
+    expect(row.top, lineRect(tester, body, 0).top, reason: 'one row only');
+    final pill = tester.getRect(chipWithText('42'));
+    expect(pill.left, closeTo(row.right + InlineResults.gap, 1));
+    expect(pill.right, greaterThan(columnRight));
+    expect(
+      pill.right,
+      lessThanOrEqualTo(tester.getRect(find.byType(NoteEditor)).right),
+    );
+  });
+
+  testWidgets('a result is never part of the note', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() {
+      AppPlatform.debugTargetPlatformOverride = null;
+      debugDefaultTargetPlatformOverride = null;
+    });
+    final clipboard = <String>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      switch (call.method) {
+        case 'Clipboard.hasStrings':
+          return {'value': clipboard.isNotEmpty};
+        case 'Clipboard.getData':
+          return clipboard.isEmpty ? null : {'text': clipboard.last};
+        case 'Clipboard.setData':
+          clipboard.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    Future<void> control(LogicalKeyboardKey key) async {
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.sendKeyEvent(key, platform: 'windows');
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.controlLeft,
+        platform: 'windows',
+      );
+      await tester.pump();
+    }
+
+    const body = 'rent = 1200 usd\nrent * 12\n';
+    String? latest;
+    await tester.pumpWidget(
+      harness(body, autofocus: true, onBodyChanged: (value) => latest = value),
+    );
     await tester.pump();
-    await mouse.moveBy(const Offset(-180, 0));
-    await mouse.up();
+    // Let EditableText commit the initial value as the undo baseline.
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(chipWithText('1,200.00 USD'), findsOneWidget);
+    expect(chipWithText('14,400.00 USD'), findsOneWidget);
+
+    final field = tester.state<EditableTextState>(find.byType(EditableText));
+    final controller = tester
+        .widget<TextField>(find.byType(TextField))
+        .controller!;
+    expect(controller.text, body);
+    // What the field lays out and paints is the note and nothing more.
+    expect(field.renderEditable.text!.toPlainText(), body);
+
+    // Copying all of it copies the note alone, and pasting it back adds the
+    // note alone.
+    controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: body.length,
+    );
+    await tester.pump();
+    await control(LogicalKeyboardKey.keyC);
+    expect(clipboard, [body]);
+    controller.selection = const TextSelection.collapsed(offset: body.length);
+    await tester.pump();
+    await control(LogicalKeyboardKey.keyV);
+    await tester.pumpAndSettle();
+    expect(controller.text, '$body$body');
+    expect(latest, '$body$body');
+
+    // An edit at the end of a calculating line goes into the line, its pill
+    // follows it live, and undo takes it back out.
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.enterText(
+      find.byType(TextField),
+      'rent = 1300 usd\nrent * 12',
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(controller.text, 'rent = 1300 usd\nrent * 12');
+    expect(chipWithText('1,300.00 USD'), findsOneWidget);
+    expect(chipWithText('15,600.00 USD'), findsOneWidget);
+
+    await control(LogicalKeyboardKey.keyZ);
+    await tester.pumpAndSettle();
+    expect(controller.text, '$body$body');
+    expect(chipWithText('14,400.00 USD'), findsNWidgets(2));
+    await tester.pump(const Duration(seconds: 2));
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('says so when a result cannot be copied', (tester) async {
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        throw PlatformException(code: 'unavailable');
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    await tester.pumpWidget(harness('rev = 4 * 3'));
     await tester.pumpAndSettle();
 
-    expect(widths, isNotEmpty);
-    expect(widths.last, closeTo(180, 1));
-    expect(visibility, [true]);
+    await tester.tap(chipWithText('12'));
+    await tester.pump();
+
+    expect(find.text("Couldn't copy to clipboard"), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('hidden results leave the writing exactly as wide', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('Budget\n6 * 7'));
+    await tester.pumpAndSettle();
+    expect(chipWithText('42'), findsOneWidget);
+    final shown = tester.getSize(find.byType(EditableText)).width;
+
+    await tester.pumpWidget(harness('Budget\n6 * 7', resultsVisible: false));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ResultChip), findsNothing);
+    expect(find.byType(InlineResults), findsNothing);
+    expect(tester.getSize(find.byType(EditableText)).width, shown);
+  });
+
+  testWidgets('a phone keeps its results in a column beside the text', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness('Budget\n6 * 7', gutterWidth: 140));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ResultsGutter), findsOneWidget);
+    expect(find.byType(InlineResults), findsNothing);
+    expect(
+      tester.getCenter(chipWithText('42')).dy,
+      closeTo(lineRect(tester, 'Budget\n6 * 7', 1).center.dy, 1.5),
+    );
   });
 
   testWidgets('keeps results pinned to their lines while scrolling', (

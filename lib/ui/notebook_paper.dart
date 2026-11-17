@@ -10,7 +10,7 @@ import '../core/theme.dart';
 /// The fibers are deterministic, so the paper never shimmers between frames.
 ///
 /// Only the marks are painted here. The colour under them belongs to the
-/// editor's page, which also runs under the gutter and its divider; painting
+/// editor's page, which also runs under a phone's results column; painting
 /// it twice was harmless while it was opaque and would double up the moment
 /// transparency thinned it.
 class NotebookPaper extends StatelessWidget {
