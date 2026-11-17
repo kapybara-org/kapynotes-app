@@ -56,7 +56,7 @@ class Tag {
   /// Fields a later build wrote, kept and written back untouched.
   final Map<String, Object?> extra;
 
-  static const _known = {'kind', 'name', 'colour', 'order', 'createdAt'};
+  static const _known = {'id', 'kind', 'name', 'colour', 'order', 'createdAt'};
 
   Tag copyWith({
     Stamped<String>? name,
@@ -83,6 +83,7 @@ class Tag {
 
   Map<String, Object?> toPayload() => {
     ...extra,
+    'id': id,
     'kind': kind,
     'name': name.toJson(),
     'colour': colour.toJson(),
@@ -90,9 +91,11 @@ class Tag {
     'createdAt': createdAt,
   };
 
-  /// Null for a payload missing anything this build needs.
+  /// Null for a payload missing anything this build needs, or sealed for
+  /// another tag: a payload names its own id, so one moved or replayed onto
+  /// another record is refused.
   static Tag? fromPayload(String id, Object? raw) {
-    if (raw is! Map) return null;
+    if (raw is! Map || raw['id'] != id) return null;
     final name = Stamped.fromJson<String>(raw['name']);
     final colour = Stamped.fromJson<String>(raw['colour']);
     final order = Stamped.fromJson<int>(raw['order']);

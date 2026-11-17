@@ -225,6 +225,54 @@ void main() {
       },
     );
 
+    test('tag payloads swapped between two records are both refused', () async {
+      final (laptop, phone) = await pair();
+      final work = laptop.tags.create('Work')!;
+      final travel = laptop.tags.create('Travel')!;
+      await laptop.pass();
+
+      final records = stored();
+      final workRecord = records[work.id]!.record;
+      final travelRecord = records[travel.id]!.record;
+      server.pushTasks('user-1', 'mallory', [
+        WireTaskRecord(
+          id: work.id,
+          updatedAt: workRecord.updatedAt.add(const Duration(seconds: 1)),
+          payload: travelRecord.payload,
+        ),
+        WireTaskRecord(
+          id: travel.id,
+          updatedAt: travelRecord.updatedAt.add(const Duration(seconds: 1)),
+          payload: workRecord.payload,
+        ),
+      ]);
+      await phone.pass();
+      expect(phone.tags.tags, isEmpty);
+      laptop.dispose();
+      phone.dispose();
+    });
+
+    test('a tag payload replayed under another id is refused', () async {
+      final (laptop, phone) = await pair();
+      final work = laptop.tags.create('Work')!;
+      await laptop.pass();
+
+      final real = stored()[work.id]!.record;
+      const replayed = '0195f0d0-aaaa-4bbb-8ccc-000000000000';
+      server.pushTasks('user-1', 'mallory', [
+        WireTaskRecord(
+          id: replayed,
+          updatedAt: real.updatedAt,
+          payload: real.payload,
+        ),
+      ]);
+      await phone.pass();
+      expect(phone.tags.byId(replayed), isNull);
+      expect([for (final tag in phone.tags.tags) tag.id], [work.id]);
+      laptop.dispose();
+      phone.dispose();
+    });
+
     test(
       'a note deleted for good takes its tags record off the server; an archived one keeps it',
       () async {
