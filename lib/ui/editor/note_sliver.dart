@@ -106,9 +106,30 @@ Rect caretRectIn(
   final prototype = apple
       ? Rect.fromLTWH(0, 0, caret.width, height + 2)
       : Rect.fromLTWH(0, 2, caret.width, height - 4);
-  final rect = prototype.shift(
-    paragraph.getOffsetForCaret(position, prototype) + caret.offset,
-  );
+  var at = paragraph.getOffsetForCaret(position, prototype);
+  // Past a run of hidden markdown at the end of a line, the engine puts the
+  // caret before the last character shown. The character before the caret
+  // says where it really is, when it sits on the caret's row.
+  if (position.offset > 0) {
+    final before = paragraph.getBoxesForSelection(
+      TextSelection(
+        baseOffset: position.offset - 1,
+        extentOffset: position.offset,
+      ),
+      boxHeightStyle: BoxHeightStyle.max,
+    );
+    if (before.isNotEmpty) {
+      final box = before.last;
+      final middle = at.dy + prototype.center.dy;
+      if (middle >= box.top && middle <= box.bottom) {
+        at = Offset(
+          box.direction == TextDirection.ltr ? box.right : box.left,
+          at.dy,
+        );
+      }
+    }
+  }
+  final rect = prototype.shift(at + caret.offset);
   final left = clampDouble(rect.left, 0, math.max(width, 0));
   final full = paragraph.getFullHeightForCaret(position, prototype);
   return apple

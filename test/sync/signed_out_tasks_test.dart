@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/task_index.dart';
 import 'package:kapy_notes/data/task_library.dart';
+import 'package:kapy_notes/data/task_lines.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/space_keyring.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
@@ -257,5 +260,67 @@ void main() {
       everyElement(isNot(startsWith(localTaskIdPrefix))),
     );
     laptop.signOut();
+  });
+
+  test('a note both devices kept signed out, seeded by the other first, '
+      'leaves no task on a line that will never arrive', () async {
+    final laptop = Device(server, name: 'laptop');
+    await laptop.boot();
+    final note = laptop.notes.create(body: 'Errands\n☐ Buy oats\n☐ Buy milk');
+    await laptop.library.reconcileNow();
+
+    final phone = Device(server, name: 'phone');
+    phone.store.data['notes.v2'] = jsonDecode(
+      jsonEncode(laptop.store.data['notes.v2']),
+    );
+    await phone.boot();
+    // Typed after the laptop's last edit: the newer words go onto the
+    // laptop's copy once the phone loses the seed, rather than beside it.
+    phone.clock = DateTime.utc(2026, 11, 17, 10);
+    phone.notes.updateBody(
+      note.id,
+      'Errands\n☐ Buy oats\n☐ Buy milk\n☐ Call mum',
+    );
+    await phone.library.reconcileNow();
+    expect(phone.library.index.entries, hasLength(3));
+
+    server.now = () => laptop.clock;
+    laptop.signIn();
+    await laptop.pass();
+    phone.signIn();
+    await phone.pass();
+    await phone.pass();
+    await laptop.pass();
+
+    for (final device in [phone, laptop]) {
+      final doc = device.library.docs.get(note.id)!.doc;
+      final lines = taskLines(doc.text);
+      expect(
+        doc.text,
+        'Errands\n☐ Buy oats\n☐ Buy milk\n☐ Call mum',
+        reason: device.name,
+      );
+      expect(device.library.index.entries, hasLength(3), reason: device.name);
+      for (final e in device.library.index.entries) {
+        final line = lines[taskLineIndex(doc, lines, e.anchor)];
+        expect(
+          e.words.v,
+          wordsDigest(doc.text.substring(line.textStart, line.end)),
+        );
+      }
+    }
+    expect(
+      phone.library.index.entries.map((e) => e.id).toSet(),
+      laptop.library.index.entries.map((e) => e.id).toSet(),
+    );
+    expect(
+      stored(laptop).entries
+          .where((e) => e.value.record.payload != null)
+          .map((e) => e.key)
+          .toSet(),
+      laptop.library.index.entries.map((e) => e.id).toSet(),
+    );
+    laptop.signOut();
+    phone.signOut();
   });
 }

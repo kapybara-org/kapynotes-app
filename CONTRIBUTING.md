@@ -17,8 +17,7 @@ flutter analyze
 flutter test
 ```
 
-Both run in CI on every push and pull request. Windows builds on every branch;
-macOS builds too.
+Both run in CI on every pull request and on pushes to main and release/**.
 
 The golden tests under `test/goldens/` render with macOS system fonts, so they
 only pass on macOS. If you are on Linux or Windows, run

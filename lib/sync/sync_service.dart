@@ -1800,7 +1800,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         // its history is what arrives here. Ours is discarded before
         // anything merges, or the same words would land twice under two
         // sets of ids. The local text is reconciled onto theirs afterwards.
-        record.doc = NoteDoc(replica: _docs.replica);
+        record.doc = NoteDoc.after(record.doc);
         record.outbox.removeWhere((entry) => !entry.inFlight);
         record.deviceSeq = 0;
         record.offline = false;
