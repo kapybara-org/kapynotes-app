@@ -12,6 +12,7 @@ import 'audio/voice_player.dart';
 import 'data/voice_prefs.dart';
 import 'speech/apple_summarizer.dart';
 import 'speech/apple_transcriber.dart';
+import 'speech/cloud_access.dart';
 import 'speech/cloud_summarizer.dart';
 import 'speech/cloud_transcriber.dart';
 import 'speech/gemma_summarizer.dart';
@@ -165,6 +166,11 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// settings has to say whether this machine can do it, and why not.
   DeviceTranscriber? _deviceTranscriber;
 
+  /// Which of the two engines the plan lets each saved choice use. Read by
+  /// both routers and the queue, so the free plan runs here without the
+  /// setting itself ever changing.
+  CloudAccess? _cloudAccess;
+
   /// Held separately from [_deviceSummarizer] because it is the one that owns
   /// memory: it has to be told when the app goes away.
   GemmaSummarizer? _gemma;
@@ -230,7 +236,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _gemma = GemmaSummarizer(models: _localModels!);
     _deviceSummarizer = DeviceSummarizer([AppleSummarizer(), _gemma!]);
     _summarizer = RoutingSummarizer(
-      engineOf: () => _voicePrefs?.summaryEngine ?? SummaryEngine.cloud,
+      engineOf: () => _cloudAccess?.summaries.engine ?? SummaryEngine.cloud,
       cloud: CloudSummarizer(() => widget.account?.speech),
       device: _deviceSummarizer!,
     );
@@ -245,8 +251,14 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         language: () => _voicePrefs?.language,
       ),
     ]);
+    _cloudAccess = CloudAccess(
+      prefs: _voicePrefs!,
+      device: _deviceTranscriber!,
+      billing: widget.account?.billing,
+    );
     _transcriber = RoutingTranscriber(
-      engineOf: () => _voicePrefs?.transcriptEngine ?? TranscriptEngine.cloud,
+      engineOf: () =>
+          _cloudAccess?.transcription.engine ?? TranscriptEngine.cloud,
       cloud: CloudTranscriber(
         () => widget.account?.speech,
         model: () =>
@@ -260,6 +272,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       notes: widget.notes,
       blobs: widget.notes.blobs,
       prefs: _voicePrefs!,
+      cloudAccess: _cloudAccess,
       api: () => widget.account?.speech,
       summarizer: () => _summarizer,
       transcriber: () => _transcriber,
@@ -438,6 +451,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _transcriptionTimer?.cancel();
     _tempSweepTimer?.cancel();
     _transcriptions?.dispose();
+    _cloudAccess?.dispose();
     _voicePrefs?.dispose();
     _localModels?.dispose();
     unawaited(_gemma?.unload() ?? Future<void>.value());

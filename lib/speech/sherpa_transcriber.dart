@@ -58,6 +58,11 @@ class SherpaTranscriber implements Transcriber {
   @override
   Future<TranscriberReadiness> readiness() async {
     if (!isPossibleHere) return TranscriberReadiness.unsupported;
+    // A language the model never learned is not a download away.
+    final language = _language();
+    if (language != null && !_model.languages.contains(language)) {
+      return TranscriberReadiness.unsupported;
+    }
     // The catalogue is the app's; whether the bytes are here is the disk's.
     // Asked every time rather than cached because the user can delete a model
     // from the pane this readiness is being drawn in.
