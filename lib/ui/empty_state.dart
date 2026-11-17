@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/editor_font.dart';
 import '../core/theme.dart';
 import 'app_logo.dart';
+import 'keycap.dart';
 
 /// Shown in the main pane when there is no note to edit.
 class EmptyState extends StatelessWidget {
@@ -53,14 +54,22 @@ class EmptyState extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              ['Start one with New drawing', ?shortcut].join(' or '),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: AppTypeScale.small,
-                fontWeight: FontWeight.w500,
-                color: palette.textTertiary,
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 5,
+              children: [
+                Text(
+                  shortcut == null
+                      ? 'Start one with New drawing'
+                      : 'Start one with New drawing or',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.small,
+                    fontWeight: FontWeight.w500,
+                    color: palette.textTertiary,
+                  ),
+                ),
+                if (shortcut case final shortcut?) Keycap(shortcut),
+              ],
             ),
           ],
         ),

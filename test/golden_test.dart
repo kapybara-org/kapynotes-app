@@ -11,6 +11,7 @@ import 'package:http/testing.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
+import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -75,6 +76,10 @@ Future<void> pumpForGolden(
   bool firstRun = false,
   bool sidebarVisible = true,
   bool withPinnedNote = false,
+
+  /// Drawings in the store, the newest pinned, for the Drawings space.
+  bool withDrawings = false,
+  bool cards = true,
 
   /// Which build the image is of.
   ///
@@ -197,6 +202,8 @@ Future<void> pumpForGolden(
   // opened at least once. A new install starts with it closed, which is what
   // the first-launch images ask for.
   if (prefs.sidebarVisible != sidebarVisible) prefs.toggleSidebar();
+  prefs.noteCards = cards;
+  if (withDrawings) _seedDrawings(notes);
   if (withNote) {
     final note = notes.create();
     if (withImages) {
@@ -235,6 +242,71 @@ Future<void> pumpForGolden(
       tester.element(find.byType(KapyNotesApp)),
     ),
   );
+  await tester.pumpAndSettle();
+}
+
+/// Five drawings, the first pinned: boxes, an arrow, a scribble and a word,
+/// in the swatches the colour popover offers.
+void _seedDrawings(NotesStore notes) {
+  const titles = [
+    'Q4 goals map',
+    'App wireframe',
+    'Onboarding flow',
+    'Living room',
+    'Garden plan',
+  ];
+  for (final (seed, title) in titles.indexed) {
+    var z = 0;
+    DrawElement element(
+      DrawKind kind,
+      List<double> points, {
+      int? color,
+      double width = 3,
+      String text = '',
+    }) => DrawElement(
+      id: '$seed-$z',
+      kind: kind,
+      points: points,
+      z: z++,
+      color: color,
+      width: width,
+      text: text,
+    );
+    final note = notes.create();
+    notes.setDrawingMode(note.id, drawing: true);
+    notes.updateDrawing(
+      note.id,
+      NoteDrawing([
+        element(DrawKind.rect, [40, 40, 260, 160]),
+        element(DrawKind.ellipse, [320, 60, 460, 170], color: 0xFF6F8F52),
+        element(DrawKind.arrow, [260, 100, 320, 110]),
+        element(DrawKind.text, [60, 80], text: seed.isEven ? 'Idea' : 'Herbs'),
+        element(
+          DrawKind.pen,
+          [
+            for (var i = 0; i < 30; i++) ...[
+              60.0 + i * 12,
+              240 + (i % 5) * 8.0,
+            ],
+          ],
+          color: 0xFF3F8796,
+          width: 4,
+        ),
+        if (seed.isOdd)
+          element(DrawKind.ellipse, [120, 260, 220, 330], color: 0xFFD0663B),
+      ]),
+      title: title,
+    );
+    if (seed == titles.length - 1) notes.togglePinned(note.id);
+  }
+}
+
+/// Opens Drawings from the rail, and [open] from its list when given.
+Future<void> _openDrawings(WidgetTester tester, {String? open}) async {
+  await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+  await tester.pumpAndSettle();
+  if (open == null) return;
+  await tester.tap(find.text(open).first);
   await tester.pumpAndSettle();
 }
 
@@ -680,6 +752,68 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_empty.png'),
+    );
+  });
+
+  testWidgets('desktop dark drawings', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1100, 720),
+      brightness: Brightness.dark,
+      withNote: false,
+      withDrawings: true,
+    );
+    await _openDrawings(tester, open: 'Garden plan');
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_drawings.png'),
+    );
+  });
+
+  testWidgets('desktop light drawings with the colour popover', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1100, 720),
+      brightness: Brightness.light,
+      withNote: false,
+      withDrawings: true,
+    );
+    await _openDrawings(tester, open: 'Garden plan');
+    await tester.tap(find.byKey(const ValueKey('draw-style')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_light_drawings_style.png'),
+    );
+  });
+
+  testWidgets('desktop dark drawings list', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1100, 720),
+      brightness: Brightness.dark,
+      withNote: false,
+      withDrawings: true,
+      cards: false,
+    );
+    await _openDrawings(tester, open: 'Garden plan');
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_drawings_list.png'),
+    );
+  });
+
+  testWidgets('desktop dark drawings, none yet and none open', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1100, 720),
+      brightness: Brightness.dark,
+      withNote: false,
+    );
+    await _openDrawings(tester);
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_drawings_empty.png'),
     );
   });
 
