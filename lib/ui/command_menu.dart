@@ -10,9 +10,10 @@ import '../data/notes_store.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/task_board.dart';
 import 'keycap.dart';
+import 'notes_list.dart' show NotesShow;
 import 'settings_dialog.dart' show SettingsIndex, SettingsSection;
 import 'settings_search.dart';
-import 'sidebar.dart' show archiveIcon;
+import 'sidebar.dart' show archiveIcon, hiddenIcon;
 import 'sidebar_timestamp.dart';
 import 'spaces_rail.dart';
 import 'tasks/task_marks.dart';
@@ -56,6 +57,12 @@ class GoToChoice extends CommandChoice {
   final LibrarySpace space;
 }
 
+/// My notes with the filter on Hidden or Archive.
+class ShowNotesChoice extends CommandChoice {
+  const ShowNotesChoice(this.show);
+  final NotesShow show;
+}
+
 class OpenSettingsChoice extends CommandChoice {
   const OpenSettingsChoice();
 }
@@ -83,9 +90,10 @@ class SearchArchiveChoice extends CommandChoice {
 ///
 /// [space] is where it was opened from, which decides what New note's key
 /// says: in Tasks and Drawings that key makes a task or a drawing instead.
-/// [destinations] are the sections Go to lists, in order. Hidden notes are
-/// searched only while [hiddenUnlocked], and [tasks] is null where there is
-/// no task list to search or add to.
+/// [destinations] are the sections Go to lists, in order, before Hidden,
+/// listed only with [showHidden], and Archive. Hidden notes are searched
+/// only while [hiddenUnlocked], and [tasks] is null where there is no task
+/// list to search or add to.
 Future<CommandChoice?> showCommandMenu(
   BuildContext context, {
   required NotesStore notes,
@@ -96,6 +104,7 @@ Future<CommandChoice?> showCommandMenu(
   required DateTime Function(DateTime) displayTime,
   required String Function(Note) taskLabel,
   TaskBoard? tasks,
+  bool showHidden = false,
   bool hiddenUnlocked = false,
   SettingsHost? settingsIndex,
 }) {
@@ -112,6 +121,7 @@ Future<CommandChoice?> showCommandMenu(
       displayTime: displayTime,
       taskLabel: taskLabel,
       tasks: tasks,
+      showHidden: showHidden,
       hiddenUnlocked: hiddenUnlocked,
       settingsIndex: settingsIndex,
       onChosen: (choice) => Navigator.of(context).pop(choice),
@@ -131,6 +141,7 @@ class CommandMenu extends StatefulWidget {
     required this.taskLabel,
     required this.onChosen,
     this.tasks,
+    this.showHidden = false,
     this.hiddenUnlocked = false,
     this.settingsIndex,
   });
@@ -144,6 +155,7 @@ class CommandMenu extends StatefulWidget {
   final String Function(Note) taskLabel;
   final ValueChanged<CommandChoice> onChosen;
   final TaskBoard? tasks;
+  final bool showHidden;
   final bool hiddenUnlocked;
 
   /// Builds the invisible settings that lend their search index, so Settings
@@ -318,8 +330,6 @@ class _CommandMenuState extends State<CommandMenu> {
             LibrarySpace.tasks => KapyIcons.tasksOutlined,
             LibrarySpace.drawings => KapyIcons.penRounded,
             LibrarySpace.shared => KapyIcons.groupOutlined,
-            LibrarySpace.hidden => KapyIcons.lockRounded,
-            LibrarySpace.archive => archiveIcon,
           },
           title: space == LibrarySpace.notes ? 'Notes' : space.title,
           keycap: switch (space) {
@@ -327,11 +337,21 @@ class _CommandMenuState extends State<CommandMenu> {
             LibrarySpace.tasks => _keycap(ShortcutAction.showTasks),
             LibrarySpace.drawings => _keycap(ShortcutAction.showDrawings),
             LibrarySpace.shared => _keycap(ShortcutAction.showShared),
-            LibrarySpace.archive => _keycap(ShortcutAction.showArchive),
-            LibrarySpace.hidden => null,
           },
           choice: GoToChoice(space),
         ),
+      if (widget.showHidden)
+        const _Line.row(
+          icon: hiddenIcon,
+          title: 'Hidden',
+          choice: ShowNotesChoice(NotesShow.hidden),
+        ),
+      _Line.row(
+        icon: archiveIcon,
+        title: 'Archive',
+        keycap: _keycap(ShortcutAction.showArchive),
+        choice: const ShowNotesChoice(NotesShow.archive),
+      ),
       _Line.row(
         icon: KapyIcons.settingsGearOutlined,
         title: 'Settings',

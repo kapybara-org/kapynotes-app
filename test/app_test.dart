@@ -24,6 +24,7 @@ import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/speech/transcriber.dart';
@@ -49,6 +50,7 @@ import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_swipe.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
+import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/page_card.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/toolbar.dart';
@@ -262,6 +264,14 @@ Future<void> pickPageAction(WidgetTester tester, String value) async {
   await tester.pumpAndSettle();
 }
 
+/// Chooses [show] in the notes filter over the list.
+Future<void> showInFilter(WidgetTester tester, NotesShow show) async {
+  await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(ValueKey('notes-filter-${show.name}')));
+  await tester.pumpAndSettle();
+}
+
 Future<void> openNoteActions(WidgetTester tester, String noteId) async {
   final mouse = await hoverNote(tester, noteId);
   await tester.tap(find.byKey(ValueKey('note-actions-$noteId')));
@@ -456,6 +466,372 @@ void main() {
     expect(home.account, isNull);
     expect(home.tags, same(relaunched));
     expect(relaunched.tagsOf(note.id).map((t) => t.name.v), ['Travel']);
+  });
+
+  group('tags', () {
+    late TagStore tags;
+
+    setUp(() async {
+      tags = TagStore(store);
+      await tags.load();
+    });
+
+    List<String> namesOn(String noteId) => [
+      for (final tag in tags.tagsOf(noteId)) tag.name.v,
+    ];
+
+    Future<void> openPicker(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('note-add-tag')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> typeAndEnter(WidgetTester tester, String text) async {
+      await tester.enterText(
+        find.byKey(const ValueKey('tag-picker-field')),
+        text,
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> openTagsFilter(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
+      await tester.pumpAndSettle();
+    }
+
+    String countOn(WidgetTester tester, Tag tag) => tester
+        .widget<Text>(
+          find
+              .descendant(
+                of: find.byKey(ValueKey('tag-filter-${tag.id}')),
+                matching: find.byType(Text),
+              )
+              .last,
+        )
+        .data!;
+
+    testWidgets('+ Tag creates a tag, and its name in another case picks it', (
+      tester,
+    ) async {
+      final note = notes.create(body: 'Trip to Kochi');
+      await pumpApp(tester, tags: tags);
+      await openPicker(tester);
+      await typeAndEnter(tester, 'Travel');
+      expect(namesOn(note.id), ['Travel']);
+
+      tags.removeTag(note.id, tags.tags.single.id);
+      await tester.pumpAndSettle();
+      await typeAndEnter(tester, 'TRAVEL');
+      expect(tags.tags, hasLength(1));
+      expect(namesOn(note.id), ['Travel']);
+    });
+
+    testWidgets('a name past 32 characters stops at 32', (tester) async {
+      final note = notes.create(body: 'Long names');
+      await pumpApp(tester, tags: tags);
+      await openPicker(tester);
+      await typeAndEnter(tester, 'x' * 33);
+      expect(namesOn(note.id), ['x' * 32]);
+    });
+
+    testWidgets('a note takes at most 20 tags, and says so', (tester) async {
+      final note = notes.create(body: 'Busy');
+      tags.setTags(note.id, [
+        for (var i = 0; i < noteTagsMax; i++) tags.create('tag $i')!.id,
+      ]);
+      await pumpApp(tester, tags: tags);
+      await openPicker(tester);
+      await typeAndEnter(tester, 'One more');
+      expect(find.text('A note takes at most 20 tags.'), findsOneWidget);
+      expect(tags.tags.map((tag) => tag.name.v), isNot(contains('One more')));
+      expect(tags.tagsOf(note.id), hasLength(noteTagsMax));
+    });
+
+    testWidgets(
+      'while Hidden is locked, no count includes it and no tag gives it away',
+      (tester) async {
+        final hidden = notes.create(body: 'Private');
+        final open = notes.create(body: 'Public');
+        notes.hide(hidden.id);
+        prefs.load();
+        prefs.hiddenFolderVisible = true;
+        final work = tags.create('Work')!;
+        final secret = tags.create('Secret')!;
+        tags.addTag(open.id, work.id);
+        tags.addTag(hidden.id, work.id);
+        tags.addTag(hidden.id, secret.id);
+        await pumpApp(tester, tags: tags, hiddenNotesGate: _HiddenGate());
+
+        await openTagsFilter(tester);
+        expect(countOn(tester, work), '1');
+        expect(find.byKey(ValueKey('tag-filter-${secret.id}')), findsNothing);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        await openPicker(tester);
+        expect(find.byKey(ValueKey('tag-row-${secret.id}')), findsNothing);
+        await typeAndEnter(tester, 'secret');
+        expect(find.text('Create “secret”'), findsOneWidget);
+        expect(find.text(chooseAnotherName), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('tag-picker')),
+            matching: find.textContaining(
+              RegExp('hidden', caseSensitive: false),
+            ),
+          ),
+          findsNothing,
+        );
+        expect(namesOn(open.id), ['Work']);
+        expect(tags.tags, hasLength(2));
+        await tester.tapAt(const Offset(1000, 700));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('notes-filter-hidden')));
+        await tester.pumpAndSettle();
+        await openTagsFilter(tester);
+        expect(countOn(tester, work), '2');
+        expect(countOn(tester, secret), '1');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        await openPicker(tester);
+        expect(find.byKey(ValueKey('tag-row-${secret.id}')), findsOneWidget);
+        await typeAndEnter(tester, 'secret');
+        expect(find.text(chooseAnotherName), findsNothing);
+        expect(find.byKey(const ValueKey('tag-create')), findsNothing);
+        expect(tags.tags, hasLength(2));
+      },
+    );
+
+    testWidgets(
+      'a name a locked Hidden tag holds is refused like any other clash',
+      (tester) async {
+        final hidden = notes.create(body: 'Private');
+        notes.create(body: 'Public');
+        notes.hide(hidden.id);
+        prefs.load();
+        prefs.hiddenFolderVisible = true;
+        final work = tags.create('Work')!;
+        tags.create('Home');
+        final secret = tags.create('Secret')!;
+        tags.addTag(hidden.id, secret.id);
+        await pumpApp(tester, tags: tags, hiddenNotesGate: _HiddenGate());
+
+        Future<void> refuses(String name) async {
+          final hiddenText = find.textContaining('Hidden');
+          final shown = hiddenText.evaluate().length;
+          await tester.enterText(
+            find.byKey(const ValueKey('tag-name-field')),
+            name,
+          );
+          await tester.testTextInput.receiveAction(TextInputAction.done);
+          await tester.pumpAndSettle();
+          expect(
+            tester
+                .widget<Text>(find.byKey(const ValueKey('tag-name-refused')))
+                .data,
+            chooseAnotherName,
+            reason: name,
+          );
+          expect(hiddenText, findsExactly(shown), reason: name);
+        }
+
+        Future<void> rename(String moreKey) async {
+          await tester.tap(find.byKey(ValueKey(moreKey)));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('tag-action-rename')));
+          await tester.pumpAndSettle();
+        }
+
+        await openTagsFilter(tester);
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(mouse.removePointer);
+        await mouse.addPointer(
+          location: tester.getCenter(
+            find.byKey(ValueKey('tag-filter-${work.id}')),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await rename('tag-filter-more-${work.id}');
+        await refuses('secret');
+        await refuses('HOME');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        await openSettings(tester, section: SettingsSection.notes);
+        final row = find.byKey(ValueKey('settings-tag-${work.id}'));
+        await tester.ensureVisible(row);
+        await tester.pumpAndSettle();
+        await rename('settings-tag-more-${work.id}');
+        await refuses('Secret');
+        await refuses('home');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(row, findsOneWidget);
+        expect(find.byKey(const ValueKey('tag-name-field')), findsNothing);
+
+        await tester.tap(find.byKey(const ValueKey('settings-new-tag')));
+        await tester.pumpAndSettle();
+        await refuses('secret');
+        await refuses('Home');
+        expect(tags.tags.map((tag) => tag.name.v), ['Work', 'Home', 'Secret']);
+      },
+    );
+
+    testWidgets('a synced name arrives cut and sits on one line in Settings', (
+      tester,
+    ) async {
+      final long = Tag.fromPayload(
+        't1',
+        Tag(
+          id: 't1',
+          name: Stamped('W' * 40, 1),
+          colour: Stamped('teal', 1),
+          order: Stamped(0, 1),
+          createdAt: 1,
+        ).toPayload(),
+      )!;
+      tags.applyRemoteTag(long, 1);
+      await pumpApp(tester, tags: tags);
+      await openSettings(tester, section: SettingsSection.notes);
+
+      final name = find.descendant(
+        of: find.byKey(const ValueKey('settings-tag-t1')),
+        matching: find.text('W' * tagNameMax),
+      );
+      await tester.ensureVisible(name);
+      await tester.pumpAndSettle();
+      expect(name, findsOneWidget);
+      final text = tester.widget<Text>(name);
+      expect(text.maxLines, 1);
+      expect(text.overflow, TextOverflow.ellipsis);
+      expect(tester.getSize(name).height, lessThan(24));
+    });
+
+    testWidgets('ticked tags narrow the list, any or all', (tester) async {
+      final both = notes.create(body: 'Both');
+      final workOnly = notes.create(body: 'Work only');
+      notes.create(body: 'Bare');
+      final work = tags.create('Work')!;
+      final home = tags.create('Home')!;
+      tags.setTags(both.id, [work.id, home.id]);
+      tags.setTags(workOnly.id, [work.id]);
+      await pumpApp(tester, tags: tags);
+
+      String count() => spaceCount(tester)!;
+      expect(count(), contains('3'));
+      await openTagsFilter(tester);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('tag-filter-none')),
+          matching: find.text('1'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(ValueKey('tag-filter-${work.id}')));
+      await tester.pumpAndSettle();
+      expect(count(), contains('2'));
+      expect(find.byKey(const ValueKey('tag-filter-any')), findsNothing);
+      await tester.tap(find.byKey(ValueKey('tag-filter-${home.id}')));
+      await tester.pumpAndSettle();
+      expect(count(), contains('2'));
+      expect(find.byKey(const ValueKey('tag-filter-any')), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('notes-filter-tags-ticked')),
+            )
+            .data,
+        '2',
+      );
+      await tester.tap(find.byKey(const ValueKey('tag-filter-all')));
+      await tester.pumpAndSettle();
+      expect(count(), contains('1'));
+      await tester.tap(find.byKey(const ValueKey('tag-filter-none')));
+      await tester.pumpAndSettle();
+      expect(count(), contains('2'));
+    });
+
+    testWidgets('delete asks once, and Undo puts the tag back in place', (
+      tester,
+    ) async {
+      final note = notes.create(body: 'Plans');
+      final ideas = tags.create('Ideas')!;
+      final work = tags.create('Work')!;
+      tags.setTags(note.id, [ideas.id, work.id]);
+      await pumpApp(tester, tags: tags);
+
+      unawaited(
+        deleteTag(tester.element(find.byType(HomePage)), tags, (
+          tag: ideas,
+          count: 1,
+        )),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Delete “Ideas”?'), findsOneWidget);
+      expect(
+        find.textContaining("It's on 1 note. The notes stay as they are"),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('tag-delete-confirm')));
+      await tester.pumpAndSettle();
+      expect(namesOn(note.id), ['Work']);
+      expect(find.text('Deleted “Ideas”'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(namesOn(note.id), ['Ideas', 'Work']);
+    });
+
+    testWidgets('Settings › Notes › Tags lists, creates and renames tags', (
+      tester,
+    ) async {
+      final first = notes.create(body: 'One');
+      final second = notes.create(body: 'Two');
+      final work = tags.create('Work')!;
+      tags.addTag(first.id, work.id);
+      tags.addTag(second.id, work.id);
+      await pumpApp(tester, tags: tags);
+      await openSettings(tester, section: SettingsSection.notes);
+
+      final row = find.byKey(ValueKey('settings-tag-${work.id}'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: row, matching: find.text('2 notes')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(ValueKey('settings-tag-more-${work.id}')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('tag-action-rename')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('tag-name-field')),
+        'Office',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(tags.byId(work.id)!.name.v, 'Office');
+
+      await tester.tap(find.byKey(const ValueKey('settings-new-tag')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('tag-name-field')),
+        'office',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(tags.tags, hasLength(1));
+    });
   });
 
   testWidgets('opens on the empty state and builds a note from it', (
@@ -2975,8 +3351,7 @@ void main() {
       final blank = notes.notes.first;
       notes.archive(blank.id);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('rail-archive')));
-      await tester.pumpAndSettle();
+      await showInFilter(tester, NotesShow.archive);
       final made = notes.notes.length;
 
       // Asking for a new note from inside the archive leaves the archive, so
@@ -3091,7 +3466,16 @@ void main() {
 
     expect(rowTitles(), ['Older', 'Latest']);
     expect(notes.notes.map((note) => note.id), ['older', 'latest']);
-    expect(find.text('Today · 09:10'), findsOneWidget);
+    expect(
+      tester
+          .widget<NoteCardFace>(
+            find.byWidgetPredicate(
+              (widget) => widget is NoteCardFace && widget.note.id == 'older',
+            ),
+          )
+          .date,
+      'Today, 09:10',
+    );
   });
 
   testWidgets('pins notes into a top section and allows unpinning', (
@@ -3159,8 +3543,7 @@ void main() {
     expect(find.widgetWithText(NoteRow, 'Third'), findsNothing);
     expect(find.byType(NoteEditor), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('rail-archive')));
-    await tester.pumpAndSettle();
+    await showInFilter(tester, NotesShow.archive);
     expect(find.widgetWithText(NoteRow, 'Third'), findsOneWidget);
 
     await openNoteActions(tester, third.id);
@@ -3185,7 +3568,6 @@ void main() {
         ShortcutAction.toggleHiddenFolder,
       )!;
       expect(prefs.hiddenFolderVisible, isTrue);
-      expect(find.byKey(const ValueKey('rail-hidden')), findsNothing);
 
       await openNoteActions(tester, private.id);
       await tester.tap(find.byKey(ValueKey('hide-note-${private.id}')));
@@ -3194,65 +3576,43 @@ void main() {
       expect(notes.hiddenNotes.single.id, private.id);
       expect(notes.search('Private'), isEmpty);
       expect(
-        find.text('Moved to Hidden Notes. Open Hidden Notes from the sidebar.'),
-        findsOneWidget,
-      );
-      expect(find.byKey(const ValueKey('rail-hidden')), findsOneWidget);
-
-      await pressShortcut(tester, hiddenShortcut);
-      expect(gate.unlockCalls, 0, reason: 'the shortcut only hides the row');
-      expect(prefs.hiddenFolderVisible, isFalse);
-      expect(find.byKey(const ValueKey('rail-hidden')), findsNothing);
-
-      await pressShortcut(tester, hiddenShortcut);
-      expect(prefs.hiddenFolderVisible, isTrue);
-      expect(find.byKey(const ValueKey('rail-hidden')), findsOneWidget);
-      expect(
-        find.byTooltip('Hidden Notes · ${hiddenShortcut.displayLabel}'),
-        findsOneWidget,
-      );
-      expect(
-        tester.getTopLeft(find.byKey(const ValueKey('rail-hidden'))).dy,
-        lessThan(
-          tester.getTopLeft(find.byKey(const ValueKey('rail-archive'))).dy,
+        find.text(
+          'Moved to Hidden Notes. Press ${hiddenShortcut.displayLabel} to '
+          'find it.',
         ),
+        findsOneWidget,
       );
-      await tester.tap(find.byKey(const ValueKey('rail-hidden')));
-      await tester.pumpAndSettle();
+
+      // The shortcut opens Notes with Hidden chosen, behind the gate.
+      await pressShortcut(tester, hiddenShortcut);
       expect(gate.unlockCalls, 1);
-      // The rail names the folder; the bar over the list counts what is in it.
       expect(spaceTitle(tester), 'Hidden');
       expect(spaceCount(tester), '1');
       expect(find.widgetWithText(NoteRow, 'Private note'), findsOneWidget);
       expect(openNoteBody(tester), 'Private note');
+      expect(
+        find.byKey(const ValueKey('sidebar-hidden-locks-again')),
+        findsOneWidget,
+      );
 
-      await tester.tap(find.byKey(const ValueKey('rail-notes')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('rail-hidden')));
-      await tester.pumpAndSettle();
+      // Pressed again, it leaves Hidden, and Hidden locks behind it.
+      await pressShortcut(tester, hiddenShortcut);
+      expect(find.widgetWithText(NoteRow, 'Private note'), findsNothing);
+      await showInFilter(tester, NotesShow.hidden);
       expect(gate.unlockCalls, 2, reason: 'entering again must authenticate');
+      expect(find.widgetWithText(NoteRow, 'Private note'), findsOneWidget);
 
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       await tester.pumpAndSettle();
       expect(find.widgetWithText(NoteRow, 'Private note'), findsNothing);
-      expect(find.byKey(const ValueKey('rail-hidden')), findsOneWidget);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
-
-      await pressShortcut(tester, hiddenShortcut);
-      expect(find.byKey(const ValueKey('rail-hidden')), findsNothing);
-      expect(gate.unlockCalls, 2, reason: 'hiding the row must not enter it');
-      await pressShortcut(tester, hiddenShortcut);
-      expect(find.byKey(const ValueKey('rail-hidden')), findsOneWidget);
-      expect(
-        gate.unlockCalls,
-        2,
-        reason: 'revealing the row must not enter it',
-      );
+      expect(find.widgetWithText(NoteRow, 'Private note'), findsNothing);
+      expect(gate.unlockCalls, 2);
     },
   );
 
-  testWidgets('desktop Settings can reveal Hidden Notes in the sidebar', (
+  testWidgets('desktop Settings can list Hidden in the notes filter', (
     tester,
   ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
@@ -3265,7 +3625,11 @@ void main() {
     await pumpApp(tester);
 
     expect(prefs.hiddenFolderVisible, isFalse);
-    expect(find.byKey(const ValueKey('rail-hidden')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('notes-filter-hidden')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('notes-filter-all')));
+    await tester.pumpAndSettle();
 
     await openSettings(tester, section: SettingsSection.notes);
     final toggle = find.byKey(const ValueKey('hidden-notes-sidebar-toggle'));
@@ -3283,7 +3647,7 @@ void main() {
       find.descendant(
         of: toggle,
         matching: find.textContaining(
-          shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)!.displayLabel,
+          shortcuts.bindingFor(ShortcutAction.toggleHiddenFolder)!.keycapLabel,
         ),
       ),
       findsOneWidget,
@@ -3294,7 +3658,9 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('settings-done')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('rail-hidden')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('notes-filter-hidden')), findsOneWidget);
   });
 
   testWidgets('system image UI does not close an unlocked hidden note', (
@@ -3314,8 +3680,7 @@ void main() {
       },
     );
 
-    await tester.tap(find.byKey(const ValueKey('rail-hidden')));
-    await tester.pumpAndSettle();
+    await showInFilter(tester, NotesShow.hidden);
     expect(openNoteBody(tester), 'Private note');
 
     await pressShortcut(
@@ -3480,8 +3845,7 @@ void main() {
     final gate = _HiddenGate(allowUnlock: false);
     await pumpApp(tester, hiddenNotesGate: gate);
 
-    await tester.tap(find.byKey(const ValueKey('rail-hidden')));
-    await tester.pumpAndSettle();
+    await showInFilter(tester, NotesShow.hidden);
 
     expect(gate.unlockCalls, 1);
     expect(find.widgetWithText(NoteRow, 'Still private'), findsNothing);
@@ -3681,8 +4045,7 @@ void main() {
         notes.archive(note.id);
       }
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('rail-archive')));
-      await tester.pumpAndSettle();
+      await showInFilter(tester, NotesShow.archive);
       await tester.tap(find.widgetWithText(NoteRow, 'Third'));
       await tester.pumpAndSettle();
 
@@ -3782,7 +4145,7 @@ void main() {
         'Second',
         'First',
       ]);
-      expect(find.text('Note moved to Archived Notes'), findsNothing);
+      expect(find.text('Moved to Archive'), findsNothing);
     });
 
     testWidgets('archives the clicked note with Cmd+Delete, and the next one '
@@ -3794,7 +4157,7 @@ void main() {
       await chord(tester);
 
       expect(notes.archivedNotes.single.title, 'Third');
-      expect(find.text('Note moved to Archived Notes'), findsOneWidget);
+      expect(find.text('Moved to Archive'), findsOneWidget);
 
       // The list keeps the keyboard: archiving the open note hands the caret
       // to the note that takes its place, and the next press must still be
@@ -3936,8 +4299,7 @@ void main() {
         notes.archive(note.id);
       }
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('rail-archive')));
-      await tester.pumpAndSettle();
+      await showInFilter(tester, NotesShow.archive);
 
       await tester.tap(find.widgetWithText(NoteRow, 'Third'));
       await tester.pumpAndSettle();
@@ -4022,8 +4384,7 @@ void main() {
         notes.archive(note.id);
       }
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('rail-archive')));
-      await tester.pumpAndSettle();
+      await showInFilter(tester, NotesShow.archive);
       return notes.archivedNotes;
     }
 
@@ -4032,15 +4393,17 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('the way into the archive is named under its box', (
+    testWidgets('the way into the archive is named beside its box', (
       tester,
     ) async {
       await pumpApp(tester);
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.pumpAndSettle();
 
-      // A bare box once sent people looking for a delete, so the word under
-      // it is what this pins, beside the icon every archive action shares.
-      final entry = find.byKey(const ValueKey('rail-archive'));
+      // A bare box once sent people looking for a delete, so the word beside
+      // it is what this pins, with the icon every archive action shares.
+      final entry = find.byKey(const ValueKey('notes-filter-archive'));
       expect(entry, findsOneWidget);
       expect(
         find.descendant(of: entry, matching: find.text('Archive')),
@@ -4164,8 +4527,7 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('rail-notes')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('rail-archive')));
-      await tester.pumpAndSettle();
+      await showInFilter(tester, NotesShow.archive);
 
       // Back to opening notes, with nothing held over from last time.
       expect(find.text('1 selected'), findsNothing);
@@ -5118,19 +5480,33 @@ void main() {
       await notes.load();
       notes.create(body: 'Words');
       await pumpApp(tester);
-      expect(
-        find.byKey(const ValueKey('sidebar-media-filter')),
-        findsOneWidget,
-      );
+      Future<Finder> openFilter() async {
+        await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tester.pumpAndSettle();
+        return find.byKey(const ValueKey('media-filter-voice'));
+      }
+
+      Future<void> closeFilter() async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+      }
+
+      expect(await openFilter(), findsOneWidget);
+      await closeFilter();
 
       await openSpace(tester, 'drawings');
-      expect(find.byKey(const ValueKey('sidebar-media-filter')), findsNothing);
-
-      await openSpace(tester, 'notes');
+      expect(await openFilter(), findsNothing);
       expect(
-        find.byKey(const ValueKey('sidebar-media-filter')),
+        find.descendant(
+          of: find.byKey(const ValueKey('notes-filter-all')),
+          matching: find.text('All drawings'),
+        ),
         findsOneWidget,
       );
+      await closeFilter();
+
+      await openSpace(tester, 'notes');
+      expect(await openFilter(), findsOneWidget);
     });
 
     testWidgets('Drawings says so while there are none', (tester) async {
@@ -5144,7 +5520,7 @@ void main() {
       expect(spaceCount(tester), '0');
     });
 
-    testWidgets('the archive opens from the rail, and Notes leaves it', (
+    testWidgets('the archive opens from the filter, and its ✕ leaves it', (
       tester,
     ) async {
       await notes.load();
@@ -5153,16 +5529,13 @@ void main() {
       notes.archive(done.id);
       await pumpApp(tester);
 
-      await openSpace(tester, 'archive');
+      await showInFilter(tester, NotesShow.archive);
       expect(rowTitles(tester), ['Done with']);
       expect(spaceTitle(tester), 'Archive');
       expect(spaceCount(tester), '1');
-      expect(
-        tester.getSemantics(find.byKey(const ValueKey('rail-archive'))),
-        isSemantics(isSelected: true),
-      );
 
-      await openSpace(tester, 'notes');
+      await tester.tap(find.byKey(const ValueKey('sidebar-filter-clear')));
+      await tester.pumpAndSettle();
       expect(rowTitles(tester), ['Kept']);
       expect(spaceTitle(tester), 'My notes');
       expect(
@@ -5229,7 +5602,7 @@ void main() {
           ),
         ]);
         await pumpApp(tester);
-        final filter = find.byKey(const ValueKey('sidebar-media-filter'));
+        final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
         Future<void> tick(String kind) async {
           await tester.tap(find.byKey(ValueKey('media-filter-$kind')));
           await tester.pumpAndSettle();
@@ -5254,7 +5627,7 @@ void main() {
         await tick('all');
         expect(rowTitles(tester).toSet(), {'Groceries', 'Floor plan'});
         expect(
-          find.descendant(of: filter, matching: find.text('All media')),
+          find.descendant(of: filter, matching: find.text('All notes')),
           findsOneWidget,
         );
         expect(spaceCount(tester), '2');
