@@ -523,7 +523,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('Adding image…'), findsOneWidget);
-    expect(find.byKey(const ValueKey('insert-image-progress')), findsOneWidget);
 
     ingest.complete(ImageBatch(images: [at(0)], rejections: const []));
     await tester.pump();
@@ -531,7 +530,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('Image added'), findsOneWidget);
-    expect(find.byKey(const ValueKey('insert-image-progress')), findsNothing);
     expect(find.byType(NoteImageView), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 2));
@@ -846,14 +844,14 @@ void main() {
     });
   });
 
-  testWidgets('the video footer action inserts a playable video block', (
-    tester,
-  ) async {
+  testWidgets('adding a video inserts a playable video block', (tester) async {
     var opened = 0;
+    final editorKey = GlobalKey<NoteEditorState>();
     await tester.pumpWidget(
       harness(
         'a note',
         attachments: const [],
+        editorKey: editorKey,
         videoAcquirer: () async {
           opened++;
           return [XFile.fromData(Uint8List(0), name: 'clip.mp4')];
@@ -864,7 +862,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('insert-video')));
+    unawaited(editorKey.currentState!.pickAndInsertVideos());
     await tester.pumpAndSettle();
 
     expect(opened, 1);
@@ -875,10 +873,12 @@ void main() {
   testWidgets('a Pro-sized video rejection names the 100 MB ceiling', (
     tester,
   ) async {
+    final editorKey = GlobalKey<NoteEditorState>();
     await tester.pumpWidget(
       harness(
         'a note',
         attachments: const [],
+        editorKey: editorKey,
         videoAttachmentMaxBytes: () => proAttachmentMaxBytes,
         videoAcquirer: () async => [
           XFile.fromData(Uint8List(0), name: 'large.mp4'),
@@ -891,7 +891,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('insert-video')));
+    unawaited(editorKey.currentState!.pickAndInsertVideos());
     await tester.pumpAndSettle();
 
     expect(find.textContaining('100 MB attachment limit'), findsOneWidget);
@@ -2145,7 +2145,7 @@ void main() {
     }, variant: windows);
   });
 
-  testWidgets("the selection toolbar's Copy copies the fragment", (
+  testWidgets("the selection menu's Copy copies a markdown note's fragment", (
     tester,
   ) async {
     final clipboard = FakeClipboard();
@@ -2154,6 +2154,7 @@ void main() {
       harness(
         'Select this text',
         attachments: const [],
+        markdownEnabled: true,
         clipboard: clipboard,
         images: immediateStore,
         editorKey: editorKey,
@@ -2171,7 +2172,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('selection-copy')));
+    tester.state<EditableTextState>(find.byType(EditableText)).showToolbar();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('editor-context-action-Copy')));
     await tester.runAsync(
       () => clipboard.waitForWrite().timeout(const Duration(seconds: 1)),
     );

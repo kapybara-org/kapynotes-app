@@ -89,7 +89,8 @@ import 'remote_carets.dart';
 import 'inline_results.dart';
 import 'results_gutter.dart';
 import 'scroll_passthrough.dart';
-import 'selection_formatting_toolbar.dart';
+import 'editor_context_menu.dart';
+import 'selection_bubble.dart';
 import 'slash_command_menu.dart';
 import 'slash_commands.dart';
 import '../../sync/presence.dart';
@@ -467,6 +468,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   late final _DailySeparatorFormatter _dailySeparatorFormatter;
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
+
+  /// A right-click selects the word under it on macOS, and that selection
+  /// is for the menu it opens, not for the bubble.
+  bool _rightClicked = false;
   Timer? _pasteOfferTimer;
 
   /// How many of the editor's edit menus are on screen. A count rather than a
@@ -511,6 +516,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   final SlashCommandMenuController _slashCommandMenu =
       SlashCommandMenuController();
+  final _selectionBubble = SelectionBubbleController();
   TextRange? _slashCommandRange;
   bool _slashCommandWasTyped = false;
   TextEditingValue? _manualSlashMenuValue;
@@ -730,6 +736,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     LinkPopover.hide();
     KeywordTooltip.hide();
     _slashCommandMenu.dispose();
+    _selectionBubble.dispose();
     _controller.removeListener(_onControllerChanged);
     _focusNode.removeListener(_handleFocusChanged);
     _scrollController.removeListener(_handleEditorScroll);
@@ -780,6 +787,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _handleEditorScroll() {
     LinkPopover.hide();
     _slashCommandMenu.hide();
+    _selectionBubble.hide();
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
     _syncTableCellEditorPosition();
@@ -1223,7 +1231,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _lastValue = value;
       if (!selectionChanged) return;
       if (_collapseLineTerminatorSelection(value.selection)) return;
-      if (_keepCaretBesideTitle(value.selection)) return;
       // Tables draw as a grid with the setting off too, so this is not
       // inside the markdown branch below.
       if (_keepCaretOutOfTable(previous.selection, value.selection)) return;
@@ -3294,7 +3301,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         _ => 'This command',
       };
 
-  Future<bool> _confirmMarkdownFor(SlashCommandType command) async {
+  Future<bool> _confirmMarkdown(String feature) async {
     final canEnable = widget.onMarkdownEnabledChanged != null;
     final accepted = await showDialog<bool>(
       context: context,
@@ -3303,7 +3310,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 390),
           child: Text(
-            '${_markdownFeatureName(command)} use Markdown. Turning it on '
+            '$feature use Markdown. Turning it on '
             'changes how Markdown syntax is displayed in every note. Your '
             'text stays unchanged.',
             style: TextStyle(
@@ -3352,7 +3359,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
     var markdown = widget.markdownEnabled;
     if (_requiresMarkdown(choice.type) && !markdown) {
-      markdown = await _confirmMarkdownFor(choice.type);
+      markdown = await _confirmMarkdown(_markdownFeatureName(choice.type));
       if (!markdown || !mounted) {
         if (typed) _dismissedSlashStart = range.start;
         return;
@@ -3580,7 +3587,24 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// reach for, but a panel that outlives the caret it was raised next to is
   /// wrong whichever key moved it.
   KeyEventResult _handleEditorKey(FocusNode node, KeyEvent event) {
-    if (_slashCommandMenu.handleKeyEvent(event)) {
+    if (_slashCommandMenu.handleKeyEvent(event) ||
+        _selectionBubble.handleKeyEvent(event)) {
+      return KeyEventResult.handled;
+    }
+    if (event is KeyDownEvent) _rightClicked = false;
+    // Link is only bound while words are selected; everywhere else its keys
+    // are left for whatever else wants them.
+    final selection = _controller.selection;
+    if (event is KeyDownEvent &&
+        !widget.readOnly &&
+        selection.isValid &&
+        !selection.isCollapsed &&
+        (widget.shortcuts
+                .bindingFor(ShortcutAction.formatLink)
+                ?.activator
+                .accepts(event, HardwareKeyboard.instance) ??
+            false)) {
+      unawaited(_startLink());
       return KeyEventResult.handled;
     }
     if (event is KeyDownEvent) {
@@ -3632,7 +3656,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _handlePointerDown(PointerDownEvent event) {
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
-    if (event.buttons & kSecondaryButton != 0) {
+    _selectionBubble.hide();
+    _rightClicked = event.buttons & kSecondaryButton != 0;
+    if (_rightClicked) {
       final editable = _fieldEditable();
       if (editable != null) {
         final offset = editable.getPositionForPoint(event.position).offset;
@@ -4002,6 +4028,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _keyboardRetryTimer?.cancel();
     // The menu the "+" opened holds the keyboard in its own search.
     if (!_slashCommandMenu.searching) _slashCommandMenu.hide();
+    // So does the bubble's address field.
+    if (!_selectionBubble.editingLink) _selectionBubble.hide();
     _kapyPeekIdleTimer?.cancel();
     _clearKeywordTooltip();
     _kapyPeekIdleTimer = null;
@@ -4434,47 +4462,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         ],
       );
     }
-    if (touch) {
-      return NoteEditorContextMenu(
-        anchors: editableTextState.contextMenuAnchors,
-        buttonItems: _touchSelectionItems(
-          editableTextState,
-          selection,
-          linkItems,
-        ),
-      );
-    }
-    return NoteSelectionFormattingToolbar(
-      editableTextState: editableTextState,
-      corrections: _spellingContextMenuItems(selection),
-      paragraphStyle: _activeParagraphStyle,
-      markdownHeadingLevel: widget.markdownEnabled
-          ? _markdownHeadingLevel
-          : null,
-      markdown: widget.markdownEnabled,
-      boldActive: _formatActive(NoteFormat.bold),
-      italicActive: _formatActive(NoteFormat.italic),
-      bulletsActive: _lineStyleActive(NoteLineStyle.bullet),
-      checklistActive: _lineStyleActive(NoteLineStyle.checklist),
-      onParagraphStylePressed: _cycleParagraphStyle,
-      onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
-      onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
-      onBulletsPressed: _toggleBullets,
-      onChecklistPressed: _toggleChecklist,
-      onOpenLink: link == null ? null : () => unawaited(_openLink(link)),
-      onCopyLink: link == null ? null : () => unawaited(_copyLink(link)),
-      onCopy: widget.images == null
-          ? null
-          : () => unawaited(_copyRichSelection(selection)),
-      // The same rule as the menu's Paste: through the editor wherever a
-      // picture could be on the clipboard, and the field's own paste where
-      // one could not.
-      onPaste: widget.images == null
-          ? null
-          : () => unawaited(handlePaste(SelectionChangedCause.toolbar)),
-      onPastePlainText: () =>
-          unawaited(_pastePlainText(SelectionChangedCause.toolbar)),
-      onCopyPlainText: () => unawaited(_copyPlainText(selection)),
+    return NoteEditorContextMenu(
+      anchors: editableTextState.contextMenuAnchors,
+      buttonItems: _selectionMenuItems(editableTextState, selection, linkItems),
     );
   }
 
@@ -4533,15 +4523,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     ];
   }
 
-  /// A phone's toolbar for selected text.
+  /// The menu for selected text, on a phone's toolbar or behind a
+  /// right-click.
   ///
-  /// Copy leads, followed by the platform's Cut and paste actions, because
-  /// copying is what a selection on a phone is usually for. The formatting
-  /// row a pointer gets had put Copy behind a More button. The rest follows in
-  /// the order the toolbar tucks it away: corrections, the platform's other
-  /// actions, the link, and the note's own formatting, which the footer's
-  /// writing tools also carry.
-  List<ContextMenuButtonItem> _touchSelectionItems(
+  /// Copy leads, followed by Cut and the paste actions, because copying is
+  /// what a selection is usually for. The rest follows in the order a phone's
+  /// toolbar tucks it away: corrections, the platform's other actions, the
+  /// link, and the note's own formatting, which the bubble also carries where
+  /// there is a pointer.
+  List<ContextMenuButtonItem> _selectionMenuItems(
     EditableTextState editableTextState,
     TextSelection selection,
     List<ContextMenuButtonItem> linkItems,
@@ -4976,27 +4966,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   ///
   /// Returns true when it took over, so the caller can leave the follow-up
   /// work to the change this triggers.
-  /// On the page the title's line break is drawn as the room under the title
-  /// (see [_layOutTitle]), which fills the rest of the title's row. A caret
-  /// after it drawn upstream would stand at that row's right edge, where
-  /// nothing is: it goes to the end of the title, where a click past the end
-  /// of any other line puts it.
-  bool _keepCaretBesideTitle(TextSelection selection) {
-    final end = _title?.end;
-    if (end == null ||
-        !selection.isCollapsed ||
-        selection.baseOffset != end + 1 ||
-        selection.affinity != TextAffinity.upstream ||
-        !_controller.imageSpans.containsKey(end)) {
-      return false;
-    }
-    _controller.selection = TextSelection.collapsed(
-      offset: end,
-      affinity: TextAffinity.upstream,
-    );
-    return true;
-  }
-
   bool _collapseLineTerminatorSelection(TextSelection selection) {
     if (_stillPress == null || HardwareKeyboard.instance.isShiftPressed) {
       return false;
@@ -5104,19 +5073,315 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return true;
   }
 
+  /// Formatting appears once a selection settles, so a drag across a
+  /// paragraph never flickers it: the bubble where there is a pointer, the
+  /// platform's toolbar on a phone.
   void _scheduleSelectionToolbar(TextSelection selection) {
     _selectionToolbarTimer?.cancel();
+    _selectionBubble.hide();
     if (!selection.isValid || selection.isCollapsed || !_focusNode.hasFocus) {
       return;
     }
-    _selectionToolbarTimer = Timer(const Duration(milliseconds: 180), () {
+    _selectionToolbarTimer = Timer(const Duration(milliseconds: 150), () {
       if (!mounted ||
           !_focusNode.hasFocus ||
           _controller.selection != selection) {
         return;
       }
-      _editableTextState()?.showToolbar();
+      if (AppPlatform.hasPointer) {
+        if (!_rightClicked) _showSelectionBubble();
+      } else {
+        _editableTextState()?.showToolbar();
+      }
     });
+  }
+
+  /// Raises the bubble over the selection, or brings the one showing up to
+  /// date with it.
+  void _showSelectionBubble() {
+    final editable = _fieldEditable();
+    final selection = _controller.selection;
+    if (widget.readOnly ||
+        editable == null ||
+        !editable.hasSize ||
+        !_focusNode.hasFocus ||
+        !selection.isValid ||
+        selection.isCollapsed) {
+      return;
+    }
+    final boxes = editable.getBoxesForSelection(selection);
+    if (boxes.isEmpty) return;
+    final transform = editable.getTransformTo(null);
+    Rect line(TextBox row) => MatrixUtils.transformRect(
+      transform,
+      [
+        for (final box in boxes)
+          if (box.top == row.top) box.toRect(),
+      ].reduce((a, b) => a.expandToInclude(b)),
+    );
+    String? key(ShortcutAction action) =>
+        widget.shortcuts.bindingFor(action)?.displayLabel;
+    final markdown = widget.markdownEnabled
+        ? _controller.markdownFor(_controller.text)
+        : null;
+    bool marked(MarkdownStyle style) =>
+        markdown != null && markdownSelectionHas(markdown, selection, style);
+    final pane = context.findRenderObject()! as RenderBox;
+    _selectionBubble.show(
+      context,
+      above: line(boxes.first),
+      below: line(boxes.last),
+      within: MatrixUtils.transformRect(
+        pane.getTransformTo(null),
+        Offset.zero & pane.size,
+      ),
+      block: _selectionBlockLabel,
+      blocks: _selectionBlocks,
+      markdownEnabled: widget.markdownEnabled,
+      actions: [
+        SelectionAction(
+          name: 'bold',
+          label: 'Bold',
+          icon: KapyIcons.formatBoldRounded,
+          active: _formatActive(NoteFormat.bold),
+          shortcut: key(ShortcutAction.formatBold),
+          onPressed: () =>
+              _bubbleEdit(() => _toggleInlineFormat(NoteFormat.bold)),
+        ),
+        SelectionAction(
+          name: 'italic',
+          label: 'Italic',
+          icon: KapyIcons.formatItalicRounded,
+          active: _formatActive(NoteFormat.italic),
+          shortcut: key(ShortcutAction.formatItalic),
+          onPressed: () =>
+              _bubbleEdit(() => _toggleInlineFormat(NoteFormat.italic)),
+        ),
+        SelectionAction(
+          name: 'strikethrough',
+          label: 'Strikethrough',
+          icon: KapyIcons.strikethroughRounded,
+          active: marked(MarkdownStyle.strikethrough),
+          shortcut: key(ShortcutAction.formatStrikethrough),
+          onPressed: () =>
+              unawaited(_toggleMarkdownWrap('~~', 'Strikethrough')),
+        ),
+        SelectionAction(
+          name: 'code',
+          label: 'Inline code',
+          icon: KapyIcons.inlineCodeRounded,
+          active: marked(MarkdownStyle.code),
+          shortcut: key(ShortcutAction.formatCode),
+          onPressed: () => unawaited(_toggleMarkdownWrap('`', 'Inline code')),
+        ),
+        SelectionAction(
+          name: 'link',
+          label: 'Link',
+          icon: KapyIcons.linkRounded,
+          active: marked(MarkdownStyle.link),
+          shortcut: key(ShortcutAction.formatLink),
+          onPressed: () => unawaited(_startLink()),
+        ),
+      ],
+      onLink: _linkSelection,
+      onLinkClosed: _focusNode.requestFocus,
+    );
+  }
+
+  /// A change from the bubble moves the selection, which takes the bubble
+  /// away until it settles again; it was made from the bubble, so the
+  /// bubble stays.
+  void _bubbleEdit(VoidCallback edit) {
+    edit();
+    _showSelectionBubble();
+  }
+
+  /// What Text ▾ says the selection's line is.
+  String get _selectionBlockLabel {
+    if (widget.markdownEnabled) {
+      final level = _markdownHeadingLevel ?? 0;
+      if (level > 0) return 'Heading ${level.clamp(1, 3)}';
+      final line = markdownLinePrefix(
+        _controller.text,
+        _controller.selection.start,
+      );
+      if (line.isTask) return 'Checklist';
+      if (line.isOrdered) return 'Numbered list';
+      if (line.isBullet) return 'Bulleted list';
+      if (line.isQuoted) return 'Quote';
+      return 'Text';
+    }
+    if (_lineStyleActive(NoteLineStyle.checklist)) return 'Checklist';
+    if (_lineStyleActive(NoteLineStyle.bullet)) return 'Bulleted list';
+    return switch (_activeParagraphStyle) {
+      NoteParagraphStyle.heading => 'Heading 1',
+      NoteParagraphStyle.subtitle => 'Heading 2',
+      _ => 'Text',
+    };
+  }
+
+  /// What Text ▾ offers, the way Commands words them.
+  List<SelectionBlock> get _selectionBlocks => [
+    SelectionBlock(
+      label: 'Text',
+      icon: KapyIcons.textFormatRounded,
+      onSelected: () => _bubbleEdit(_turnIntoText),
+    ),
+    for (final (type, label, icon, trigger) in const [
+      (SlashCommandType.heading1, 'Heading 1', KapyIcons.heading1Rounded, '#'),
+      (SlashCommandType.heading2, 'Heading 2', KapyIcons.heading2Rounded, '##'),
+      (
+        SlashCommandType.heading3,
+        'Heading 3',
+        KapyIcons.heading3Rounded,
+        '###',
+      ),
+      (
+        SlashCommandType.bulletedList,
+        'Bulleted list',
+        KapyIcons.bulletedListRounded,
+        '-',
+      ),
+      (
+        SlashCommandType.numberedList,
+        'Numbered list',
+        KapyIcons.numberedListRounded,
+        '1.',
+      ),
+      (
+        SlashCommandType.checklist,
+        'Checklist',
+        KapyIcons.checklistRounded,
+        '[ ]',
+      ),
+      (SlashCommandType.quote, 'Quote', KapyIcons.quoteRounded, '>'),
+    ])
+      SelectionBlock(
+        label: label,
+        icon: icon,
+        trigger:
+            widget.markdownEnabled ||
+                (type != SlashCommandType.heading1 &&
+                    type != SlashCommandType.heading2)
+            ? trigger
+            : null,
+        requiresMarkdown: _requiresMarkdown(type),
+        onSelected: () => unawaited(_turnInto(type)),
+      ),
+    SelectionBlock(
+      label: 'Code block',
+      icon: KapyIcons.codeRounded,
+      trigger: '```',
+      requiresMarkdown: true,
+      onSelected: () => unawaited(_wrapInCodeBlock()),
+    ),
+  ];
+
+  /// Text ▾'s Text: no heading, and out of a list.
+  void _turnIntoText() {
+    if (_lineStyleActive(NoteLineStyle.checklist)) _toggleChecklist();
+    if (_lineStyleActive(NoteLineStyle.bullet)) _toggleBullets();
+    if (widget.markdownEnabled) {
+      _applyMarkdownEdit(applyMarkdownHeading(_controller.value, 0));
+    } else {
+      _applyParagraphStyle(NoteParagraphStyle.text);
+    }
+  }
+
+  /// Text ▾'s other blocks, applied the way the same command from the "+"
+  /// applies them, Markdown asked for where it is needed.
+  Future<void> _turnInto(SlashCommandType type) async {
+    final selection = _controller.selection;
+    if (widget.readOnly || !selection.isValid) return;
+    _slashCommandRange = TextRange.collapsed(selection.extentOffset);
+    _slashCommandWasTyped = false;
+    await _runSlashCommand(SlashCommandChoice(type));
+    if (mounted) _showSelectionBubble();
+  }
+
+  /// Fences the selected lines as a code block.
+  Future<void> _wrapInCodeBlock() async {
+    final before = _controller.value;
+    final selection = before.selection;
+    if (widget.readOnly || !selection.isValid) return;
+    if (!widget.markdownEnabled && !await _confirmMarkdown('Code blocks')) {
+      return;
+    }
+    if (!mounted || _controller.text != before.text) return;
+    final text = before.text;
+    final start = selection.start == 0
+        ? 0
+        : text.lastIndexOf('\n', selection.start - 1) + 1;
+    final next = text.indexOf('\n', selection.end);
+    final end = next < 0 ? text.length : next;
+    final code = text.substring(start, end);
+    _replaceCommandValue(
+      replaceSlashCommandRange(
+        before,
+        TextRange(start: start, end: end),
+        '```\n$code\n```',
+        selection: TextSelection(
+          baseOffset: start + 4,
+          extentOffset: start + 4 + code.length,
+        ),
+      ),
+    );
+    _showSelectionBubble();
+  }
+
+  /// Strikethrough and inline code, which only Markdown can write.
+  Future<void> _toggleMarkdownWrap(String marker, String feature) async {
+    final before = _controller.value;
+    if (widget.readOnly ||
+        !before.selection.isValid ||
+        before.selection.isCollapsed) {
+      return;
+    }
+    if (!widget.markdownEnabled && !await _confirmMarkdown(feature)) return;
+    if (!mounted || _controller.text != before.text) return;
+    _replaceCommandValue(toggleMarkdownWrap(before, marker));
+    _showSelectionBubble();
+  }
+
+  /// Link: the bubble becomes a field for the address, Markdown asked for
+  /// first in a plain note.
+  Future<void> _startLink() async {
+    final before = _controller.value;
+    if (widget.readOnly ||
+        !before.selection.isValid ||
+        before.selection.isCollapsed) {
+      return;
+    }
+    if (!widget.markdownEnabled) {
+      if (!await _confirmMarkdown('Links')) return;
+      if (!mounted || _controller.text != before.text) return;
+      _controller.selection = before.selection;
+      _focusNode.requestFocus();
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+    }
+    _selectionToolbarTimer?.cancel();
+    _showSelectionBubble();
+    _selectionBubble.editLink();
+  }
+
+  /// Links the selected words to [address], in Markdown.
+  void _linkSelection(String address) {
+    final value = _controller.value;
+    final selection = value.selection;
+    if (widget.readOnly || !selection.isValid || selection.isCollapsed) return;
+    final words = value.text.substring(selection.start, selection.end);
+    _replaceCommandValue(
+      replaceSlashCommandRange(
+        value,
+        TextRange(start: selection.start, end: selection.end),
+        '[$words]($address)',
+        selection: TextSelection(
+          baseOffset: selection.start + 1,
+          extentOffset: selection.start + 1 + words.length,
+        ),
+      ),
+    );
   }
 
   EditableTextState? _editableTextState() {
@@ -5900,12 +6165,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   ///
   /// The room under a title for its meta row cannot come from the line's own
   /// height: whatever makes a row taller sets the words lower in it as well.
-  /// So the title's line break is drawn as a placeholder as tall as the title
-  /// row and that room, filling what is left of the title's last row. The
-  /// row grows downwards, the words stay at its top, and the line under it
-  /// starts below the room. Filling the row needs the width of the title's
-  /// writing, which this measures; it is redone only when the title or what
-  /// it is laid out from changes.
+  /// Nor from its line break, which has to stay a break: an empty line under
+  /// the title would otherwise have no row of its own, and a caret on it
+  /// would stand at the end of the title's row. So the last letter on the
+  /// title's last row is drawn by a placeholder that reaches down past the
+  /// row by the room. The row grows downwards and the words stay at its top.
+  /// It is redone only when the title or what it is laid out from changes.
   _TitleLayout? _layOutTitle(
     BuildContext context,
     TextStyle style,
@@ -5913,6 +6178,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     double width,
     TextScaler scaler,
     Object layoutKey,
+    Iterable<int> pictures,
   ) {
     final text = _controller.text;
     final newline = text.indexOf('\n');
@@ -5920,7 +6186,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final words = text.substring(0, end);
     if (!EditorMetrics.page ||
         words.trim().isEmpty ||
-        _controller.imageSpans.keys.any((offset) => offset < end)) {
+        pictures.any((offset) => offset < end)) {
       _titleKey = null;
       return _title = null;
     }
@@ -5932,7 +6198,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       style: style,
       withComposing: false,
     );
-    final runs = <InlineSpan>[];
+    final runs = <TextSpan>[];
     var at = 0;
     for (final run in full.children ?? const <InlineSpan>[]) {
       if (at >= end) break;
@@ -5942,9 +6208,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
     if (at != end) return _title = null;
 
-    // An empty placeholder where the line break is, to find where the text
-    // engine puts the top of one in that row: level with the surrounding
-    // run's ascent, not with the row's top.
+    // An empty placeholder after the words, to find where the text engine
+    // puts the top of one in the last row: level with the surrounding run's
+    // ascent, not with the row's top.
     final painter =
         TextPainter(
             text: TextSpan(
@@ -5976,7 +6242,23 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       width,
       last.height,
     );
-    final spacer = painter.inlinePlaceholderBoxes!.last;
+    final spacerTop = painter.inlinePlaceholderBoxes!.last.top;
+
+    // The letter: one character standing alone, so not a space, a surrogate
+    // pair or a letter with a mark on it.
+    TextBox? glyph;
+    var letter = end;
+    for (final character in words.characters.toList().reversed) {
+      letter -= character.length;
+      if (character.length != 1 || character.trim().isEmpty) continue;
+      final boxes = painter.getBoxesForSelection(
+        TextSelection(baseOffset: letter, extentOffset: letter + 1),
+      );
+      if (boxes.isEmpty) continue;
+      if (boxes.last.bottom <= row.top) break;
+      glyph = boxes.last;
+      break;
+    }
     final trimmed = words.trimRight();
     final wordBoxes = painter
         .getBoxesForSelection(
@@ -5987,11 +6269,33 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         )
         .where((box) => box.bottom > row.top);
     painter.dispose();
+    if (glyph == null) return _title = null;
+
+    var start = 0;
+    final run = runs.firstWhere((run) {
+      start += run.text?.length ?? 0;
+      return letter < start;
+    });
+    final drawn = TextSpan(
+      text: words[letter],
+      style: full.style?.merge(run.style) ?? run.style,
+    );
+    final measure = TextPainter(
+      text: drawn,
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    )..layout();
+    final baseline = measure.computeDistanceToActualBaseline(
+      TextBaseline.alphabetic,
+    );
+    measure.dispose();
     return _title = (
-      end: end,
-      right: spacer.left,
+      letter: letter,
+      drawn: drawn,
+      width: glyph.right - glyph.left,
+      top: last.baseline - spacerTop - baseline,
       row: row,
-      spacerTop: spacer.top - row.top,
+      spacerTop: spacerTop - row.top,
       word: wordBoxes.isEmpty
           ? null
           : Rect.fromLTRB(
@@ -6137,16 +6441,23 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           ? _emptyLineAt(selection.baseOffset)
           : null;
       final hoverLine = _hoverLine.value;
+      // The field's rects are scrolled; the marks keep the text's own place
+      // and scroll with it.
+      final scrolled = _scrollController.hasClients
+          ? _scrollController.offset
+          : 0.0;
       final marks = editable == null || !editable.hasSize || _isEmpty
           ? const <_LineMark>[]
           : [
               for (final line in {?caretLine, ?hoverLine})
                 (
                   line: line,
-                  middle: editable
-                      .getLocalRectForCaret(TextPosition(offset: line))
-                      .center
-                      .dy,
+                  middle:
+                      editable
+                          .getLocalRectForCaret(TextPosition(offset: line))
+                          .center
+                          .dy +
+                      scrolled,
                   caret: line == caretLine,
                   hovered: line == hoverLine,
                 ),
@@ -6532,6 +6843,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   widget.markdownEnabled,
                   concealment.key,
                 );
+                _controller.setImageSpansDuringLayout(spacers);
                 final title = _layOutTitle(
                   context,
                   textStyle,
@@ -6539,24 +6851,43 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   contentWidth,
                   textScaler,
                   layoutKey,
+                  spacers.keys,
                 );
-                // The title's line break becomes the room under it, filling
-                // the rest of its row so the next line starts below.
-                if (title != null && title.end < _controller.text.length) {
-                  final width = math.max(0.0, contentWidth - title.right);
+                // The title's last letter stands in for the room under it,
+                // drawn at the top of a placeholder that reaches below the
+                // row, so the line under the title starts below the room.
+                if (title != null) {
                   final height =
                       title.row.height -
                       title.spacerTop +
                       textScaler.scale(
                         EditorMetrics.titleReserve * widget.editorTextScale,
                       );
-                  spacers[title.end] = (
-                    width: width,
+                  spacers[title.letter] = (
+                    width: title.width,
                     height: height,
-                    child: SizedBox(width: width, height: height),
+                    child: SizedBox(
+                      width: title.width,
+                      height: height,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            left: 0,
+                            top: title.top,
+                            child: RichText(
+                              text: title.drawn,
+                              textScaler: textScaler,
+                              maxLines: 1,
+                              softWrap: false,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   );
+                  _controller.setImageSpansDuringLayout(spacers);
                 }
-                _controller.setImageSpansDuringLayout(spacers);
                 if (_editingCell != null) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) _syncTableCellEditorPosition();
@@ -6845,7 +7176,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   AppPlatform.isMobile && _keyboardInset > 0
                   ? _dismissKeyboard
                   : null,
-            ),
+            )
+          else
+            // The page has no footer to hold the writing above a home
+            // indicator, so the room is kept here instead.
+            SizedBox(height: MediaQuery.paddingOf(context).bottom),
         ],
       ),
     );
@@ -6933,6 +7268,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     .bindingFor(ShortcutAction.formatItalic)
                     ?.activator: () =>
                     _toggleInlineFormat(NoteFormat.italic),
+                ?widget.shortcuts
+                    .bindingFor(ShortcutAction.formatStrikethrough)
+                    ?.activator: () =>
+                    unawaited(_toggleMarkdownWrap('~~', 'Strikethrough')),
+                ?widget.shortcuts
+                    .bindingFor(ShortcutAction.formatCode)
+                    ?.activator: () =>
+                    unawaited(_toggleMarkdownWrap('`', 'Inline code')),
                 ?widget.shortcuts
                     .bindingFor(ShortcutAction.pasteAsPlainText)
                     ?.activator: () =>
@@ -7754,15 +8097,18 @@ class _UnknownChip extends StatelessWidget {
   }
 }
 
-/// Where the note's title sits in the field: [end] is its line break,
-/// [right] where its writing stops on its last [row], and [word] its last
-/// word on that row.
+/// The note's title as laid out on the page: [row] is its last row and
+/// [word] its last word on that row. [letter] is where the letter drawn by
+/// the placeholder under the title stands, [drawn] that letter as the field
+/// would draw it, [width] its advance, and [top] how far down the
+/// placeholder it is drawn so it sits on the row's baseline.
 ///
-/// [spacerTop] is how far below the row's top a placeholder standing in for
-/// the line break starts.
+/// [spacerTop] is how far below the row's top a placeholder in it starts.
 typedef _TitleLayout = ({
-  int end,
-  double right,
+  int letter,
+  TextSpan drawn,
+  double width,
+  double top,
   Rect row,
   double spacerTop,
   Rect? word,

@@ -2557,6 +2557,9 @@ extension on ShortcutAction {
     ShortcutAction.cycleTextStyle ||
     ShortcutAction.formatBold ||
     ShortcutAction.formatItalic ||
+    ShortcutAction.formatStrikethrough ||
+    ShortcutAction.formatCode ||
+    ShortcutAction.formatLink ||
     ShortcutAction.formatBullets ||
     ShortcutAction.formatChecklist => _ShortcutGroup.formatting,
   };

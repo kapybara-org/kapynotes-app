@@ -536,6 +536,14 @@ class KapyIcons {
     0xE0D9,
     HugeIcons.strokeRoundedFunction,
   );
+  static const strikethroughRounded = KapyIconData(
+    0xE0DA,
+    HugeIcons.strokeRoundedTextStrikethrough,
+  );
+  static const inlineCodeRounded = KapyIconData(
+    0xE0DB,
+    HugeIcons.strokeRoundedSourceCode,
+  );
   static const dividerRounded = KapyIconData(
     0xE06F,
     HugeIcons.strokeRoundedMinusSign,

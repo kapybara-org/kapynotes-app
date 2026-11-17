@@ -108,7 +108,8 @@ TextStyle paragraphTextStyle(
 }
 
 /// The note's first line on the page, its title: Paper's 40/48 in bold, in
-/// the handwritten face when the writing font is mixed.
+/// the handwritten face when the writing font is mixed. Emphasis in it
+/// stays.
 TextStyle noteTitleStyle(TextStyle base, {WritingFont? writingFont}) {
   final face = writingFont == WritingFont.mixed
       ? WritingFont.handwritten
@@ -126,7 +127,6 @@ TextStyle noteTitleStyle(TextStyle base, {WritingFont? writingFont}) {
         : EditorMetrics.titleRow / EditorMetrics.titleFontSize,
     leadingDistribution: TextLeadingDistribution.even,
     fontWeight: FontWeight.w700,
-    fontStyle: FontStyle.normal,
   );
 }
 

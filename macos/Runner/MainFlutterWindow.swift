@@ -4,6 +4,7 @@ import FlutterMacOS
 class MainFlutterWindow: NSWindow {
   /// Held for the window's lifetime: a channel whose only owner is a local
   /// stops answering as soon as `awakeFromNib` returns.
+  private var fileKeychainChannel: FlutterMethodChannel?
   private var loginItemChannel: FlutterMethodChannel?
   private var richClipboardChannel: FlutterMethodChannel?
   private var spellCheckChannel: FlutterMethodChannel?
@@ -46,6 +47,9 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    fileKeychainChannel = FileKeychain.register(
+      with: flutterViewController.engine.binaryMessenger
+    )
     loginItemChannel = LoginItem.register(
       with: flutterViewController.engine.binaryMessenger
     )

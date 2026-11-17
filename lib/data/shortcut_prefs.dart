@@ -31,6 +31,9 @@ enum ShortcutAction {
   cycleTextStyle,
   formatBold,
   formatItalic,
+  formatStrikethrough,
+  formatCode,
+  formatLink,
   formatBullets,
   formatChecklist,
   recordVoiceNote,
@@ -65,6 +68,9 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.cycleTextStyle => 'Cycle text style',
     ShortcutAction.formatBold => 'Bold',
     ShortcutAction.formatItalic => 'Italic',
+    ShortcutAction.formatStrikethrough => 'Strikethrough',
+    ShortcutAction.formatCode => 'Inline code',
+    ShortcutAction.formatLink => 'Link',
     ShortcutAction.formatBullets => 'Bulleted list',
     ShortcutAction.formatChecklist => 'Checklist',
     ShortcutAction.recordVoiceNote => 'Record a voice note',
@@ -112,6 +118,12 @@ extension ShortcutActionCopy on ShortcutAction {
       'Switch between Text, Heading, and Subtitle',
     ShortcutAction.formatBold => 'Toggle bold on the selection or new text',
     ShortcutAction.formatItalic => 'Toggle italic on the selection or new text',
+    ShortcutAction.formatStrikethrough =>
+      'Strike through the selection, in Markdown',
+    ShortcutAction.formatCode =>
+      'Set the selection as inline code, in Markdown',
+    ShortcutAction.formatLink =>
+      'Link the selected words to an address. Only while text is selected',
     ShortcutAction.formatBullets =>
       'Toggle a bulleted list on the current lines',
     ShortcutAction.formatChecklist => 'Toggle a checklist on the current lines',
@@ -133,6 +145,9 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.cycleTextStyle ||
     ShortcutAction.formatBold ||
     ShortcutAction.formatItalic ||
+    ShortcutAction.formatStrikethrough ||
+    ShortcutAction.formatCode ||
+    ShortcutAction.formatLink ||
     ShortcutAction.formatBullets ||
     ShortcutAction.formatChecklist => true,
     _ => false,
@@ -681,6 +696,26 @@ class ShortcutPrefs extends ChangeNotifier {
       ShortcutAction.formatItalic => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyI,
         physicalKey: PhysicalKeyboardKey.keyI,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      // X for crossed out: ⌘X alone is Cut.
+      ShortcutAction.formatStrikethrough => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyX,
+        physicalKey: PhysicalKeyboardKey.keyX,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      ShortcutAction.formatCode => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyE,
+        physicalKey: PhysicalKeyboardKey.keyE,
+        meta: useMeta,
+        control: !useMeta,
+      ),
+      ShortcutAction.formatLink => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyK,
+        physicalKey: PhysicalKeyboardKey.keyK,
         meta: useMeta,
         control: !useMeta,
       ),
