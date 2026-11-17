@@ -85,6 +85,11 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color totalPillBackground;
   final Color totalPillText;
 
+  /// Riverbank's clay, the one warm mark on the page: a pinned note's pin,
+  /// the note title's hand-drawn underline, the streak's flame and the badge
+  /// that counts invitations.
+  final Color clay;
+
   /// How much of the desktop the window's chrome lets through: a multiplier on
   /// the alpha of every [GlassSurface]. 1 is fully opaque.
   ///
@@ -201,6 +206,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.resultPillText,
     required this.totalPillBackground,
     required this.totalPillText,
+    required this.clay,
     this.translucency = 1,
     this.paperTranslucency = 1,
   });
@@ -255,6 +261,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? resultPillText,
     Color? totalPillBackground,
     Color? totalPillText,
+    Color? clay,
     double? translucency,
     double? paperTranslucency,
   }) => CalcPalette(
@@ -306,6 +313,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     resultPillText: resultPillText ?? this.resultPillText,
     totalPillBackground: totalPillBackground ?? this.totalPillBackground,
     totalPillText: totalPillText ?? this.totalPillText,
+    clay: clay ?? this.clay,
     translucency: translucency ?? this.translucency,
     paperTranslucency: paperTranslucency ?? this.paperTranslucency,
   );
@@ -366,6 +374,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       resultPillText: mix(resultPillText, other.resultPillText),
       totalPillBackground: mix(totalPillBackground, other.totalPillBackground),
       totalPillText: mix(totalPillText, other.totalPillText),
+      clay: mix(clay, other.clay),
       translucency: translucency + (other.translucency - translucency) * t,
       paperTranslucency:
           paperTranslucency + (other.paperTranslucency - paperTranslucency) * t,
@@ -714,6 +723,24 @@ class AppTypeScale {
       ? 11.5
       : 11;
 
+  /// The names under the spaces rail's tiles, and the streak's run of days.
+  /// A step under [caption], because each sits under its own icon rather
+  /// than being read on its own.
+  static double get railLabel => _touch
+      ? 13
+      : _windows
+      ? 12
+      : 11;
+
+  /// The figure in a count badge, such as the invitations on Shared. Smaller
+  /// than [micro], because it is bold, it sits in a coloured dot, and it is
+  /// never more than two digits.
+  static double get badge => _touch
+      ? 11
+      : _windows
+      ? 10.5
+      : 9.5;
+
   /// Metadata, list snippets, the helper line under a control.
   static double get caption => _touch
       ? 13
@@ -768,6 +795,14 @@ class AppTypeScale {
       : _windows
       ? 19
       : 16;
+
+  /// The name of the space the notes list is showing, over the list: the
+  /// window's own heading, set in Shantell Sans.
+  static double get spaceTitle => _touch
+      ? 20
+      : _windows
+      ? 18
+      : 17;
 
   /// The brand lockup, which is set in its own face and carries its own
   /// optical size a half point off [title].
@@ -913,6 +948,7 @@ class KapyTheme {
     resultPillText: Color(0xFFB3C79C),
     totalPillBackground: Color(0xFF7D9468),
     totalPillText: Color(0xFF1C1A17),
+    clay: Color(0xFFCF7A57),
   );
 
   /// A cool, clean paper palette rather than the previous warm stationery.
@@ -967,6 +1003,7 @@ class KapyTheme {
     resultPillText: Color(0xFF445A2F),
     totalPillBackground: Color(0xFF56703C),
     totalPillText: Color(0xFFFCFAF4),
+    clay: Color(0xFFD0663B),
   );
 
   /// Transparency mode.

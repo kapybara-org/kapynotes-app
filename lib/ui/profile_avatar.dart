@@ -74,7 +74,7 @@ class ProfileAvatar extends StatelessWidget {
       color: palette.selectedBackground,
       child: Center(
         child: Text(
-          _initial(name),
+          avatarInitial(name),
           style: TextStyle(
             fontSize: extent * 0.42,
             fontWeight: FontWeight.w400,
@@ -121,7 +121,9 @@ Uint8List? _decodeDataImage(String value) {
   }
 }
 
-String _initial(String value) {
+/// The letter a face without a photo shows: the first one in [value] that is
+/// not a space, capitalised.
+String avatarInitial(String value) {
   for (final rune in value.runes) {
     final char = String.fromCharCode(rune);
     if (char.trim().isNotEmpty) return char.toUpperCase();

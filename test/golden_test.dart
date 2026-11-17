@@ -287,9 +287,15 @@ Future<void> _warmNoteImage(
   return completer.future;
 }
 
-/// Opens settings through the affordance the current layout owns. Phones keep
-/// settings in the notes drawer so the editor footer can stay focused on input.
+/// Opens settings through the affordance the current layout owns: the rail's
+/// gear beside a wide window's notes list. Phones keep settings in the notes
+/// drawer so the editor footer can stay focused on input.
 Future<void> tapSettings(WidgetTester tester) async {
+  final gear = find.byKey(const ValueKey('rail-settings'));
+  if (gear.evaluate().isNotEmpty) {
+    await tester.tap(gear);
+    return;
+  }
   final sidebar = find.byKey(const ValueKey('sidebar-settings'));
   final showNotes = find.byWidgetPredicate(
     (widget) =>
@@ -476,7 +482,7 @@ void main() {
       notes.archive(note.id);
     }
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
+    await tester.tap(find.byKey(const ValueKey('rail-archive')));
     await tester.pumpAndSettle();
   }
 
@@ -729,10 +735,13 @@ void main() {
   });
 
   testWidgets('desktop dark selection formatting toolbar', (tester) async {
+    // With the list put away, so the whole note fits the page and the word
+    // to select is on screen rather than scrolled above it.
     await pumpForGolden(
       tester,
       size: const Size(760, 520),
       brightness: Brightness.dark,
+      sidebarVisible: false,
     );
     final editor = find.descendant(
       of: find.byType(NoteEditor),

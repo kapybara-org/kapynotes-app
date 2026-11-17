@@ -44,6 +44,7 @@ class NoteToolbar extends StatelessWidget {
     this.currentUserId = '',
     this.noteShared = false,
     this.updates,
+    this.atWindowLeftEdge = true,
   });
 
   final VoidCallback onToggleSidebar;
@@ -108,6 +109,11 @@ class NoteToolbar extends StatelessWidget {
   /// Offers "Update and restart" once a release has downloaded. Null where
   /// the app does not update itself.
   final UpdateChecker? updates;
+
+  /// Whether the bar starts at the window's left edge, where macOS draws the
+  /// traffic lights over it. In the wide window it starts beside the spaces
+  /// rail, which keeps them clear itself.
+  final bool atWindowLeftEdge;
 
   /// Wide enough for the update button to say what it does in full. Below
   /// this it would run into the centred lockup, so it shortens to "Update".
@@ -255,8 +261,9 @@ class NoteToolbar extends StatelessWidget {
 
   /// Where the leading cluster starts: clear of the traffic lights on macOS,
   /// and a matching beat from the window edge everywhere else.
-  static double get _leadingInset =>
-      WindowChrome.overlaysContent ? WindowChrome.trafficLightsWidth : _edgeGap;
+  double get _leadingInset => WindowChrome.overlaysContent && atWindowLeftEdge
+      ? WindowChrome.trafficLightsWidth
+      : _edgeGap;
 
   /// Half the lockup, plus air.
   ///

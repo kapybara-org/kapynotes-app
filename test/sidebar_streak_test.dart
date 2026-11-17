@@ -38,7 +38,6 @@ Sidebar sidebar(
   onCreate: () {},
   archiveMode: archiveMode,
   streak: streak,
-  showHeader: false,
 );
 
 Widget harness(

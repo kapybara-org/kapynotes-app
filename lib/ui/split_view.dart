@@ -1,11 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../core/theme.dart';
-
 /// A two-pane layout whose divider the user can drag.
 ///
-/// The width is owned by the caller so it can be persisted; this widget only
-/// reports deltas.
+/// The width is owned by the caller so it can be persisted. A drag moves the
+/// divider here and reports where it ended, so each frame of it lays the
+/// panes out again without rebuilding them or writing the width.
 class SplitView extends StatefulWidget {
   const SplitView({
     super.key,
@@ -33,16 +32,25 @@ class SplitView extends StatefulWidget {
 }
 
 class _SplitViewState extends State<SplitView> {
-  bool _dragging = false;
   bool _hovering = false;
+
+  /// Where the divider is while it is being dragged.
+  double? _dragWidth;
+
+  bool get _dragging => _dragWidth != null;
+
+  void _endDrag() {
+    final width = _dragWidth;
+    if (width == null) return;
+    setState(() => _dragWidth = null);
+    widget.onWidthChanged(width);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = widget.sidebarWidth.clamp(
+        double clamped(double value) => value.clamp(
           widget.minSidebarWidth,
           widget.maxSidebarWidth.clamp(
             widget.minSidebarWidth,
@@ -52,6 +60,7 @@ class _SplitViewState extends State<SplitView> {
             ),
           ),
         );
+        final width = clamped(_dragWidth ?? widget.sidebarWidth);
 
         return Stack(
           children: [
@@ -97,13 +106,14 @@ class _SplitViewState extends State<SplitView> {
                         behavior: HitTestBehavior.opaque,
                         onTap: widget.onHide,
                         onHorizontalDragStart: (_) =>
-                            setState(() => _dragging = true),
-                        onHorizontalDragEnd: (_) =>
-                            setState(() => _dragging = false),
-                        onHorizontalDragCancel: () =>
-                            setState(() => _dragging = false),
-                        onHorizontalDragUpdate: (details) =>
-                            widget.onWidthChanged(width + details.delta.dx),
+                            setState(() => _dragWidth = width),
+                        onHorizontalDragUpdate: (details) => setState(
+                          () => _dragWidth = clamped(
+                            _dragWidth! + details.delta.dx,
+                          ),
+                        ),
+                        onHorizontalDragEnd: (_) => _endDrag(),
+                        onHorizontalDragCancel: _endDrag,
                         child: Center(
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 120),
@@ -111,7 +121,7 @@ class _SplitViewState extends State<SplitView> {
                             decoration: BoxDecoration(
                               color: _dragging || _hovering
                                   ? Theme.of(context).colorScheme.primary
-                                  : palette.separator,
+                                  : Colors.transparent,
                               borderRadius: BorderRadius.circular(999),
                             ),
                           ),
