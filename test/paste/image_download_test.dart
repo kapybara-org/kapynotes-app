@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +14,26 @@ http.Response picture([String type = 'image/png']) =>
     http.Response.bytes(png, 200, headers: {'content-type': type});
 
 Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 10));
+
+/// Serves [png] from an isolate of its own, so it keeps answering while the
+/// test's isolate is blocked.
+Future<({int port, Isolate isolate})> serveElsewhere() async {
+  final ready = ReceivePort();
+  final isolate = await Isolate.spawn(_serve, ready.sendPort);
+  final port = await ready.first as int;
+  return (port: port, isolate: isolate);
+}
+
+Future<void> _serve(SendPort ready) async {
+  final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+  ready.send(server.port);
+  await for (final request in server) {
+    request.response
+      ..headers.contentType = ContentType('image', 'png')
+      ..add(png);
+    await request.response.close();
+  }
+}
 
 void main() {
   test(
@@ -124,6 +145,36 @@ void main() {
     final results = await Future.wait(fetches);
     expect(results.every((result) => result?.mime == 'image/png'), isTrue);
     expect(most, PastedImageDownloader.maxConcurrent);
+  });
+
+  test('a busy editor cannot run a download out of time', () async {
+    final server = await serveElsewhere();
+    addTearDown(() => server.isolate.kill(priority: Isolate.immediate));
+    final downloader = PastedImageDownloader(
+      timeout: const Duration(seconds: 2),
+    );
+    final fetching = downloader.fetch('http://127.0.0.1:${server.port}/p.png');
+    // Lets the download start, and nothing else this isolate is waiting on.
+    await Future<void>.delayed(Duration.zero);
+    // Longer than the timeout, the way laying out a long note holds the
+    // editor.
+    sleep(const Duration(seconds: 3));
+    final fetched = await fetching;
+    expect(fetched?.bytes, png);
+    expect(fetched?.mime, 'image/png');
+  });
+
+  test('a stand-in network set up here answers on this isolate', () async {
+    var asked = 0;
+    final fetched = await HttpOverrides.runZoned(
+      () => PastedImageDownloader().fetch('https://example.com/p.png'),
+      createHttpClient: (_) {
+        asked++;
+        throw const SocketException('no network in tests');
+      },
+    );
+    expect(asked, 1);
+    expect(fetched, isNull);
   });
 
   test('a picture an app left on disk is read from there', () async {
