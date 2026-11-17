@@ -850,4 +850,19 @@ void main() {
       }
     });
   });
+
+  test("a code block's fences are read with its language", () {
+    final analysis = MarkdownAnalyzer.analyzeWhole(
+      'a\n\n~~~~ ts extra\nlet x\n~~~~\n\nb\n\n```\nopen',
+    );
+    final fences = [
+      for (final block in analysis.blocks)
+        ?analysis.fencesOf(block),
+    ];
+    expect(fences, hasLength(2));
+    expect(fences.first.language, 'ts');
+    expect(fences.first.close, isNotNull);
+    expect(fences.last.language, '');
+    expect(fences.last.close, isNull);
+  });
 }
