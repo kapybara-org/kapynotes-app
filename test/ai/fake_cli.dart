@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:kapy_notes/ai/local_tools.dart';
+import 'package:kapy_notes/ai/tool_helper.dart';
 
 /// A Codex the app will run: pinned at 0.160, which is what the stand-in
 /// reports. The real pin is null until a canary has passed.
@@ -10,12 +11,14 @@ CodexCli codexCli({
   Map<String, String>? environment,
   bool? windows,
   (int, int)? pin = (0, 160),
+  ToolHelper? helper,
 }) => CodexCli(
   executable: executable,
   timeout: timeout,
   environment: environment,
   windows: windows,
   pin: pin,
+  helper: helper,
 );
 
 /// A shell script standing in for the codex or claude binary.
@@ -107,6 +110,44 @@ fast_mode                          stable             true
 tool_call_mcp_elicitation          stable             true
 code_mode                          under development  false
 ''';
+
+/// The macOS helper, standing in for KapyToolRunner.xpc: records every
+/// request and answers it as the real tools would, unless [reply] says
+/// otherwise.
+class FakeToolHelper implements ToolHelper {
+  FakeToolHelper({this.answers = true, this.reply});
+
+  bool answers;
+  int pings = 0;
+  HelperResult? Function(HelperRequest request)? reply;
+  final List<HelperRequest> requests = [];
+
+  @override
+  Future<bool> available() async {
+    pings++;
+    return answers;
+  }
+
+  @override
+  Future<HelperResult> run(HelperRequest request) async {
+    requests.add(request);
+    if (reply?.call(request) case final result?) return result;
+    HelperResult ran(String stdout) =>
+        (outcome: HelperOutcome.ran, exitCode: 0, stdout: stdout);
+    return switch (request.arguments.first) {
+      '--version' => ran(
+        request.tool == 'codex'
+            ? 'codex-cli 0.160.0\n'
+            : '2.1.326 (Claude Code)\n',
+      ),
+      'features' => ran(knownFeatures),
+      'debug' => ran(_catalogue),
+      'exec' => ran('helper answer\n'),
+      '--print' => ran('{"result":"helper answer"}'),
+      _ => ran(''),
+    };
+  }
+}
 
 const String _catalogue =
     '{"models":[{"slug":"gpt-x","display_name":"GPT X","visibility":"list",'

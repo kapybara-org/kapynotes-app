@@ -21,18 +21,20 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		2068A4B1C9C98530D181A7C5 /* ToolRunnerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ABE5356A1AC16BDAE189574 /* ToolRunnerClient.swift */; };
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
-		C1A0B0F10000000000000002 /* RichClipboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F10000000000000001 /* RichClipboardTests.swift */; };
-		C1A0B0F40000000000000002 /* RichClipboardFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F40000000000000001 /* RichClipboardFixtureTests.swift */; };
-		C1A0B0F50000000000000002 /* AccessibilityTextMirrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F50000000000000001 /* AccessibilityTextMirrorTests.swift */; };
-		C1A0B0F30000000000000002 /* paste in Resources */ = {isa = PBXBuildFile; fileRef = C1A0B0F30000000000000001 /* paste */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		35C2C0F9AEBF68DE7BC30254 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0C8D5D7EE69E0011CD9A30EB /* Pods_Runner.framework */; };
+		3A007C31BD71408E361D59AE /* ToolRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3117D788D20B0DB1CBBFD255 /* ToolRunnerTests.swift */; };
+		48CC25A151E98321DEE0306B /* ToolRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F2DC1C68E06D4CB2CB6234 /* ToolRunner.swift */; };
+		6F67EA4D2C0CAE06CE973325 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B381F91A09A92AF2745A04B8 /* main.swift */; };
+		78175CAD17722DD7697915FF /* Listener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32F5653DFF812F052595A82E /* Listener.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
+		825ED758D764AEE864E8A4E0 /* Listener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32F5653DFF812F052595A82E /* Listener.swift */; };
 		A11C10F12044A3C60003C045 /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11C10F02044A3C60003C045 /* LoginItem.swift */; };
 		A11C10F12044A3C60003C046 /* WindowMaterial.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11C10F02044A3C60003C046 /* WindowMaterial.swift */; };
 		AF27F60885C626B56BB7826B /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 95D26CE3424D889EB606C16A /* Pods_RunnerTests.framework */; };
@@ -43,11 +45,18 @@
 		C1A0B0060000000000000002 /* Transcription.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0060000000000000001 /* Transcription.swift */; };
 		C1A0B0080000000000000002 /* AudioDecode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0080000000000000001 /* AudioDecode.swift */; };
 		C1A0B0090000000000000002 /* WindowPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0090000000000000001 /* WindowPin.swift */; };
-		D5F1EC0A0000000000000002 /* FileKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F1EC0A0000000000000001 /* FileKeychain.swift */; };
 		C1A0B00B0000000000000002 /* AccessibilityText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00B0000000000000001 /* AccessibilityText.swift */; };
-		C1A0B00E0000000000000002 /* AccessibilityTextMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00E0000000000000001 /* AccessibilityTextMirror.swift */; };
 		C1A0B00C0000000000000002 /* SystemRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00C0000000000000001 /* SystemRegion.swift */; };
 		C1A0B00D0000000000000002 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00D0000000000000001 /* AppUpdater.swift */; };
+		C1A0B00E0000000000000002 /* AccessibilityTextMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00E0000000000000001 /* AccessibilityTextMirror.swift */; };
+		C1A0B0F10000000000000002 /* RichClipboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F10000000000000001 /* RichClipboardTests.swift */; };
+		C1A0B0F30000000000000002 /* paste in Resources */ = {isa = PBXBuildFile; fileRef = C1A0B0F30000000000000001 /* paste */; };
+		C1A0B0F40000000000000002 /* RichClipboardFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F40000000000000001 /* RichClipboardFixtureTests.swift */; };
+		C1A0B0F50000000000000002 /* AccessibilityTextMirrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F50000000000000001 /* AccessibilityTextMirrorTests.swift */; };
+		D32DC9EC11ADCAADC4C8F14C /* ToolRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F2DC1C68E06D4CB2CB6234 /* ToolRunner.swift */; };
+		D5F1EC0A0000000000000002 /* FileKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F1EC0A0000000000000001 /* FileKeychain.swift */; };
+		FE2D88EAEC780B2317ABCDA7 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 23AB27ECAE95DBB6F410D0C8 /* Cocoa.framework */; };
+		FF7BA9916EAA314A20D2C650 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 23AB27ECAE95DBB6F410D0C8 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,6 +73,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 33CC111A2044C6BA0003C045;
 			remoteInfo = FLX;
+		};
+		A0B29A13DEAF55D338871B25 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 33CC10E52044A3C60003C045 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1525B0284866DFDF83AFDD49;
+			remoteInfo = KapyToolRunner;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -83,13 +99,15 @@
 /* Begin PBXFileReference section */
 		025B24DC4F1F43AB96DA24BA /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 		04D5DD9A699E0E56E35B23F9 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
+		053962277D8696A605A5EFA5 /* KapyToolRunner */ = {isa = PBXFileReference; includeInIndex = 0; path = KapyToolRunner; sourceTree = BUILT_PRODUCTS_DIR; };
 		0C8D5D7EE69E0011CD9A30EB /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		23AB27ECAE95DBB6F410D0C8 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		2ABE5356A1AC16BDAE189574 /* ToolRunnerClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ToolRunnerClient.swift; sourceTree = "<group>"; };
+		2BB8FA7F3DDFE73D20B79091 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		3117D788D20B0DB1CBBFD255 /* ToolRunnerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ToolRunnerTests.swift; sourceTree = "<group>"; };
+		32F5653DFF812F052595A82E /* Listener.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Listener.swift; sourceTree = "<group>"; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
-		C1A0B0F10000000000000001 /* RichClipboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboardTests.swift; sourceTree = "<group>"; };
-		C1A0B0F40000000000000001 /* RichClipboardFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboardFixtureTests.swift; sourceTree = "<group>"; };
-		C1A0B0F50000000000000001 /* AccessibilityTextMirrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTextMirrorTests.swift; sourceTree = "<group>"; };
-		C1A0B0F30000000000000001 /* paste */ = {isa = PBXFileReference; lastKnownFileType = folder; name = paste; path = ../test/fixtures/paste; sourceTree = SOURCE_ROOT; };
 		333000ED22D3DE5D00554162 /* Warnings.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Warnings.xcconfig; sourceTree = "<group>"; };
 		335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GeneratedPluginRegistrant.swift; sourceTree = "<group>"; };
 		33CC10ED2044A3C60003C045 /* kapy_notes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = kapy_notes.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -110,10 +128,14 @@
 		7F98A7AB506D6582FBF438A6 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		877151FC15D588CC10C3728A /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		95D26CE3424D889EB606C16A /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		96D6F6FDE5D86E142864C94D /* KapyToolRunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KapyToolRunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		A11C10F02044A3C60003C045 /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
 		A11C10F02044A3C60003C046 /* WindowMaterial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowMaterial.swift; sourceTree = "<group>"; };
+		B381F91A09A92AF2745A04B8 /* main.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		B4F2DC1C68E06D4CB2CB6234 /* ToolRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ToolRunner.swift; sourceTree = "<group>"; };
 		B5117A83E87A522312E4D0DB /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
+		BEAF75855F806CFCC1CB6E7D /* KapyToolRunner.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = KapyToolRunner.entitlements; sourceTree = "<group>"; };
 		C1A0B0020000000000000001 /* RichClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboard.swift; sourceTree = "<group>"; };
 		C1A0B0030000000000000001 /* SpellCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpellCheck.swift; sourceTree = "<group>"; };
 		C1A0B0040000000000000001 /* Summaries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Summaries.swift; sourceTree = "<group>"; };
@@ -121,11 +143,15 @@
 		C1A0B0060000000000000001 /* Transcription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcription.swift; sourceTree = "<group>"; };
 		C1A0B0080000000000000001 /* AudioDecode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDecode.swift; sourceTree = "<group>"; };
 		C1A0B0090000000000000001 /* WindowPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPin.swift; sourceTree = "<group>"; };
-		D5F1EC0A0000000000000001 /* FileKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileKeychain.swift; sourceTree = "<group>"; };
 		C1A0B00B0000000000000001 /* AccessibilityText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityText.swift; sourceTree = "<group>"; };
-		C1A0B00E0000000000000001 /* AccessibilityTextMirror.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTextMirror.swift; sourceTree = "<group>"; };
 		C1A0B00C0000000000000001 /* SystemRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemRegion.swift; sourceTree = "<group>"; };
 		C1A0B00D0000000000000001 /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
+		C1A0B00E0000000000000001 /* AccessibilityTextMirror.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTextMirror.swift; sourceTree = "<group>"; };
+		C1A0B0F10000000000000001 /* RichClipboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboardTests.swift; sourceTree = "<group>"; };
+		C1A0B0F30000000000000001 /* paste */ = {isa = PBXFileReference; lastKnownFileType = folder; name = paste; path = ../test/fixtures/paste; sourceTree = SOURCE_ROOT; };
+		C1A0B0F40000000000000001 /* RichClipboardFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboardFixtureTests.swift; sourceTree = "<group>"; };
+		C1A0B0F50000000000000001 /* AccessibilityTextMirrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTextMirrorTests.swift; sourceTree = "<group>"; };
+		D5F1EC0A0000000000000001 /* FileKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileKeychain.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -146,9 +172,38 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		62F16145E03DACBA8EBCBA7F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FE2D88EAEC780B2317ABCDA7 /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0A444436FE8E6DB210906D1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FF7BA9916EAA314A20D2C650 /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1B27F6B8C15052576EB5668C /* KapyToolRunner */ = {
+			isa = PBXGroup;
+			children = (
+				B381F91A09A92AF2745A04B8 /* main.swift */,
+				32F5653DFF812F052595A82E /* Listener.swift */,
+				B4F2DC1C68E06D4CB2CB6234 /* ToolRunner.swift */,
+				2BB8FA7F3DDFE73D20B79091 /* Info.plist */,
+				BEAF75855F806CFCC1CB6E7D /* KapyToolRunner.entitlements */,
+			);
+			name = KapyToolRunner;
+			path = KapyToolRunner;
+			sourceTree = "<group>";
+		};
 		331C80D6294CF71000263BE5 /* RunnerTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -181,6 +236,8 @@
 				33CC10EE2044A3C60003C045 /* Products */,
 				D73912EC22F37F3D000D13A0 /* Frameworks */,
 				F26944A3731BCC3CEDFB9131 /* Pods */,
+				1B27F6B8C15052576EB5668C /* KapyToolRunner */,
+				78E69D3473072CD29FB480BA /* KapyToolRunnerTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -189,6 +246,8 @@
 			children = (
 				33CC10ED2044A3C60003C045 /* kapy_notes.app */,
 				331C80D5294CF71000263BE5 /* RunnerTests.xctest */,
+				053962277D8696A605A5EFA5 /* KapyToolRunner */,
+				96D6F6FDE5D86E142864C94D /* KapyToolRunnerTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -239,8 +298,26 @@
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
 				33BA886A226E78AF003329D5 /* Configs */,
+				2ABE5356A1AC16BDAE189574 /* ToolRunnerClient.swift */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		78E69D3473072CD29FB480BA /* KapyToolRunnerTests */ = {
+			isa = PBXGroup;
+			children = (
+				3117D788D20B0DB1CBBFD255 /* ToolRunnerTests.swift */,
+			);
+			name = KapyToolRunnerTests;
+			path = KapyToolRunnerTests;
+			sourceTree = "<group>";
+		};
+		9B1F80ED98B694277216EC06 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				23AB27ECAE95DBB6F410D0C8 /* Cocoa.framework */,
+			);
+			name = "OS X";
 			sourceTree = "<group>";
 		};
 		D73912EC22F37F3D000D13A0 /* Frameworks */ = {
@@ -248,6 +325,7 @@
 			children = (
 				0C8D5D7EE69E0011CD9A30EB /* Pods_Runner.framework */,
 				95D26CE3424D889EB606C16A /* Pods_RunnerTests.framework */,
+				9B1F80ED98B694277216EC06 /* OS X */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -269,6 +347,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		1525B0284866DFDF83AFDD49 /* KapyToolRunner */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9DA6A3EE2A3DFC3D67656DF7 /* Build configuration list for PBXNativeTarget "KapyToolRunner" */;
+			buildPhases = (
+				27C5994BB55084C0E992818E /* Sources */,
+				62F16145E03DACBA8EBCBA7F /* Frameworks */,
+				9E1FE90AEF2280890B178AAA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KapyToolRunner;
+			productName = KapyToolRunner;
+			productReference = 053962277D8696A605A5EFA5 /* KapyToolRunner */;
+			productType = "com.apple.product-type.xpc-service";
+		};
 		331C80D4294CF70F00263BE5 /* RunnerTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 331C80DE294CF71000263BE5 /* Build configuration list for PBXNativeTarget "RunnerTests" */;
@@ -300,11 +395,13 @@
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				59DE74FB97409911300CFFFF /* [CP] Embed Pods Frameworks */,
 				4D7DE86DC975C74B7515D2CE /* [flutter_gemma] Setup LiteRT-LM macOS */,
+				8D645418B8098026D3C4DD3B /* Embed Kapy tool runner */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				33CC11202044C79F0003C045 /* PBXTargetDependency */,
+				F7BD05C4926C506014B14110 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -313,6 +410,23 @@
 			productName = Runner;
 			productReference = 33CC10ED2044A3C60003C045 /* kapy_notes.app */;
 			productType = "com.apple.product-type.application";
+		};
+		35F9A960748BC21AD589FFD3 /* KapyToolRunnerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A4BC3FAE6F64E80F2971D314 /* Build configuration list for PBXNativeTarget "KapyToolRunnerTests" */;
+			buildPhases = (
+				837541AF72DC52344312941D /* Sources */,
+				D0A444436FE8E6DB210906D1 /* Frameworks */,
+				AF3C085679BADF0A9D942404 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KapyToolRunnerTests;
+			productName = KapyToolRunnerTests;
+			productReference = 96D6F6FDE5D86E142864C94D /* KapyToolRunnerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -364,6 +478,8 @@
 				33CC10EC2044A3C60003C045 /* Runner */,
 				331C80D4294CF70F00263BE5 /* RunnerTests */,
 				33CC111A2044C6BA0003C045 /* Flutter Assemble */,
+				1525B0284866DFDF83AFDD49 /* KapyToolRunner */,
+				35F9A960748BC21AD589FFD3 /* KapyToolRunnerTests */,
 			);
 		};
 /* End PBXProject section */
@@ -383,6 +499,20 @@
 			files = (
 				33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */,
 				33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9E1FE90AEF2280890B178AAA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF3C085679BADF0A9D942404 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -486,6 +616,25 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		8D645418B8098026D3C4DD3B /* Embed Kapy tool runner */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed Kapy tool runner";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# KapyToolRunner.xpc, built and signed by its own target with its own\n# entitlements, copied in before the app is signed so the app's signature\n# seals it. Removed first, so a build with KAPY_TOOL_RUNNER=NO (the Mac App\n# Store build) cannot keep one an earlier build left behind.\nset -e\nDEST=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}/Contents/XPCServices\"\nrm -rf \"${DEST}/KapyToolRunner.xpc\"\nif [ \"${KAPY_TOOL_RUNNER}\" != \"YES\" ]; then\n  rmdir \"${DEST}\" 2>/dev/null || true\n  exit 0\nfi\nmkdir -p \"${DEST}\"\nditto \"${BUILT_PRODUCTS_DIR}/KapyToolRunner.xpc\" \"${DEST}/KapyToolRunner.xpc\"\n";
+		};
 		D2BA9B77142E9C20934FB118 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -511,6 +660,16 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		27C5994BB55084C0E992818E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6F67EA4D2C0CAE06CE973325 /* main.swift in Sources */,
+				78175CAD17722DD7697915FF /* Listener.swift in Sources */,
+				48CC25A151E98321DEE0306B /* ToolRunner.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		331C80D1294CF70F00263BE5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -543,6 +702,17 @@
 				C1A0B00B0000000000000002 /* AccessibilityText.swift in Sources */,
 				C1A0B00E0000000000000002 /* AccessibilityTextMirror.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
+				2068A4B1C9C98530D181A7C5 /* ToolRunnerClient.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		837541AF72DC52344312941D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				825ED758D764AEE864E8A4E0 /* Listener.swift in Sources */,
+				D32DC9EC11ADCAADC4C8F14C /* ToolRunner.swift in Sources */,
+				3A007C31BD71408E361D59AE /* ToolRunnerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -559,6 +729,12 @@
 			target = 33CC111A2044C6BA0003C045 /* Flutter Assemble */;
 			targetProxy = 33CC111F2044C79F0003C045 /* PBXContainerItemProxy */;
 		};
+		F7BD05C4926C506014B14110 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = KapyToolRunner;
+			target = 1525B0284866DFDF83AFDD49 /* KapyToolRunner */;
+			targetProxy = A0B29A13DEAF55D338871B25 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
@@ -574,6 +750,28 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		23FF0199369AB2DD00055A45 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				FRAMEWORK_SEARCH_PATHS = "";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "";
+				LD_RUNPATH_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = "";
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				OTHER_LDFLAGS = "";
+				OTHER_SWIFT_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.kapybara.kapynotes.ToolRunnerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
 		331C80DB294CF71000263BE5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = B5117A83E87A522312E4D0DB /* Pods-RunnerTests.debug.xcconfig */;
@@ -856,6 +1054,128 @@
 			};
 			name = Release;
 		};
+		55EAD25467EF153D62A61936 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				FRAMEWORK_SEARCH_PATHS = "";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "";
+				LD_RUNPATH_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = "";
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				OTHER_LDFLAGS = "";
+				OTHER_SWIFT_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.kapybara.kapynotes.ToolRunnerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		8DF47EA0812465D48B54D392 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				CODE_SIGN_ENTITLEMENTS = KapyToolRunner/KapyToolRunner.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 96V66447C6;
+				ENABLE_HARDENED_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = "";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = "";
+				INFOPLIST_FILE = KapyToolRunner/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = "";
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				OTHER_LDFLAGS = "";
+				OTHER_SWIFT_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.kapybara.kapynotes.ToolRunner;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A2EA5A207D8B71B947924FD4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				CODE_SIGN_ENTITLEMENTS = KapyToolRunner/KapyToolRunner.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 96V66447C6;
+				ENABLE_HARDENED_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = "";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = "";
+				INFOPLIST_FILE = KapyToolRunner/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = "";
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				OTHER_LDFLAGS = "";
+				OTHER_SWIFT_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.kapybara.kapynotes.ToolRunner;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B8B63F6C3BB043FAA3FF785A /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				CODE_SIGN_ENTITLEMENTS = KapyToolRunner/KapyToolRunner.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 96V66447C6;
+				ENABLE_HARDENED_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = "";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = "";
+				INFOPLIST_FILE = KapyToolRunner/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = "";
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				OTHER_LDFLAGS = "";
+				OTHER_SWIFT_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.kapybara.kapynotes.ToolRunner;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Profile;
+		};
+		D2C36941BCF0DEC7143C3C02 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				FRAMEWORK_SEARCH_PATHS = "";
+				GCC_PREPROCESSOR_DEFINITIONS = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "";
+				LD_RUNPATH_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = "";
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				OTHER_LDFLAGS = "";
+				OTHER_SWIFT_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.kapybara.kapynotes.ToolRunnerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Profile;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -895,6 +1215,26 @@
 				33CC111C2044C6BA0003C045 /* Debug */,
 				33CC111D2044C6BA0003C045 /* Release */,
 				338D0CEB231458BD00FA5F75 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9DA6A3EE2A3DFC3D67656DF7 /* Build configuration list for PBXNativeTarget "KapyToolRunner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A2EA5A207D8B71B947924FD4 /* Release */,
+				8DF47EA0812465D48B54D392 /* Debug */,
+				B8B63F6C3BB043FAA3FF785A /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A4BC3FAE6F64E80F2971D314 /* Build configuration list for PBXNativeTarget "KapyToolRunnerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				55EAD25467EF153D62A61936 /* Release */,
+				23FF0199369AB2DD00055A45 /* Debug */,
+				D2C36941BCF0DEC7143C3C02 /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

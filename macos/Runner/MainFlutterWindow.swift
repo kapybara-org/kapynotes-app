@@ -15,6 +15,7 @@ class MainFlutterWindow: NSWindow {
   private var windowPinChannel: FlutterMethodChannel?
   private var systemRegionChannel: FlutterMethodChannel?
   private var updaterChannel: FlutterMethodChannel?
+  private var toolRunnerChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
     let flutterViewController = KapyFlutterViewController()
@@ -79,6 +80,9 @@ class MainFlutterWindow: NSWindow {
       with: flutterViewController.engine.binaryMessenger
     )
     updaterChannel = AppUpdater.register(
+      with: flutterViewController.engine.binaryMessenger
+    )
+    toolRunnerChannel = ToolRunnerClient.register(
       with: flutterViewController.engine.binaryMessenger
     )
 

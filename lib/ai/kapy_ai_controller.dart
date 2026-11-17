@@ -20,6 +20,7 @@ import 'kapy_chat_book.dart';
 import 'local_tools.dart';
 import 'open_router.dart';
 import 'retrieval.dart';
+import 'tool_helper.dart';
 
 /// Kapy AI's engine: chats, models, accounts, and the answer to each
 /// question, with every state that can hold one up.
@@ -42,8 +43,9 @@ import 'retrieval.dart';
 ///
 /// Everything else has a default: the API at [kApiBaseUrl], the keychain
 /// for the OpenRouter key, the Codex and Claude Code programs on this
-/// computer, and the process environment (where [appSandboxVariable] says
-/// the app is sandboxed, so Codex and Claude Code are not offered). Tests
+/// computer, the process environment (where [appSandboxVariable] says the
+/// app is sandboxed), and the macOS helper that runs both tools for a
+/// sandboxed app, which offers them only when that helper answers. Tests
 /// pass their own.
 ///
 /// Nothing happens at construction: no disk scan, no keychain read, no
@@ -68,6 +70,7 @@ class KapyAiController extends KapyAi {
     Uri? apiBaseUrl,
     DateTime Function()? now,
     Map<String, String>? environment,
+    ToolHelper? toolHelper,
   }) : _store = KapyAiStore(store),
        _book =
            chats ?? KapyChatBook(store, ready: () => notes.isLoaded, now: now),
@@ -78,8 +81,10 @@ class KapyAiController extends KapyAi {
        _sandboxed = (environment ?? Platform.environment).containsKey(
          appSandboxVariable,
        ),
-       _codex = codex ?? CodexCli(),
-       _claudeCode = claudeCode ?? ClaudeCodeCli() {
+       _toolHelper = toolHelper ?? const MacToolHelper() {
+    final helper = _sandboxed ? _toolHelper : null;
+    _codex = codex ?? CodexCli(helper: helper);
+    _claudeCode = claudeCode ?? ClaudeCodeCli(helper: helper);
     final web = client ?? http.Client();
     _cloud = KapyCloudClient(
       baseUrl: apiBaseUrl ?? Uri.parse(kApiBaseUrl),
@@ -103,8 +108,13 @@ class KapyAiController extends KapyAi {
   final Billing? _billing;
   final DateTime Function() _now;
   final bool _sandboxed;
-  final LocalTool _codex;
-  final LocalTool _claudeCode;
+  final ToolHelper _toolHelper;
+
+  /// A sandboxed macOS app's helper answered: Codex and Claude Code run
+  /// through it.
+  bool _helperReady = false;
+  late final LocalTool _codex;
+  late final LocalTool _claudeCode;
   late final KapyCloudClient _cloud;
   late final OpenRouterAccount _openRouter;
 
@@ -143,6 +153,9 @@ class KapyAiController extends KapyAi {
       );
     }
     unawaited(_refreshUsage());
+    if (_sandboxed && AppPlatform.isMacOS) {
+      _helperReady = await _toolHelper.available();
+    }
     for (final tool in [_codex, _claudeCode]) {
       if (_toolPlatform(tool.kind)) unawaited(_check(tool));
     }
@@ -320,9 +333,10 @@ class KapyAiController extends KapyAi {
   static bool _isTool(KapyAccountKind kind) =>
       kind == KapyAccountKind.codex || kind == KapyAccountKind.claudeCode;
 
-  /// Codex and Claude Code: on a desktop where the app is not sandboxed (a
-  /// sandboxed app cannot run them, so it never offers them), and while
-  /// their const is on.
+  /// Codex and Claude Code: on a desktop, while their const is on, where
+  /// the app is not sandboxed or its helper answered (a sandboxed app cannot
+  /// run them itself; the Mac App Store build has no helper, so it never
+  /// offers them).
   ///
   /// Not on Windows either, until a canary and a check that a timeout kills
   /// the whole process tree have passed on a Windows machine. The shim code
@@ -330,7 +344,7 @@ class KapyAiController extends KapyAi {
   bool _toolPlatform(KapyAccountKind kind) =>
       AppPlatform.isDesktop &&
       !AppPlatform.isWindows &&
-      !_sandboxed &&
+      (!_sandboxed || _helperReady) &&
       switch (kind) {
         KapyAccountKind.codex => codexAvailable,
         KapyAccountKind.claudeCode => claudeCodeAvailable,
