@@ -301,7 +301,6 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
     widget.prefs.load();
     widget.shortcuts.load();
-    _voicePrefs?.load();
     _activateLoadedApp(capturedText: _launchController.text, intent: intent);
     setState(() {});
 
@@ -319,6 +318,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     LaunchIntent intent = LaunchIntent.open,
   }) {
     if (_ready) return;
+    _voicePrefs?.load();
     // A new install opens on a note that teaches itself rather than on a blank
     // page. Seeded ahead of the capture below so that a launch which arrives
     // with text still puts that text on screen, with the welcome underneath it
