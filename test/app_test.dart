@@ -827,6 +827,99 @@ void main() {
       await tester.pumpAndSettle();
       expect(tags.tags, hasLength(1));
     });
+
+    testWidgets('on a phone the filter is a sheet whose Tags page narrows the '
+        'list live', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final hidden = notes.create(body: 'Private plan');
+      final trip = notes.create(body: 'Trip to Kochi');
+      notes.create(body: 'Groceries');
+      notes.hide(hidden.id);
+      final work = tags.create('Work')!;
+      final secret = tags.create('Secret')!;
+      tags.addTag(trip.id, work.id);
+      tags.addTag(hidden.id, secret.id);
+      await pumpApp(tester, size: const Size(390, 760), tags: tags);
+      await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('notes-filter-sheet')), findsOneWidget);
+      expect(find.byKey(const ValueKey('notes-filter-menu')), findsNothing);
+      expect(find.text('Show'), findsOneWidget);
+      expect(find.text('Media'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('tag-filter-${work.id}')), findsOneWidget);
+      expect(find.byKey(ValueKey('tag-filter-${secret.id}')), findsNothing);
+      await tester.tap(find.byKey(ValueKey('tag-filter-${work.id}')));
+      await tester.pumpAndSettle();
+      expect(find.text('Groceries'), findsNothing);
+      expect(find.text('Trip to Kochi'), findsWidgets);
+
+      await tester.tap(find.byKey(const ValueKey('notes-filter-back')));
+      await tester.pumpAndSettle();
+      expect(find.text('Work'), findsWidgets);
+      await tester.tap(find.byKey(const ValueKey('notes-filter-done')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('notes-filter-sheet')), findsNothing);
+      expect(find.text('Groceries'), findsNothing);
+    });
+
+    testWidgets('⌘K # filters by a tag, and Tag note… tags the open note', (
+      tester,
+    ) async {
+      final trip = notes.create(body: 'Trip to Kochi');
+      notes.create(body: 'Groceries');
+      final work = tags.create('Work')!;
+      tags.addTag(trip.id, work.id);
+      await pumpApp(tester, tags: tags);
+
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.findNotes)!,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        '#wo',
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+      expect(find.text('Groceries'), findsNothing);
+      expect(find.text('Trip to Kochi'), findsWidgets);
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-filter-clear')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Groceries').first);
+      await tester.pumpAndSettle();
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.findNotes)!,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'tag',
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'Errands',
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      final groceries = notes.notes.firstWhere(
+        (note) => note.title == 'Groceries',
+      );
+      expect(namesOn(groceries.id), ['Errands']);
+    });
   });
 
   testWidgets('opens on the empty state and builds a note from it', (
@@ -3801,59 +3894,42 @@ void main() {
     expect(find.text('Hidden Notes is empty'), findsNothing);
   });
 
-  testWidgets('a phone reveals Hidden Notes by pulling down below Search', (
-    tester,
-  ) async {
+  testWidgets('a phone reaches Hidden and Archive from the filter, with no '
+      'footer button or pull-down for them', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await notes.load();
     for (var index = 0; index < 30; index++) {
       notes.create(body: 'Note $index');
     }
+    notes.hide(notes.create(body: 'Only private note').id);
     final gate = _HiddenGate();
     await pumpApp(tester, size: const Size(390, 844), hiddenNotesGate: gate);
     await showNotesList(tester);
 
-    final drawerList = find.descendant(
-      of: find.byType(Drawer),
-      matching: find.byType(CustomScrollView),
-    );
-    expect(drawerList, findsOneWidget);
-    final hidden = find.byKey(const ValueKey('sidebar-hidden-notes'));
-    expect(hidden.hitTestable(), findsNothing);
-
-    await tester.drag(drawerList, Offset(0, NoteFooter.height + 20));
-    await tester.pumpAndSettle();
-
-    expect(hidden.hitTestable(), findsOneWidget);
+    final drawer = find.byType(Drawer);
     expect(
-      tester.getTopLeft(hidden).dy,
-      greaterThanOrEqualTo(
-        tester
-            .getBottomLeft(find.byKey(const ValueKey('sidebar-search-field')))
-            .dy,
-      ),
+      find.descendant(of: drawer, matching: find.byType(CustomScrollView)),
+      findsNothing,
     );
-    await tester.tap(hidden);
+    expect(find.byKey(const ValueKey('sidebar-hidden-notes')), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar-archive')), findsNothing);
+    expect(
+      find.descendant(of: drawer, matching: find.text('Archived Notes')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('sidebar-settings')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-hidden')));
     await tester.pumpAndSettle();
 
     expect(gate.unlockCalls, 1);
-    expect(find.text('Hidden Notes is empty'), findsOneWidget);
-
-    // A new app session starts at the notes again, never at the revealed
-    // pull-down position from the previous one.
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-    rates = RatesRepository(store);
-    await pumpApp(tester, size: const Size(390, 844), hiddenNotesGate: gate);
-    await showNotesList(tester);
-    expect(
-      find.byKey(const ValueKey('sidebar-hidden-notes')).hitTestable(),
-      findsNothing,
-    );
+    expect(find.widgetWithText(NoteRow, 'Only private note'), findsOneWidget);
   });
 
-  testWidgets('a phone explains how to find a note after hiding it', (
+  testWidgets('a phone says where to find a note after hiding it', (
     tester,
   ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
@@ -3869,30 +3945,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(gate.configureCalls, 1);
-    expect(notes.notes.map((note) => note.id), isNot(contains(private.id)));
     expect(notes.hiddenNotes.single.id, private.id);
     expect(
-      find.text('Moved to Hidden Notes. Pull down below Search to find it.'),
+      find.text(
+        'Moved to Hidden Notes. Choose Hidden in the notes filter to find it.',
+      ),
       findsOneWidget,
     );
+    expect(find.textContaining('Pull down'), findsNothing);
 
-    final drawerList = find.descendant(
-      of: find.byType(Drawer),
-      matching: find.byType(CustomScrollView),
-    );
-    expect(drawerList, findsOneWidget);
-    final hidden = find.byKey(const ValueKey('sidebar-hidden-notes'));
-    expect(hidden.hitTestable(), findsNothing);
-
-    await tester.drag(drawerList, Offset(0, NoteFooter.height + 20));
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
     await tester.pumpAndSettle();
-    expect(hidden.hitTestable(), findsOneWidget);
-    expect(
-      find.descendant(of: hidden, matching: find.text('1')),
-      findsOneWidget,
-    );
-
-    await tester.tap(hidden);
+    await tester.tap(find.byKey(const ValueKey('notes-filter-hidden')));
     await tester.pumpAndSettle();
     expect(gate.unlockCalls, 1);
     expect(find.widgetWithText(NoteRow, 'Only private note'), findsOneWidget);
@@ -4977,8 +5041,14 @@ void main() {
       expect(tester.testTextInput.isVisible, isFalse);
       tester.testTextInput.log.clear();
 
-      await tester.tap(find.byKey(const ValueKey('sidebar-archive')));
-      await tester.pumpAndSettle();
+      Future<void> choose(String show) async {
+        await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey('notes-filter-$show')));
+        await tester.pumpAndSettle();
+      }
+
+      await choose('archive');
       expect(find.widgetWithText(NoteRow, 'Archived note'), findsOneWidget);
       expect(openNoteField(tester).focusNode.hasFocus, isFalse);
       expect(tester.testTextInput.isVisible, isFalse);
@@ -4988,20 +5058,8 @@ void main() {
       );
 
       tester.testTextInput.log.clear();
-      await tester.tap(find.byKey(const ValueKey('sidebar-all-notes')));
-      await tester.pumpAndSettle();
-      final drawerList = find.descendant(
-        of: find.byType(Drawer),
-        matching: find.byType(Scrollable),
-      );
-      await tester.drag(drawerList.last, const Offset(0, 200));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('sidebar-hidden-notes')),
-        findsOneWidget,
-      );
-      await tester.tap(find.byKey(const ValueKey('sidebar-hidden-notes')));
-      await tester.pumpAndSettle();
+      await choose('all');
+      await choose('hidden');
       expect(find.widgetWithText(NoteRow, 'Hidden note'), findsOneWidget);
       expect(openNoteField(tester).focusNode.hasFocus, isFalse);
       expect(tester.testTextInput.isVisible, isFalse);

@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/task_index.dart';
@@ -192,9 +193,88 @@ void main() {
           ),
         ]);
         await phone.pass();
-        expect(jsonEncode(phone.store.data['tags.v1']), contains('Later'));
+        final saved = jsonEncode(phone.store.data['tags.v1']);
+        expect(saved, contains(id));
+        expect(saved, isNot(contains('Later')));
         expect(phone.tags.owed, isEmpty);
         expect(phone.tasks.entries, isEmpty);
+        laptop.dispose();
+        phone.dispose();
+      },
+    );
+
+    test(
+      'a pull of many records saves each store once, not once per record',
+      () async {
+        final (laptop, phone) = await pair();
+        final records = <WireTaskRecord>[];
+        for (var i = 0; i < 60; i++) {
+          final tag = Tag(
+            id: '0195f0d0-aaaa-4bbb-8ccc-${i.toString().padLeft(12, '0')}',
+            name: Stamped('Tag $i', 1),
+            colour: Stamped('teal', 1),
+            order: Stamped(i, 1),
+            createdAt: i + 1,
+          );
+          records.add(
+            WireTaskRecord(
+              id: tag.id,
+              updatedAt: DateTime.utc(2026, 11, 17, 9, 0, i),
+              payload: await sharedVault().sealRaw(
+                utf8.encode(
+                  jsonEncode(
+                    i.isEven
+                        ? tag.toPayload()
+                        : {'kind': 'chat', 'text': 'x' * 3000},
+                  ),
+                ),
+                null,
+              ),
+            ),
+          );
+        }
+        server.pushTasks('user-1', 'later-build', records);
+
+        final tagSaves = phone.store.puts['tags.v1'] ?? 0;
+        final indexSaves = phone.store.puts['tasks.v1'] ?? 0;
+        await phone.pass();
+
+        expect(phone.tags.tags, hasLength(30));
+        expect(phone.store.puts['tags.v1']! - tagSaves, lessThanOrEqualTo(2));
+        expect(
+          (phone.store.puts['tasks.v1'] ?? 0) - indexSaves,
+          lessThanOrEqualTo(2),
+        );
+        final saved = jsonEncode(phone.store.data['tags.v1']);
+        expect(saved, isNot(contains('xxxx')));
+        expect(saved.length, lessThan(20000));
+        laptop.dispose();
+        phone.dispose();
+      },
+    );
+
+    test(
+      'a push of many records saves each store once per chunk, not once per record',
+      () async {
+        final (laptop, phone) = await pair();
+        for (var i = 0; i < 250; i++) {
+          laptop.tags.create('Tag $i');
+          laptop.notes.create(body: 'Note $i');
+        }
+
+        final tagSaves = laptop.store.puts['tags.v1'] ?? 0;
+        final indexSaves = laptop.store.puts['tasks.v1'] ?? 0;
+        await laptop.pass();
+
+        expect(laptop.tags.owed, isEmpty);
+        expect(laptop.tasks.owed, isEmpty);
+        expect(laptop.store.puts['tags.v1']! - tagSaves, lessThanOrEqualTo(8));
+        expect(
+          laptop.store.puts['tasks.v1']! - indexSaves,
+          lessThanOrEqualTo(8),
+        );
+        await phone.pass();
+        expect(phone.tags.tags, hasLength(250));
         laptop.dispose();
         phone.dispose();
       },

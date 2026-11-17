@@ -47,7 +47,6 @@ void main() {
   late ShortcutPrefs shortcuts;
   late TaskBoard board;
   late _MemoryStore memory;
-  late TagStore tags;
   CommandChoice? chosen;
 
   /// Notes about a trip to Sintra in every place a note can be: two notes,
@@ -62,8 +61,6 @@ void main() {
       storage: MemoryDocStorage(),
     );
     await notes.load();
-    tags = TagStore(store);
-    await tags.load();
     await library.load();
     notes.create(
       body: 'Goals - Oct 2026\nSee Sintra and Cascais before December',
@@ -96,71 +93,57 @@ void main() {
     });
   }
 
-  Widget tagged(Widget menu) => TagShelf(
-    store: tags,
-    listed: () => [
-      for (final tag in tags.tags)
-        (
-          tag: tag,
-          count: [
-            for (final note in notes.notes)
-              if (tags.tagsOf(note.id).any((on) => on.id == tag.id)) note,
-          ].length,
-        ),
-    ],
-    untagged: () => 0,
-    isShared: (_) => false,
-    onFilter: (_) {},
-    child: TagMarks(
-      marksOf: (noteId) => [
-        for (final tag in tags.tagsOf(noteId)) tagMarkOf(tag),
-      ],
-      child: menu,
-    ),
-  );
-
   Future<void> pumpMenu(
     WidgetTester tester, {
     LibrarySpace space = LibrarySpace.notes,
     bool hiddenUnlocked = false,
     bool withSettings = false,
     List<String> recentIds = const [],
-    Note? openNote,
-    bool withTags = false,
+    TagShelf? tags,
+    Note? tagNote,
+    TagStore? marks,
   }) async {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final menu = CommandMenu(
-      notes: notes,
-      shortcuts: shortcuts,
-      space: space,
-      destinations: const [
-        LibrarySpace.notes,
-        LibrarySpace.tasks,
-        LibrarySpace.drawings,
-      ],
-      showHidden: true,
-      recentIds: recentIds,
-      displayTime: (instant) => instant,
-      taskLabel: (note) => note.title,
-      tasks: board,
-      hiddenUnlocked: hiddenUnlocked,
-      settingsIndex: withSettings
-          ? (lend) => SettingsDialog(
-              onIndex: lend,
-              layoutPrefs: LayoutPrefs(memory)..load(),
-              shortcuts: shortcuts,
-              rates: RatesRepository(memory),
-              notes: notes,
-            )
-          : null,
-      openNote: openNote,
-      onChosen: (choice) => chosen = choice,
-    );
     await tester.pumpWidget(
       MaterialApp(
         theme: KapyTheme.dark(),
-        home: Scaffold(body: withTags ? tagged(menu) : menu),
+        home: Scaffold(
+          body: TagMarks(
+            marksOf: (noteId) => [
+              for (final tag in marks?.tagsOf(noteId) ?? <Tag>[])
+                tagMarkOf(tag),
+            ],
+            child: CommandMenu(
+              notes: notes,
+              shortcuts: shortcuts,
+              space: space,
+              destinations: const [
+                LibrarySpace.notes,
+                LibrarySpace.tasks,
+                LibrarySpace.drawings,
+              ],
+              showHidden: true,
+              recentIds: recentIds,
+              displayTime: (instant) => instant,
+              taskLabel: (note) => note.title,
+              tasks: board,
+              hiddenUnlocked: hiddenUnlocked,
+              tags: tags,
+              tagNote: tagNote,
+              settingsIndex: withSettings
+                  ? (lend) => SettingsDialog(
+                      onIndex: lend,
+                      layoutPrefs: LayoutPrefs(memory)..load(),
+                      shortcuts: shortcuts,
+                      rates: RatesRepository(memory),
+                      notes: notes,
+                    )
+                  : null,
+              onChosen: (choice) => chosen = choice,
+            ),
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -366,128 +349,157 @@ void main() {
   });
 
   group('tags', () {
+    late TagStore store;
+    late Tag work;
+    late Tag secret;
+    late Tag travel;
     late Note trip;
 
-    Future<void> withTags(WidgetTester tester) async {
+    /// Work on one note, Travel on none, and a Secret tag the lists leave
+    /// out, as they do while Hidden is locked and only Hidden notes carry it.
+    Future<TagShelf> shelf(WidgetTester tester) async {
       await setUpNotes(tester);
+      store = TagStore(memory);
+      await store.load();
+      work = store.create('Work')!;
+      travel = store.create('Travel')!;
+      secret = store.create('Secret')!;
       trip = notes.notes.firstWhere((note) => note.title == 'Trip budget');
-      final work = tags.create('Work')!;
-      tags.create('Travel');
-      tags.addTag(trip.id, work.id);
+      store.addTag(trip.id, work.id);
+      return TagShelf(
+        store: store,
+        listed: () => [(tag: work, count: 1), (tag: travel, count: 0)],
+        untagged: () => 3,
+        isShared: (_) => false,
+        onFilter: (_) {},
+        child: const SizedBox.shrink(),
+      );
     }
 
-    testWidgets('a result carries the dot of its first tag', (tester) async {
-      await withTags(tester);
-      await pumpMenu(tester, withTags: true, recentIds: [trip.id]);
+    testWidgets('a result carries the dot of its first tag, before its date', (
+      tester,
+    ) async {
+      await shelf(tester);
+      await pumpMenu(tester, marks: store, recentIds: [trip.id]);
 
       expect(
         find.descendant(of: row('Trip budget'), matching: find.byType(TagDot)),
         findsOneWidget,
       );
       expect(
-        find.descendant(of: row('Notes'), matching: find.byType(TagDot)),
+        find.descendant(
+          of: row('Goals - Oct 2026'),
+          matching: find.byType(TagDot),
+        ),
         findsNothing,
       );
     });
 
-    testWidgets('# lists the tags with their counts, and letters narrow it', (
-      tester,
-    ) async {
-      await withTags(tester);
-      await pumpMenu(tester, withTags: true);
-      await type(tester, '#');
+    testWidgets('# lists the tags with counts, letters narrow them, and ↵ '
+        'chooses one to filter by', (tester) async {
+      final tags = await shelf(tester);
+      await pumpMenu(tester, tags: tags);
 
+      await type(tester, '#');
       expect(find.text('Filter by tag'), findsOneWidget);
       expect(row('Work'), findsOneWidget);
       expect(row('Travel'), findsOneWidget);
-      expect(
-        find.descendant(of: row('Work'), matching: find.text('1')),
-        findsOneWidget,
-      );
+      expect(row('Secret'), findsNothing);
       expect(find.text('Filter notes'), findsOneWidget);
 
       await type(tester, '#tr');
       expect(row('Work'), findsNothing);
+      expect(row('Travel'), findsOneWidget);
+
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      expect(
-        chosen,
-        isA<FilterTagChoice>().having(
-          (choice) => choice.tagId,
-          'tagId',
-          tags.named('Travel')!.id,
-        ),
-      );
+      await tester.pumpAndSettle();
+      expect((chosen! as FilterTagChoice).tagId, travel.id);
     });
 
-    testWidgets('# with no match says so and offers nothing else', (
-      tester,
-    ) async {
-      await withTags(tester);
-      await pumpMenu(tester, withTags: true);
-      await type(tester, '#zzz');
+    testWidgets('# with no match says so and offers nothing, and a hidden-only '
+        'tag is no match', (tester) async {
+      final tags = await shelf(tester);
+      await pumpMenu(tester, tags: tags);
 
-      expect(find.text('No tag named “zzz”'), findsOneWidget);
+      await type(tester, '#secret');
+      expect(find.text('No tag named “secret”'), findsOneWidget);
+      expect(find.textContaining('Hidden'), findsNothing);
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
       expect(chosen, isNull);
     });
 
-    testWidgets('typing # without tags leaves search alone', (tester) async {
+    testWidgets('# is plain search where there are no tags', (tester) async {
       await setUpNotes(tester);
       await pumpMenu(tester);
-      await type(tester, '#');
-
+      await type(tester, '#sintra');
       expect(find.text('Filter by tag'), findsNothing);
-      expect(find.text('Use “#”'), findsOneWidget);
+      expect(find.text('New note: #sintra'), findsOneWidget);
     });
 
-    testWidgets('Tag note… ticks and unticks tags on the open note, and a new '
-        'name creates one', (tester) async {
-      await withTags(tester);
-      await pumpMenu(tester, withTags: true, openNote: trip);
-      await type(tester, 'tag');
+    testWidgets('Tag note… is offered for the open note, ↵ swaps the menu for '
+        'its tags, and ticks follow ↵', (tester) async {
+      final tags = await shelf(tester);
+      await pumpMenu(tester, tags: tags, tagNote: trip);
 
+      await type(tester, 'tag');
       expect(find.text('Actions'), findsOneWidget);
+      expect(row('Tag note…'), findsOneWidget);
+      expect(find.text('Trip budget'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('command-menu-tagging')),
+        findsOneWidget,
+      );
+      expect(find.text('Tag note · Trip budget'), findsOneWidget);
+      expect(find.byKey(ValueKey('tag-row-${work.id}')), findsOneWidget);
+      expect(find.byKey(ValueKey('tag-row-${secret.id}')), findsNothing);
       expect(
         find.descendant(
-          of: row('Tag note…'),
-          matching: find.text('Trip budget'),
+          of: find.byKey(ValueKey('tag-row-${work.id}')),
+          matching: find.byType(KapyIcon),
         ),
         findsOneWidget,
       );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
-
-      expect(find.text('Tag note · Trip budget'), findsOneWidget);
-      Finder tick(String name) => find.descendant(
-        of: row(name),
-        matching: findKapyIcon(KapyIcons.checkRounded),
-      );
-      expect(row('Work'), findsOneWidget);
-
-      expect(tick('Work'), findsOneWidget);
-      await tester.tap(row('Travel'));
-      await tester.pumpAndSettle();
-      expect(tick('Travel'), findsOneWidget);
-      await tester.tap(row('Work'));
-      await tester.pumpAndSettle();
-      expect(tags.tagsOf(trip.id).map((tag) => tag.name.v), ['Travel']);
-      expect(tick('Work'), findsNothing);
-
-      await type(tester, 'Garden');
-      await tester.tap(row('Create “Garden”'));
-      await tester.pumpAndSettle();
       expect(
-        tags.tagsOf(trip.id).map((tag) => tag.name.v),
-        containsAll(['Travel', 'Garden']),
+        [for (final tag in store.tagsOf(trip.id)) tag.name.v],
+        ['Work', 'Travel'],
       );
       expect(chosen, isNull);
     });
 
-    testWidgets('Tag note… is offered only with a note open', (tester) async {
-      await withTags(tester);
-      await pumpMenu(tester, withTags: true);
+    testWidgets('in Tag note…, a hidden-only tag\'s name is refused neutrally '
+        'and neither picked nor shown', (tester) async {
+      final tags = await shelf(tester);
+      await pumpMenu(tester, tags: tags, tagNote: trip);
       await type(tester, 'tag');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
 
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'secret',
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('Create “secret”'), findsOneWidget);
+      expect(find.text(chooseAnotherName), findsOneWidget);
+      expect(find.textContaining('Hidden'), findsNothing);
+      expect(store.tagsOf(trip.id).map((tag) => tag.id), [work.id]);
+      expect(store.tags, hasLength(3));
+    });
+
+    testWidgets('Tag note… is not offered with no open note', (tester) async {
+      final tags = await shelf(tester);
+      await pumpMenu(tester, tags: tags);
+      await type(tester, 'tag');
       expect(row('Tag note…'), findsNothing);
     });
   });

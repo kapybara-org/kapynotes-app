@@ -158,55 +158,6 @@ class TagPopover extends StatelessWidget {
   }
 }
 
-/// Putting tags on one note and taking them off, with the words for what
-/// refuses: the Tags popover and ⌘K's Tag note… do it the same way.
-class NoteTagging {
-  const NoteTagging(this.shelf, this.noteId);
-
-  final TagShelf shelf;
-  final String noteId;
-
-  static const tooMany = 'A note takes at most $noteTagsMax tags.';
-
-  TagStore get _store => shelf.store;
-
-  List<TagEntry> matches(String query) {
-    final lowered = query.trim().toLowerCase();
-    return [
-      for (final entry in shelf.listed())
-        if (entry.tag.name.v.toLowerCase().contains(lowered)) entry,
-    ];
-  }
-
-  bool isOn(String tagId) =>
-      _store.tagsOf(noteId).any((tag) => tag.id == tagId);
-
-  /// Null when it worked, else why it did not.
-  String? toggle(String tagId) {
-    if (isOn(tagId)) {
-      _store.removeTag(noteId, tagId);
-      return null;
-    }
-    return _store.addTag(noteId, tagId) ? null : tooMany;
-  }
-
-  /// A name another tag has, in any case, picks that tag. One the lists
-  /// leave out, found only on Hidden notes while Hidden is locked, is
-  /// neither picked nor shown by its name. Null when it worked, else why not.
-  String? create(String name) {
-    final existing = _store.named(name);
-    if (existing != null &&
-        !shelf.listed().any((entry) => entry.tag.id == existing.id)) {
-      return chooseAnotherName;
-    }
-    if (_store.tagsOf(noteId).length >= noteTagsMax) return tooMany;
-    final tag = _store.create(name);
-    if (tag == null) return 'A tag name is 1 to $tagNameMax characters.';
-    _store.addTag(noteId, tag.id);
-    return null;
-  }
-}
-
 /// One field that finds or creates, over the tags with ticks for the ones on
 /// [noteId]. ↵ adds or takes off, ↑↓ move, esc closes.
 class TagPicker extends StatefulWidget {
@@ -225,54 +176,122 @@ class TagPicker extends StatefulWidget {
   State<TagPicker> createState() => _TagPickerState();
 }
 
-class _TagPickerState extends State<TagPicker> {
-  final _query = TextEditingController();
+/// What a tag list for one note does: the field's words find tags or name a
+/// new one, a row ticks or unticks, and a refused name or a full note says
+/// why. The popover and ⌘K's Tag note... both draw it.
+class TagPickerController extends ChangeNotifier {
+  TagPickerController({required this.shelf, required this.noteId});
+
+  final TagShelf shelf;
+  final String noteId;
+  final query = TextEditingController();
   int _at = 0;
   String? _problem;
 
-  NoteTagging get _tagging => NoteTagging(widget.shelf, widget.noteId);
+  TagStore get _store => shelf.store;
 
-  TagStore get _store => widget.shelf.store;
+  /// The row ↵ acts on.
+  int get at => _at;
+  String? get problem => _problem;
+
+  static const _tooMany = 'A note takes at most $noteTagsMax tags.';
 
   @override
   void dispose() {
-    _query.dispose();
+    query.dispose();
     super.dispose();
   }
 
-  void _toggle(String tagId) =>
-      setState(() => _problem = _tagging.toggle(tagId));
-
-  void _create() {
-    final problem = _tagging.create(_query.text);
-    if (problem == null) _query.clear();
-    setState(() {
-      _problem = problem;
-      if (problem == null) _at = 0;
-    });
+  /// Rows are reached with the pointer or the arrows, and the field's words
+  /// start the list over.
+  set at(int index) {
+    _at = index;
+    notifyListeners();
   }
 
-  void _activate() {
-    final matches = _tagging.matches(_query.text);
-    if (matches.isNotEmpty) {
-      return _toggle(matches[_at.clamp(0, matches.length - 1)].tag.id);
+  void typed() {
+    _at = 0;
+    _problem = null;
+    notifyListeners();
+  }
+
+  List<TagEntry> matches() {
+    final text = query.text.trim().toLowerCase();
+    return [
+      for (final entry in shelf.listed())
+        if (entry.tag.name.v.toLowerCase().contains(text)) entry,
+    ];
+  }
+
+  bool isOn(String tagId) =>
+      _store.tagsOf(noteId).any((tag) => tag.id == tagId);
+
+  void toggle(String tagId) {
+    if (isOn(tagId)) {
+      _store.removeTag(noteId, tagId);
+      _problem = null;
+    } else {
+      _problem = _store.addTag(noteId, tagId) ? null : _tooMany;
     }
-    if (_query.text.trim().isNotEmpty) _create();
+    notifyListeners();
   }
 
-  void _move(int by) {
-    final count = _tagging.matches(_query.text).length;
+  /// A name another tag has, in any case, picks that tag. One the lists
+  /// leave out, found only on Hidden notes while Hidden is locked, is
+  /// neither picked nor shown by its name.
+  void create() {
+    final existing = _store.named(query.text);
+    if (existing != null &&
+        !shelf.listed().any((entry) => entry.tag.id == existing.id)) {
+      _problem = chooseAnotherName;
+    } else if (_store.tagsOf(noteId).length >= noteTagsMax) {
+      _problem = _tooMany;
+    } else if (_store.create(query.text) case final tag?) {
+      _store.addTag(noteId, tag.id);
+      query.clear();
+      _problem = null;
+      _at = 0;
+    } else {
+      _problem = 'A tag name is 1 to $tagNameMax characters.';
+    }
+    notifyListeners();
+  }
+
+  void activate() {
+    final matches = this.matches();
+    if (matches.isNotEmpty) {
+      return toggle(matches[_at.clamp(0, matches.length - 1)].tag.id);
+    }
+    if (query.text.trim().isNotEmpty) create();
+  }
+
+  void move(int by) {
+    final count = matches().length;
     if (count == 0) return;
-    setState(() => _at = (_at + by).clamp(0, count - 1));
+    _at = (_at + by).clamp(0, count - 1);
+    notifyListeners();
+  }
+}
+
+class _TagPickerState extends State<TagPicker> {
+  late final _picker = TagPickerController(
+    shelf: widget.shelf,
+    noteId: widget.noteId,
+  );
+
+  @override
+  void dispose() {
+    _picker.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: _store,
+    listenable: Listenable.merge([_picker.shelf.store, _picker]),
     builder: (context, _) {
       final palette = context.palette;
-      final matches = _tagging.matches(_query.text);
-      final query = _query.text.trim();
+      final matches = _picker.matches();
+      final query = _picker.query.text.trim();
       Widget row({
         required Key key,
         required int index,
@@ -283,7 +302,7 @@ class _TagPickerState extends State<TagPicker> {
         required VoidCallback onTap,
       }) => MouseRegion(
         cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _at = index),
+        onEnter: (_) => _picker.at = index,
         child: GestureDetector(
           key: key,
           behavior: HitTestBehavior.opaque,
@@ -292,7 +311,7 @@ class _TagPickerState extends State<TagPicker> {
             height: 30,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
-              color: index == _at ? palette.hover : null,
+              color: index == _picker.at ? palette.hover : null,
               borderRadius: BorderRadius.circular(7),
             ),
             child: Row(
@@ -340,8 +359,8 @@ class _TagPickerState extends State<TagPicker> {
             leading: TagDot(tagColourOf(entry.tag.colour.v)),
             label: entry.tag.name.v,
             count: '${entry.count}',
-            ticked: _tagging.isOn(entry.tag.id),
-            onTap: () => _toggle(entry.tag.id),
+            ticked: _picker.isOn(entry.tag.id),
+            onTap: () => _picker.toggle(entry.tag.id),
           ),
         if (matches.isEmpty && query.isNotEmpty)
           row(
@@ -354,10 +373,10 @@ class _TagPickerState extends State<TagPicker> {
               color: palette.textTertiary,
             ),
             label: 'Create “$query”',
-            onTap: _create,
+            onTap: _picker.create,
           ),
       ];
-      final problem = _problem;
+      final problem = _picker.problem;
       return TagPopover(
         key: const ValueKey('tag-picker'),
         child: Column(
@@ -375,10 +394,11 @@ class _TagPickerState extends State<TagPicker> {
             CallbackShortcuts(
               bindings: {
                 const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-                    _move(1),
+                    _picker.move(1),
                 const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
-                    _move(-1),
-                const SingleActivator(LogicalKeyboardKey.enter): _activate,
+                    _picker.move(-1),
+                const SingleActivator(LogicalKeyboardKey.enter):
+                    _picker.activate,
                 const SingleActivator(LogicalKeyboardKey.escape):
                     widget.onClose,
               },
@@ -403,15 +423,12 @@ class _TagPickerState extends State<TagPicker> {
                     Expanded(
                       child: TextField(
                         key: const ValueKey('tag-picker-field'),
-                        controller: _query,
+                        controller: _picker.query,
                         autofocus: true,
                         inputFormatters: [
                           LengthLimitingTextInputFormatter(tagNameMax),
                         ],
-                        onChanged: (_) => setState(() {
-                          _at = 0;
-                          _problem = null;
-                        }),
+                        onChanged: (_) => _picker.typed(),
                         style: _text(13, FontWeight.w400, palette.textPrimary),
                         decoration: InputDecoration.collapsed(
                           hintText: 'Find or create a tag',
