@@ -6,8 +6,10 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/auth_api.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
@@ -49,6 +51,12 @@ void main() {
         notes: notes,
         state: state,
         store: store,
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          state: state,
+          storage: MemoryDocStorage(),
+        ),
       ),
       notes: notes,
       keys: keys,

@@ -16,8 +16,8 @@ import '../crdt/crdt.dart';
 /// document with its character identities and tombstones, the per-device op
 /// counter, and the outbox of changes the server has not acknowledged. The
 /// two are kept apart so a keystroke rewrites one small file rather than
-/// every note the user owns, and so a build that never syncs pays for none
-/// of it.
+/// every note the user owns, and so a note that is neither synced nor holds
+/// a task pays for none of it.
 ///
 /// Records are plaintext on local disk, as the notes themselves are; sealing
 /// happens on the way out.
@@ -217,6 +217,7 @@ class DocRecord {
     this.opsSinceSnapshot = 0,
     this.ownOpsSinceSnapshot = 0,
     this.seeded = false,
+    this.offline = false,
     List<OutboxEntry>? outbox,
   }) : _doc = doc,
        _replica = replica,
@@ -231,6 +232,7 @@ class DocRecord {
     this.opsSinceSnapshot = 0,
     this.ownOpsSinceSnapshot = 0,
     this.seeded = false,
+    this.offline = false,
     List<OutboxEntry>? outbox,
   }) : _snapshotJson = snapshotJson,
        _replica = replica,
@@ -303,6 +305,15 @@ class DocRecord {
   /// seed was acknowledged, or after any of it arrived from the server.
   bool seeded;
 
+  /// Holds changes taken in while nothing was syncing, which no outbox entry
+  /// carries. Sync sends the whole document next, as a seed if the server
+  /// has never had the note.
+  bool offline;
+
+  /// Never on the server, and nothing on its way there: a document kept on
+  /// this device alone so far.
+  bool get isLocal => !seeded && outbox.isEmpty;
+
   final List<OutboxEntry> outbox;
 
   /// Content keys by epoch, so an op sealed under a key that has since
@@ -326,6 +337,7 @@ class DocRecord {
     'opsSinceSnapshot': opsSinceSnapshot,
     'ownOpsSinceSnapshot': ownOpsSinceSnapshot,
     'seeded': seeded,
+    if (offline) 'offline': true,
     'serverEpoch': serverEpoch,
     'doc': _snapshotForWrite(),
     'outbox': outbox.map((entry) => entry.toJson()).toList(),
@@ -362,6 +374,7 @@ class DocRecord {
               ? raw['ownOpsSinceSnapshot'] as int
               : 0,
           seeded: raw['seeded'] == true,
+          offline: raw['offline'] == true,
           outbox: outbox is List
               ? outbox
                     .map(OutboxEntry.fromJson)
@@ -416,7 +429,12 @@ class DocStore {
   int get pendingCount =>
       _records.values.fold(0, (sum, record) => sum + record.outbox.length);
 
-  Future<void> load() => _loading ??= _load();
+  /// A fresh future once loaded, not the one the load ran on: the store now
+  /// outlives any one sign-in, and a test that loads it inside the fake
+  /// clock and syncs on the real one would otherwise wait on a microtask the
+  /// fake clock never runs.
+  Future<void> load() =>
+      _loaded ? Future<void>.value() : _loading ??= _load();
 
   Future<void> _load() async {
     try {

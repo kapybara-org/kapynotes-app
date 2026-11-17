@@ -257,7 +257,7 @@ Widget harness(
       resultsVisible: true,
       writingFont: WritingFont.handwritten,
       shortcuts: shortcutPrefs,
-      onDocumentChanged: (body, formats, refs) {
+      onDocumentChanged: (body, formats, refs, _) {
         onAttachmentsChanged?.call(refs);
         onFormatsChanged?.call(formats);
       },

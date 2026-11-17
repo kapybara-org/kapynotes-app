@@ -11,6 +11,7 @@ import 'package:kapy_notes/calc/highlight.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/crdt/text_diff.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
@@ -78,6 +79,7 @@ Widget harness(
   TargetPlatform? platform,
   ValueChanged<String>? onBodyChanged,
   ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
+  ValueChanged<TextEdit?>? onEdit,
   VoidCallback? onSettingsPressed,
   VoidCallback? onRecordVoice,
   WritingFont writingFont = WritingFont.handwritten,
@@ -103,9 +105,10 @@ Widget harness(
     autofocus: autofocus,
     ensureKeyboardVisible: ensureKeyboardVisible,
     readOnly: readOnly,
-    onDocumentChanged: (body, formats, attachments) {
+    onDocumentChanged: (body, formats, attachments, edit) {
       onBodyChanged?.call(body);
       onFormatsChanged?.call(formats);
+      onEdit?.call(edit);
     },
     onSettingsPressed: onSettingsPressed ?? () {},
     onRecordVoice: onRecordVoice,
@@ -587,6 +590,33 @@ void main() {
     final selection = state.textEditingValue.selection;
     expect(selection.isCollapsed, isFalse);
     expect(selection.extentOffset, 12);
+  });
+
+  testWidgets('a line deleted whole is reported where it went, not where '
+      'the text alone would put it', (tester) async {
+    const body = 'Errands\n☐ Buy oats\n☐ Buy milk\n☐ Buy eggs';
+    final edits = <TextEdit?>[];
+    await tester.pumpWidget(harness(body, autofocus: true, onEdit: edits.add));
+    await tester.pumpAndSettle();
+
+    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    state.userUpdateTextEditingValue(
+      state.textEditingValue.copyWith(
+        selection: const TextSelection(baseOffset: 19, extentOffset: 30),
+      ),
+      SelectionChangedCause.drag,
+    );
+    await tester.pumpAndSettle();
+    state.userUpdateTextEditingValue(
+      const TextEditingValue(
+        text: 'Errands\n☐ Buy oats\n☐ Buy eggs',
+        selection: TextSelection.collapsed(offset: 19),
+      ),
+      SelectionChangedCause.keyboard,
+    );
+    await tester.pumpAndSettle();
+
+    expect(edits.last, (start: 19, oldEnd: 30, newEnd: 19));
   });
 
   group('blank lines', () {

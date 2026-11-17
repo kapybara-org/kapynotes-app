@@ -69,7 +69,7 @@ Widget harness(
         engine: engine,
         highlighter: Highlighter(engine.registry),
         resultsVisible: true,
-        onDocumentChanged: (body, formats, attachments) {
+        onDocumentChanged: (body, formats, attachments, _) {
           store?.body = body;
           onBodyChanged?.call(body);
         },
