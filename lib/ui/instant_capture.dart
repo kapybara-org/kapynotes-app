@@ -83,7 +83,7 @@ class _InstantCaptureAppState extends State<InstantCaptureApp>
   @override
   Widget build(BuildContext context) {
     return WidgetsApp(
-      color: const Color(0xFFFAF9F7),
+      color: KapyTheme.lightPalette.editorBackground,
       debugShowCheckedModeBanner: false,
       builder: (context, _) =>
           _CaptureSurface(controller: widget.controller, focusNode: _focusNode),

@@ -332,7 +332,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       widget.notes.create();
     }
     widget.rates.loadCache();
-    _engines = EngineProvider(widget.rates, widget.prefs);
+    _engines = EngineProvider(widget.rates, widget.prefs, widget.notes.now);
     _ready = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;

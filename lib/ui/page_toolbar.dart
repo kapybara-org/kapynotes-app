@@ -100,9 +100,10 @@ class PageToolbar extends StatelessWidget {
     final newNoteShortcut = this.newNoteShortcut;
     final updates = this.updates;
 
-    return SizedBox(
+    return Container(
       key: const ValueKey('page-toolbar'),
       height: AppControlMetrics.scaleBar(context, height),
+      color: palette.isGlass ? palette.paperColor : null,
       child: Stack(
         children: [
           const Positioned.fill(

@@ -145,10 +145,10 @@ const _cardRadius = BorderRadius.only(
   bottomRight: Radius.circular(14),
 );
 
-const _cardShadow = [
-  BoxShadow(color: Color(0x33000000), offset: Offset(0, 1)),
+List<BoxShadow> _cardShadow(CalcPalette palette) => [
+  BoxShadow(color: palette.shadowAt(0x33), offset: const Offset(0, 1)),
   BoxShadow(
-    color: Color(0x73000000),
+    color: palette.shadowAt(0x73),
     offset: Offset(0, 8),
     blurRadius: 14,
     spreadRadius: -10,
@@ -302,7 +302,7 @@ class NoteCardFace extends StatelessWidget {
               : blank
               ? Border.all(color: palette.separator)
               : null,
-          boxShadow: _cardShadow,
+          boxShadow: _cardShadow(palette),
         ),
         child: Stack(
           children: [
@@ -744,9 +744,9 @@ class NotesListControls extends StatelessWidget {
                     ? BoxDecoration(
                         color: palette.selectedBackground,
                         borderRadius: BorderRadius.circular(7),
-                        boxShadow: const [
+                        boxShadow: [
                           BoxShadow(
-                            color: Color(0x4D000000),
+                            color: palette.shadowAt(0x4D),
                             offset: Offset(0, 1),
                             blurRadius: 2,
                           ),
@@ -988,9 +988,9 @@ class _MediaMenu extends StatelessWidget {
         color: palette.controlBackground,
         border: Border.all(color: palette.separator),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Color(0x80000000),
+            color: palette.shadowAt(0x80),
             offset: Offset(0, 12),
             blurRadius: 28,
             spreadRadius: -14,

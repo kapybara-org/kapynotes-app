@@ -7,7 +7,8 @@ import 'layout_prefs.dart';
 import 'rates.dart';
 
 /// Keeps a [CalcEngine] in step with the current exchange rates and the
-/// number system the user has chosen.
+/// number system the user has chosen, dating it by [_now]: the clock the
+/// notes are dated by, so "today" in a line and "Today" on its card agree.
 ///
 /// The engine is immutable in both, so either change means building a new
 /// one rather than patching it — which also guarantees no line is ever
@@ -15,6 +16,7 @@ import 'rates.dart';
 class EngineProvider extends ChangeNotifier {
   final RatesRepository _rates;
   final LayoutPrefs _prefs;
+  final DateTime Function() _now;
 
   late CalcEngine _engine;
   late Highlighter _highlighter;
@@ -22,7 +24,7 @@ class EngineProvider extends ChangeNotifier {
   late DigitGrouping _grouping;
   String? _timeZoneId;
 
-  EngineProvider(this._rates, this._prefs) {
+  EngineProvider(this._rates, this._prefs, this._now) {
     _grouping = _prefs.digitGrouping;
     _timeZoneId = _prefs.timeZoneId;
     _rebuild();
@@ -58,6 +60,7 @@ class EngineProvider extends ChangeNotifier {
       ratesPerUsd: _rates.rates,
       grouping: _grouping,
       timeZoneId: _timeZoneId,
+      now: _now,
     );
     _highlighter = Highlighter(_engine.registry);
   }
