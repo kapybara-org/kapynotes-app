@@ -287,15 +287,12 @@ total''';
         strutStyle: strut,
       )..layout(maxWidth: EditorMetrics.columnWidth);
       addTearDown(whole.dispose);
-      final perLine = controller.lineSpans(context, _style);
+      final spansIn = controller.spansIn(context, _style);
 
       final lines = NoteLines(body);
       final layout = NoteLayout(
         lines: lines,
-        spanOf: (line) => (
-          span: TextSpan(style: _style, children: perLine[line]),
-          placeholders: const [],
-        ),
+        spanOf: (line) => spansIn(lines.startOf(line), lines.endOf(line)),
         style: _style,
         strut: strut,
       );

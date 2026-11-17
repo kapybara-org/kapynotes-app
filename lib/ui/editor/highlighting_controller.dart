@@ -13,6 +13,7 @@ import 'code_highlighting.dart';
 import 'editor_formatting.dart';
 import 'markdown_syntax.dart';
 import 'note_math.dart';
+import 'note_sliver.dart';
 
 /// One image, already sized and built, ready to be dropped into the span tree
 /// at its placeholder.
@@ -181,17 +182,26 @@ class HighlightingController extends TextEditingController {
   /// The placeholder boxes [TextPainter] must be told about before it can lay
   /// out a span containing [WidgetSpan]s, in the order they appear: pictures,
   /// table rows, and the formulas the last [buildTextSpan] drew.
-  List<PlaceholderDimensions> placeholderDimensions() {
+  List<PlaceholderDimensions> placeholderDimensions() =>
+      _placeholdersIn(0, text.length, _formulaPlaceholders);
+
+  /// The pictures in `[start, end)` and [formulas], in the order they come.
+  List<PlaceholderDimensions> _placeholdersIn(
+    int start,
+    int end,
+    List<(int, PlaceholderDimensions)> formulas,
+  ) {
     final placeholders = [
       for (final MapEntry(key: offset, value: image) in _imageSpans.entries)
-        (
-          offset,
-          PlaceholderDimensions(
-            size: Size(image.width, image.height),
-            alignment: PlaceholderAlignment.top,
+        if (offset >= start && offset < end)
+          (
+            offset,
+            PlaceholderDimensions(
+              size: Size(image.width, image.height),
+              alignment: PlaceholderAlignment.top,
+            ),
           ),
-        ),
-      ..._formulaPlaceholders,
+      ...formulas,
     ]..sort((a, b) => a.$1.compareTo(b.$1));
     return [for (final (_, dimensions) in placeholders) dimensions];
   }
@@ -255,20 +265,22 @@ class HighlightingController extends TextEditingController {
     return _NoteSpan(style: base, children: children);
   }
 
-  /// Each line's runs, built a line at a time from the same styling as
-  /// [buildTextSpan]'s.
-  @visibleForTesting
-  List<List<InlineSpan>> lineSpans(BuildContext context, TextStyle style) {
-    final styling = _stylingFor(context, style, null);
-    final source = text;
-    final lines = <List<InlineSpan>>[];
-    var start = 0;
-    while (true) {
-      final end = _lineEndAt(source, start);
-      lines.add(_spansIn(styling, start, end).$1);
-      if (end == source.length) return lines;
-      start = end + 1;
-    }
+  /// What any stretch of the note draws, by [buildTextSpan]'s rules, from
+  /// styling worked out once for the note as it is now: the stretch's runs,
+  /// and the size of each picture and formula among them, in order.
+  LineSpan Function(int start, int end) spansIn(
+    BuildContext context,
+    TextStyle style, {
+    TextRange? composing,
+  }) {
+    final styling = _stylingFor(context, style, composing);
+    return (start, end) {
+      final (children, formulas) = _spansIn(styling, start, end);
+      return (
+        span: TextSpan(style: style, children: children),
+        placeholders: _placeholdersIn(start, end, formulas),
+      );
+    };
   }
 
   /// What the note's text is styled by, worked out for the whole note so that

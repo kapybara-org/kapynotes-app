@@ -84,14 +84,14 @@ void main() {
             .buildTextSpan(context: context, style: style, withComposing: false)
             .children!,
       );
-      final lines = controller.lineSpans(context, style);
+      final spansIn = controller.spansIn(context, style);
       expect(whole, hasLength(_note.length));
       var start = 0;
       final texts = _note.split('\n');
-      expect(lines, hasLength(texts.length));
       for (var line = 0; line < texts.length; line++) {
+        final drawn = spansIn(start, start + texts[line].length).span;
         expect(
-          _drawn(lines[line]),
+          _drawn((drawn as TextSpan).children!),
           whole.sublist(start, start + texts[line].length),
           reason: 'line $line with the caret at $caret',
         );
