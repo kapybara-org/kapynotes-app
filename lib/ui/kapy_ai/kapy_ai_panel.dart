@@ -35,7 +35,8 @@ class KapyAiPanelController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// The draft for the composer, once.
+  /// The draft for the composer, once. It goes after anything already typed
+  /// there, on a line of its own.
   String? takeDraft() {
     final draft = _draft;
     _draft = null;
@@ -135,9 +136,11 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
   void _takeDraft() {
     final draft = widget.controller.takeDraft();
     if (draft == null) return;
+    final typed = _field.text.trimRight();
+    final text = typed.trim().isEmpty ? draft : '$typed\n$draft';
     _field.value = TextEditingValue(
-      text: draft,
-      selection: TextSelection.collapsed(offset: draft.length),
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 
