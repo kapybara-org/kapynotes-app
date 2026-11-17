@@ -14,8 +14,13 @@ class _MemoryStore extends LocalStore {
   @override
   Future<void> flush() async {}
 
+  int puts = 0;
+
   @override
-  void put(String key, Object? value) => data[key] = value;
+  void put(String key, Object? value) {
+    puts++;
+    data[key] = value;
+  }
 }
 
 const noteId = '0195f0d0-1111-4222-8333-444455556666';
@@ -390,26 +395,40 @@ void main() {
       },
     );
 
-    test('held, many records save once, on release', () {
-      var saves = 0;
-      tags.addListener(() => saves++);
+    test('held, many records are written once, on release', () {
+      final before = store.puts;
       tags.hold();
       for (var i = 0; i < 50; i++) {
         tags.keepUnknown('r$i', i);
         tags.applyRemoteTag(remoteTag('t$i', 'Tag $i'), i);
       }
-      expect(saves, 0);
+      expect(store.puts, before);
       expect((store.data['tags.v1'] as Map)['unknown'], isEmpty);
       tags.release();
-      expect(saves, 1);
+      expect(store.puts, before + 1);
       expect(
         ((store.data['tags.v1'] as Map)['unknown'] as List),
         hasLength(50),
       );
       tags.hold();
       tags.release();
-      expect(saves, 1);
+      expect(store.puts, before + 1);
     });
+
+    test(
+      'a change made while held notifies at once and is written on release',
+      () {
+        var told = 0;
+        tags.addListener(() => told++);
+        tags.hold();
+        tags.create('Held');
+        expect(told, 1);
+        expect(jsonEncode(store.data['tags.v1']), isNot(contains('Held')));
+        tags.release();
+        expect(told, 1);
+        expect(jsonEncode(store.data['tags.v1']), contains('Held'));
+      },
+    );
 
     test('survives a reload, owed records included', () async {
       final work = tags.create('Work')!;

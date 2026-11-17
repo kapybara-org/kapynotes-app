@@ -194,8 +194,15 @@ class TaskSync {
           );
         }
         final result = await _api.pushTasks(records);
-        for (final item in chunk) {
-          if (result.applied.contains(item.id)) item.acknowledge();
+        _index.hold();
+        _tags.hold();
+        try {
+          for (final item in chunk) {
+            if (result.applied.contains(item.id)) item.acknowledge();
+          }
+        } finally {
+          _index.release();
+          _tags.release();
         }
         for (final conflict in result.conflicts) {
           await _take(conflict);

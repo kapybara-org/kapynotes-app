@@ -235,18 +235,46 @@ void main() {
         }
         server.pushTasks('user-1', 'later-build', records);
 
-        var tagSaves = 0;
-        var indexSaves = 0;
-        phone.tags.addListener(() => tagSaves++);
-        phone.tasks.addListener(() => indexSaves++);
+        final tagSaves = phone.store.puts['tags.v1'] ?? 0;
+        final indexSaves = phone.store.puts['tasks.v1'] ?? 0;
         await phone.pass();
 
         expect(phone.tags.tags, hasLength(30));
-        expect(tagSaves, lessThanOrEqualTo(2));
-        expect(indexSaves, lessThanOrEqualTo(2));
+        expect(phone.store.puts['tags.v1']! - tagSaves, lessThanOrEqualTo(2));
+        expect(
+          (phone.store.puts['tasks.v1'] ?? 0) - indexSaves,
+          lessThanOrEqualTo(2),
+        );
         final saved = jsonEncode(phone.store.data['tags.v1']);
         expect(saved, isNot(contains('xxxx')));
         expect(saved.length, lessThan(20000));
+        laptop.dispose();
+        phone.dispose();
+      },
+    );
+
+    test(
+      'a push of many records saves each store once per chunk, not once per record',
+      () async {
+        final (laptop, phone) = await pair();
+        for (var i = 0; i < 250; i++) {
+          laptop.tags.create('Tag $i');
+          laptop.notes.create(body: 'Note $i');
+        }
+
+        final tagSaves = laptop.store.puts['tags.v1'] ?? 0;
+        final indexSaves = laptop.store.puts['tasks.v1'] ?? 0;
+        await laptop.pass();
+
+        expect(laptop.tags.owed, isEmpty);
+        expect(laptop.tasks.owed, isEmpty);
+        expect(laptop.store.puts['tags.v1']! - tagSaves, lessThanOrEqualTo(8));
+        expect(
+          laptop.store.puts['tasks.v1']! - indexSaves,
+          lessThanOrEqualTo(8),
+        );
+        await phone.pass();
+        expect(phone.tags.tags, hasLength(250));
         laptop.dispose();
         phone.dispose();
       },
