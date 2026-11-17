@@ -114,10 +114,10 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('sidebar-media-filter')));
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
     await tester.pumpAndSettle();
-    expect(unpressable(), isEmpty, reason: 'with the media filter open');
-    expect(unnamed(), isEmpty, reason: 'with the media filter open');
+    expect(unpressable(), isEmpty, reason: 'with the notes filter open');
+    expect(unnamed(), isEmpty, reason: 'with the notes filter open');
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
@@ -130,12 +130,17 @@ void main() {
     expect(unpressable(), isEmpty, reason: 'on a drawing');
     expect(unnamed(), isEmpty, reason: 'on a drawing');
 
-    for (final space in ['drawings', 'archive']) {
-      await tester.tap(find.byKey(ValueKey('rail-$space')));
-      await tester.pumpAndSettle();
-      expect(unpressable(), isEmpty, reason: 'in $space');
-      expect(unnamed(), isEmpty, reason: 'in $space');
-    }
+    await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+    await tester.pumpAndSettle();
+    expect(unpressable(), isEmpty, reason: 'in drawings');
+    expect(unnamed(), isEmpty, reason: 'in drawings');
+
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
+    await tester.pumpAndSettle();
+    expect(unpressable(), isEmpty, reason: 'in the archive');
+    expect(unnamed(), isEmpty, reason: 'in the archive');
 
     await tapSettings(tester);
     expect(unpressable(), isEmpty, reason: 'with Settings open');
@@ -192,8 +197,8 @@ void main() {
     await press(tester, labelled('Cards'));
     expect(goldenPrefs.noteCards, isTrue);
 
-    await press(tester, find.semantics.byLabel(RegExp('^Media filter')));
-    expect(find.byKey(const ValueKey('media-filter-menu')), findsOneWidget);
+    await press(tester, find.semantics.byLabel(RegExp('^Notes filter')));
+    expect(find.byKey(const ValueKey('notes-filter-menu')), findsOneWidget);
   });
 
   testPress('See all is pressed by its name', (tester) async {

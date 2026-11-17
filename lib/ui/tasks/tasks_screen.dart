@@ -764,17 +764,18 @@ class _DoNowCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      if (label != null)
-                        Flexible(
-                          child: NoteMark(
-                            note: item.note,
-                            label: label,
-                            onPressed: onOpenNote,
-                          ),
-                        )
-                      else
-                        const Spacer(),
-                      if (label != null) const Spacer(),
+                      Expanded(
+                        child: label == null
+                            ? const SizedBox.shrink()
+                            : Align(
+                                alignment: Alignment.centerLeft,
+                                child: NoteMark(
+                                  note: item.note,
+                                  label: label,
+                                  onPressed: onOpenNote,
+                                ),
+                              ),
+                      ),
                       Tooltip(
                         message: 'Moves it to the end of the list',
                         child: TextButton.icon(

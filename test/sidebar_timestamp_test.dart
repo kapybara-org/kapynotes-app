@@ -34,7 +34,7 @@ void main() {
     expect(glance(DateTime.utc(2026, 11, 16, 9, 5)), '09:05');
     expect(
       glance(DateTime.utc(2026, 11, 16, 9, 5), today: true),
-      'Today · 09:05',
+      'Today, 09:05',
     );
     expect(glance(DateTime.utc(2026, 11, 15, 23)), 'Yesterday');
     expect(glance(DateTime.utc(2026, 11, 14, 8)), 'Sat');
