@@ -103,7 +103,9 @@ class SearchArchiveChoice extends CommandChoice {
 /// listed only with [showHidden], and Archive. Hidden notes are searched
 /// only while [hiddenUnlocked], and [tasks] is null where there is no task
 /// list to search or add to. With [tags], # lists the tags to filter by, and
-/// [tagNote], the open note, can be tagged from the menu.
+/// [tagNote], the open note, can be tagged from the menu. A result shows the
+/// dot of the first of [marksOf]'s tags for its note: the dialog is a route
+/// of its own, so the page's own marks don't reach it.
 Future<CommandChoice?> showCommandMenu(
   BuildContext context, {
   required NotesStore notes,
@@ -119,27 +121,31 @@ Future<CommandChoice?> showCommandMenu(
   SettingsHost? settingsIndex,
   TagShelf? tags,
   Note? tagNote,
+  List<TagMark> Function(String noteId)? marksOf,
 }) {
   final dark = context.palette.brightness == Brightness.dark;
   return showDialog<CommandChoice>(
     context: context,
     barrierColor: dark ? const Color(0x990C0B09) : const Color(0x402A2620),
-    builder: (context) => CommandMenu(
-      notes: notes,
-      shortcuts: shortcuts,
-      space: space,
-      destinations: destinations,
-      recentIds: recentIds,
-      displayTime: displayTime,
-      taskLabel: taskLabel,
-      tasks: tasks,
-      showHidden: showHidden,
-      hiddenUnlocked: hiddenUnlocked,
-      settingsIndex: settingsIndex,
-      tags: tags,
-      tagNote: tagNote,
-      onChosen: (choice) => Navigator.of(context).pop(choice),
-    ),
+    builder: (context) {
+      final menu = CommandMenu(
+        notes: notes,
+        shortcuts: shortcuts,
+        space: space,
+        destinations: destinations,
+        recentIds: recentIds,
+        displayTime: displayTime,
+        taskLabel: taskLabel,
+        tasks: tasks,
+        showHidden: showHidden,
+        hiddenUnlocked: hiddenUnlocked,
+        settingsIndex: settingsIndex,
+        tags: tags,
+        tagNote: tagNote,
+        onChosen: (choice) => Navigator.of(context).pop(choice),
+      );
+      return marksOf == null ? menu : TagMarks(marksOf: marksOf, child: menu);
+    },
   );
 }
 

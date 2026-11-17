@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -17,7 +19,6 @@ import 'package:kapy_notes/ui/command_menu.dart';
 import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
-import 'package:kapy_notes/ui/tag_colours.dart';
 import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:material_ui/material_ui.dart';
@@ -101,7 +102,6 @@ void main() {
     List<String> recentIds = const [],
     TagShelf? tags,
     Note? tagNote,
-    TagStore? marks,
   }) async {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -109,39 +109,33 @@ void main() {
       MaterialApp(
         theme: KapyTheme.dark(),
         home: Scaffold(
-          body: TagMarks(
-            marksOf: (noteId) => [
-              for (final tag in marks?.tagsOf(noteId) ?? <Tag>[])
-                tagMarkOf(tag),
+          body: CommandMenu(
+            notes: notes,
+            shortcuts: shortcuts,
+            space: space,
+            destinations: const [
+              LibrarySpace.notes,
+              LibrarySpace.tasks,
+              LibrarySpace.drawings,
             ],
-            child: CommandMenu(
-              notes: notes,
-              shortcuts: shortcuts,
-              space: space,
-              destinations: const [
-                LibrarySpace.notes,
-                LibrarySpace.tasks,
-                LibrarySpace.drawings,
-              ],
-              showHidden: true,
-              recentIds: recentIds,
-              displayTime: (instant) => instant,
-              taskLabel: (note) => note.title,
-              tasks: board,
-              hiddenUnlocked: hiddenUnlocked,
-              tags: tags,
-              tagNote: tagNote,
-              settingsIndex: withSettings
-                  ? (lend) => SettingsDialog(
-                      onIndex: lend,
-                      layoutPrefs: LayoutPrefs(memory)..load(),
-                      shortcuts: shortcuts,
-                      rates: RatesRepository(memory),
-                      notes: notes,
-                    )
-                  : null,
-              onChosen: (choice) => chosen = choice,
-            ),
+            showHidden: true,
+            recentIds: recentIds,
+            displayTime: (instant) => instant,
+            taskLabel: (note) => note.title,
+            tasks: board,
+            hiddenUnlocked: hiddenUnlocked,
+            tags: tags,
+            tagNote: tagNote,
+            settingsIndex: withSettings
+                ? (lend) => SettingsDialog(
+                    onIndex: lend,
+                    layoutPrefs: LayoutPrefs(memory)..load(),
+                    shortcuts: shortcuts,
+                    rates: RatesRepository(memory),
+                    notes: notes,
+                  )
+                : null,
+            onChosen: (choice) => chosen = choice,
           ),
         ),
       ),
@@ -376,11 +370,41 @@ void main() {
       );
     }
 
-    testWidgets('a result carries the dot of its first tag, before its date', (
-      tester,
-    ) async {
+    testWidgets('a result carries the dot of its first tag, in the dialog the '
+        'app opens', (tester) async {
       await shelf(tester);
-      await pumpMenu(tester, marks: store, recentIds: [trip.id]);
+      await tester.binding.setSurfaceSize(const Size(1000, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: Builder(
+              builder: (inner) {
+                context = inner;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      unawaited(
+        showCommandMenu(
+          context,
+          notes: notes,
+          shortcuts: shortcuts,
+          space: LibrarySpace.notes,
+          destinations: const [LibrarySpace.notes],
+          recentIds: [trip.id],
+          displayTime: (instant) => instant,
+          taskLabel: (note) => note.title,
+          marksOf: (noteId) => [
+            for (final tag in store.tagsOf(noteId)) tagMarkOf(tag),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
 
       expect(
         find.descendant(of: row('Trip budget'), matching: find.byType(TagDot)),
