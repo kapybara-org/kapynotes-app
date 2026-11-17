@@ -76,7 +76,9 @@ const List<String> _multiCharOperators = [
   '->',
 ];
 
-const String _singleCharOperators = '+-*/^<>=!:&|×÷−–—';
+/// En and em dashes are left out: in prose they join ranges, `2020–2024` and
+/// `pages 10–20`, so they stay part of the words around them.
+const String _singleCharOperators = '+-*/^<>=!:&|×÷−';
 
 /// Turns a single line of note text into tokens.
 ///
@@ -363,13 +365,17 @@ class Lexer {
     return value >= 0 && value < radix;
   }
 
+  /// Letters past ASCII start names too, `café` and `größe`, but the signs
+  /// among them, `×`, `÷` and `−`, are operators.
   static bool _isIdentStart(String ch) {
     final c = ch.codeUnitAt(0);
     return (c >= 0x41 && c <= 0x5a) ||
         (c >= 0x61 && c <= 0x7a) ||
         ch == '_' ||
         ch == '°' ||
-        c > 0x7f && !currencySymbolCodes.containsKey(ch);
+        c > 0x7f &&
+            !currencySymbolCodes.containsKey(ch) &&
+            !_singleCharOperators.contains(ch);
   }
 
   static bool _isIdentPart(String ch) => _isIdentStart(ch) || _isDigit(ch);

@@ -249,18 +249,7 @@ class CalcEngine {
       // numbers is a time or a ratio.
       if (token.type == TokenType.operator &&
           i > 0 &&
-          const [
-            '+',
-            '-',
-            '*',
-            '/',
-            '^',
-            '×',
-            '÷',
-            '−',
-            '–',
-            '—',
-          ].contains(token.text)) {
+          const ['+', '-', '*', '/', '^', '×', '÷', '−'].contains(token.text)) {
         return true;
       }
       if (token.type == TokenType.identifier &&
@@ -283,6 +272,12 @@ class CalcEngine {
   /// answer. Single-name labels such as `budget: 120` are parsed first as
   /// assignments and keep defining a reusable variable.
   ///
+  /// The first equals sign makes the same promise once more than a name
+  /// stands before it, so `looker connector = 29 usd` reads as
+  /// `looker connector: 29 usd` does and names nothing. A single name before
+  /// it is an assignment, read before this. Colons are tried first, so
+  /// `Q1: revenue = 1000` still defines `revenue`.
+  ///
   /// Work from the rightmost colon so nested descriptions such as
   /// `Quote 7: panels: 12000rs` still select the final value. A colon joining
   /// two adjacent numbers is time/ratio punctuation (`12:30`, `1:2`), not a
@@ -297,17 +292,23 @@ class CalcEngine {
         .tokenize()
         .where((t) => t.isSignificant && t.type != TokenType.eof)
         .toList();
-    for (var i = tokens.length - 2; i > 0; i--) {
-      final colon = tokens[i];
-      if (colon.type != TokenType.operator || colon.text != ':') continue;
-
+    final equals = tokens.indexWhere(
+      (token) => token.type == TokenType.operator && token.text == '=',
+    );
+    final boundaries = [
+      for (var i = tokens.length - 2; i > 0; i--)
+        if (tokens[i].type == TokenType.operator && tokens[i].text == ':') i,
+      if (equals > 1 && equals < tokens.length - 1) equals,
+    ];
+    for (final i in boundaries) {
+      final boundary = tokens[i];
       final before = tokens[i - 1];
       final after = tokens[i + 1];
       final joinsNumbers =
           before.type == TokenType.number &&
           after.type == TokenType.number &&
-          before.end == colon.start &&
-          colon.end == after.start;
+          before.end == boundary.start &&
+          boundary.end == after.start;
       if (joinsNumbers) continue;
 
       final hasLabel = tokens
@@ -315,7 +316,7 @@ class CalcEngine {
           .any((token) => _isExplicitLabelToken(token, scope));
       if (!hasLabel) continue;
 
-      final right = source.substring(colon.end).trim();
+      final right = source.substring(boundary.end).trim();
       if (right.isEmpty) continue;
       final evaluated =
           _evaluateExpression(right, index, evaluator, scope) ??
@@ -456,7 +457,7 @@ class CalcEngine {
               (next.type == TokenType.operator && next.text == '-'));
     }
     return token.type == TokenType.operator &&
-        const ['-', '−', '–', '—'].contains(token.text) &&
+        const ['-', '−'].contains(token.text) &&
         next != null &&
         (next.type == TokenType.number ||
             next.type == TokenType.currencySymbol ||
@@ -482,7 +483,7 @@ class CalcEngine {
         case TokenType.operator:
           // Hyphens belong naturally in model names (`Model-7`). Every other
           // operator is evidence that the discarded prefix was arithmetic.
-          if (!const ['-', '−', '–', '—'].contains(token.text)) return false;
+          if (!const ['-', '−'].contains(token.text)) return false;
         case TokenType.currencySymbol:
         case TokenType.percent:
           return false;
