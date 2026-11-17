@@ -56,19 +56,89 @@ class SidebarTimestamp {
   }) {
     final shown = displayTime(timestamp);
     final current = displayTime(now);
-    final days = DateTime.utc(
-      current.year,
-      current.month,
-      current.day,
-    ).difference(DateTime.utc(shown.year, shown.month, shown.day)).inDays;
-    if (days <= 0) {
-      final hour = shown.hour.toString().padLeft(2, '0');
-      final minute = shown.minute.toString().padLeft(2, '0');
-      return today ? 'Today · $hour:$minute' : '$hour:$minute';
-    }
+    final days = _daysBetween(shown, current);
+    if (days <= 0) return today ? 'Today · ${_clock(shown)}' : _clock(shown);
     if (days == 1) return 'Yesterday';
     if (days < 7) return _weekdays[shown.weekday - 1];
     final day = '${shown.day} ${_months[shown.month - 1]}';
     return shown.year == current.year ? day : '$day ${shown.year}';
   }
+
+  /// The row under a note's title: "Edited today, 11:15" or "Edited
+  /// yesterday, 09:02", then the weekday or the date as [glance] has them.
+  static String edited(
+    DateTime timestamp, {
+    required DateTime now,
+    required DateTime Function(DateTime) displayTime,
+  }) {
+    final shown = displayTime(timestamp);
+    return switch (_daysBetween(shown, displayTime(now))) {
+      <= 0 => 'Edited today, ${_clock(shown)}',
+      1 => 'Edited yesterday, ${_clock(shown)}',
+      _ => 'Edited ${glance(timestamp, now: now, displayTime: displayTime)}',
+    };
+  }
+
+  static const _monthNames = <String>[
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  static const _weekdayNames = <String>[
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
+  /// A day spelt out, as over Tasks' one list: "Tuesday, 17 November".
+  static String fullDay(DateTime shown) =>
+      '${_weekdayNames[shown.weekday - 1]}, ${shown.day} '
+      '${_monthNames[shown.month - 1]}';
+
+  /// A day in a few letters, as a task says when it was added: "Sat 14 Nov",
+  /// with the year only when it is not this one.
+  static String shortDay(DateTime shown, {required DateTime now}) {
+    final day =
+        '${_weekdays[shown.weekday - 1]} ${shown.day} ${_months[shown.month - 1]}';
+    return shown.year == now.year ? day : '$day ${shown.year}';
+  }
+
+  /// The heading over a day of finished tasks: "Today", "Yesterday · Monday,
+  /// 16 Nov", then "Sunday, 15 Nov", with the year when it is not this one.
+  static String doneDay(DateTime shown, {required DateTime now}) {
+    final days = _daysBetween(shown, now);
+    if (days <= 0) return 'Today';
+    final year = shown.year == now.year ? '' : ' ${shown.year}';
+    final day =
+        '${_weekdayNames[shown.weekday - 1]}, ${shown.day} '
+        '${_months[shown.month - 1]}$year';
+    return days == 1 ? 'Yesterday · $day' : day;
+  }
+
+  /// The time of day on a 24-hour clock: "16:05".
+  static String clock(DateTime shown) => _clock(shown);
+
+  static int _daysBetween(DateTime shown, DateTime current) => DateTime.utc(
+    current.year,
+    current.month,
+    current.day,
+  ).difference(DateTime.utc(shown.year, shown.month, shown.day)).inDays;
+
+  static String _clock(DateTime shown) =>
+      '${shown.hour.toString().padLeft(2, '0')}:'
+      '${shown.minute.toString().padLeft(2, '0')}';
 }

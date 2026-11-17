@@ -1,0 +1,137 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/crdt/note_doc.dart';
+import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note.dart';
+import 'package:kapy_notes/data/task_board.dart';
+import 'package:kapy_notes/data/task_index.dart';
+
+class _MemoryStore extends LocalStore {
+  _MemoryStore() : super(fileName: 'task-board-test.json');
+
+  @override
+  Future<void> load() async {}
+
+  @override
+  Future<void> flush() async {}
+
+  @override
+  void put(String key, Object? value) => data[key] = value;
+}
+
+void main() {
+  late DateTime clock;
+  late TaskIndex index;
+  late Map<String, NoteDoc> docs;
+  late List<Note> notes;
+
+  setUp(() {
+    clock = DateTime(2026, 11, 17, 9);
+    index = TaskIndex(_MemoryStore(), now: () => clock);
+    docs = {};
+    notes = [];
+  });
+
+  Note note(
+    String id,
+    String body, {
+    DateTime? archivedAt,
+    DateTime? hiddenAt,
+    DateTime? createdAt,
+  }) {
+    final made = Note(
+      id: id,
+      body: body,
+      createdAt: createdAt ?? DateTime(2026, 11, 1),
+      updatedAt: DateTime(2026, 11, 1),
+      archivedAt: archivedAt,
+      hiddenAt: hiddenAt,
+    );
+    final doc = docs[id] ??= NoteDoc(replica: 'aaaaaaaaaaaa');
+    doc.reconcile(
+      body: body,
+      formats: const [],
+      attachments: const [],
+      createdAt: made.createdAt,
+    );
+    index.reconcileNote(id, doc, idFor: (anchor) => '$id:$anchor');
+    notes.removeWhere((n) => n.id == id);
+    notes.add(made);
+    return made;
+  }
+
+  TaskBoard read() => TaskBoard.read(
+    entries: index.entries,
+    notes: notes,
+    docOf: (id) => docs[id],
+  );
+
+  List<String> words(List<TaskItem> items) => [for (final i in items) i.words];
+
+  test('the list keeps the order tasks were added in, across notes', () {
+    note('a', 'Trip\n☐ Book flights\n☐ Learn phrases');
+    clock = clock.add(const Duration(minutes: 1));
+    note('b', 'Car\n- [ ] Call the garage');
+    clock = clock.add(const Duration(minutes: 1));
+    note('a', 'Trip\n☐ Book flights\n☐ Learn phrases\n☐ Pack');
+
+    expect(words(read().open), [
+      'Book flights',
+      'Learn phrases',
+      'Call the garage',
+      'Pack',
+    ]);
+  });
+
+  test('a task that went back in at the end sits there', () {
+    note('a', 'Trip\n☐ Book flights\n☐ Learn phrases');
+    final first = read().open.first;
+    clock = clock.add(const Duration(hours: 1));
+    index.update(first.entry.copyWith(enteredAt: clock.millisecondsSinceEpoch));
+
+    expect(words(read().open), ['Learn phrases', 'Book flights']);
+  });
+
+  test('done is newest first, and counts by day', () {
+    note('a', 'Trip\n☐ One\n☐ Two\n☐ Three');
+    clock = DateTime(2026, 11, 16, 20);
+    note('a', 'Trip\n☑ One\n☐ Two\n☐ Three');
+    clock = DateTime(2026, 11, 17, 10);
+    note('a', 'Trip\n☑ One\n☑ Two\n☐ Three');
+
+    final board = read();
+    expect(words(board.done), ['Two', 'One']);
+    expect(words(board.open), ['Three']);
+    expect(board.doneSince(DateTime(2026, 11, 17)), 1);
+  });
+
+  test('archived, hidden and dismissed tasks are left out', () {
+    note('a', 'Trip\n☐ Book flights');
+    note('b', 'Old\n☐ Archived task', archivedAt: DateTime(2026, 11, 2));
+    note('c', 'Secret\n☐ Hidden task', hiddenAt: DateTime(2026, 11, 2));
+    note('d', 'Shop\n☐ Dismissed task');
+    final dismissed = read().open.firstWhere((i) => i.note.id == 'd');
+    index.update(dismissed.entry.copyWith(dismissed: const Stamped(true, 1)));
+
+    expect(words(read().open), ['Book flights']);
+  });
+
+  test('the oldest of my notes called Tasks holds tasks with no note', () {
+    note('new', 'Tasks\n☐ Later', createdAt: DateTime(2026, 11, 10));
+    note('old', 'Tasks\n☐ Earlier', createdAt: DateTime(2026, 11, 3));
+    note('other', 'Trip\n☐ Book flights');
+
+    final board = read();
+    expect(board.home?.id, 'old');
+    expect(
+      [for (final item in board.open) board.isHome(item)],
+      [false, true, false],
+    );
+  });
+
+  test('a filter narrows the list to one note', () {
+    note('a', 'Trip\n☐ Book flights');
+    note('b', 'Car\n☐ Call the garage');
+
+    expect(words(read().openIn('b')), ['Call the garage']);
+  });
+}

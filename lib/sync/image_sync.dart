@@ -109,11 +109,7 @@ class ImageSync {
   ) async {
     // The preview is visible, but compression has not produced the durable
     // object yet. Uploading this temporary source would race the replacement.
-    // A pasted picture still at its address has no bytes here to upload.
-    if (ref
-        case NoteImageRef(isPreparing: true) || NoteImageRef(src: String())) {
-      return null;
-    }
+    if (ref case NoteImageRef(isPreparing: true)) return null;
 
     var current = ref;
     try {

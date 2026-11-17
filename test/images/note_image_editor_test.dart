@@ -30,6 +30,7 @@ import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_image_view.dart';
 import 'package:kapy_notes/ui/editor/file_chip.dart';
 import 'package:kapy_notes/ui/editor/note_video_view.dart';
+import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:kapy_notes/files/file_ingest.dart';
 import 'package:kapy_notes/files/file_opener.dart';
 import 'package:kapy_notes/video/video_ingest.dart';
@@ -256,7 +257,7 @@ Widget harness(
       resultsVisible: true,
       writingFont: WritingFont.handwritten,
       shortcuts: shortcutPrefs,
-      onDocumentChanged: (body, formats, refs) {
+      onDocumentChanged: (body, formats, refs, _) {
         onAttachmentsChanged?.call(refs);
         onFormatsChanged?.call(formats);
       },
@@ -522,7 +523,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('Adding image…'), findsOneWidget);
-    expect(find.byKey(const ValueKey('insert-image-progress')), findsOneWidget);
 
     ingest.complete(ImageBatch(images: [at(0)], rejections: const []));
     await tester.pump();
@@ -530,7 +530,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('Image added'), findsOneWidget);
-    expect(find.byKey(const ValueKey('insert-image-progress')), findsNothing);
     expect(find.byType(NoteImageView), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 2));
@@ -845,14 +844,14 @@ void main() {
     });
   });
 
-  testWidgets('the video footer action inserts a playable video block', (
-    tester,
-  ) async {
+  testWidgets('adding a video inserts a playable video block', (tester) async {
     var opened = 0;
+    final editorKey = GlobalKey<NoteEditorState>();
     await tester.pumpWidget(
       harness(
         'a note',
         attachments: const [],
+        editorKey: editorKey,
         videoAcquirer: () async {
           opened++;
           return [XFile.fromData(Uint8List(0), name: 'clip.mp4')];
@@ -863,7 +862,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('insert-video')));
+    unawaited(editorKey.currentState!.pickAndInsertVideos());
     await tester.pumpAndSettle();
 
     expect(opened, 1);
@@ -874,10 +873,12 @@ void main() {
   testWidgets('a Pro-sized video rejection names the 100 MB ceiling', (
     tester,
   ) async {
+    final editorKey = GlobalKey<NoteEditorState>();
     await tester.pumpWidget(
       harness(
         'a note',
         attachments: const [],
+        editorKey: editorKey,
         videoAttachmentMaxBytes: () => proAttachmentMaxBytes,
         videoAcquirer: () async => [
           XFile.fromData(Uint8List(0), name: 'large.mp4'),
@@ -890,7 +891,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('insert-video')));
+    unawaited(editorKey.currentState!.pickAndInsertVideos());
     await tester.pumpAndSettle();
 
     expect(find.textContaining('100 MB attachment limit'), findsOneWidget);
@@ -2144,7 +2145,7 @@ void main() {
     }, variant: windows);
   });
 
-  testWidgets("the selection toolbar's Copy copies the fragment", (
+  testWidgets("the selection menu's Copy copies a markdown note's fragment", (
     tester,
   ) async {
     final clipboard = FakeClipboard();
@@ -2153,6 +2154,7 @@ void main() {
       harness(
         'Select this text',
         attachments: const [],
+        markdownEnabled: true,
         clipboard: clipboard,
         images: immediateStore,
         editorKey: editorKey,
@@ -2170,7 +2172,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('selection-copy')));
+    tester.state<EditableTextState>(find.byType(EditableText)).showToolbar();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('editor-context-action-Copy')));
     await tester.runAsync(
       () => clipboard.waitForWrite().timeout(const Duration(seconds: 1)),
     );
@@ -2419,11 +2423,69 @@ void main() {
       expect(ref.offset, text.indexOf(anchor));
       expect(ref.src, 'https://example.com/photo.png');
       expect(ref.isPreparing, isFalse);
+      // Nothing holds the note back: it syncs with the address.
+      expect(ref.isUploaded, isTrue);
+      expect(find.text("Couldn't load image from example.com"), findsOneWidget);
       expect(
         find.byKey(const ValueKey('retry-image-download')),
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('open-image-address')), findsOneWidget);
+    });
+
+    testWidgets('Retry fetches a picture that came in as its address', (
+      tester,
+    ) async {
+      // A file stands in for the web, which the test binding answers with 400.
+      final folder = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('kapy_retry_'),
+      ))!;
+      addTearDown(() => folder.delete(recursive: true));
+      final file = File('${folder.path}/photo.png')
+        ..writeAsBytesSync(pngOf(120, 90, seed: 11));
+      final address = file.uri.toString();
+      final arrived = NoteImageRef(
+        offset: 0,
+        hash: BlobStore.hashOf(Uint8List.fromList(utf8.encode(address))),
+        key: Uint8List.fromList(List.generate(32, (i) => i)),
+        mime: 'image/png',
+        width: 360,
+        height: 240,
+        bytes: 0,
+        src: address,
+      );
+      List<NoteAttachmentRef>? reported;
+      await tester.pumpWidget(
+        harness(
+          anchor,
+          attachments: [arrived],
+          onAttachmentsChanged: (attachments) => reported = attachments,
+        ),
+      );
+      await tester.pump();
+
+      NoteImageRef? current() => reported?.single as NoteImageRef?;
+      await tester.runAsync(() async {
+        tester
+            .widget<TonalButton>(
+              find.byKey(const ValueKey('retry-image-download')),
+            )
+            .onPressed!();
+        for (var i = 0; i < 200 && current()?.src != null; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      });
+      await tester.pump();
+
+      final fetched = current()!;
+      expect(fetched.src, isNull);
+      expect(fetched.hash, isNot(arrived.hash));
+      expect(fetched.key, arrived.key);
+      expect(await tester.runAsync(() => store.has(fetched.hash)), isTrue);
+      // An ordinary picture now, which sync uploads like any other.
+      expect(fetched.attachmentId, isNull);
+      expect(find.byKey(const ValueKey('retry-image-download')), findsNothing);
+      await tester.pump(const Duration(seconds: 2));
     });
 
     testWidgets('an empty clipboard falls through to the text paste', (

@@ -20,6 +20,7 @@ import 'spaces.dart';
 import 'sync_api.dart';
 import 'sync_socket.dart';
 import 'sync_state.dart';
+import 'task_sync.dart';
 import 'vault.dart';
 
 enum SyncStatus {
@@ -106,6 +107,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     required SpaceKeyring keyring,
     required DocStore docs,
     ImageSync? images,
+    TaskSync? tasks,
     Vault? vault,
     DateTime Function()? now,
     this.sendDelay = const Duration(milliseconds: 60),
@@ -122,6 +124,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
        _keyring = keyring,
        _docs = docs,
        _images = images,
+       _tasks = tasks,
        _vault = vault,
        _now = now ?? DateTime.now {
     _notes.addListener(_onNotesChanged);
@@ -139,6 +142,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   final SpaceKeyring _keyring;
   final DocStore _docs;
   final ImageSync? _images;
+  final TaskSync? _tasks;
   final DateTime Function() _now;
 
   /// How long after an edit the outbox drains. Short: this is the whole
@@ -524,6 +528,17 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// document missing words the note still shows.
   Future<void> flush() => _docs.flush();
 
+  /// Takes the notes' latest edits into their documents and the task index
+  /// now, not a microtask and a task pass later, for a screen that has just
+  /// written a task and reads the index back. What that owes the server
+  /// goes on the usual schedule.
+  Future<void> reconcileTasksNow() async {
+    await _docs.load();
+    _reconcileDirty();
+    _scheduleSend();
+    await _tasks?.reconcile();
+  }
+
   /// Signing out. Sync stops; the notes stay exactly where they are.
   void lock() {
     leaveNote();
@@ -600,6 +615,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       }
       _reconcileDirty();
       await _drain();
+      await _tasks?.run();
       _failures = 0;
       _lastError = null;
       _state.recordSync(_now());
@@ -770,6 +786,8 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         break;
       case 'presence':
         await _onPresence(message);
+      case 'tasks':
+        unawaited(_tasks?.run());
     }
   }
 
@@ -1090,13 +1108,14 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       }
 
       final record = _docs.get(current.id);
-      if (record == null) {
+      if (record == null || (record.offline && !record.seeded)) {
         if (!_caughtUp.contains(spaceId)) continue;
-        _seed(current, spaceId);
+        _seed(current, spaceId, record);
       } else {
         _reconcileInto(record, current, spaceId);
       }
       _notes.markSynced(notes: [current]);
+      _tasks?.schedule();
     }
 
     for (final stone in _notes.dirtyTombstones) {
@@ -1123,6 +1142,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         OutboxEntry(id: _nextRequestId(), spaceId: spaceId, deleted: true),
       );
       _docs.markDirty(stone.id);
+      _tasks?.schedule();
     }
   }
 
@@ -1165,9 +1185,15 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   }
 
   /// The note's first bytes on the server: a snapshot, marked as a seed so
-  /// two devices holding the same old note cannot both write it.
-  void _seed(Note note, String spaceId) {
-    final record = _docs.create(note.id, spaceId);
+  /// two devices holding the same old note cannot both write it. Taken from
+  /// [local] when this device has been keeping one for it, so the anchors
+  /// its tasks were given while signed out are the ones every device gets.
+  void _seed(Note note, String spaceId, [DocRecord? local]) {
+    final record = local ?? _docs.create(note.id, spaceId);
+    record
+      ..spaceId = spaceId
+      ..offline = false
+      ..outbox.removeWhere((entry) => !entry.inFlight);
     record.doc.reconcile(
       body: note.body,
       formats: note.formats,
@@ -1177,6 +1203,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       archivedAt: note.archivedAt,
       hiddenAt: note.hiddenAt,
       now: _now(),
+      near: _notes.takeEdit(note.id),
     );
     record.outbox.add(
       OutboxEntry(
@@ -1200,8 +1227,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       archivedAt: note.archivedAt,
       hiddenAt: note.hiddenAt,
       now: _now(),
+      near: _notes.takeEdit(note.id),
     );
-    var changed = false;
+    var changed = record.offline;
     if (record.spaceId != spaceId) {
       // Moved. The whole document seeds the new space, and the server
       // tombstones the old one in the same transaction.
@@ -1220,6 +1248,19 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       record.opsSinceSnapshot = 0;
       record.ownOpsSinceSnapshot = 0;
       changed = true;
+    } else if (record.offline) {
+      // What changed while nothing synced is in the document and in no op,
+      // so the document goes whole.
+      record.outbox.add(
+        OutboxEntry(
+          id: _nextRequestId(),
+          spaceId: spaceId,
+          snapshot: record.doc.toSnapshot(),
+          covers: _state.cursorFor(spaceId),
+        ),
+      );
+      record.opsSinceSnapshot = 0;
+      record.ownOpsSinceSnapshot = 0;
     } else if (ops.isNotEmpty) {
       record.opsSinceSnapshot++;
       record.ownOpsSinceSnapshot++;
@@ -1247,6 +1288,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       }
       changed = true;
     }
+    record.offline = false;
     if (changed) _docs.markDirty(note.id);
   }
 
@@ -1761,6 +1803,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         record.doc = NoteDoc(replica: _docs.replica);
         record.outbox.removeWhere((entry) => !entry.inFlight);
         record.deviceSeq = 0;
+        record.offline = false;
         fresh = true;
       }
       if (fresh) {
@@ -1847,7 +1890,10 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       );
     }
     _state.recordCursor(batch.spaceId, batch.cursor);
-    if (touched.isNotEmpty) notifyListeners();
+    if (touched.isNotEmpty) {
+      _tasks?.schedule();
+      notifyListeners();
+    }
   }
 
   /// Writes a document back into the note list after a batch touched it.
@@ -2200,6 +2246,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     _presenceExpiryTimer?.cancel();
     _stopPolling();
     _disconnect();
+    _tasks?.dispose();
     _caretPulse.dispose();
     super.dispose();
   }

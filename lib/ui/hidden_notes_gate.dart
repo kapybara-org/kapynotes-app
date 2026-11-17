@@ -28,6 +28,14 @@ abstract interface class HiddenNotesGate {
 
   /// Authenticates one entry into Hidden Notes.
   Future<bool> unlock(BuildContext context);
+
+  /// Whether this device's credential is a PIN, so a caller can offer
+  /// [changePin] only where it means something. It never shows a dialog and
+  /// answers false when the credential cannot be read.
+  Future<bool> usesPin();
+
+  /// Replaces this device's PIN after asking for the current one.
+  Future<bool> changePin(BuildContext context);
 }
 
 enum DeviceAuthenticationResult { authenticated, canceled, unavailable, failed }
@@ -90,17 +98,20 @@ class DefaultHiddenNotesGate implements HiddenNotesGate {
     DeviceAuthenticator? deviceAuthenticator,
     bool? useSystemAuthentication,
     Future<Uint8List> Function(String pin, Uint8List salt)? pinDeriver,
-  }) : _store = store ?? const PlatformSecureStore(),
+    DateTime Function()? now,
+  }) : _store = store ?? platformSecureStore(),
        _deviceAuthenticator = deviceAuthenticator ?? LocalDeviceAuthenticator(),
        _pinDeriver = pinDeriver ?? _derivePin,
        _useSystemAuthentication =
-           useSystemAuthentication ?? AppPlatform.isMobile;
+           useSystemAuthentication ?? AppPlatform.isMobile,
+       _attempts = _PinAttempts(now ?? DateTime.now);
 
   static const String credentialKey = 'kapynotes.hiddenNotesCredential';
   final SecureStore _store;
   final DeviceAuthenticator _deviceAuthenticator;
   final Future<Uint8List> Function(String pin, Uint8List salt) _pinDeriver;
   final bool _useSystemAuthentication;
+  final _PinAttempts _attempts;
 
   @override
   Future<bool> ensureConfigured(BuildContext context) async {
@@ -164,19 +175,76 @@ class DefaultHiddenNotesGate implements HiddenNotesGate {
         }
         return false;
       case _PinCredential():
-        final unlocked = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => _UnlockPinDialog(
-            verify: (pin) async => _constantTimeEquals(
-              await _pinDeriver(pin, credential.salt),
-              credential.verifier,
-            ),
-          ),
-        );
-        return unlocked ?? false;
+        return _checkPin(context, credential);
     }
   }
+
+  @override
+  Future<bool> usesPin() async {
+    try {
+      final raw = await _store.read(credentialKey);
+      return raw != null && _Credential.parse(raw) is _PinCredential;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Overwrites the credential in place and reads it back, because unlock
+  /// treats a missing credential as "create one now": deleting first would
+  /// hand Hidden Notes to whoever opens it next.
+  @override
+  Future<bool> changePin(BuildContext context) async {
+    final read = await _read(context);
+    if (read is _ReadFailed || !context.mounted) return false;
+    final current = (read as _ReadCredential).value;
+    if (current is! _PinCredential) return false;
+    if (!await _checkPin(context, current) || !context.mounted) return false;
+
+    final pin = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _CreatePinDialog(changing: true),
+    );
+    if (pin == null || !context.mounted) return false;
+    final salt = randomBytes(16);
+    final verifier = await _pinDeriver(pin, salt);
+    if (!context.mounted) return false;
+
+    final encoded = _PinCredential(salt: salt, verifier: verifier).encode();
+    var saved = false;
+    try {
+      await _store.write(credentialKey, encoded);
+      try {
+        saved = await _store.read(credentialKey) == encoded;
+      } catch (_) {}
+      if (!saved) await _store.write(credentialKey, current.encode());
+    } catch (_) {}
+    if (saved) return true;
+    if (context.mounted) {
+      await _showFailure(
+        context,
+        'The new PIN could not be saved. Your old PIN still works.',
+      );
+    }
+    return false;
+  }
+
+  Future<bool> _checkPin(
+    BuildContext context,
+    _PinCredential credential,
+  ) async =>
+      await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _UnlockPinDialog(
+          attempts: _attempts,
+          verify: (pin) async => _constantTimeEquals(
+            await _pinDeriver(pin, credential.salt),
+            credential.verifier,
+          ),
+        ),
+      ) ??
+      false;
 
   Future<_ReadResult> _read(BuildContext context) async {
     try {
@@ -333,8 +401,40 @@ bool _constantTimeEquals(Uint8List left, Uint8List right) {
   return difference == 0;
 }
 
+/// Wrong PIN guesses for the life of the gate, shared by every PIN prompt so
+/// closing and reopening the dialog does not reset the wait.
+class _PinAttempts {
+  _PinAttempts(this._now);
+
+  static const int _limit = 5;
+  static const Duration _wait = Duration(seconds: 30);
+
+  final DateTime Function() _now;
+  int _wrong = 0;
+  DateTime? _lockedUntil;
+
+  Duration get remaining {
+    final until = _lockedUntil;
+    if (until == null) return Duration.zero;
+    final left = until.difference(_now());
+    return left > Duration.zero ? left : Duration.zero;
+  }
+
+  void record({required bool correct}) {
+    if (correct) {
+      _wrong = 0;
+      return;
+    }
+    if (++_wrong < _limit) return;
+    _wrong = 0;
+    _lockedUntil = _now().add(_wait);
+  }
+}
+
 class _CreatePinDialog extends StatefulWidget {
-  const _CreatePinDialog();
+  const _CreatePinDialog({this.changing = false});
+
+  final bool changing;
 
   @override
   State<_CreatePinDialog> createState() => _CreatePinDialogState();
@@ -367,7 +467,9 @@ class _CreatePinDialogState extends State<_CreatePinDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Create a Hidden Notes PIN'),
+    title: Text(
+      widget.changing ? 'Change Hidden Notes PIN' : 'Create a Hidden Notes PIN',
+    ),
     content: ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 380),
       child: Column(
@@ -375,7 +477,9 @@ class _CreatePinDialogState extends State<_CreatePinDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            AppPlatform.isMobile
+            widget.changing
+                ? 'Use a new 4-digit PIN for Hidden Notes on this device.'
+                : AppPlatform.isMobile
                 ? 'System authentication is not set up, so Hidden Notes will '
                       'use a 4-digit PIN on this device.'
                 : 'Use a 4-digit PIN to protect Hidden Notes on this device.',
@@ -415,14 +519,18 @@ class _CreatePinDialogState extends State<_CreatePinDialog> {
         onPressed: () => Navigator.of(context).pop(),
         child: const Text('Cancel'),
       ),
-      FilledButton(onPressed: _submit, child: const Text('Create PIN')),
+      FilledButton(
+        onPressed: _submit,
+        child: Text(widget.changing ? 'Change PIN' : 'Create PIN'),
+      ),
     ],
   );
 }
 
 class _UnlockPinDialog extends StatefulWidget {
-  const _UnlockPinDialog({required this.verify});
+  const _UnlockPinDialog({required this.attempts, required this.verify});
 
+  final _PinAttempts attempts;
   final Future<bool> Function(String pin) verify;
 
   @override
@@ -433,15 +541,36 @@ class _UnlockPinDialogState extends State<_UnlockPinDialog> {
   final TextEditingController _pin = TextEditingController();
   bool _checking = false;
   String? _error;
+  Timer? _countdown;
+
+  @override
+  void initState() {
+    super.initState();
+    _countDownIfLocked();
+  }
 
   @override
   void dispose() {
+    _countdown?.cancel();
     _pin.dispose();
     super.dispose();
   }
 
+  void _countDownIfLocked() {
+    if (widget.attempts.remaining == Duration.zero) return;
+    _countdown ??= Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (widget.attempts.remaining > Duration.zero) {
+        setState(() {});
+        return;
+      }
+      timer.cancel();
+      _countdown = null;
+      setState(() => _error = null);
+    });
+  }
+
   Future<void> _submit() async {
-    if (_checking) return;
+    if (_checking || widget.attempts.remaining > Duration.zero) return;
     if (_pin.text.length != 4) {
       setState(() => _error = 'Enter your four-digit PIN.');
       return;
@@ -451,12 +580,14 @@ class _UnlockPinDialogState extends State<_UnlockPinDialog> {
       _error = null;
     });
     final correct = await widget.verify(_pin.text);
+    widget.attempts.record(correct: correct);
     if (!mounted) return;
     if (correct) {
       Navigator.of(context).pop(true);
       return;
     }
     _pin.clear();
+    _countDownIfLocked();
     setState(() {
       _checking = false;
       _error = 'That PIN is not correct.';
@@ -464,44 +595,51 @@ class _UnlockPinDialogState extends State<_UnlockPinDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Unlock Hidden Notes'),
-    content: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 320),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _PinField(
-            key: const ValueKey('hidden-pin-unlock'),
-            controller: _pin,
-            label: 'PIN',
-            autofocus: true,
-            enabled: !_checking,
-            onSubmitted: (_) => unawaited(_submit()),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              _error!,
-              key: const ValueKey('hidden-pin-error'),
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+  Widget build(BuildContext context) {
+    final wait = widget.attempts.remaining;
+    final locked = wait > Duration.zero;
+    final message = locked
+        ? 'Too many tries. Try again in ${(wait.inMilliseconds / 1000).ceil()} s.'
+        : _error;
+    return AlertDialog(
+      title: const Text('Unlock Hidden Notes'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 320),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _PinField(
+              key: const ValueKey('hidden-pin-unlock'),
+              controller: _pin,
+              label: 'PIN',
+              autofocus: true,
+              enabled: !_checking && !locked,
+              onSubmitted: (_) => unawaited(_submit()),
             ),
+            if (message != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                message,
+                key: const ValueKey('hidden-pin-error'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: _checking ? null : () => Navigator.of(context).pop(false),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: _checking ? null : () => unawaited(_submit()),
-        child: Text(_checking ? 'Checking…' : 'Unlock'),
-      ),
-    ],
-  );
+      actions: [
+        TextButton(
+          onPressed: _checking ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _checking || locked ? null : () => unawaited(_submit()),
+          child: Text(_checking ? 'Checking…' : 'Unlock'),
+        ),
+      ],
+    );
+  }
 }
 
 class _PinField extends StatelessWidget {

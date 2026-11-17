@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/ui/checklist_pie.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -48,9 +49,10 @@ void main() {
     }
 
     final heading = inCard(onCard(title, find.text(title)));
-    final date = inCard(onCard(title, find.text('Today · 15:38')));
-    expect(heading.height, 18, reason: 'one line');
-    expect(date.top - 6 - 4 - heading.bottom, greaterThanOrEqualTo(6));
+    final pie = inCard(onCard(title, find.byType(ChecklistPie)));
+    // The pie is shorter than the bar was, so the title may take two lines.
+    expect(heading.height, anyOf(18, 36), reason: 'whole lines');
+    expect(pie.top - heading.bottom, greaterThanOrEqualTo(6));
   });
 
   testWidgets('an amount on a card is set in Geist Mono', (tester) async {

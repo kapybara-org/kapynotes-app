@@ -11,6 +11,7 @@ import 'package:kapy_notes/calc/highlight.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/crdt/text_diff.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
@@ -23,7 +24,7 @@ import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
-import 'package:kapy_notes/ui/editor/selection_formatting_toolbar.dart';
+import 'package:kapy_notes/ui/editor/editor_context_menu.dart';
 
 import 'test_fonts.dart';
 
@@ -78,6 +79,7 @@ Widget harness(
   TargetPlatform? platform,
   ValueChanged<String>? onBodyChanged,
   ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
+  ValueChanged<TextEdit?>? onEdit,
   VoidCallback? onSettingsPressed,
   VoidCallback? onRecordVoice,
   WritingFont writingFont = WritingFont.handwritten,
@@ -103,9 +105,10 @@ Widget harness(
     autofocus: autofocus,
     ensureKeyboardVisible: ensureKeyboardVisible,
     readOnly: readOnly,
-    onDocumentChanged: (body, formats, attachments) {
+    onDocumentChanged: (body, formats, attachments, edit) {
       onBodyChanged?.call(body);
       onFormatsChanged?.call(formats);
+      onEdit?.call(edit);
     },
     onSettingsPressed: onSettingsPressed ?? () {},
     onRecordVoice: onRecordVoice,
@@ -227,6 +230,13 @@ Future<void> revealFormatting(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// The footer's tools are a phone's: on a desktop the page has none, and
+/// formatting comes from the bubble over a selection.
+void _onPhone() {
+  AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+  addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+}
+
 void main() {
   setUpAll(loadTestFonts);
   setUp(() {
@@ -295,11 +305,14 @@ void main() {
   testWidgets('finishing a checklist keeps its confetti but not Kapy', (
     tester,
   ) async {
-    await tester.pumpWidget(harness('☑ milk\n☐ bread', autofocus: true));
+    const body = '☑ milk\n☐ bread';
+    await tester.pumpWidget(harness(body, autofocus: true));
     await tester.pumpAndSettle();
     final topLeft = tester.getTopLeft(find.byType(EditableText));
 
-    await tester.tapAt(topLeft + const Offset(6, 43));
+    await tester.tapAt(
+      Offset(topLeft.dx + 6, lineRect(tester, body, 1).center.dy),
+    );
     await tester.pump();
     expect(find.byKey(Celebrate.burstKey), findsOneWidget);
     expect(
@@ -425,11 +438,17 @@ void main() {
     await tester.pumpWidget(harness(body, autofocus: true));
     await tester.pumpAndSettle();
 
-    final heading = lineRect(tester, body, 0);
-    final firstItem = lineRect(tester, body, 2);
+    // The middle of the blank line's own row, which on the page sits under
+    // the room for the title's meta row.
+    final editable = tester
+        .state<EditableTextState>(find.byType(EditableText))
+        .renderEditable;
+    final row = editable.getLocalRectForCaret(
+      TextPosition(offset: body.indexOf('\n') + 1),
+    );
     final blank = Offset(
-      heading.center.dx,
-      (heading.bottom + firstItem.top) / 2,
+      lineRect(tester, body, 0).center.dx,
+      editable.localToGlobal(row.center).dy,
     );
 
     await tester.tapAt(blank);
@@ -475,6 +494,9 @@ void main() {
       bool readOnly = false,
       ValueChanged<String>? onBodyChanged,
     }) async {
+      // Ruled rows all the way down, which on the page start under the
+      // title's taller row and its meta row instead.
+      _onPhone();
       tester.view.physicalSize = const Size(900, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -587,6 +609,33 @@ void main() {
     final selection = state.textEditingValue.selection;
     expect(selection.isCollapsed, isFalse);
     expect(selection.extentOffset, 12);
+  });
+
+  testWidgets('a line deleted whole is reported where it went, not where '
+      'the text alone would put it', (tester) async {
+    const body = 'Errands\n☐ Buy oats\n☐ Buy milk\n☐ Buy eggs';
+    final edits = <TextEdit?>[];
+    await tester.pumpWidget(harness(body, autofocus: true, onEdit: edits.add));
+    await tester.pumpAndSettle();
+
+    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    state.userUpdateTextEditingValue(
+      state.textEditingValue.copyWith(
+        selection: const TextSelection(baseOffset: 19, extentOffset: 30),
+      ),
+      SelectionChangedCause.drag,
+    );
+    await tester.pumpAndSettle();
+    state.userUpdateTextEditingValue(
+      const TextEditingValue(
+        text: 'Errands\n☐ Buy oats\n☐ Buy eggs',
+        selection: TextSelection.collapsed(offset: 19),
+      ),
+      SelectionChangedCause.keyboard,
+    );
+    await tester.pumpAndSettle();
+
+    expect(edits.last, (start: 19, oldEnd: 30, newEnd: 19));
   });
 
   group('blank lines', () {
@@ -948,6 +997,8 @@ void main() {
   });
 
   testWidgets('dims only the slash comment portion of a line', (tester) async {
+    // A phone's look: on the page the first line is the note's title.
+    _onPhone();
     const body = '  // travel assumptions\n2 + 2';
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
@@ -991,14 +1042,15 @@ void main() {
         expect(call.method, 'check');
         return [
           {
-            'startIndex': 0,
-            'endIndex': 5,
+            'startIndex': 1,
+            'endIndex': 6,
             'suggestions': ['sample', 'simple'],
           },
         ];
       });
 
-      await tester.pumpWidget(harness('smple + 2', autofocus: true));
+      // Under a blank first line, so this is not the note's title.
+      await tester.pumpWidget(harness('\nsmple + 2', autofocus: true));
       await tester.pump(const Duration(milliseconds: 181));
       await tester.pump();
 
@@ -1128,14 +1180,14 @@ void main() {
       field.controller!.selection,
       const TextSelection(baseOffset: 0, extentOffset: 5),
     );
-    expect(
-      find.byKey(const ValueKey('selection-formatting-toolbar')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('editor-context-menu')), findsOneWidget);
     expect(find.text('sample'), findsOneWidget);
     expect(find.text('simple'), findsOneWidget);
-    // Formatting stays where it was: the word is still selected text.
-    expect(find.byKey(const ValueKey('selection-bold')), findsOneWidget);
+    // Formatting stays where it was: the word is still selected text. The
+    // selection is the menu's, so the bubble keeps out of its way.
+    expect(find.text('Bold'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byKey(const ValueKey('selection-bubble')), findsNothing);
 
     await tester.tap(find.text('simple'));
     await tester.pumpAndSettle();
@@ -1195,9 +1247,8 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('starts the controls at the left and pins the total right', (
-    tester,
-  ) async {
+  testWidgets('starts the controls at the left', (tester) async {
+    _onPhone();
     await tester.pumpWidget(harness('2 + 2'));
     await tester.pumpAndSettle();
 
@@ -1205,21 +1256,20 @@ void main() {
     final formatting = tester.getRect(
       find.byKey(const ValueKey('note-formatting-controls')),
     );
-    final total = tester.getRect(find.byKey(const ValueKey('note-total')));
 
     // Left-anchored, in reading order, rather than floating in the middle.
-    expect(formatting.left, closeTo(footer.left + 12, 1));
+    expect(formatting.left, closeTo(footer.left + 8, 1));
     expect(
       formatting.center.dx,
       lessThan(footer.center.dx),
       reason: 'the controls belong at the edge the eye starts from',
     );
-    expect(total.right, closeTo(footer.right - 12, 1));
   });
 
   testWidgets('the formatting button keeps tools open until clicked again', (
     tester,
   ) async {
+    _onPhone();
     await tester.pumpWidget(harness('2 + 2'));
     await tester.pumpAndSettle();
 
@@ -1263,6 +1313,7 @@ void main() {
   testWidgets('the controls do not move when the nesting buttons appear', (
     tester,
   ) async {
+    _onPhone();
     await tester.pumpWidget(harness('2 + 2'));
     await tester.pumpAndSettle();
     await revealFormatting(tester);
@@ -1288,39 +1339,10 @@ void main() {
     );
   });
 
-  testWidgets('spaces consistently sized footer controls on desktop', (
-    tester,
-  ) async {
-    await tester.pumpWidget(harness('2 + 2'));
-    await tester.pumpAndSettle();
-    await revealFormatting(tester);
-
-    final controls = <Finder>[
-      for (final key in const [
-        ValueKey('format-style'),
-        ValueKey('format-checklist'),
-        ValueKey('format-bullets'),
-        ValueKey('format-bold'),
-        ValueKey('format-italic'),
-      ])
-        find.descendant(of: find.byKey(key), matching: find.byType(IconButton)),
-    ];
-    expect(
-      controls.map(tester.getSize),
-      everyElement(const Size.square(32)),
-      reason: 'Every footer action should have the same readable hover target',
-    );
-    for (var index = 1; index < controls.length; index++) {
-      final previous = tester.getRect(controls[index - 1]);
-      final current = tester.getRect(controls[index]);
-      expect(current.left - previous.right, closeTo(4, 0.01));
-    }
-    expect(tester.getSize(find.byType(NoteFooter)).height, 48);
-  });
-
   testWidgets('puts the line tools before the ones that mark a word', (
     tester,
   ) async {
+    _onPhone();
     await tester.pumpWidget(harness('2 + 2'));
     await tester.pumpAndSettle();
     await revealFormatting(tester);
@@ -1336,6 +1358,7 @@ void main() {
   });
 
   testWidgets('leaves settings to the notes list', (tester) async {
+    _onPhone();
     await tester.pumpWidget(harness('2 + 2'));
     await tester.pumpAndSettle();
     await revealFormatting(tester);
@@ -1346,34 +1369,10 @@ void main() {
     expect(find.byTooltip('Settings'), findsNothing);
   });
 
-  testWidgets('keeps the footer controls separated on a narrow phone', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(320, 640);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    await tester.pumpWidget(harness('2 + 2'));
-    await tester.pumpAndSettle();
-
-    final footer = tester.getRect(find.byType(NoteFooter));
-    final formatting = tester.getRect(
-      find.byKey(const ValueKey('note-formatting-controls')),
-    );
-    final total = tester.getRect(find.byKey(const ValueKey('note-total')));
-    expect(footer.left, lessThanOrEqualTo(formatting.left));
-    expect(formatting.right, lessThanOrEqualTo(total.left));
-    expect(
-      tester
-          .widget<Text>(find.byKey(const ValueKey('note-total')))
-          .textSpan!
-          .toPlainText(),
-      'Σ 4',
-    );
-  });
-
   testWidgets('applies real bold and italic styles without changing text', (
     tester,
   ) async {
+    _onPhone();
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(
       harness('Format me', onFormatsChanged: changes.add),
@@ -1413,6 +1412,9 @@ void main() {
   testWidgets('styles pasted URLs as links without changing their text', (
     tester,
   ) async {
+    // A phone's look: on the page a link is a chip and the first line a
+    // title, both of which editor_page_test covers.
+    _onPhone();
     const body = 'Read https://example.com/docs?q=notes.';
     const linkText = 'https://example.com/docs?q=notes';
     final linkStart = body.indexOf(linkText);
@@ -1443,7 +1445,10 @@ void main() {
           span.style?.decoration?.contains(TextDecoration.underline) ?? false,
           isFalse,
         );
-        expect(span.style?.fontWeight ?? FontWeight.w400, FontWeight.w400);
+        expect(
+          span.style?.fontWeight,
+          tester.widget<TextField>(find.byType(TextField)).style!.fontWeight,
+        );
       }
       if (offset == linkEnd && text == '.') {
         sawTrailingPeriod = true;
@@ -1469,6 +1474,9 @@ void main() {
   ) async {
     // A slash comment, a hash after a sum and a quoted annotation, then
     // prose, where the same kind of address still shows as a link.
+    // A phone's look: on the page a link is a chip and the first line a
+    // title, both of which editor_page_test covers.
+    _onPhone();
     const body =
         '//buy from unipile (https://www.unipile.com/pricing-api/)\n'
         '2 + 2 # rates at https://example.com/rates\n'
@@ -1529,6 +1537,7 @@ void main() {
   testWidgets('cycles paragraph presets directly from the footer', (
     tester,
   ) async {
+    _onPhone();
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(
       harness(
@@ -1617,7 +1626,8 @@ void main() {
     final body = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text?.contains('Body') ?? false,
     );
-    expect(body.style!.fontWeight, FontWeight.w400);
+    // The page's writing weight, in italic.
+    expect(body.style!.fontWeight, FontWeight.w500);
     expect(body.style!.fontStyle, FontStyle.italic);
 
     field.controller!.value = const TextEditingValue(
@@ -1636,6 +1646,7 @@ void main() {
   testWidgets('starts an empty note in the chosen paragraph style', (
     tester,
   ) async {
+    _onPhone();
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(
       harness('', startAtEnd: true, onFormatsChanged: changes.add),
@@ -1651,127 +1662,6 @@ void main() {
     expect(changes.last, const [
       NoteFormatRange(start: 0, end: 13, format: NoteFormat.heading),
     ]);
-  });
-
-  testWidgets('shows formatting actions beside selected text', (tester) async {
-    final changes = <List<NoteFormatRange>>[];
-    await tester.pumpWidget(
-      harness(
-        'Select this text',
-        autofocus: true,
-        onFormatsChanged: changes.add,
-      ),
-    );
-    await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection(
-      baseOffset: 0,
-      extentOffset: 6,
-    );
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const ValueKey('selection-formatting-toolbar')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('selection-style')), findsOneWidget);
-    expect(find.byKey(const ValueKey('selection-bold')), findsOneWidget);
-    expect(find.byKey(const ValueKey('selection-italic')), findsOneWidget);
-    expect(find.byKey(const ValueKey('selection-bullets')), findsOneWidget);
-    expect(find.byKey(const ValueKey('selection-checklist')), findsOneWidget);
-    expect(find.byKey(const ValueKey('selection-more')), findsOneWidget);
-    expect(
-      tester.getSize(find.byKey(const ValueKey('selection-style'))).height,
-      24,
-    );
-    for (final key in const [
-      ValueKey('selection-bold'),
-      ValueKey('selection-italic'),
-      ValueKey('selection-bullets'),
-      ValueKey('selection-checklist'),
-    ]) {
-      expect(
-        tester.getSize(
-          find.descendant(
-            of: find.byKey(key),
-            matching: find.byType(IconButton),
-          ),
-        ),
-        const Size.square(24),
-      );
-    }
-    final selectionFade = tester.widget<FadeTransition>(
-      find
-          .ancestor(
-            of: find.byKey(const ValueKey('selection-formatting-toolbar')),
-            matching: find.byType(FadeTransition),
-          )
-          .first,
-    );
-    expect(selectionFade.opacity.value, closeTo(1, 0.01));
-
-    await tester.tap(find.byKey(const ValueKey('selection-bold')));
-    await tester.pumpAndSettle();
-    expect(changes.last, const [
-      NoteFormatRange(start: 0, end: 6, format: NoteFormat.bold),
-    ]);
-  });
-
-  testWidgets('puts Copy and Paste on the selection toolbar itself', (
-    tester,
-  ) async {
-    // They used to wait behind the More button, so copying a selection took
-    // a click, a menu, and another click.
-    final copied = <String>[];
-    String? body;
-    final messenger = tester.binding.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-      switch (call.method) {
-        case 'Clipboard.hasStrings':
-          return {'value': true};
-        case 'Clipboard.getData':
-          return {'text': 'pasted'};
-        case 'Clipboard.setData':
-          copied.add((call.arguments as Map)['text'] as String);
-      }
-      return null;
-    });
-    addTearDown(
-      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
-    );
-    await tester.pumpWidget(
-      harness(
-        'Select this text',
-        autofocus: true,
-        onBodyChanged: (value) => body = value,
-      ),
-    );
-    await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    Future<void> selectFirstWord() async {
-      field.controller!.selection = const TextSelection.collapsed(offset: 0);
-      await tester.pump();
-      field.controller!.selection = const TextSelection(
-        baseOffset: 0,
-        extentOffset: 6,
-      );
-      await tester.pump(const Duration(milliseconds: 200));
-      await tester.pumpAndSettle();
-    }
-
-    await selectFirstWord();
-    expect(find.byKey(const ValueKey('selection-copy')), findsOneWidget);
-    expect(find.byKey(const ValueKey('selection-paste')), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('selection-copy')));
-    await tester.pumpAndSettle();
-    expect(copied, ['Select']);
-
-    await selectFirstWord();
-    await tester.tap(find.byKey(const ValueKey('selection-paste')));
-    await tester.pumpAndSettle();
-    expect(body, 'pasted this text');
   });
 
   testWidgets('offers one-tap open and full-link copy for selected URLs', (
@@ -1806,10 +1696,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('selection-open-link')), findsOneWidget);
-    expect(find.byKey(const ValueKey('selection-copy-link')), findsOneWidget);
+    tester.state<EditableTextState>(find.byType(EditableText)).showToolbar();
+    await tester.pumpAndSettle();
+    expect(find.text('Open link'), findsOneWidget);
+    expect(find.text('Copy link'), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('selection-copy-link')));
+    await tester.tap(find.text('Copy link'));
     await tester.pumpAndSettle();
 
     expect(copied, [linkText]);
@@ -2108,7 +2000,8 @@ void main() {
   testWidgets(
     'a click elsewhere dismisses the panel and still moves the caret',
     (tester) async {
-      const body = 'Open www.example.com/path and then keep writing here';
+      // Under a blank first line, so this is not the note's title.
+      const body = '\nOpen www.example.com/path and then keep writing here';
       await tester.pumpWidget(harness(body, autofocus: true));
       await tester.pumpAndSettle();
       await tester.tapAt(_centerOf(tester, body, 'www.example.com/path'));
@@ -2238,15 +2131,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('selection-more')));
+    tester.state<EditableTextState>(find.byType(EditableText)).showToolbar();
     await tester.pumpAndSettle();
-    final editActions = find.byKey(const ValueKey('kapy-context-menu'));
-    expect(editActions, findsOneWidget);
-    expect(tester.getSize(editActions).width, lessThanOrEqualTo(208));
-    expect(
-      find.ancestor(of: editActions, matching: find.byType(FadeTransition)),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('editor-context-menu')), findsOneWidget);
     await tester.tap(find.text('Copy plain text'));
     await tester.pumpAndSettle();
 
@@ -2336,7 +2223,7 @@ void main() {
     );
   });
 
-  testWidgets('cycles selected line styles without a floating popover', (
+  testWidgets('Text ▾ in a plain note maps headings to its own styles', (
     tester,
   ) async {
     final changes = <List<NoteFormatRange>>[];
@@ -2349,35 +2236,36 @@ void main() {
     );
     await tester.pumpAndSettle();
     final field = tester.widget<TextField>(find.byType(TextField));
-    field.controller!.selection = const TextSelection(
-      baseOffset: 2,
-      extentOffset: 12,
-    );
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.pumpAndSettle();
+    Future<void> turnInto(String block) async {
+      field.controller!.selection = const TextSelection(
+        baseOffset: 2,
+        extentOffset: 12,
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('selection-block')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('selection-block-$block')));
+      await tester.pumpAndSettle();
+    }
 
-    await tester.tap(find.byKey(const ValueKey('selection-style')));
-    await tester.pumpAndSettle();
+    await turnInto('Heading 1');
     expect(changes.last, const [
       NoteFormatRange(start: 0, end: 20, format: NoteFormat.heading),
     ]);
-    expect(
-      find.byKey(const ValueKey('selection-formatting-toolbar')),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.byKey(const ValueKey('selection-style')));
-    await tester.pumpAndSettle();
-
+    await turnInto('Heading 2');
     expect(changes.last, const [
       NoteFormatRange(start: 0, end: 20, format: NoteFormat.subtitle),
     ]);
-    expect(find.byType(PopupMenuButton<NoteParagraphStyle>), findsNothing);
+    await turnInto('Text');
+    expect(changes.last, isEmpty);
+    expect(field.controller!.text, 'A supporting thought');
   });
 
   testWidgets('Text style preserves independent bold and italic controls', (
     tester,
   ) async {
+    _onPhone();
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(
       harness(
@@ -2458,6 +2346,7 @@ void main() {
   testWidgets('a collapsed format toggle styles subsequent typing', (
     tester,
   ) async {
+    _onPhone();
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(harness('A', onFormatsChanged: changes.add));
     await tester.pumpAndSettle();
@@ -2595,6 +2484,7 @@ void main() {
   testWidgets('footer hints and actions follow a changed shortcut live', (
     tester,
   ) async {
+    _onPhone();
     await tester.pumpWidget(harness('Task', autofocus: true));
     await tester.pumpAndSettle();
     expect(
@@ -2653,6 +2543,7 @@ void main() {
   testWidgets('creates, completes, and removes a checklist item', (
     tester,
   ) async {
+    _onPhone();
     await tester.pumpWidget(harness('Task'));
     await tester.pumpAndSettle();
     final field = tester.widget<TextField>(find.byType(TextField));
@@ -2837,6 +2728,7 @@ void main() {
   testWidgets('the nesting controls appear only for a list line', (
     tester,
   ) async {
+    _onPhone();
     await tester.pumpWidget(harness('plain\n• item', autofocus: true));
     await tester.pumpAndSettle();
     final field = tester.widget<TextField>(find.byType(TextField));
@@ -3014,8 +2906,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // Handwritten for the title and headings, clean for the writing.
     final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.style?.fontFamily, WritingFont.monospace.fontFamily);
+    expect(field.style?.fontFamily, WritingFont.mixed.fontFamily);
 
     final rendered =
         tester
@@ -3023,8 +2916,9 @@ void main() {
                 .renderEditable
                 .text!
             as TextSpan;
+    // Its last letter is drawn by the placeholder under the title.
     final heading = rendered.children!.whereType<TextSpan>().firstWhere(
-      (span) => span.text == 'Nightly cost',
+      (span) => span.text == 'Nightly cos',
     );
     final bodyText = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'nightly',
@@ -3035,8 +2929,8 @@ void main() {
       heading.style?.fontVariations,
       WritingFont.handwritten.fontVariations,
     );
-    expect(heading.style?.fontSize, WritingFont.handwritten.editorSize * 1.28);
-    expect(bodyText.style?.fontFamily, WritingFont.monospace.fontFamily);
+    expect(heading.style?.fontSize, EditorMetrics.titleFontSize);
+    expect(bodyText.style?.fontFamily, WritingFont.mixed.fontFamily);
     expect(
       tester.getRect(chipWithText('896.00 EUR')).center.dy,
       closeTo(lineRect(tester, body, 2).center.dy, 1.5),
@@ -3065,10 +2959,10 @@ void main() {
             as TextSpan;
     final scaledHeading = scaledRendered.children!
         .whereType<TextSpan>()
-        .firstWhere((span) => span.text == 'Nightly cost');
+        .firstWhere((span) => span.text == 'Nightly cos');
     expect(
       scaledHeading.style?.fontSize,
-      closeTo(WritingFont.handwritten.editorSize * 1.4 * 1.28, 0.001),
+      closeTo(EditorMetrics.titleFontSize * 1.4, 0.001),
     );
     expect(
       tester.getRect(chipWithText('896.00 EUR')).center.dy,
@@ -3182,7 +3076,8 @@ void main() {
     // in the margin to step out into.
     const tail = ' = 6 * 7';
     final chars = ((width - 40) / advance).floor() - tail.length;
-    final body = '${'x' * chars}$tail';
+    // Under a blank first line, so this is not the note's title.
+    final body = '\n${'x' * chars}$tail';
     await tester.pumpWidget(harness(body, writingFont: WritingFont.monospace));
     await tester.pumpAndSettle();
     editable = tester
@@ -3190,8 +3085,8 @@ void main() {
         .renderEditable;
     final columnRight = editable.localToGlobal(Offset.zero).dx + width;
 
-    final row = lastRowRect(tester, body, 0);
-    expect(row.top, lineRect(tester, body, 0).top, reason: 'one row only');
+    final row = lastRowRect(tester, body, 1);
+    expect(row.top, lineRect(tester, body, 1).top, reason: 'one row only');
     final pill = tester.getRect(chipWithText('42'));
     expect(pill.left, closeTo(row.right + InlineResults.gap, 1));
     expect(pill.right, greaterThan(columnRight));
@@ -4180,10 +4075,7 @@ total to usd''';
 
       await selectFirstWord(tester);
 
-      expect(
-        find.byKey(const ValueKey('selection-formatting-toolbar')),
-        findsNothing,
-      );
+      expect(find.byKey(const ValueKey('selection-bubble')), findsNothing);
       expect(find.text('Cut').hitTestable(), findsOneWidget);
       expect(find.text('Copy').hitTestable(), findsOneWidget);
       expect(find.text('Paste').hitTestable(), findsOneWidget);

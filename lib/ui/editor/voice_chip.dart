@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -11,7 +13,8 @@ import 'note_image_layout.dart';
 ///
 /// Fixed, and the same whatever the recording holds: a chip that grew once a
 /// transcript arrived would reflow the note under whoever was reading it.
-const double noteVoiceChipHeight = 56;
+/// The page's is Paper's 44px pill; a phone keeps its two-line row.
+double get noteVoiceChipHeight => EditorMetrics.page ? 44 : 56;
 
 /// What the chip says about a recording beyond the recording itself.
 enum VoiceChipState {
@@ -168,146 +171,230 @@ class NoteVoiceChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
     return Semantics(
       label: '$_label, ${formatVoiceDuration(ref.duration)}',
       button: true,
       child: Padding(
         padding: const EdgeInsets.only(bottom: noteImageGap),
-        child: MouseRegion(
-          // A recording is not text, and every part of the row does something.
-          cursor:
-              onOpen == null && onPlayPause == null && onSeekFraction == null
-              ? MouseCursor.defer
-              : SystemMouseCursors.click,
-          child: _hoverHint(
-            _openHint,
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onOpen,
-              onSecondaryTapDown: onRemove == null
-                  ? null
-                  : (details) => _showMenu(context, details.globalPosition),
-              onLongPressStart: onRemove == null
-                  ? null
-                  : (details) => _showMenu(context, details.globalPosition),
-              child: Stack(
-                children: [
-                  Container(
-                    height: noteVoiceChipHeight,
-                    decoration: BoxDecoration(
-                      color: palette.controlBackground,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: palette.controlBorder),
-                    ),
-                    padding: EdgeInsets.only(
-                      left: 8,
-                      right: onRemove == null ? 8 : 34,
-                    ),
-                    child: Row(
-                      children: [
-                        _PlayButton(
-                          playing: playing,
-                          opening: opening,
-                          failure: failure,
-                          onPressed: onPlayPause,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: AppTypeScale.small,
-                                  color: _isTransient
-                                      ? palette.textSecondary
-                                      : palette.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              if (_summaryPreview case final preview?)
-                                Text(
-                                  preview,
-                                  key: const ValueKey('voice-summary-preview'),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: AppTypeScale.caption,
-                                    color: palette.textSecondary,
-                                  ),
-                                )
-                              else
-                                SizedBox(
-                                  height: 20,
-                                  child: RepaintBoundary(
-                                    child: _Waveform(
-                                      peaks: ref.peaks,
-                                      progress: progress,
-                                      played: palette.textPrimary,
-                                      unplayed: palette.textTertiary,
-                                      onSeekFraction: onSeekFraction,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          formatVoiceDuration(ref.duration),
-                          style: TextStyle(
-                            fontSize: AppTypeScale.caption,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                            color: palette.textSecondary,
-                          ),
-                        ),
-                        if (_summaryPreview != null) ...[
-                          const SizedBox(width: 4),
-                          Text(
-                            '...',
-                            key: const ValueKey('voice-summary-more'),
-                            style: TextStyle(
-                              fontSize: AppTypeScale.caption,
-                              color: palette.textTertiary,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+        child: EditorMetrics.page ? _pill(context) : _row(context),
+      ),
+    );
+  }
+
+  /// Paper's voice chip: a pill holding the play button, the waveform in
+  /// sage up to the play head, the length, and what has become of the
+  /// recording when that is more than "Voice note".
+  Widget _pill(BuildContext context) {
+    final palette = context.palette;
+    final accent = Theme.of(context).colorScheme.primary;
+    final label = _label;
+    final small = TextStyle(
+      fontFamily: AppFonts.ui,
+      fontFamilyFallback: AppFonts.uiFallback,
+      fontSize: 12.5,
+      height: 16 / 12.5,
+      fontWeight: FontWeight.w600,
+      fontFeatures: const [FontFeature.tabularFigures()],
+      color: palette.textSecondary,
+    );
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: _gestures(
+        context,
+        Container(
+          key: const ValueKey('voice-chip-pill'),
+          height: noteVoiceChipHeight,
+          padding: EdgeInsets.only(left: 6, right: onRemove == null ? 16 : 6),
+          decoration: BoxDecoration(
+            color: palette.controlBackground,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: palette.controlBorder, width: 1.5),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 12,
+            children: [
+              _PlayButton(
+                playing: playing,
+                opening: opening,
+                failure: failure,
+                onPressed: onPlayPause,
+                pill: true,
+              ),
+              SizedBox(
+                width: 118,
+                height: 18,
+                child: RepaintBoundary(
+                  child: _Waveform(
+                    peaks: ref.peaks,
+                    progress: progress,
+                    played: accent,
+                    unplayed: palette.switchTrackOff,
+                    onSeekFraction: onSeekFraction,
+                    bars: 24,
                   ),
-                  if (onRemove != null)
-                    Positioned(
-                      top: 2,
-                      right: 2,
-                      child: Tooltip(
-                        message: 'Remove voice note',
-                        child: IconButton(
-                          key: const ValueKey('remove-voice-note'),
-                          onPressed: onRemove,
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 28,
-                            height: 28,
-                          ),
-                          icon: KapyIcon(
-                            KapyIcons.closeRounded,
-                            size: 16,
-                            color: palette.textSecondary,
-                          ),
-                        ),
+                ),
+              ),
+              Text(formatVoiceDuration(ref.duration), style: small),
+              if (label != 'Voice note')
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 280),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: small.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: _isTransient
+                            ? palette.textTertiary
+                            : palette.textMuted,
                       ),
                     ),
-                ],
-              ),
-            ),
+                  ),
+                ),
+              if (onRemove != null) _removeButton(palette),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// What the whole chip answers to: a click opens the recording, and a
+  /// secondary click or a long press offers to remove it.
+  Widget _gestures(BuildContext context, Widget child) => MouseRegion(
+    // A recording is not text, and every part of the row does something.
+    cursor: onOpen == null && onPlayPause == null && onSeekFraction == null
+        ? MouseCursor.defer
+        : SystemMouseCursors.click,
+    child: _hoverHint(
+      _openHint,
+      GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onOpen,
+        onSecondaryTapDown: onRemove == null
+            ? null
+            : (details) => _showMenu(context, details.globalPosition),
+        onLongPressStart: onRemove == null
+            ? null
+            : (details) => _showMenu(context, details.globalPosition),
+        child: child,
+      ),
+    ),
+  );
+
+  Widget _removeButton(CalcPalette palette) => Tooltip(
+    message: 'Remove voice note',
+    child: IconButton(
+      key: const ValueKey('remove-voice-note'),
+      onPressed: onRemove,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+      icon: KapyIcon(
+        KapyIcons.closeRounded,
+        size: 16,
+        color: palette.textSecondary,
+      ),
+    ),
+  );
+
+  /// A phone's row: the play button, the label over the waveform or the
+  /// summary, and the length.
+  Widget _row(BuildContext context) {
+    final palette = context.palette;
+    return _gestures(
+      context,
+      Stack(
+        children: [
+          Container(
+            height: noteVoiceChipHeight,
+            decoration: BoxDecoration(
+              color: palette.controlBackground,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: palette.controlBorder),
+            ),
+            padding: EdgeInsets.only(left: 8, right: onRemove == null ? 8 : 34),
+            child: Row(
+              children: [
+                _PlayButton(
+                  playing: playing,
+                  opening: opening,
+                  failure: failure,
+                  onPressed: onPlayPause,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: AppTypeScale.small,
+                          color: _isTransient
+                              ? palette.textSecondary
+                              : palette.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      if (_summaryPreview case final preview?)
+                        Text(
+                          preview,
+                          key: const ValueKey('voice-summary-preview'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: AppTypeScale.caption,
+                            color: palette.textSecondary,
+                          ),
+                        )
+                      else
+                        SizedBox(
+                          height: 20,
+                          child: RepaintBoundary(
+                            child: _Waveform(
+                              peaks: ref.peaks,
+                              progress: progress,
+                              played: palette.textPrimary,
+                              unplayed: palette.textTertiary,
+                              onSeekFraction: onSeekFraction,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  formatVoiceDuration(ref.duration),
+                  style: TextStyle(
+                    fontSize: AppTypeScale.caption,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                    color: palette.textSecondary,
+                  ),
+                ),
+                if (_summaryPreview != null) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    '...',
+                    key: const ValueKey('voice-summary-more'),
+                    style: TextStyle(
+                      fontSize: AppTypeScale.caption,
+                      color: palette.textTertiary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (onRemove != null)
+            Positioned(top: 2, right: 2, child: _removeButton(palette)),
+        ],
       ),
     );
   }
@@ -397,12 +484,16 @@ class _PlayButton extends StatelessWidget {
     required this.opening,
     this.failure,
     this.onPressed,
+    this.pill = false,
   });
 
   final bool playing;
   final bool opening;
   final VoicePlaybackFailure? failure;
   final VoidCallback? onPressed;
+
+  /// The page's pill: Paper's 32px sage button with a dark glyph.
+  final bool pill;
 
   @override
   Widget build(BuildContext context) {
@@ -417,11 +508,12 @@ class _PlayButton extends StatelessWidget {
       label: label,
       child: _hoverHint(
         onPressed == null ? null : label,
-        SizedBox(
-          width: 36,
-          height: 36,
+        SizedBox.square(
+          dimension: pill ? 32 : 36,
           child: Material(
-            color: palette.selectedBackground,
+            color: pill
+                ? Theme.of(context).colorScheme.primary
+                : palette.selectedBackground,
             shape: const CircleBorder(),
             child: InkWell(
               customBorder: const CircleBorder(),
@@ -430,10 +522,12 @@ class _PlayButton extends StatelessWidget {
                 playing: playing,
                 opening: opening,
                 failure: failure,
-                size: 20,
+                size: pill ? 14 : 20,
                 // Quieter rather than red: a recording that did not start is
                 // still a perfectly good recording.
-                color: failure == null && !opening
+                color: pill
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : failure == null && !opening
                     ? palette.textPrimary
                     : palette.textSecondary,
               ),
@@ -452,6 +546,7 @@ class _Waveform extends StatelessWidget {
     required this.played,
     required this.unplayed,
     this.onSeekFraction,
+    this.bars,
   });
 
   final Uint8List? peaks;
@@ -459,6 +554,7 @@ class _Waveform extends StatelessWidget {
   final Color played;
   final Color unplayed;
   final ValueChanged<double>? onSeekFraction;
+  final int? bars;
 
   @override
   Widget build(BuildContext context) {
@@ -484,6 +580,7 @@ class _Waveform extends StatelessWidget {
                 progress: value,
                 played: played,
                 unplayed: unplayed,
+                bars: bars,
               ),
             ),
           ),
@@ -500,6 +597,7 @@ class VoiceWaveformPainter extends CustomPainter {
     required this.progress,
     required this.played,
     required this.unplayed,
+    this.bars,
   });
 
   final Uint8List? peaks;
@@ -507,25 +605,31 @@ class VoiceWaveformPainter extends CustomPainter {
   final Color played;
   final Color unplayed;
 
+  /// Drawn as this many 3px bars with 2px between them, each as loud as the
+  /// loudest level it stands for, rather than one hairline per level.
+  final int? bars;
+
   @override
   void paint(Canvas canvas, Size size) {
     final levels = peaks;
     // A recording from a client that never wrote peaks, or one still being
     // adopted: a flat line reads as "no waveform", not as silence.
-    final count = levels == null || levels.isEmpty ? 0 : levels.length;
-    if (count == 0 || size.width <= 0) return;
+    if (levels == null || levels.isEmpty || size.width <= 0) return;
+    final count = bars ?? levels.length;
 
     final barWidth = size.width / count;
     final head = (progress ?? 0) * size.width;
     final paint = Paint()..strokeCap = StrokeCap.round;
 
     for (var i = 0; i < count; i++) {
-      final level = levels![i] / 255;
+      final from = i * levels.length ~/ count;
+      final to = math.max(from + 1, (i + 1) * levels.length ~/ count);
+      final level = levels.sublist(from, to).reduce(math.max) / 255;
       // A floor, so silence is still a visible line rather than a gap.
       final height = (size.height * level).clamp(2.0, size.height);
       final x = i * barWidth + barWidth / 2;
       paint
-        ..strokeWidth = barWidth * 0.6
+        ..strokeWidth = bars == null ? barWidth * 0.6 : barWidth - 2
         ..color = progress != null && x <= head ? played : unplayed;
       canvas.drawLine(
         Offset(x, (size.height - height) / 2),
@@ -540,7 +644,8 @@ class VoiceWaveformPainter extends CustomPainter {
       old.progress != progress ||
       old.peaks != peaks ||
       old.played != played ||
-      old.unplayed != unplayed;
+      old.unplayed != unplayed ||
+      old.bars != bars;
 }
 
 /// `m:ss`, or `h:mm:ss` past an hour. Recordings are capped at thirty minutes,

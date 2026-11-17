@@ -35,6 +35,7 @@ import '../../data/daily_separator.dart';
 import '../../data/attachment_limits.dart';
 import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
+import '../compact_icon_button.dart';
 import '../notebook_paper.dart';
 import '../celebrate.dart';
 import '../kapy_cursor_peek.dart';
@@ -50,6 +51,8 @@ import 'markdown_syntax.dart';
 import 'table_cell_editor.dart';
 import 'table_geometry.dart';
 import 'note_footer.dart';
+import 'note_header.dart';
+import '../sidebar_timestamp.dart';
 import '../../data/note_attachment.dart';
 import 'package:file_selector/file_selector.dart';
 
@@ -86,16 +89,20 @@ import 'remote_carets.dart';
 import 'inline_results.dart';
 import 'results_gutter.dart';
 import 'scroll_passthrough.dart';
-import 'selection_formatting_toolbar.dart';
+import 'editor_context_menu.dart';
+import 'selection_bubble.dart';
 import 'slash_command_menu.dart';
 import 'slash_commands.dart';
 import '../../sync/presence.dart';
 
+/// [edit] is where in the old body the change happened, as the editor saw
+/// it; null when it cannot say. See [NotesStore.updateDocument].
 typedef NoteDocumentChanged =
     void Function(
       String body,
       List<NoteFormatRange> formats,
       List<NoteAttachmentRef> attachments,
+      TextEdit? edit,
     );
 
 /// A note as the store holds it, for [NoteEditor.storedDocument].
@@ -143,6 +150,10 @@ class NoteEditor extends StatefulWidget {
     this.onOpenVoiceNote,
     this.recording,
     this.onRecordVoice,
+    this.slashHint = false,
+    this.onSlashCommandUsed,
+    this.lastSlashCommand,
+    this.onSlashCommandChosen,
     this.voiceActionBusy = false,
     this.clipboard = const ImageClipboard(),
     this.imageAcquirer,
@@ -219,6 +230,19 @@ class NoteEditor extends StatefulWidget {
 
   /// Starts a recording, or stops the one running.
   final VoidCallback? onRecordVoice;
+
+  /// Whether an empty line holding the caret says to type "/" for commands.
+  /// Off once someone has used it a few times.
+  final bool slashHint;
+
+  /// Each time "/" typed at the start of a line opens Commands.
+  final VoidCallback? onSlashCommandUsed;
+
+  /// The command chosen last, highlighted when Commands opens.
+  final SlashCommandType? lastSlashCommand;
+
+  /// Each time a command is chosen from Commands.
+  final ValueChanged<SlashCommandType>? onSlashCommandChosen;
   final bool voiceActionBusy;
 
   /// Where a pasted picture comes from. Swapped in tests, which have no
@@ -397,6 +421,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   late HighlightingController _controller;
   final GlobalKey _textFieldKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
+
+  /// The empty line under the pointer, which shows its "+".
+  final _hoverLine = ValueNotifier<int?>(null);
+  final _lineMarks = ValueNotifier<List<_LineMark>>(const []);
+  bool _lineMarksScheduled = false;
+  late final _lineMarkSources = Listenable.merge([
+    _controller,
+    _focusNode,
+    _hoverLine,
+    _slashCommandMenu,
+  ]);
+
   late final FocusNode _focusNode = FocusNode(
     debugLabel: 'note-editor:${widget.noteId}',
   );
@@ -432,6 +468,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   late final _DailySeparatorFormatter _dailySeparatorFormatter;
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
+
+  /// A right-click selects the word under it on macOS, and that selection
+  /// is for the menu it opens, not for the bubble.
+  bool _rightClicked = false;
   Timer? _pasteOfferTimer;
 
   /// How many of the editor's edit menus are on screen. A count rather than a
@@ -476,6 +516,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   final SlashCommandMenuController _slashCommandMenu =
       SlashCommandMenuController();
+  final _selectionBubble = SelectionBubbleController();
   TextRange? _slashCommandRange;
   bool _slashCommandWasTyped = false;
   TextEditingValue? _manualSlashMenuValue;
@@ -597,6 +638,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         (_) => resumeAt == null ? focusAtEnd() : focusHere(),
       );
     }
+    _lineMarkSources.addListener(_scheduleLineMarks);
   }
 
   @override
@@ -688,9 +730,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _lineMarkSources.removeListener(_scheduleLineMarks);
+    _lineMarks.dispose();
+    _hoverLine.dispose();
     LinkPopover.hide();
     KeywordTooltip.hide();
     _slashCommandMenu.dispose();
+    _selectionBubble.dispose();
     _controller.removeListener(_onControllerChanged);
     _focusNode.removeListener(_handleFocusChanged);
     _scrollController.removeListener(_handleEditorScroll);
@@ -741,6 +787,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _handleEditorScroll() {
     LinkPopover.hide();
     _slashCommandMenu.hide();
+    _selectionBubble.hide();
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
     _syncTableCellEditorPosition();
@@ -920,13 +967,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _commit(
     String text,
     List<NoteFormatRange> formats,
-    List<NoteAttachmentRef> attachments,
-  ) {
+    List<NoteAttachmentRef> attachments, {
+    TextEdit? edit,
+  }) {
     final stored = _stored.body;
     if (stored == _storeBase) {
       _storeBase = text;
       _storeShadow = text;
-      widget.onDocumentChanged(text, formats, attachments);
+      widget.onDocumentChanged(text, formats, attachments, edit);
       return;
     }
     final merge = mergeTexts(base: _storeBase, local: text, remote: stored);
@@ -948,6 +996,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         for (final ref in attachments)
           ref.copyWith(offset: merge.mapLocalStart(ref.offset)),
       ],
+      null,
     );
     _remotePending = true;
     _scheduleTake();
@@ -1295,7 +1344,35 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _evaluate();
     });
     unawaited(_requestSpellCheck(value.text));
-    _commit(value.text, updatedFormats, updatedAttachments);
+    _commit(
+      value.text,
+      updatedFormats,
+      updatedAttachments,
+      edit: previous.text == _storeBase ? _editBetween(previous, value) : null,
+    );
+  }
+
+  /// Where the change from [before] to [after] happened, as far as the
+  /// selections tell: from where the earlier of the two starts to where both
+  /// end. Diffed inside, a line deleted between two that start alike is the
+  /// line the writer deleted, not the end of one and the start of the next.
+  static TextEdit? _editBetween(
+    TextEditingValue before,
+    TextEditingValue after,
+  ) {
+    final was = before.selection;
+    final now = after.selection;
+    if (!was.isValid || !now.isValid) return null;
+    final tail = math.min(
+      before.text.length - was.end,
+      after.text.length - now.end,
+    );
+    if (tail < 0) return null;
+    return (
+      start: math.min(was.start, now.start),
+      oldEnd: before.text.length - tail,
+      newEnd: after.text.length - tail,
+    );
   }
 
   Future<void> _requestSpellCheck([String? requestedText]) async {
@@ -3054,6 +3131,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (widget.images != null && !_videoActionBusy) SlashCommandType.video,
     if (widget.images != null && !_fileActionBusy) SlashCommandType.file,
     SlashCommandType.numberedList,
+    SlashCommandType.heading1,
+    SlashCommandType.heading2,
+    SlashCommandType.heading3,
+    SlashCommandType.formula,
     SlashCommandType.quote,
     SlashCommandType.codeBlock,
   };
@@ -3068,7 +3149,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   void _syncSlashCommandMenu() {
-    if (widget.readOnly || !_focusNode.hasFocus) {
+    if (widget.readOnly ||
+        (!_focusNode.hasFocus && !_slashCommandMenu.searching)) {
       _manualSlashMenuValue = null;
       _slashCommandMenu.hide();
       return;
@@ -3101,6 +3183,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _slashCommandMenu.hide();
       return;
     }
+    if (!_slashCommandMenu.isVisible) widget.onSlashCommandUsed?.call();
     _slashCommandRange = invocation.range;
     _slashCommandWasTyped = true;
     _manualSlashMenuValue = null;
@@ -3119,7 +3202,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
-  void _showSlashCommandMenu({required Rect anchor, required String query}) {
+  void _showSlashCommandMenu({
+    required Rect anchor,
+    required String query,
+    bool search = false,
+  }) {
     ContextMenuController.removeAny();
     LinkPopover.hide();
     _clearKeywordTooltip();
@@ -3129,7 +3216,24 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       query: query,
       available: _availableSlashCommands,
       markdownEnabled: widget.markdownEnabled,
-      onSelected: (choice) => unawaited(_runSlashCommand(choice)),
+      hints: {
+        for (final (command, action) in const [
+          (SlashCommandType.image, ShortcutAction.insertImage),
+          (SlashCommandType.voiceNote, ShortcutAction.recordVoiceNote),
+          (SlashCommandType.video, ShortcutAction.insertVideo),
+          (SlashCommandType.file, ShortcutAction.insertFile),
+          (SlashCommandType.checklist, ShortcutAction.formatChecklist),
+          (SlashCommandType.bulletedList, ShortcutAction.formatBullets),
+        ])
+          if (widget.shortcuts.bindingFor(action) case final binding?)
+            command: binding.displayLabel,
+      },
+      lastCommand: widget.lastSlashCommand,
+      search: search,
+      onSelected: (choice) {
+        widget.onSlashCommandChosen?.call(choice.type);
+        unawaited(_runSlashCommand(choice));
+      },
       onDismissed: _slashCommandMenuDismissed,
     );
   }
@@ -3137,7 +3241,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// The touch footer's `/` opens the same menu without putting a slash in
   /// the note. A tap-opened popup gives the screen to its choices, so it puts
   /// the software keyboard away until a choice returns to the editor.
-  void _showInsertMenu() {
+  void _showInsertMenu({bool search = false}) {
     if (widget.readOnly) return;
     _dismissedSlashStart = null;
     _manualSlashMenuValue = null;
@@ -3145,7 +3249,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final caret = selection.isValid
         ? selection.extentOffset
         : _controller.text.length;
-    _dismissKeyboard();
+    if (AppPlatform.isMobile) _dismissKeyboard();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || widget.readOnly) return;
       final anchor = _slashAnchorAt(caret);
@@ -3153,13 +3257,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _slashCommandRange = TextRange.collapsed(caret);
       _slashCommandWasTyped = false;
       _manualSlashMenuValue = _controller.value;
-      _showSlashCommandMenu(anchor: anchor, query: '');
+      _showSlashCommandMenu(anchor: anchor, query: '', search: search);
     });
+    // Off a phone nothing else changes, so nothing else would bring the
+    // frame the menu waits for.
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _slashCommandMenuDismissed(bool userInitiated) {
     if (userInitiated && _slashCommandWasTyped) {
       _dismissedSlashStart = _slashCommandRange?.start;
+    }
+    // Closing the menu the "+" opened gives the keyboard back to the note.
+    if (userInitiated && !_slashCommandWasTyped && !AppPlatform.isMobile) {
+      _focusNode.requestFocus();
     }
     _slashCommandRange = null;
     _slashCommandWasTyped = false;
@@ -3172,7 +3283,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     SlashCommandType.numberedList ||
     SlashCommandType.quote ||
     SlashCommandType.divider ||
-    SlashCommandType.codeBlock => true,
+    SlashCommandType.codeBlock ||
+    SlashCommandType.heading3 ||
+    SlashCommandType.formula => true,
     _ => false,
   };
 
@@ -3183,10 +3296,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         SlashCommandType.quote => 'Quotes',
         SlashCommandType.divider => 'Dividers',
         SlashCommandType.codeBlock => 'Code blocks',
+        SlashCommandType.heading3 => 'Third-level headings',
+        SlashCommandType.formula => 'Formulas',
         _ => 'This command',
       };
 
-  Future<bool> _confirmMarkdownFor(SlashCommandType command) async {
+  Future<bool> _confirmMarkdown(String feature) async {
     final canEnable = widget.onMarkdownEnabledChanged != null;
     final accepted = await showDialog<bool>(
       context: context,
@@ -3195,7 +3310,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 390),
           child: Text(
-            '${_markdownFeatureName(command)} use Markdown. Turning it on '
+            '$feature use Markdown. Turning it on '
             'changes how Markdown syntax is displayed in every note. Your '
             'text stays unchanged.',
             style: TextStyle(
@@ -3234,6 +3349,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _slashCommandRange = null;
     _slashCommandWasTyped = false;
     _manualSlashMenuValue = null;
+    if (!AppPlatform.isMobile) _focusNode.requestFocus();
     if (range == null ||
         !range.isValid ||
         range.start < 0 ||
@@ -3243,7 +3359,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
     var markdown = widget.markdownEnabled;
     if (_requiresMarkdown(choice.type) && !markdown) {
-      markdown = await _confirmMarkdownFor(choice.type);
+      markdown = await _confirmMarkdown(_markdownFeatureName(choice.type));
       if (!markdown || !mounted) {
         if (typed) _dismissedSlashStart = range.start;
         return;
@@ -3354,6 +3470,35 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         if (typed) _consumeSlashCommand(range);
         widget.onRecordVoice?.call();
         break;
+      case SlashCommandType.formula:
+        _replaceCommandValue(
+          replaceWithSlashCommandBlock(
+            _controller.value,
+            range,
+            '\$\$\n\n\$\$',
+            selectionInBlock: const TextSelection.collapsed(offset: 3),
+          ),
+        );
+        break;
+      case SlashCommandType.heading1 ||
+          SlashCommandType.heading2 ||
+          SlashCommandType.heading3:
+        if (typed) _consumeSlashCommand(range);
+        final level = switch (choice.type) {
+          SlashCommandType.heading1 => 1,
+          SlashCommandType.heading2 => 2,
+          _ => 3,
+        };
+        if (markdown) {
+          _applyMarkdownEdit(applyMarkdownHeading(_controller.value, level));
+        } else {
+          _applyParagraphStyle(
+            level == 1
+                ? NoteParagraphStyle.heading
+                : NoteParagraphStyle.subtitle,
+          );
+        }
+        break;
     }
   }
 
@@ -3442,7 +3587,24 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// reach for, but a panel that outlives the caret it was raised next to is
   /// wrong whichever key moved it.
   KeyEventResult _handleEditorKey(FocusNode node, KeyEvent event) {
-    if (_slashCommandMenu.handleKeyEvent(event)) {
+    if (_slashCommandMenu.handleKeyEvent(event) ||
+        _selectionBubble.handleKeyEvent(event)) {
+      return KeyEventResult.handled;
+    }
+    if (event is KeyDownEvent) _rightClicked = false;
+    // Link is only bound while words are selected; everywhere else its keys
+    // are left for whatever else wants them.
+    final selection = _controller.selection;
+    if (event is KeyDownEvent &&
+        !widget.readOnly &&
+        selection.isValid &&
+        !selection.isCollapsed &&
+        (widget.shortcuts
+                .bindingFor(ShortcutAction.formatLink)
+                ?.activator
+                .accepts(event, HardwareKeyboard.instance) ??
+            false)) {
+      unawaited(_startLink());
       return KeyEventResult.handled;
     }
     if (event is KeyDownEvent) {
@@ -3494,7 +3656,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _handlePointerDown(PointerDownEvent event) {
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
-    if (event.buttons & kSecondaryButton != 0) {
+    _selectionBubble.hide();
+    _rightClicked = event.buttons & kSecondaryButton != 0;
+    if (_rightClicked) {
       final editable = _fieldEditable();
       if (editable != null) {
         final offset = editable.getPositionForPoint(event.position).offset;
@@ -3795,6 +3959,27 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     editable.showToolbar();
   }
 
+  /// Ticked boxes, and every box in the note.
+  ///
+  /// Markdown tasks count alongside the app's own boxes: a list is finished
+  /// when neither kind has anything left open. With markdown off there are
+  /// none, the way the old null was: a table is all that view holds. See
+  /// HighlightingController.markdownFor.
+  ({int done, int total}) _checklist() {
+    final text = _controller.text;
+    final tasks = _controller.markdownFor(text).tasks;
+    final done =
+        checkedPrefix.allMatches(text).length +
+        tasks.where((task) => task.checked).length;
+    return (
+      done: done,
+      total:
+          done +
+          uncheckedPrefix.allMatches(text).length +
+          tasks.where((task) => !task.checked).length,
+    );
+  }
+
   /// Confetti over the box just ticked, with a fuller burst for the last one.
   ///
   /// The finale is deliberately rare: a note has to have had at least two
@@ -3802,20 +3987,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// than ticking a single stray item.
   void _celebrateCheck(RenderEditable editable, Offset tapPosition) {
     if (!mounted) return;
-    final text = _controller.text;
-    // Markdown tasks count alongside the app's own boxes: a list is finished
-    // when neither kind has anything left open.
-    // With markdown off this is empty, the way the old null was: a table is all
-    // that view holds. See HighlightingController.markdownFor.
-    final tasks = _controller.markdownFor(text).tasks;
-    final open =
-        uncheckedPrefix.allMatches(text).length +
-        tasks.where((task) => !task.checked).length;
-    final total =
-        open +
-        checkedPrefix.allMatches(text).length +
-        tasks.where((task) => task.checked).length;
-    final finale = open == 0 && total >= 2;
+    final checklist = _checklist();
+    final finale = checklist.done == checklist.total && checklist.total >= 2;
     Celebrate.at(context, tapPosition);
     if (!finale) return;
 
@@ -3853,7 +4026,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // Nothing left to raise a keyboard for. A retry still in flight would
     // otherwise put one up over a note nobody is writing in.
     _keyboardRetryTimer?.cancel();
-    _slashCommandMenu.hide();
+    // The menu the "+" opened holds the keyboard in its own search.
+    if (!_slashCommandMenu.searching) _slashCommandMenu.hide();
+    // So does the bubble's address field.
+    if (!_selectionBubble.editingLink) _selectionBubble.hide();
     _kapyPeekIdleTimer?.cancel();
     _clearKeywordTooltip();
     _kapyPeekIdleTimer = null;
@@ -4286,47 +4462,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         ],
       );
     }
-    if (touch) {
-      return NoteEditorContextMenu(
-        anchors: editableTextState.contextMenuAnchors,
-        buttonItems: _touchSelectionItems(
-          editableTextState,
-          selection,
-          linkItems,
-        ),
-      );
-    }
-    return NoteSelectionFormattingToolbar(
-      editableTextState: editableTextState,
-      corrections: _spellingContextMenuItems(selection),
-      paragraphStyle: _activeParagraphStyle,
-      markdownHeadingLevel: widget.markdownEnabled
-          ? _markdownHeadingLevel
-          : null,
-      markdown: widget.markdownEnabled,
-      boldActive: _formatActive(NoteFormat.bold),
-      italicActive: _formatActive(NoteFormat.italic),
-      bulletsActive: _lineStyleActive(NoteLineStyle.bullet),
-      checklistActive: _lineStyleActive(NoteLineStyle.checklist),
-      onParagraphStylePressed: _cycleParagraphStyle,
-      onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
-      onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
-      onBulletsPressed: _toggleBullets,
-      onChecklistPressed: _toggleChecklist,
-      onOpenLink: link == null ? null : () => unawaited(_openLink(link)),
-      onCopyLink: link == null ? null : () => unawaited(_copyLink(link)),
-      onCopy: widget.images == null
-          ? null
-          : () => unawaited(_copyRichSelection(selection)),
-      // The same rule as the menu's Paste: through the editor wherever a
-      // picture could be on the clipboard, and the field's own paste where
-      // one could not.
-      onPaste: widget.images == null
-          ? null
-          : () => unawaited(handlePaste(SelectionChangedCause.toolbar)),
-      onPastePlainText: () =>
-          unawaited(_pastePlainText(SelectionChangedCause.toolbar)),
-      onCopyPlainText: () => unawaited(_copyPlainText(selection)),
+    return NoteEditorContextMenu(
+      anchors: editableTextState.contextMenuAnchors,
+      buttonItems: _selectionMenuItems(editableTextState, selection, linkItems),
     );
   }
 
@@ -4385,15 +4523,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     ];
   }
 
-  /// A phone's toolbar for selected text.
+  /// The menu for selected text, on a phone's toolbar or behind a
+  /// right-click.
   ///
-  /// Copy leads, followed by the platform's Cut and paste actions, because
-  /// copying is what a selection on a phone is usually for. The formatting
-  /// row a pointer gets had put Copy behind a More button. The rest follows in
-  /// the order the toolbar tucks it away: corrections, the platform's other
-  /// actions, the link, and the note's own formatting, which the footer's
-  /// writing tools also carry.
-  List<ContextMenuButtonItem> _touchSelectionItems(
+  /// Copy leads, followed by Cut and the paste actions, because copying is
+  /// what a selection is usually for. The rest follows in the order a phone's
+  /// toolbar tucks it away: corrections, the platform's other actions, the
+  /// link, and the note's own formatting, which the bubble also carries where
+  /// there is a pointer.
+  List<ContextMenuButtonItem> _selectionMenuItems(
     EditableTextState editableTextState,
     TextSelection selection,
     List<ContextMenuButtonItem> linkItems,
@@ -4935,19 +5073,315 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return true;
   }
 
+  /// Formatting appears once a selection settles, so a drag across a
+  /// paragraph never flickers it: the bubble where there is a pointer, the
+  /// platform's toolbar on a phone.
   void _scheduleSelectionToolbar(TextSelection selection) {
     _selectionToolbarTimer?.cancel();
+    _selectionBubble.hide();
     if (!selection.isValid || selection.isCollapsed || !_focusNode.hasFocus) {
       return;
     }
-    _selectionToolbarTimer = Timer(const Duration(milliseconds: 180), () {
+    _selectionToolbarTimer = Timer(const Duration(milliseconds: 150), () {
       if (!mounted ||
           !_focusNode.hasFocus ||
           _controller.selection != selection) {
         return;
       }
-      _editableTextState()?.showToolbar();
+      if (AppPlatform.hasPointer) {
+        if (!_rightClicked) _showSelectionBubble();
+      } else {
+        _editableTextState()?.showToolbar();
+      }
     });
+  }
+
+  /// Raises the bubble over the selection, or brings the one showing up to
+  /// date with it.
+  void _showSelectionBubble() {
+    final editable = _fieldEditable();
+    final selection = _controller.selection;
+    if (widget.readOnly ||
+        editable == null ||
+        !editable.hasSize ||
+        !_focusNode.hasFocus ||
+        !selection.isValid ||
+        selection.isCollapsed) {
+      return;
+    }
+    final boxes = editable.getBoxesForSelection(selection);
+    if (boxes.isEmpty) return;
+    final transform = editable.getTransformTo(null);
+    Rect line(TextBox row) => MatrixUtils.transformRect(
+      transform,
+      [
+        for (final box in boxes)
+          if (box.top == row.top) box.toRect(),
+      ].reduce((a, b) => a.expandToInclude(b)),
+    );
+    String? key(ShortcutAction action) =>
+        widget.shortcuts.bindingFor(action)?.displayLabel;
+    final markdown = widget.markdownEnabled
+        ? _controller.markdownFor(_controller.text)
+        : null;
+    bool marked(MarkdownStyle style) =>
+        markdown != null && markdownSelectionHas(markdown, selection, style);
+    final pane = context.findRenderObject()! as RenderBox;
+    _selectionBubble.show(
+      context,
+      above: line(boxes.first),
+      below: line(boxes.last),
+      within: MatrixUtils.transformRect(
+        pane.getTransformTo(null),
+        Offset.zero & pane.size,
+      ),
+      block: _selectionBlockLabel,
+      blocks: _selectionBlocks,
+      markdownEnabled: widget.markdownEnabled,
+      actions: [
+        SelectionAction(
+          name: 'bold',
+          label: 'Bold',
+          icon: KapyIcons.formatBoldRounded,
+          active: _formatActive(NoteFormat.bold),
+          shortcut: key(ShortcutAction.formatBold),
+          onPressed: () =>
+              _bubbleEdit(() => _toggleInlineFormat(NoteFormat.bold)),
+        ),
+        SelectionAction(
+          name: 'italic',
+          label: 'Italic',
+          icon: KapyIcons.formatItalicRounded,
+          active: _formatActive(NoteFormat.italic),
+          shortcut: key(ShortcutAction.formatItalic),
+          onPressed: () =>
+              _bubbleEdit(() => _toggleInlineFormat(NoteFormat.italic)),
+        ),
+        SelectionAction(
+          name: 'strikethrough',
+          label: 'Strikethrough',
+          icon: KapyIcons.strikethroughRounded,
+          active: marked(MarkdownStyle.strikethrough),
+          shortcut: key(ShortcutAction.formatStrikethrough),
+          onPressed: () =>
+              unawaited(_toggleMarkdownWrap('~~', 'Strikethrough')),
+        ),
+        SelectionAction(
+          name: 'code',
+          label: 'Inline code',
+          icon: KapyIcons.inlineCodeRounded,
+          active: marked(MarkdownStyle.code),
+          shortcut: key(ShortcutAction.formatCode),
+          onPressed: () => unawaited(_toggleMarkdownWrap('`', 'Inline code')),
+        ),
+        SelectionAction(
+          name: 'link',
+          label: 'Link',
+          icon: KapyIcons.linkRounded,
+          active: marked(MarkdownStyle.link),
+          shortcut: key(ShortcutAction.formatLink),
+          onPressed: () => unawaited(_startLink()),
+        ),
+      ],
+      onLink: _linkSelection,
+      onLinkClosed: _focusNode.requestFocus,
+    );
+  }
+
+  /// A change from the bubble moves the selection, which takes the bubble
+  /// away until it settles again; it was made from the bubble, so the
+  /// bubble stays.
+  void _bubbleEdit(VoidCallback edit) {
+    edit();
+    _showSelectionBubble();
+  }
+
+  /// What Text ▾ says the selection's line is.
+  String get _selectionBlockLabel {
+    if (widget.markdownEnabled) {
+      final level = _markdownHeadingLevel ?? 0;
+      if (level > 0) return 'Heading ${level.clamp(1, 3)}';
+      final line = markdownLinePrefix(
+        _controller.text,
+        _controller.selection.start,
+      );
+      if (line.isTask) return 'Checklist';
+      if (line.isOrdered) return 'Numbered list';
+      if (line.isBullet) return 'Bulleted list';
+      if (line.isQuoted) return 'Quote';
+      return 'Text';
+    }
+    if (_lineStyleActive(NoteLineStyle.checklist)) return 'Checklist';
+    if (_lineStyleActive(NoteLineStyle.bullet)) return 'Bulleted list';
+    return switch (_activeParagraphStyle) {
+      NoteParagraphStyle.heading => 'Heading 1',
+      NoteParagraphStyle.subtitle => 'Heading 2',
+      _ => 'Text',
+    };
+  }
+
+  /// What Text ▾ offers, the way Commands words them.
+  List<SelectionBlock> get _selectionBlocks => [
+    SelectionBlock(
+      label: 'Text',
+      icon: KapyIcons.textFormatRounded,
+      onSelected: () => _bubbleEdit(_turnIntoText),
+    ),
+    for (final (type, label, icon, trigger) in const [
+      (SlashCommandType.heading1, 'Heading 1', KapyIcons.heading1Rounded, '#'),
+      (SlashCommandType.heading2, 'Heading 2', KapyIcons.heading2Rounded, '##'),
+      (
+        SlashCommandType.heading3,
+        'Heading 3',
+        KapyIcons.heading3Rounded,
+        '###',
+      ),
+      (
+        SlashCommandType.bulletedList,
+        'Bulleted list',
+        KapyIcons.bulletedListRounded,
+        '-',
+      ),
+      (
+        SlashCommandType.numberedList,
+        'Numbered list',
+        KapyIcons.numberedListRounded,
+        '1.',
+      ),
+      (
+        SlashCommandType.checklist,
+        'Checklist',
+        KapyIcons.checklistRounded,
+        '[ ]',
+      ),
+      (SlashCommandType.quote, 'Quote', KapyIcons.quoteRounded, '>'),
+    ])
+      SelectionBlock(
+        label: label,
+        icon: icon,
+        trigger:
+            widget.markdownEnabled ||
+                (type != SlashCommandType.heading1 &&
+                    type != SlashCommandType.heading2)
+            ? trigger
+            : null,
+        requiresMarkdown: _requiresMarkdown(type),
+        onSelected: () => unawaited(_turnInto(type)),
+      ),
+    SelectionBlock(
+      label: 'Code block',
+      icon: KapyIcons.codeRounded,
+      trigger: '```',
+      requiresMarkdown: true,
+      onSelected: () => unawaited(_wrapInCodeBlock()),
+    ),
+  ];
+
+  /// Text ▾'s Text: no heading, and out of a list.
+  void _turnIntoText() {
+    if (_lineStyleActive(NoteLineStyle.checklist)) _toggleChecklist();
+    if (_lineStyleActive(NoteLineStyle.bullet)) _toggleBullets();
+    if (widget.markdownEnabled) {
+      _applyMarkdownEdit(applyMarkdownHeading(_controller.value, 0));
+    } else {
+      _applyParagraphStyle(NoteParagraphStyle.text);
+    }
+  }
+
+  /// Text ▾'s other blocks, applied the way the same command from the "+"
+  /// applies them, Markdown asked for where it is needed.
+  Future<void> _turnInto(SlashCommandType type) async {
+    final selection = _controller.selection;
+    if (widget.readOnly || !selection.isValid) return;
+    _slashCommandRange = TextRange.collapsed(selection.extentOffset);
+    _slashCommandWasTyped = false;
+    await _runSlashCommand(SlashCommandChoice(type));
+    if (mounted) _showSelectionBubble();
+  }
+
+  /// Fences the selected lines as a code block.
+  Future<void> _wrapInCodeBlock() async {
+    final before = _controller.value;
+    final selection = before.selection;
+    if (widget.readOnly || !selection.isValid) return;
+    if (!widget.markdownEnabled && !await _confirmMarkdown('Code blocks')) {
+      return;
+    }
+    if (!mounted || _controller.text != before.text) return;
+    final text = before.text;
+    final start = selection.start == 0
+        ? 0
+        : text.lastIndexOf('\n', selection.start - 1) + 1;
+    final next = text.indexOf('\n', selection.end);
+    final end = next < 0 ? text.length : next;
+    final code = text.substring(start, end);
+    _replaceCommandValue(
+      replaceSlashCommandRange(
+        before,
+        TextRange(start: start, end: end),
+        '```\n$code\n```',
+        selection: TextSelection(
+          baseOffset: start + 4,
+          extentOffset: start + 4 + code.length,
+        ),
+      ),
+    );
+    _showSelectionBubble();
+  }
+
+  /// Strikethrough and inline code, which only Markdown can write.
+  Future<void> _toggleMarkdownWrap(String marker, String feature) async {
+    final before = _controller.value;
+    if (widget.readOnly ||
+        !before.selection.isValid ||
+        before.selection.isCollapsed) {
+      return;
+    }
+    if (!widget.markdownEnabled && !await _confirmMarkdown(feature)) return;
+    if (!mounted || _controller.text != before.text) return;
+    _replaceCommandValue(toggleMarkdownWrap(before, marker));
+    _showSelectionBubble();
+  }
+
+  /// Link: the bubble becomes a field for the address, Markdown asked for
+  /// first in a plain note.
+  Future<void> _startLink() async {
+    final before = _controller.value;
+    if (widget.readOnly ||
+        !before.selection.isValid ||
+        before.selection.isCollapsed) {
+      return;
+    }
+    if (!widget.markdownEnabled) {
+      if (!await _confirmMarkdown('Links')) return;
+      if (!mounted || _controller.text != before.text) return;
+      _controller.selection = before.selection;
+      _focusNode.requestFocus();
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+    }
+    _selectionToolbarTimer?.cancel();
+    _showSelectionBubble();
+    _selectionBubble.editLink();
+  }
+
+  /// Links the selected words to [address], in Markdown.
+  void _linkSelection(String address) {
+    final value = _controller.value;
+    final selection = value.selection;
+    if (widget.readOnly || !selection.isValid || selection.isCollapsed) return;
+    final words = value.text.substring(selection.start, selection.end);
+    _replaceCommandValue(
+      replaceSlashCommandRange(
+        value,
+        TextRange(start: selection.start, end: selection.end),
+        '[$words]($address)',
+        selection: TextSelection(
+          baseOffset: selection.start + 1,
+          extentOffset: selection.start + 1 + words.length,
+        ),
+      ),
+    );
   }
 
   EditableTextState? _editableTextState() {
@@ -5721,6 +6155,348 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  Object? _titleKey;
+  _TitleLayout? _title;
+
+  /// Where the note's title, its first line, falls on the page, laid out from
+  /// the very runs the field draws it with. Null off the page, for a note
+  /// with no words on its first line, and for a title holding a picture or a
+  /// formula, which keeps it as an ordinary line.
+  ///
+  /// The room under a title for its meta row cannot come from the line's own
+  /// height: whatever makes a row taller sets the words lower in it as well.
+  /// Nor from its line break, which has to stay a break: an empty line under
+  /// the title would otherwise have no row of its own, and a caret on it
+  /// would stand at the end of the title's row. So the last letter on the
+  /// title's last row is drawn by a placeholder that reaches down past the
+  /// row by the room. The row grows downwards and the words stay at its top.
+  /// It is redone only when the title or what it is laid out from changes.
+  _TitleLayout? _layOutTitle(
+    BuildContext context,
+    TextStyle style,
+    StrutStyle strut,
+    double width,
+    TextScaler scaler,
+    Object layoutKey,
+    Iterable<int> pictures,
+  ) {
+    final text = _controller.text;
+    final newline = text.indexOf('\n');
+    final end = newline < 0 ? text.length : newline;
+    final words = text.substring(0, end);
+    if (!EditorMetrics.page ||
+        words.trim().isEmpty ||
+        pictures.any((offset) => offset < end)) {
+      _titleKey = null;
+      return _title = null;
+    }
+    final key = (words, width, style, scaler, layoutKey);
+    if (key == _titleKey) return _title;
+    _titleKey = key;
+    final full = _controller.buildTextSpan(
+      context: context,
+      style: style,
+      withComposing: false,
+    );
+    final runs = <TextSpan>[];
+    var at = 0;
+    for (final run in full.children ?? const <InlineSpan>[]) {
+      if (at >= end) break;
+      if (run is! TextSpan || run.children != null) return _title = null;
+      runs.add(run);
+      at += run.text?.length ?? 0;
+    }
+    if (at != end) return _title = null;
+
+    // An empty placeholder after the words, to find where the text engine
+    // puts the top of one in the last row: level with the surrounding run's
+    // ascent, not with the row's top.
+    final painter =
+        TextPainter(
+            text: TextSpan(
+              style: full.style,
+              children: [
+                ...runs,
+                const WidgetSpan(
+                  alignment: PlaceholderAlignment.top,
+                  child: SizedBox.shrink(),
+                ),
+              ],
+            ),
+            textDirection: TextDirection.ltr,
+            strutStyle: strut,
+            textScaler: scaler,
+          )
+          ..setPlaceholderDimensions(const [
+            PlaceholderDimensions(
+              size: Size.zero,
+              alignment: PlaceholderAlignment.top,
+            ),
+          ])
+          ..layout(maxWidth: width);
+    final lines = painter.computeLineMetrics();
+    final last = lines.last;
+    final row = Rect.fromLTWH(
+      0,
+      lines.fold(0.0, (top, line) => top + line.height) - last.height,
+      width,
+      last.height,
+    );
+    final spacerTop = painter.inlinePlaceholderBoxes!.last.top;
+
+    // The letter: one character standing alone, so not a space, a surrogate
+    // pair or a letter with a mark on it.
+    TextBox? glyph;
+    var letter = end;
+    for (final character in words.characters.toList().reversed) {
+      letter -= character.length;
+      if (character.length != 1 || character.trim().isEmpty) continue;
+      final boxes = painter.getBoxesForSelection(
+        TextSelection(baseOffset: letter, extentOffset: letter + 1),
+      );
+      if (boxes.isEmpty) continue;
+      if (boxes.last.bottom <= row.top) break;
+      glyph = boxes.last;
+      break;
+    }
+    final trimmed = words.trimRight();
+    final wordBoxes = painter
+        .getBoxesForSelection(
+          TextSelection(
+            baseOffset: trimmed.lastIndexOf(RegExp(r'\s')) + 1,
+            extentOffset: trimmed.length,
+          ),
+        )
+        .where((box) => box.bottom > row.top);
+    painter.dispose();
+    if (glyph == null) return _title = null;
+
+    var start = 0;
+    final run = runs.firstWhere((run) {
+      start += run.text?.length ?? 0;
+      return letter < start;
+    });
+    final drawn = TextSpan(
+      text: words[letter],
+      style: full.style?.merge(run.style) ?? run.style,
+    );
+    final measure = TextPainter(
+      text: drawn,
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    )..layout();
+    final baseline = measure.computeDistanceToActualBaseline(
+      TextBaseline.alphabetic,
+    );
+    measure.dispose();
+    return _title = (
+      letter: letter,
+      drawn: drawn,
+      width: glyph.right - glyph.left,
+      top: last.baseline - spacerTop - baseline,
+      row: row,
+      spacerTop: spacerTop - row.top,
+      word: wordBoxes.isEmpty
+          ? null
+          : Rect.fromLTRB(
+              wordBoxes.map((box) => box.left).reduce(math.min),
+              row.top,
+              wordBoxes.map((box) => box.right).reduce(math.max),
+              row.bottom,
+            ),
+    );
+  }
+
+  /// The title's underline and the meta row under it, scrolled with the
+  /// text they belong to.
+  Widget _titleMarks(_TitleLayout title, EdgeInsets padding) {
+    final checklist = _checklist();
+    final now = (widget.now ?? DateTime.now)();
+    final scale = title.row.height / EditorMetrics.titleRow;
+    return ClipRect(
+      child: ListenableBuilder(
+        listenable: _scrollController,
+        builder: (context, meta) {
+          final y =
+              padding.top -
+              (_scrollController.hasClients ? _scrollController.offset : 0);
+          return Stack(
+            children: [
+              if (title.word case final word?)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: NoteTitleUnderline(
+                      word: word.shift(Offset(padding.left, y)),
+                    ),
+                  ),
+                ),
+              Positioned(
+                left: padding.left,
+                top: y + title.row.bottom + EditorMetrics.metaGap * scale,
+                child: meta!,
+              ),
+            ],
+          );
+        },
+        child: NoteMetaRow(
+          edited: SidebarTimestamp.edited(
+            widget.lastUpdatedAt ?? now,
+            now: now,
+            displayTime: widget.displayTime ?? (time) => time.toLocal(),
+          ),
+          done: checklist.done,
+          tasks: checklist.total,
+          total: _totalText,
+          typing: widget.typing,
+          readOnlyLabel: widget.readOnly ? widget.readOnlyLabel : null,
+          readOnlyIcon: widget.readOnlyIcon,
+          onReadOnlyPressed: widget.onReadOnlyPressed,
+        ),
+      ),
+    );
+  }
+
+  /// The faint "+" beside an empty line, the caret's or the pointer's, that
+  /// opens Commands there, and on the caret's empty line a hint saying what
+  /// "/" does.
+  Widget _emptyLineMarks(
+    EdgeInsets padding,
+    TextStyle style,
+    StrutStyle strut,
+    double rowHeight,
+  ) {
+    _scheduleLineMarks();
+    return ListenableBuilder(
+      listenable: Listenable.merge([_lineMarks, _scrollController]),
+      builder: (context, _) {
+        final y =
+            padding.top -
+            (_scrollController.hasClients ? _scrollController.offset : 0);
+        final palette = context.palette;
+        return Stack(
+          children: [
+            for (final mark in _lineMarks.value) ...[
+              Positioned(
+                left: padding.left - _lineCommandsExtent - 12,
+                top: y + mark.middle - _lineCommandsExtent / 2,
+                child: Semantics(
+                  button: true,
+                  label: 'Commands',
+                  onTap: () => _openCommandsAt(mark.line),
+                  excludeSemantics: true,
+                  child: ExcludeFocus(
+                    child: CompactIconButton(
+                      key: const ValueKey('line-commands'),
+                      tooltip: 'Commands',
+                      extent: _lineCommandsExtent,
+                      selected: mark.hovered,
+                      foregroundColor: mark.hovered
+                          ? palette.textPrimary
+                          : palette.lineCommand,
+                      onPressed: () => _openCommandsAt(mark.line),
+                      icon: KapyIcon(KapyIcons.addRounded, size: 16),
+                    ),
+                  ),
+                ),
+              ),
+              if (mark.caret && widget.slashHint)
+                Positioned(
+                  left: padding.left,
+                  top: y + mark.middle - rowHeight / 2,
+                  height: rowHeight,
+                  child: IgnorePointer(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Type / for commands',
+                        key: const ValueKey('slash-hint'),
+                        style: style.copyWith(color: palette.writingHint),
+                        strutStyle: strut,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  /// Measures the empty lines that get a "+" once the field has laid out,
+  /// since a line's place is only known then.
+  void _scheduleLineMarks() {
+    if (_lineMarksScheduled) return;
+    _lineMarksScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _lineMarksScheduled = false;
+      if (!mounted) return;
+      final editable = _fieldEditable();
+      final selection = _controller.selection;
+      final caretLine =
+          _focusNode.hasFocus &&
+              selection.isValid &&
+              selection.isCollapsed &&
+              !_slashCommandMenu.isVisible
+          ? _emptyLineAt(selection.baseOffset)
+          : null;
+      final hoverLine = _hoverLine.value;
+      // The field's rects are scrolled; the marks keep the text's own place
+      // and scroll with it.
+      final scrolled = _scrollController.hasClients
+          ? _scrollController.offset
+          : 0.0;
+      final marks = editable == null || !editable.hasSize || _isEmpty
+          ? const <_LineMark>[]
+          : [
+              for (final line in {?caretLine, ?hoverLine})
+                (
+                  line: line,
+                  middle:
+                      editable
+                          .getLocalRectForCaret(TextPosition(offset: line))
+                          .center
+                          .dy +
+                      scrolled,
+                  caret: line == caretLine,
+                  hovered: line == hoverLine,
+                ),
+            ];
+      if (!listEquals(marks, _lineMarks.value)) _lineMarks.value = marks;
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  static const double _lineCommandsExtent = 22;
+
+  /// Where the line holding [offset] starts, when there is nothing on it.
+  int? _emptyLineAt(int offset) {
+    final text = _controller.text;
+    if (offset < 0 || offset > text.length) return null;
+    final start = offset == 0 ? 0 : text.lastIndexOf('\n', offset - 1) + 1;
+    final end = text.indexOf('\n', start);
+    return (end < 0 ? text.length : end) == start ? start : null;
+  }
+
+  /// The empty line under the pointer at [global], if there is one.
+  int? _emptyLineUnder(Offset global, double rowHeight) {
+    final editable = _fieldEditable();
+    if (editable == null || !editable.hasSize) return null;
+    final line = _emptyLineAt(editable.getPositionForPoint(global).offset);
+    if (line == null) return null;
+    final middle = editable.localToGlobal(
+      editable.getLocalRectForCaret(TextPosition(offset: line)).center,
+    );
+    return (global.dy - middle.dy).abs() <= rowHeight / 2 ? line : null;
+  }
+
+  void _openCommandsAt(int line) {
+    _hoverLine.value = null;
+    _controller.selection = TextSelection.collapsed(offset: line);
+    _focusNode.requestFocus();
+    _showInsertMenu(search: !AppPlatform.isMobile);
+  }
+
   Map<int, NoteImageSpan> _tableRowSpacers({
     required MarkdownAnalysis? markdown,
     required double rowHeight,
@@ -5907,7 +6683,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // No home indicator inset here: the footer below runs under it and keeps
     // its own controls clear of it, so an inset on the text would only open a
     // second gap above a bar that already covers that strip.
-    final padding = AppPlatform.isMobile
+    final basePadding = AppPlatform.isMobile
         ? EditorMetrics.mobilePadding
         : EditorMetrics.padding;
     final textStyle = EditorMetrics.textStyle(
@@ -5958,9 +6734,22 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     : 0.0;
                 final textPaneWidth = constraints.maxWidth - gutterWidth;
 
+                // The page centres a column of [EditorMetrics.columnWidth].
+                final side = EditorMetrics.page
+                    ? math.max(
+                        basePadding.left,
+                        (textPaneWidth - EditorMetrics.columnWidth) / 2,
+                      )
+                    : null;
+                final padding = side == null
+                    ? basePadding
+                    : basePadding.copyWith(left: side, right: side);
+
                 // Must match the text field's own content box exactly, right
                 // down to the sliver it holds back for the caret.
-                const trailingGap = 16.0;
+                final trailingGap = side == null
+                    ? 16.0
+                    : side - EditorMetrics.caretMargin;
                 final contentWidth = EditorMetrics.textLayoutWidth(
                   textPaneWidth - padding.left - trailingGap,
                 );
@@ -6032,7 +6821,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 // A table's rows reserve their room the same way a picture
                 // does, through a placeholder apiece. A real attachment wins any
                 // offset they might share.
-                _controller.setImageSpansDuringLayout({
+                final spacers = {
                   ..._tableRowSpacers(
                     markdown: markdown,
                     rowHeight: rowHeight,
@@ -6046,7 +6835,59 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     attachmentWidth,
                     constraints.maxHeight,
                   ),
-                });
+                };
+                final layoutKey = (
+                  widget.writingFont,
+                  widget.editorTextScale,
+                  _formats,
+                  widget.markdownEnabled,
+                  concealment.key,
+                );
+                _controller.setImageSpansDuringLayout(spacers);
+                final title = _layOutTitle(
+                  context,
+                  textStyle,
+                  strut,
+                  contentWidth,
+                  textScaler,
+                  layoutKey,
+                  spacers.keys,
+                );
+                // The title's last letter stands in for the room under it,
+                // drawn at the top of a placeholder that reaches below the
+                // row, so the line under the title starts below the room.
+                if (title != null) {
+                  final height =
+                      title.row.height -
+                      title.spacerTop +
+                      textScaler.scale(
+                        EditorMetrics.titleReserve * widget.editorTextScale,
+                      );
+                  spacers[title.letter] = (
+                    width: title.width,
+                    height: height,
+                    child: SizedBox(
+                      width: title.width,
+                      height: height,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            left: 0,
+                            top: title.top,
+                            child: RichText(
+                              text: title.drawn,
+                              textScaler: textScaler,
+                              maxLines: 1,
+                              softWrap: false,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                  _controller.setImageSpansDuringLayout(spacers);
+                }
                 if (_editingCell != null) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) _syncTableCellEditorPosition();
@@ -6064,17 +6905,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   textScaler: textScaler,
                   // What is hidden changes where lines wrap, so it is part of
                   // what the measurement depends on.
-                  layoutKey: (
-                    widget.writingFont,
-                    widget.editorTextScale,
-                    _formats,
-                    widget.markdownEnabled,
-                    concealment.key,
-                  ),
+                  layoutKey: layoutKey,
                   placeholders: _controller.placeholderDimensions(),
                   lastRowsOf: inlineResults ? _results.keys : const [],
                 );
                 _lineOffsets = offsets;
+                final checkboxes = EditorMetrics.page
+                    ? _controller.plainCheckboxes(_controller.text)
+                    : const <MarkdownOrnament>[];
+                final chips = EditorMetrics.page
+                    ? _controller.linkChips(_controller.text)
+                    : const <TextRange>[];
 
                 return Stack(
                   children: [
@@ -6084,84 +6925,119 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                         children: [
                           SizedBox(
                             width: textPaneWidth,
-                            child: NotebookPaper(
-                              style: widget.paperStyle,
-                              lineHeight: offsets.lineHeight,
-                              topInset: padding.top,
-                              scroll: _scrollController,
-                              child: Stack(
-                                children: [
-                                  if (_isEmpty)
-                                    _Placeholder(
-                                      padding: padding,
-                                      style: textStyle,
-                                      strut: strut,
-                                      writingFont: widget.writingFont,
-                                    ),
-                                  // A note with a table always needs it, even on
-                                  // a device with markdown switched off. A plain
-                                  // note gains no layer it did not have before.
-                                  if (widget.markdownEnabled ||
-                                      markdown.tables.isNotEmpty)
-                                    Positioned.fill(
-                                      child: IgnorePointer(
-                                        child: MarkdownBackdrop(
-                                          analysis: markdown,
-                                          concealment: concealment,
-                                          grids: _tableGrids,
-                                          offsets: offsets,
-                                          scroll: _scrollController,
-                                          editable: _fieldEditable,
-                                          colors: MarkdownBackdropColors(
-                                            quiet: palette.textSecondary,
-                                            faint: palette.textTertiary
-                                                .withValues(alpha: 0.35),
-                                            panel: palette.controlBackground,
-                                            panelBorder: palette.controlBorder,
-                                            accent: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                            onAccent: Theme.of(
-                                              context,
-                                            ).colorScheme.onPrimary,
+                            child: MouseRegion(
+                              opaque: false,
+                              onHover: widget.readOnly || !EditorMetrics.page
+                                  ? null
+                                  : (event) =>
+                                        _hoverLine.value = _emptyLineUnder(
+                                          event.position,
+                                          rowHeight,
+                                        ),
+                              onExit: (_) => _hoverLine.value = null,
+                              child: NotebookPaper(
+                                style: widget.paperStyle,
+                                lineHeight: offsets.lineHeight,
+                                topInset:
+                                    padding.top +
+                                    (title == null || offsets.tops.length < 2
+                                        ? 0
+                                        : offsets.tops[1]),
+                                scroll: _scrollController,
+                                child: Stack(
+                                  children: [
+                                    if (_isEmpty)
+                                      _Placeholder(
+                                        padding: padding,
+                                        style: textStyle,
+                                        strut: strut,
+                                        writingFont: widget.writingFont,
+                                      ),
+                                    // A note with a table always needs it, even on
+                                    // a device with markdown switched off. A plain
+                                    // note gains no layer it did not have before.
+                                    if (widget.markdownEnabled ||
+                                        markdown.tables.isNotEmpty ||
+                                        checkboxes.isNotEmpty ||
+                                        chips.isNotEmpty)
+                                      Positioned.fill(
+                                        child: IgnorePointer(
+                                          child: MarkdownBackdrop(
+                                            analysis: markdown,
+                                            concealment: concealment,
+                                            grids: _tableGrids,
+                                            offsets: offsets,
+                                            scroll: _scrollController,
+                                            editable: _fieldEditable,
+                                            colors: MarkdownBackdropColors(
+                                              quiet: palette.textSecondary,
+                                              faint: palette.textTertiary
+                                                  .withValues(alpha: 0.35),
+                                              panel: palette.controlBackground,
+                                              panelBorder:
+                                                  palette.controlBorder,
+                                              accent: Theme.of(
+                                                context,
+                                              ).colorScheme.primary,
+                                              onAccent: Theme.of(
+                                                context,
+                                              ).colorScheme.onPrimary,
+                                              box: palette.checkboxBorder,
+                                              chip: palette.controlBackground,
+                                            ),
+                                            checkboxes: checkboxes,
+                                            chips: chips,
+                                            markerRoom: _controller
+                                                .markdownMarkerRoom(
+                                                  textStyle,
+                                                  textScaler,
+                                                ),
                                           ),
-                                          markerRoom: _controller
-                                              .markdownMarkerRoom(
-                                                textStyle,
-                                                textScaler,
-                                              ),
                                         ),
                                       ),
-                                    ),
-                                  // Under the field, as its own highlight is.
-                                  Positioned.fill(
-                                    child: BlankLineHighlight(
-                                      editable: () =>
-                                          _editableTextState()?.renderEditable,
-                                      repaint: _selectionRepaint,
-                                    ),
-                                  ),
-                                  _buildField(
-                                    padding,
-                                    textStyle,
-                                    strut,
-                                    trailingGap,
-                                  ),
-                                  if (widget.remoteCarets case final source?)
+                                    // Under the field, as its own highlight is.
                                     Positioned.fill(
-                                      child: RemoteCaretLayer(
-                                        noteId: widget.noteId,
-                                        source: source,
-                                        controller: _controller,
-                                        scroll: _scrollController,
-                                        editable: _fieldEditable,
-                                        hover: _remoteHover,
-                                        tableCaretRect: _remoteTableCaretRect,
-                                        tableSelectionRects:
-                                            _remoteTableSelectionRects,
+                                      child: BlankLineHighlight(
+                                        editable: () => _editableTextState()
+                                            ?.renderEditable,
+                                        repaint: _selectionRepaint,
                                       ),
                                     ),
-                                ],
+                                    _buildField(
+                                      padding,
+                                      textStyle,
+                                      strut,
+                                      trailingGap,
+                                    ),
+                                    if (title != null)
+                                      Positioned.fill(
+                                        child: _titleMarks(title, padding),
+                                      ),
+                                    if (EditorMetrics.page && !widget.readOnly)
+                                      Positioned.fill(
+                                        child: _emptyLineMarks(
+                                          padding,
+                                          textStyle,
+                                          strut,
+                                          rowHeight,
+                                        ),
+                                      ),
+                                    if (widget.remoteCarets case final source?)
+                                      Positioned.fill(
+                                        child: RemoteCaretLayer(
+                                          noteId: widget.noteId,
+                                          source: source,
+                                          controller: _controller,
+                                          scroll: _scrollController,
+                                          editable: _fieldEditable,
+                                          hover: _remoteHover,
+                                          tableCaretRect: _remoteTableCaretRect,
+                                          tableSelectionRects:
+                                              _remoteTableSelectionRects,
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -6200,6 +7076,22 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           columnWidth: contentWidth,
                         ),
                       ),
+                    // Only where there is room for it beside the writing.
+                    if (EditorMetrics.page &&
+                        textPaneWidth >= EditorMetrics.columnWidth + 120)
+                      Positioned(
+                        right: -6,
+                        bottom: 0,
+                        child: IgnorePointer(
+                          child: Image.asset(
+                            KapyCursorPeek.assetPath,
+                            key: const ValueKey('page-kapy'),
+                            width: 60,
+                            height: 113,
+                            excludeFromSemantics: true,
+                          ),
+                        ),
+                      ),
                   ],
                 );
               },
@@ -6213,9 +7105,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onStop: widget.onRecordVoice,
               onCancel: () => unawaited(widget.recording!.cancel()),
             )
-          else
+          else if (!EditorMetrics.page)
             NoteFooter(
-              total: AppPlatform.isMobile ? null : _totalText,
               typing: widget.typing,
               readOnly: widget.readOnly,
               readOnlyLabel: widget.readOnlyLabel,
@@ -6236,28 +7127,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               checklistShortcut: widget.shortcuts.bindingFor(
                 ShortcutAction.formatChecklist,
               ),
-              imageShortcut: widget.shortcuts.bindingFor(
-                ShortcutAction.insertImage,
-              ),
-              voiceShortcut: widget.shortcuts.bindingFor(
-                ShortcutAction.recordVoiceNote,
-              ),
               onParagraphStylePressed: _cycleParagraphStyle,
               onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
               onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
               onBulletsPressed: _toggleBullets,
-              onInsertImagePressed: widget.readOnly || widget.images == null
-                  ? null
-                  : () => unawaited(pickAndInsertImages()),
-              imageBusy: _imageActionBusy,
-              onInsertVideoPressed: widget.readOnly || widget.images == null
-                  ? null
-                  : () => unawaited(pickAndInsertVideos()),
-              videoBusy: _videoActionBusy,
-              onRecordVoicePressed: widget.readOnly
-                  ? null
-                  : widget.onRecordVoice,
-              voiceBusy: widget.voiceActionBusy,
               onChecklistPressed: _toggleChecklist,
               onInsertMenuPressed: _showInsertMenu,
               onIndentPressed: () => _indentList(outdent: false),
@@ -6303,7 +7176,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   AppPlatform.isMobile && _keyboardInset > 0
                   ? _dismissKeyboard
                   : null,
-            ),
+            )
+          else
+            // The page has no footer to hold the writing above a home
+            // indicator, so the room is kept here instead.
+            SizedBox(height: MediaQuery.paddingOf(context).bottom),
         ],
       ),
     );
@@ -6392,6 +7269,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     ?.activator: () =>
                     _toggleInlineFormat(NoteFormat.italic),
                 ?widget.shortcuts
+                    .bindingFor(ShortcutAction.formatStrikethrough)
+                    ?.activator: () =>
+                    unawaited(_toggleMarkdownWrap('~~', 'Strikethrough')),
+                ?widget.shortcuts
+                    .bindingFor(ShortcutAction.formatCode)
+                    ?.activator: () =>
+                    unawaited(_toggleMarkdownWrap('`', 'Inline code')),
+                ?widget.shortcuts
                     .bindingFor(ShortcutAction.pasteAsPlainText)
                     ?.activator: () =>
                     unawaited(_pastePlainText(SelectionChangedCause.keyboard)),
@@ -6419,11 +7304,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           .bindingFor(ShortcutAction.recordVoiceNote)
                           ?.activator:
                       widget.onRecordVoice!,
-                if (!widget.readOnly && widget.images != null)
+                if (!widget.readOnly && widget.images != null) ...{
                   ?widget.shortcuts
                       .bindingFor(ShortcutAction.insertImage)
                       ?.activator: () =>
                       unawaited(pickAndInsertImages()),
+                  ?widget.shortcuts
+                      .bindingFor(ShortcutAction.insertVideo)
+                      ?.activator: () =>
+                      unawaited(pickAndInsertVideos()),
+                  ?widget.shortcuts
+                      .bindingFor(ShortcutAction.insertFile)
+                      ?.activator: () =>
+                      unawaited(pickAndInsertFileAttachments()),
+                },
                 ?widget.shortcuts
                         .bindingFor(ShortcutAction.openSettings)
                         ?.activator:
@@ -7202,3 +8096,24 @@ class _UnknownChip extends StatelessWidget {
     );
   }
 }
+
+/// The note's title as laid out on the page: [row] is its last row and
+/// [word] its last word on that row. [letter] is where the letter drawn by
+/// the placeholder under the title stands, [drawn] that letter as the field
+/// would draw it, [width] its advance, and [top] how far down the
+/// placeholder it is drawn so it sits on the row's baseline.
+///
+/// [spacerTop] is how far below the row's top a placeholder in it starts.
+typedef _TitleLayout = ({
+  int letter,
+  TextSpan drawn,
+  double width,
+  double top,
+  Rect row,
+  double spacerTop,
+  Rect? word,
+});
+
+/// An empty line with a "+" beside it: where it starts, its middle in the
+/// field, and whether the caret or the pointer is on it.
+typedef _LineMark = ({int line, double middle, bool caret, bool hovered});

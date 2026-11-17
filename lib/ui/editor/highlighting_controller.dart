@@ -257,7 +257,17 @@ class HighlightingController extends TextEditingController {
     final transparent = concealment.transparent;
     final scaler =
         MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
-    final stretches = _listStretches(analysis, base, scaler);
+    final page = EditorMetrics.page;
+    final titleEnd = page ? _lineEndAt(source, 0) : 0;
+    final boxes = page ? plainCheckboxes(source) : const <MarkdownOrnament>[];
+    final boxGlyphs = {for (final box in boxes) box.start};
+    final stretches = page
+        ? [
+            ..._listStretches(analysis, base, scaler),
+            ..._pageStretches(source, boxes, links, base, scaler),
+          ]
+        : _listStretches(analysis, base, scaler);
+    if (page) stretches.sort((a, b) => a.start.compareTo(b.start));
     final formulas = concealment.formulas;
     final code = _codeTokens(analysis);
     final composing = withComposing && value.isComposingRangeValid
@@ -267,7 +277,7 @@ class HighlightingController extends TextEditingController {
     // Cut the text at every span edge and at the composing-region edges, then
     // emit one run per segment. Doing it via a boundary set keeps the two
     // kinds of styling from having to know about each other.
-    final boundaries = <int>{0, source.length};
+    final boundaries = <int>{0, source.length, titleEnd};
     for (final span in spans) {
       boundaries.add(span.start.clamp(0, source.length));
       boundaries.add(span.end.clamp(0, source.length));
@@ -353,8 +363,9 @@ class HighlightingController extends TextEditingController {
         transparentIndex++;
       }
       final unpainted =
-          transparentIndex < transparent.length &&
-          transparent[transparentIndex].start <= start;
+          (transparentIndex < transparent.length &&
+              transparent[transparentIndex].start <= start) ||
+          boxGlyphs.contains(start);
       while (stretchIndex < stretches.length &&
           stretches[stretchIndex].end <= start) {
         stretchIndex++;
@@ -382,7 +393,12 @@ class HighlightingController extends TextEditingController {
       final image = end == start + 1 ? _imageSpans[start] : null;
       if (image != null) {
         children.add(
-          WidgetSpan(alignment: PlaceholderAlignment.top, child: image.child),
+          source.codeUnitAt(start) != PlaceholderSpan.placeholderCodeUnit
+              ? _StandInSpan(text: source[start], child: image.child)
+              : WidgetSpan(
+                  alignment: PlaceholderAlignment.top,
+                  child: image.child,
+                ),
         );
         continue;
       }
@@ -481,6 +497,8 @@ class HighlightingController extends TextEditingController {
         ...matchingFormats.where((format) => format.format.isInline),
       ];
       for (final format in activeFormats) {
+        // The title is set as one whatever paragraph style its line had.
+        if (start < titleEnd && format.format.isParagraph) continue;
         segmentStyle = switch (format.format) {
           NoteFormat.bold => segmentStyle.copyWith(fontWeight: FontWeight.w700),
           NoteFormat.italic => segmentStyle.copyWith(
@@ -515,6 +533,9 @@ class HighlightingController extends TextEditingController {
           script == null ? '' : source.substring(script.start, script.end),
         );
       }
+      if (start < titleEnd) {
+        segmentStyle = noteTitleStyle(segmentStyle, writingFont: _writingFont);
+      }
       final done = checked || marked(MarkdownStyle.doneTask);
       // A spelling mark must not replace KapyNotes' syntax, rich formatting,
       // link, or attachment spans. It is just one quiet decoration layered on
@@ -532,10 +553,12 @@ class HighlightingController extends TextEditingController {
         );
       }
       if (activeLink != null) {
-        segmentStyle = segmentStyle.copyWith(
-          color: segmentLinkColor,
-          decoration: TextDecoration.none,
-        );
+        segmentStyle = page && _chipLink(activeLink) && start >= titleEnd
+            ? _linkChipStyle(segmentStyle)
+            : segmentStyle.copyWith(
+                color: segmentLinkColor,
+                decoration: TextDecoration.none,
+              );
       }
       if (done) {
         segmentStyle = segmentStyle.copyWith(
@@ -597,6 +620,110 @@ class HighlightingController extends TextEditingController {
   }
 
   static final _lineEnd = RegExp('[\r\n]');
+
+  /// Where the line [from] is on ends: its line break, or the end of [source].
+  static int _lineEndAt(String source, int from) {
+    final end = source.indexOf('\n', from);
+    return end < 0 ? source.length : end;
+  }
+
+  /// Whether [link] is a web address written out, which the page sets as a
+  /// chip. A markdown link's words stay words.
+  bool _chipLink(NoteLink link) => _cachedWebLinks.any(
+    (web) => web.start == link.start && web.end == link.end,
+  );
+
+  /// A web address on the page: Paper's link chip, Geist Mono at 12.5 in the
+  /// muted ink, keeping the row it sits in. The chip under it is drawn by the
+  /// backdrop.
+  TextStyle _linkChipStyle(TextStyle style) {
+    final size = style.fontSize == null ? null : style.fontSize! * 12.5 / 16;
+    final row = style.fontSize == null || style.height == null
+        ? null
+        : style.fontSize! * style.height!;
+    return style.copyWith(
+      fontFamily: AppFonts.mono,
+      fontFamilyFallback: AppFonts.monoFallback,
+      fontVariations: const [],
+      fontWeight: FontWeight.w400,
+      fontSize: size,
+      height: row == null || size == null ? null : row / size,
+      color: _palette.textMuted,
+      decoration: TextDecoration.none,
+    );
+  }
+
+  /// The web addresses in [source] the page sets as chips: all but those in
+  /// the title, which stay in the title's face.
+  List<TextRange> linkChips(String source) {
+    final titleEnd = _lineEndAt(source, 0);
+    return [
+      for (final link in linksFor(source))
+        if (link.start >= titleEnd && _chipLink(link))
+          TextRange(start: link.start, end: link.end),
+    ];
+  }
+
+  String? _boxesFor;
+  List<MarkdownOrnament> _boxes = const [];
+
+  /// The app's own checkboxes in [source], the ☐ and ☑ at the start of a
+  /// line's words, as the ornaments the page draws them as.
+  List<MarkdownOrnament> plainCheckboxes(String source) {
+    if (_boxesFor == source) return _boxes;
+    final boxes = <MarkdownOrnament>[];
+    var lineStart = 0;
+    while (lineStart < source.length) {
+      final lineEnd = _lineEndAt(source, lineStart);
+      var at = lineStart;
+      while (at < lineEnd && source[at] == ' ') {
+        at++;
+      }
+      final checked = source.startsWith(checkedPrefix, at);
+      if (checked || source.startsWith(uncheckedPrefix, at)) {
+        boxes.add(
+          MarkdownOrnament(
+            MarkdownOrnamentKind.checkbox,
+            at,
+            at + 1,
+            checked: checked,
+          ),
+        );
+      }
+      lineStart = lineEnd + 1;
+    }
+    _boxesFor = source;
+    return _boxes = boxes;
+  }
+
+  /// The page's room: a checkbox's glyph spaced out so that it and the space
+  /// after it take a box and its gap, unpainted for the box drawn there, and
+  /// the space before a link chip widened by the chip's reach.
+  List<_Stretch> _pageStretches(
+    String source,
+    List<MarkdownOrnament> boxes,
+    List<NoteLink> links,
+    TextStyle base,
+    TextScaler scaler,
+  ) {
+    final room = markdownMarkerRoom(base, scaler);
+    final reach = scaler.scale(EditorMetrics.linkChipReach);
+    double advance(int start, int end) =>
+        _advance(source.substring(start, end), base, scaler);
+    return [
+      for (final box in boxes)
+        (
+          start: box.start,
+          end: box.end,
+          spacing:
+              (room - advance(box.start, box.end + 1)) /
+              (box.start == 0 || source[box.start - 1] == '\n' ? 1.5 : 1),
+        ),
+      for (final link in links)
+        if (_chipLink(link) && link.start > 0 && source[link.start - 1] == ' ')
+          (start: link.start - 1, end: link.start, spacing: reach),
+    ];
+  }
 
   /// How much bigger a formula is set than the words around it. KaTeX's own
   /// face runs small beside a sans serif at the same size.
@@ -752,7 +879,9 @@ class HighlightingController extends TextEditingController {
   /// Enough for a task's box and a gap, and for a one-digit number, its dot
   /// and a space, in the note's own face: a monospace one needs more.
   double markdownMarkerRoom(TextStyle base, TextScaler scaler) => math.max(
-    scaler.scale(markdownMarkerMinRoom),
+    scaler.scale(
+      EditorMetrics.page ? markdownMarkerPageRoom : markdownMarkerMinRoom,
+    ),
     _advance('8. ', base, scaler),
   );
 
@@ -1083,6 +1212,35 @@ class HighlightingController extends TextEditingController {
 /// Letter spacing over [start, end): see
 /// [HighlightingController._listStretches].
 typedef _Stretch = ({int start, int end, double spacing});
+
+/// A placeholder standing in for a character of the note, such as the
+/// title's letter that carries the room under the title, which reads to a
+/// screen reader and copies as that character rather than as an object.
+class _StandInSpan extends WidgetSpan {
+  const _StandInSpan({required this.text, required super.child})
+    : super(alignment: PlaceholderAlignment.top);
+
+  final String text;
+
+  @override
+  void computeToPlainText(
+    StringBuffer buffer, {
+    bool includeSemanticsLabels = true,
+    bool includePlaceholders = true,
+  }) => buffer.write(text);
+
+  @override
+  void computeSemanticsInformation(
+    List<InlineSpanSemanticsInformation> collector,
+  ) => collector.add(InlineSpanSemanticsInformation(text));
+
+  @override
+  bool operator ==(Object other) =>
+      other is _StandInSpan && other.text == text && super == other;
+
+  @override
+  int get hashCode => Object.hash(super.hashCode, text);
+}
 
 /// The text the field draws, which works out its semantics information once
 /// and keeps it.

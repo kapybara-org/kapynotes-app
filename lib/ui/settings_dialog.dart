@@ -538,20 +538,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     await _setTranscription(false);
   }
 
-  /// The languages worth offering: the ones a provider detects least reliably
-  /// are the ones somebody will want to state once and forget.
   static const Map<String?, String> _speechLanguages = {
     null: 'Detect automatically',
-    'en': 'English',
-    'es': 'Spanish',
-    'fr': 'French',
-    'de': 'German',
-    'hi': 'Hindi',
-    'pt': 'Portuguese',
-    'it': 'Italian',
-    'nl': 'Dutch',
-    'ja': 'Japanese',
-    'zh': 'Chinese',
+    ...speechLanguages,
   };
 
   Future<void> _pickSpeechLanguage(VoicePrefs prefs) async {
@@ -2551,10 +2540,15 @@ extension on ShortcutAction {
     ShortcutAction.resetEditorTextSize ||
     ShortcutAction.pasteAsPlainText => _ShortcutGroup.editor,
     ShortcutAction.insertImage ||
+    ShortcutAction.insertVideo ||
+    ShortcutAction.insertFile ||
     ShortcutAction.recordVoiceNote => _ShortcutGroup.insert,
     ShortcutAction.cycleTextStyle ||
     ShortcutAction.formatBold ||
     ShortcutAction.formatItalic ||
+    ShortcutAction.formatStrikethrough ||
+    ShortcutAction.formatCode ||
+    ShortcutAction.formatLink ||
     ShortcutAction.formatBullets ||
     ShortcutAction.formatChecklist => _ShortcutGroup.formatting,
   };

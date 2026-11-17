@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/theme.dart' show EditorMetrics;
 import 'line_metrics.dart';
 import 'markdown_syntax.dart';
 import 'table_geometry.dart';
@@ -18,9 +19,11 @@ class MarkdownBackdropColors {
     required this.panelBorder,
     required this.accent,
     required this.onAccent,
+    required this.box,
+    required this.chip,
   });
 
-  /// Bullets, an unticked box, a quote's bar.
+  /// Bullets, a quote's bar, and an unticked box off the page.
   final Color quiet;
 
   /// Rules and a table's lines.
@@ -34,6 +37,10 @@ class MarkdownBackdropColors {
   final Color accent;
   final Color onAccent;
 
+  /// An unticked box's edge on the page, and the chip under a web address.
+  final Color box;
+  final Color chip;
+
   @override
   bool operator ==(Object other) =>
       other is MarkdownBackdropColors &&
@@ -42,11 +49,21 @@ class MarkdownBackdropColors {
       other.panel == panel &&
       other.panelBorder == panelBorder &&
       other.accent == accent &&
-      other.onAccent == onAccent;
+      other.onAccent == onAccent &&
+      other.box == box &&
+      other.chip == chip;
 
   @override
-  int get hashCode =>
-      Object.hash(quiet, faint, panel, panelBorder, accent, onAccent);
+  int get hashCode => Object.hash(
+    quiet,
+    faint,
+    panel,
+    panelBorder,
+    accent,
+    onAccent,
+    box,
+    chip,
+  );
 }
 
 /// What a markdown note draws behind its text: the parts of markdown that
@@ -72,9 +89,17 @@ class MarkdownBackdrop extends LeafRenderObjectWidget {
     required this.editable,
     required this.colors,
     required this.markerRoom,
+    this.checkboxes = const [],
+    this.chips = const [],
   });
 
   final MarkdownAnalysis analysis;
+
+  /// The app's own checkboxes, drawn the way a task's box is, on the page.
+  final List<MarkdownOrnament> checkboxes;
+
+  /// The web addresses the page sets as chips.
+  final List<TextRange> chips;
   final MarkdownConcealment concealment;
 
   /// The grid each table is drawn as, measured by the editor, which is the only
@@ -104,6 +129,8 @@ class MarkdownBackdrop extends LeafRenderObjectWidget {
         editable: editable,
         colors: colors,
         markerRoom: markerRoom,
+        checkboxes: checkboxes,
+        chips: chips,
       );
 
   @override
@@ -120,6 +147,8 @@ class MarkdownBackdrop extends LeafRenderObjectWidget {
       ..editable = editable
       ..colors = colors
       ..markerRoom = markerRoom
+      ..checkboxes = checkboxes
+      ..chips = chips
       // The field was rebuilt alongside this, and its layout can change with
       // nothing here changing — a wider window, a new writing font.
       ..markNeedsPaint();
@@ -136,6 +165,8 @@ class RenderMarkdownBackdrop extends RenderBox {
     required this.editable,
     required this.colors,
     required this.markerRoom,
+    required this.checkboxes,
+    required this.chips,
   }) : _analysis = analysis,
        _scroll = scroll;
 
@@ -152,6 +183,8 @@ class RenderMarkdownBackdrop extends RenderBox {
   RenderEditable? Function() editable;
   MarkdownBackdropColors colors;
   double markerRoom;
+  List<MarkdownOrnament> checkboxes;
+  List<TextRange> chips;
 
   ScrollController _scroll;
   set scroll(ScrollController value) {
@@ -303,7 +336,45 @@ class RenderMarkdownBackdrop extends RenderBox {
       }
     }
 
+    for (final chip in chips) {
+      if (!onScreen(chip.start, chip.end)) continue;
+      for (final box in field.getBoxesForSelection(
+        TextSelection(baseOffset: chip.start, extentOffset: chip.end),
+      )) {
+        final rect = box.toRect().shift(origin);
+        canvas.drawRRect(
+          RRect.fromLTRBR(
+            rect.left - EditorMetrics.linkChipReach,
+            rect.center.dy - _chipHeight / 2,
+            rect.right + EditorMetrics.linkChipReach,
+            rect.center.dy + _chipHeight / 2,
+            const Radius.circular(_chipHeight / 2),
+          ),
+          Paint()..color = colors.chip,
+        );
+      }
+    }
+
     final room = markerRoom;
+    // The app's own boxes stand in a room before the words the way a task's
+    // does: their glyph and the space after it are spaced out to fill it.
+    for (final checkbox in checkboxes) {
+      if (!onScreen(checkbox.start, checkbox.end)) continue;
+      final boxes = field.getBoxesForSelection(
+        TextSelection(
+          baseOffset: checkbox.start,
+          extentOffset: checkbox.end + 1,
+        ),
+      );
+      if (boxes.isEmpty) continue;
+      final row = boxes.first.toRect().shift(origin);
+      final words = boxes.last.toRect().shift(origin).right;
+      _paintCheckbox(
+        canvas,
+        Rect.fromLTRB(words - room, row.top, words, row.bottom),
+        checkbox,
+      );
+    }
     for (final ornament in _analysis.ornaments) {
       if (!onScreen(ornament.start, ornament.end)) continue;
       final boxes = field.getBoxesForSelection(
@@ -372,8 +443,13 @@ class RenderMarkdownBackdrop extends RenderBox {
   }
 
   /// A task's box: how far in from where its item starts, and how big.
-  static const double _boxInset = 1;
-  static const double _boxSide = 15;
+  /// The page's is Paper's 20px box with a 6px corner.
+  static double get _boxInset => EditorMetrics.page ? 0 : 1;
+  static double get _boxSide => EditorMetrics.page ? 20 : 15;
+  static double get _boxRadius => EditorMetrics.page ? 6 : 3.5;
+
+  /// Paper's link chip is 28 tall.
+  static const double _chipHeight = 28;
 
   void _paintBullet(Canvas canvas, Offset center, MarkdownOrnament bullet) {
     final paint = Paint()..color = colors.quiet;
@@ -404,14 +480,18 @@ class RenderMarkdownBackdrop extends RenderBox {
       side,
       side,
     );
-    final rounded = RRect.fromRectAndRadius(square, const Radius.circular(3.5));
+    final rounded = RRect.fromRectAndRadius(
+      square,
+      Radius.circular(_boxRadius),
+    );
     if (!checkbox.checked) {
+      final page = EditorMetrics.page;
       canvas.drawRRect(
-        rounded.deflate(0.7),
+        rounded.deflate(page ? 0.75 : 0.7),
         Paint()
-          ..color = colors.quiet
+          ..color = page ? colors.box : colors.quiet
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.4,
+          ..strokeWidth = page ? 1.5 : 1.4,
       );
       return;
     }

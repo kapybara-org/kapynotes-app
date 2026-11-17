@@ -18,7 +18,7 @@ extension WritingFontDetails on WritingFont {
   };
 
   String get description => switch (this) {
-    WritingFont.mixed => 'Handwritten headings with monospaced text',
+    WritingFont.mixed => 'Handwritten titles and headings with clean text',
     WritingFont.handwritten => 'Relaxed strokes with a steady baseline',
     WritingFont.clean => 'Comfortable text for longer notes',
     WritingFont.monospace => 'Fixed-width text for notes and calculations',
@@ -32,14 +32,14 @@ extension WritingFontDetails on WritingFont {
   };
 
   String? get fontFamily => switch (this) {
-    WritingFont.mixed => AppPlatform.monoFontFallback.first,
+    WritingFont.mixed => 'Figtree',
     WritingFont.handwritten => 'Shantell Sans',
     WritingFont.clean => AppPlatform.uiFontFamily,
     WritingFont.monospace => AppPlatform.monoFontFallback.first,
   };
 
   List<String>? get fontFamilyFallback => switch (this) {
-    WritingFont.mixed => AppPlatform.monoFontFallback,
+    WritingFont.mixed => AppPlatform.uiFontFallback,
     WritingFont.handwritten => const [
       'Roboto',
       'Noto Sans',
@@ -69,7 +69,7 @@ extension WritingFontDetails on WritingFont {
   /// Handwriting faces need a little more size to carry the same visual weight
   /// as a UI sans or a compact mono face.
   double get editorSize => switch (this) {
-    WritingFont.mixed => 14.5,
+    WritingFont.mixed => 16,
     WritingFont.handwritten => 16.5,
     WritingFont.clean => 15.5,
     WritingFont.monospace => 14.5,

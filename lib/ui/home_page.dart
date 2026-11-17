@@ -13,6 +13,7 @@ import 'package:material_ui/material_ui.dart';
 import '../audio/voice_player.dart';
 import '../audio/voice_recording_controller.dart';
 import '../billing/note_limit.dart';
+import '../crdt/text_diff.dart';
 import '../data/voice_prefs.dart';
 import '../speech/local_model_store.dart';
 import '../speech/summarizer.dart';
@@ -29,6 +30,7 @@ import '../data/daily_separator.dart';
 import '../data/editor_workspace.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
+import '../data/task_library.dart';
 import '../data/note.dart';
 import '../data/note_drawing.dart';
 import '../files/file_picker.dart';
@@ -55,6 +57,7 @@ import '../images/image_picker.dart';
 import '../video/video_picker.dart';
 import 'editor/note_editor.dart';
 import 'editor/image_insertion.dart';
+import 'editor/slash_commands.dart';
 import 'editor_panes.dart';
 import 'billing/note_limit_dialog.dart';
 import 'billing/pro_sheet.dart';
@@ -66,6 +69,10 @@ import 'mobile_page_swipe.dart';
 import 'notes_list.dart';
 import 'page_card.dart';
 import 'page_toolbar.dart';
+import 'tasks/task_marks.dart';
+import 'tasks/tasks_controller.dart';
+import 'tasks/tasks_screen.dart';
+import 'tasks/tasks_sidebar.dart';
 import 'sidebar.dart';
 import 'sidebar_timestamp.dart';
 import 'settings_dialog.dart';
@@ -93,6 +100,7 @@ class HomePage extends StatefulWidget {
     this.updates,
     this.desktopIntegration,
     this.account,
+    this.tasks,
     required this.store,
     this.welcomeNoteId,
     this.launchIntent = LaunchIntent.open,
@@ -121,6 +129,9 @@ class HomePage extends StatefulWidget {
   final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
   final Account? account;
+
+  /// Every checklist line as a task, for Tasks. Null leaves Tasks out.
+  final TaskLibrary? tasks;
   final LocalStore store;
 
   /// The welcome note seeded by this launch, if this launch seeded one.
@@ -282,7 +293,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // The sidebar groups shared notes by space once the account is unlocked,
     // and that is a fact of the account, not of the notes.
     ?widget.account,
+    ?widget.tasks,
   ]);
+
+  /// Tasks, while the rail has it open.
+  bool _tasksMode = false;
+  TaskFilter _taskFilter = const TaskFilter.all();
+  String _taskQuery = '';
+  final FocusNode _taskAddFocus = FocusNode(debugLabel: 'Add a task');
+  final GlobalKey<TasksScreenState> _tasksPage = GlobalKey();
+  late final TasksController? _taskController = switch (widget.tasks) {
+    final tasks? => TasksController(
+      notes: widget.notes,
+      library: tasks,
+      canEdit: _canEditNote,
+      now: widget.notes.now,
+    ),
+    null => null,
+  };
 
   /// The welcome note while it is still exactly as it was written.
   ///
@@ -357,6 +385,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _kapyHeader.dispose();
     _searchFocus.dispose();
     _desktopShortcutFocus.dispose();
+    _taskAddFocus.dispose();
+    _taskController?.dispose();
     super.dispose();
   }
 
@@ -1540,7 +1570,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// What New makes in the space on screen: a drawing in Drawings, a note
   /// everywhere else.
-  bool _createInSpace() => _createNote(drawing: _drawingsOnly);
+  bool _createInSpace() {
+    if (!_tasksMode) return _createNote(drawing: _drawingsOnly);
+    _taskAddFocus.requestFocus();
+    return true;
+  }
+
+  /// A note's name on a task's mark, with its space's after it when it is
+  /// shared.
+  String _taskNoteLabel(Note note) {
+    final space = widget.account?.sharing?.spaceById(note.spaceId);
+    return space == null ? note.title : '${note.title} · ${space.name}';
+  }
+
+  /// Opens a task's note where it lives, leaving Tasks.
+  void _openTaskNote(String id) {
+    final note = widget.notes.byId(id);
+    final sharing = widget.account?.sharing;
+    if (note == null) return;
+    _showSpace(
+      sharing != null && sidebarTabOf(note, sharing) == SidebarTab.shared
+          ? LibrarySpace.shared
+          : LibrarySpace.notes,
+    );
+    _select(id);
+  }
 
   bool _createNoteNow({bool drawing = false}) {
     _recordKapyActivity();
@@ -2069,6 +2123,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     String body,
     List<NoteFormatRange> formats,
     List<NoteAttachmentRef> attachments,
+    TextEdit? edit,
   ) {
     if (!_canWriteNote(widget.notes.byId(id))) return;
     _recordKapyActivity();
@@ -2077,7 +2132,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // holding the cursor is already mounted, and nothing on screen changes
     // until it is next built.
     if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
-    widget.notes.updateDocument(id, body, formats, attachments);
+    widget.notes.updateDocument(id, body, formats, attachments, edit);
   }
 
   /// The note as the store holds it this instant. An editor reads it on
@@ -2394,6 +2449,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ? LibrarySpace.archive
       : _hiddenMode
       ? LibrarySpace.hidden
+      : _tasksMode
+      ? LibrarySpace.tasks
       : _drawingsOnly
       ? LibrarySpace.drawings
       : widget.account?.sharing != null && _sidebarTab == SidebarTab.shared
@@ -2417,7 +2474,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _showSpace(LibrarySpace space) {
     if (space == _space) return;
     _pinnedOnly = false;
+    setState(() => _tasksMode = space == LibrarySpace.tasks);
     switch (space) {
+      case LibrarySpace.tasks:
+        if (_archiveMode) _toggleArchive();
+        if (_hiddenMode) _leaveHiddenNotes();
       case LibrarySpace.archive:
         _toggleArchive();
       case LibrarySpace.hidden:
@@ -2502,6 +2563,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             focusNode: _desktopShortcutFocus,
             shortcuts: widget.shortcuts,
             onNewNote: _createInSpace,
+            onCompleteTask: _tasksMode
+                ? () => _tasksPage.currentState?.completeDoNow()
+                : null,
             onFindNotes: _focusGlobalSearch,
             onNextNote: () => _cycleNote(1),
             onPreviousNote: () => _cycleNote(-1),
@@ -2572,6 +2636,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             final pinned =
                 selected != null &&
                 widget.notes.pinnedNoteIds.contains(selected.id);
+            final taskBoard = _taskController?.read();
+            final tasks = _tasksMode ? _taskController : null;
             return Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -2579,6 +2645,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   space: space,
                   onSelected: _showSpace,
                   invitations: widget.account?.sharing?.invites.length,
+                  openTasks: taskBoard?.open.length,
                   showHidden:
                       _hiddenMode ||
                       (widget.prefs.hiddenFolderVisible &&
@@ -2608,88 +2675,124 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     onWidthChanged: (value) =>
                         widget.prefs.sidebarWidth = value,
                     onHide: () => _setListShown(false),
-                    sidebar: Sidebar(
-                      notes: _visibleNotes,
-                      pinnedNoteIds: widget.notes.pinnedNoteIds,
-                      lockedNoteIds: _noteLimit?.lockedIds ?? const {},
-                      selectedId: _selectedId,
-                      query: _query,
-                      displayTime: widget.prefs.displayTime,
-                      searchFocusNode: _searchFocus,
-                      onQueryChanged: (value) => setState(() => _query = value),
-                      onSelect: AppPlatform.isDesktop
-                          ? _selectFromSidebar
-                          : _select,
-                      onMoveSelect: AppPlatform.isDesktop
-                          ? _previewFromSidebar
-                          : null,
-                      onEnterSelected: AppPlatform.isDesktop
-                          ? _enterSelectedEditorFromSidebar
-                          : null,
-                      onOpenToSide: _specialMode ? null : _openNoteToSide,
-                      openElsewhereIds: _specialMode
-                          ? const {}
-                          : _workspace.openNoteIds.difference({?_selectedId}),
-                      onArchive: _archiveNote,
-                      onRestore: _restoreNote,
-                      onHide: (id) => unawaited(_hideNote(id)),
-                      onUnhide: _unhideNote,
-                      onTogglePin: _specialMode ? null : _togglePinnedNote,
-                      archiveMode: _archiveMode,
-                      hiddenMode: _hiddenMode,
-                      onDelete: _deleteNote,
-                      onDeleteAll: () => unawaited(_deleteAllArchived()),
-                      selecting: _selectingArchived,
-                      checkedIds: _checkedArchived,
-                      onToggleChecked: _toggleChecked,
-                      onStartSelecting: _startSelecting,
-                      onCancelSelecting: _cancelSelecting,
-                      onCheckAll: _checkAllArchived,
-                      onDeleteChecked: () => unawaited(_deleteChecked()),
-                      onRestoreChecked: _restoreChecked,
-                      onShare: widget.account == null ? null : _shareNote,
-                      sharing: widget.account?.sharing,
-                      collaborators:
-                          widget.account?.sync?.collaboratorsByNote ?? const {},
-                      onOpenSpace: widget.account?.sharing == null
-                          ? null
-                          : _openSpace,
-                      tab: _sidebarTab,
-                      onTabChanged: _setSidebarTab,
-                      searchShortcut: widget.shortcuts.bindingFor(
-                        ShortcutAction.findNotes,
-                      ),
-                      archiveShortcut: widget.shortcuts.bindingFor(
-                        ShortcutAction.deleteNote,
-                      ),
-                      drawings: space == LibrarySpace.drawings,
-                      onNewDrawing: () => _createNote(drawing: true),
-                      engine: widget.engines.engine,
-                      now: widget.notes.now,
-                      cards: widget.prefs.noteCards,
-                      onCardsChanged: (cards) => widget.prefs.noteCards = cards,
-                      mediaFilter: _mediaFilter,
-                      onMediaFilterChanged: (media) =>
-                          setState(() => _mediaFilter = media),
-                      pinnedOnly: _showingPinnedOnly,
-                      onPinnedOnlyChanged: (value) =>
-                          setState(() => _pinnedOnly = value),
-                      windowBar: SidebarWindowBar(
-                        title: space.title,
-                        count: _spaceCount,
-                        noun: space == LibrarySpace.drawings
-                            ? 'drawing'
-                            : 'note',
-                        onCreate: _createInSpace,
-                        newNoteShortcut: widget.shortcuts.bindingFor(
-                          ShortcutAction.newNote,
-                        ),
-                        onHide: () => _setListShown(false),
-                        hideShortcut: widget.shortcuts.bindingFor(
-                          ShortcutAction.toggleSidebar,
-                        ),
-                      ),
-                    ),
+                    sidebar: tasks != null && taskBoard != null
+                        ? TasksSidebar(
+                            board: taskBoard,
+                            filter: _taskFilter,
+                            onFilter: (filter) =>
+                                setState(() => _taskFilter = filter),
+                            labelOf: _taskNoteLabel,
+                            query: _taskQuery,
+                            onQueryChanged: (value) =>
+                                setState(() => _taskQuery = value),
+                            searchFocusNode: _searchFocus,
+                            searchShortcut: widget.shortcuts.bindingFor(
+                              ShortcutAction.findNotes,
+                            ),
+                            windowBar: SidebarWindowBar(
+                              title: space.title,
+                              count: taskBoard.open.length,
+                              countLabel: 'open',
+                              noun: 'task',
+                              onCreate: _createInSpace,
+                              newNoteShortcut: widget.shortcuts.bindingFor(
+                                ShortcutAction.newNote,
+                              ),
+                              onHide: () => _setListShown(false),
+                              hideShortcut: widget.shortcuts.bindingFor(
+                                ShortcutAction.toggleSidebar,
+                              ),
+                            ),
+                          )
+                        : Sidebar(
+                            notes: _visibleNotes,
+                            pinnedNoteIds: widget.notes.pinnedNoteIds,
+                            lockedNoteIds: _noteLimit?.lockedIds ?? const {},
+                            selectedId: _selectedId,
+                            query: _query,
+                            displayTime: widget.prefs.displayTime,
+                            searchFocusNode: _searchFocus,
+                            onQueryChanged: (value) =>
+                                setState(() => _query = value),
+                            onSelect: AppPlatform.isDesktop
+                                ? _selectFromSidebar
+                                : _select,
+                            onMoveSelect: AppPlatform.isDesktop
+                                ? _previewFromSidebar
+                                : null,
+                            onEnterSelected: AppPlatform.isDesktop
+                                ? _enterSelectedEditorFromSidebar
+                                : null,
+                            onOpenToSide: _specialMode ? null : _openNoteToSide,
+                            openElsewhereIds: _specialMode
+                                ? const {}
+                                : _workspace.openNoteIds.difference({
+                                    ?_selectedId,
+                                  }),
+                            onArchive: _archiveNote,
+                            onRestore: _restoreNote,
+                            onHide: (id) => unawaited(_hideNote(id)),
+                            onUnhide: _unhideNote,
+                            onTogglePin: _specialMode
+                                ? null
+                                : _togglePinnedNote,
+                            archiveMode: _archiveMode,
+                            hiddenMode: _hiddenMode,
+                            onDelete: _deleteNote,
+                            onDeleteAll: () => unawaited(_deleteAllArchived()),
+                            selecting: _selectingArchived,
+                            checkedIds: _checkedArchived,
+                            onToggleChecked: _toggleChecked,
+                            onStartSelecting: _startSelecting,
+                            onCancelSelecting: _cancelSelecting,
+                            onCheckAll: _checkAllArchived,
+                            onDeleteChecked: () => unawaited(_deleteChecked()),
+                            onRestoreChecked: _restoreChecked,
+                            onShare: widget.account == null ? null : _shareNote,
+                            sharing: widget.account?.sharing,
+                            collaborators:
+                                widget.account?.sync?.collaboratorsByNote ??
+                                const {},
+                            onOpenSpace: widget.account?.sharing == null
+                                ? null
+                                : _openSpace,
+                            tab: _sidebarTab,
+                            onTabChanged: _setSidebarTab,
+                            searchShortcut: widget.shortcuts.bindingFor(
+                              ShortcutAction.findNotes,
+                            ),
+                            archiveShortcut: widget.shortcuts.bindingFor(
+                              ShortcutAction.deleteNote,
+                            ),
+                            drawings: space == LibrarySpace.drawings,
+                            onNewDrawing: () => _createNote(drawing: true),
+                            engine: widget.engines.engine,
+                            now: widget.notes.now,
+                            cards: widget.prefs.noteCards,
+                            onCardsChanged: (cards) =>
+                                widget.prefs.noteCards = cards,
+                            mediaFilter: _mediaFilter,
+                            onMediaFilterChanged: (media) =>
+                                setState(() => _mediaFilter = media),
+                            pinnedOnly: _showingPinnedOnly,
+                            onPinnedOnlyChanged: (value) =>
+                                setState(() => _pinnedOnly = value),
+                            windowBar: SidebarWindowBar(
+                              title: space.title,
+                              count: _spaceCount,
+                              noun: space == LibrarySpace.drawings
+                                  ? 'drawing'
+                                  : 'note',
+                              onCreate: _createInSpace,
+                              newNoteShortcut: widget.shortcuts.bindingFor(
+                                ShortcutAction.newNote,
+                              ),
+                              onHide: () => _setListShown(false),
+                              hideShortcut: widget.shortcuts.bindingFor(
+                                ShortcutAction.toggleSidebar,
+                              ),
+                            ),
+                          ),
                     // No bottom inset here: on a tablet the note's footer
                     // holds its own controls above the home indicator, and
                     // the empty state does the same with its paper.
@@ -2719,38 +2822,58 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  PageToolbar(
-                                    space: space.title,
-                                    section: pinned ? 'Pinned' : null,
-                                    listVisible: listFits && listShown,
-                                    onShowList: _toggleList,
-                                    showListShortcut: _sidebarShortcut,
-                                    noun: space == LibrarySpace.drawings
-                                        ? 'drawing'
-                                        : 'note',
-                                    onCreate: _createInSpace,
-                                    newNoteShortcut: widget.shortcuts
-                                        .bindingFor(ShortcutAction.newNote)
-                                        ?.displayLabel,
-                                    noteOpen: selected != null,
-                                    syncStatus: widget.account?.sync?.status,
-                                    members: _selectedMembers,
-                                    present: _selectedPresence,
-                                    currentUserId:
-                                        widget.account?.sharing?.userId ?? '',
-                                    noteShared: selected?.isShared ?? false,
-                                    onShare: _shareSelected,
-                                    pinned: pinned,
-                                    onTogglePin:
-                                        selected == null || _specialMode
-                                        ? null
-                                        : () => _togglePinnedNote(selected.id),
-                                    moreActions: _pageActions(selected),
-                                    onMore: (action) =>
-                                        _runPageAction(action, selected),
-                                    updates: widget.updates,
-                                  ),
-                                  Expanded(child: _buildWideWorkspace()),
+                                  if (tasks != null)
+                                    ..._buildTasksPage(
+                                      tasks,
+                                      listVisible: listFits && listShown,
+                                    )
+                                  else ...[
+                                    PageToolbar(
+                                      space: space.title,
+                                      section: pinned ? 'Pinned' : null,
+                                      listVisible: listFits && listShown,
+                                      onShowList: _toggleList,
+                                      showListShortcut: _sidebarShortcut,
+                                      noun: space == LibrarySpace.drawings
+                                          ? 'drawing'
+                                          : 'note',
+                                      onCreate: _createInSpace,
+                                      newNoteShortcut: widget.shortcuts
+                                          .bindingFor(ShortcutAction.newNote)
+                                          ?.displayLabel,
+                                      noteOpen: selected != null,
+                                      syncStatus: widget.account?.sync?.status,
+                                      members: _selectedMembers,
+                                      present: _selectedPresence,
+                                      currentUserId:
+                                          widget.account?.sharing?.userId ?? '',
+                                      noteShared: selected?.isShared ?? false,
+                                      onShare: _shareSelected,
+                                      pinned: pinned,
+                                      onTogglePin:
+                                          selected == null || _specialMode
+                                          ? null
+                                          : () =>
+                                                _togglePinnedNote(selected.id),
+                                      moreActions: _pageActions(selected),
+                                      onMore: (action) =>
+                                          _runPageAction(action, selected),
+                                      updates: widget.updates,
+                                      center:
+                                          selected != null &&
+                                              _canChooseMode(selected)
+                                          ? NoteModeSwitch(
+                                              drawing: selected.isDrawing,
+                                              onChanged: (drawing) =>
+                                                  _setDrawingMode(
+                                                    selected.id,
+                                                    drawing: drawing,
+                                                  ),
+                                            )
+                                          : null,
+                                    ),
+                                    Expanded(child: _buildWideWorkspace()),
+                                  ],
                                 ],
                               ),
                             ),
@@ -2853,6 +2976,86 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       case 'delete':
         unawaited(_deleteNote(note.id));
     }
+  }
+
+  /// Tasks on the page: its own breadcrumb and Pick again over Today, or
+  /// over the Done view.
+  List<Widget> _buildTasksPage(
+    TasksController tasks, {
+    required bool listVisible,
+  }) {
+    final filter = _taskFilter;
+    final note = filter.noteId == null
+        ? null
+        : widget.notes.byId(filter.noteId);
+    final home = note != null && tasks.read().home?.id == note.id;
+    final palette = context.palette;
+    return [
+      PageToolbar(
+        space: LibrarySpace.tasks.title,
+        section: filter.done
+            ? 'Done'
+            : note == null || home
+            ? 'Today'
+            : _taskNoteLabel(note),
+        listVisible: listVisible,
+        onShowList: _toggleList,
+        showListShortcut: _sidebarShortcut,
+        noun: 'task',
+        onCreate: _createInSpace,
+        newNoteShortcut: widget.shortcuts
+            .bindingFor(ShortcutAction.newNote)
+            ?.displayLabel,
+        moreActions: [
+          for (final action in _pageActions(null))
+            if (action.value == 'on-top') action,
+        ],
+        onMore: (action) => _runPageAction(action, null),
+        updates: widget.updates,
+        actions: [
+          if (!filter.done)
+            TextButton.icon(
+              key: const ValueKey('tasks-pick-again'),
+              onPressed: () => _tasksPage.currentState?.pickAgain(),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                foregroundColor: palette.textTertiary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                textStyle: uiStyle(
+                  12.5,
+                  16,
+                  FontWeight.w500,
+                  palette.textTertiary,
+                ),
+              ),
+              icon: KapyIcon(
+                KapyIcons.refreshRounded,
+                size: 15,
+                strokeWidth: 1.8,
+                color: palette.textTertiary,
+              ),
+              label: const Text('Pick again'),
+            ),
+        ],
+      ),
+      Expanded(
+        child: TasksScreen(
+          key: _tasksPage,
+          controller: tasks,
+          filter: filter,
+          query: _taskQuery,
+          addFocus: _taskAddFocus,
+          labelOf: _taskNoteLabel,
+          onOpenNote: _openTaskNote,
+          newTaskShortcut: widget.shortcuts
+              .bindingFor(ShortcutAction.newNote)
+              ?.keycapLabel,
+        ),
+      ),
+    ];
   }
 
   Widget _buildWideWorkspace() {
@@ -3105,7 +3308,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _buildCompactEditor(Note note) {
-    if (note.isDrawing) return _buildDrawing(note);
+    if (note.isDrawing) return _buildDrawing(note, modeSwitch: true);
     final editor = ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
@@ -3149,6 +3352,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           editorTextScale: widget.prefs.editorTextScale,
+          slashHint: widget.prefs.slashHint,
+          onSlashCommandUsed: widget.prefs.noteSlashCommandUsed,
+          lastSlashCommand: SlashCommandType.values
+              .asNameMap()[widget.prefs.lastSlashCommand],
+          onSlashCommandChosen: (command) =>
+              widget.prefs.lastSlashCommand = command.name,
+          now: widget.notes.now,
           shortcuts: widget.shortcuts,
           spellCheckEnabled: widget.prefs.spellCheckEnabled,
           markdownEnabled: widget.prefs.markdownEnabled,
@@ -3170,8 +3380,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onReadOnlyPressed: _limitHolds(note)
               ? () => unawaited(_explainNoteLimit(creating: false))
               : null,
-          onDocumentChanged: (body, formats, attachments) =>
-              _updateDocument(note.id, body, formats, attachments),
+          onDocumentChanged: (body, formats, attachments, edit) =>
+              _updateDocument(note.id, body, formats, attachments, edit),
           storedDocument: () => _storedDocument(note.id),
           onSettingsPressed: _showSettings,
         ),
@@ -3187,7 +3397,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     VoidCallback? onFocus,
   }) {
     if (note.isDrawing) return _buildDrawing(note, onFocus: onFocus);
-    final editor = ListenableBuilder(
+    return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
         // The wide layout already listens to the account around this body.
@@ -3235,6 +3445,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           editorTextScale: widget.prefs.editorTextScale,
+          slashHint: widget.prefs.slashHint,
+          onSlashCommandUsed: widget.prefs.noteSlashCommandUsed,
+          lastSlashCommand: SlashCommandType.values
+              .asNameMap()[widget.prefs.lastSlashCommand],
+          onSlashCommandChosen: (command) =>
+              widget.prefs.lastSlashCommand = command.name,
+          now: widget.notes.now,
           shortcuts: widget.shortcuts,
           spellCheckEnabled: widget.prefs.spellCheckEnabled,
           markdownEnabled: widget.prefs.markdownEnabled,
@@ -3261,14 +3478,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onReadOnlyPressed: _limitHolds(note)
               ? () => unawaited(_explainNoteLimit(creating: false))
               : null,
-          onDocumentChanged: (body, formats, attachments) =>
-              _updateDocument(note.id, body, formats, attachments),
+          onDocumentChanged: (body, formats, attachments, edit) =>
+              _updateDocument(note.id, body, formats, attachments, edit),
           storedDocument: () => _storedDocument(note.id),
           onSettingsPressed: _showSettings,
         ),
       ),
     );
-    return _withModeSwitch(note, editor);
   }
 
   /// Whether [note] can still become a drawing, or go back to being a page:
@@ -3279,7 +3495,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       note.isEmpty &&
       note.attachments.isEmpty;
 
-  /// The editor, with "Write | Draw" over its corner while the note is new.
+  /// The phone's editor, with "Write | Draw" over its corner while the note
+  /// is new.
   ///
   /// Always the same Stack, with or without the switch: the first keystroke
   /// takes the switch away, and a tree that changed shape under the editor
@@ -3323,7 +3540,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         )
       : EmptyState(onCreate: _createNote);
 
-  Widget _buildDrawing(Note note, {VoidCallback? onFocus}) {
+  /// A phone shows Write | Draw in the drawing's title row when
+  /// [modeSwitch]; a window shows it in the page toolbar.
+  Widget _buildDrawing(
+    Note note, {
+    VoidCallback? onFocus,
+    bool modeSwitch = false,
+  }) {
     final canWrite = _canWriteNote(note);
     return DrawingCanvas(
       key: ValueKey('drawing-${note.id}'),
@@ -3337,7 +3560,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       readOnly: !canWrite,
       onFocus: onFocus,
-      onSwitchToWrite: _canChooseMode(note)
+      onSwitchToWrite: modeSwitch && _canChooseMode(note)
           ? () => _setDrawingMode(note.id, drawing: false)
           : null,
       onChanged: (drawing) => _updateDrawing(note.id, drawing: drawing),
@@ -3402,6 +3625,7 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.child,
     required this.focusNode,
     required this.onNewNote,
+    required this.onCompleteTask,
     required this.onFindNotes,
     required this.onNextNote,
     required this.onPreviousNote,
@@ -3426,6 +3650,9 @@ class _DesktopShortcuts extends StatelessWidget {
   final Widget child;
   final FocusNode focusNode;
   final VoidCallback onNewNote;
+
+  /// Done on Do now, while Tasks is open: ⌘↵, or Ctrl+Enter.
+  final VoidCallback? onCompleteTask;
   final VoidCallback onFindNotes;
   final VoidCallback onNextNote;
   final VoidCallback onPreviousNote;
@@ -3455,6 +3682,11 @@ class _DesktopShortcuts extends StatelessWidget {
     return CallbackShortcuts(
       bindings: {
         ?shortcuts.bindingFor(ShortcutAction.newNote)?.activator: onNewNote,
+        SingleActivator(
+          LogicalKeyboardKey.enter,
+          meta: AppPlatform.isMacOS,
+          control: !AppPlatform.isMacOS,
+        ): ?onCompleteTask,
         ?shortcuts.bindingFor(ShortcutAction.findNotes)?.activator: onFindNotes,
         ?shortcuts.bindingFor(ShortcutAction.nextNote)?.activator: onNextNote,
         ?shortcuts.bindingFor(ShortcutAction.previousNote)?.activator:

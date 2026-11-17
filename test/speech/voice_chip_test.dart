@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/audio/voice_player.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
@@ -88,8 +89,16 @@ Future<void> hover(WidgetTester tester, Finder finder) async {
   await tester.pump();
 }
 
+/// The phone's row, which says in words what the page's pill leaves to its
+/// waveform: the label, and the summary under it.
+void _onPhone() {
+  setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS);
+  tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+}
+
 void main() {
   group('what the chip says', () {
+    _onPhone();
     testWidgets('an untranscribed recording is just a voice note', (
       tester,
     ) async {
@@ -146,6 +155,7 @@ void main() {
   });
 
   group('what the chip says when it cannot transcribe', () {
+    _onPhone();
     testWidgets('signed out offers transcription without assuming the engine', (
       tester,
     ) async {
@@ -330,7 +340,7 @@ void main() {
       await tester.pumpWidget(harness(recording(), onOpen: () {}));
       await tester.pumpAndSettle();
 
-      await hover(tester, find.text('Voice note'));
+      await hover(tester, find.text('2:14'));
       expect(find.text('Open this recording'), findsOneWidget);
     });
 

@@ -9,44 +9,233 @@ import 'unit_registry.dart';
 import 'value.dart';
 
 /// Mutable state shared by every line of a note, top to bottom.
+///
+/// Lines reach it only through the members below, so that while a line is
+/// traced, from [beginTrace] to [endTrace], the scope can write down what the
+/// line read and what it changed. [reuse] then tells whether the same text
+/// would do exactly the same again in another scope, and if so does it.
 class CalcScope {
-  final Map<String, CalcValue> variables = {};
+  final Map<String, CalcValue> _variables = {};
+  CalcValue? _prev;
+  CalcValue? _runningSum;
+  int _numericCount = 0;
 
-  CalcValue? prev;
-  CalcValue? runningSum;
-  int numericCount = 0;
+  /// The defined names, sorted and joined, so that scopes defining the same
+  /// names hold equal strings. Null once a name comes or goes, until asked
+  /// for again.
+  String? _names = '';
+
+  ScopeTrace? _trace;
+
+  /// The value the note gave [name], or null if it gave it none.
+  CalcValue? operator [](String name) {
+    final value = _variables[name];
+    _trace?._sawValue(name, value);
+    return value;
+  }
+
+  /// Whether the note has given [name] a value.
+  bool defines(String name) {
+    final defined = _variables.containsKey(name);
+    _trace?._sawDefined(name, defined);
+    return defined;
+  }
+
+  void operator []=(String name, CalcValue value) {
+    if (!_variables.containsKey(name)) _names = null;
+    _variables[name] = value;
+    _trace?._wrote[name] = value;
+  }
+
+  /// Takes back the value the note gave [name], if it gave it one.
+  void remove(String name) {
+    if (_variables.remove(name) != null) _names = null;
+    _trace?._wrote[name] = null;
+  }
+
+  CalcValue? get prev {
+    _trace
+      ?.._readsPrev = true
+      .._prevSeen = _prev;
+    return _prev;
+  }
+
+  CalcValue? get runningSum {
+    _trace
+      ?.._readsSum = true
+      .._sumSeen = _runningSum;
+    return _runningSum;
+  }
 
   CalcValue? get average {
     final sum = runningSum;
-    if (sum == null || numericCount == 0) return null;
-    return Arith.scale(sum, 1 / numericCount);
+    _trace
+      ?.._readsCount = true
+      .._countSeen = _numericCount;
+    if (sum == null || _numericCount == 0) return null;
+    return Arith.scale(sum, 1 / _numericCount);
   }
 
   /// Folds a line's result into the running aggregates. Values that cannot
   /// join the sum (a boolean, or a unit that does not match) update `prev`
   /// but are left out of `sum`/`avg` rather than poisoning them.
   void record(CalcValue value) {
-    prev = value;
+    _prev = value;
     if (value is BooleanValue || value is DateTimeValue) return;
-    final sum = runningSum;
+    final sum = _runningSum;
     if (sum == null) {
-      runningSum = value;
-      numericCount = 1;
+      _runningSum = value;
+      _numericCount = 1;
       return;
     }
     try {
-      runningSum = Arith.add(sum, value);
-      numericCount++;
+      _runningSum = Arith.add(sum, value);
+      _numericCount++;
     } on CalcError {
       // Mixed dimensions: keep the existing running total intact.
     }
   }
 
-  void reset() {
-    variables.clear();
-    prev = null;
-    runningSum = null;
-    numericCount = 0;
+  /// Starts writing down what the next line reads and writes.
+  void beginTrace() => _trace = ScopeTrace._(_definedNames);
+
+  /// Stops writing down, and returns what the line read and wrote: null when
+  /// its answer could change with nothing in the note changing.
+  ScopeTrace? endTrace() {
+    final trace = _trace!;
+    _trace = null;
+    if (trace._unrepeatable) return null;
+    return trace.._namesAfter = _definedNames;
+  }
+
+  /// Marks the line being traced as one whose answer can change with nothing
+  /// in the note changing: it read the clock, drew a random number, or shows
+  /// a date in the device's time zone, which the device can change.
+  void markUnrepeatable() => _trace?._unrepeatable = true;
+
+  /// Redoes the line [trace] was taken from if every read it made would see
+  /// the same here: makes the line's writes and returns true. Otherwise
+  /// leaves the scope as it is and returns false.
+  bool reuse(ScopeTrace trace) {
+    final names = _definedNames;
+    final sameNames = names == trace._namesBefore;
+    if (!sameNames && trace._defined.isNotEmpty) {
+      for (final MapEntry(key: name, value: defined)
+          in trace._defined.entries) {
+        if (_variables.containsKey(name) != defined) return false;
+      }
+    }
+    if (trace._values.isNotEmpty) {
+      for (final MapEntry(key: name, :value) in trace._values.entries) {
+        if (!_same(_variables[name], value)) return false;
+      }
+    }
+    if ((trace._readsPrev && !_same(_prev, trace._prevSeen)) ||
+        (trace._readsSum && !_same(_runningSum, trace._sumSeen)) ||
+        (trace._readsCount && _numericCount != trace._countSeen)) {
+      return false;
+    }
+    if (trace._wrote.isNotEmpty) {
+      trace._wrote.forEach(
+        (name, value) => value == null ? remove(name) : this[name] = value,
+      );
+    }
+    if (sameNames) {
+      _names = trace._namesAfter;
+    } else {
+      // The names are likely to be these next time too, and then they need
+      // no checking one by one.
+      trace
+        .._namesBefore = names
+        .._namesAfter = _definedNames;
+    }
+    return true;
+  }
+
+  String get _definedNames =>
+      _names ??= (_variables.keys.toList()..sort()).join('\n');
+
+  /// Whether a line could tell [a] from [b]: not if they are the same value,
+  /// or the same kind of value with the same number, unit, notation or
+  /// instant. The running total is added up afresh on every pass, so a
+  /// `total` line could never be reused if only the same object would do.
+  static bool _same(CalcValue? a, CalcValue? b) =>
+      identical(a, b) ||
+      switch ((a, b)) {
+        (NumberValue x, NumberValue y) => _sameNumber(x.value, y.value),
+        (FormattedNumberValue x, FormattedNumberValue y) =>
+          x.notation == y.notation && _sameNumber(x.value, y.value),
+        (PercentValue x, PercentValue y) => _sameNumber(x.fraction, y.fraction),
+        (QuantityValue x, QuantityValue y) =>
+          _sameNumber(x.value, y.value) && _sameUnit(x.unit, y.unit),
+        (BooleanValue x, BooleanValue y) => x.value == y.value,
+        (DateTimeValue x, DateTimeValue y) =>
+          x.instant == y.instant &&
+              x.timeZoneId == y.timeZoneId &&
+              x.display == y.display,
+        _ => false,
+      };
+
+  /// Equal and with the same sign, since a line that divides by zero tells
+  /// -0 from 0.
+  static bool _sameNumber(double a, double b) =>
+      a == b && a.isNegative == b.isNegative;
+
+  static bool _sameUnit(Unit a, Unit b) {
+    if (a.terms.length != b.terms.length) return false;
+    for (var i = 0; i < a.terms.length; i++) {
+      if (!identical(a.terms[i].def, b.terms[i].def) ||
+          a.terms[i].exponent != b.terms[i].exponent) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
+/// What one line read from a [CalcScope] and what it wrote there, between
+/// [CalcScope.beginTrace] and [CalcScope.endTrace].
+///
+/// Only what the line found already in the scope counts as read: once the
+/// line has written a name, what it reads back is its own doing.
+class ScopeTrace {
+  ScopeTrace._(this._namesBefore);
+
+  /// The names defined before and after the line, the last time it was read
+  /// or reused.
+  String _namesBefore;
+  late String _namesAfter;
+
+  /// Names the line asked about, and whether each was defined. They need
+  /// checking only in a scope that defines other names than [_namesBefore].
+  final Map<String, bool> _defined = {};
+
+  /// Names whose values the line read, and the values.
+  final Map<String, CalcValue> _values = {};
+
+  /// Names the line wrote, and what it left: null where it took a value away.
+  final Map<String, CalcValue?> _wrote = {};
+
+  bool _readsPrev = false;
+  CalcValue? _prevSeen;
+  bool _readsSum = false;
+  CalcValue? _sumSeen;
+  bool _readsCount = false;
+  int _countSeen = 0;
+  bool _unrepeatable = false;
+
+  void _sawDefined(String name, bool defined) {
+    if (_wrote.containsKey(name) || _values.containsKey(name)) return;
+    _defined[name] = defined;
+  }
+
+  void _sawValue(String name, CalcValue? value) {
+    if (value == null) {
+      _sawDefined(name, false);
+    } else if (!_wrote.containsKey(name)) {
+      _defined.remove(name);
+      _values[name] = value;
+    }
   }
 }
 
@@ -100,7 +289,7 @@ class Evaluator {
 
       case AssignNode():
         final value = evaluate(node.value);
-        scope.variables[node.name] = value;
+        scope[node.name] = value;
         return value;
 
       case ConvertNode():
@@ -238,8 +427,8 @@ class Evaluator {
   }
 
   Unit _contextualUnit(Unit unit) {
-    final ppi = _positiveScalar(scope.variables['ppi']);
-    final em = scope.variables['em'];
+    final ppi = _positiveScalar(scope['ppi']);
+    final em = scope['em'];
     final emFactor =
         em is QuantityValue &&
             em.unit.dimension == Dimension.base(Dimension.length)
@@ -282,7 +471,7 @@ class Evaluator {
   }
 
   CalcValue _identifier(String name) {
-    final variable = scope.variables[name];
+    final variable = scope[name];
     if (variable != null) return variable;
 
     final lower = name.toLowerCase();
@@ -321,20 +510,20 @@ class Evaluator {
         return const BooleanValue(false);
       case 'now':
         return DateTimeValue(
-          now().toUtc(),
+          _clock().toUtc(),
           timeZoneId: timeZoneId,
           display: TemporalDisplay.dateTime,
         );
       case 'time':
         return DateTimeValue(
-          now().toUtc(),
+          _clock().toUtc(),
           timeZoneId: timeZoneId,
           display: TemporalDisplay.time,
         );
       case 'today':
       case 'tomorrow':
       case 'yesterday':
-        final shown = AppTimeZones.convert(now(), timeZoneId);
+        final shown = AppTimeZones.convert(_clock(), timeZoneId);
         final offset = lower == 'tomorrow'
             ? 1
             : lower == 'yesterday'
@@ -358,6 +547,12 @@ class Evaluator {
     if (unit != null) return QuantityValue(1, Unit.single(unit));
 
     throw CalcError('unknown name "$name"');
+  }
+
+  /// The time now, which a line that asks for can't be reused for.
+  DateTime _clock() {
+    scope.markUnrepeatable();
+    return now();
   }
 
   CalcValue _call(CallNode node) {
@@ -498,6 +693,7 @@ class Evaluator {
         if (!lower.isFinite || !upper.isFinite || upper < lower) {
           throw const CalcError('random needs a valid ascending range');
         }
+        scope.markUnrepeatable();
         return NumberValue(lower + _random.nextDouble() * (upper - lower));
       case 'fromunix':
         return DateTimeValue(

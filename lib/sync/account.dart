@@ -7,9 +7,10 @@ import '../billing/note_limit.dart';
 import '../billing/plan_terms.dart';
 import '../data/local_store.dart';
 import '../data/notes_store.dart';
+import '../data/task_library.dart';
 import 'auth_api.dart';
 import 'key_bundle.dart';
-import 'doc_store.dart';
+import 'task_sync.dart';
 import 'image_sync.dart';
 import 'joining.dart';
 import 'key_store.dart';
@@ -63,21 +64,21 @@ class Account extends ChangeNotifier {
     required NotesStore notes,
     required SyncState state,
     required LocalStore store,
+    required TaskLibrary tasks,
     SyncService Function({
       required SyncApi api,
       required Vault vault,
       required SpaceKeyring keyring,
     })?
     syncServiceFactory,
-    DocStorage? docStorage,
   }) : _auth = auth,
        _syncApiFor = syncApi,
        _keys = keys,
        _notes = notes,
        _state = state,
        _store = store,
-       _syncServiceFactory = syncServiceFactory,
-       _docStorage = docStorage;
+       _tasks = tasks,
+       _syncServiceFactory = syncServiceFactory;
 
   final AuthApi _auth;
   final SyncApi Function(String token) _syncApiFor;
@@ -136,9 +137,9 @@ class Account extends ChangeNotifier {
   AccountUser? _user;
   String? _token;
 
-  /// Where the merge state lives; in memory for a test.
-  final DocStorage? _docStorage;
-  DocStore? _docs;
+  /// The task index and the notes' documents, which sync keeps while it
+  /// runs and the library itself keeps the rest of the time.
+  final TaskLibrary _tasks;
   SyncService? _sync;
   Sharing? _sharing;
   Joining? _joining;
@@ -193,7 +194,8 @@ class Account extends ChangeNotifier {
   /// frame: a keystore read is a platform channel round trip and the editor
   /// should not wait on it.
   Future<void> restore() async {
-    _state.load();
+    // Loads the sync state with the documents, whose replica comes from it.
+    await _tasks.load();
     final token = await _keys.readToken();
     if (token == null) return _moveTo(AccountState.signedOut);
 
@@ -469,13 +471,7 @@ class Account extends ChangeNotifier {
       trust: trust,
     );
     final images = ImageSync(api: api, store: _notes.blobs, notes: _notes);
-    // The replica id every character this device writes is stamped with.
-    // Twelve hex digits of the install id: stable for the life of the
-    // install, and short enough to ride in every op without weighing on it.
-    final docs = _docs ??= DocStore(
-      _docStorage ?? FileDocStorage(),
-      replica: _state.deviceId.substring(0, 12),
-    );
+    final docs = _tasks.docs;
     final service =
         _syncServiceFactory?.call(api: api, vault: vault, keyring: keyring) ??
         SyncService(
@@ -485,6 +481,13 @@ class Account extends ChangeNotifier {
           keyring: keyring,
           docs: docs,
           images: images,
+          tasks: TaskSync(
+            api: api,
+            vault: vault,
+            index: _tasks.index,
+            docs: docs,
+            noteIsLive: (noteId) => _notes.byId(noteId) != null,
+          ),
           vault: vault,
         );
     _teardownSync();
@@ -495,6 +498,7 @@ class Account extends ChangeNotifier {
     _images = images;
     _keyring = keyring;
     _sync = service..addListener(notifyListeners);
+    _tasks.attachSync(service.reconcileTasksNow);
     _sharing = Sharing(
       api: api,
       vault: vault,
@@ -531,6 +535,7 @@ class Account extends ChangeNotifier {
     images?.dispose();
     _keyring?.clear();
     _keyring = null;
+    _tasks.detachSync();
   }
 
   /// Signing out drops the session and the key. It never touches the notes:
@@ -542,6 +547,9 @@ class Account extends ChangeNotifier {
     _token = null;
     _user = null;
     _state.clearCursor();
+    // Its ids and its seal are the account's; the next account pulls its own,
+    // and until then the library rebuilds the index from the documents.
+    _tasks.index.clear();
     await _keys.clear();
     if (token != null) await _auth.signOut(token);
     _moveTo(AccountState.signedOut);
@@ -610,6 +618,7 @@ class Account extends ChangeNotifier {
     _user = null;
     _lastError = null;
     _state.clearCursor();
+    _tasks.index.clear();
     await _keys.clear();
     _moveTo(AccountState.signedOut);
     return true;
