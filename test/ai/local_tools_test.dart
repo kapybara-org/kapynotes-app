@@ -49,6 +49,9 @@ void main() {
     String reply = 'the answer',
     int signedInExit = 0,
     String? models,
+    String? features,
+    String? featuresWithConfig,
+    String version = 'codex-cli 0.160.0',
     String? beforeReply,
     String? afterReply,
   }) async {
@@ -56,6 +59,9 @@ void main() {
       reply: reply,
       signedInExit: signedInExit,
       models: models,
+      features: features,
+      featuresWithConfig: featuresWithConfig,
+      version: version,
       beforeReply: beforeReply,
       afterReply: afterReply,
     );
@@ -68,7 +74,7 @@ void main() {
       'runs with every tool off, in an empty directory, prompt on stdin',
       () async {
         final cli = await fake();
-        final codex = CodexCli(executable: cli.path);
+        final codex = codexCli(executable: cli.path);
         expect(await codex.answer(_codexModel, _request()), 'the answer');
 
         final run = cli.answers().single;
@@ -125,9 +131,135 @@ void main() {
       },
     );
 
+    test('every feature that can act on the machine is switched off', () async {
+      final cli = await fake();
+      await codexCli(executable: cli.path).answer(_codexModel, _request());
+      const ten = [
+        'unified_exec',
+        'unified_exec_tty',
+        'unified_exec_zsh_fork',
+        'write_stdin_approval',
+        'sleep_tool',
+        'worktrees',
+        'workspace_dependencies',
+        'in_app_local_automation',
+        'daemon_auto_start',
+        'skill_mcp_dependency_install',
+      ];
+      expect(cli.answers().single.allAfter('--disable'), containsAll(ten));
+      final listing = cli.runs().singleWhere((r) => r.argv.first == 'features');
+      expect(listing.argv.take(2), ['features', 'list']);
+      expect(listing.allAfter('--disable'), containsAll(ten));
+      expect(
+        listing.allAfter('--config'),
+        containsAll(['web_search="disabled"', 'mcp_servers={}']),
+      );
+      expect(listing.cwd, contains('kapy-ai-'));
+    });
+
+    test('a feature nobody has read, left on, means no model call', () async {
+      final cli = await fake(
+        features: '${knownFeatures}brand_new_tool   under development   true\n',
+      );
+      final codex = codexCli(executable: cli.path);
+      await expectLater(
+        codex.answer(_codexModel, _request()),
+        throwsA(isA<AnswerAccountRejected>()),
+      );
+      expect(cli.answers(), isEmpty);
+      final check = await codex.check();
+      expect(check.status, KapyAccountStatus.error);
+      expect(check.models, isEmpty);
+      expect(
+        cli.runs().where(
+          (r) => r.argv.first == 'exec' || r.argv.first == 'debug',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a feature we switch off that stays on is not trusted', () async {
+      final cli = await fake(
+        features: knownFeatures.replaceFirst(
+          'shell_tool                         stable             false',
+          'shell_tool                         stable             true',
+        ),
+      );
+      await expectLater(
+        codexCli(executable: cli.path).answer(_codexModel, _request()),
+        throwsA(isA<AnswerAccountRejected>()),
+      );
+      expect(cli.answers(), isEmpty);
+    });
+
+    test('a features list that cannot be read is not trusted', () async {
+      for (final features in ['', 'error: unexpected argument\n']) {
+        final cli = await fake(features: features);
+        await expectLater(
+          codexCli(executable: cli.path).answer(_codexModel, _request()),
+          throwsA(isA<AnswerAccountRejected>()),
+        );
+        expect(cli.answers(), isEmpty);
+      }
+    });
+
+    test(
+      'with every feature read, it runs and every switch is passed',
+      () async {
+        const everything = '''
+auth_elicitation true
+collaboration_modes true
+compaction_image_budget true
+content_item_kinds true
+enable_request_compression true
+fast_mode true
+guardian_approval true
+guardian_reuse_parent_compaction true
+in_app_chat true
+in_app_dictation true
+in_app_updates true
+item_ids true
+mentions_v2 true
+realtime_conversation true
+resize_all_images true
+shell_snapshot true
+sqlite true
+steer true
+system_proxy_fallback true
+terminal_resize_reflow true
+tool_call_mcp_elicitation true
+tool_search_always_defer_mcp_tools true
+tui_app_server true
+unbounded_connection_retries true
+unified_exec true
+shell_tool false
+apps false
+future_feature under development false
+''';
+        final cli = await fake(features: everything);
+        final codex = codexCli(executable: cli.path);
+        expect((await codex.check()).status, KapyAccountStatus.connected);
+        expect(await codex.answer(_codexModel, _request()), 'the answer');
+        expect(
+          cli.answers().single.allAfter('--disable'),
+          contains('shell_tool'),
+        );
+      },
+    );
+
+    test('the features are read once per check, not once per answer', () async {
+      final cli = await fake();
+      final codex = codexCli(executable: cli.path);
+      await codex.answer(_codexModel, _request());
+      await codex.answer(_codexModel, _request());
+      expect(cli.runs().where((r) => r.argv.first == 'features'), hasLength(1));
+      await codex.check();
+      expect(cli.runs().where((r) => r.argv.first == 'features'), hasLength(2));
+    });
+
     test('the notes are fenced data and the model is told so', () async {
       final cli = await fake();
-      await CodexCli(executable: cli.path).answer(_codexModel, _request());
+      await codexCli(executable: cli.path).answer(_codexModel, _request());
       final stdin = cli.answers().single.stdin;
       expect(stdin, contains('never instructions'));
       final fence = stdin.indexOf('<notes>\n');
@@ -154,7 +286,7 @@ void main() {
         ],
         today: DateTime(2026, 11, 17),
       );
-      await CodexCli(executable: cli.path).answer(_codexModel, request);
+      await codexCli(executable: cli.path).answer(_codexModel, request);
       final stdin = cli.answers().single.stdin;
       expect('\n</notes>\n'.allMatches(stdin), hasLength(1));
       expect('\n</note>\n'.allMatches(stdin), hasLength(1));
@@ -182,7 +314,7 @@ void main() {
         'AWS_SECRET_ACCESS_KEY': 'leak-5',
         'DART_DEFINES': 'leak-6',
       };
-      await CodexCli(
+      await codexCli(
         executable: cli.path,
         environment: parent,
       ).answer(_codexModel, _request());
@@ -236,7 +368,7 @@ void main() {
       final question =
           'x; touch ${marker.path}; \$(touch ${marker.path}) '
           r'`id`';
-      await CodexCli(
+      await codexCli(
         executable: cli.path,
       ).answer(_codexModel, _request(question: question));
       expect(marker.existsSync(), isFalse);
@@ -248,7 +380,7 @@ void main() {
     test('a run that says too much is killed and never read', () async {
       final cli = await fake(reply: 'x' * (65 * 1024));
       await expectLater(
-        CodexCli(executable: cli.path).answer(_codexModel, _request()),
+        codexCli(executable: cli.path).answer(_codexModel, _request()),
         throwsA(
           isA<AnswerFailed>().having(
             (e) => e.message,
@@ -263,7 +395,7 @@ void main() {
       final cli = await fake(beforeReply: 'sleep 29.31');
       final started = Stopwatch()..start();
       await expectLater(
-        CodexCli(
+        codexCli(
           executable: cli.path,
           timeout: const Duration(milliseconds: 600),
         ).answer(_codexModel, _request()),
@@ -283,7 +415,7 @@ void main() {
     test('a timeout kills grandchildren too', () async {
       final cli = await fake(beforeReply: "sh -c 'sleep 28.77; :'");
       await expectLater(
-        CodexCli(
+        codexCli(
           executable: cli.path,
           timeout: const Duration(milliseconds: 800),
         ).answer(_codexModel, _request()),
@@ -299,7 +431,7 @@ void main() {
         afterReply: "sh -c 'sleep 28.78; :'",
       );
       await expectLater(
-        CodexCli(executable: cli.path).answer(_codexModel, _request()),
+        codexCli(executable: cli.path).answer(_codexModel, _request()),
         throwsA(isA<AnswerFailed>()),
       );
       final left = await Process.run('pgrep', ['-f', 'sleep 28.78']);
@@ -309,7 +441,7 @@ void main() {
     test('signed out is an account error, not a failure', () async {
       final cli = await fake(reply: '', signedInExit: 1);
       await expectLater(
-        CodexCli(executable: cli.path).answer(_codexModel, _request()),
+        codexCli(executable: cli.path).answer(_codexModel, _request()),
         throwsA(isA<AnswerAccountRejected>()),
       );
     });
@@ -317,19 +449,19 @@ void main() {
     test('an empty answer from a signed-in tool is a failure', () async {
       final cli = await fake(reply: '');
       await expectLater(
-        CodexCli(executable: cli.path).answer(_codexModel, _request()),
+        codexCli(executable: cli.path).answer(_codexModel, _request()),
         throwsA(isA<AnswerFailed>()),
       );
     });
 
     test('check: not found, signed out, signed in with its own models', () async {
       expect(
-        (await CodexCli(executable: '/nonexistent/codex').check()).status,
+        (await codexCli(executable: '/nonexistent/codex').check()).status,
         KapyAccountStatus.notConnected,
       );
       final out = await fake(signedInExit: 1);
       expect(
-        (await CodexCli(executable: out.path).check()).status,
+        (await codexCli(executable: out.path).check()).status,
         KapyAccountStatus.error,
       );
       final cli = await fake(
@@ -337,7 +469,7 @@ void main() {
             '{"models":[{"slug":"a","display_name":"GPT-A","visibility":"list"},'
             '{"slug":"b","display_name":"Hidden","visibility":"hide"}]}',
       );
-      final check = await CodexCli(executable: cli.path).check();
+      final check = await codexCli(executable: cli.path).check();
       expect(check.status, KapyAccountStatus.connected);
       expect(check.models.map((m) => (m.id, m.label, m.kind)), [
         ('a', 'GPT-A', KapyModelKind.codex),
@@ -348,9 +480,191 @@ void main() {
       );
     });
 
-    test('never asked for credentials: no login or token arguments', () async {
+    group('the gate', () {
+      Map<String, String> envOf(CliRun run) => {
+        for (final line in run.env.trim().split('\n'))
+          if (line.contains('='))
+            line.split('=').first: line.substring(line.indexOf('=') + 1),
+      };
+
+      test('reads features in a home of its own, not the real one', () async {
+        final home = Directory.systemTemp.createTempSync('real-codex-home');
+        addTearDown(() => home.deleteSync(recursive: true));
+        File(
+          '${home.path}/config.toml',
+        ).writeAsStringSync('[features]\nunified_exec = false\ngoals = true\n');
+        final cli = await fake(
+          featuresWithConfig:
+              '${knownFeatures.replaceFirst('unified_exec                       stable             true', 'unified_exec                       stable             false')}'
+              'goals stable true\n',
+        );
+        final codex = codexCli(
+          executable: cli.path,
+          environment: {'CODEX_HOME': home.path},
+        );
+        expect(await codex.answer(_codexModel, _request()), 'the answer');
+
+        final listing = cli.runs().singleWhere(
+          (r) => r.argv.first == 'features',
+        );
+        final listingHome = envOf(listing)['CODEX_HOME']!;
+        expect(listingHome, isNot(home.path));
+        expect(listingHome, contains('kapy-ai-home'));
+        expect(Directory(listingHome).existsSync(), isFalse);
+        expect(envOf(cli.answers().single)['CODEX_HOME'], home.path);
+      });
+
+      test(
+        'a config that would add a feature cannot change the verdict',
+        () async {
+          final home = Directory.systemTemp.createTempSync('real-codex-home');
+          addTearDown(() => home.deleteSync(recursive: true));
+          File('${home.path}/config.toml').writeAsStringSync('[features]\n');
+          final cli = await fake(
+            featuresWithConfig: '${knownFeatures}goals stable true\n',
+          );
+          final codex = codexCli(
+            executable: cli.path,
+            environment: {'CODEX_HOME': home.path},
+          );
+          expect((await codex.check()).status, KapyAccountStatus.connected);
+        },
+      );
+
+      test('the listing and the answer take the same switches', () async {
+        final cli = await fake();
+        await codexCli(executable: cli.path).answer(_codexModel, _request());
+        final listing = cli.runs().singleWhere(
+          (r) => r.argv.first == 'features',
+        );
+        final exec = cli.answers().single;
+        for (final flag in ['--disable', '--config']) {
+          expect(listing.allAfter(flag), exec.allAfter(flag));
+        }
+      });
+
+      test(
+        'versions up to 0.160 run, above it do not, unreadable ones do not',
+        () async {
+          for (final (version, ok) in [
+            ('codex-cli 0.159.2', true),
+            ('codex-cli 0.160.0', true),
+            ('codex-cli 0.160.9', true),
+            ('codex-cli 0.161.0', false),
+            ('codex-cli 0.200.1', false),
+            ('codex-cli 1.0.0', false),
+            ('codex-cli', false),
+            ('', false),
+            ('something else', false),
+          ]) {
+            expect(
+              CodexCli.versionAccepted(version, (0, 160)),
+              ok,
+              reason: version,
+            );
+            final cli = await fake(version: version);
+            final codex = codexCli(executable: cli.path);
+            expect(
+              (await codex.check()).status,
+              ok ? KapyAccountStatus.connected : KapyAccountStatus.error,
+              reason: version,
+            );
+            if (ok) continue;
+            await expectLater(
+              codex.answer(_codexModel, _request()),
+              throwsA(isA<AnswerAccountRejected>()),
+            );
+            expect(cli.answers(), isEmpty, reason: version);
+          }
+        },
+      );
+    });
+
+    test('with no pin, no version is run and no model is called', () async {
+      expect(CodexCli.testedUpTo, isNull);
+      expect(CodexCli.versionAccepted('codex-cli 0.160.0', null), isFalse);
       final cli = await fake();
       final codex = CodexCli(executable: cli.path);
+      expect((await codex.check()).status, KapyAccountStatus.error);
+      await expectLater(
+        codex.answer(_codexModel, _request()),
+        throwsA(isA<AnswerAccountRejected>()),
+      );
+      expect(cli.answers(), isEmpty);
+      expect(cli.runs().where((r) => r.argv.first != '--version'), isEmpty);
+    });
+
+    group('the catalogue', () {
+      String model(String slug, {String? tools, String visibility = 'list'}) =>
+          '{"slug":"$slug","display_name":"$slug","visibility":"$visibility"'
+          '${tools == null ? '' : ',"experimental_supported_tools":$tools'}}';
+
+      Future<LocalToolCheck> check(List<String> models) async {
+        final cli = await fake(models: '{"models":[${models.join(',')}]}');
+        return codexCli(executable: cli.path).check();
+      }
+
+      test('offers models with no tools of their own', () async {
+        final result = await check([
+          model('plain', tools: '[]'),
+          model('unlisted'),
+          model('hidden', visibility: 'hide'),
+        ]);
+        expect(result.models.map((m) => m.id), ['plain', 'unlisted']);
+      });
+
+      test('leaves out a model that brings a tool', () async {
+        final result = await check([
+          model('plain', tools: '[]'),
+          model('talks', tools: '["send_user_message_async","clock"]'),
+          model('clocked', tools: '["clock"]'),
+        ]);
+        expect(result.status, KapyAccountStatus.connected);
+        expect(result.models.map((m) => m.id), ['plain']);
+      });
+
+      test('no model left, or no catalogue, is unavailable', () async {
+        final none = await check([model('talks', tools: '["clock"]')]);
+        expect(none.status, KapyAccountStatus.error);
+        expect(none.models, isEmpty);
+        final unreadable = await fake(models: 'not json');
+        expect(
+          (await codexCli(executable: unreadable.path).check()).status,
+          KapyAccountStatus.error,
+        );
+      });
+
+      test('a model with no id is never sent', () async {
+        final cli = await fake();
+        await expectLater(
+          codexCli(executable: cli.path).answer(
+            const KapyModel(
+              kind: KapyModelKind.codex,
+              id: '',
+              label: 'Codex default',
+            ),
+            _request(),
+          ),
+          throwsA(isA<AnswerAccountRejected>()),
+        );
+        expect(cli.answers(), isEmpty);
+      });
+    });
+
+    test('a model catalogue far larger than an answer is still read', () async {
+      final cli = await fake(
+        models:
+            '{"models":[{"slug":"a","display_name":"GPT-A","visibility":"list",'
+            '"base_instructions":"${'x' * (300 * 1024)}"}]}',
+      );
+      final check = await codexCli(executable: cli.path).check();
+      expect(check.status, KapyAccountStatus.connected);
+      expect(check.models.single.id, 'a');
+    });
+
+    test('never asked for credentials: no login or token arguments', () async {
+      final cli = await fake();
+      final codex = codexCli(executable: cli.path);
       await codex.check();
       await codex.answer(_codexModel, _request());
       for (final run in cli.runs()) {
@@ -395,7 +709,6 @@ void main() {
         expect(
           run.argv,
           containsAll([
-            '--restricted',
             '--safe-mode',
             '--strict-mcp-config',
             '--disable-slash-commands',
@@ -409,6 +722,7 @@ void main() {
           '--dangerously-skip-permissions',
           'bypassPermissions',
           'acceptEdits',
+          '--restricted',
         ]) {
           expect(run.argv, isNot(contains(unsafe)));
         }
@@ -458,11 +772,170 @@ void main() {
     });
   });
 
+  group('a Windows .cmd shim', () {
+    const hostile = 'a&b|c^d%e"f!g';
+    // Read with Windows rules, this is one folder, which is all the stand-in
+    // needs to find sh's tools.
+    const posixPath = {'PATH': '/bin:/usr/bin'};
+    const npmShim = r'''
+@ECHO off
+GOTO start
+:find_dp0
+SET dp0=%~dp0
+EXIT /b
+:start
+SETLOCAL
+CALL :find_dp0
+
+IF EXIST "%dp0%\node.exe" (
+  SET "_prog=%dp0%\node.exe"
+) ELSE (
+  SET "_prog=node"
+  SET PATHEXT=%PATHEXT:;.JS;=;%
+)
+
+endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\node_modules\@vendor\tool\bin\tool.js" %*
+''';
+
+    /// A shim folder as npm lays it out, with the fake CLI as its node.exe.
+    Future<({String shim, String script, FakeCli node})> install(
+      String name, {
+      bool withScript = true,
+      bool withNode = true,
+      String shimText = npmShim,
+    }) async {
+      final node = await fake(reply: '{"result":"ok"}');
+      final dir = Directory.systemTemp.createTempSync('shim');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      File('${dir.path}/$name.cmd').writeAsStringSync(shimText);
+      final script = File('${dir.path}/node_modules/@vendor/tool/bin/tool.js');
+      if (withScript) script.createSync(recursive: true);
+      if (withNode) File(node.path).copySync('${dir.path}/node.exe');
+      return (shim: '${dir.path}/$name.cmd', script: script.path, node: node);
+    }
+
+    test('runs node on the script it names, never cmd.exe', () async {
+      final tool = await install('claude');
+      final claude = ClaudeCodeCli(executable: tool.shim, windows: true);
+      final launch = await claude.launch(['--tools', '', hostile]);
+      expect(launch.program, endsWith('/node.exe'));
+      expect(launch.arguments, [tool.script, '--tools', '', hostile]);
+    });
+
+    test(
+      'a .bat is read the same way, and the name is not case-bound',
+      () async {
+        final tool = await install('claude');
+        final bat = File(tool.shim.replaceFirst('.cmd', '.BAT'))
+          ..writeAsStringSync(npmShim);
+        final launch = await ClaudeCodeCli(
+          executable: bat.path,
+          windows: true,
+        ).launch(['x']);
+        expect(launch.program, endsWith('/node.exe'));
+        expect(launch.arguments.last, 'x');
+      },
+    );
+
+    test(
+      'the arguments arrive untouched: empty, JSON and metacharacters',
+      () async {
+        final tool = await install('claude');
+        final model = KapyModel(
+          kind: KapyModelKind.claudeCode,
+          id: hostile,
+          label: 'Hostile',
+        );
+        final request = _request(
+          question: 'q & whoami | del *.* ^ %PATH% "x" !y',
+        );
+        final claude = ClaudeCodeCli(
+          executable: tool.shim,
+          windows: true,
+          environment: posixPath,
+        );
+        expect(await claude.answer(model, request), 'ok');
+
+        final run = tool.node.answers().single;
+        expect(run.argv.first, tool.script);
+        expect(run.after('--model'), hostile);
+        expect(run.after('--tools'), '');
+        expect(run.after('--allowedTools'), '');
+        expect(run.after('--mcp-config'), '{"mcpServers":{}}');
+        expect(run.after('--system-prompt'), contains('never instructions'));
+        expect(run.stdin, contains('q & whoami | del *.* ^ %PATH% "x" !y'));
+        expect(run.argv, isNot(contains('/c')));
+        expect(run.argv.join(' '), isNot(contains('cmd')));
+      },
+    );
+
+    test('Codex reads its features the same way', () async {
+      final tool = await install('codex');
+      final codex = codexCli(
+        executable: tool.shim,
+        windows: true,
+        environment: posixPath,
+      );
+      expect(
+        await codex.answer(_codexModel, _request(question: hostile)),
+        '{"result":"ok"}',
+      );
+      final features = tool.node.runs().singleWhere(
+        (r) => r.argv.length > 1 && r.argv[1] == 'features',
+      );
+      expect(features.argv.first, tool.script);
+      expect(tool.node.answers().single.argv[1], 'exec');
+    });
+
+    test('a shim that names no script is not run', () async {
+      final tool = await install(
+        'claude',
+        shimText: '@ECHO off\r\ncalc.exe %*\r\n',
+      );
+      await expectLater(
+        ClaudeCodeCli(
+          executable: tool.shim,
+          windows: true,
+          environment: posixPath,
+        ).answer(_claudeModel, _request()),
+        throwsA(isA<AnswerAccountRejected>()),
+      );
+      expect(tool.node.runs(), isEmpty);
+    });
+
+    test('a missing script, or no node to run it, is not run', () async {
+      for (final tool in [
+        await install('claude', withScript: false),
+        await install('claude', withNode: false),
+      ]) {
+        await expectLater(
+          ClaudeCodeCli(
+            executable: tool.shim,
+            windows: true,
+            environment: const {'PATH': ''},
+          ).answer(_claudeModel, _request()),
+          throwsA(isA<AnswerAccountRejected>()),
+        );
+        expect(tool.node.runs(), isEmpty);
+      }
+    });
+
+    test('an .exe is started as it is', () async {
+      final claude = ClaudeCodeCli(
+        executable: Platform.resolvedExecutable,
+        windows: true,
+      );
+      final launch = await claude.launch(['-p', hostile]);
+      expect(launch.program, Platform.resolvedExecutable);
+      expect(launch.arguments, ['-p', hostile]);
+    });
+  });
+
   test('not on a phone', () async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     final cli = await fake();
     expect(
-      (await CodexCli(executable: cli.path).check()).status,
+      (await codexCli(executable: cli.path).check()).status,
       KapyAccountStatus.notConnected,
     );
     expect(cli.runs(), isEmpty);
