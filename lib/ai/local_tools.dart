@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../core/platform.dart';
 import 'answer_engine.dart';
 import 'kapy_ai.dart';
+import 'tool_helper.dart';
 
 /// Set by macOS in the environment of a sandboxed app, and only then.
 const String appSandboxVariable = 'APP_SANDBOX_CONTAINER_ID';
@@ -33,11 +34,17 @@ typedef LocalToolCheck = ({KapyAccountStatus status, List<KapyModel> models});
 /// stdin, and a run that takes longer than the timeout (120 seconds) or says
 /// more than [_maxOutput] is killed with its child processes.
 ///
+/// Every answer runs only while the program still says the version it said
+/// when it was last checked: a tool that updated itself since has not been
+/// vetted, and the account is reported unavailable until it is checked again.
+///
 /// The macOS app is sandboxed (macos/Runner/*.entitlements), and a sandboxed
 /// app's children inherit its sandbox: a tool installed under the home
 /// directory is not found, and one found elsewhere cannot read its own
-/// sign-in. So `KapyAiController` does not offer either while the app runs
-/// sandboxed ([appSandboxVariable] is set).
+/// sign-in. So a sandboxed app hands each run to a [ToolHelper] instead,
+/// KapyToolRunner.xpc, which builds the same environment, directory,
+/// timeout, cap and kill itself, and offers either tool only when that
+/// helper answers. The arguments are still built here, in one place.
 abstract class LocalTool implements AnswerEngine {
   KapyAccountKind get kind;
 
@@ -49,14 +56,29 @@ abstract class LocalTool implements AnswerEngine {
 /// One run of a local tool's program.
 typedef _Run = ({int exitCode, String stdout});
 
+/// The program is not where installers put it.
+class _NotInstalled implements Exception {
+  const _NotInstalled();
+}
+
+/// The program no longer says the version it was vetted at.
+class _VersionChanged implements Exception {
+  const _VersionChanged();
+}
+
 abstract class _Cli implements LocalTool {
   _Cli(
     this._executable,
     this._timeout,
     Map<String, String>? environment,
     bool? windows,
+    this._helper,
   ) : _parent = environment ?? Platform.environment,
       _windows = windows ?? Platform.isWindows;
+
+  /// Runs the program instead of this process, when this process is
+  /// sandboxed and cannot.
+  final ToolHelper? _helper;
 
   /// The program, when the caller already knows where it is; found on PATH
   /// and in the usual install locations otherwise.
@@ -144,15 +166,21 @@ abstract class _Cli implements LocalTool {
     };
   }
 
+  /// The program, followed through its links, so the version a check reads
+  /// and the answer that relies on it come from one file.
   Future<String?> _find() async {
+    Future<String> real(String path) =>
+        File(path).resolveSymbolicLinks().catchError((_) => path);
     if (_executable != null) {
-      return _found = await File(_executable).exists() ? _executable : null;
+      return _found = await File(_executable).exists()
+          ? await real(_executable)
+          : null;
     }
     final names = _windows ? ['$_name.exe', '$_name.cmd'] : [_name];
     for (final dir in _searchDirs) {
       for (final name in names) {
         final path = '$dir${_windows ? '\\' : '/'}$name';
-        if (await File(path).exists()) return _found = path;
+        if (await File(path).exists()) return _found = await real(path);
       }
     }
     return _found = null;
@@ -161,7 +189,8 @@ abstract class _Cli implements LocalTool {
   @override
   Future<LocalToolCheck> check() async {
     const none = <KapyModel>[];
-    if (!AppPlatform.isDesktop || await _find() == null) {
+    _forget();
+    if (!AppPlatform.isDesktop || _helper == null && await _find() == null) {
       return (status: KapyAccountStatus.notConnected, models: none);
     }
     try {
@@ -169,9 +198,29 @@ abstract class _Cli implements LocalTool {
         return (status: KapyAccountStatus.error, models: none);
       }
       return (status: KapyAccountStatus.connected, models: await _models());
+    } on _NotInstalled {
+      return (status: KapyAccountStatus.notConnected, models: none);
     } on Exception {
       return (status: KapyAccountStatus.error, models: none);
     }
+  }
+
+  /// What `--version` said at the last check.
+  String? _version;
+
+  /// The version every answer must still be, read once per [check].
+  Future<String?> _vettedVersion() async {
+    if (_version case final version?) return version;
+    final run = await _run(const ['--version']);
+    final said = run.stdout.trim();
+    return _version = run.exitCode == 0 && said.isNotEmpty ? said : null;
+  }
+
+  /// Drops what the last check learned, so the next one starts over.
+  @mustCallSuper
+  void _forget() {
+    _version = null;
+    _found = null;
   }
 
   Future<bool> _signedIn();
@@ -191,7 +240,7 @@ abstract class _Cli implements LocalTool {
     List<String> arguments,
   ) async {
     final program = _found ?? await _find();
-    if (program == null) throw AnswerAccountRejected(kind);
+    if (program == null) throw const _NotInstalled();
     final lower = program.toLowerCase();
     if (!_windows || !(lower.endsWith('.cmd') || lower.endsWith('.bat'))) {
       return (program: program, arguments: arguments);
@@ -215,13 +264,75 @@ abstract class _Cli implements LocalTool {
   }
 
   /// Runs the program once in a new empty directory, which is deleted
-  /// afterwards whatever happened.
+  /// afterwards whatever happened, here or in the helper.
+  ///
+  /// With [freshHome], CODEX_HOME is a new empty directory too. With
+  /// [expectVersion], the program is first asked its version, and the run
+  /// does not happen unless it says exactly that and is still the same file:
+  /// in the helper, within the same request.
   Future<_Run> _run(
     List<String> arguments, {
     String? stdin,
     int maxOutput = _maxOutput,
-    Map<String, String> environment = const {},
+    bool freshHome = false,
+    String? expectVersion,
   }) async {
+    if (_helper case final helper?) {
+      final result = await helper.run(
+        HelperRequest(
+          tool: kind == KapyAccountKind.codex ? 'codex' : 'claude',
+          arguments: arguments,
+          stdin: stdin,
+          timeout: _timeout,
+          maxOutput: maxOutput,
+          freshHome: freshHome,
+          expectedVersion: expectVersion,
+        ),
+      );
+      return switch (result.outcome) {
+        HelperOutcome.ran => (exitCode: result.exitCode, stdout: result.stdout),
+        HelperOutcome.notInstalled => throw const _NotInstalled(),
+        HelperOutcome.versionChanged => throw const _VersionChanged(),
+        HelperOutcome.timedOut => throw AnswerFailed(
+          '$_label took too long to answer.',
+        ),
+        HelperOutcome.tooLong => throw AnswerFailed(
+          '$_label wrote more than an answer.',
+        ),
+        HelperOutcome.refused ||
+        HelperOutcome.failed => throw AnswerAccountRejected(kind),
+      };
+    }
+    if (expectVersion != null) {
+      final program = _found ?? await _find();
+      if (program == null) throw const _NotInstalled();
+      final before = await File(program).stat();
+      final said = await _run(const ['--version']);
+      final after = await File(program).stat();
+      if (said.exitCode != 0 ||
+          said.stdout.trim() != expectVersion ||
+          after.modified != before.modified ||
+          after.size != before.size) {
+        throw const _VersionChanged();
+      }
+    }
+    if (!freshHome) return _spawn(arguments, stdin, maxOutput, const {});
+    final home = await Directory.systemTemp.createTemp('kapy-ai-home-');
+    try {
+      return await _spawn(arguments, stdin, maxOutput, {
+        'CODEX_HOME': home.path,
+      });
+    } finally {
+      await home.delete(recursive: true).catchError((_) => home);
+    }
+  }
+
+  Future<_Run> _spawn(
+    List<String> arguments,
+    String? stdin,
+    int maxOutput,
+    Map<String, String> environment,
+  ) async {
     final launch = await this.launch(arguments);
     final scratch = await Directory.systemTemp.createTemp('kapy-ai-');
     try {
@@ -302,9 +413,16 @@ abstract class _Cli implements LocalTool {
 
   @override
   Future<String> answer(KapyModel model, AnswerRequest request) async {
-    final text = await _answer(model, request);
-    if (text != null && text.isNotEmpty) return text;
-    if (!await _signedIn()) throw AnswerAccountRejected(kind);
+    try {
+      final text = await _answer(model, request);
+      if (text != null && text.isNotEmpty) return text;
+      if (!await _signedIn()) throw AnswerAccountRejected(kind);
+    } on _NotInstalled {
+      throw AnswerAccountRejected(kind);
+    } on _VersionChanged {
+      _forget();
+      throw AnswerAccountRejected(kind);
+    }
     throw AnswerFailed("$_label couldn't answer. Try again.");
   }
 
@@ -320,8 +438,9 @@ class CodexCli extends _Cli {
     Map<String, String>? environment,
     @visibleForTesting bool? windows,
     @visibleForTesting (int, int)? pin = testedUpTo,
+    ToolHelper? helper,
   }) : _pin = pin,
-       super(executable, timeout, environment, windows);
+       super(executable, timeout, environment, windows, helper);
 
   final (int, int)? _pin;
 
@@ -347,7 +466,7 @@ class CodexCli extends _Cli {
   /// Some tools come from the catalogue rather than from a feature: in 0.160
   /// a model's `experimental_supported_tools` (`send_user_message_async` and
   /// `clock` on one of today's). A model is offered only when that list is
-  /// empty or holds only tools in [_reviewedTools]. A catalogue that cannot
+  /// empty or holds only tools in [reviewedTools]. A catalogue that cannot
   /// be read, or that leaves nothing to offer, makes Codex unavailable: there
   /// is no "default model" to fall back to, because nobody has read it.
   @override
@@ -379,12 +498,13 @@ class CodexCli extends _Cli {
 
   /// The tools a catalogue entry may bring and still be offered. Empty: none
   /// has been shown to be harmless, and one that reaches a person, a clock
-  /// or anything else is not assumed to be.
-  static const Set<String> _reviewedTools = {};
+  /// or anything else is not assumed to be. The helper keeps its own copy and
+  /// checks it too (`Lockdown.codexReviewedTools`).
+  static const Set<String> reviewedTools = {};
 
   static bool _toolsReviewed(Object? tools) =>
       tools == null ||
-      tools is List && tools.every((tool) => _reviewedTools.contains(tool));
+      tools is List && tools.every((tool) => reviewedTools.contains(tool));
 
   /// What turns Codex from an agent into a writer, checked against
   /// `codex exec --help` and `codex features list` (0.160).
@@ -399,7 +519,7 @@ class CodexCli extends _Cli {
   static final List<String> lockedDown = [
     '--sandbox',
     'read-only',
-    ..._switches,
+    ...switches,
     '--ignore-user-config',
     '--ignore-rules',
     '--skip-git-repo-check',
@@ -456,7 +576,7 @@ class CodexCli extends _Cli {
   /// Every `--config` and `--disable` an answer runs with, and the same ones
   /// `features list` is read with: one list, so the gate cannot be shown a
   /// different Codex from the one that answers.
-  static final List<String> _switches = [..._settings, ..._features];
+  static final List<String> switches = [..._settings, ..._features];
 
   /// The newest Codex, as major and minor, that the app will run; null while
   /// no live canary has passed, and then no Codex is run and no model called.
@@ -489,7 +609,7 @@ class CodexCli extends _Cli {
   ///
   /// A feature on that is not here, a newer one or one that would not turn
   /// off, has not been read, and Codex is reported unavailable until it is.
-  static const Set<String> _knownEnabled = {
+  static const Set<String> knownEnabled = {
     'auth_elicitation',
     'collaboration_modes',
     'compaction_image_budget',
@@ -529,20 +649,9 @@ class CodexCli extends _Cli {
   /// So it runs with a home of its own, new and empty, and sees what an
   /// answer sees; only an answer gets the real one, for its sign-in.
   Future<bool> _isVetted() => _vetted ??= () async {
-    final version = await _run(const ['--version']);
-    if (version.exitCode != 0 || !versionAccepted(version.stdout, _pin)) {
-      return false;
-    }
-    final home = await Directory.systemTemp.createTemp('kapy-ai-home-');
-    final _Run run;
-    try {
-      run = await _run(
-        ['features', 'list', ..._switches],
-        environment: {'CODEX_HOME': home.path},
-      );
-    } finally {
-      await home.delete(recursive: true).catchError((_) => home);
-    }
+    final version = await _vettedVersion();
+    if (version == null || !versionAccepted(version, _pin)) return false;
+    final run = await _run(['features', 'list', ...switches], freshHome: true);
     if (run.exitCode != 0) return false;
     final lines = run.stdout
         .split('\n')
@@ -553,7 +662,7 @@ class CodexCli extends _Cli {
         continue;
       }
       any = true;
-      if (columns.last == 'true' && !_knownEnabled.contains(columns.first)) {
+      if (columns.last == 'true' && !knownEnabled.contains(columns.first)) {
         return false;
       }
     }
@@ -561,9 +670,9 @@ class CodexCli extends _Cli {
   }();
 
   @override
-  Future<LocalToolCheck> check() {
+  void _forget() {
+    super._forget();
     _vetted = null;
-    return super.check();
   }
 
   /// Exits 0 only when signed in, and not at all when Codex is not vetted.
@@ -584,6 +693,7 @@ class CodexCli extends _Cli {
       stdin:
           '${answerInstructions(request.today)}\n\n'
           '${answerPrompt(request)}',
+      expectVersion: await _vettedVersion(),
     );
     return run.exitCode == 0 ? run.stdout.trim() : null;
   }
@@ -596,7 +706,8 @@ class ClaudeCodeCli extends _Cli {
     Duration timeout = _Cli.defaultTimeout,
     Map<String, String>? environment,
     @visibleForTesting bool? windows,
-  }) : super(executable, timeout, environment, windows);
+    ToolHelper? helper,
+  }) : super(executable, timeout, environment, windows, helper);
 
   @override
   KapyAccountKind get kind => KapyAccountKind.claudeCode;
@@ -614,9 +725,11 @@ class ClaudeCodeCli extends _Cli {
     '.npm-global/bin',
   ];
 
-  /// `claude auth status` exits 0 only when signed in.
+  /// `claude auth status` exits 0 only when signed in, and a Claude Code
+  /// that cannot say its version is not vetted.
   @override
   Future<bool> _signedIn() async =>
+      await _vettedVersion() != null &&
       (await _run(const ['auth', 'status'])).exitCode == 0;
 
   /// Claude Code takes aliases that follow Anthropic's newest models, so the
@@ -668,16 +781,22 @@ class ClaudeCodeCli extends _Cli {
   /// answer is told apart from an error.
   @override
   Future<String?> _answer(KapyModel model, AnswerRequest request) async {
-    final run = await _run([
-      '--print',
-      '--model',
-      model.id,
-      ...lockedDown,
-      '--output-format',
-      'json',
-      '--system-prompt',
-      answerInstructions(request.today),
-    ], stdin: answerPrompt(request));
+    final version = await _vettedVersion();
+    if (version == null) throw AnswerAccountRejected(kind);
+    final run = await _run(
+      [
+        '--print',
+        '--model',
+        model.id,
+        ...lockedDown,
+        '--output-format',
+        'json',
+        '--system-prompt',
+        answerInstructions(request.today),
+      ],
+      stdin: answerPrompt(request),
+      expectVersion: version,
+    );
     try {
       final body = jsonDecode(run.stdout);
       if (body is Map && body['is_error'] != true && body['result'] is String) {

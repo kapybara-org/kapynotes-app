@@ -49,6 +49,7 @@ class HighlightingController extends TextEditingController {
   List<NoteFormatRange> _formats;
   bool _markdown;
   final MarkdownAnalyzer _markdownAnalyzer = MarkdownAnalyzer();
+  final NoteLinkFinder _linkFinder = NoteLinkFinder();
   Map<int, NoteImageSpan> _imageSpans = const {};
   final NoteMath _math = NoteMath();
   final CodeHighlighter _codeHighlighter = CodeHighlighter();
@@ -66,6 +67,7 @@ class HighlightingController extends TextEditingController {
   List<HighlightSpan> _cachedSpans = const [];
   List<NoteLink> _cachedLinks = const [];
   List<NoteLink> _cachedWebLinks = const [];
+  Set<(int, int)> _cachedWebSpans = const {};
 
   /// Swapped in when exchange rates arrive and new currency codes become
   /// colourable.
@@ -221,6 +223,8 @@ class HighlightingController extends TextEditingController {
     _cachedSpans = const [];
     _cachedLinks = const [];
     _cachedWebLinks = const [];
+    _cachedWebSpans = const {};
+    _styled = null;
   }
 
   List<HighlightSpan> spansFor(String source) {
@@ -230,7 +234,10 @@ class HighlightingController extends TextEditingController {
     // the highlighter: colouring and evaluation have to agree on which lines
     // are calculations, and a bullet or a line of code is not one.
     final view = markdown.calculatorText;
-    _cachedWebLinks = findNoteLinks(view);
+    _cachedWebLinks = _linkFinder.find(view);
+    _cachedWebSpans = {
+      for (final link in _cachedWebLinks) (link.start, link.end),
+    };
     _cachedLinks = markdown.linksWith(_cachedWebLinks);
     _cachedSpans = _highlighter.spans(view, links: _cachedWebLinks);
     _cachedText = source;
@@ -302,6 +309,11 @@ class HighlightingController extends TextEditingController {
     };
   }
 
+  /// The last styling worked out, and what it was worked out from: the title
+  /// and the field both ask for it in one frame.
+  _Styling? _styled;
+  Object? _styledFor;
+
   /// What the note's text is styled by, worked out for the whole note so that
   /// [_spansIn] can build any stretch of it.
   _Styling _stylingFor(
@@ -316,6 +328,24 @@ class HighlightingController extends TextEditingController {
     final scaler =
         MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
     final page = EditorMetrics.page;
+    final colors = Theme.of(context).colorScheme;
+    final key = (
+      source,
+      analysis,
+      concealment,
+      base,
+      composing,
+      scaler,
+      page,
+      _palette,
+      _writingFont,
+      _imageSpans,
+      colors.primary,
+      colors.error,
+    );
+    final styled = _styled;
+    if (styled != null && key == _styledFor) return styled;
+    _styledFor = key;
     final boxes = page ? plainCheckboxes(source) : const <MarkdownOrnament>[];
     final stretches = page
         ? [
@@ -333,8 +363,7 @@ class HighlightingController extends TextEditingController {
       }
     }
     final copies = <String, int>{};
-    final colors = Theme.of(context).colorScheme;
-    return (
+    return _styled = (
       base: base,
       scaler: scaler,
       page: page,
@@ -837,9 +866,8 @@ class HighlightingController extends TextEditingController {
 
   /// Whether [link] is a web address written out, which the page sets as a
   /// chip. A markdown link's words stay words.
-  bool _chipLink(NoteLink link) => _cachedWebLinks.any(
-    (web) => web.start == link.start && web.end == link.end,
-  );
+  bool _chipLink(NoteLink link) =>
+      _cachedWebSpans.contains((link.start, link.end));
 
   /// A web address on the page: Paper's link chip, Geist Mono at 12.5 in the
   /// muted ink, keeping the row it sits in. The chip under it is drawn by the

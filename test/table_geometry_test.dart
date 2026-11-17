@@ -339,6 +339,31 @@ void main() {
       );
     });
 
+    test('hands back the grid for a table that only moved', () {
+      final cache = TableGeometryCache();
+      addTearDown(cache.dispose);
+      final first = MarkdownAnalyzer.analyzeWhole(simple);
+      final moved = MarkdownAnalyzer.analyzeWhole('Above it\n\n$simple');
+      final before = ask(cache, first);
+      final after = ask(cache, moved);
+      final rows = first.tables.single.rows;
+      final movedRows = moved.tables.single.rows;
+      expect(after.table, same(moved.tables.single));
+      expect(after.columns, same(before.columns));
+      for (var i = 0; i < rows.length; i++) {
+        expect(after.rowHeight(movedRows[i]), before.rowHeight(rows[i]));
+        expect(after.cell(movedRows[i], 0), same(before.cell(rows[i], 0)));
+      }
+    });
+
+    test('measures again when a table\'s words change', () {
+      final cache = TableGeometryCache();
+      addTearDown(cache.dispose);
+      final before = ask(cache, MarkdownAnalyzer.analyzeWhole(simple));
+      final edited = MarkdownAnalyzer.analyzeWhole('$simple more');
+      expect(ask(cache, edited).columns, isNot(same(before.columns)));
+    });
+
     test('forgets everything when the note is read again', () {
       final cache = TableGeometryCache();
       addTearDown(cache.dispose);
