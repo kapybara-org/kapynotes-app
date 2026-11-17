@@ -99,4 +99,47 @@ void main() {
       }
     }
   });
+  testWidgets('a new highlighter recolours the note before the next key', (
+    tester,
+  ) async {
+    const text = 'fare = 1200 JPY\nfare * 2';
+    HighlightingController controllerWith(Highlighter highlighter) =>
+        HighlightingController(
+          highlighter: highlighter,
+          palette: KapyTheme.lightPalette,
+          writingFont: WritingFont.mixed,
+          markdown: true,
+          text: text,
+        )..spellingSuggestions = const [];
+    Highlighter withRates(Map<String, double> rates) =>
+        Highlighter(CalcEngine(ratesPerUsd: rates).registry);
+    final controller = controllerWith(withRates(const {}));
+    final rated = controllerWith(withRates(const {'JPY': 150}));
+    addTearDown(controller.dispose);
+    addTearDown(rated.dispose);
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.light(),
+        home: Builder(
+          builder: (inner) {
+            context = inner;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    const style = TextStyle(fontSize: 16, height: 1.75);
+    List<Object?> drawn(HighlightingController controller) => _drawn(
+      (controller.spansIn(context, style)(0, text.length).span as TextSpan)
+          .children!,
+    );
+
+    final before = drawn(controller);
+    final expected = drawn(rated);
+    expect(expected, isNot(before), reason: 'the rates have to show');
+    // Exchange rates arriving swap the highlighter, with no edit to the note.
+    controller.highlighter = withRates(const {'JPY': 150});
+    expect(drawn(controller), expected);
+  });
 }

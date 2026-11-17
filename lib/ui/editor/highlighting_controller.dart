@@ -214,6 +214,7 @@ class HighlightingController extends TextEditingController {
     _cachedLinks = const [];
     _cachedWebLinks = const [];
     _cachedWebSpans = const {};
+    _styled = null;
   }
 
   List<HighlightSpan> spansFor(String source) {
