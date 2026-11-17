@@ -1571,13 +1571,15 @@ class _SettingsDialogState extends State<SettingsDialog>
           if (AppPlatform.isDesktop)
             _toggle(
               'hidden-notes-sidebar-toggle',
-              'Hidden Notes',
-              'Show the protected folder · ${hiddenKeys.isEmpty ? 'Settings only' : hiddenKeys}',
+              'Show Hidden in the notes filter',
+              hiddenKeys.isEmpty
+                  ? 'Hidden stays out of the notes filter while this is off'
+                  : '$hiddenKeys opens Hidden either way',
               value: widget.layoutPrefs.hiddenFolderVisible,
               onChanged: (value) =>
                   widget.layoutPrefs.hiddenFolderVisible = value,
               byDefault: true,
-              keywords: ['hidden', 'private', 'protected', 'folder', 'sidebar'],
+              keywords: ['hidden', 'private', 'protected', 'folder', 'filter'],
             ),
           if (_usesPin)
             _Setting(
