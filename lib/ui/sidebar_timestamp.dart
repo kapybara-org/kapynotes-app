@@ -79,6 +79,59 @@ class SidebarTimestamp {
     };
   }
 
+  static const _monthNames = <String>[
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  static const _weekdayNames = <String>[
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
+  /// A day spelt out, as over Tasks' one list: "Tuesday, 17 November".
+  static String fullDay(DateTime shown) =>
+      '${_weekdayNames[shown.weekday - 1]}, ${shown.day} '
+      '${_monthNames[shown.month - 1]}';
+
+  /// A day in a few letters, as a task says when it was added: "Sat 14 Nov",
+  /// with the year only when it is not this one.
+  static String shortDay(DateTime shown, {required DateTime now}) {
+    final day =
+        '${_weekdays[shown.weekday - 1]} ${shown.day} ${_months[shown.month - 1]}';
+    return shown.year == now.year ? day : '$day ${shown.year}';
+  }
+
+  /// The heading over a day of finished tasks: "Today", "Yesterday · Monday,
+  /// 16 Nov", then "Sunday, 15 Nov", with the year when it is not this one.
+  static String doneDay(DateTime shown, {required DateTime now}) {
+    final days = _daysBetween(shown, now);
+    if (days <= 0) return 'Today';
+    final year = shown.year == now.year ? '' : ' ${shown.year}';
+    final day =
+        '${_weekdayNames[shown.weekday - 1]}, ${shown.day} '
+        '${_months[shown.month - 1]}$year';
+    return days == 1 ? 'Yesterday · $day' : day;
+  }
+
+  /// The time of day on a 24-hour clock: "16:05".
+  static String clock(DateTime shown) => _clock(shown);
+
   static int _daysBetween(DateTime shown, DateTime current) => DateTime.utc(
     current.year,
     current.month,

@@ -18,19 +18,35 @@ typedef TextEdit = ({int start, int oldEnd, int newEnd});
 /// The suffix scan is capped so the two matches never overlap; without that
 /// cap, replacing "aa" with "a" would claim both a prefix and a suffix of
 /// length 1 and report a negative edit.
-TextEdit diffTexts(String oldText, String newText) {
+///
+/// [near] is where the editor saw the change happen. Text alone cannot say
+/// which of two lines that start alike went — deleting "Buy milk" from
+/// between "Buy oats" and "Buy eggs" reads just as well as deleting the end
+/// of one and the start of the next — so when [near] fits the two texts the
+/// match is taken only inside it. One that does not fit is ignored.
+TextEdit diffTexts(String oldText, String newText, {TextEdit? near}) {
   final oldLength = oldText.length;
   final newLength = newText.length;
   final shorter = oldLength < newLength ? oldLength : newLength;
+  final fits =
+      near != null &&
+      near.start >= 0 &&
+      near.start <= near.oldEnd &&
+      near.start <= near.newEnd &&
+      near.oldEnd <= oldLength &&
+      oldLength - near.oldEnd == newLength - near.newEnd &&
+      oldText.startsWith(newText.substring(0, near.start)) &&
+      oldText.endsWith(newText.substring(near.newEnd));
 
-  var prefix = 0;
-  while (prefix < shorter &&
+  var prefix = fits ? near.start : 0;
+  final tail = fits ? oldLength - near.oldEnd : 0;
+  while (prefix < shorter - tail &&
       oldText.codeUnitAt(prefix) == newText.codeUnitAt(prefix)) {
     prefix++;
   }
 
   final suffixLimit = shorter - prefix;
-  var suffix = 0;
+  var suffix = tail;
   while (suffix < suffixLimit &&
       oldText.codeUnitAt(oldLength - suffix - 1) ==
           newText.codeUnitAt(newLength - suffix - 1)) {
@@ -41,6 +57,17 @@ TextEdit diffTexts(String oldText, String newText) {
     start: prefix,
     oldEnd: oldLength - suffix,
     newEnd: newLength - suffix,
+  );
+}
+
+/// [first] then [then] as one edit: the stretch either touched, from the
+/// text before [first] to the text after [then].
+TextEdit composeEdits(TextEdit first, TextEdit then) {
+  final end = first.newEnd > then.oldEnd ? first.newEnd : then.oldEnd;
+  return (
+    start: first.start < then.start ? first.start : then.start,
+    oldEnd: end - first.newEnd + first.oldEnd,
+    newEnd: end - then.oldEnd + then.newEnd,
   );
 }
 

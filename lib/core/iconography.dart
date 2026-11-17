@@ -124,6 +124,10 @@ class KapyIcons {
     0xE011,
     HugeIcons.strokeRoundedTick02,
   );
+  static const tasksOutlined = KapyIconData(
+    0xE0DA,
+    HugeIcons.strokeRoundedCheckmarkSquare02,
+  );
   static const checklistRounded = KapyIconData(
     0xE012,
     HugeIcons.strokeRoundedCheckList,

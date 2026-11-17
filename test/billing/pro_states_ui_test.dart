@@ -5,6 +5,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
@@ -48,14 +49,20 @@ void main() {
     server = FakeServer();
     store = _MemoryStore();
     notes = NotesStore(store);
+    final syncState = SyncState(store);
     account = Account(
       auth: auth ?? FakeAuth(),
       syncApi: (_) => FakeApi(server, device: 'device-1'),
       keys: KeyStore(InMemorySecureStore()),
       notes: notes,
-      state: SyncState(store),
+      state: syncState,
       store: store,
-      docStorage: MemoryDocStorage(),
+      tasks: TaskLibrary(
+        notes: notes,
+        store: store,
+        state: syncState,
+        storage: MemoryDocStorage(),
+      ),
     );
     billingApi = FakeBillingApi();
     account.billing = Billing(

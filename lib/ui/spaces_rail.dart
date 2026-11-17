@@ -19,6 +19,7 @@ import 'window_drag_area.dart';
 /// What the notes list beside the spaces rail can show.
 enum LibrarySpace {
   notes,
+  tasks,
   drawings,
   shared,
   hidden,
@@ -28,6 +29,7 @@ enum LibrarySpace {
   /// own word for it, except that the person's notes are "My notes".
   String get title => switch (this) {
     LibrarySpace.notes => 'My notes',
+    LibrarySpace.tasks => 'Tasks',
     LibrarySpace.drawings => 'Drawings',
     LibrarySpace.shared => 'Shared',
     LibrarySpace.hidden => 'Hidden',
@@ -53,6 +55,7 @@ class SpacesRail extends StatelessWidget {
     required this.onSelected,
     required this.onSettingsPressed,
     this.invitations,
+    this.openTasks,
     this.showHidden = false,
     this.hiddenShortcut,
     this.streak,
@@ -74,6 +77,10 @@ class SpacesRail extends StatelessWidget {
   /// no other people's notes to show, as the tabs this replaces had nothing
   /// for their second half.
   final int? invitations;
+
+  /// How many tasks are on the list, counted on Tasks' badge. Null leaves
+  /// Tasks off the rail, as a build with no task index has none.
+  final int? openTasks;
 
   /// Whether Hidden Notes has a place on the rail: while the setting that
   /// shows the folder is on and something is in it, and whenever the list is
@@ -118,6 +125,7 @@ class SpacesRail extends StatelessWidget {
     final hiddenShortcut = this.hiddenShortcut;
     final streak = this.streak;
     final onAccountPressed = this.onAccountPressed;
+    final openTasks = this.openTasks;
 
     Widget destination(
       LibrarySpace destination, {
@@ -156,52 +164,89 @@ class SpacesRail extends StatelessWidget {
                     height: titleBarHeight,
                   ),
                 ),
-              const SizedBox(height: 6),
-              destination(
-                LibrarySpace.notes,
-                icon: KapyIcons.noteOutlined,
-                label: 'Notes',
-              ),
-              const SizedBox(height: 4),
-              destination(
-                LibrarySpace.drawings,
-                icon: KapyIcons.penRounded,
-                label: 'Drawings',
-              ),
-              if (invitations != null) ...[
-                const SizedBox(height: 4),
-                destination(
-                  LibrarySpace.shared,
-                  icon: KapyIcons.groupOutlined,
-                  label: 'Shared',
-                  semanticLabel: switch (invitations) {
-                    0 => 'Shared with me',
-                    1 => 'Shared with me, 1 invitation',
-                    _ => 'Shared with me, $invitations invitations',
-                  },
-                  badge: invitations,
+              // The spaces scroll rather than overflow in the shortest window,
+              // and the room under them drags the window.
+              Expanded(
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(
+                    context,
+                  ).copyWith(scrollbars: false),
+                  child: CustomScrollView(
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 6),
+                            destination(
+                              LibrarySpace.notes,
+                              icon: KapyIcons.noteOutlined,
+                              label: 'Notes',
+                            ),
+                            if (openTasks != null) ...[
+                              const SizedBox(height: 4),
+                              destination(
+                                LibrarySpace.tasks,
+                                icon: KapyIcons.tasksOutlined,
+                                label: 'Tasks',
+                                semanticLabel: switch (openTasks) {
+                                  0 => 'Tasks',
+                                  1 => 'Tasks, 1 open',
+                                  _ => 'Tasks, $openTasks open',
+                                },
+                                badge: openTasks,
+                              ),
+                            ],
+                            const SizedBox(height: 4),
+                            destination(
+                              LibrarySpace.drawings,
+                              icon: KapyIcons.penRounded,
+                              label: 'Drawings',
+                            ),
+                            if (invitations != null) ...[
+                              const SizedBox(height: 4),
+                              destination(
+                                LibrarySpace.shared,
+                                icon: KapyIcons.groupOutlined,
+                                label: 'Shared',
+                                semanticLabel: switch (invitations) {
+                                  0 => 'Shared with me',
+                                  1 => 'Shared with me, 1 invitation',
+                                  _ =>
+                                    'Shared with me, $invitations invitations',
+                                },
+                                badge: invitations,
+                              ),
+                            ],
+                            if (showHidden) ...[
+                              const SizedBox(height: 4),
+                              destination(
+                                LibrarySpace.hidden,
+                                icon: KapyIcons.lockRounded,
+                                label: 'Hidden',
+                                tooltip: hiddenShortcut == null
+                                    ? 'Hidden Notes'
+                                    : 'Hidden Notes · ${hiddenShortcut.displayLabel}',
+                                semanticLabel: 'Hidden Notes',
+                              ),
+                            ],
+                            const SizedBox(height: 4),
+                            destination(
+                              LibrarySpace.archive,
+                              icon: archiveIcon,
+                              label: 'Archive',
+                              semanticLabel: 'Archived Notes',
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: WindowDragArea(child: SizedBox.expand()),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-              if (showHidden) ...[
-                const SizedBox(height: 4),
-                destination(
-                  LibrarySpace.hidden,
-                  icon: KapyIcons.lockRounded,
-                  label: 'Hidden',
-                  tooltip: hiddenShortcut == null
-                      ? 'Hidden Notes'
-                      : 'Hidden Notes · ${hiddenShortcut.displayLabel}',
-                  semanticLabel: 'Hidden Notes',
-                ),
-              ],
-              const SizedBox(height: 4),
-              destination(
-                LibrarySpace.archive,
-                icon: archiveIcon,
-                label: 'Archive',
-                semanticLabel: 'Archived Notes',
               ),
-              const Expanded(child: WindowDragArea(child: SizedBox.expand())),
               if (streak != null && streak.days > 0) ...[
                 _RailStreak(key: const ValueKey('rail-streak'), streak: streak),
                 const SizedBox(height: 7.5),
@@ -299,7 +344,16 @@ class _RailItemState extends State<_RailItem> {
         children: [
           KapyIcon(widget.icon, size: 19, strokeWidth: 1.7, color: ink),
           if (widget.badge > 0)
-            Positioned(top: 2, right: 2, child: _Badge(count: widget.badge)),
+            Positioned(
+              top: 2,
+              right: 2,
+              child: _Badge(
+                key: ValueKey(
+                  '${(widget.key! as ValueKey<String>).value}-badge',
+                ),
+                count: widget.badge,
+              ),
+            ),
         ],
       ),
     );
@@ -350,9 +404,10 @@ class _RailItemState extends State<_RailItem> {
   }
 }
 
-/// How many invitations are waiting, on Shared's corner.
+/// A count on a space's corner: invitations waiting under Shared, tasks
+/// open under Tasks.
 class _Badge extends StatelessWidget {
-  const _Badge({required this.count});
+  const _Badge({super.key, required this.count});
 
   final int count;
 
@@ -360,7 +415,6 @@ class _Badge extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Container(
-      key: const ValueKey('rail-shared-badge'),
       height: 17,
       constraints: const BoxConstraints(minWidth: 17),
       // Inside the ring, which the decoration adds to it.
