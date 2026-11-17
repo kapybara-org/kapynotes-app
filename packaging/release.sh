@@ -141,6 +141,7 @@ build_mac_direct() {
   prepare_macos
   install_macos_profile
   archive_macos "$ARCHIVES/kapy-developerid.xcarchive" \
+    DEVELOPMENT_TEAM=96V66447C6 \
     CODE_SIGN_STYLE=Manual \
     "CODE_SIGN_IDENTITY=Developer ID Application" \
     KAPY_ENTITLEMENTS=DeveloperID \
