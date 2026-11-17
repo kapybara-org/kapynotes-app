@@ -70,6 +70,9 @@ class TaskLibrary extends ChangeNotifier {
   bool _fresh = true;
   bool _scheduled = false;
 
+  /// Whether [load] has finished, and [docs] and [index] can be read.
+  bool get isLoaded => _loaded;
+
   Future<void> load() => _loading ??= _load();
 
   Future<void> _load() async {
