@@ -112,7 +112,7 @@ jobs:
   # free for public repositories. The check validates that the app builds and
   # packages; the release job in desktop-release.yml stays on its own runner.
   macos:
-    runs-on: macos-15-intel
+    runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v4
 
