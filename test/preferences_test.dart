@@ -682,7 +682,7 @@ void main() {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     expect(
       ShortcutPrefs.defaultFor(ShortcutAction.findNotes).keycapLabel,
-      '⌘F',
+      '⌘K',
     );
     // The order a Mac's own menus print modifiers in.
     expect(everything.keycapLabel, '⌃⌥⇧⌘K');
@@ -690,7 +690,7 @@ void main() {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
     expect(
       ShortcutPrefs.defaultFor(ShortcutAction.findNotes).keycapLabel,
-      'Ctrl+F',
+      'Ctrl+K',
     );
     expect(everything.keycapLabel, 'Ctrl+Alt+Shift+Win+K');
   });
@@ -773,6 +773,7 @@ void main() {
       final claimed = <ShortcutBinding, ShortcutAction>{};
       for (final action in ShortcutAction.values) {
         final binding = ShortcutPrefs.defaultFor(action);
+        if (ShortcutPrefs.sharesChord(action, claimed[binding])) continue;
         expect(
           claimed[binding],
           isNull,
@@ -943,7 +944,9 @@ void main() {
       for (final action in ShortcutAction.values) prefs.bindingFor(action)!,
     ];
 
-    expect(defaults.toSet(), hasLength(ShortcutAction.values.length));
+    // Less one: Link and Search share a chord, Link only while words are
+    // selected.
+    expect(defaults.toSet(), hasLength(ShortcutAction.values.length - 1));
     expect(
       prefs.bindingFor(ShortcutAction.cycleTextStyle)!.logicalKey,
       LogicalKeyboardKey.keyT,
@@ -1158,6 +1161,7 @@ void main() {
       final seen = <String, ShortcutAction>{};
       for (final action in ShortcutAction.values) {
         final label = prefs.bindingFor(action)!.displayLabel;
+        if (ShortcutPrefs.sharesChord(action, seen[label])) continue;
         expect(
           seen[label],
           isNull,

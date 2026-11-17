@@ -7,6 +7,7 @@ import 'package:flutter/services.dart'
         KeyEvent,
         KeyUpEvent,
         LogicalKeyboardKey,
+        PhysicalKeyboardKey,
         SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
@@ -64,6 +65,7 @@ import 'editor/slash_commands.dart';
 import 'editor_panes.dart';
 import 'billing/note_limit_dialog.dart';
 import 'billing/pro_sheet.dart';
+import 'command_menu.dart';
 import 'empty_state.dart';
 import 'context_menu.dart';
 import 'hidden_notes_gate.dart';
@@ -213,7 +215,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static const String _pendingImageNoteKey = 'pendingImageNote.v1';
   static final _totalCue = RegExp(r'\btotal\b', caseSensitive: false);
 
-  final FocusNode _searchFocus = FocusNode(debugLabel: 'sidebar-search');
   final FocusNode _desktopShortcutFocus = FocusNode(
     debugLabel: 'desktop-shortcuts',
   );
@@ -230,7 +231,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   late final EditorWorkspace _workspace;
 
   String? _selectedId;
-  String _query = '';
+
+  /// The search the ⌘K menu carries into Archive. Only Archive is narrowed by
+  /// it, and leaving Archive drops it.
+  String _archiveQuery = '';
 
   /// Which half of the library the sidebar lists. Not remembered across
   /// launches: the app opens on the tab of the note it opens on, and on the
@@ -320,7 +324,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Tasks, while the rail has it open.
   bool _tasksMode = false;
   TaskFilter _taskFilter = const TaskFilter.all();
-  String _taskQuery = '';
   final FocusNode _taskAddFocus = FocusNode(debugLabel: 'Add a task');
   final GlobalKey<TasksScreenState> _tasksPage = GlobalKey();
   late final TasksController? _taskController = switch (widget.tasks) {
@@ -404,7 +407,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.desktopIntegration?.onOpenRequested = null;
     _kapyIdleTimer?.cancel();
     _kapyHeader.dispose();
-    _searchFocus.dispose();
     _desktopShortcutFocus.dispose();
     _kapyPanel.dispose();
     _taskAddFocus.dispose();
@@ -1094,13 +1096,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Shows or hides the notes list in the wide layout. Every control that does
   /// either comes through here: the shortcut, the toolbar's button, the list's
-  /// own hide button and divider, a sideways swipe, an empty pane, and Find
-  /// notes.
+  /// own hide button and divider, a sideways swipe, and an empty pane.
   ///
   /// Where the window has room, the list stands beside the page and the
   /// choice is [LayoutPrefs.sidebarVisible], which the settings switch shows.
   /// Where it has not, the list opens over the page and takes the keyboard
-  /// into its search field, so nothing typed lands in the note it covers, and
+  /// from the note, so nothing typed lands in the note it covers, and
   /// closing it gives the keyboard back to the note.
   void _setListShown(bool shown) {
     if (_listFits) {
@@ -1109,13 +1110,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (shown == _listOverlaid) return;
     setState(() => _listOverlaid = shown);
-    if (!shown) {
-      _focusSelectedEditorHere();
-      return;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _searchFocus.requestFocus();
-    });
+    if (!shown) _focusSelectedEditorHere();
   }
 
   void _toggleList() => _setListShown(!_listShown);
@@ -1575,19 +1570,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   ///
   /// Returns whether anything was actually created, which is what the swipe
   /// cue needs in order not to announce a note that does not exist.
-  bool _createNote({bool drawing = false}) {
+  bool _createNote({bool drawing = false, String body = ''}) {
     final recording = widget.recording;
     if (recording != null && recording.isRecording) {
       unawaited(
         recording.finishRecordingAndFlush().then((_) {
-          if (mounted) _createNoteNow(drawing: drawing);
+          if (mounted) _createNoteNow(drawing: drawing, body: body);
         }),
       );
       // The recording is about to land in the note that is open, so that note
       // will not be blank by the time this runs and a new one will follow.
       return true;
     }
-    return _createNoteNow(drawing: drawing);
+    return _createNoteNow(drawing: drawing, body: body);
   }
 
   /// What New makes in the space on screen: a drawing in Drawings, a note
@@ -1618,20 +1613,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _select(id);
   }
 
-  bool _createNoteNow({bool drawing = false}) {
+  /// [body] is the note's first words, from the ⌘K menu's field.
+  bool _createNoteNow({bool drawing = false, String body = ''}) {
     _recordKapyActivity();
     final creatingHidden = _hiddenMode;
-    final blank = drawing ? null : _blankNoteAlreadyOpen();
+    final blank = drawing || body.isNotEmpty ? null : _blankNoteAlreadyOpen();
     if (blank == null && !(_noteLimit?.canCreate ?? true)) {
       unawaited(_explainNoteLimit(creating: true));
       return false;
     }
-    final note = blank ?? widget.notes.create(hidden: creatingHidden);
+    final note =
+        blank ?? widget.notes.create(body: body, hidden: creatingHidden);
     if (drawing) widget.notes.setDrawingMode(note.id, drawing: true);
     if (blank == null) _freshNoteIds.add(note.id);
     setState(() {
-      _query = '';
+      _archiveQuery = '';
       _archiveMode = false;
+      _tasksMode = false;
       if (!creatingHidden) _hiddenMode = false;
       // A new note is the person's own, so it is listed where they can see
       // it being written.
@@ -2014,7 +2012,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _hiddenMode = false;
       _selectingArchived = false;
       _checkedArchived.clear();
-      _query = '';
+      _archiveQuery = '';
       if (entering) {
         _setSelectedId(_narrowed(widget.notes.archivedNotes).firstOrNull?.id);
       } else {
@@ -2057,7 +2055,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _hiddenMode = true;
       _selectingArchived = false;
       _checkedArchived.clear();
-      _query = '';
+      _archiveQuery = '';
       _setSelectedId(_narrowed(widget.notes.hiddenNotes).firstOrNull?.id);
     });
     widget.prefs.lastOpenedNoteId = _selectedId;
@@ -2068,7 +2066,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final previous = _selectedId;
     setState(() {
       _hiddenMode = false;
-      _query = '';
+      _archiveQuery = '';
       _workspace.reconcile(
         widget.notes.notes.map((note) => note.id),
         fallbackId: widget.notes.notes.firstOrNull?.id,
@@ -2653,31 +2651,82 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  /// Opens whichever shape the notes list has at this width, then hands its
-  /// search field the keyboard. Deferring focus matters when the shortcut is
-  /// what makes a hidden sidebar or an unbuilt compact drawer exist.
-  void _focusGlobalSearch() {
+  /// Whether Hidden is listed in the notes filter and in Go to: while the
+  /// setting that shows it is on and something is in it, and while it is
+  /// open.
+  bool get _hiddenReachable =>
+      _hiddenMode ||
+      (widget.prefs.hiddenFolderVisible && widget.notes.hiddenNotes.isNotEmpty);
+
+  /// Opens the ⌘K menu over whatever is on screen, and does what was chosen.
+  Future<void> _openCommandMenu() async {
     _recordKapyActivity();
-    if (!_usesCompactLayout) {
-      _setListShown(true);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _searchFocus.requestFocus();
-      });
+    final choice = await showCommandMenu(
+      context,
+      notes: widget.notes,
+      shortcuts: widget.shortcuts,
+      space: _space,
+      destinations: [
+        LibrarySpace.notes,
+        if (_taskController != null) LibrarySpace.tasks,
+        LibrarySpace.drawings,
+        if (widget.account?.sharing != null) LibrarySpace.shared,
+      ],
+      recentIds: widget.prefs.recentlyOpenedNoteIds,
+      displayTime: widget.prefs.displayTime,
+      taskLabel: _taskNoteLabel,
+      tasks: _taskController?.read(),
+      showHidden: _hiddenReachable,
+      hiddenUnlocked: _hiddenMode,
+    );
+    if (!mounted || choice == null) return;
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      _scaffoldKey.currentState!.closeDrawer();
+    }
+    _dismissListOverlay();
+    switch (choice) {
+      case OpenNoteChoice(:final note):
+        if (note.isHidden) {
+          _select(note.id);
+        } else if (note.isDrawing) {
+          _showSpace(LibrarySpace.drawings);
+          _select(note.id);
+        } else {
+          _openTaskNote(note.id);
+        }
+      case OpenTaskChoice(:final task):
+        _showSpace(LibrarySpace.tasks);
+        setState(() => _taskFilter = TaskFilter.note(task.note.id));
+      case NewNoteChoice(:final text):
+        _createNote(body: text);
+      case NewTaskChoice(:final text):
+        _newTask(text);
+      case NewDrawingChoice():
+        _createNote(drawing: true);
+      case GoToChoice(:final space):
+        _showSpace(space);
+      case ShowNotesChoice(:final show):
+        _showNotes(show);
+      case OpenSettingsChoice():
+        _showSettings();
+      case SearchArchiveChoice(:final query):
+        _showNotes(NotesShow.archive);
+        setState(() => _archiveQuery = query);
+    }
+  }
+
+  /// Opens Tasks to add [text] to the end of the list, or, with no text, on
+  /// its add row.
+  void _newTask([String text = '']) {
+    final tasks = _taskController;
+    if (tasks == null) return;
+    _showSpace(LibrarySpace.tasks);
+    if (text.isNotEmpty) {
+      unawaited(tasks.add(text));
       return;
     }
-
-    if (!_drawerContentReady) setState(() => _drawerContentReady = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final scaffold = _scaffoldKey.currentState;
-      if (scaffold == null) return;
-      if (!scaffold.isDrawerOpen) {
-        FocusManager.instance.primaryFocus?.unfocus();
-        scaffold.openDrawer();
-      }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _searchFocus.requestFocus();
-      });
+      if (mounted) _taskAddFocus.requestFocus();
     });
   }
 
@@ -2766,13 +2815,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
+  /// My notes with the filter on [show], as Go to and its key open Hidden
+  /// and Archive.
+  void _showNotes(NotesShow show) {
+    if (_space != LibrarySpace.notes) _showSpace(LibrarySpace.notes);
+    _setShow(show);
+  }
+
   List<Note> get _visibleNotes {
     var notes = _filtered(
       _archiveMode
-          ? widget.notes.searchArchived(_query)
+          ? widget.notes.searchArchived(_archiveQuery)
           : _hiddenMode
-          ? widget.notes.searchHidden(_query)
-          : widget.notes.search(_query),
+          ? widget.notes.hiddenNotes
+          : widget.notes.search(''),
     );
     if (_showingPinnedOnly) {
       final pinned = widget.notes.pinnedNoteIds;
@@ -2833,7 +2889,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onCompleteTask: _tasksMode
                 ? () => _tasksPage.currentState?.completeDoNow()
                 : null,
-            onFindNotes: _focusGlobalSearch,
+            onSearch: _openCommandMenu,
+            onNewTask: _taskController == null ? null : _newTask,
+            onNewDrawing: () => _createNote(drawing: true),
+            onShowSpace: _showSpace,
+            onShowArchive: () => _showNotes(NotesShow.archive),
+            showsTasks: _taskController != null,
+            showsShared: widget.account?.sharing != null,
             onNextNote: () => _cycleNote(1),
             onPreviousNote: () => _cycleNote(-1),
             onSplitEditor: _specialMode || !_workspace.canSplit
@@ -2943,10 +3005,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             onFilter: (filter) =>
                                 setState(() => _taskFilter = filter),
                             labelOf: _taskNoteLabel,
-                            query: _taskQuery,
-                            onQueryChanged: (value) =>
-                                setState(() => _taskQuery = value),
-                            searchFocusNode: _searchFocus,
+                            onSearch: _openCommandMenu,
                             searchShortcut: widget.shortcuts.bindingFor(
                               ShortcutAction.findNotes,
                             ),
@@ -2970,11 +3029,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             pinnedNoteIds: widget.notes.pinnedNoteIds,
                             lockedNoteIds: _noteLimit?.lockedIds ?? const {},
                             selectedId: _selectedId,
-                            query: _query,
+                            query: _archiveQuery,
                             displayTime: widget.prefs.displayTime,
-                            searchFocusNode: _searchFocus,
-                            onQueryChanged: (value) =>
-                                setState(() => _query = value),
+                            onSearch: _openCommandMenu,
+                            onClearQuery: () =>
+                                setState(() => _archiveQuery = ''),
                             onSelect: AppPlatform.isDesktop
                                 ? _selectFromSidebar
                                 : _select,
@@ -3034,10 +3093,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               show: _show,
                               offersShow: space != LibrarySpace.shared,
                               onShowChanged: _setShow,
-                              hiddenListed:
-                                  _hiddenMode ||
-                                  (widget.prefs.hiddenFolderVisible &&
-                                      widget.notes.hiddenNotes.isNotEmpty),
+                              hiddenListed: _hiddenReachable,
                               hiddenShortcut: widget.shortcuts
                                   .bindingFor(ShortcutAction.toggleHiddenFolder)
                                   ?.displayLabel,
@@ -3342,7 +3398,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           key: _tasksPage,
           controller: tasks,
           filter: filter,
-          query: _taskQuery,
           addFocus: _taskAddFocus,
           labelOf: _taskNoteLabel,
           onOpenNote: _openTaskNote,
@@ -3474,10 +3529,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       pinnedNoteIds: widget.notes.pinnedNoteIds,
                       lockedNoteIds: _noteLimit?.lockedIds ?? const {},
                       selectedId: _selectedId,
-                      query: _query,
+                      query: _archiveQuery,
                       displayTime: widget.prefs.displayTime,
-                      searchFocusNode: _searchFocus,
-                      onQueryChanged: (value) => setState(() => _query = value),
+                      onSearch: _openCommandMenu,
+                      onClearQuery: () => setState(() => _archiveQuery = ''),
                       onSelect: (id) {
                         _select(id);
                         Navigator.of(drawerContext).pop();
@@ -3926,7 +3981,13 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.focusNode,
     required this.onNewNote,
     required this.onCompleteTask,
-    required this.onFindNotes,
+    required this.onSearch,
+    required this.onNewTask,
+    required this.onNewDrawing,
+    required this.onShowSpace,
+    required this.onShowArchive,
+    required this.showsTasks,
+    required this.showsShared,
     required this.onNextNote,
     required this.onPreviousNote,
     required this.onSplitEditor,
@@ -3954,7 +4015,16 @@ class _DesktopShortcuts extends StatelessWidget {
 
   /// Done on Do now, while Tasks is open: ⌘↵, or Ctrl+Enter.
   final VoidCallback? onCompleteTask;
-  final VoidCallback onFindNotes;
+  final VoidCallback onSearch;
+  final VoidCallback? onNewTask;
+  final VoidCallback onNewDrawing;
+
+  /// Opens a section from its Go to key; Tasks and Shared only where they
+  /// are on the rail.
+  final ValueChanged<LibrarySpace> onShowSpace;
+  final VoidCallback onShowArchive;
+  final bool showsTasks;
+  final bool showsShared;
   final VoidCallback onNextNote;
   final VoidCallback onPreviousNote;
   final VoidCallback? onSplitEditor;
@@ -3979,6 +4049,13 @@ class _DesktopShortcuts extends StatelessWidget {
   final ShortcutPrefs shortcuts;
   final bool autofocus;
 
+  ShortcutBinding get _find => ShortcutBinding(
+    logicalKey: LogicalKeyboardKey.keyF,
+    physicalKey: PhysicalKeyboardKey.keyF,
+    meta: AppPlatform.isMacOS,
+    control: !AppPlatform.isMacOS,
+  );
+
   @override
   Widget build(BuildContext context) {
     // A cleared shortcut leaves no entry behind: the action keeps whatever
@@ -3991,7 +4068,26 @@ class _DesktopShortcuts extends StatelessWidget {
           meta: AppPlatform.isMacOS,
           control: !AppPlatform.isMacOS,
         ): ?onCompleteTask,
-        ?shortcuts.bindingFor(ShortcutAction.findNotes)?.activator: onFindNotes,
+        ?shortcuts.bindingFor(ShortcutAction.findNotes)?.activator: onSearch,
+        // Find's own chord opens search too, unless it was given to
+        // something else.
+        if (shortcuts.conflictFor(ShortcutAction.findNotes, _find) == null)
+          _find.activator: onSearch,
+        ?shortcuts.bindingFor(ShortcutAction.newTask)?.activator: ?onNewTask,
+        ?shortcuts.bindingFor(ShortcutAction.newDrawing)?.activator:
+            onNewDrawing,
+        ?shortcuts.bindingFor(ShortcutAction.showNotes)?.activator: () =>
+            onShowSpace(LibrarySpace.notes),
+        if (showsTasks)
+          ?shortcuts.bindingFor(ShortcutAction.showTasks)?.activator: () =>
+              onShowSpace(LibrarySpace.tasks),
+        ?shortcuts.bindingFor(ShortcutAction.showDrawings)?.activator: () =>
+            onShowSpace(LibrarySpace.drawings),
+        if (showsShared)
+          ?shortcuts.bindingFor(ShortcutAction.showShared)?.activator: () =>
+              onShowSpace(LibrarySpace.shared),
+        ?shortcuts.bindingFor(ShortcutAction.showArchive)?.activator:
+            onShowArchive,
         ?shortcuts.bindingFor(ShortcutAction.nextNote)?.activator: onNextNote,
         ?shortcuts.bindingFor(ShortcutAction.previousNote)?.activator:
             onPreviousNote,
