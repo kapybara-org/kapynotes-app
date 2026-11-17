@@ -452,7 +452,6 @@ class KapyChatBook extends ChangeNotifier {
     if (key.startsWith('c:')) {
       final id = chatOfKey(key);
       _remove([id], DateTime.fromMillisecondsSinceEpoch(updatedAt));
-      _chatStore.writeChats(_chats!, _deleted);
     } else {
       _parked.remove(key);
     }
@@ -525,10 +524,31 @@ class KapyChatBook extends ChangeNotifier {
     _chats = rest..insert(at, chat);
   }
 
+  bool _held = false;
+  bool _pending = false;
+
+  /// Defers the writes until [release], so a pull of many records writes
+  /// once instead of once per record. Listeners are still told of each change.
+  void hold() => _held = true;
+
+  void release() {
+    _held = false;
+    if (_pending) _persist();
+  }
+
   void _finish() {
+    if (_held) {
+      _pending = true;
+    } else {
+      _persist();
+    }
+    notifyListeners();
+  }
+
+  void _persist() {
+    _pending = false;
     _chatStore.writeChats(_chats!, _deleted);
     _saveLedger();
-    notifyListeners();
   }
 
   /// Signing out: the chats stay, and everything is owed again to the next

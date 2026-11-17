@@ -109,6 +109,9 @@ class FakeServer {
   /// catch-up alike, mirroring the real limit being smaller than the corpus.
   int pageSize = 200;
 
+  /// How many task records one pull returns.
+  int taskPageSize = 1 << 30;
+
   // --- sockets ------------------------------------------------------------
 
   /// Connected sockets, by device id.
@@ -372,10 +375,11 @@ class FakeServer {
         .where((row) => row.seq > after)
         .toList()
       ..sort((a, b) => a.seq.compareTo(b.seq));
+    final page = rows.take(taskPageSize).toList();
     return TasksPage(
-      records: [for (final row in rows) row.record],
-      cursor: rows.isEmpty ? after : rows.last.seq,
-      hasMore: false,
+      records: [for (final row in page) row.record],
+      cursor: page.isEmpty ? after : page.last.seq,
+      hasMore: rows.length > page.length,
     );
   }
 

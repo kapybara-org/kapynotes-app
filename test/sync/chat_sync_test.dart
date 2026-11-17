@@ -1104,6 +1104,87 @@ void main() {
     });
   });
 
+  group('a pull holds the chat book', () {
+    test('writes it about once per page, not once per record', () async {
+      final laptop = Device(server, name: 'laptop');
+      await laptop.boot();
+      for (var i = 0; i < 200; i++) {
+        laptop.chats.put(chat(title: 'Chat $i', minute: i));
+      }
+      await laptop.pass();
+      final records = stored().length;
+      expect(records, greaterThanOrEqualTo(600));
+
+      server.taskPageSize = 50;
+      final phone = Device(server, name: 'phone');
+      await phone.boot();
+      phone.store.puts.clear();
+      await phone.pass();
+
+      final pages = (records / 50).ceil();
+      expect(phone.chats.chats, hasLength(200));
+      expect(
+        phone.store.puts['kapyAi.chats.v1'] ?? 0,
+        lessThanOrEqualTo(pages + 1),
+      );
+      expect(
+        phone.store.puts['kapyAi.chatSync.v1'] ?? 0,
+        lessThanOrEqualTo(pages + 2),
+        reason: 'a page each, and the first pass clearing its skipped mark',
+      );
+      laptop.dispose();
+      phone.dispose();
+    });
+
+    test('tells listeners of every record while the writes wait', () async {
+      final store = MemoryStore();
+      final book = KapyChatBook(store, now: () => base);
+      await book.load();
+      var told = 0;
+      book.addListener(() => told++);
+      book.hold();
+      for (var i = 0; i < 5; i++) {
+        book.applyRemoteChat(ChatMeta.of(chat(minute: i)), 1000 + i);
+      }
+      expect(told, 5);
+      expect(store.puts, isEmpty);
+
+      book.release();
+      expect(store.puts['kapyAi.chats.v1'], 1);
+      expect(store.puts['kapyAi.chatSync.v1'], 1);
+      book.release();
+      expect(store.puts['kapyAi.chats.v1'], 1, reason: 'nothing to write');
+    });
+
+    test(
+      'a chat id kept bare by an older build is dropped once taken',
+      () async {
+        final laptop = Device(server, name: 'laptop');
+        await laptop.boot();
+        final first = chat();
+        laptop.chats.put(first);
+        await laptop.pass();
+
+        final phone = Device(server, name: 'phone');
+        await phone.boot();
+        final ids = [for (final row in stored().values) row.record.id];
+        expect(ids, contains(vault.chatRecordId(first.id)));
+        for (final id in ids) {
+          phone.tags.keepUnknown(id, 1);
+        }
+        List unknown() =>
+            (phone.store.data['tags.v1'] as Map)['unknown'] as List;
+        expect(unknown(), hasLength(ids.length));
+
+        await phone.pass();
+        expect(phone.chats.chats, hasLength(1));
+        expect(unknown(), isEmpty);
+        laptop.dispose();
+        phone.dispose();
+      },
+    );
+  });
+
   group('what a push holds', () {
     test('chats go in chunks of their own, after the tasks and tags', () async {
       final laptop = Device(server, name: 'laptop');

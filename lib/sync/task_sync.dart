@@ -272,6 +272,7 @@ class TaskSync {
       if (!_chatsSync && page.records.isNotEmpty) _chats?.markSkipped();
       _index.hold();
       _tags.hold();
+      _chats?.hold();
       try {
         for (final record in page.records) {
           await _take(record);
@@ -280,6 +281,7 @@ class TaskSync {
       } finally {
         _index.release();
         _tags.release();
+        _chats?.release();
       }
       if (!page.hasMore) break;
     }
@@ -343,6 +345,7 @@ class TaskSync {
         _tags.applyRemoteNote(note, updatedAt);
       case chatKind:
         if (!_chatsSync) return;
+        _tags.dropUnknown(record.id);
         final chat = ChatMeta.fromPayload(decoded);
         if (chat == null || _vault.chatRecordId(chat.chatId) != record.id) {
           debugPrint('KapyNotes: chat record ${record.id} is not one of ours');
@@ -351,6 +354,7 @@ class TaskSync {
         _chats!.applyRemoteChat(chat, updatedAt);
       case chatMessageKind:
         if (!_chatsSync) return;
+        _tags.dropUnknown(record.id);
         final part = ChatMessagePart.fromPayload(decoded);
         if (part == null ||
             _vault.chatMessageRecordId(

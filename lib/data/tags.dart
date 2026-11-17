@@ -677,6 +677,11 @@ class TagStore extends ChangeNotifier {
     _save();
   }
 
+  /// A record whose kind this build now knows, so it is no longer kept bare.
+  void dropUnknown(String id) {
+    if (_unknown.remove(id) != null) _save();
+  }
+
   /// A deleted record as the server holds it: a tag by its id, a note's tags
   /// by [noteId] where the record id is known to be that note's. A newer
   /// local change survives it and goes up again.
