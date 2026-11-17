@@ -2116,13 +2116,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final store = widget.tags;
     if (store == null) return const [];
     final notes = widget.notes;
-    final counted = {
-      for (final note
-          in _archiveMode
-              ? notes.archivedNotes
-              : [...notes.notes, if (_hiddenMode) ...notes.hiddenNotes])
-        note.id,
-    };
+    final counted = _countedNoteIds();
     final open = {
       ...counted,
       for (final note in [...notes.notes, ...notes.archivedNotes]) note.id,
@@ -2146,6 +2140,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
   }
 
+  /// The notes a tag's count counts: the archived ones in Archive, and
+  /// otherwise the rest, with Hidden's only while Hidden is open.
+  Set<String> _countedNoteIds() => {
+    for (final note
+        in _archiveMode
+            ? widget.notes.archivedNotes
+            : [
+                ...widget.notes.notes,
+                if (_hiddenMode) ...widget.notes.hiddenNotes,
+              ])
+      note.id,
+  };
+
+  /// How many of those carry no tag, for No tag.
+  int _untaggedCount() => _countedNoteIds()
+      .where((noteId) => widget.tags!.tagsOf(noteId).isEmpty)
+      .length;
+
   /// The tag filter as far as the listed tags go.
   TagFilter get _tagsNarrowed =>
       _tagFilter.within([for (final entry in _listedTags()) entry.tag.id]);
@@ -2165,6 +2177,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       builder: (context, child) => TagShelf(
         store: store,
         listed: _listedTags,
+        untagged: _untaggedCount,
         isShared: (noteId) => widget.notes.byId(noteId)?.isShared ?? false,
         onFilter: _filterToTag,
         child: TagMarks(

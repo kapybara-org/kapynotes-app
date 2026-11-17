@@ -58,6 +58,7 @@ class TagShelf extends InheritedWidget {
     super.key,
     required this.store,
     required this.listed,
+    required this.untagged,
     required this.isShared,
     required this.onFilter,
     required super.child,
@@ -69,6 +70,9 @@ class TagShelf extends InheritedWidget {
   /// While Hidden is locked no Hidden note counts, and a tag found only on
   /// Hidden notes is left out, so neither gives Hidden away.
   final List<TagEntry> Function() listed;
+
+  /// How many of the notes those counts count carry no tag.
+  final int Function() untagged;
   final bool Function(String noteId) isShared;
 
   /// Narrows the list to one tag, from a chip.
@@ -578,7 +582,7 @@ class _NoteTagChipsState extends State<NoteTagChips> {
                         shelf.store.removeTag(widget.noteId, tag.id),
                     onDropped: (dragged) => move(dragged, tag.id),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                 ],
               ],
             ),
@@ -926,10 +930,7 @@ class _TagSettingsState extends State<TagSettings> {
       Widget line({Key? key, required List<Widget> children}) => Container(
         key: key,
         height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: palette.separator)),
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Row(children: children),
       );
       return Column(
@@ -937,12 +938,17 @@ class _TagSettingsState extends State<TagSettings> {
         children: [
           SettingsRow(
             title: 'Your tags',
+            subtitle:
+                "A note takes its first tag's colour. Drag to change the "
+                'order everywhere. Only you see your tags.',
             trailing: SettingsRowButton(
               key: const ValueKey('settings-new-tag'),
               label: 'New tag',
               onPressed: () => setState(() => _creating = true),
             ),
           ),
+          if (entries.isNotEmpty || _creating)
+            Divider(height: 1, thickness: 1, color: palette.separator),
           ReorderableListView(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -966,8 +972,8 @@ class _TagSettingsState extends State<TagSettings> {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    TagDot(tagColourOf(entry.tag.colour.v)),
-                    const SizedBox(width: 9),
+                    TagDot(tagColourOf(entry.tag.colour.v), size: 10),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: _renaming == entry.tag.id
                           ? TagNameField(
@@ -1022,8 +1028,8 @@ class _TagSettingsState extends State<TagSettings> {
             line(
               children: [
                 const SizedBox(width: 24),
-                const TagDot(null),
-                const SizedBox(width: 9),
+                const TagDot(null, size: 10),
+                const SizedBox(width: 10),
                 Expanded(
                   child: TagNameField(
                     onSubmit: (name) {

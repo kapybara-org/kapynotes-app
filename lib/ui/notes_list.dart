@@ -1336,6 +1336,26 @@ class _NotesFilterState extends State<_NotesFilter> {
   final _menu = OverlayPortalController();
   final _link = LayerLink();
   bool _tagsOpen = false;
+  final _menuKey = GlobalKey();
+  final _tagsRow = GlobalKey();
+
+  /// How far down the menu the Tags row sits, which the submenu's top
+  /// lines up with.
+  double _tagsTop = 0;
+
+  void _toggleTags() {
+    final row = _tagsRow.currentContext?.findRenderObject() as RenderBox?;
+    final menu = _menuKey.currentContext?.findRenderObject() as RenderBox?;
+    setState(() {
+      _tagsOpen = !_tagsOpen;
+      if (row != null && menu != null) {
+        _tagsTop = math.max(
+          0,
+          row.localToGlobal(Offset.zero, ancestor: menu).dy - 6,
+        );
+      }
+    });
+  }
 
   void _toggle() => setState(() {
     _tagsOpen = false;
@@ -1540,6 +1560,7 @@ class _NotesFilterState extends State<_NotesFilter> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _FilterMenu(
+                          key: _menuKey,
                           show: widget.show,
                           offersShow: widget.offersShow,
                           onShow: _choose,
@@ -1549,15 +1570,18 @@ class _NotesFilterState extends State<_NotesFilter> {
                           everything: widget.everything,
                           media: widget.media,
                           onTick: _tick,
-                          onTags: widget.tags == null
-                              ? null
-                              : () => setState(() => _tagsOpen = !_tagsOpen),
+                          onTags: widget.tags == null ? null : _toggleTags,
+                          tagsRow: _tagsRow,
+                          tagsTicked: widget.tags?.ticked ?? 0,
                         ),
                         if (_tagsOpen && widget.tags != null) ...[
                           const SizedBox(width: 4),
-                          _TagsMenu(
-                            filter: widget.tags!,
-                            onChanged: widget.onTagsChanged!,
+                          Padding(
+                            padding: EdgeInsets.only(top: _tagsTop),
+                            child: _TagsMenu(
+                              filter: widget.tags!,
+                              onChanged: widget.onTagsChanged!,
+                            ),
                           ),
                         ],
                       ],
@@ -1585,7 +1609,10 @@ class _FilterMenu extends StatelessWidget {
     required this.everything,
     required this.media,
     required this.onTick,
+    super.key,
     required this.onTags,
+    required this.tagsRow,
+    required this.tagsTicked,
   });
 
   final NotesShow show;
@@ -1602,6 +1629,10 @@ class _FilterMenu extends StatelessWidget {
 
   /// Opens or closes the Tags submenu; null leaves Tags out.
   final VoidCallback? onTags;
+  final Key tagsRow;
+
+  /// How many of the submenu's rows are ticked, shown before its chevron.
+  final int tagsTicked;
 
   @override
   Widget build(BuildContext context) {
@@ -1709,18 +1740,39 @@ class _FilterMenu extends StatelessWidget {
                 margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 color: palette.separator,
               ),
-            _ShowMenuRow(
-              key: const ValueKey('notes-filter-tags'),
-              label: 'Tags',
-              icon: KapyIcons.tagRounded,
-              chosen: false,
-              trailing: KapyIcon(
-                KapyIcons.chevronRightRounded,
-                size: 13,
-                strokeWidth: 2,
-                color: palette.textTertiary,
+            KeyedSubtree(
+              key: tagsRow,
+              child: _ShowMenuRow(
+                key: const ValueKey('notes-filter-tags'),
+                label: 'Tags',
+                icon: KapyIcons.tagRounded,
+                chosen: false,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (tagsTicked > 0) ...[
+                      Text(
+                        '$tagsTicked',
+                        key: const ValueKey('notes-filter-tags-ticked'),
+                        style: _figtree(
+                          AppTypeScale.small,
+                          16,
+                          FontWeight.w400,
+                          palette.textTertiary,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    KapyIcon(
+                      KapyIcons.chevronRightRounded,
+                      size: 13,
+                      strokeWidth: 2,
+                      color: palette.textTertiary,
+                    ),
+                  ],
+                ),
+                onTap: onTags,
               ),
-              onTap: onTags,
             ),
           ],
         ],
@@ -1896,9 +1948,9 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
   }
 }
 
-/// The filter's Tags submenu: the tags in the person's order with their
-/// counts and boxes, then No tag, then Match any | all once two are ticked.
-/// Past eight tags a field finds one.
+/// The filter's Tags submenu, beside the Tags row: Match any | all once two
+/// are ticked, then the tags in the person's order with their counts and
+/// boxes, then No tag. Past eight tags a field finds one.
 class _TagsMenu extends StatefulWidget {
   const _TagsMenu({required this.filter, required this.onChanged});
 
@@ -1928,10 +1980,6 @@ class _TagsMenuState extends State<_TagsMenu> {
     final filter = widget.filter;
     final every = shelf.listed();
     final query = _query.text.trim().toLowerCase();
-    final shown = [
-      for (final entry in every)
-        if (entry.tag.name.v.toLowerCase().contains(query)) entry,
-    ];
     final quiet = _figtree(
       AppTypeScale.small,
       16,
@@ -1944,12 +1992,12 @@ class _TagsMenuState extends State<_TagsMenu> {
         key: ValueKey(all ? 'tag-filter-all' : 'tag-filter-any'),
         onTap: () => widget.onChanged(filter.copyWith(all: all)),
         child: Container(
-          height: 22,
+          height: 20,
           padding: const EdgeInsets.symmetric(horizontal: 8),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: on ? palette.segmentSelected : null,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(5),
           ),
           child: Text(
             all ? 'all' : 'any',
@@ -1964,136 +2012,177 @@ class _TagsMenuState extends State<_TagsMenu> {
       );
     }
 
-    return TagPopover(
-      key: const ValueKey('tags-filter-menu'),
-      child: every.isEmpty
-          ? Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text(
+    if (every.isEmpty) {
+      return TagPopover(
+        key: const ValueKey('tags-filter-menu'),
+        width: 220,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'No tags yet',
+                style: _figtree(
+                  AppTypeScale.control,
+                  16,
+                  FontWeight.w600,
+                  palette.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
                 'Open a note and choose + Tag next to its date.',
                 style: quiet,
               ),
-            )
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (every.length > _findPast)
+            ],
+          ),
+        ),
+      );
+    }
+    return TagPopover(
+      key: const ValueKey('tags-filter-menu'),
+      width: 220,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (filter.ticked >= 2)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 2, 8, 6),
+              child: Row(
+                children: [
+                  Text('Match', style: quiet),
+                  const SizedBox(width: 8),
                   Container(
-                    height: 30,
-                    margin: const EdgeInsets.only(bottom: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 9),
+                    padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
-                      color: palette.wellBackground,
-                      border: Border.all(color: palette.controlBorder),
-                      borderRadius: BorderRadius.circular(8),
+                      color: palette.cardBackground,
+                      borderRadius: BorderRadius.circular(7),
                     ),
                     child: Row(
-                      children: [
-                        KapyIcon(
-                          KapyIcons.searchRounded,
-                          size: 14,
-                          strokeWidth: 1.8,
-                          color: palette.textTertiary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            key: const ValueKey('tag-filter-find'),
-                            controller: _query,
-                            onChanged: (_) => setState(() {}),
-                            style: _figtree(
-                              AppTypeScale.control,
-                              16,
-                              FontWeight.w400,
-                              palette.textPrimary,
-                            ),
-                            decoration: InputDecoration.collapsed(
-                              hintText: 'Find a tag',
-                              hintStyle: quiet,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 31.0 * 9),
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: [
-                      for (final entry in shown)
-                        _TagFilterRow(
-                          key: ValueKey('tag-filter-${entry.tag.id}'),
-                          entry: entry,
-                          ticked: filter.ids.contains(entry.tag.id),
-                          renaming: _renaming == entry.tag.id,
-                          onTap: () => widget.onChanged(
-                            filter.copyWith(
-                              ids: filter.ids.contains(entry.tag.id)
-                                  ? ({...filter.ids}..remove(entry.tag.id))
-                                  : {...filter.ids, entry.tag.id},
-                            ),
-                          ),
-                          onRename: (renaming) => setState(
-                            () => _renaming = renaming ? entry.tag.id : null,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                _MediaMenuRow(
-                  key: const ValueKey('tag-filter-none'),
-                  label: 'No tag',
-                  ticked: filter.none,
-                  onTap: () =>
-                      widget.onChanged(filter.copyWith(none: !filter.none)),
-                ),
-                if (filter.ticked >= 2) ...[
-                  Container(
-                    height: 1,
-                    margin: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 4,
-                    ),
-                    color: palette.separator,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      children: [
-                        Expanded(child: Text('Match', style: quiet)),
-                        match(false),
-                        const SizedBox(width: 2),
-                        match(true),
-                      ],
+                      mainAxisSize: MainAxisSize.min,
+                      children: [match(false), match(true)],
                     ),
                   ),
                 ],
+              ),
+            ),
+          if (every.length > _findPast)
+            Container(
+              height: 30,
+              margin: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              decoration: BoxDecoration(
+                color: palette.wellBackground,
+                border: Border.all(color: palette.controlBorder),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  KapyIcon(
+                    KapyIcons.searchRounded,
+                    size: 14,
+                    strokeWidth: 1.8,
+                    color: palette.textTertiary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      key: const ValueKey('tag-filter-find'),
+                      controller: _query,
+                      onChanged: (_) => setState(() {}),
+                      style: _figtree(
+                        AppTypeScale.control,
+                        16,
+                        FontWeight.w400,
+                        palette.textPrimary,
+                      ),
+                      decoration: InputDecoration.collapsed(
+                        hintText: 'Find a tag',
+                        hintStyle: quiet,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 30.0 * 8),
+            child: ListView(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              children: [
+                for (final entry in every)
+                  if (entry.tag.name.v.toLowerCase().contains(query))
+                    _TagFilterRow(
+                      key: ValueKey('tag-filter-${entry.tag.id}'),
+                      colour: tagColourOf(entry.tag.colour.v),
+                      label: entry.tag.name.v,
+                      count: entry.count,
+                      ticked: filter.ids.contains(entry.tag.id),
+                      entry: entry,
+                      renaming: _renaming == entry.tag.id,
+                      onTap: () => widget.onChanged(
+                        filter.copyWith(
+                          ids: filter.ids.contains(entry.tag.id)
+                              ? ({...filter.ids}..remove(entry.tag.id))
+                              : {...filter.ids, entry.tag.id},
+                        ),
+                      ),
+                      onRename: (renaming) => setState(
+                        () => _renaming = renaming ? entry.tag.id : null,
+                      ),
+                    ),
               ],
             ),
+          ),
+          Container(
+            height: 1,
+            margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            color: palette.separator,
+          ),
+          _TagFilterRow(
+            key: const ValueKey('tag-filter-none'),
+            colour: null,
+            label: 'No tag',
+            count: shelf.untagged(),
+            ticked: filter.none,
+            onTap: () => widget.onChanged(filter.copyWith(none: !filter.none)),
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// A tag in the Tags submenu: its box, dot, name and count, with ⋯ while the
-/// pointer is over it, and a field in its place while it is renamed.
+/// A row of the Tags submenu: dot, name, count and its box at the right.
+/// A tag's row trades its count for ⋯ while the pointer is over it, and its
+/// name for a field while it is renamed.
 class _TagFilterRow extends StatefulWidget {
   const _TagFilterRow({
     super.key,
-    required this.entry,
+    required this.colour,
+    required this.label,
+    required this.count,
     required this.ticked,
-    required this.renaming,
     required this.onTap,
-    required this.onRename,
+    this.entry,
+    this.renaming = false,
+    this.onRename,
   });
 
-  final TagEntry entry;
+  final TagColour? colour;
+  final String label;
+  final int count;
   final bool ticked;
-  final bool renaming;
   final VoidCallback onTap;
-  final ValueChanged<bool> onRename;
+
+  /// Null for No tag, which has nothing to rename, recolour or delete.
+  final TagEntry? entry;
+  final bool renaming;
+  final ValueChanged<bool>? onRename;
 
   @override
   State<_TagFilterRow> createState() => _TagFilterRowState();
@@ -2105,11 +2194,12 @@ class _TagFilterRowState extends State<_TagFilterRow> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final entry = widget.entry;
+    final onRename = widget.onRename;
     final store = TagShelf.maybeOf(context)!.store;
-    final tag = widget.entry.tag;
     return Semantics(
       checked: widget.ticked,
-      label: tag.name.v,
+      label: widget.label,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _hovering = true),
@@ -2126,23 +2216,21 @@ class _TagFilterRowState extends State<_TagFilterRow> {
             ),
             child: Row(
               children: [
-                _PickBox(checked: widget.ticked),
-                const SizedBox(width: 9),
-                TagDot(tagColourOf(tag.colour.v)),
+                TagDot(widget.colour, size: 7),
                 const SizedBox(width: 9),
                 Expanded(
-                  child: widget.renaming
+                  child: entry != null && onRename != null && widget.renaming
                       ? TagNameField(
-                          initial: tag.name.v,
+                          initial: entry.tag.name.v,
                           onSubmit: (name) {
-                            final kept = store.rename(tag.id, name);
-                            if (kept) widget.onRename(false);
+                            final kept = store.rename(entry.tag.id, name);
+                            if (kept) onRename(false);
                             return kept;
                           },
-                          onCancel: () => widget.onRename(false),
+                          onCancel: () => onRename(false),
                         )
                       : Text(
-                          tag.name.v,
+                          widget.label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: _figtree(
@@ -2153,16 +2241,19 @@ class _TagFilterRowState extends State<_TagFilterRow> {
                           ),
                         ),
                 ),
-                const SizedBox(width: 9),
-                if (_hovering && !widget.renaming)
+                const SizedBox(width: 8),
+                if (entry != null &&
+                    onRename != null &&
+                    _hovering &&
+                    !widget.renaming)
                   GestureDetector(
-                    key: ValueKey('tag-filter-more-${tag.id}'),
+                    key: ValueKey('tag-filter-more-${entry.tag.id}'),
                     onTapUp: (details) => showTagActions(
                       context,
                       store: store,
-                      entry: widget.entry,
+                      entry: entry,
                       position: details.globalPosition,
-                      onRename: () => widget.onRename(true),
+                      onRename: () => onRename(true),
                     ),
                     child: KapyIcon(
                       KapyIcons.moreRounded,
@@ -2172,7 +2263,7 @@ class _TagFilterRowState extends State<_TagFilterRow> {
                   )
                 else
                   Text(
-                    '${widget.entry.count}',
+                    '${widget.count}',
                     style: _figtree(
                       AppTypeScale.small,
                       16,
@@ -2180,6 +2271,8 @@ class _TagFilterRowState extends State<_TagFilterRow> {
                       palette.textTertiary,
                     ),
                   ),
+                const SizedBox(width: 9),
+                _PickBox(checked: widget.ticked),
               ],
             ),
           ),

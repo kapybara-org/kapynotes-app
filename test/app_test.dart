@@ -591,7 +591,7 @@ void main() {
     testWidgets('ticked tags narrow the list, any or all', (tester) async {
       final both = notes.create(body: 'Both');
       final workOnly = notes.create(body: 'Work only');
-      final bare = notes.create(body: 'Bare');
+      notes.create(body: 'Bare');
       final work = tags.create('Work')!;
       final home = tags.create('Home')!;
       tags.setTags(both.id, [work.id, home.id]);
@@ -601,19 +601,35 @@ void main() {
       String count() => spaceCount(tester)!;
       expect(count(), contains('3'));
       await openTagsFilter(tester);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('tag-filter-none')),
+          matching: find.text('1'),
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(ValueKey('tag-filter-${work.id}')));
       await tester.pumpAndSettle();
       expect(count(), contains('2'));
+      expect(find.byKey(const ValueKey('tag-filter-any')), findsNothing);
       await tester.tap(find.byKey(ValueKey('tag-filter-${home.id}')));
       await tester.pumpAndSettle();
       expect(count(), contains('2'));
+      expect(find.byKey(const ValueKey('tag-filter-any')), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('notes-filter-tags-ticked')),
+            )
+            .data,
+        '2',
+      );
       await tester.tap(find.byKey(const ValueKey('tag-filter-all')));
       await tester.pumpAndSettle();
       expect(count(), contains('1'));
       await tester.tap(find.byKey(const ValueKey('tag-filter-none')));
       await tester.pumpAndSettle();
       expect(count(), contains('2'));
-      expect(bare.id, isNotEmpty);
     });
 
     testWidgets('delete asks once, and Undo puts the tag back in place', (
