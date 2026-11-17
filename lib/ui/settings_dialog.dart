@@ -114,6 +114,9 @@ extension SettingsSectionCopy on SettingsSection {
   };
 }
 
+/// Everything settings search can reach, read as it stands.
+typedef SettingsIndex = List<SettingsSearchEntry<SettingsSection>> Function();
+
 /// Opens settings in the shape the platform wants.
 ///
 /// A pointer gets the dialog: a rail beside a pane, everything one click
@@ -212,6 +215,7 @@ class SettingsDialog extends StatefulWidget {
     this.section,
     this.reveal,
     this.notice,
+    this.onIndex,
     this.asSheet = false,
   });
 
@@ -269,6 +273,12 @@ class SettingsDialog extends StatefulWidget {
   /// by the caller: on Windows this opens only after the window has widened,
   /// and a toast shown before it would be drawn underneath.
   final String? notice;
+
+  /// Set by the ⌘K menu, which only borrows what settings can find. This then
+  /// builds nothing and does none of the loading an open settings does, and
+  /// hands over the search index, read live, so the menu finds exactly what
+  /// settings search finds.
+  final ValueChanged<SettingsIndex>? onIndex;
 
   /// Present as the phone sheet — a list of categories you push through —
   /// instead of the rail dialog. Set by [showSettings]. Both shapes are the
@@ -446,6 +456,10 @@ class _SettingsDialogState extends State<SettingsDialog>
   @override
   void initState() {
     super.initState();
+    if (widget.onIndex case final lend?) {
+      lend(_searchIndex);
+      return;
+    }
     _search.addListener(_onSearchChanged);
     _shortcutFilter.addListener(() => setState(() {}));
     if (!widget.asSheet) HardwareKeyboard.instance.addHandler(_onFindKey);
@@ -2360,19 +2374,21 @@ class _SettingsDialogState extends State<SettingsDialog>
   // Layout
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([
-      widget.layoutPrefs,
-      widget.shortcuts,
-      ?widget.voicePrefs,
-      ?widget.cloudAccess,
-      ?widget.localModels,
-      ?widget.updates,
-      ?_kapyAi,
-    ]),
-    builder: (context, _) =>
-        widget.asSheet ? _buildSheet(context) : _buildDialog(context),
-  );
+  Widget build(BuildContext context) => widget.onIndex != null
+      ? const SizedBox.shrink()
+      : ListenableBuilder(
+          listenable: Listenable.merge([
+            widget.layoutPrefs,
+            widget.shortcuts,
+            ?widget.voicePrefs,
+            ?widget.cloudAccess,
+            ?widget.localModels,
+            ?widget.updates,
+            ?_kapyAi,
+          ]),
+          builder: (context, _) =>
+              widget.asSheet ? _buildSheet(context) : _buildDialog(context),
+        );
 
   Widget _buildDialog(BuildContext context) {
     final media = MediaQuery.sizeOf(context);

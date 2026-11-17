@@ -4,13 +4,16 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
+import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/command_menu.dart';
 import 'package:kapy_notes/ui/keycap.dart';
+import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:material_ui/material_ui.dart';
@@ -39,12 +42,13 @@ void main() {
   late NotesStore notes;
   late ShortcutPrefs shortcuts;
   late TaskBoard board;
+  late _MemoryStore memory;
   CommandChoice? chosen;
 
   /// Notes about a trip to Sintra in every place a note can be: two notes,
   /// a task in one of them, a drawing, one archived and one hidden.
   Future<void> setUpNotes(WidgetTester tester) async {
-    final store = _MemoryStore();
+    final store = memory = _MemoryStore();
     notes = NotesStore(store, now: () => DateTime(2026, 11, 17, 16, 40));
     shortcuts = ShortcutPrefs(store)..load();
     final library = TaskLibrary(
@@ -54,7 +58,9 @@ void main() {
     );
     await notes.load();
     await library.load();
-    notes.create(body: 'Goals - Oct 2026\nSee Sintra and Cascais before December');
+    notes.create(
+      body: 'Goals - Oct 2026\nSee Sintra and Cascais before December',
+    );
     notes.create(
       body:
           'Trip budget\nGo to Sintra on a weekday. The weekend queues are '
@@ -62,7 +68,11 @@ void main() {
     );
     final drawing = notes.create();
     notes.setDrawingMode(drawing.id, drawing: true);
-    notes.updateDrawing(drawing.id, NoteDrawing.empty, title: 'Sintra day route');
+    notes.updateDrawing(
+      drawing.id,
+      NoteDrawing.empty,
+      title: 'Sintra day route',
+    );
     notes.archive(notes.create(body: 'Old Sintra plan').id);
     notes.hide(notes.create(body: 'Secret Sintra gift').id);
     final tasks = TasksController(
@@ -83,6 +93,7 @@ void main() {
     WidgetTester tester, {
     LibrarySpace space = LibrarySpace.notes,
     bool hiddenUnlocked = false,
+    bool withSettings = false,
     List<String> recentIds = const [],
     bool askKapyAi = false,
   }) async {
@@ -109,6 +120,15 @@ void main() {
             tasks: board,
             hiddenUnlocked: hiddenUnlocked,
             askKapyAi: askKapyAi,
+            settingsIndex: withSettings
+                ? (lend) => SettingsDialog(
+                    onIndex: lend,
+                    layoutPrefs: LayoutPrefs(memory)..load(),
+                    shortcuts: shortcuts,
+                    rates: RatesRepository(memory),
+                    notes: notes,
+                  )
+                : null,
             onChosen: (choice) => chosen = choice,
           ),
         ),
@@ -117,8 +137,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Finder row(String title) =>
-      find.byKey(ValueKey('command-menu-row-$title'));
+  Finder row(String title) => find.byKey(ValueKey('command-menu-row-$title'));
 
   String? keycapOn(WidgetTester tester, String title) {
     final caps = find.descendant(of: row(title), matching: find.byType(Keycap));
@@ -136,7 +155,9 @@ void main() {
   testWidgets('before typing: recent notes, then Create and Go to with the '
       'keys that work from here', (tester) async {
     await setUpNotes(tester);
-    final recent = notes.notes.firstWhere((note) => note.title == 'Trip budget');
+    final recent = notes.notes.firstWhere(
+      (note) => note.title == 'Trip budget',
+    );
     await pumpMenu(tester, recentIds: [recent.id]);
 
     for (final heading in ['Recent', 'Create', 'Go to']) {
@@ -255,6 +276,66 @@ void main() {
     expect((chosen! as NewTaskChoice).text, 'buy stamps');
   });
 
+  testWidgets('settings are found by what they are called, and Return opens '
+      'Settings on the row', (tester) async {
+    await setUpNotes(tester);
+    await pumpMenu(tester, withSettings: true);
+    await type(tester, 'text size');
+
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Appearance › Text'), findsWidgets);
+    expect(find.text('Open in Settings'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    final choice = chosen! as RevealSettingChoice;
+    expect(choice.section, SettingsSection.appearance);
+    expect(choice.reveal, isNotNull);
+  });
+
+  testWidgets('a shortcut shows its key, and a setting a note can not match '
+      'stays out of the way', (tester) async {
+    await setUpNotes(tester);
+    await pumpMenu(tester, withSettings: true);
+    await type(tester, 'new task');
+    expect(keycapOn(tester, 'New task'), '⇧⌘N');
+
+    await type(tester, 'sintra');
+    expect(find.text('Settings'), findsNothing);
+    expect(find.text('Open in Settings'), findsNothing);
+    expect(find.text('Open'), findsOneWidget);
+  });
+
+  testWidgets('settings that live elsewhere go nowhere, so they are not '
+      'offered', (tester) async {
+    await setUpNotes(tester);
+    await pumpMenu(tester, withSettings: true);
+    await type(tester, 'results column');
+    expect(find.text('Calculation results'), findsNothing);
+  });
+
+  testWidgets('without the settings index there is no Settings section', (
+    tester,
+  ) async {
+    await setUpNotes(tester);
+    await pumpMenu(tester);
+    await type(tester, 'text size');
+    expect(find.text('Settings'), findsNothing);
+  });
+
+  testWidgets('settings follow the notes, tasks and drawings unless the words '
+      'are the name of a setting', (tester) async {
+    await setUpNotes(tester);
+    await pumpMenu(tester, withSettings: true);
+    notes.create(body: 'Shortcuts for the trip');
+    await tester.pumpAndSettle();
+    await type(tester, 'shortcuts');
+    final notesHeading = tester.getTopLeft(find.text('Notes'));
+    final settingsHeading = tester.getTopLeft(find.text('Settings'));
+    expect(settingsHeading.dy < notesHeading.dy, isTrue);
+
+    await type(tester, 'trip');
+    expect(find.text('Settings'), findsNothing);
+  });
+
   group('Ask Kapy AI', () {
     testWidgets('is offered only where Kapy AI can be asked', (tester) async {
       await setUpNotes(tester);
@@ -351,6 +432,24 @@ void main() {
         find.byKey(const ValueKey('command-menu')),
         matchesGoldenFile('goldens/command_menu_dark_ask.png'),
       );
+    });
+
+    testWidgets('with a setting found, Return opens it and Tab asks', (
+      tester,
+    ) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester, askKapyAi: true, withSettings: true);
+      await type(tester, 'text size');
+
+      expect(find.text('Open in Settings'), findsOneWidget);
+      expect(find.text('Ask Kapy AI'), findsOneWidget);
+      expect(row('Ask Kapy AI: text size'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(chosen, isA<RevealSettingChoice>());
+
+      chosen = null;
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      expect((chosen! as AskKapyAiChoice).text, 'text size');
     });
   });
 }
