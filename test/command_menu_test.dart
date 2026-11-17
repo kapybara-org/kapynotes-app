@@ -3,18 +3,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/task_board.dart';
+import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/command_menu.dart';
 import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
+import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -95,6 +98,8 @@ void main() {
     bool hiddenUnlocked = false,
     bool withSettings = false,
     List<String> recentIds = const [],
+    TagShelf? tags,
+    Note? tagNote,
   }) async {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -117,6 +122,8 @@ void main() {
             taskLabel: (note) => note.title,
             tasks: board,
             hiddenUnlocked: hiddenUnlocked,
+            tags: tags,
+            tagNote: tagNote,
             settingsIndex: withSettings
                 ? (lend) => SettingsDialog(
                     onIndex: lend,
@@ -331,5 +338,142 @@ void main() {
 
     await type(tester, 'trip');
     expect(find.text('Settings'), findsNothing);
+  });
+
+  group('tags', () {
+    late TagStore store;
+    late Tag work;
+    late Tag secret;
+    late Tag travel;
+    late Note trip;
+
+    /// Work on one note, Travel on none, and a Secret tag the lists leave
+    /// out, as they do while Hidden is locked and only Hidden notes carry it.
+    Future<TagShelf> shelf(WidgetTester tester) async {
+      await setUpNotes(tester);
+      store = TagStore(memory);
+      await store.load();
+      work = store.create('Work')!;
+      travel = store.create('Travel')!;
+      secret = store.create('Secret')!;
+      trip = notes.notes.firstWhere((note) => note.title == 'Trip budget');
+      store.addTag(trip.id, work.id);
+      return TagShelf(
+        store: store,
+        listed: () => [(tag: work, count: 1), (tag: travel, count: 0)],
+        untagged: () => 3,
+        isShared: (_) => false,
+        onFilter: (_) {},
+        child: const SizedBox.shrink(),
+      );
+    }
+
+    testWidgets('# lists the tags with counts, letters narrow them, and ↵ '
+        'chooses one to filter by', (tester) async {
+      final tags = await shelf(tester);
+      await pumpMenu(tester, tags: tags);
+
+      await type(tester, '#');
+      expect(find.text('Filter by tag'), findsOneWidget);
+      expect(row('Work'), findsOneWidget);
+      expect(row('Travel'), findsOneWidget);
+      expect(row('Secret'), findsNothing);
+      expect(find.text('Filter notes'), findsOneWidget);
+
+      await type(tester, '#tr');
+      expect(row('Work'), findsNothing);
+      expect(row('Travel'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect((chosen! as FilterTagChoice).tagId, travel.id);
+    });
+
+    testWidgets('# with no match says so and offers nothing, and a hidden-only '
+        'tag is no match', (tester) async {
+      final tags = await shelf(tester);
+      await pumpMenu(tester, tags: tags);
+
+      await type(tester, '#secret');
+      expect(find.text('No tag named “secret”'), findsOneWidget);
+      expect(find.textContaining('Hidden'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(chosen, isNull);
+    });
+
+    testWidgets('# is plain search where there are no tags', (tester) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester);
+      await type(tester, '#sintra');
+      expect(find.text('Filter by tag'), findsNothing);
+      expect(find.text('New note: #sintra'), findsOneWidget);
+    });
+
+    testWidgets('Tag note… is offered for the open note, ↵ swaps the menu for '
+        'its tags, and ticks follow ↵', (tester) async {
+      final tags = await shelf(tester);
+      await pumpMenu(tester, tags: tags, tagNote: trip);
+
+      await type(tester, 'tag');
+      expect(find.text('Actions'), findsOneWidget);
+      expect(row('Tag note…'), findsOneWidget);
+      expect(find.text('Trip budget'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('command-menu-tagging')),
+        findsOneWidget,
+      );
+      expect(find.text('Tag note · Trip budget'), findsOneWidget);
+      expect(find.byKey(ValueKey('tag-row-${work.id}')), findsOneWidget);
+      expect(find.byKey(ValueKey('tag-row-${secret.id}')), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('tag-row-${work.id}')),
+          matching: find.byType(KapyIcon),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        [for (final tag in store.tagsOf(trip.id)) tag.name.v],
+        ['Work', 'Travel'],
+      );
+      expect(chosen, isNull);
+    });
+
+    testWidgets('in Tag note…, a hidden-only tag\'s name is refused neutrally '
+        'and neither picked nor shown', (tester) async {
+      final tags = await shelf(tester);
+      await pumpMenu(tester, tags: tags, tagNote: trip);
+      await type(tester, 'tag');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'secret',
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('Create “secret”'), findsOneWidget);
+      expect(find.text(chooseAnotherName), findsOneWidget);
+      expect(find.textContaining('Hidden'), findsNothing);
+      expect(store.tagsOf(trip.id).map((tag) => tag.id), [work.id]);
+      expect(store.tags, hasLength(3));
+    });
+
+    testWidgets('Tag note… is not offered with no open note', (tester) async {
+      final tags = await shelf(tester);
+      await pumpMenu(tester, tags: tags);
+      await type(tester, 'tag');
+      expect(row('Tag note…'), findsNothing);
+    });
   });
 }
