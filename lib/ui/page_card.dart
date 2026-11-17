@@ -21,14 +21,14 @@ class PageCard extends StatelessWidget {
         color: palette.paperColor,
         borderRadius: const BorderRadius.all(Radius.circular(radius)),
         border: Border.all(color: palette.pageBorder, width: borderWidth),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Color(0x40000000),
+            color: palette.shadowAt(0x40),
             offset: Offset(0, 1),
             blurRadius: 2,
           ),
           BoxShadow(
-            color: Color(0x66000000),
+            color: palette.shadowAt(0x66),
             offset: Offset(0, 16),
             blurRadius: 32,
             spreadRadius: -20,

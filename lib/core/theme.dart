@@ -116,6 +116,18 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color pageBorder;
   final Color textDivider;
 
+  /// A switch's thumb while it is on, standing on the sage track.
+  final Color switchThumb;
+
+  /// What casts every shadow, with its alpha as the strength: black in dark,
+  /// the ink at a fraction of that in light, where a black shadow reads as
+  /// dirt on the paper.
+  final Color shadow;
+
+  /// The shadow a black at [alpha] casts in dark, scaled by [shadow]'s own
+  /// strength so the dark values stay exact and light ones soften with it.
+  Color shadowAt(int alpha) => shadow.withAlpha((shadow.a * alpha).round());
+
   /// How much of the desktop the window's chrome lets through: a multiplier on
   /// the alpha of every [GlassSurface]. 1 is fully opaque.
   ///
@@ -244,6 +256,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.accentText,
     required this.pageBorder,
     required this.textDivider,
+    required this.switchThumb,
+    required this.shadow,
     this.translucency = 1,
     this.paperTranslucency = 1,
   });
@@ -310,6 +324,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? accentText,
     Color? pageBorder,
     Color? textDivider,
+    Color? switchThumb,
+    Color? shadow,
     double? translucency,
     double? paperTranslucency,
   }) => CalcPalette(
@@ -373,6 +389,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     accentText: accentText ?? this.accentText,
     pageBorder: pageBorder ?? this.pageBorder,
     textDivider: textDivider ?? this.textDivider,
+    switchThumb: switchThumb ?? this.switchThumb,
+    shadow: shadow ?? this.shadow,
     translucency: translucency ?? this.translucency,
     paperTranslucency: paperTranslucency ?? this.paperTranslucency,
   );
@@ -445,6 +463,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       accentText: mix(accentText, other.accentText),
       pageBorder: mix(pageBorder, other.pageBorder),
       textDivider: mix(textDivider, other.textDivider),
+      switchThumb: mix(switchThumb, other.switchThumb),
+      shadow: mix(shadow, other.shadow),
       translucency: translucency + (other.translucency - translucency) * t,
       paperTranslucency:
           paperTranslucency + (other.paperTranslucency - paperTranslucency) * t,
@@ -908,14 +928,11 @@ class AppFonts {
 class KapyTheme {
   const KapyTheme._();
 
-  /// A restrained copper accent, used sparingly for focus and active state.
-  /// It echoes the warm caret in the visual reference without tinting every
-  /// calculator token or control. The dark theme's accent is Riverbank's
-  /// sage, which marks what is on, done or open: checkboxes, switches,
-  /// progress and the open note.
-  static const brand = Color(0xFFC97849);
+  /// Riverbank's sage, which marks what is on, done or open: checkboxes,
+  /// switches, progress and the open note. Deeper in light, where it carries
+  /// light ink.
   static const _darkAccent = Color(0xFF7D9468);
-  static const _lightAccent = Color(0xFFA85F38);
+  static const _lightAccent = Color(0xFF56703C);
 
   /// The accent the theme for [brightness] marks focus, the caret and what is
   /// on with.
@@ -1025,72 +1042,82 @@ class KapyTheme {
     accentText: Color(0xFF9DB384),
     pageBorder: Color(0xFF2E2A25),
     textDivider: Color(0xFF554F47),
+    switchThumb: Color(0xFFE2DCCF),
+    shadow: Color(0xFF000000),
   );
 
-  /// A cool, clean paper palette rather than the previous warm stationery.
+  /// Riverbank light: warm paper, ink-brown text and a deeper sage.
+  ///
+  /// The dark palette turned over, from the light page in Paper: the page is
+  /// the lightest layer, the window a step behind it and the rail a step
+  /// behind that. Edges are warm tints rather than grey lines, shadows come
+  /// from the ink at low alpha, and sage and clay deepen so that what sits on
+  /// them keeps its contrast.
   static const CalcPalette lightPalette = CalcPalette(
-    number: Color(0xFF3F4248),
-    keyword: Color(0xFFA85F38),
-    unit: Color(0xFF5E6B62),
-    currency: Color(0xFF5E6B62),
-    function: Color(0xFFA85F38),
-    variable: Color(0xFFA85F38),
-    operator: Color(0xFF73757A),
-    comment: Color(0xFF919399),
-    chipNumber: Color(0xFF667254),
-    chipCurrency: Color(0xFF667254),
-    chipUnit: Color(0xFF667254),
-    chipBoolean: Color(0xFF667254),
-    chipOther: Color(0xFF667254),
-    textPrimary: Color(0xFF292B30),
-    textSecondary: Color(0xFF65686E),
-    textTertiary: Color(0xFF92949A),
-    separator: Color(0x16000000),
-    sidebarBackground: Color(0xFFF0EFEC),
-    editorBackground: Color(0xFFF8F7F4),
-    gutterBackground: Color(0xFFF4F3EF),
-    surfaceBackground: Color(0xFFF2F1ED),
-    controlBackground: Color(0xFFEAE9E5),
-    controlBorder: Color(0xFFD8D7D2),
-    selectedBackground: Color(0xFFE2E0DA),
-    selectedBorder: Color(0xFFA85F38),
-    selection: Color(0x30C97849),
-    hover: Color(0xFFE8E7E3),
+    number: Color(0xFF2A2620),
+    keyword: Color(0xFF2A2620),
+    unit: Color(0xFF8A8476),
+    currency: Color(0xFF8A8476),
+    function: Color(0xFF2A2620),
+    variable: Color(0xFF2A2620),
+    operator: Color(0xFF8A8476),
+    comment: Color(0xFF8A8476),
+    chipNumber: Color(0xFF445A2F),
+    chipCurrency: Color(0xFF445A2F),
+    chipUnit: Color(0xFF445A2F),
+    chipBoolean: Color(0xFF445A2F),
+    chipOther: Color(0xFF445A2F),
+    textPrimary: Color(0xFF2A2620),
+    textSecondary: Color(0xFF6F695C),
+    textTertiary: Color(0xFF8A8476),
+    separator: Color(0xFFD9D2C1),
+    sidebarBackground: Color(0xFFF3EFE4),
+    editorBackground: Color(0xFFFCFAF4),
+    gutterBackground: Color(0xFFFCFAF4),
+    surfaceBackground: Color(0xFFFCFAF4),
+    controlBackground: Color(0xFFEFEADD),
+    controlBorder: Color(0xFFE2DCCB),
+    selectedBackground: Color(0xFFE2DCCB),
+    selectedBorder: Color(0xFF56703C),
+    selection: Color(0x3356703C),
+    hover: Color(0xFFEBE5D6),
     // The optional notepad style keeps a barely visible fibre. Plain remains
     // the default, and dark paper stays completely clean.
     paperFiber: Color(0x085B5148),
-    paperRuling: Color(0x12000000),
-    railBackground: Color(0xFFEFEADD),
+    paperRuling: Color(0xFFE6E0D0),
+    railBackground: Color(0xFFECE6D8),
     railBorder: Color(0x0F2A2620),
-    tonalBackground: Color(0xFF56703C),
-    tonalForeground: Color(0xFFFCFAF4),
-    tonalKeyBackground: Color(0xFF445A2F),
-    tonalKeyText: Color(0xFFE6ECDB),
+    tonalBackground: Color(0xFFE6ECDB),
+    tonalForeground: Color(0xFF445A2F),
+    tonalKeyBackground: Color(0xFFD3DEC2),
+    tonalKeyText: Color(0xFF56703C),
     keycapBackground: Color(0xFFEFEADD),
-    keycapBorder: Color(0xFFE2DCCB),
+    keycapBorder: Color(0xFFD9D2C1),
     keycapText: Color(0xFF6F695C),
-    stickyMustard: Color(0xFFF6E7A6),
-    stickyTeal: Color(0xFFD5E5E6),
-    stickyOlive: Color(0xFFDCE6C8),
-    stickyRust: Color(0xFFF5D9C7),
-    stickySage: Color(0xFFE6ECDB),
-    scrim: Color(0x33000000),
-    resultPillBackground: Color(0xFFE6ECDB),
+    stickyMustard: Color(0xFFF4EBC8),
+    stickyTeal: Color(0xFFDCE8E6),
+    stickyOlive: Color(0xFFE6EBD5),
+    stickyRust: Color(0xFFF2E0D4),
+    stickySage: Color(0xFFE3EBD8),
+    scrim: Color(0x332A2620),
+    resultPillBackground: Color(0xFFE3EBD8),
     resultPillText: Color(0xFF445A2F),
     totalPillBackground: Color(0xFF56703C),
     totalPillText: Color(0xFFFCFAF4),
     clay: Color(0xFFD0663B),
-    textHeading: Color(0xFF292B30),
-    textSubheading: Color(0xFF3F4248),
-    textMuted: Color(0xFF55585E),
-    textDescription: Color(0xFF6B6D73),
-    cardBackground: Color(0xFFF2F1ED),
-    paneEdge: Color(0xFFE2E0DA),
-    switchTrackOff: Color(0xFFDAD8D2),
+    textHeading: Color(0xFF2A2620),
+    textSubheading: Color(0xFF3A352D),
+    textMuted: Color(0xFF4A453B),
+    textDescription: Color(0xFF6F695C),
+    cardBackground: Color(0xFFF6F2E8),
+    paneEdge: Color(0xFFE2DCCB),
+    switchTrackOff: Color(0xFFDCD5C4),
     cardTitle: Color(0xFF2A2620),
     accentText: Color(0xFF56703C),
-    pageBorder: Color(0xFFE3E1DC),
-    textDivider: Color(0xFFB9BBC0),
+    pageBorder: Color(0xFFE6E0D0),
+    textDivider: Color(0xFFBDB6A6),
+    switchThumb: Color(0xFFFCFAF4),
+    shadow: Color(0x662A2620),
   );
 
   /// Transparency mode.
@@ -1152,7 +1179,7 @@ class KapyTheme {
     final dark = brightness == Brightness.dark;
     final compactControls = AppPlatform.isDesktop;
     final accent = accentFor(brightness);
-    final onAccent = dark ? const Color(0xFF1C1A17) : Colors.white;
+    final onAccent = dark ? const Color(0xFF1C1A17) : const Color(0xFFFCFAF4);
     final buttonHeight = AppControlMetrics.buttonHeight;
     final iconButtonExtent = AppControlMetrics.iconButtonExtent;
     final tapTarget = compactControls
@@ -1161,7 +1188,7 @@ class KapyTheme {
 
     final scheme =
         ColorScheme.fromSeed(
-          seedColor: dark ? _darkAccent : brand,
+          seedColor: accent,
           brightness: brightness,
         ).copyWith(
           primary: accent,

@@ -1182,15 +1182,15 @@ class _SettingsDialogState extends State<SettingsDialog>
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
           borderRadius: corners,
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
-              color: Color(0x80000000),
+              color: palette.shadowAt(0x80),
               offset: Offset(0, 30),
               blurRadius: 60,
               spreadRadius: -24,
             ),
             BoxShadow(
-              color: Color(0x59000000),
+              color: palette.shadowAt(0x59),
               offset: Offset(0, 2),
               blurRadius: 8,
             ),

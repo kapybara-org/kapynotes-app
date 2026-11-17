@@ -2466,9 +2466,9 @@ class _SearchFieldState extends State<_SearchField> {
           color: palette.surfaceBackground,
           border: Border.all(color: palette.controlBorder, width: 1.5),
           borderRadius: BorderRadius.circular(12),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
-              color: Color(0x4D000000),
+              color: palette.shadowAt(0x4D),
               offset: Offset(0, 1),
               blurRadius: 2,
             ),

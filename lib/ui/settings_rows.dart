@@ -450,13 +450,13 @@ class SettingsSwitch extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: value
-                ? (pointer ? palette.textPrimary : scheme.onPrimary)
+                ? (pointer ? palette.switchThumb : scheme.onPrimary)
                 : palette.textTertiary,
             shape: BoxShape.circle,
             boxShadow: pointer && value
-                ? const [
+                ? [
                     BoxShadow(
-                      color: Color(0x40000000),
+                      color: palette.shadowAt(0x40),
                       offset: Offset(0, 1),
                       blurRadius: 2,
                     ),
