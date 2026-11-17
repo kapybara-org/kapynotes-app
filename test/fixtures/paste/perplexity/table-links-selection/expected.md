@@ -1,0 +1,20 @@
+<!-- read as: html -->
+Several strong open‑source Opsgenie alternatives exist in 2025, offering on‑call scheduling, alert routing, and incident management without vendor lock‑in. The most capable options include **Iris**, **OnCall**, **OpenDuty**, **Cabot**, and **Grafana OnCall**. Each caters to slightly different infrastructure and team‑size needs. [onpage](https://www.onpage.com/evaluating-opsgenie-alternatives/)
+
+## Notable Open‑Source Opsgenie Alternatives
+
+| Tool | Overview | Best For |
+| --- | --- | --- |
+| **Iris (LinkedIn)** | High‑scale incident communication platform used internally at LinkedIn. Routes alerts intelligently to correct responders. Integrates tightly with OnCall. | Enterprise DevOps and SRE teams needing scalable, extensible alert routing [onpage](https://www.onpage.com/evaluating-opsgenie-alternatives/). |
+| **LinkedIn OnCall** | Handles complex on‑call schedules, rotations, and escalations. Integrates with Slack and email for customizable delivery. | Engineering teams managing multi‑team schedules with self‑hosted control [onpage](https://www.onpage.com/evaluating-opsgenie-alternatives/). |
+| **OpenDuty** | Lightweight, PagerDuty‑style alerting system using Twilio and SMTP for notifications. | Small teams seeking simplicity and control with minimal infrastructure [onpage](https://www.onpage.com/evaluating-opsgenie-alternatives/). |
+| **Cabot** | Combines uptime monitoring, health checks, and alerting in a single self‑hosted app. Integrates with popular monitoring tools. | Teams preferring an all‑in‑one open‑source monitoring and alerting stack [onpage](https://www.onpage.com/evaluating-opsgenie-alternatives/). |
+| **Grafana OnCall (Community Edition)** | Fully integrated with Grafana, Prometheus, and Loki. Supports escalation policies, scheduling, and Slack notifications. | DevOps orgs already using Grafana stack for observability [99rdp](https://99rdp.com/top-open-source-alternatives-to-pagerduty-opsgenie-more-in-2025/). |
+
+## Key Considerations
+
+- **Hosting & Maintenance**: All options require internal hosting, updates, and security configuration—unlike SaaS tools such as PagerDuty or TaskCall. [onpage](https://www.onpage.com/evaluating-opsgenie-alternatives/)
+- **Integrations**: Grafana OnCall and Iris/OnCall offer the most native integrations with modern observability stacks. [99rdp](https://99rdp.com/top-open-source-alternatives-to-pagerduty-opsgenie-more-in-2025/)
+- **Status of Grafana OnCall OSS**: Community reports note Grafana OnCall OSS has recently been deprecated, though forks and older versions remain available. [reddit](https://www.reddit.com/r/devops/comments/1j572gh/opsgenie_is_shutting_down_here_are_5_open_source/)
+
+For teams prioritizing freedom from licensing constraints and deep operational customization, **Iris + OnCall**, **Cabot**, and **OpenDuty** are the leading open‑source alternatives to Opsgenie in late 2025. [99rdp](https://99rdp.com/top-open-source-alternatives-to-pagerduty-opsgenie-more-in-2025/)

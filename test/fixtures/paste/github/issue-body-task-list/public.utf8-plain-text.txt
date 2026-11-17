@@ -1,0 +1,65 @@
+This is a tracking issue for generic associated types (rust-lang/rfcs#1598)
+
+Repository
+Detailed tracking information is available at the GAT initiative repository
+Unresolved questions:
+
+GATs: Decide whether to have defaults for where Self: 'a #87479 -- defaults for where Self: 'a
+
+Proposal: Change syntax of where clauses on type aliases #89122 -- where to put where clauses
+Blocking bugs
+See also the GATs-blocking tag (the list below should be a superset of that, but its good to double-check).
+
+
+lifetime-parametric GATs cause ICEs (with feature(generic_associated_types)) #62521
+
+Associated type projections don't play well with HRTBs and normalization #30472 No longer blocking
+
+Pretty printing loses associated type generics and where clauses #67509
+
+Allow generic associate types in trait paths #67510
+
+Generic associated types can shadow lifetimes #67512
+
+Implement type- and const-generic associated types #67513
+
+GAT's arent typechecked, and can cause UB #68641
+
+GAT's and broken LLVM #68642
+
+GAT ICE: use of PlaceRef { local: _0, projection: [] } before def #68643
+
+GAT ICE: Encountered error Unimplemented selecting `Binder #68644
+
+GAT ICE: FulfillmentError #68645
+
+GAT ICE: impl item and trait item have different parameter counts #68648
+
+GAT ICE: place local already assigned to #68649
+
+GAT ICE: unsize_thin_ptr: called on bad types #68650
+
+GAT ICE: codegen_argument #68652
+
+GAT ICE: unelided lifetime in signature #68653
+
+GAT ICE: cannot directly store unsized values #68656
+
+Broken LLVM with GAT #74684
+
+[nightly] ICE when using GATs with const generics #75415
+
+ICE when combining GATs and HRTBs #76826
+
+Internal Compiler Error caused by Generic Associated Types #79768
+
+Enum variant with GAT field fails to derive Sized #80626 Not GATs specific, not blocking
+
+Error when inferring a lifetime in return type using GATs #81487
+
+Bad diagnostics for GATs in trait paths #81801
+
+defaults on GATs emit an error but function correctlyish #99205
+Postponed work
+
+Trait objects do not work with generic associated types #81823

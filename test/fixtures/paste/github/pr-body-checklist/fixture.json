@@ -1,0 +1,28 @@
+{
+  "source": "github",
+  "case": "pr-body-checklist",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the nodejs/node pull request #28831 and selected the PR description (first .markdown-body, a short checklist body) with a DOM range, then ran document.execCommand(\"copy\").",
+  "url": "https://github.com/nodejs/node/pull/28831",
+  "notes": "Selection of the short PR description of nodejs/node#28831: a 'Refs:' line and a checklist (3 checkbox task-list items, inline code). Small on purpose.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

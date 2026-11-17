@@ -1,6 +1,8 @@
 #include "rich_clipboard.h"
 
 #include <flutter/standard_method_codec.h>
+#include <objbase.h>
+#include <shellapi.h>
 #include <wincodec.h>
 #include <wrl/client.h>
 
@@ -10,15 +12,18 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
 
+using flutter::EncodableList;
 using flutter::EncodableMap;
 using flutter::EncodableValue;
 using Microsoft::WRL::ComPtr;
 
 constexpr wchar_t kPngClipboardFormat[] = L"PNG";
+constexpr wchar_t kKapyClipboardFormat[] = L"KapyNotes Fragment";
 
 const EncodableValue* Find(const EncodableMap& arguments,
                            const std::string& name) {
@@ -88,6 +93,25 @@ std::wstring Utf16FromUtf8(const std::string& source) {
   if (::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source.data(),
                             source_length, result.data(), length) != length) {
     return std::wstring();
+  }
+  return result;
+}
+
+std::string Utf8FromUtf16(const wchar_t* source, size_t length) {
+  if (length == 0 ||
+      length > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return std::string();
+  }
+  const int source_length = static_cast<int>(length);
+  const int size = ::WideCharToMultiByte(CP_UTF8, 0, source, source_length,
+                                         nullptr, 0, nullptr, nullptr);
+  if (size <= 0) {
+    return std::string();
+  }
+  std::string result(static_cast<size_t>(size), '\0');
+  if (::WideCharToMultiByte(CP_UTF8, 0, source, source_length, result.data(),
+                            size, nullptr, nullptr) != size) {
+    return std::string();
   }
   return result;
 }
@@ -231,6 +255,292 @@ bool SetEncodedImage(const std::vector<uint8_t>& bytes,
   return SetGlobalClipboardData(format, bytes.data(), bytes.size());
 }
 
+bool SetKapyFragment(const std::string& fragment) {
+  return SetGlobalClipboardData(::RegisterClipboardFormatW(kKapyClipboardFormat),
+                                fragment.c_str(), fragment.size() + 1);
+}
+
+// Every byte of |format| on the open clipboard. The allocation can be
+// larger than what was written, so text formats are cut at their NUL.
+std::vector<uint8_t> ClipboardBytes(UINT format) {
+  if (format == 0) {
+    return std::vector<uint8_t>();
+  }
+  HANDLE memory = ::GetClipboardData(format);
+  if (memory == nullptr) {
+    return std::vector<uint8_t>();
+  }
+  const auto* data = static_cast<const uint8_t*>(::GlobalLock(memory));
+  if (data == nullptr) {
+    return std::vector<uint8_t>();
+  }
+  std::vector<uint8_t> bytes(data, data + ::GlobalSize(memory));
+  ::GlobalUnlock(memory);
+  return bytes;
+}
+
+// |bytes| up to their first NUL as UTF-8. Invalid sequences become U+FFFD,
+// because Dart refuses a channel string that isn't UTF-8.
+std::string ClipboardUtf8(const std::vector<uint8_t>& bytes) {
+  size_t length = 0;
+  while (length < bytes.size() && bytes[length] != 0) {
+    ++length;
+  }
+  if (length == 0 ||
+      length > static_cast<size_t>(std::numeric_limits<int>::max())) {
+    return std::string();
+  }
+  std::string text(reinterpret_cast<const char*>(bytes.data()), length);
+  const int text_length = static_cast<int>(text.size());
+  if (::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(),
+                            text_length, nullptr, 0) > 0) {
+    return text;
+  }
+  const int wide_length =
+      ::MultiByteToWideChar(CP_UTF8, 0, text.data(), text_length, nullptr, 0);
+  if (wide_length <= 0) {
+    return std::string();
+  }
+  std::wstring wide(static_cast<size_t>(wide_length), L'\0');
+  if (::MultiByteToWideChar(CP_UTF8, 0, text.data(), text_length, wide.data(),
+                            wide_length) != wide_length) {
+    return std::string();
+  }
+  return Utf8FromUtf16(wide.c_str(), wide.size());
+}
+
+std::string ClipboardUnicodeText() {
+  const std::vector<uint8_t> bytes = ClipboardBytes(CF_UNICODETEXT);
+  const auto* text = reinterpret_cast<const wchar_t*>(bytes.data());
+  const size_t capacity = bytes.size() / sizeof(wchar_t);
+  size_t length = 0;
+  while (length < capacity && text[length] != L'\0') {
+    ++length;
+  }
+  return Utf8FromUtf16(text, length);
+}
+
+std::vector<std::string> ClipboardFiles() {
+  std::vector<std::string> paths;
+  HANDLE memory = ::GetClipboardData(CF_HDROP);
+  if (memory == nullptr) {
+    return paths;
+  }
+  HDROP drop = static_cast<HDROP>(memory);
+  const UINT count = ::DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+  for (UINT index = 0; index < count; ++index) {
+    const UINT length = ::DragQueryFileW(drop, index, nullptr, 0);
+    if (length == 0) {
+      continue;
+    }
+    std::wstring path(static_cast<size_t>(length) + 1, L'\0');
+    if (::DragQueryFileW(drop, index, path.data(), length + 1) == 0) {
+      continue;
+    }
+    std::string utf8 = Utf8FromUtf16(path.c_str(), length);
+    if (!utf8.empty()) {
+      paths.push_back(std::move(utf8));
+    }
+  }
+  return paths;
+}
+
+std::string FormatName(UINT format) {
+  wchar_t name[256];
+  const int length = ::GetClipboardFormatNameW(format, name, 256);
+  if (length > 0) {
+    return Utf8FromUtf16(name, static_cast<size_t>(length));
+  }
+  switch (format) {
+    case CF_TEXT:
+      return "CF_TEXT";
+    case CF_BITMAP:
+      return "CF_BITMAP";
+    case CF_METAFILEPICT:
+      return "CF_METAFILEPICT";
+    case CF_OEMTEXT:
+      return "CF_OEMTEXT";
+    case CF_DIB:
+      return "CF_DIB";
+    case CF_UNICODETEXT:
+      return "CF_UNICODETEXT";
+    case CF_ENHMETAFILE:
+      return "CF_ENHMETAFILE";
+    case CF_HDROP:
+      return "CF_HDROP";
+    case CF_LOCALE:
+      return "CF_LOCALE";
+    case CF_DIBV5:
+      return "CF_DIBV5";
+    default:
+      return "CF_" + std::to_string(format);
+  }
+}
+
+// Any picture WIC can decode, as PNG.
+std::vector<uint8_t> PngFromEncoded(const std::vector<uint8_t>& encoded) {
+  if (encoded.empty() ||
+      encoded.size() > static_cast<size_t>(std::numeric_limits<DWORD>::max())) {
+    return std::vector<uint8_t>();
+  }
+  ComPtr<IWICImagingFactory> factory;
+  if (FAILED(::CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&factory)))) {
+    return std::vector<uint8_t>();
+  }
+  ComPtr<IWICStream> input;
+  if (FAILED(factory->CreateStream(&input)) ||
+      FAILED(input->InitializeFromMemory(
+          const_cast<BYTE*>(encoded.data()), static_cast<DWORD>(encoded.size())))) {
+    return std::vector<uint8_t>();
+  }
+  ComPtr<IWICBitmapDecoder> decoder;
+  ComPtr<IWICBitmapFrameDecode> frame;
+  ComPtr<IWICFormatConverter> converter;
+  if (FAILED(factory->CreateDecoderFromStream(
+          input.Get(), nullptr, WICDecodeMetadataCacheOnDemand, &decoder)) ||
+      FAILED(decoder->GetFrame(0, &frame)) ||
+      FAILED(factory->CreateFormatConverter(&converter)) ||
+      FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppBGRA,
+                                   WICBitmapDitherTypeNone, nullptr, 0,
+                                   WICBitmapPaletteTypeCustom))) {
+    return std::vector<uint8_t>();
+  }
+  UINT width = 0;
+  UINT height = 0;
+  if (FAILED(converter->GetSize(&width, &height)) || width == 0 || height == 0) {
+    return std::vector<uint8_t>();
+  }
+
+  ComPtr<IStream> output;
+  ComPtr<IWICBitmapEncoder> encoder;
+  ComPtr<IWICBitmapFrameEncode> target;
+  if (FAILED(::CreateStreamOnHGlobal(nullptr, TRUE, &output)) ||
+      FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) ||
+      FAILED(encoder->Initialize(output.Get(), WICBitmapEncoderNoCache)) ||
+      FAILED(encoder->CreateNewFrame(&target, nullptr)) ||
+      FAILED(target->Initialize(nullptr)) ||
+      FAILED(target->SetSize(width, height))) {
+    return std::vector<uint8_t>();
+  }
+  WICPixelFormatGUID pixel_format = GUID_WICPixelFormat32bppBGRA;
+  if (FAILED(target->SetPixelFormat(&pixel_format)) ||
+      !IsEqualGUID(pixel_format, GUID_WICPixelFormat32bppBGRA) ||
+      FAILED(target->WriteSource(converter.Get(), nullptr)) ||
+      FAILED(target->Commit()) || FAILED(encoder->Commit())) {
+    return std::vector<uint8_t>();
+  }
+
+  STATSTG stat = {};
+  HGLOBAL memory = nullptr;
+  if (FAILED(output->Stat(&stat, STATFLAG_NONAME)) ||
+      FAILED(::GetHGlobalFromStream(output.Get(), &memory)) ||
+      stat.cbSize.QuadPart == 0 ||
+      stat.cbSize.QuadPart > ::GlobalSize(memory)) {
+    return std::vector<uint8_t>();
+  }
+  const auto* data = static_cast<const uint8_t*>(::GlobalLock(memory));
+  if (data == nullptr) {
+    return std::vector<uint8_t>();
+  }
+  std::vector<uint8_t> png(data, data + static_cast<size_t>(stat.cbSize.QuadPart));
+  ::GlobalUnlock(memory);
+  return png;
+}
+
+// A packed DIB as PNG, through the BMP file WIC decodes: a file header is
+// put in front, pointing past the info header, masks and colour table.
+std::vector<uint8_t> PngFromDib(const std::vector<uint8_t>& dib) {
+  if (dib.size() < sizeof(BITMAPINFOHEADER) ||
+      dib.size() > std::numeric_limits<DWORD>::max() - sizeof(BITMAPFILEHEADER)) {
+    return std::vector<uint8_t>();
+  }
+  BITMAPINFOHEADER info;
+  std::memcpy(&info, dib.data(), sizeof(info));
+  if (info.biSize < sizeof(BITMAPINFOHEADER) || info.biSize > dib.size()) {
+    return std::vector<uint8_t>();
+  }
+  uint64_t pixels = info.biSize;
+  if (info.biSize == sizeof(BITMAPINFOHEADER) &&
+      info.biCompression == BI_BITFIELDS) {
+    pixels += 3 * sizeof(DWORD);
+  }
+  uint64_t colors = info.biClrUsed;
+  if (colors == 0 && info.biBitCount >= 1 && info.biBitCount <= 8) {
+    colors = uint64_t{1} << info.biBitCount;
+  }
+  pixels += colors * sizeof(RGBQUAD);
+  if (pixels >= dib.size()) {
+    return std::vector<uint8_t>();
+  }
+
+  BITMAPFILEHEADER file = {};
+  file.bfType = 0x4D42;
+  file.bfSize = static_cast<DWORD>(sizeof(BITMAPFILEHEADER) + dib.size());
+  file.bfOffBits = static_cast<DWORD>(sizeof(BITMAPFILEHEADER) + pixels);
+  std::vector<uint8_t> bmp(sizeof(BITMAPFILEHEADER) + dib.size());
+  std::memcpy(bmp.data(), &file, sizeof(file));
+  std::memcpy(bmp.data() + sizeof(file), dib.data(), dib.size());
+  return PngFromEncoded(bmp);
+}
+
+// Everything on the clipboard that a paste can use, in the shape
+// ClipboardSnapshot.fromChannel reads. "HTML Format" keeps its header, which
+// Dart reads for the fragment's offsets and the page's address. A picture is
+// the "PNG" format when an app published one, else the bitmap as PNG; the
+// bitmap is read as CF_DIB, which Windows also offers for a CF_DIBV5, so any
+// alpha a CF_DIBV5 carried is dropped.
+void HandleRead(std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
+  if (!OpenClipboardWithRetry(nullptr)) {
+    result->Error("clipboard_open", "The clipboard is busy");
+    return;
+  }
+  EncodableMap snapshot;
+  EncodableList types;
+  for (UINT format = ::EnumClipboardFormats(0); format != 0;
+       format = ::EnumClipboardFormats(format)) {
+    types.push_back(EncodableValue(FormatName(format)));
+  }
+  snapshot[EncodableValue("types")] = EncodableValue(std::move(types));
+
+  const std::string text = ClipboardUnicodeText();
+  if (!text.empty()) {
+    snapshot[EncodableValue("text")] = EncodableValue(text);
+  }
+  const std::string html =
+      ClipboardUtf8(ClipboardBytes(::RegisterClipboardFormatW(L"HTML Format")));
+  if (!html.empty()) {
+    snapshot[EncodableValue("html")] = EncodableValue(html);
+  }
+  const std::string kapy =
+      ClipboardUtf8(ClipboardBytes(::RegisterClipboardFormatW(kKapyClipboardFormat)));
+  if (!kapy.empty()) {
+    snapshot[EncodableValue("kapy")] = EncodableValue(kapy);
+  }
+  EncodableList files;
+  for (const std::string& path : ClipboardFiles()) {
+    files.push_back(EncodableValue(path));
+  }
+  if (!files.empty()) {
+    snapshot[EncodableValue("files")] = EncodableValue(std::move(files));
+  }
+  std::vector<uint8_t> image =
+      ClipboardBytes(::RegisterClipboardFormatW(kPngClipboardFormat));
+  const std::vector<uint8_t> dib =
+      image.empty() ? ClipboardBytes(CF_DIB) : std::vector<uint8_t>();
+  ::CloseClipboard();
+
+  if (image.empty()) {
+    image = PngFromDib(dib);
+  }
+  if (!image.empty()) {
+    snapshot[EncodableValue("image")] = EncodableValue(std::move(image));
+    snapshot[EncodableValue("imageMime")] = EncodableValue("image/png");
+  }
+  result->Success(EncodableValue(std::move(snapshot)));
+}
+
 std::string ReadHtml() {
   const UINT format = ::RegisterClipboardFormatW(L"HTML Format");
   if (format == 0 || !::IsClipboardFormatAvailable(format) ||
@@ -285,9 +595,12 @@ void HandleWrite(
     const bool bitmap_written = SetDecodedBitmap(*image);
     image_written = encoded_written || bitmap_written;
   }
+  const auto* kapy = StringArgument(*arguments, "kapy");
+  const bool kapy_written =
+      kapy == nullptr || kapy->empty() || SetKapyFragment(*kapy);
   ::CloseClipboard();
 
-  if (!text_written || !html_written || !image_written) {
+  if (!text_written || !html_written || !image_written || !kapy_written) {
     result->Error("clipboard_write", "Could not publish every clipboard format");
     return;
   }
@@ -307,6 +620,8 @@ RegisterRichClipboardChannel(flutter::BinaryMessenger* messenger, HWND owner) {
               std::unique_ptr<flutter::MethodResult<EncodableValue>> result) {
         if (call.method_name() == "write") {
           HandleWrite(owner, call.arguments(), std::move(result));
+        } else if (call.method_name() == "read") {
+          HandleRead(std::move(result));
         } else if (call.method_name() == "readHtml") {
           const std::string html = ReadHtml();
           if (html.empty()) {

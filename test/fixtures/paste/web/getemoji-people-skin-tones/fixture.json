@@ -1,0 +1,28 @@
+{
+  "source": "web",
+  "case": "getemoji-people-skin-tones",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened getemoji.com and selected three emoji sections (People and Fantasy, Clothing and Accessories, Pale Emojis) with a DOM range, then ran document.execCommand(\"copy\").",
+  "url": "https://getemoji.com/",
+  "notes": "Selection of three sections of getemoji.com: ~1,100 emoji in 4 KB of plain text including skin-tone modifiers and ZWJ sequences, in 1 MB of HTML (every emoji is its own element with a long computed style). Checks surrogate pairs and joiners survive.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "source": "perplexity",
+  "case": "table-links-selection",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the public Perplexity session page and selected the answer body (a table and citations) with a DOM range, then ran document.execCommand(\"copy\").",
+  "url": "https://www.perplexity.ai/session/cb8dfa18-d668-4bad-ae57-83b1cf7cbbcc",
+  "notes": "Perplexity session page, selection of the answer body: 2 tables, citations, source chips. The 'Copy' button under the answer wrote nothing to the clipboard in headless Chrome (no clipboard API call observed), so there is no copy-button capture.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

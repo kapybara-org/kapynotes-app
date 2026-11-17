@@ -22,6 +22,9 @@
 
 /* Begin PBXBuildFile section */
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
+		C1A0B0F10000000000000002 /* RichClipboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F10000000000000001 /* RichClipboardTests.swift */; };
+		C1A0B0F40000000000000002 /* RichClipboardFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F40000000000000001 /* RichClipboardFixtureTests.swift */; };
+		C1A0B0F30000000000000002 /* paste in Resources */ = {isa = PBXBuildFile; fileRef = C1A0B0F30000000000000001 /* paste */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
@@ -80,6 +83,9 @@
 		0C8D5D7EE69E0011CD9A30EB /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
+		C1A0B0F10000000000000001 /* RichClipboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboardTests.swift; sourceTree = "<group>"; };
+		C1A0B0F40000000000000001 /* RichClipboardFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboardFixtureTests.swift; sourceTree = "<group>"; };
+		C1A0B0F30000000000000001 /* paste */ = {isa = PBXFileReference; lastKnownFileType = folder; name = paste; path = ../test/fixtures/paste; sourceTree = SOURCE_ROOT; };
 		333000ED22D3DE5D00554162 /* Warnings.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Warnings.xcconfig; sourceTree = "<group>"; };
 		335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GeneratedPluginRegistrant.swift; sourceTree = "<group>"; };
 		33CC10ED2044A3C60003C045 /* kapy_notes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = kapy_notes.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -141,6 +147,9 @@
 			isa = PBXGroup;
 			children = (
 				331C80D7294CF71000263BE5 /* RunnerTests.swift */,
+				C1A0B0F10000000000000001 /* RichClipboardTests.swift */,
+				C1A0B0F40000000000000001 /* RichClipboardFixtureTests.swift */,
+				C1A0B0F30000000000000001 /* paste */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -355,6 +364,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C1A0B0F30000000000000002 /* paste in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -497,6 +507,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */,
+				C1A0B0F10000000000000002 /* RichClipboardTests.swift in Sources */,
+				C1A0B0F40000000000000002 /* RichClipboardFixtureTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

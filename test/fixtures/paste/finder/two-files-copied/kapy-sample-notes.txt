@@ -1,0 +1,2 @@
+Sample notes file used by the Finder fixture.
+Line two.

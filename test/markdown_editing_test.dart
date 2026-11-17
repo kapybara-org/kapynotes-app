@@ -52,18 +52,31 @@ String bold(String marked, {bool strong = true}) {
 TextEditingValue keystroke(
   TextEditingValue before,
   TextEditingValue typed,
-  MarkdownTyping typing,
-) {
+  MarkdownTyping typing, {
+  MarkdownShortcut? shortcut,
+}) {
   final analysis = MarkdownAnalyzer.analyzeWhole(before.text);
+  final afterShortcut =
+      markdownShortcutEdit(
+        before,
+        typed,
+        MarkdownAnalyzer.analyzeWhole,
+        shortcut ?? MarkdownShortcut(),
+      ) ??
+      typed;
   final afterTyping =
-      markdownTypingEdit(before, typed, analysis, typing) ?? typed;
+      markdownTypingEdit(before, afterShortcut, analysis, typing) ??
+      afterShortcut;
   return markdownStructureEdit(before, afterTyping, analysis) ?? afterTyping;
 }
 
-/// What typing [keys] one at a time at the caret in [marked] leaves.
-String type(String marked, String keys, {MarkdownTyping? typing}) {
-  var value = at(marked);
-  final state = typing ?? MarkdownTyping();
+TextEditingValue _typed(
+  TextEditingValue start,
+  String keys,
+  MarkdownTyping typing,
+  MarkdownShortcut shortcut,
+) {
+  var value = start;
   for (final key in keys.split('')) {
     final caret = value.selection.start;
     value = keystroke(
@@ -72,10 +85,35 @@ String type(String marked, String keys, {MarkdownTyping? typing}) {
         text: value.text.replaceRange(caret, caret, key),
         selection: TextSelection.collapsed(offset: caret + 1),
       ),
-      state,
+      typing,
+      shortcut: shortcut,
     );
   }
-  return shown(value);
+  return value;
+}
+
+/// What typing [keys] one at a time at the caret in [marked] leaves.
+String type(String marked, String keys, {MarkdownTyping? typing}) => shown(
+  _typed(at(marked), keys, typing ?? MarkdownTyping(), MarkdownShortcut()),
+);
+
+/// What typing [keys] at the caret in [marked], and then Backspace, leaves.
+String typeThenBackspace(String marked, String keys) {
+  final typing = MarkdownTyping();
+  final shortcut = MarkdownShortcut();
+  final value = _typed(at(marked), keys, typing, shortcut);
+  final caret = value.selection.start;
+  return shown(
+    keystroke(
+      value,
+      TextEditingValue(
+        text: value.text.replaceRange(caret - 1, caret, ''),
+        selection: TextSelection.collapsed(offset: caret - 1),
+      ),
+      typing,
+      shortcut: shortcut,
+    ),
+  );
 }
 
 /// What Backspace at the caret in [marked] leaves.
@@ -529,6 +567,125 @@ void main() {
       expect(type('> []|', ' '), '> - [ ] |');
       expect(type('- []|', ' '), '- [] |', reason: 'already an item');
       expect(type('a []|', ' '), 'a [] |');
+    });
+  });
+
+  group('shortcuts', () {
+    test('[x] and a space makes a ticked task', () {
+      expect(type('|', '[x] '), '- [x] |');
+      expect(type('|', '[X] '), '- [x] |');
+      expect(type('  |', '[x] '), '  - [x] |');
+      expect(type('a [x]|', ' '), 'a [x] |', reason: 'only at the start');
+    });
+
+    test('*, + and a number keep what was typed', () {
+      expect(type('|', '* '), '* |');
+      expect(type('|', '+ '), '+ |');
+      expect(type('|', '3. '), '3. |');
+      expect(enter('3. three|'), '3. three\n4. |');
+      expect(enter('7) seven|'), '7) seven\n8) |');
+    });
+
+    test('Return after a fence the writer opened closes it', () {
+      expect(type('|', '```dart\n'), '```dart\n|\n```');
+      expect(type('|', '```\n'), '```\n|\n```');
+      expect(type('|', '~~~~py\n'), '~~~~py\n|\n~~~~');
+      expect(
+        type('Intro\n|\nOutro', '```js\n'),
+        'Intro\n```js\n|\n```\nOutro',
+        reason: 'the rest of the note stays out of the block',
+      );
+      expect(
+        type('```dart|', '\n'),
+        '```dart\n|',
+        reason: 'a fence that was already there is left as it is',
+      );
+      expect(
+        type('```\nlet x = 1\n|', '```\n'),
+        '```\nlet x = 1\n```\n|',
+        reason: 'a fence typed to close a block closes it',
+      );
+      expect(
+        type('|', '```dart x\n'),
+        '```dart x\n|\n```',
+        reason: 'words typed after the language are its info string',
+      );
+    });
+
+    test('--- under words is a divider, with a blank line above it', () {
+      expect(type('Words\n|', '---'), 'Words\n\n---|');
+      expect(type('|', '---'), '---|');
+      expect(type('Words\n\n|', '---'), 'Words\n\n---|');
+      expect(type('# Title\n|', '---'), '# Title\n---|');
+      expect(type('Words\n|', '--'), 'Words\n--|');
+      expect(type('Words\n|', '---x'), 'Words\n\n---x|');
+    });
+
+    test('Backspace straight after one gives back what was typed', () {
+      expect(typeThenBackspace('|', '# '), r'\# |');
+      expect(typeThenBackspace('|', '### '), r'\### |');
+      expect(typeThenBackspace('|', '- '), r'\- |');
+      expect(typeThenBackspace('|', '* '), r'\* |');
+      expect(typeThenBackspace('|', '+ '), r'\+ |');
+      expect(typeThenBackspace('|', '12. '), r'12\. |');
+      expect(typeThenBackspace('|', '> '), r'\> |');
+      expect(typeThenBackspace('> |', '- '), r'> \- |');
+      expect(typeThenBackspace('|', '[] '), r'\[] |');
+      expect(typeThenBackspace('|', '[x] '), r'\[x] |');
+      expect(typeThenBackspace('Words\n|', '---'), 'Words\n\\---|');
+      expect(typeThenBackspace('|', '---'), '\\---|');
+      expect(typeThenBackspace('|', '```dart\n'), '\\```dart\n|');
+    });
+
+    test('and only straight after one', () {
+      expect(typeThenBackspace('|', '# T'), '# |');
+      expect(typeThenBackspace('|', '#'), '|');
+      expect(
+        typeThenBackspace('Words\n|', '- '),
+        'Words\n-|',
+        reason: 'an empty item under words is not a list yet',
+      );
+      expect(typeThenBackspace('|', '[x] a'), '- [x] |');
+    });
+
+    test('what comes back stays as typed', () {
+      final analysis = MarkdownAnalyzer.analyzeWhole(r'\# Words');
+      expect(
+        analysis.spans.where((span) => span.style == MarkdownStyle.heading1),
+        isEmpty,
+      );
+      expect(MarkdownAnalyzer.analyzeWhole(r'\- Words').listItems, isEmpty);
+      expect(MarkdownAnalyzer.analyzeWhole(r'\[x] Words').tasks, isEmpty);
+      expect(MarkdownAnalyzer.analyzeWhole('\\---').blocks, isEmpty);
+      expect(MarkdownAnalyzer.analyzeWhole('\\```dart\nx').codeBlocks, isEmpty);
+    });
+
+    test('nothing happens while an input method is composing', () {
+      final before = at('[x]|');
+      final composing = keystroke(
+        before,
+        const TextEditingValue(
+          text: '[x] ',
+          selection: TextSelection.collapsed(offset: 4),
+          composing: TextRange(start: 0, end: 4),
+        ),
+        MarkdownTyping(),
+      );
+      expect(composing.text, '[x] ');
+
+      final shortcut = MarkdownShortcut();
+      final fence = _typed(at('|'), '```dart', MarkdownTyping(), shortcut);
+      final returned = keystroke(
+        fence,
+        const TextEditingValue(
+          text: '```dart\n',
+          selection: TextSelection.collapsed(offset: 8),
+          composing: TextRange(start: 7, end: 8),
+        ),
+        MarkdownTyping(),
+        shortcut: shortcut,
+      );
+      expect(returned.text, '```dart\n');
     });
   });
 }

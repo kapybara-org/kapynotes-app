@@ -1,0 +1,31 @@
+{
+  "source": "vscode",
+  "case": "python-selection",
+  "app": "Visual Studio Code 1.9x for macOS (synthesized)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized: selecting a Python dataclass in VS Code (Dark Modern theme) and pressing Cmd+C.",
+  "notes": "SYNTHESIZED. VS Code is Electron and sets its data in the copy event through DataTransfer, so on the macOS pasteboard Chromium stores the custom \"vscode-editor-data\" JSON inside the pickled org.chromium.web-custom-data entry (included here, real binary pickle layout: uint32 size, uint32 count, then UTF-16 type/data string pairs). The same JSON is also stored as a separate \"vscode-editor-data\" representation so tests can read it directly; a real macOS pasteboard would NOT have that top-level type. HTML is a <div> with the editor font and one <div> per line, tokens as <span style=\"color:#rrggbb;\">, blank lines as <div><br></div>, plus Chrome's <meta charset='utf-8'> prefix; colors depend on the active theme. Note \"mode\" tells you the language of the copied text; isFromEmptySelection is true when a line was copied with no selection.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "org.chromium.web-custom-data",
+          "file": "org.chromium.web-custom-data.bin"
+        },
+        {
+          "type": "vscode-editor-data",
+          "file": "vscode-editor-data.json"
+        }
+      ]
+    }
+  ]
+}

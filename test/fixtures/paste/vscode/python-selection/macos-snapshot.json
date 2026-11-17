@@ -1,0 +1,12 @@
+{
+  "html" : "<meta charset='utf-8'><div style=\"color: #cccccc;background-color: #1f1f1f;font-family: Menlo, Monaco, 'Courier New', monospace;font-weight: normal;font-size: 12px;line-height: 18px;white-space: pre;\"><div><span style=\"color: #c586c0;\">from</span><span style=\"color: #cccccc;\"> dataclasses </span><span style=\"color: #c586c0;\">import</span><span style=\"color: #cccccc;\"> dataclass</span></div><div><br></div><div><span style=\"color: #dcdcaa;\">@dataclass</span></div><div><span style=\"color: #569cd6;\">class</span><span style=\"color: #cccccc;\"> </span><span style=\"color: #4ec9b0;\">Note</span><span style=\"color: #cccccc;\">:</span></div><div><span style=\"color: #cccccc;\">    title: </span><span style=\"color: #4ec9b0;\">str</span></div><div><span style=\"color: #cccccc;\">    pinned: </span><span style=\"color: #4ec9b0;\">bool</span><span style=\"color: #cccccc;\"> = </span><span style=\"color: #569cd6;\">False</span></div><div><br></div><div><span style=\"color: #569cd6;\">def</span><span style=\"color: #cccccc;\"> </span><span style=\"color: #dcdcaa;\">summary</span><span style=\"color: #cccccc;\">(note: </span><span style=\"color: #4ec9b0;\">Note</span><span style=\"color: #cccccc;\">) -> </span><span style=\"color: #4ec9b0;\">str</span><span style=\"color: #cccccc;\">:</span></div><div><span style=\"color: #cccccc;\">    </span><span style=\"color: #c586c0;\">return</span><span style=\"color: #cccccc;\"> </span><span style=\"color: #569cd6;\">f</span><span style=\"color: #ce9178;\">\"{note.title}: {</span><span style=\"color: #ce9178;\">'pinned'</span><span style=\"color: #cccccc;\"> </span><span style=\"color: #c586c0;\">if</span><span style=\"color: #cccccc;\"> note.pinned </span><span style=\"color: #c586c0;\">else</span><span style=\"color: #cccccc;\"> </span><span style=\"color: #ce9178;\">'normal'</span><span style=\"color: #ce9178;\">}\"</span></div></div>",
+  "text" : "from dataclasses import dataclass\n\n@dataclass\nclass Note:\n    title: str\n    pinned: bool = False\n\ndef summary(note: Note) -> str:\n    return f\"{note.title}: {'pinned' if note.pinned else 'normal'}\"",
+  "types" : [
+    "public.html",
+    "Apple HTML pasteboard type",
+    "public.utf8-plain-text",
+    "NSStringPboardType",
+    "org.chromium.web-custom-data"
+  ],
+  "vscode" : "{\"version\":1,\"isFromEmptySelection\":false,\"multicursorText\":null,\"mode\":\"python\"}"
+}

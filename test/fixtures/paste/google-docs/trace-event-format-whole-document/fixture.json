@@ -1,0 +1,28 @@
+{
+  "source": "google-docs",
+  "case": "trace-event-format-whole-document",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the public view-only Google Doc 'Trace Event Format' in the Docs editor in headless Chrome and pressed Cmd+A, Cmd+C: the complete document (headings, ~38 tables, lists, code samples).",
+  "url": "https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/edit",
+  "notes": "Real Google Docs copy of the whole document (Cmd+A): 38 tables with per-cell inline styles, 32 headings, 10 <ul> / 3 <ol>, code in monospace spans, 680 KB of HTML. A stress input for inline-style soup.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

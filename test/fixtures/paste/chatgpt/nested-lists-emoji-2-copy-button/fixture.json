@@ -1,0 +1,24 @@
+{
+  "source": "chatgpt",
+  "case": "nested-lists-emoji-2-copy-button",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the public ChatGPT share page and clicked the site's own \"Copy response\" button under the longest assistant answer (nested lists, headings and emoji).",
+  "url": "https://chatgpt.com/share/67bde29f-a56c-800a-8e26-44a5a3ad2326",
+  "notes": "Copy-button capture. The site writes through navigator.clipboard.write, so there is no org.chromium.source-url. text/plain is the answer as markdown source (pipe tables, ``` fences, $...$ / $$...$$ math, hard line breaks as a trailing backslash); text/html is the app's rendered DOM full of <!--[--> hydration comments, wrapped in <html><head></head><body>, with no inline styles. Nested bullet lists under emoji headings.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        }
+      ]
+    }
+  ]
+}

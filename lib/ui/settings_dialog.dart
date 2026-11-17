@@ -2548,7 +2548,8 @@ extension on ShortcutAction {
     ShortcutAction.openSettings => _ShortcutGroup.window,
     ShortcutAction.increaseEditorTextSize ||
     ShortcutAction.decreaseEditorTextSize ||
-    ShortcutAction.resetEditorTextSize => _ShortcutGroup.editor,
+    ShortcutAction.resetEditorTextSize ||
+    ShortcutAction.pasteAsPlainText => _ShortcutGroup.editor,
     ShortcutAction.insertImage ||
     ShortcutAction.recordVoiceNote => _ShortcutGroup.insert,
     ShortcutAction.cycleTextStyle ||

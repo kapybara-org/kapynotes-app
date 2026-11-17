@@ -1,0 +1,43 @@
+{
+  "source": "finder",
+  "case": "two-files-copied",
+  "app": "Finder (macOS 15) (synthesized)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized: selecting kapy-sample-notes.txt and kapy-sample-chart.png on the Desktop in Finder and pressing Cmd+C.",
+  "notes": "SYNTHESIZED. Finder writes one pasteboard item per file, each with public.file-url (percent-encoded file:// URL, no trailing slash for files) and public.utf8-plain-text (the file NAME only, not the path); the legacy NSFilenamesPboardType property list (array of absolute paths) is exposed on the first item. The two files live beside this fixture.json as sidecars named like the basenames, so a test can resolve a file URL by basename. Real Finder also adds com.apple.finder.node and icon types (not reproduced) and the paths are of course the copier's own.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.file-url",
+          "file": "public.file-url.txt"
+        },
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "NSFilenamesPboardType",
+          "file": "NSFilenamesPboardType.plist"
+        }
+      ]
+    },
+    {
+      "representations": [
+        {
+          "type": "public.file-url",
+          "file": "item1.public.file-url.txt"
+        },
+        {
+          "type": "public.utf8-plain-text",
+          "file": "item1.public.utf8-plain-text.txt"
+        }
+      ]
+    }
+  ],
+  "sidecars": [
+    "kapy-sample-notes.txt",
+    "kapy-sample-chart.png"
+  ]
+}

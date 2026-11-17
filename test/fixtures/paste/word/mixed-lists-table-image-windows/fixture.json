@@ -1,0 +1,30 @@
+{
+  "source": "word",
+  "case": "mixed-lists-table-image-windows",
+  "app": "Microsoft Word for Windows 16.0 (Microsoft 365) (synthesized)",
+  "platform": "windows",
+  "capture": "synthesized",
+  "how": "Synthesized: what Word for Windows writes to the clipboard for the same selection (heading, runs, nested bullets, numbered list, table, inline picture).",
+  "notes": "SYNTHESIZED. \"HTML Format\" is the full CF_HTML payload with the Version/StartHTML/EndHTML/StartFragment/EndFragment/ header (10-digit zero-padded byte offsets, CRLF line endings, offsets computed over the UTF-8 bytes here). Windows Word writes the downlevel-revealed form <![if !supportLists]>...<![endif]> around list markers (Mac writes the <!--[if !supportLists]--> form); images point to %TEMP%\\msohtmlclip1\\01\\clip_image001.png (sidecar copy stored here). Windows Word also registers many private formats (Rich Text Format, Embed Source, Link Source, \"Art::GVML ClipFormat\", \"Biff12\"...) which are not reproduced. Unsure: whether the CF_UNICODETEXT bullet glyph is U+2022 or the Symbol private-use character; this fixture uses U+2022.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "HTML Format",
+          "file": "HTML_Format.html"
+        },
+        {
+          "type": "Rich Text Format",
+          "file": "Rich_Text_Format.rtf"
+        },
+        {
+          "type": "CF_UNICODETEXT",
+          "file": "CF_UNICODETEXT.txt"
+        }
+      ]
+    }
+  ],
+  "sidecars": [
+    "clip_image001.png"
+  ]
+}

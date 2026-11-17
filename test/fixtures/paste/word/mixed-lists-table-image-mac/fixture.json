@@ -1,0 +1,30 @@
+{
+  "source": "word",
+  "case": "mixed-lists-table-image-mac",
+  "app": "Microsoft Word for Mac 16.x (synthesized)",
+  "platform": "macos",
+  "capture": "synthesized",
+  "how": "Synthesized: what Word for Mac writes when a heading, a paragraph with bold/italic/underline runs, a nested bullet list, a numbered list, a 3x3 table and an inline picture are selected and copied.",
+  "notes": "SYNTHESIZED from the structure Word emits, not captured; recapture with tool/paste_fixtures/capture_macos.swift. Facts to rely on: Word list items are <p class=MsoListParagraph*> with mso-list:lN levelM lfoK in style, a bullet/number glyph inside <span style=\"mso-list:Ignore\"> wrapped in <!--[if !supportLists]-->...<!--[endif]--> (the glyph is Symbol-font U+F0B7 shown as \"·\", nested level uses Courier New \"o\"), <o:p> elements, MsoNormal/MsoListParagraph classes defined in the <style> block (including @list definitions), tables as <table class=MsoTableGrid> with mso-* style noise, and images as file:/// URLs to a clip_image001.png in Word's temp dir (that file is saved as a sidecar here; it is NOT a clipboard representation), plus VML <!--[if gte vml 1]> duplicate of the picture. Unsure: the exact set of macOS types Word for Mac registers (public.html, public.rtf and public.utf8-plain-text are certain; Word also registers private com.microsoft.* types that are not reproduced), the temp-dir path shape on Mac, and the plain-text bullet glyph (U+2022 used here).",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "public.rtf",
+          "file": "public.rtf.rtf"
+        },
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        }
+      ]
+    }
+  ],
+  "sidecars": [
+    "clip_image001.png"
+  ]
+}

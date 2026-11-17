@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert' show utf8;
+import 'dart:io' show Directory, File;
 import 'dart:math' as math;
 import 'dart:ui' show BoxHeightStyle, BoxWidthStyle, Locale;
 
@@ -52,6 +54,13 @@ import '../../data/note_attachment.dart';
 import 'package:file_selector/file_selector.dart';
 
 import '../../images/image_clipboard.dart';
+import '../../paste/clipboard_snapshot.dart';
+import '../../paste/image_download.dart';
+import '../../paste/note_text.dart';
+import '../../paste/paste_converter.dart';
+import '../../paste/paste_insertion.dart';
+import '../../paste/paste_tree.dart';
+import '../../sync/aead.dart' show randomKey;
 import '../../images/image_codec.dart';
 import '../../images/image_ingest.dart';
 import '../../images/image_picker.dart';
@@ -489,6 +498,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   /// Bold switched on for the next word, and the like. See [MarkdownTyping].
   final MarkdownTyping _markdownTyping = MarkdownTyping();
+
+  /// The shortcut just typed, which Backspace or Undo gives back as typed.
+  /// See [MarkdownShortcut].
+  final MarkdownShortcut _markdownShortcut = MarkdownShortcut();
 
   /// Whether inline markdown stays hidden even beside the caret: while the
   /// writer is typing, so markers disappear as they are completed, and until
@@ -1180,6 +1193,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           // The writer moved the caret: anything waiting to be typed is
           // off, and the syntax beside the caret may show again.
           _markdownTyping.clear();
+          _markdownShortcut.clear();
           _markdownQuiet = false;
         }
       }
@@ -1434,6 +1448,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     for (final ref in after) {
       survivors[ref.hash] = (survivors[ref.hash] ?? 0) + 1;
     }
+    var removed = 0;
     for (final ref in before) {
       final left = survivors[ref.hash] ?? 0;
       if (left > 0) {
@@ -1441,8 +1456,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         continue;
       }
       _removedRefs.add((textBefore: textBefore, ref: ref));
+      removed++;
     }
-    while (_removedRefs.length > _maxRemovedRefs) {
+    while (_removedRefs.length > math.max(_maxRemovedRefs, removed)) {
       _removedRefs.removeAt(0);
     }
   }
@@ -1528,6 +1544,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   bool _canIndent({required bool outdent}) => _indentsAsMarkdown
       ? canIndentMarkdownSelection(_controller.value, outdent: outdent)
       : canIndentSelection(_controller.value, outdent: outdent);
+
+  /// What Undo does straight after a markdown shortcut: gives back what was
+  /// typed. False when the last thing typed was not one.
+  bool _undoMarkdownShortcut() {
+    final typed = _markdownShortcut.typedFor(_controller.value);
+    if (typed == null || widget.readOnly || !widget.markdownEnabled) {
+      return false;
+    }
+    _markdownShortcut.clear();
+    _controller.value = typed;
+    return true;
+  }
 
   /// Puts a markdown control's edit into the note.
   ///
@@ -1817,24 +1845,57 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final startingValue = _editableTextState()?.textEditingValue;
     final store = widget.images;
 
-    // Kapy Notes rich HTML carries the positions of every selected image, so it
-    // outranks the clipboard's native bitmap: reading only that would reduce a
-    // mixed selection to its first picture and lose the text around it.
-    final (capturedText, fragment, paths) = await (
-      _clipboardText(),
-      store == null
-          ? Future<NoteClipboardFragment?>.value()
-          : widget.clipboard.readFragment(),
+    // A note without markdown takes its words from the platform's own text
+    // call, as it always has; a markdown note takes them from the same read
+    // as the rest of what it converts.
+    final markdown = widget.markdownEnabled;
+    final (plainText, snapshot, paths) = await (
+      markdown ? Future<String?>.value() : _clipboardText(),
+      markdown || store != null
+          ? widget.clipboard.readSnapshot()
+          : Future.value(const ClipboardSnapshot()),
       store == null
           ? Future<List<String>>.value(const [])
           : widget.clipboard.readImageFiles(),
     ).wait;
     if (!mounted) return;
+    final capturedText = markdown ? snapshot.text : plainText;
 
+    // A selection copied out of a note carries everything that was in it, so
+    // it outranks the rest of the clipboard: the native bitmap alone would
+    // reduce a mixed selection to its first picture, and the HTML would lose
+    // what only a note holds.
+    final fragment = store == null
+        ? null
+        : await NoteClipboardFragment.fromSnapshot(snapshot);
+    if (!mounted) return;
     if (fragment != null) {
       await _insertClipboardFragment(
         fragment,
         cause,
+        startingValue: startingValue,
+      );
+      return;
+    }
+
+    // In a markdown note, anything richer than plain words — a page, a
+    // document, an AI's answer, an editor's code — is read for what it says,
+    // as markdown, which only reads well drawn. A note without markdown
+    // pastes as it always has. Lone pictures and plain words take the paths
+    // below either way.
+    final converted = markdown
+        ? await convertPasteInBackground(snapshot)
+        : null;
+    if (!mounted) return;
+    final rich = switch (converted?.kind) {
+      null || PasteKind.text || PasteKind.nothing => null,
+      _ => converted!.output,
+    };
+    if (rich != null && rich.hasWords) {
+      _insertConvertedPaste(
+        rich,
+        cause,
+        clipboardText: capturedText,
         startingValue: startingValue,
       );
       return;
@@ -1903,8 +1964,236 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       await insertFiles([for (final path in paths) XFile(path)]);
       return;
     }
-    if (!mounted || capturedText == null) return;
+    if (!mounted) return;
+    // Pictures and nothing else, from markup that only pointed at them.
+    if (rich != null && rich.images.isNotEmpty) {
+      _insertConvertedPaste(
+        rich,
+        cause,
+        clipboardText: capturedText,
+        startingValue: startingValue,
+      );
+      return;
+    }
+    if (capturedText == null) return;
+    if (converted case PasteConversion(kind: PasteKind.text, :final output)) {
+      _insertConvertedPaste(
+        output,
+        cause,
+        clipboardText: capturedText,
+        startingValue: startingValue,
+      );
+      return;
+    }
     _insertPastedText(capturedText, cause, startingValue: startingValue);
+  }
+
+  /// Puts a converted paste into the note as one edit, so one undo takes all
+  /// of it back out, fitted to the line it lands on (see [planPaste]).
+  ///
+  /// Pictures go in as placeholders at once — the clipboard's own bytes, or a
+  /// quiet box while they download — and are prepared afterwards. Only their
+  /// refs change when they are ready, never the text, so they add no undo
+  /// steps of their own.
+  void _insertConvertedPaste(
+    PasteOutput output,
+    SelectionChangedCause cause, {
+    String? clipboardText,
+    TextEditingValue? startingValue,
+  }) {
+    if (widget.readOnly) return;
+    final editable = _editableTextState();
+    if (editable == null) return;
+    final store = widget.images;
+    final value = editable.textEditingValue;
+    final selection = _selectionForPaste(value, startingValue);
+    final insertion = planPaste(
+      note: value.text,
+      selection: selection,
+      output: store == null ? output.withoutPictures() : output,
+      target: _pasteTargetAt(value.text, selection.start),
+      clipboardText: clipboardText,
+    );
+    final nextText = value.text.replaceRange(
+      insertion.start,
+      insertion.end,
+      insertion.text,
+    );
+    final delta = insertion.text.length - (insertion.end - insertion.start);
+    final pictures = [
+      for (final image in insertion.images)
+        (
+          ref: _pastedImagePlaceholder(
+            image.image,
+            insertion.start + image.offset,
+          ),
+          image: image.image,
+        ),
+    ];
+    _nextAttachments = normalizeNoteAttachments([
+      for (final ref in _attachments)
+        if (ref.offset < insertion.start)
+          ref
+        else if (ref.offset >= insertion.end)
+          ref.copyWith(offset: ref.offset + delta),
+      for (final picture in pictures) picture.ref,
+    ], nextText);
+    _nextInsertedFormats = const {};
+    editable.userUpdateTextEditingValue(
+      value.copyWith(
+        text: nextText,
+        selection: TextSelection.collapsed(
+          offset: insertion.start + insertion.text.length,
+        ),
+        composing: TextRange.empty,
+      ),
+      cause,
+    );
+    _focusNode.requestFocus();
+    if (store != null && pictures.isNotEmpty) {
+      unawaited(_preparePastedImages(pictures, store));
+    }
+  }
+
+  /// What a paste may write where it lands: only words in a table, only the
+  /// clipboard's own text in a code block.
+  PasteTarget _pasteTargetAt(String text, int offset) {
+    final analysis = _controller.markdownFor(text);
+    for (final table in analysis.tables) {
+      if (offset > table.start && offset < table.end) return PasteTarget.table;
+    }
+    final fence = RegExp(r'^\s*(```|~~~)');
+    for (final block in analysis.blocks) {
+      if (block.kind != MarkdownBlockKind.code) continue;
+      final firstLineEnd = text.indexOf('\n', block.start);
+      if (firstLineEnd < 0 || firstLineEnd >= block.end) continue;
+      final fenced = fence.hasMatch(text.substring(block.start, firstLineEnd));
+      final contentStart = fenced ? firstLineEnd + 1 : block.start;
+      var contentEnd = block.end;
+      final lastLineStart = text.lastIndexOf('\n', block.end - 1) + 1;
+      if (fenced &&
+          lastLineStart > firstLineEnd &&
+          fence.hasMatch(text.substring(lastLineStart, block.end))) {
+        contentEnd = lastLineStart - 1;
+      }
+      if (offset >= contentStart && offset <= contentEnd) {
+        return PasteTarget.code;
+      }
+    }
+    return PasteTarget.text;
+  }
+
+  /// What holds a pasted picture's place until it is prepared: the bytes
+  /// themselves when the clipboard carried them, and otherwise a quiet box
+  /// that remembers where to fetch them from.
+  NoteImageRef _pastedImagePlaceholder(PasteImage image, int offset) {
+    final bytes = image.bytes;
+    final width = (image.width ?? 0).round();
+    final height = (image.height ?? 0).round();
+    final sized = width > 0 && height > 0;
+    return NoteImageRef(
+      offset: offset,
+      hash: BlobStore.hashOf(
+        bytes ?? Uint8List.fromList(utf8.encode(image.src ?? '')),
+      ),
+      key: randomKey(),
+      mime: image.mime ?? 'image/png',
+      width: sized ? width : 4,
+      height: sized ? height : 3,
+      bytes: bytes?.length ?? 0,
+      widthFactor: image.widthFactor,
+      isPreparing: true,
+      previewBytes: bytes,
+      src: bytes == null ? image.src : null,
+    );
+  }
+
+  /// Fetches what pasted pictures still need and prepares them in order:
+  /// downloads run side by side, compression one at a time.
+  Future<void> _preparePastedImages(
+    List<({NoteImageRef ref, PasteImage image})> pictures,
+    BlobStore store,
+  ) async {
+    final fetched = [
+      for (final picture in pictures)
+        picture.image.hasBytes
+            ? Future.value((
+                bytes: picture.image.bytes!,
+                mime: picture.image.mime ?? 'image/png',
+              ))
+            : PastedImageDownloader.shared.fetch(picture.ref.src ?? ''),
+    ];
+    for (var i = 0; i < pictures.length; i++) {
+      final placeholder = pictures[i].ref;
+      final source = await fetched[i];
+      final staged = source == null
+          ? null
+          : (await stageImage(
+              source: source.bytes,
+              sourceMime: source.mime,
+            )).staged;
+      if (staged == null) {
+        // Nothing usable came back. The place stays, with the address to try
+        // again from.
+        _publishPreparedImage(
+          placeholder,
+          placeholder.copyWith(isPreparing: false, previewBytes: null),
+        );
+        continue;
+      }
+      final local = NoteImageRef(
+        offset: placeholder.offset,
+        hash: staged.ref.hash,
+        key: placeholder.key,
+        mime: staged.ref.mime,
+        width: staged.ref.width,
+        height: staged.ref.height,
+        bytes: staged.ref.bytes,
+        widthFactor: placeholder.widthFactor,
+        isPreparing: true,
+        previewBytes: staged.source,
+      );
+      final keyed = StagedImage(
+        ref: local,
+        source: staged.source,
+        sourceMime: staged.sourceMime,
+      );
+      try {
+        await store.put(keyed.source);
+        _publishPreparedImage(placeholder, local);
+        final result = await (widget.imageFinalizer ?? _finishStagedImage)(
+          keyed,
+          store,
+        );
+        final ready = result.isOk && result.image!.ref is NoteImageRef
+            ? result.image!.ref as NoteImageRef
+            : await storeStagedImageAsIs(keyed, store: store);
+        _publishPreparedImage(local, ready);
+      } catch (error, stack) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stack,
+            library: 'Kapy Notes editor',
+            context: ErrorDescription('while preparing a pasted image'),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Tries a pasted picture's download again.
+  void _retryPastedImage(NoteImageRef ref) {
+    final store = widget.images;
+    final address = ref.src;
+    if (widget.readOnly || store == null || address == null) return;
+    final loading = ref.copyWith(isPreparing: true);
+    _publishPreparedImage(ref, loading);
+    unawaited(
+      _preparePastedImages([
+        (ref: loading, image: PasteImage(src: address)),
+      ], store),
+    );
   }
 
   /// Pastes only the clipboard's plain-text representation.
@@ -1947,17 +2236,49 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Future<bool> _clipboardStillHolds(String? capturedText) async =>
       await _clipboardText() == capturedText;
 
+  /// Puts a selection copied out of a note back as it was: its words, their
+  /// styles and every attachment it carried, stored here anew, all as one
+  /// edit and so one undo step. A selection from a note of the other kind is
+  /// rewritten for this one on the way in.
   Future<void> _insertClipboardFragment(
     NoteClipboardFragment fragment,
     SelectionChangedCause cause, {
     TextEditingValue? startingValue,
   }) async {
     final store = widget.images;
-    if (store == null || fragment.images.isEmpty) return;
+    if (store == null) return;
+    var body = fragment.body;
+    var formats = fragment.formats;
+    Map<int, int>? anchors;
+    final markdown = fragment.markdown;
+    if (markdown != null && markdown != widget.markdownEnabled) {
+      final converted = convertNote(
+        body,
+        toMarkdown: widget.markdownEnabled,
+        formats: formats,
+      );
+      body = converted.text;
+      formats = converted.formats;
+      anchors = converted.anchors;
+    }
+    if (fragment.images.isEmpty && fragment.attachments.isEmpty) {
+      _replaceSelectionWithFragment(
+        body,
+        const [],
+        formats,
+        cause,
+        startingValue: startingValue,
+      );
+      return;
+    }
     if (!_beginImageAction()) return;
-    final progress = Toast.showProgress(context, 'Pasting with images…');
+    final picturesOnly = fragment.attachments.isEmpty;
+    final progress = Toast.showProgress(
+      context,
+      picturesOnly ? 'Pasting with images…' : 'Pasting with attachments…',
+    );
     try {
-      final incoming = <NoteImageRef>[];
+      final incoming = <NoteAttachmentRef>[];
       for (final image in fragment.images) {
         final result = await ingestImage(
           source: image.bytes,
@@ -1979,16 +2300,36 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           ),
         );
       }
+      for (final attachment in fragment.attachments) {
+        final ref = await _storeCarriedAttachment(attachment, store);
+        if (!mounted) {
+          progress.dismiss();
+          return;
+        }
+        if (ref == null) {
+          progress.error('Could not paste one of those attachments');
+          return;
+        }
+        incoming.add(ref);
+      }
       if (!_replaceSelectionWithFragment(
-        fragment.body,
-        incoming,
+        body,
+        [
+          for (final ref in incoming)
+            if ((anchors == null ? ref.offset : anchors[ref.offset])
+                case final at?)
+              ref.copyWith(offset: at),
+        ],
+        formats,
         cause,
         startingValue: startingValue,
       )) {
         progress.error('Could not paste that selection');
         return;
       }
-      progress.success('Pasted with images');
+      progress.success(
+        picturesOnly ? 'Pasted with images' : 'Pasted with attachments',
+      );
     } catch (error, stack) {
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -2001,6 +2342,74 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       progress.error('Could not paste that selection');
     } finally {
       _endImageAction();
+    }
+  }
+
+  /// Stores a file, voice note or video a paste carried, and returns its ref
+  /// at its place in the fragment, or null when it could not be stored.
+  ///
+  /// A file or a video goes in the way a dropped one does, from a copy on
+  /// disk under its own name, so it is held to the same limits and a video
+  /// this device cannot play is refused. A voice note is stored as a
+  /// recording is, keeping its transcript, summary and posts.
+  Future<NoteAttachmentRef?> _storeCarriedAttachment(
+    ClipboardFragmentAttachment attachment,
+    BlobStore store,
+  ) async {
+    final copied = attachment.ref;
+    if (copied is NoteVoiceRef) {
+      return NoteVoiceRef(
+        offset: copied.offset,
+        hash: await store.put(
+          attachment.bytes,
+          extension: NoteVoiceRef.voiceExtension,
+        ),
+        key: randomKey(),
+        mime: copied.mime,
+        bytes: attachment.bytes.length,
+        durationMs: copied.durationMs,
+        peaks: copied.peaks,
+        transcript: copied.transcript,
+        summary: copied.summary,
+        takes: copied.takes,
+      );
+    }
+    final name = switch (copied) {
+      NoteFileRef(:final name) => name,
+      NoteVideoRef(:final extension) => 'video$extension',
+      _ => null,
+    };
+    if (name == null) return null;
+    final attachmentMaxBytes =
+        widget.videoAttachmentMaxBytes?.call() ?? freeAttachmentMaxBytes;
+    final directory = await Directory.systemTemp.createTemp('kapy-paste');
+    try {
+      final path = '${directory.path}/$name';
+      await File(path).writeAsBytes(attachment.bytes);
+      final files = [XFile(path, mimeType: copied.mime)];
+      if (copied is NoteVideoRef) {
+        final batch = widget.videoIngestor == null
+            ? await ingestVideoFiles(
+                files,
+                store: store,
+                attachmentMaxBytes: attachmentMaxBytes,
+              )
+            : await widget.videoIngestor!(files, store);
+        return batch.videos.firstOrNull?.copyWith(
+          offset: copied.offset,
+          widthFactor: copied.widthFactor,
+        );
+      }
+      final batch = widget.fileIngestor == null
+          ? await ingestFileAttachments(
+              files,
+              store: store,
+              attachmentMaxBytes: attachmentMaxBytes,
+            )
+          : await widget.fileIngestor!(files, store);
+      return batch.files.firstOrNull?.copyWith(offset: copied.offset);
+    } finally {
+      await directory.delete(recursive: true);
     }
   }
 
@@ -2022,7 +2431,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   bool _replaceSelectionWithFragment(
     String body,
-    List<NoteImageRef> images,
+    List<NoteAttachmentRef> attachments,
+    List<NoteFormatRange> formats,
     SelectionChangedCause cause, {
     TextEditingValue? startingValue,
   }) {
@@ -2042,9 +2452,25 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           ref
         else if (ref.offset >= selection.end)
           ref.copyWith(offset: ref.offset + delta),
-      for (final image in images)
-        image.copyWith(offset: selection.start + image.offset),
+      for (final ref in attachments)
+        ref.copyWith(offset: selection.start + ref.offset),
     ], nextText);
+    if (formats.isNotEmpty) {
+      _nextFormats = normalizeNoteFormats([
+        ...rebaseNoteFormats(
+          oldText: value.text,
+          newText: nextText,
+          formats: _formats,
+          insertedFormats: const {},
+        ),
+        for (final range in formats)
+          NoteFormatRange(
+            start: selection.start + range.start,
+            end: selection.start + range.end,
+            format: range.format,
+          ),
+      ], nextText.length);
+    }
     _nextInsertedFormats = const {};
     editable.userUpdateTextEditingValue(
       value.copyWith(
@@ -3414,6 +3840,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // what is drawn changes with focus.
     if (widget.markdownEnabled && mounted) {
       _markdownTyping.clear();
+      _markdownShortcut.clear();
       setState(() => _markdownQuiet = true);
     }
     if (_focusNode.hasFocus) {
@@ -3888,9 +4315,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       onChecklistPressed: _toggleChecklist,
       onOpenLink: link == null ? null : () => unawaited(_openLink(link)),
       onCopyLink: link == null ? null : () => unawaited(_copyLink(link)),
-      onCopy: _selectionContainsImage(selection)
-          ? () => unawaited(_copyRichSelection(selection))
-          : null,
+      onCopy: widget.images == null
+          ? null
+          : () => unawaited(_copyRichSelection(selection)),
       // The same rule as the menu's Paste: through the editor wherever a
       // picture could be on the clipboard, and the field's own paste where
       // one could not.
@@ -4069,16 +4496,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _focusNode.requestFocus();
   }
 
-  bool _selectionContainsImage(TextSelection selection) =>
-      selection.isValid &&
-      !selection.isCollapsed &&
-      _attachments.any(
-        (ref) =>
-            ref is NoteImageRef &&
-            ref.offset >= selection.start &&
-            ref.offset < selection.end,
-      );
-
   /// Makes a picture a real one-character editor selection.
   ///
   /// A selection that already includes it is preserved, which is what makes
@@ -4099,15 +4516,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   void _copyImageFromMenu(NoteImageRef ref) {
+    ContextMenuController.removeAny();
     _selectImage(ref);
     unawaited(_copyRichSelection(_controller.selection));
   }
 
-  Future<Uint8List?> _clipboardBytes(NoteImageRef ref) async {
+  Future<Uint8List?> _clipboardBytes(NoteAttachmentRef ref) async {
     final store = widget.images;
     if (store == null) return null;
     var bytes = await store.read(ref.hash);
-    if (bytes != null) return bytes;
+    if (bytes != null || ref is! NoteImageRef) return bytes;
     final fetch = widget.imageFetch;
     if (fetch == null) return null;
     bytes = await fetch(ref.hash);
@@ -4116,45 +4534,38 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return bytes;
   }
 
-  /// Materialises only the images inside [selection], preserving their exact
-  /// positions among the selected text. Non-image attachments become readable
-  /// labels because this clipboard contract is intentionally image-specific.
+  /// Everything in [selection] a paste needs to rebuild it: its words, the
+  /// styles over them, every picture with its bytes, and with
+  /// [withAttachments] its files, voice notes and videos with theirs. An
+  /// attachment that does not travel becomes the label it pastes as. Null
+  /// when a picture's bytes cannot be had.
   Future<NoteClipboardFragment?> _clipboardFragment(
-    TextSelection selection,
-  ) async {
-    if (!selection.isValid || selection.isCollapsed) return null;
+    TextSelection selection, {
+    required bool withAttachments,
+  }) async {
     final text = _controller.text;
-    if (selection.start < 0 || selection.end > text.length) return null;
-
-    final selected = [
-      for (final ref in _attachments)
-        if (ref.offset >= selection.start && ref.offset < selection.end) ref,
-    ]..sort((a, b) => a.offset.compareTo(b.offset));
-    final selectedImages = selected.whereType<NoteImageRef>().toList();
-    if (selectedImages.isEmpty ||
-        selectedImages.length > maxClipboardFragmentImages ||
-        selectedImages.fold<int>(0, (sum, ref) => sum + ref.bytes) >
-            maxClipboardFragmentBytes) {
-      return null;
-    }
-
+    final refs = {for (final ref in _attachments) ref.offset: ref};
     final body = StringBuffer();
     final images = <ClipboardFragmentImage>[];
+    final attachments = <ClipboardFragmentAttachment>[];
+    final labels = <({int at, int growth})>[];
     var cursor = selection.start;
-    for (final ref in selected) {
-      body.write(
-        text
-            .substring(cursor, ref.offset)
-            .replaceAll(NoteAttachmentRef.placeholder, '[Attachment]'),
-      );
+    for (
+      var at = text.indexOf(NoteAttachmentRef.placeholder, cursor);
+      at >= 0 && at < selection.end;
+      at = text.indexOf(NoteAttachmentRef.placeholder, at + 1)
+    ) {
+      body.write(text.substring(cursor, at));
+      cursor = at + 1;
+      final ref = refs[at];
+      final offset = body.length;
       if (ref is NoteImageRef) {
         final bytes = await _clipboardBytes(ref);
         if (bytes == null) return null;
-        final relativeOffset = body.length;
         body.write(NoteAttachmentRef.placeholder);
         images.add(
           ClipboardFragmentImage(
-            offset: relativeOffset,
+            offset: offset,
             bytes: bytes,
             mime: ref.mime,
             width: ref.width,
@@ -4162,36 +4573,68 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             widthFactor: ref.widthFactor,
           ),
         );
-      } else if (ref is NoteVoiceRef) {
-        body.write('[Voice note]');
-      } else {
-        body.write('[Attachment]');
+        continue;
       }
-      cursor = ref.offset + 1;
+      if (withAttachments && ref != null && ref is! NoteUnknownRef) {
+        final bytes = await _clipboardBytes(ref);
+        if (bytes != null) {
+          body.write(NoteAttachmentRef.placeholder);
+          attachments.add(
+            ClipboardFragmentAttachment(
+              ref: ref.copyWith(offset: offset),
+              bytes: bytes,
+            ),
+          );
+          continue;
+        }
+      }
+      final label = ref == null
+          ? '[Attachment]'
+          : NoteClipboardFragment.labelFor(ref);
+      body.write(label);
+      labels.add((at: at, growth: label.length - 1));
     }
-    body.write(
-      text
-          .substring(cursor, selection.end)
-          .replaceAll(NoteAttachmentRef.placeholder, '[Attachment]'),
+    body.write(text.substring(cursor, selection.end));
+
+    int moved(int offset) =>
+        offset -
+        selection.start +
+        labels
+            .where((label) => label.at < offset)
+            .fold<int>(0, (sum, label) => sum + label.growth);
+    return NoteClipboardFragment(
+      body: body.toString(),
+      images: images,
+      attachments: attachments,
+      formats: normalizeNoteFormats([
+        for (final range in _formats)
+          if (range.end > selection.start && range.start < selection.end)
+            NoteFormatRange(
+              start: moved(math.max(range.start, selection.start)),
+              end: moved(math.min(range.end, selection.end)),
+              format: range.format,
+            ),
+      ], body.length),
+      markdown: widget.markdownEnabled,
     );
-    return NoteClipboardFragment(body: body.toString(), images: images);
   }
 
+  /// Copies [selection] in every form a clipboard holds at once: its
+  /// markdown, or its text in a note without markdown; its HTML; and Kapy
+  /// Notes' own fragment, which puts back every style and attachment when it
+  /// is pasted into a note.
   Future<bool> _copyRichSelection(TextSelection selection) async {
-    ContextMenuController.removeAny();
     if (!selection.isValid ||
         selection.isCollapsed ||
         selection.start < 0 ||
         selection.end > _controller.text.length) {
       return false;
     }
-    final selectedImages = [
+    final selected = [
       for (final ref in _attachments)
-        if (ref is NoteImageRef &&
-            ref.offset >= selection.start &&
-            ref.offset < selection.end)
-          ref,
+        if (ref.offset >= selection.start && ref.offset < selection.end) ref,
     ];
+    final selectedImages = selected.whereType<NoteImageRef>().toList();
     final selectionBytes = selectedImages.fold<int>(
       0,
       (sum, ref) => sum + ref.bytes,
@@ -4210,10 +4653,19 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       }
       return false;
     }
+    // The rest travels only when the whole selection keeps to the same caps;
+    // otherwise each pastes as its label.
+    final withAttachments =
+        selected.length <= maxClipboardFragmentImages &&
+        selected.fold<int>(0, (sum, ref) => sum + ref.bytes) <=
+            maxClipboardFragmentBytes;
     if (_copyingRichSelection) return false;
     _copyingRichSelection = true;
     try {
-      final fragment = await _clipboardFragment(selection);
+      final fragment = await _clipboardFragment(
+        selection,
+        withAttachments: withAttachments,
+      );
       if (!mounted) return false;
       if (fragment == null) {
         Toast.show(
@@ -4229,7 +4681,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       final imageOnly =
           fragment.images.length == 1 &&
           fragment.body == NoteAttachmentRef.placeholder;
-      Toast.show(context, imageOnly ? 'Image copied' : 'Copied with images');
+      if (!withAttachments && selected.length > selectedImages.length) {
+        Toast.show(
+          context,
+          'Copied without its attachments, which are too large to copy at '
+          'once',
+          icon: KapyIcons.warningRounded,
+        );
+      } else if (imageOnly) {
+        Toast.show(context, 'Image copied');
+      } else if (fragment.attachments.isNotEmpty) {
+        Toast.show(context, 'Copied with attachments');
+      } else if (fragment.images.isNotEmpty) {
+        Toast.show(context, 'Copied with images');
+      }
       return true;
     } catch (error, stack) {
       FlutterError.reportError(
@@ -4237,13 +4702,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           exception: error,
           stack: stack,
           library: 'Kapy Notes editor',
-          context: ErrorDescription('while copying images from a note'),
+          context: ErrorDescription('while copying from a note'),
         ),
       );
       if (mounted) {
         Toast.show(
           context,
-          'Could not copy that image',
+          selectedImages.isEmpty
+              ? 'Could not copy that'
+              : 'Could not copy that image',
           icon: KapyIcons.errorOutlined,
           isError: true,
         );
@@ -4270,12 +4737,31 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _focusNode.requestFocus();
   }
 
+  /// Whether [selection] is copied in every form at once (see
+  /// [_copyRichSelection]) rather than as the field's own text.
+  ///
+  /// In a note without markdown only a selection that holds an attachment
+  /// is, so that words alone reach other apps, and come back in, exactly as
+  /// they always have. Either way there must be a store for what a paste
+  /// brings back.
+  bool _copiesRich(TextSelection selection) =>
+      widget.images != null &&
+      selection.isValid &&
+      !selection.isCollapsed &&
+      (widget.markdownEnabled ||
+          _attachments.any(
+            (ref) =>
+                ref.offset >= selection.start && ref.offset < selection.end,
+          ));
+
+  /// Copy and Cut from the keyboard, through the rich copy where
+  /// [_copiesRich] says, and the field's own elsewhere.
   void _handleCopyIntent(CopySelectionTextIntent intent) {
     if (intent.collapseSelection && widget.readOnly) return;
     final editable = _editableTextState();
     if (editable == null) return;
     final selection = editable.textEditingValue.selection;
-    if (!_selectionContainsImage(selection)) {
+    if (!_copiesRich(selection)) {
       if (intent.collapseSelection) {
         editable.cutSelection(intent.cause);
       } else {
@@ -4290,21 +4776,38 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  /// The menu's Copy and Cut, by the same rule as the keyboard's.
   List<ContextMenuButtonItem> _withRichCopy(
     List<ContextMenuButtonItem> items,
     TextSelection selection,
   ) {
-    if (!_selectionContainsImage(selection)) return items;
+    if (!_copiesRich(selection)) return items;
     return [
       for (final item in items)
-        if (item.type == ContextMenuButtonType.copy)
-          ContextMenuButtonItem(
+        switch (item.type) {
+          ContextMenuButtonType.copy => ContextMenuButtonItem(
             type: item.type,
             label: item.label,
-            onPressed: () => unawaited(_copyRichSelection(selection)),
-          )
-        else
-          item,
+            onPressed: () {
+              ContextMenuController.removeAny();
+              unawaited(_copyRichSelection(selection));
+            },
+          ),
+          ContextMenuButtonType.cut => ContextMenuButtonItem(
+            type: item.type,
+            label: item.label,
+            onPressed: () {
+              ContextMenuController.removeAny();
+              unawaited(
+                _copyAndCutRichSelection(
+                  selection,
+                  SelectionChangedCause.toolbar,
+                ),
+              );
+            },
+          ),
+          _ => item,
+        },
     ];
   }
 
@@ -5389,6 +5892,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               : (factor) => _resizeImage(ref.offset, factor),
           onResizeEnd: widget.readOnly ? null : _commitAttachments,
           onRemove: widget.readOnly ? null : () => removeAttachment(ref.offset),
+          onRetry: widget.readOnly || ref.src == null
+              ? null
+              : () => _retryPastedImage(ref),
         ),
       );
     }
@@ -5828,7 +6334,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: _handleEditorKey,
-        child: _textField(textStyle, strut),
+        child: Actions(
+          actions: {UndoTextIntent: _ShortcutUndoAction(_undoMarkdownShortcut)},
+          child: _textField(textStyle, strut),
+        ),
       ),
     );
   }
@@ -5882,6 +6391,21 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     .bindingFor(ShortcutAction.formatItalic)
                     ?.activator: () =>
                     _toggleInlineFormat(NoteFormat.italic),
+                ?widget.shortcuts
+                    .bindingFor(ShortcutAction.pasteAsPlainText)
+                    ?.activator: () =>
+                    unawaited(_pastePlainText(SelectionChangedCause.keyboard)),
+                // The Mac's own Paste and Match Style, alongside whatever
+                // the setting above says.
+                if (AppPlatform.isMacOS)
+                  const SingleActivator(
+                    LogicalKeyboardKey.keyV,
+                    meta: true,
+                    alt: true,
+                    shift: true,
+                  ): () => unawaited(
+                    _pastePlainText(SelectionChangedCause.keyboard),
+                  ),
                 ?widget.shortcuts
                         .bindingFor(ShortcutAction.formatBullets)
                         ?.activator:
@@ -5947,6 +6471,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   _StaleInputFormatter(_rebaseStaleInput),
                   _dailySeparatorFormatter,
                   if (widget.markdownEnabled) ...[
+                    _MarkdownShortcutFormatter(
+                      _controller.markdownFor,
+                      _markdownShortcut,
+                    ),
                     _MarkdownTypingFormatter(
                       _controller.markdownFor,
                       _markdownTyping,
@@ -6318,9 +6846,38 @@ class _MarkdownTypingFormatter extends TextInputFormatter {
   }
 }
 
+/// Markdown shortcuts as they are typed, and Backspace straight after one
+/// giving back what was typed. See [markdownShortcutEdit].
+class _MarkdownShortcutFormatter extends TextInputFormatter {
+  const _MarkdownShortcutFormatter(this.markdown, this.shortcut);
+
+  final MarkdownAnalysis Function(String text) markdown;
+  final MarkdownShortcut shortcut;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) => markdownShortcutEdit(oldValue, newValue, markdown, shortcut) ?? newValue;
+}
+
+/// Undo, unless a markdown shortcut was the last thing typed: then what was
+/// typed comes back as plain text, as Backspace would give it.
+class _ShortcutUndoAction extends ContextAction<UndoTextIntent> {
+  _ShortcutUndoAction(this.undoShortcut);
+
+  final bool Function() undoShortcut;
+
+  @override
+  Object? invoke(UndoTextIntent intent, [BuildContext? context]) {
+    if (undoShortcut()) return null;
+    return callingAction?.invoke(intent);
+  }
+}
+
 /// Keystrokes that act on a line's hidden markdown as one piece: Backspace
 /// at the start of a heading or list item takes the whole `## ` or `- [ ] `
-/// away, and `[] ` at the start of a line becomes a checkbox.
+/// away.
 class _MarkdownStructureFormatter extends TextInputFormatter {
   const _MarkdownStructureFormatter(this.markdown);
 

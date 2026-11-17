@@ -1,0 +1,21 @@
+<!-- read as: html -->
+# Your October summary
+
+Hi Sam, here is where things stand. [Open the full report](https://example.com/report).
+
+| Metric | Oct | Sep |
+| --- | --: | --: |
+| Notes created | 1,204 | 987 |
+| Synced devices | 3 | 2 |
+
+On Mon, 3 Nov 2025 at 09:14, Asha Rao <[asha@example.com](mailto:asha@example.com)> wrote:
+
+> Can you send the numbers?
+>
+> Thanks!
+
+--
+
+Sam Sample
+Product, Example Co.
+[example.com](https://example.com)

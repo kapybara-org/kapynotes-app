@@ -1,0 +1,27 @@
+{
+  "source": "outlook",
+  "case": "email-body-windows",
+  "app": "Microsoft Outlook for Windows 16.0 (Microsoft 365) (synthesized)",
+  "platform": "windows",
+  "capture": "synthesized",
+  "how": "Synthesized: selecting the body of a composed email (greeting, bold word, link, bullet list, small table, signature) in Outlook for Windows and copying.",
+  "notes": "SYNTHESIZED. Outlook uses Word as its editor, so the HTML Format is Word-flavoured: <meta name=Generator content=\"Microsoft Word 15 (filtered medium)\">, MsoNormal paragraphs, <div class=WordSection1>, mso-list bullets with <![if !supportLists]>, <o:p> and empty <o:p>&nbsp;</o:p> spacer paragraphs, a MsoNormalTable with per-cell inline borders. Unsure about extra private formats Outlook adds.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "HTML Format",
+          "file": "HTML_Format.html"
+        },
+        {
+          "type": "CF_UNICODETEXT",
+          "file": "CF_UNICODETEXT.txt"
+        },
+        {
+          "type": "Rich Text Format",
+          "file": "Rich_Text_Format.rtf"
+        }
+      ]
+    }
+  ]
+}

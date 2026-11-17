@@ -62,6 +62,30 @@ void main() {
       expect(stylesOf(analysis, 'Sub'), {MarkdownStyle.heading2});
     });
 
+    test('- or -- under words as a list or a divider being typed', () {
+      for (final text in ['Words\n-', 'Words\n- ', 'Words\n--']) {
+        final analysis = read(text);
+        expect(analysis.spans, isEmpty, reason: text);
+        expect(analysis.blocks, isEmpty, reason: text);
+      }
+      expect(read('Words\n- item').listItems, hasLength(1));
+      expect(stylesOf(read('Words\n---'), 'Words'), {
+        MarkdownStyle.heading2,
+      }, reason: 'written out in full, it is still an underline');
+    });
+
+    test('emphasis by either marker, but never inside a word', () {
+      final analysis = read('*one* _two_ snake_case_name');
+      expect(stylesOf(analysis, 'one'), {MarkdownStyle.emphasis});
+      expect(stylesOf(analysis, 'two'), {MarkdownStyle.emphasis});
+      expect(stylesOf(analysis, 'case'), isEmpty);
+    });
+
+    test('a bare address as an address', () {
+      const text = 'see https://a.example/path now';
+      expect(read(text).urls, [const TextRange(start: 4, end: 26)]);
+    });
+
     test('emphasis, strong, strikethrough and code, with their markers', () {
       final analysis = read('*it* **bold** ~~gone~~ `code`');
       expect(stylesOf(analysis, 'it'), {MarkdownStyle.emphasis});
@@ -282,6 +306,8 @@ void main() {
 
     test('an escape\'s backslash', () {
       expect(visible('a\\*b c|'), 'a*b c');
+      expect(visible('\\# Not a heading|'), '# Not a heading');
+      expect(visible('\\- Not a bullet|', typing: true), '- Not a bullet');
       expect(visible('a\\|*b'), 'a\\*b');
     });
 

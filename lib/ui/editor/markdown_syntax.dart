@@ -685,8 +685,9 @@ class MarkdownAnalysis {
   /// Anywhere else a tag is shown as written, as any other inline HTML is.
   List<TextRange> get lineBreaks => _parts.lineBreaks;
 
-  /// The rest of what the calculator does not read: struck-through text, and
-  /// the `*` and `_` around emphasis — the markers only, not the words.
+  /// The rest of what the calculator does not read: struck-through text, the
+  /// `*` and `_` around emphasis — the markers only, not the words — and
+  /// the backslash of an escape.
   List<TextRange> get unread => _parts.unread;
 
   /// Where the text is literal rather than prose: code, code blocks, HTML.
@@ -1402,6 +1403,11 @@ List<int> _chunkStarts(String text) {
   return starts;
 }
 
+bool _isShortDashes(String underline) {
+  final dashes = underline.trim();
+  return dashes.length < 3 && dashes.replaceAll('-', '').isEmpty;
+}
+
 bool _isIndentOrBreak(int unit) =>
     unit == 0x20 || unit == 0x09 || unit == 0x0A || unit == 0x0D;
 
@@ -1473,7 +1479,10 @@ const _asteriskMask = 0xE000;
 /// than becoming an italic four that the calculator would then be told to
 /// read past. It costs `un*frigging*believable`, which is a price worth
 /// paying here.
-String _maskOperatorAsterisks(String source) {
+///
+/// Each hidden `*` becomes [mask], one code unit for one, so every offset
+/// stays where it was.
+String maskOperatorAsterisks(String source, {int mask = _asteriskMask}) {
   if (!source.contains('*')) return source;
   List<int>? units;
   var i = 0;
@@ -1491,7 +1500,7 @@ String _maskOperatorAsterisks(String source) {
         _endsOperand(source.codeUnitAt(i - 1)) &&
         _startsOperand(source.codeUnitAt(end))) {
       units ??= List<int>.of(source.codeUnits);
-      units.fillRange(i, end, _asteriskMask);
+      units.fillRange(i, end, mask);
     }
     i = end;
   }
@@ -1536,7 +1545,7 @@ _Parts _parse(String source) {
   );
   final List<md.Node> nodes;
   try {
-    nodes = document.parse(_maskOperatorAsterisks(source));
+    nodes = document.parse(maskOperatorAsterisks(source));
   } catch (error, stack) {
     // A parser fault must cost the note its styling, never its text: the
     // piece simply draws as plain writing.
@@ -2017,6 +2026,13 @@ class _Collector {
       case 'setextHeading':
         // The underline is the last marker; the heading is what it underlines.
         final underline = markers.isEmpty ? null : markers.last;
+        // `-` and `--` under a line of words are a bullet or a divider being
+        // typed, not an underline: read as one, the line above would turn
+        // into a heading and back with every key.
+        if (underline != null && _isShortDashes(underline.text)) {
+          claimed.add(underline.start.offset);
+          break;
+        }
         _style(
           start,
           underline?.start.offset ?? end,
@@ -2262,8 +2278,10 @@ class _Collector {
       if (claimed.contains(marker.start.offset)) continue;
       _style(marker.start.offset, marker.end.offset, MarkdownStyle.syntax);
       // What is left is an escape's backslash, or a hard line break's: shown
-      // with the caret against it, like any other inline marker.
+      // with the caret against it, like any other inline marker, and not
+      // read by the calculator, so `\- 5` is the minus five it shows.
       if (marker.text == r'\') {
+        _record(_unread, marker.start.offset, marker.end.offset);
         _conceal(
           marker.start.offset,
           marker.end.offset,

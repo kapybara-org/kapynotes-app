@@ -1,0 +1,85 @@
+This Product Requirements Document (PRD) outlines the specifications for the "Active-AWD Modular Trade Platform," a self-propelled, detachable truck bed system.
+
+Product Requirements Document (PRD)
+Project Name: Modular Through-the-Road (TTR) AWD Trade Platform
+Version: 1.0
+Status: Draft
+
+1. Executive Summary
+The goal is to develop a modular, electrified truck bed/trailer system that transforms a standard 2WD or 4WD vehicle into an extended-range 6x6 or 4x4+2 hybrid. By utilizing high-torque density in-wheel motors and a sensor-based control loop, the platform neutralizes its own weight during towing ("Zero-Force Emulation") and provides active traction assistance ("Virtual AWD") in low-grip scenarios, without requiring mechanical driveline integration.
+
+2. Target Audience
+Commercial Trades: Contractors requiring heavy payload capacity without upgrading to HD/Super-Duty trucks.
+
+Overland/Expedition: Campers requiring off-grid power and extreme traction capabilities.
+
+EV Owners: Towing users needing to mitigate the ~50% range loss associated with passive trailers.
+
+3. System Architecture
+3.1 Drivetrain Topology
+Type: Through-the-Road (TTR) Parallel Hybrid.
+
+Coupling: Electronic (Software-defined), not mechanical.
+
+Motors: Dual In-Wheel or E-Axle configuration.
+
+Primary Spec: Axial Flux (YASA-style) or Radial-Axial (RAX) topology for maximum torque-to-weight ratio and packaging efficiency within standard wheel wells.
+
+Alternative Spec: Elaphe L1500 (Direct Drive) for high-durability commercial applications.
+
+Voltage: 400V or 800V architecture (compatible with DC Fast Charging).
+
+3.2 Control Systems (The VCU)
+Controller: Motorsport-grade VCU (e.g., AEM VCU300, Motec) running custom PID loops.
+
+Sensors:
+
+Hitch Load Cell: Bi-directional strain gauge (10kN capacity) to measure Tension (pull) and Compression (push).
+
+6-Axis IMU: Accelerometer/Gyroscope for sway detection and grade estimation.
+
+Wheel Speed Sensors: Hall-effect sensors for traction monitoring.
+
+Connection: High-reliability umbilical (Amphenol) carrying HV power and CAN-FD data.
+
+4. Functional Requirements
+4.1 Drive Modes
+Mode A: Transparent Towing (Cruising)
+
+Logic: PID controller targets 0N (Zero Newtons) force at the hitch.
+
+Behavior: The bed propels itself. The tow vehicle expends energy only to move its own mass.
+
+Mode B: Virtual AWD (Assist)
+
+Logic: VCU detects high throttle input or wheel slip via CAN bus.
+
+Behavior: Motors apply positive torque exceeding the friction loss, effectively pushing the truck.
+
+Mode C: Vectoring (Stability)
+
+Logic: IMU detects yaw (sway).
+
+Behavior: Differential torque applied (e.g., Left Motor Brake / Right Motor Drive) to force-align the rig.
+
+4.2 Energy Management
+Regenerative Braking: Automatic engagement upon hitch compression detection or brake light signal.
+
+Static Power (V2L): Onboard inverter providing 120V/240V AC for job site tools (welding, saws) or camper amenities.
+
+4.3 Safety Mechanisms (Critical)
+Anti-Jackknife: If the hitch angle exceeds 15° while the hitch is in compression, drive torque is instantly cut and regenerative braking is applied to the rear wheels to straighten the line.
+
+Dead-Man Loop: Physical signal wire loop. If the umbilical is severed, motors default to "Resistance Mode" (dynamic braking).
+
+Thermal Management: Liquid cooling loop (glycol/water) with dedicated radiator and pump for continuous duty cycle management of Axial Flux motors.
+
+5. Mechanical & Material Specs
+Chassis: High-strength steel or aluminum ladder frame.
+
+Batteries: Structural pack integration (potential for Lignin-derived Anode / Graphene enhancements).
+
+Suspension: Independent trailing arm with heavy-duty damping to manage high unsprung weight of hub motors.
+
+Keyword-Dense Summary
+The proposed Active-AWD Trade Platform utilizes a Through-the-Road (TTR) Hybrid architecture to decouple the mechanical drivetrain while maintaining synchronized propulsion via a Vehicle Control Unit (VCU). By integrating high-topology Axial Flux or Radial-Axial (RAX) in-wheel motors—such as those pioneered by YASA or Koenigsegg—the system achieves exceptional torque density within the limited packaging of a trailer wheel well. The control strategy relies on Zero-Force Emulation, utilizing a bi-directional load cell at the hitch to modulate torque output via a PID loop, ensuring the module remains neutrally buoyant to the tow vehicle during steady-state cruising. In low-traction environments, the system transitions to Virtual AWD, employing Torque Vectoring to mitigate sway and Regenerative Braking to prevent jackknifing, effectively acting as an intelligent e-Axle retrofit. This configuration leverages 400V/800V DC architecture for rapid energy discharge and V2L (Vehicle-to-Load) site power, solving the unsprung weight damping challenges through advanced suspension geometry while eliminating the parasitic drag of traditional passive towing.

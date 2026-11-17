@@ -1,0 +1,28 @@
+{
+  "source": "google-docs",
+  "case": "vmware-com1-images-table",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Opened the public view-only Google Doc 'Escaping VMware Workstation through COM1' in the Docs editor in headless Chrome, Cmd+A, Cmd+C.",
+  "url": "https://docs.google.com/document/d/1sIYgqrytPK-CFWfqDntraA_Fwi2Ov-YBgMtl5hdrYd4/edit",
+  "notes": "Real Google Docs copy of a whole document with 11 <img> (Docs image URLs on googleusercontent.com), a table, 14 headings, a list; 970 KB of HTML.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

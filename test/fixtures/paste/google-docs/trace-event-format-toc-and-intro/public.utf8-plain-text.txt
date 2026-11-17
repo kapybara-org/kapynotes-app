@@ -1,0 +1,57 @@
+
+Introduction
+JSON Format
+JSON Array Format
+JSON Object Format
+Event Descriptions
+Phases
+Duration Events
+Stack Traces on Duration Events
+Complete Events
+Instant Events
+Counter Events
+Async Events
+Flow Events
+Sample Events (deprecated)
+Object Events
+Snapshots
+Snapshot category override
+Snapshot base_type override
+References
+Metadata Events
+Memory Dump Events
+Mark Events
+Clock Sync Event
+Context Events
+Linking IDs
+More about IDs
+StackFrames Dictionary
+Global Samples
+Linux Debug Format
+
+Introduction
+The Trace Event Format is the trace data representation that is processed by the Trace Viewer application. Trace Viewer recognizes four input variations.
+Two are representations of the JSON format:
+A string dump of a JSON array.
+A JSON object.
+Two are representations of the Linux ftrace data:
+Text dump starting with # tracer:.
+An Android systrace HTML dump.
+
+This document describes the JSON input format and provides links for more information on the Linux ftrace functionality.
+
+JSON Format
+The JSON events can be provided in two slightly different structures.
+
+JSON Array Format
+The simplest format accepted by the trace viewer is the JSON array format. Essentially, an array of event objects. The events do not have to be in timestamp-sorted order.
+
+[ {"name": "Asub", "cat": "PERF", "ph": "B", "pid": 22630, "tid": 22630, "ts": 829},
+  {"name": "Asub", "cat": "PERF", "ph": "E", "pid": 22630, "tid": 22630, "ts": 833} ]
+JSON Array Format
+
+
+When provided as a string to the importer the ] at the end of the JSON Array Format is optional. The Trace Viewer importer will automatically add a ] if needed to turn the string into valid JSON.. This is to support tracing systems that can not cleanly finish writing the trace. For example, when tracing the exit of a program.
+
+JSON Object Format
+The JSON Ob

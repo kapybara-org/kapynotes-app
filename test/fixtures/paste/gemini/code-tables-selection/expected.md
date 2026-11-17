@@ -1,0 +1,59 @@
+<!-- read as: html -->
+I have updated the document and reformatted it according to your specifications.
+
+qualia_reformatted
+
+XLSX
+
+qualia_reformatted
+
+XLSX
+
+qualia_reformatted
+
+|  | A | B | C | D | E | F | G |
+| :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+| 1 | The Qualia of Being Understood |  |  |  |  |  |  |
+| 2 | Factor | Role | Drives? | Origin | Increases | Inhibits | Signals that... |
+| 3 | Oxytocin | Social Glue, Relational Bridge | · Qualia of "connection" |  |  |  |  |
+| 4 | · Feeling of being seen" | Hypothalamus | Prosocial trust, |  |  |  |  |
+| 5 | info sharing |  |  |  |  |  |  |
+| 6 | vulnerability" | Amygdala activity; social anxiety | The "self-other" gap has been bridged and made temporarily permeable; social safety is high / assured to some extent |  |  |  |  |
+| 7 | Dopamine | Reward Signal, Predictive Success | · Validation |  |  |  |  |
+| 8 | · ""Aha!"" moment |  |  |  |  |  |  |
+| 9 | · The ""click""" | Ventral Striatum | Reinforcement, |  |  |  |  |
+| 10 | social motivation" | Prediction error; uncertainty | Your social reality is predictable and safe; your internal model of the world matches feedback from others |  |  |  |  |
+| 11 | Serotonin | Status/Safety, |  |  |  |  |  |
+| 12 | Social Coherence" | · Resilience |  |  |  |  |  |
+| 13 | · Social belonging |  |  |  |  |  |  |
+| 14 | · Feeling ""right"" or ""placed"" in the world" | Raphe Nuclei | Emotional stability, confidence | Shame response; status anxiety | You are a valued member of the collective; you aren't an outlier; your perspective is valid + integrated (in/for the group) |  |  |
+| 15 | Endorphins | Social Warmth, |  |  |  |  |  |
+| 16 | Vagal Tone/Relief" | · Physical/Emotional relief |  |  |  |  |  |
+| 17 | · Sigh/exhale of relaxation" | Pituitary | Feelings of "flow" and comfort | Social pain; |  |  |  |
+| 18 | physical tension" | The work of "translating" is done; there's no perceived need to defend/explain; the interaction is now "nourishing" or restorative |  |  |  |  |  |
+| 19 | The Qualia of Being Misunderstood |  |  |  |  |  |  |
+| 20 | Factor | Role | Drives? | Origin | Increases | Inhibits | Signals that... |
+| 21 | Cortisol | Stress Hormone; Isolation Alarm | · Sense of "drain" or fatigue |  |  |  |  |
+| 22 | · ""Heavy"" or ""cold"" feeling of being alone" | Adrenal Cortex | Hyper-vigilance; social withdrawal | Immunity; neuroplasticity; repair | You are socially disconnected/isolated, which the brain interprets as a survival risk. |  |  |
+| 23 | Norepinephrine | Physiological arousal; fight-or-flight response; motivating urgent communication | · Frustration |  |  |  |  |
+| 24 | · Urgency |  |  |  |  |  |  |
+| 25 | · ""Itch"" or impulse to correct or over-explain " | Locus Coeruleus | Heart rate; desire to over-explain | Creative/Nuanced reasoning | There is a conflict or threat to agency (or well-being), an error in the environment that requires attention+effort |  |  |
+| 26 | Glutamate | Excitatory; noise interfering with signal | · Cognitive friction |  |  |  |  |
+| 27 | · Mental loops |  |  |  |  |  |  |
+| 28 | · ""Why don't they get it?""" | The central nervous system in general | Mental agitation; "noise" | Systematic, calm processing | There is a fundamental system error/clash; the system is "overheating" (or rather locked up / hung) in trying to resolve a gap/ambiguity; high cognitive friction |  |  |
+| 29 | ACC/Insula | · Processing of Social Pain | · The sting or ache of rejection | · Cerebral Cortex | · Perception of rejection: Misunderstanding is like physical injury to the "social self/body" | · Feelings of physical well-being | · Communication failure is a survival threat. |
+
+### Implementation Details:
+
+- One-Sheet Structure: Maintained everything on a single sheet with the original column order.
+- Font Replacement: Calibri has been completely removed in favor of Arial, which provides high legibility for technical and physiological data.
+- Bullet Formatting: Applied the "middle dot" (`·`) bullet style to all cells in columns B through G. I utilized semicolons and commas as natural break points to create clean, multi-line lists within the cells.
+- Vertical Alignment: I set all cells to Top Align. This ensures that even with long bulleted lists, the "Factor" (Column A) remains level with the start of its corresponding data.
+
+### Suggested "Pretty" Enhancements (Applied):
+
+1. Differentiated Headers: I applied a soft green background to the "Understood" headers and a soft peach/orange to the "Misunderstood" headers. This provides an immediate visual cue for which state the user is viewing without being "overwrought."
+2. Column Optimization: Adjusted widths so that the "Signals that..." column (the most text-heavy) has enough room to breathe, preventing the spreadsheet from becoming vertically excessive.
+3. Factor Boldness: Added a subtle bold weight and a very light gray fill to the "Factor" column to anchor the row data.
+
+The reformatted file is attached below.

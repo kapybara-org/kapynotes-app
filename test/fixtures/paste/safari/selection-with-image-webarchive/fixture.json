@@ -1,0 +1,35 @@
+{
+  "how" : "Synthesized: selecting a heading, a paragraph with a link and an image with caption on a web page in Safari and copying.",
+  "source" : "safari",
+  "case" : "selection-with-image-webarchive",
+  "items" : [
+    {
+      "representations" : [
+        {
+          "file" : "com.apple.webarchive.webarchive",
+          "type" : "com.apple.webarchive"
+        },
+        {
+          "type" : "public.rtf",
+          "file" : "public.rtf.rtf"
+        },
+        {
+          "type" : "com.apple.flat-rtfd",
+          "file" : "com.apple.flat-rtfd.rtfd"
+        },
+        {
+          "type" : "public.html",
+          "file" : "public.html.html"
+        },
+        {
+          "type" : "public.utf8-plain-text",
+          "file" : "public.utf8-plain-text.txt"
+        }
+      ]
+    }
+  ],
+  "notes" : "SYNTHESIZED. com.apple.webarchive is a binary property list built with PropertyListSerialization: WebMainResource (WebResourceData = the selection as an HTML document, WebResourceMIMEType, WebResourceTextEncodingName, WebResourceURL = the page URL, WebResourceFrameName) and WebSubresources (one dict per image with WebResourceData = the PNG bytes, WebResourceMIMEType, WebResourceURL, WebResourceResponse = NSKeyedArchiver data of an NSHTTPURLResponse). Safari also writes RTF, flat RTFD (with the image attachment), HTML and plain text; the exact set is from memory (UNSURE whether current Safari still writes public.html), and WebKit may add com.apple.WebKit.custom-pasteboard-data (not reproduced). The image URL in the HTML is absolute here; in the live page it may be relative, but WebKit resolves URLs when serializing a selection.",
+  "app" : "Safari 18.x for macOS (synthesized)",
+  "platform" : "macos",
+  "capture" : "synthesized"
+}

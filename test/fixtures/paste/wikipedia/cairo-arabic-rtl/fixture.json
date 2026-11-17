@@ -1,0 +1,28 @@
+{
+  "source": "wikipedia",
+  "case": "cairo-arabic-rtl",
+  "app": "Chrome/157.0.8103.78 (chrome-headless-shell)",
+  "platform": "macos",
+  "capture": "real",
+  "how": "Selected the first paragraphs of the Arabic Wikipedia article \"القاهرة\" (Cairo) and ran document.execCommand(\"copy\").",
+  "url": "https://ar.wikipedia.org/wiki/%D8%A7%D9%84%D9%82%D8%A7%D9%87%D8%B1%D8%A9",
+  "notes": "First paragraphs of the Arabic article: right-to-left text with Arabic diacritics, Latin text and digits mixed in; links percent-encode the Arabic titles (href=\"https://ar.wikipedia.org/wiki/%D9%85%D8%B5%D8%B1\"). The direction comes from the page (no dir attribute inside the fragment), so you must infer RTL from the text.",
+  "items": [
+    {
+      "representations": [
+        {
+          "type": "public.utf8-plain-text",
+          "file": "public.utf8-plain-text.txt"
+        },
+        {
+          "type": "public.html",
+          "file": "public.html.html"
+        },
+        {
+          "type": "org.chromium.source-url",
+          "file": "org.chromium.source-url.txt"
+        }
+      ]
+    }
+  ]
+}

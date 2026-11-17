@@ -1,0 +1,1919 @@
+
+Worked for 70m 17s
+Verdict
+The post contains a plausible and genuinely interesting benchmark, but its headline conclusion is much broader than the evidence supports.
+
+What it appears to establish is:
+
+On one undisclosed Kimi K3/SGLang software snapshot, using fixed 1,024-input/400-output requests, an 8×MI355X server reached about 952 aggregate output tokens/s at concurrency 64. At Wafer’s assumed price of $2.50/GPU-hour, that is about $5.84 per million output tokens at 100% sustained utilization.
+It does not establish that:
+
+users receive 952 tok/s, or even 118 tok/s, at the 952-tok/s operating point;
+MI355X generally has the best performance per dollar;
+MI355X is more energy-efficient;
+the comparison is QoS-equivalent;
+Kimi K3 was production-ready “out of the box” on ROCm;
+the long-context prefill gap was actually eliminated;
+HBM is the only meaningful moat;
+agent-written glue has largely killed the CUDA moat.
+The largest problem is that Wafer combines the best interactivity point, the best saturation-throughput point, and a selected vendor price into a single narrative even though those properties do not occur simultaneously. 
+
+Wafer
+
+The most consequential issues
+1. “952 tok/s/node” is not user-visible speed
+The headline number is aggregate throughput at approximately 64 concurrent requests. It is not one stream producing 952 tokens each second.
+
+Let:
+
+T
+ = aggregate output throughput;
+O
+=
+400
+ = output tokens per request;
+c
+ = concurrency;
+λ
+=
+T
+/
+O
+ = completed requests per second.
+For a saturated constant-concurrency benchmark, Little’s law gives the approximate mean request residence time:
+
+W
+=
+c
+λ
+=
+400
+c
+T
+.
+If this was instead a one-wave batch test, 
+400
+c
+/
+T
+ is approximately the wave’s completion window rather than mean latency. Either interpretation makes the same central point: aggregate throughput is not per-user throughput.
+
+
+Operating point	Concurrency	Aggregate output	Requests/s	Approx. residence or wave window	Aggregate per in-flight slot
+MI355X single stream	1	118 tok/s	0.295	3.39 s	118 tok/s
+MI355X, chart mid-point	16	~880 tok/s	2.20	~7.27 s	~55 tok/s
+MI355X headline	64	952 tok/s	2.38	26.89 s	14.88 tok/s
+B300 single stream	1	172 tok/s	0.430	2.33 s	172 tok/s
+B300 selected peak	24	1,568 tok/s	3.92	6.12 s	65.33 tok/s
+B200 TP16	32	498 tok/s	1.245	25.70 s	15.56 tok/s
+The c16 MI figure is read approximately from the chart; the headline and table values are from the article. 
+
+Wafer
++1
+
+At the two headline aggregate points:
+
+W
+MI,c64
+W
+B300,c24
+=
+26.89
+6.12
+≈
+4.39.
+So the B300 operating point is not merely 1.65× higher-throughput. Under the natural constant-concurrency interpretation, it also has an approximately 4.4× shorter request residence/completion window.
+
+That makes the peak performance-per-dollar comparison fundamentally non-QoS-equivalent.
+
+2. The chart’s “per-user decode speed” is not end-to-end user speed
+At MI c64, the chart reports roughly 48 tok/s on its horizontal “per-user” decode axis. But aggregate throughput divided by concurrency is:
+
+952
+/
+64
+=
+14.875
+ output tok/s per occupied slot
+.
+Those cannot both be end-to-end throughput measures.
+
+The likely reconciliation is that the horizontal metric excludes prefill, queueing, scheduler pauses, or periods when another batch is executing. Using the chart’s approximate horizontal values:
+
+MI c16
+reported decode duration
+≈
+400
+/
+61.5
+=
+6.50
+ s
+total residence
+≈
+400
+(
+16
+)
+/
+880
+=
+7.27
+ s
+time outside measured decode
+≈
+0.77
+ s
+.
+MI c64
+reported decode duration
+≈
+400
+/
+48
+=
+8.33
+ s
+total residence
+≈
+400
+(
+64
+)
+/
+952
+=
+26.89
+ s
+time outside measured decode
+≈
+18.56
+ s
+.
+Visually:
+
+
+text
+MI c16
+request wall time:
+[ 0.77 s outside metric ][------ 6.50 s measured decode ------]
+                         total ≈ 7.27 s
+
+MI c64
+request wall time:
+[---------- 18.56 s outside metric ----------][-- 8.33 s decode --]
+                                               total ≈ 26.89 s
+Thus, c16 → c64 buys only:
+
+952
+/
+880
+−
+1
+≈
+8.2
+%
+more aggregate output, while increasing the approximate completion window by:
+
+26.89
+/
+7.27
+≈
+3.70
+×
+.
+That is a poor production operating point unless the service has an extremely loose latency target. The post calls c64 the winner because it maximizes tokens per dollar, but it does not price the roughly 3.7× latency increase. 
+
+Wafer
++1
+
+3. The post takes different maxima from different runs and implicitly combines them
+The MI row simultaneously advertises:
+
+118 tok/s per-user streaming, obtained at or near c1;
+952 tok/s aggregate, obtained at c64;
+the c64 performance-per-dollar result.
+The user does not get 118 tok/s while the system is producing 952 tok/s. At c64 the chart’s own decode metric is around 48 tok/s, while the end-to-end slot-average rate implied by aggregate throughput is about 14.9 tok/s.
+
+Reporting separate maxima is not inherently wrong. Presenting them together without stating that they are mutually exclusive operating points is misleading. 
+
+Wafer
++1
+
+The proper comparison is a quality-of-service frontier:
+
+T
+S
+L
+O
+=
+max
+⁡
+T
+subject to
+{
+p
+99
+(
+T
+T
+F
+T
+)
+≤
+A
+p
+99
+(
+T
+P
+O
+T
+)
+≤
+B
+p
+99
+(
+E
+2
+E
+)
+≤
+C
+e
+r
+r
+o
+r
+ 
+r
+a
+t
+e
+≤
+D
+.
+Then compare:
+
+T
+S
+L
+O
+fully loaded hourly cost
+.
+The post instead compares each machine at a different unspecified service quality.
+
+4. A roughly QoS-matched comparison is much less dramatic
+The MI c16 point has an approximate 7.27-second residence window. The B300 c24 point has a 6.12-second window. These still are not rigorously SLO-matched, but they are much closer than MI c64 versus B300 c24.
+
+At the post’s prices:
+
+MI c16 efficiency
+≈
+880
+8
+(
+2.50
+)
+=
+44.0
+B300 c24 efficiency
+=
+1568
+8
+(
+6
+)
+=
+32.67.
+That gives MI about:
+
+44
+/
+32.67
+−
+1
+≈
+34.7
+%
+more aggregate output per hourly dollar, rather than the roughly 46% advantage at c64.
+
+That remains a good result for MI355X. It is not evidence that it universally “crushes” B300. It says that, at Wafer’s selected prices and this one workload, MI may trade approximately 19% longer completion time for roughly 35% better raw output throughput per dollar.
+
+5. “3.8× B200 per-node throughput” is a synthetic normalization, not a deployable comparison
+The measured B200 configuration is a 16-GPU, two-node TP16 system producing 498 tok/s. Wafer divides that by two to obtain about 249 tok/s per node, then compares it with the deployable 8-GPU MI node:
+
+952
+/
+(
+498
+/
+2
+)
+=
+3.82.
+But one 8×B200 node cannot run the model in the tested representation. Its “249 tok/s per node” is therefore not the throughput of an independently usable server. It is half the accounting footprint of a two-node system.
+
+The actual system-level throughput comparison is:
+
+952
+/
+498
+=
+1.91
+×
+,
+while the per-GPU comparison is:
+
+(
+952
+/
+8
+)
+/
+(
+498
+/
+16
+)
+=
+3.82
+×
+.
+“3.8× per GPU” or “3.8× resource-normalized per node” would be defensible. “3.8× per-node throughput” invites readers to imagine two independently deployable servers when the B200 half is not one. 
+
+Wafer
++1
+
+The benchmark does not support a general performance claim
+6. The benchmark is one unusually narrow workload
+Every request has:
+
+1,024 input tokens;
+400 output tokens.
+That is a useful controlled point, but it is not representative of “agents” in general. Agent systems commonly have:
+
+large system prompts and accumulated tool traces;
+highly variable output lengths;
+many short turns;
+prefix-cache reuse;
+long idle periods during tools;
+bursts after external events;
+concurrent trajectories rather than independent flat requests;
+structured-output or grammar constraints;
+cancellation when a tool call appears;
+heavy-tail prompt lengths.
+The article invokes million-token context and agentic workloads, but its headline benchmark exercises only 0.1% of the model’s nominal one-million-token context. The separate 172K prefill anecdote is also not a one-million-token serving test. The public AMD day-zero recipe was configured around a 16,384-token maximum, illustrating that model-level one-million-token support and a production-proven one-million-token serving stack are different claims. 
+
+Wafer
++4
+
+At minimum, the analysis needed curves over:
+
+
+text
+input:     128, 1K, 8K, 32K, 128K, 512K, 1M
+output:     32, 128, 400, 2K, 8K
+cache hit:   0%, 50%, 90%+
+arrival:  closed-loop and Poisson/bursty open-loop
+SLO:      TTFT, TPOT, E2E and failure percentiles
+7. It may be a closed-loop benchmark, which can hide overload
+A constant-concurrency benchmark commonly works like this:
+
+
+text
+send request
+     |
+     v
+wait until it finishes
+     |
+     v
+send replacement request
+When the server slows down, the clients automatically send requests less frequently. That suppresses incoming load and prevents a visible unbounded queue.
+
+A real open-loop service looks more like:
+
+
+text
+external arrival process ---> queue ---> server
+        keeps arriving          |
+                                +--> queue explodes when λ > capacity
+The post does not disclose:
+
+whether arrivals were open-loop or closed-loop;
+total request count;
+benchmark duration;
+drain handling;
+whether “c64” means 64 continually active requests or only a semaphore cap.
+Without this, it is impossible to determine whether c64 represents a usable operating point or only a closed-loop saturation experiment.
+
+8. No latency distribution or reliability data is shown
+Means and peak throughput are especially weak metrics for online serving. The post needs, at every concurrency:
+
+p50/p90/p95/p99 TTFT;
+p50/p90/p95/p99 TPOT or inter-token latency;
+p50/p99 total request latency;
+maximum scheduler stall;
+error, timeout, cancellation and abort rate;
+speculative acceptance distribution;
+GPU utilization and power;
+repeated trials and confidence intervals.
+This omission is even more important because the public ROCm failure could be triggered by a particular request’s top-k/top-p settings and kill the serving process. Successful throughput from a homogeneous benchmark does not capture that failure mode. 
+
+GitHub
++1
+
+A useful metric would be successful goodput, not emitted tokens:
+
+G
+=
+T
+raw
+×
+Pr
+⁡
+(
+request succeeds
+)
+×
+Pr
+⁡
+(
+meets SLO
+)
+×
+Pr
+⁡
+(
+quality is acceptable
+)
+.
+9. The displayed “peaks” are only the highest tested points
+B300 stops at c24 while MI reaches c64. The article does not explain whether:
+
+B300 ran out of KV memory;
+DCP imposed a limit;
+CUDA graph capture had a maximum batch;
+c32 or c48 was slower;
+higher concurrencies were simply not tested;
+errors appeared above c24.
+Likewise, it does not show whether MI c96 or c128 was attempted.
+
+Therefore, “peak” means highest point on the displayed experiment, not demonstrated hardware or stack maximum. The curves also connect discrete concurrency points into loop-like lines, even though several points are dominated by another operating point. A Pareto frontier would be much clearer. 
+
+Wafer
++1
+
+10. There is an internal c24/c48 discrepancy
+The prose says the no-speculation comparison uses concurrency 24. In the second chart, the high-throughput non-speculative blue point is labeled c48.
+
+That is a direct article-versus-chart inconsistency. It matters because the claimed gains—2.2× single-stream, 1.7× at moderate concurrency, and 18% at peak—depend on selecting matching concurrency points. 
+
+Wafer
++1
+
+11. “Warm run” and “cold prefill” are not defined
+The speculative chart is labeled a warm run, while the long-context example is described as cold prefill. “Warm” could mean any combination of:
+
+kernels JIT-compiled;
+graphs captured;
+weights touched into HBM;
+allocator pools established;
+prefix cache populated;
+filesystem cache warm;
+connection pools established.
+“Cold prefill” could mean only a cache miss, rather than a cold model or cold process. Given that loading a roughly 1.56TB checkpoint is itself a major operation, the terminology must be defined precisely. 
+
+Wafer
++1
+
+The price calculations are arithmetically right but economically incomplete
+12. The table arithmetic itself is correct
+Using the article’s prices:
+
+MI355X
+8
+(
+2.50
+)
+=
+$
+20
+/
+h
+952
+/
+20
+=
+47.6.
+B300
+8
+(
+6
+)
+=
+$
+48
+/
+h
+1568
+/
+48
+=
+32.67.
+B200
+16
+(
+4.25
+)
+=
+$
+68
+/
+h
+498
+/
+68
+=
+7.32.
+So the rounded 48, 33 and 7 figures are internally consistent. 
+
+Wafer
+
+However, the column label is confused. It is not throughput “per $/GPU-hour” in the usual sense. The denominator is the entire deployment’s hourly cost:
+
+o
+u
+t
+p
+u
+t
+ 
+t
+o
+k
+/
+s
+U
+S
+D
+/
+h
+o
+u
+r
+.
+Multiplying by 3,600 converts this to tokens per dollar.
+
+13. The implied ideal output-only costs are conditional on 100% utilization
+At full saturation:
+
+C
+out
+=
+node dollars/hour
+3600
+T
+×
+10
+6
+.
+This gives:
+
+
+Point	Ideal output-only cost
+MI355X c64	$5.84/M output tokens
+MI355X c16, approximate	$6.31/M
+B300 c24	$8.50/M
+B200 TP16	$37.93/M
+Those figures assume:
+
+the node is continuously saturated;
+there are no failed or late requests;
+prompt processing is free;
+no standby or failover capacity;
+no engineering or support cost;
+no model load or restart overhead;
+no idle gaps caused by real traffic.
+At utilization 
+u
+:
+
+C
+MI,c64
+=
+$
+5.84
+/
+u
+.
+Therefore:
+
+
+Productive utilization	MI cost/M output
+100%	$5.84
+50%	$11.67
+20%	$29.18
+10%	$58.36
+A realistic expression is:
+
+C
+e
+f
+f
+e
+c
+t
+i
+v
+e
+=
+10
+6
+(
+C
+G
+P
+U
++
+C
+h
+o
+s
+t
++
+C
+n
+e
+t
+w
+o
+r
+k
++
+C
+s
+t
+o
+r
+a
+g
+e
++
+C
+o
+p
+s
+)
+3600
+T
+p
+e
+a
+k
+u
+a
+s
+,
+where 
+a
+ is availability and 
+s
+ is the fraction of requests that succeed and meet the service target.
+
+14. The article’s prices are not demonstrated “market averages”
+The post gives:
+
+MI355X: $2.50/GPU-hour;
+B200: $4.25;
+B300: $6.
+It does not name:
+
+providers;
+region;
+date of quote;
+bare metal versus VM;
+spot versus interruptible versus on-demand;
+one-year commitment;
+minimum cluster size;
+SLA;
+network topology;
+host CPU/RAM;
+availability at scale.
+Current public examples illustrate how much this matters:
+
+TensorWave publicly lists MI355X from approximately $2.95/GPU-hour, with a specific host and network configuration. 
+
+TensorWave
++1
+Runpod publicly lists B300 and B200 at different prices and handles longer reserved-cluster terms through sales rather than one universal public annual rate. 
+
+Runpod
+CoreWeave’s published regional pricing includes B300 spot prices around the mid-$4/GPU-hour range in some configurations, while B200 on-demand and spot pricing differ substantially. 
+
+CoreWeave
++1
+These are not interchangeable offers. That is precisely the problem: there is no single defensible “average” without matching purchase mode, term, provider, topology and capacity guarantee.
+
+The post is also evaluating a product Wafer itself can sell. Using a favorable internal MI rate against unidentified competitor rates may describe Wafer’s offer, but it does not isolate an AMD hardware advantage.
+
+15. The conclusion flips at a fairly ordinary price ratio
+For peak raw throughput, MI beats B300 on price if:
+
+952
+8
+P
+M
+I
+>
+1568
+8
+P
+B
+300
+.
+Therefore:
+
+P
+B
+300
+P
+M
+I
+>
+1568
+952
+=
+1.647.
+So:
+
+if MI is $2.50, B300 breaks even at about $4.12/GPU-hour;
+if MI is $2.95, B300 breaks even at about $4.86/GPU-hour.
+At the more latency-reasonable approximate MI c16 point:
+
+P
+B
+300
+/
+P
+M
+I
+>
+1568
+/
+880
+=
+1.782.
+At a $2.95 MI price, that makes B300 break-even about $5.26/GPU-hour.
+
+A useful sensitivity summary is:
+
+
+text
+B300 price / MI price
+
+below 1.65:
+    B300 wins even the raw peak-throughput/$ comparison
+
+1.65 to 1.78:
+    MI wins only by using its high-latency c64 saturation point
+
+above 1.78:
+    MI wins both the shown raw peak and approximate QoS-nearer comparison
+That is far more informative than declaring a universal winner.
+
+As an illustration of sensitivity—not an apples-to-apples purchasing recommendation—combining a $2.95 public MI starting rate with a roughly $4.48 B300 spot rate gives:
+
+952
+/
+[
+8
+(
+2.95
+)
+]
+=
+40.34
+versus
+
+1568
+/
+[
+8
+(
+4.48
+)
+]
+=
+43.75.
+The result flips. Another provider pairing flips it back. The provider contract dominates the purported architectural conclusion. 
+
+TensorWave
++1
+
+16. “2.4× cheaper” is mathematically poor wording
+If one item costs $6 and another costs $2.50:
+
+the former costs 2.4× as much;
+the latter costs 58.3% less.
+Calling it “2.4× cheaper” is ambiguous and often interpreted incorrectly. The same applies to the 1.7× B200 wording.
+
+17. Output-only throughput ignores prefill economics
+The article’s metric favors a decode-heavy 1,024/400 workload. But it simultaneously argues that K3’s million-token context and memory footprint are central.
+
+For the separate 172K-prompt example:
+
+MI: 51 seconds;
+B300: 23 seconds.
+At the article’s hourly prices, the node rental consumed by that one serialized prefill would be approximately:
+
+51
+(
+20
+)
+/
+3600
+=
+$
+0.283
+for MI and:
+
+23
+(
+48
+)
+/
+3600
+=
+$
+0.307
+for B300.
+
+So the old MI path would still be slightly cheaper in raw rental terms, but B300 would deliver the result more than twice as fast. Whether that is a better business trade depends on the value of latency, concurrency and user experience—not just output-token cost. 
+
+Wafer
+
+The right workload-level metric is closer to:
+
+successful tasks/hour under SLO
+or:
+
+fully loaded dollars per successful task
+,
+not output tokens alone.
+
+18. API economics are omitted
+Moonshot’s official Kimi K3 API pricing is approximately:
+
+$0.30/M cached input tokens;
+$3/M uncached input tokens;
+$15/M output tokens. 
+
+Kimi
+For the post’s 1,024/400 request:
+
+Uncached input
+1024
+(
+3
+/
+10
+6
+)
++
+400
+(
+15
+/
+10
+6
+)
+=
+$
+0.009072.
+Cached input
+1024
+(
+0.30
+/
+10
+6
+)
++
+400
+(
+15
+/
+10
+6
+)
+=
+$
+0.006307.
+The ideal MI c64 self-host cost per request at Wafer’s rate is:
+
+$
+20
+/
+[
+2.38
+(
+3600
+)
+]
+=
+$
+0.002334.
+Ignoring operations, failover and capital risk, break-even productive utilization is therefore approximately:
+
+0.002334
+/
+0.009072
+=
+25.7
+%
+against uncached API pricing, and:
+
+0.002334
+/
+0.006307
+=
+37.0
+%
+against cached pricing.
+
+At a public $2.95 MI rate, those become approximately 30.4% and 43.7%.
+
+That is attractive at scale, but it is not automatically cheaper for a new or bursty service. Agent workloads can have high prefix-cache reuse, making the cached API comparison especially relevant.
+
+19. Rental performance per dollar is not hardware efficiency
+The observed quantity is approximately:
+
+
+text
+rental performance/$ =
+    silicon capability
+  × software quality
+  × provider utilization
+  × supply scarcity
+  × procurement terms
+  × provider margin
+It does not separately measure:
+
+tokens per joule;
+hardware acquisition TCO;
+silicon compute efficiency;
+rack density;
+cooling cost;
+reliability;
+usable fleet capacity.
+MI355X is specified around 288GB HBM3E, 8TB/s of HBM bandwidth and a high power envelope; HGX B300 has similar HBM capacity/bandwidth but materially different compute, attention and interconnect characteristics. No wall-power measurement appears in the post, so no energy-efficiency conclusion follows. 
+
+NVIDIA
++3
+
+Model-size and memory claims
+20. The 2.8T parameter count is correct, but total parameters are not active compute
+Kimi K3 is approximately:
+
+2.8T total parameters;
+104B active parameters;
+896 routed experts with a subset active per token;
+93 temporal layers, combining KDA and gated MLA components;
+one-million-token nominal context;
+MXFP4-weight/MXFP8-activation-oriented. 
+
+Hugging Face
+The post uses 2.8T as if it simultaneously describes intelligence, memory and per-token compute. It mainly describes the residency burden.
+
+
+text
+All ~2.8T parameters must reside somewhere
+                   |
+                   v
+             MoE router
+                   |
+                   v
+Only ~104B parameters are active for a token
+The active fraction is:
+
+104
+B
+/
+2.8
+T
+≈
+3.7
+%
+.
+That makes “a smarter model means a bigger model” a false causal generalization. Intelligence depends on architecture, training data, optimization, post-training, tools, inference-time compute and evaluation harnesses. Total MoE parameters are not comparable to dense-model parameters without also stating active parameters and routing topology.
+
+The cited DeepSeek and GLM parameter counts may be broadly correct, but the post similarly omits active parameters and then turns a memory-footprint trend into a claim about intelligence. Official model materials themselves show mixed benchmark outcomes rather than one scalar “near Opus” intelligence level. 
+
+Hugging Face
++2
+
+21. “Open source” is inaccurate terminology
+The official description is better characterized as open-weight under the Kimi K3 license, not unrestricted open source.
+
+The custom license includes commercial conditions for certain high-revenue MaaS operators and branding conditions at very large scale. Those provisions may not affect a small deployment, but they matter to the inference-provider market discussed by the article. 
+
+GitHub
++1
+
+This does not make the model unusable. It means “open source” and “cost-efficient alternative” require a licensing qualification.
+
+22. The B200 memory figure is wrong or at least not the usable figure
+The article says “8×192GB B200.” Current deployed B200 systems and public cloud offerings generally expose about 180GB per GPU, or approximately 1.44TB across eight GPUs. B300 exposes about 288GB per GPU. 
+
+NVIDIA Docs
++2
+
+AMD’s K3 memory analysis gives approximately:
+
+checkpoint: 1.5609TB;
+weights per TP8 rank: 190.974GiB;
+one one-million-token known-state allocation: 14.427GiB per rank;
+combined: 205.401GiB;
+remaining on a 288GB GPU: about 82.6GiB before other runtime overhead. 
+
+AMD
++2
+Therefore, an 8×B200 node does not merely fail to hold “weights plus a 1M KV pool.” The weights alone do not fit.
+
+Even using the article’s nominal 192GB value:
+
+8
+(
+192
+ GB
+)
+=
+1.536
+ TB
+,
+which is already below the approximately 1.561TB checkpoint, before allocator fragmentation, kernels, graphs, activations and any sequence state.
+
+The conclusion that one B200 node is insufficient is right. The explanation should say that the checkpoint itself crosses the fit boundary.
+
+23. Calling K3’s state a conventional “1M KV pool” is misleading
+K3 is not a standard 93-layer full-attention transformer with a normal K/V tensor growing at every layer. Its temporal stack contains:
+
+
+text
+69 KDA/recurrent-style layers
+        -> mostly fixed-size recurrent state
+
+24 gated MLA layers
+        -> compressed per-token latent attention state
+vLLM’s K3 engineering notes likewise describe the hybrid recurrent/full-attention behavior. 
+
+Hugging Face
++1
+
+That is why AMD’s estimate for one million tokens is around 14.4GiB per rank rather than an enormous conventional full-KV allocation across 93 layers.
+
+The remaining memory still matters. Very roughly, before runtime workspace and speculative-draft allocations:
+
+288
+−
+190.974
+14.427
+≈
+6.7
+idealized one-million-token sequence states fit per rank. In practice the feasible number would be lower. The real memory advantage is therefore:
+
+the checkpoint crosses a one-node fit threshold;
+MI355X/B300 can retain several very long sessions;
+B200 cannot host the base weights in one node.
+That is a stronger and more accurate argument than “weights plus the 1M KV pool.”
+
+24. The checkpoint is not simply 2.8T × four bits
+An ideal pure four-bit representation would be:
+
+2.8
+T
+×
+4
+/
+8
+≈
+1.4
+ TB
+.
+The actual checkpoint is around 1.56TB because not every tensor is encoded as an ideal packed four-bit value. Non-expert tensors, scales, metadata and higher-precision components add overhead.
+
+This distinction matters when extrapolating whether a model “should” fit. Parameter count × advertised weight precision is only a lower-bound estimate.
+
+25. HBM creates a fit threshold, but it is not the whole moat
+The post’s strongest architectural observation is real:
+
+
+text
+checkpoint fits in one high-bandwidth domain?
+        |
+   +----+----+
+   |         |
+  yes        no
+   |         |
+single-node  extra node / offload / different partitioning
+fast fabric  slow-fabric and synchronization penalties
+But after the checkpoint fits, performance still depends on:
+
+
+text
+active weight traffic and reuse
+MoE expert routing and load balance
+MLA/KDA/AttnRes kernel quality
+speculative acceptance and verification overhead
+collectives and topology
+graph capture
+scheduler efficiency
+prefix/KV management
+compiler and runtime maturity
+The post’s own B300 result is evidence against a pure-memory thesis. B300 and MI355X occupy a similar HBM capacity/bandwidth class, yet B300 produces 1.65× the selected aggregate throughput and 1.46× the single-stream speed. Memory capacity explains feasibility, not the complete performance result. 
+
+Wafer
++2
+
+The hardware comparison mixes very different systems
+26. B200 is penalized by a topology choice, not just by B200 silicon
+The tested configurations are approximately:
+
+
+text
+MI355X: 8 GPUs, TP8, one node
+
+B300:   8 GPUs, TP8 + DCP8, one node
+
+B200:  16 GPUs, TP16, two nodes over ~195 Gb/s RoCE
+A 195Gb/s link corresponds to only:
+
+195
+/
+8
+=
+24.375
+ GB/s
+.
+Modern NVLink-class intra-node fabric is on the order of 1.8TB/s per GPU in the relevant NVIDIA platform, roughly:
+
+1800
+/
+24.375
+≈
+74
+×
+the raw bandwidth of that one 195Gb/s figure, before protocol and collective overhead. 
+
+Wafer
++2
+
+So the B200 result very plausibly measures:
+
+B200 checkpoint non-fit + pure TP16 + this specific cross-node RoCE deployment.
+It does not isolate “B200 performance.”
+
+Other partitioning options include expert parallelism, tensor/expert parallel combinations, pipeline parallelism, sequence parallelism, offload, disaggregated serving and different network fabrics. Those may have their own costs and may still lose, but the article does not test them.
+
+vLLM’s K3 work reports that topology-aware expert parallelism and custom collectives can materially change K3 performance, including multi-fold differences over less-specialized collective paths for relevant message shapes. 
+
+vLLM
++1
+
+27. “Comparable hardware specs” is true only along two selected dimensions
+MI355X and B300 are comparable in:
+
+nominal HBM capacity;
+nominal HBM bandwidth;
+broad power class.
+They differ in:
+
+low-precision matrix throughput;
+attention acceleration;
+intra-node interconnect;
+host and NIC platform;
+collective implementation;
+compiler/runtime ecosystem;
+supported kernels and formats.
+Peak FLOPS figures are also meaningless unless the model’s actual kernels, sparsity assumptions, data format and utilization are specified.
+
+The post can legitimately compare complete deployable systems. But then the conclusion must be:
+
+this complete MI/SGLang/provider stack versus these complete NVIDIA stacks,
+not a clean finding about memory or AMD silicon alone.
+
+28. The host platform is missing from the benchmark description
+TensorWave’s public MI355X node listing includes substantial CPU, RAM and networking specifications. B300 and B200 cloud instances can have different CPU generations, host-memory sizes, NUMA layouts and NICs. 
+
+TensorWave
++1
+
+At high concurrency and long context, host-side work can include:
+
+tokenization;
+request scheduling;
+sampling metadata;
+block-table construction;
+collective launch;
+CPU/GPU synchronization;
+streaming and serialization.
+Without publishing host specifications, the article is comparing servers rather than only GPUs but labels the result as a GPU conclusion.
+
+SGLang and ROCm maturity are overstated
+29. “Out of the box” contradicts the article’s own debugging story
+The article says MI355X delivered strong results out of the box and later explains that speculative decoding crashed because a ROCm path lacked a top-k renormalization operation, requiring a local fix.
+
+Those cannot both be true in their ordinary meanings.
+
+A more accurate formulation would be:
+
+Base K3 execution was available on day zero, and a relatively small local compatibility fix enabled our desired speculative-sampling path.
+That is still a meaningful accomplishment. It is not out-of-box production parity. 
+
+Wafer
+
+30. The public failure was request-dependent and process-level
+The public SGLang report showed K3 DSPARK serving successfully for a period and then crashing when a request exercised top-k/top-p sampling. Removing speculative decoding avoided the problem. 
+
+GitHub
+
+That is more serious than a benchmark-startup typo:
+
+
+text
+ordinary requests                 top-k/top-p request
+       |                                  |
+       v                                  v
+ server appears healthy       missing ROCm verify operation
+                                          |
+                                          v
+                                scheduler process failure
+A production server should not let one client’s valid sampling settings kill the serving process.
+
+The article reports a NameError; the public issue showed a TypeError from a callable being None. That difference does not prove the article fabricated anything—different branch revisions can easily produce different exceptions. It does prove that the exact commit, container digest and local diff are essential for auditing the claim.
+
+31. The fix was branch-specific amid active upstream churn
+The main and K3-specific branches had visibly different HIP/ROCm paths. The K3 branch added HIP-specific renormalization handling that was not identically present in the main code snapshot.
+
+As of August 2, 2026, the relevant public pull requests showed:
+
+special K3 branch work rather than a simple long-stable mainline release;
+uneven CI status;
+a separate main-targeting fix still open or gated on broader K3 integration;
+broader K3 support under active development. 
+
+GitHub
++4
+That is normal for day-zero model enablement. It does not justify the word hardened.
+
+32. A semantically small operation is not necessarily computationally small
+K3’s vocabulary is around 160K tokens. A top-k/top-p renormalization can conceptually be written as:
+
+
+python
+values, indices = topk(probabilities, k)
+filtered = zeros_like(probabilities)
+filtered.scatter_(indices, values)
+filtered /= filtered.sum(-1, keepdim=True)
+But full top-p generally requires ordering or selection over the vocabulary.
+
+At c64 with a speculative block of five, a rough upper-bound verification shape is:
+
+64
+×
+5
+=
+320
+ rows
+.
+Across a 160K vocabulary:
+
+320
+×
+160000
+=
+51.2
+ million probabilities
+.
+A single FP32-sized copy is about:
+
+51.2
+M
+×
+4
+≈
+205
+ MB
+,
+before indices, temporary sorting buffers and repeated reads/writes.
+
+This does not prove the operation is a bottleneck. It proves that “it was just sort, mask and divide” is not enough performance analysis. A full sort is 
+O
+(
+V
+log
+⁡
+V
+)
+; an optimized top-k selection can be closer to 
+O
+(
+V
+)
+ or 
+O
+(
+V
+log
+⁡
+k
+)
+. The exact implementation and sampling workload matter.
+
+If the throughput benchmark used greedy sampling, the patched top-k/top-p path may not even have been exercised. Sampling parameters are absent from the post.
+
+33. Correct speculative renormalization is a quality issue, not merely a crash fix
+In rejection-based speculative sampling, a draft distribution 
+q
+ proposes a token and the target distribution 
+p
+ accepts it with approximately:
+
+a
+(
+x
+)
+=
+min
+⁡
+(
+1
+,
+p
+(
+x
+)
+q
+(
+x
+)
+)
+.
+On rejection, sampling uses a residual distribution related to:
+
+r
+(
+x
+)
+∝
+max
+⁡
+(
+p
+(
+x
+)
+−
+q
+(
+x
+)
+,
+0
+)
+.
+If target and draft top-k/top-p filtering are normalized differently, the server can silently alter the intended target distribution even if it no longer crashes.
+
+A proper hardening suite needs to test:
+
+greedy, top-k and top-p combinations;
+top-k/top-p ordering;
+scalar and per-request parameters;
+ties;
+penalties and logit bias;
+grammar masks and tool calling;
+BF16/FP16 underflow;
+zero or NaN denominators;
+deterministic seeds;
+statistical equivalence to the CUDA path;
+long context;
+mixed requests in one batch;
+request isolation.
+The article reports none of this.
+
+DSpark claims need much more disclosure
+34. It is unclear whether speculative decoding was enabled equally on all three platforms
+This is one of the most important omitted facts.
+
+There are two possible interpretations:
+
+All platforms used DSpark
+Then the article must provide:
+
+exact draft checkpoint;
+block size;
+target and draft precision;
+acceptance lengths;
+verification backend;
+sampling settings;
+version on each platform.
+MI used DSpark while B200/B300 did not
+Then the result compares optimized software stacks, not hardware. That can still be a useful buyer comparison, but statements such as “AMD versus B300” become misleading.
+
+The article never resolves this.
+
+35. The article uses a different block size from the published DSpark setup
+The official DSpark materials describe a roughly 2.25B-parameter draft and commonly report a block size of seven with a corresponding verification width. The article’s chart uses block size five. 
+
+Hugging Face
++2
+
+Block-five tuning may be entirely valid. But it changes:
+
+draft cost;
+verification batch width;
+acceptance probability;
+latency;
+memory;
+maximum throughput.
+The exact draft revision and reason for selecting block five should be stated.
+
+36. The 2.2× and 18% gains are workload-dependent, not intrinsic
+A first-principles approximation is:
+
+s
+p
+e
+e
+d
+u
+p
+≈
+E
+[
+accepted target tokens per round
+]
+×
+t
+b
+a
+s
+e
+l
+i
+n
+e
+ 
+t
+a
+r
+g
+e
+t
+ 
+s
+t
+e
+p
+t
+d
+r
+a
+f
+t
++
+t
+v
+e
+r
+i
+f
+y
++
+t
+s
+a
+m
+p
+l
+e
+r
++
+t
+s
+c
+h
+e
+d
+u
+l
+e
+r
+.
+Acceptance varies by task and sampling temperature. Official DSpark results show meaningfully different accepted lengths across coding, math, chat and million-token retrieval workloads rather than one constant factor. 
+
+Hugging Face
++1
+
+Therefore:
+
+2.2× at c1 may be real for the 1,024/400 benchmark;
+18% at saturation may be real for that operating point;
+neither is a model- or hardware-invariant speedup.
+The post needs acceptance histograms and a timing decomposition:
+
+
+text
+draft forward
+target verification
+accept/reject kernel
+sampling/renormalization
+KV/state updates
+scheduler overhead
+37. “Only speculative path” is too absolute
+It may have been the only released, learned K3-specific draft that Wafer considered practical. That is narrower than saying it was the only speculative path.
+
+Other categories can include:
+
+prompt lookup or n-gram speculation;
+alternative external drafts;
+self-speculative layer skipping;
+medusa/eagle-like heads if trained;
+future model-specific methods.
+The claim should be scoped to the exact public K3 ecosystem and date.
+
+The AITER prefill conclusion is not demonstrated
+38. The post never gives the post-fix end-to-end prefill time
+The article provides:
+
+original MI cold-prefill time: 51 seconds;
+B300: 23 seconds;
+AITER kernel throughput: about 13K tok/s;
+prior Triton path: about 4–7K tok/s.
+It then says the difference is almost entirely one kernel. But kernel throughput is not model end-to-end TTFT. 
+
+Wafer
+
+A prefill request includes:
+
+
+text
+tokenization / host setup
+        |
+QKV and other projections
+        |
+MLA/KDA attention kernels
+        |
+MoE router + expert GEMMs
+        |
+collectives
+        |
+metadata / allocations / synchronization
+        |
+first-token sampling
+The article reports no new number replacing 51 seconds.
+
+39. Amdahl’s law shows how strong the missing assumption is
+Let 
+f
+ be the fraction of the original 51 seconds spent in the optimized kernel and 
+S
+ its speedup:
+
+T
+n
+e
+w
+=
+51
+[
+(
+1
+−
+f
+)
++
+f
+S
+]
+.
+To reach B300’s 23 seconds:
+
+If the kernel is 3× faster
+23
+/
+51
+=
+1
+−
+f
++
+f
+/
+3
+f
+≈
+82.4
+%
+.
+If it is 2.5× faster
+f
+≈
+91.5
+%
+.
+If it is only 2× faster
+Even if 
+f
+=
+1
+:
+
+T
+n
+e
+w
+,
+m
+i
+n
+=
+51
+/
+2
+=
+25.5
+ s
+,
+so reaching 23 seconds is impossible.
+
+Thus, “almost entirely one kernel” requires that roughly 82–92% of the original end-to-end time was in that kernel, depending on the actual speedup. A profiler or post-fix TTFT would settle this immediately. The post supplies neither.
+
+40. Padding 12 heads to 16 is not computationally “trivial”
+K3 has 96 attention heads. Under TP8:
+
+96
+/
+8
+=
+12
+ heads per rank
+.
+Padding to 16 means:
+
+16
+/
+12
+−
+1
+=
+33.3
+%
+more executed head slots relative to useful work, or:
+
+4
+/
+16
+=
+25
+%
+of executed slots being dummy slots.
+
+It may be a trivial code change. It is not a trivial amount of nominal head-axis work.
+
+For correctness, the integration must verify:
+
+padded Q/K/V entries are neutral;
+masks and scales cover dummy heads;
+outputs are sliced correctly;
+quantization blocks do not mix useful and dummy values incorrectly;
+strides and layouts remain valid;
+long-context numerical behavior matches a reference.
+The exact AITER commit also matters because supported shapes and dispatch paths change rapidly.
+
+41. “No custom kernels” is misleading
+The article explicitly relies on an AITER MLA prefill ASM kernel. AITER is AMD’s high-performance operator library and contains Triton, Composable Kernel and hand-tuned assembly implementations, including model-specific MoE, routing and attention paths. 
+
+GitHub
++2
+
+Therefore:
+
+“Wafer did not need to author a new assembly kernel” may be true;
+“the result did not require custom kernels” is false for the complete stack.
+The actual story is:
+
+
+text
+AMD/AITER engineers wrote the specialized high-performance kernel
+                         +
+Wafer added shape-padding and compatibility glue
+                         +
+SGLang integrated the execution path
+That is still good ecosystem progress. It is not evidence that generic PyTorch/Triton performance has reached parity automatically.
+
+vLLM’s independent K3 work similarly required specialized fused metadata and skinny-GEMM kernels to remove meaningful end-to-end overhead. 
+
+vLLM
++1
+
+Introductory and concluding rhetoric
+42. “Near Opus,” “Fable/Sol intelligence,” and “new era” are not auditable claims
+There is no single intelligence number. A credible comparison needs:
+
+benchmark suite;
+exact model versions;
+reasoning budgets;
+tool access;
+prompts;
+number of samples;
+judge model;
+pass@k;
+harness and retries;
+cost and latency.
+K3’s own model card shows a mixed benchmark profile, doing better on some tasks and worse on others. “Near” can be conversationally reasonable but is not a precise factual conclusion. 
+
+Hugging Face
+
+“Marks the start of a new era” is marketing rhetoric and cannot be tested.
+
+43. “Agents are closing the software gap” is anecdotal
+The article describes an agent helping find and patch a missing operation. That demonstrates that an agent can accelerate integration debugging.
+
+It does not measure:
+
+total engineer-hours;
+human review and corrections;
+failed approaches;
+upstream maintenance burden;
+correctness coverage;
+time to optimize a missing kernel;
+debugging of distributed hangs or numerical errors;
+ongoing cost after ROCm/SGLang changes.
+The hard high-performance prefill kernel was already supplied by AITER. The agent appears to have helped with dispatch, padding and compatibility code. That is valuable, but much narrower than closing the overall CUDA software gap.
+
+A convincing experiment would compare matched teams doing several ports, including:
+
+
+text
+missing Python dispatch
+missing Triton op
+missing fused kernel
+collective regression
+numerical mismatch
+distributed deadlock
+production soak and upgrade
+and report time-to-correct-fix plus maintenance failures over later releases.
+
+44. “The only problem is software” is false
+Even if software were fully equal, hardware and market differences would remain:
+
+matrix and attention throughput;
+interconnect;
+NIC options;
+rack architecture;
+power and cooling;
+cloud availability;
+failure rate and support;
+supply and delivery lead time;
+precision-format behavior;
+spare capacity and fleet size.
+Conversely, if a provider gives MI355X a large price discount, that can make it the better customer choice despite weaker absolute performance. That is an economic result, not proof that the chips are otherwise equivalent.
+
+45. “CUDA moat dead” is not supported by this evidence
+The CUDA/NVIDIA moat is not one missing function. It includes:
+
+
+text
+operator coverage
+mature optimized kernels
+compiler stability
+profilers and debuggers
+collectives and topology support
+CI across model and sampling combinations
+container/dependency stability
+application compatibility
+cloud fleet availability
+support and operational expertise
+The post itself supplies contrary evidence:
+
+a request-dependent speculative failure;
+unsupported attention-head shape;
+branch-specific fixes;
+reliance on a specialized ROCm image and rapidly evolving dependencies;
+no stable upstream reproduction;
+materially faster B300 absolute performance.
+Independent vLLM notes also described K3’s dependencies as sufficiently complicated that a purpose-built container was the practical supported route at the time. 
+
+vLLM
+
+The defensible conclusion is:
+
+The ROCm gap is narrowing rapidly, and day-zero support for a difficult model is meaningful.
+That is very different from saying the moat is dead.
+
+Reproducibility information that is missing
+For this benchmark to support its stated conclusions, Wafer should publish at least:
+
+Software
+
+text
+SGLang commit and branch
+container digest
+ROCm/CUDA and driver versions
+PyTorch version
+AITER commit
+Triton version
+FlashInfer/CK versions
+all local patches
+environment variables
+Model
+
+text
+target checkpoint revision
+draft checkpoint revision
+text-only vs multimodal weights
+quantization/conversion details
+weight checksum
+target and KV/state dtypes
+quality/eval comparison after conversion
+Serving configuration
+
+text
+TP / EP / TEP / PP / DCP topology
+attention and MoE backends
+max model length
+memory fraction
+KV/state capacity
+chunked-prefill settings
+batch-token limits
+CUDA/HIP graph settings
+prefix-cache policy
+scheduler policy
+speculative block and verification width
+Hardware
+
+text
+exact server model
+GPU clocks and power settings
+CPU model
+RAM size and NUMA topology
+NIC count and speed
+switch fabric
+RoCE/NCCL/RCCL settings
+GPUDirect state
+Workload
+
+text
+prompt source
+random-length distribution
+natural EOS or forced 400 tokens
+sampling temperature/top-k/top-p
+seeds
+prefix overlap
+request count and duration
+closed-loop or open-loop arrival process
+warmup and cache-flush procedure
+Results
+
+text
+raw per-run logs
+repetitions and variance
+p50/p95/p99 TTFT, TPOT and E2E
+errors and restarts
+acceptance-length histogram
+GPU utilization and wall power
+quality-equivalence tests
+Without these, the post is a vendor-reported result, not a reproducible systems benchmark.
+
+What the post gets right
+The criticism should not obscure the legitimate result.
+
+K3’s checkpoint creates a real HBM fit threshold. One 8×B200 node cannot hold the published checkpoint in the tested representation; one 8×MI355X or 8×B300 node can. 
+
+AMD
++1
+Cross-node TP16 over a relatively slow RoCE fabric can be devastating for decode. That is fully plausible from first principles.
+The price-table arithmetic is correct.
+At Wafer’s assumed prices and 100% saturation, MI355X has the lowest ideal output-only cost for this fixed workload.
+MI355X is a viable K3 platform. A 952-output-tok/s node is substantial throughput.
+DSpark can materially improve K3 serving. The magnitude is workload-dependent, but the direction is credible. 
+
+Hugging Face
++1
+AITER can dramatically outperform generic fallback paths on AMD. The existence of the specialized kernel is evidence that the ROCm serving ecosystem is advancing quickly. 
+
+GitHub
++1
+Day-zero support matters. Even with branch churn and bugs, supporting an unusual 2.8T hybrid MoE model within days is meaningful progress.
+A defensible rewritten conclusion
+A conclusion justified by the shown evidence would be:
+
+In our fixed 1,024-input/400-output benchmark, an 8×MI355X server running a patched K3/SGLang/DSpark stack reached approximately 952 aggregate output tok/s at concurrency 64 and approximately 118 tok/s for a single stream. Under our assumed $2.50/GPU-hour price, the saturation point corresponds to an idealized $5.84/M output tokens at full utilization.
+The 952-tok/s point is a high-concurrency throughput result, not per-user speed; under a constant-concurrency interpretation it corresponds to an approximately 26.9-second request residence window. B300 achieved higher absolute throughput and substantially better interactivity, while MI355X offered better raw throughput per dollar under our particular prices.
+
+The experiment shows that MI355X is a credible, cost-sensitive deployment option for K3 and that AMD’s K3 software stack is improving quickly. It does not by itself establish universal performance-per-dollar leadership, production maturity, one-million-context serving performance, energy efficiency, or the disappearance of NVIDIA’s software advantage.
+
+That is still a strong MI355X story. It removes the unsupported parts without diminishing the real engineering accomplishment.
