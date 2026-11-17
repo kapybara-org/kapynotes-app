@@ -18,6 +18,7 @@ InputDecoration kapyFieldDecoration(
   Color? fillColor,
   double? borderWidth,
   double? radius,
+  bool neutralFocus = false,
 }) {
   final palette = context.palette;
   final error = Theme.of(context).colorScheme.error;
@@ -45,7 +46,9 @@ InputDecoration kapyFieldDecoration(
     border: border(palette.controlBorder),
     enabledBorder: border(palette.controlBorder),
     disabledBorder: border(palette.controlBorder.withValues(alpha: 0.55)),
-    focusedBorder: border(palette.selectedBorder, width: 1.25),
+    focusedBorder: neutralFocus
+        ? border(palette.controlBorder)
+        : border(palette.selectedBorder, width: 1.25),
     errorBorder: border(error.withValues(alpha: 0.8)),
     focusedErrorBorder: border(error, width: 1.25),
   );

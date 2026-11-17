@@ -817,6 +817,35 @@ void main() {
     );
   });
 
+  // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
+  // long for one line, See all at the heading's end, and amounts in mono.
+  testWidgets('desktop dark pinned cards', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      withNote: false,
+    );
+    for (final (index, body) in [
+      'Groceries\nMilk, eggs',
+      'land\n₹75,60,000',
+      'car issues\n₹18,400',
+      'Ideas\nA quieter dock',
+      'Goals - Oct 2026\nShip the redesign',
+      'Todos\nRenew domain, gym',
+      'Reading list\nThree books',
+      'SnowSEO Issues backlog\n☑ Crawl\n☐ Fix titles\n☐ Sitemap',
+    ].indexed) {
+      final note = goldenNotes.create(body: body);
+      if (index > 2) goldenNotes.togglePinned(note.id);
+    }
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_pinned_cards.png'),
+    );
+  });
+
   testWidgets('desktop dark note with images', (tester) async {
     await pumpForGolden(
       tester,

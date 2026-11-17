@@ -62,12 +62,23 @@ class NoteGlance {
   /// What [line] calculates to, when it is a calculation.
   final String? result;
 
+  /// [line] as written when it is nothing but an amount, "₹75,60,000", which
+  /// a card shows as its figure whether or not there are rates to read it by.
+  String? get amount {
+    final line = this.line;
+    return line != null && _amount.hasMatch(line) ? line : null;
+  }
+
   /// Ticked boxes, of [boxes] checkboxes in the whole note.
   final int done;
   final int boxes;
   final Set<NoteMedia> media;
 
   static final _read = Expando<(CalcEngine?, NoteGlance)>();
+  static final _amount = RegExp(
+    r'^\p{Sc}?\s?-?\d[\d,]*(\.\d+)?$',
+    unicode: true,
+  );
   static final _marks = RegExp(r'^(#{1,6}\s*|[☐☑•]\s*)');
 
   static NoteGlance of(Note note, CalcEngine? engine) {
@@ -291,7 +302,7 @@ class NoteCardFace extends StatelessWidget {
     final blank = note.isEmpty;
     final title = _handwritten(14, 18, FontWeight.w500, palette.cardTitle);
     final glance = this.glance;
-    final result = snippet == null ? glance.result : null;
+    final result = snippet == null ? glance.amount ?? glance.result : null;
     final preview =
         snippet ??
         (blank ? 'Empty' : glance.line ?? (note.isDrawing ? 'Sketch' : null));
@@ -353,13 +364,16 @@ class NoteCardFace extends StatelessWidget {
                               Text(
                                 heading,
                                 maxLines:
-                                    constraints.maxHeight >= scaler.scale(36)
+                                    constraints.maxHeight >=
+                                        scaler.scale(36 + 6)
                                     ? 2
                                     : 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: title,
                               ),
                               if (oneLine && roomy && glance.boxes == 0) ...[
+                                if (result != null || preview != null)
+                                  const SizedBox(height: 3),
                                 if (result != null)
                                   Text(
                                     result,
@@ -376,8 +390,7 @@ class NoteCardFace extends StatelessWidget {
                                       color: palette.resultPillText,
                                     ),
                                   )
-                                else if (preview != null) ...[
-                                  const SizedBox(height: 3),
+                                else if (preview != null)
                                   Text(
                                     preview,
                                     maxLines: 1,
@@ -391,7 +404,6 @@ class NoteCardFace extends StatelessWidget {
                                           : palette.textMuted,
                                     ),
                                   ),
-                                ],
                               ],
                             ],
                           ),
@@ -940,36 +952,44 @@ class NotesListHeading extends StatelessWidget {
             leading,
             const SizedBox(width: 6),
           ],
-          Flexible(
-            child: Semantics(
-              header: true,
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: _handwritten(
-                  14,
-                  20,
-                  FontWeight.w600,
-                  palette.textSubheading,
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Semantics(
+                    header: true,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _handwritten(
+                        14,
+                        20,
+                        FontWeight.w600,
+                        palette.textSubheading,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 7),
+                Tooltip(
+                  message: count == 1 ? '1 $noun' : '$count ${noun}s',
+                  child: Text(
+                    '$count',
+                    style:
+                        _figtree(
+                          AppTypeScale.small,
+                          16,
+                          FontWeight.w600,
+                          palette.textTertiary,
+                        ).copyWith(
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 7),
-          Tooltip(
-            message: count == 1 ? '1 $noun' : '$count ${noun}s',
-            child: Text(
-              '$count',
-              style: _figtree(
-                AppTypeScale.small,
-                16,
-                FontWeight.w600,
-                palette.textTertiary,
-              ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
-            ),
-          ),
-          const Spacer(),
           ?trailing,
         ],
       ),
