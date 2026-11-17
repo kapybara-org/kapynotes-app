@@ -205,14 +205,26 @@ class KapyAiController extends KapyAi {
 
   /// Whether [model] can be picked here and now. Own accounts count while
   /// they are offered: one that has since signed out says so when asked,
-  /// rather than the chat quietly moving to another model.
+  /// rather than the chat quietly moving to another model. A signed-in tool
+  /// that no longer lists the model, because its catalogue changed or the
+  /// model now brings a tool of its own, does not count.
   bool _usable(KapyModel model) => switch (model.kind) {
     KapyModelKind.cloud => isPro,
     KapyModelKind.device => model == _deviceModel,
-    KapyModelKind.codex => _offered(KapyAccountKind.codex),
-    KapyModelKind.claudeCode => _offered(KapyAccountKind.claudeCode),
+    KapyModelKind.codex => _toolModelUsable(KapyAccountKind.codex, model),
+    KapyModelKind.claudeCode => _toolModelUsable(
+      KapyAccountKind.claudeCode,
+      model,
+    ),
     KapyModelKind.openRouter => true,
   };
+
+  bool _toolModelUsable(KapyAccountKind kind, KapyModel model) {
+    if (!_offered(kind)) return false;
+    final check = _checks[kind];
+    return check?.status != KapyAccountStatus.connected ||
+        check!.models.contains(model);
+  }
 
   /// What answers when the chosen model cannot: the device's own, then
   /// Kapy AI Cloud on Pro, then the first account model there is.
@@ -310,8 +322,13 @@ class KapyAiController extends KapyAi {
   /// Codex and Claude Code: on a desktop where the app is not sandboxed (a
   /// sandboxed app cannot run them, so it never offers them), and while
   /// their const is on.
+  ///
+  /// Not on Windows either, until a canary and a check that a timeout kills
+  /// the whole process tree have passed on a Windows machine. The shim code
+  /// in local_tools.dart stays for the day one does.
   bool _toolPlatform(KapyAccountKind kind) =>
       AppPlatform.isDesktop &&
+      !AppPlatform.isWindows &&
       !_sandboxed &&
       switch (kind) {
         KapyAccountKind.codex => codexAvailable,

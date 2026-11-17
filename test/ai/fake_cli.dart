@@ -1,5 +1,23 @@
 import 'dart:io';
 
+import 'package:kapy_notes/ai/local_tools.dart';
+
+/// A Codex the app will run: pinned at 0.160, which is what the stand-in
+/// reports. The real pin is null until a canary has passed.
+CodexCli codexCli({
+  String? executable,
+  Duration timeout = const Duration(seconds: 120),
+  Map<String, String>? environment,
+  bool? windows,
+  (int, int)? pin = (0, 160),
+}) => CodexCli(
+  executable: executable,
+  timeout: timeout,
+  environment: environment,
+  windows: windows,
+  pin: pin,
+);
+
 /// A shell script standing in for the codex or claude binary.
 ///
 /// Every run writes what it was given to its own folder under [log]: its
@@ -20,6 +38,8 @@ class FakeCli {
     int signedInExit = 0,
     String? models,
     String? features,
+    String? featuresWithConfig,
+    String version = 'codex-cli 0.160.0',
     String? beforeReply,
     String? afterReply,
   }) async {
@@ -28,9 +48,11 @@ class FakeCli {
     await cli.log.create();
     File('${cli.log.path}/reply').writeAsStringSync(reply);
     File('${cli.log.path}/signed_in_exit').writeAsStringSync('$signedInExit');
+    File('${cli.log.path}/models.json').writeAsStringSync(models ?? _catalogue);
+    File('${cli.log.path}/version').writeAsStringSync(version);
     File(
-      '${cli.log.path}/models.json',
-    ).writeAsStringSync(models ?? '{"models":[]}');
+      '${cli.log.path}/features_with_config',
+    ).writeAsStringSync(featuresWithConfig ?? knownFeatures);
     File(
       '${cli.log.path}/features',
     ).writeAsStringSync(features ?? knownFeatures);
@@ -86,6 +108,10 @@ tool_call_mcp_elicitation          stable             true
 code_mode                          under development  false
 ''';
 
+const String _catalogue =
+    '{"models":[{"slug":"gpt-x","display_name":"GPT X","visibility":"list",'
+    '"experimental_supported_tools":[]}]}';
+
 const String _script = r'''#!/bin/sh
 LOG="@LOG@"
 d="$LOG/run-$$"
@@ -99,7 +125,14 @@ case "$1" in *.js) shift ;; esac
 case "$1" in
   login|auth) exit "$(cat "$LOG/signed_in_exit")" ;;
   debug) cat "$LOG/models.json"; exit 0 ;;
-  features) cat "$LOG/features"; exit 0 ;;
+  --version) cat "$LOG/version"; exit 0 ;;
+  features)
+    if [ -f "${CODEX_HOME:-/nonexistent}/config.toml" ]; then
+      cat "$LOG/features_with_config"
+    else
+      cat "$LOG/features"
+    fi
+    exit 0 ;;
 esac
 @BEFORE@
 cat "$LOG/reply"

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme.dart';
 import 'kapy_ai_parts.dart';
+import 'punycode.dart';
 
 /// An answer, drawn from the little Markdown a model writes: paragraphs,
 /// headings as bold lines, bullet and numbered lists, bold, italic, inline
@@ -40,13 +41,25 @@ class KapyAiMarkdown extends StatefulWidget {
     };
   }
 
+  static String _unescaped(String host) {
+    try {
+      return Uri.decodeComponent(host);
+    } on FormatException {
+      return host;
+    }
+  }
+
   /// Where [uri] really goes, to print beside its words: the host of a web
   /// address, the address of mail. Null when [label] already says it, so
   /// "example.com" is not followed by "(example.com)".
   ///
   /// The words of a link are whatever the model, or a note it was shown,
   /// chose to write, so they say nothing about the address. The host is the
-  /// part a reader can check at a glance.
+  /// part a reader can check at a glance, and it is shown as the network
+  /// sees it (Punycode, `xn--`), so a lookalike with a letter from another
+  /// alphabet shows as itself. The words are compared in that form too, and
+  /// a host written with such a letter is always shown, even under words that
+  /// spell it the same way: that is what a lookalike's own words do.
   static String? destination(Uri uri, String label) {
     final said = label.trim().toLowerCase();
     if (uri.scheme.toLowerCase() == 'mailto') {
@@ -54,13 +67,16 @@ class KapyAiMarkdown extends StatefulWidget {
           ? null
           : uri.path;
     }
-    final host = uri.host.toLowerCase();
-    final named = said
-        .replaceFirst(RegExp(r'^https?://'), '')
-        .split(RegExp(r'[/?#]'))
-        .first
-        .replaceFirst('www.', '');
-    return named == host.replaceFirst('www.', '') ? null : host;
+    final written = _unescaped(uri.host);
+    final host = asciiHost(written);
+    final named = asciiHost(
+      said
+          .replaceFirst(RegExp(r'^https?://'), '')
+          .split(RegExp(r'[/?#]'))
+          .first,
+    ).replaceFirst('www.', '');
+    final plain = written.runes.every((rune) => rune < 128);
+    return plain && named == host.replaceFirst('www.', '') ? null : host;
   }
 
   @override

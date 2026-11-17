@@ -7,6 +7,7 @@ import 'package:kapy_notes/ui/kapy_ai/kapy_ai_chats.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_conversation.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_markdown.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
+import 'package:kapy_notes/ui/kapy_ai/punycode.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'fake_kapy_ai.dart';
@@ -104,6 +105,37 @@ void main() {
     kapyAiAvailable = true;
   });
   tearDown(() => kapyAiAvailable = wasAvailable);
+
+  group('Punycode', () {
+    for (final (host, ascii) in [
+      ('bücher.example', 'xn--bcher-kva.example'),
+      ('exаmple.com', 'xn--exmple-4nf.com'),
+      ('münchen.de', 'xn--mnchen-3ya.de'),
+      ('例え.jp', 'xn--r8jz45g.jp'),
+      ('пример.рф', 'xn--e1afmkfd.xn--p1ai'),
+      ('Ünï.com', 'xn--n-nga1b.com'),
+      ('Example.COM', 'example.com'),
+      ('a-b.example', 'a-b.example'),
+      ('例え。jp', 'xn--r8jz45g.jp'),
+    ]) {
+      test('$host is $ascii', () => expect(asciiHost(host), ascii));
+    }
+
+    test('the RFC 3492 sample strings', () {
+      expect(
+        punycode('\u4ed6\u4eec\u4e3a\u4ec0\u4e48\u4e0d\u8bf4\u4e2d\u6587'),
+        'ihqwcrb4cv8a8dqg056pqjye',
+      );
+      expect(
+        punycode(
+          '\u0644\u064a\u0647\u0645\u0627\u0628\u062a\u0643\u0644\u0645'
+          '\u0648\u0634\u0639\u0631\u0628\u064a\u061f',
+        ),
+        'egbpdaj6bu4bxfgehfvwxn',
+      );
+      expect(punycode('b\u00fccher'), 'bcher-kva');
+    });
+  });
 
   group('panel', () {
     testWidgets('asks with the note the chip names, and ↵ sends', (
@@ -1029,6 +1061,66 @@ void main() {
           findRichText: true,
         ),
         findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'a lookalike host shows in Punycode, and its words do not pass',
+      (tester) async {
+        await show(
+          tester,
+          '[example.com](https://ex\u0430mple.com/login) and '
+          '[ex\u0430mple.com](https://ex\u0430mple.com) and '
+          '[b\u00fccher.example](https://xn--bcher-kva.example).',
+        );
+
+        expect(
+          find.textContaining(
+            'example.com (xn--exmple-4nf.com)',
+            findRichText: true,
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining(
+            'ex\u0430mple.com (xn--exmple-4nf.com)',
+            findRichText: true,
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('bücher.example (', findRichText: true),
+          findsNothing,
+        );
+      },
+    );
+
+    test('destination compares the Punycode forms', () {
+      Uri uri(String url) => KapyAiMarkdown.safeLink(url)!;
+      expect(
+        KapyAiMarkdown.destination(
+          uri('https://ex\u0430mple.com'),
+          'example.com',
+        ),
+        'xn--exmple-4nf.com',
+      );
+      expect(
+        KapyAiMarkdown.destination(
+          uri('https://b\u00fccher.example/a'),
+          'BÜCHER.example/x',
+        ),
+        'xn--bcher-kva.example',
+      );
+      expect(
+        KapyAiMarkdown.destination(
+          uri('https://xn--bcher-kva.example'),
+          'bücher.example',
+        ),
+        isNull,
+      );
+      expect(
+        KapyAiMarkdown.destination(uri('https://example.com'), 'exämple.com'),
+        'example.com',
       );
     });
 

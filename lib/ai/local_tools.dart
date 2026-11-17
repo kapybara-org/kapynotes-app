@@ -111,7 +111,10 @@ abstract class _Cli implements LocalTool {
   /// the program's own sign-in and to run, and nothing the app may hold
   /// (keys, tokens, anything a build or a shell put there). [scratch] is its
   /// temporary directory.
-  Map<String, String> _childEnvironment(Directory scratch) {
+  Map<String, String> _childEnvironment(
+    Directory scratch,
+    Map<String, String> overrides,
+  ) {
     final windows = _windows;
     final keep = {
       'HOME',
@@ -137,6 +140,7 @@ abstract class _Cli implements LocalTool {
       'PATH': _searchDirs.join(windows ? ';' : ':'),
       if (windows) ...{'TEMP': scratch.path, 'TMP': scratch.path},
       if (!windows) 'TMPDIR': scratch.path,
+      ...overrides,
     };
   }
 
@@ -216,6 +220,7 @@ abstract class _Cli implements LocalTool {
     List<String> arguments, {
     String? stdin,
     int maxOutput = _maxOutput,
+    Map<String, String> environment = const {},
   }) async {
     final launch = await this.launch(arguments);
     final scratch = await Directory.systemTemp.createTemp('kapy-ai-');
@@ -226,7 +231,7 @@ abstract class _Cli implements LocalTool {
           launch.program,
           launch.arguments,
           workingDirectory: scratch.path,
-          environment: _childEnvironment(scratch),
+          environment: _childEnvironment(scratch, environment),
           includeParentEnvironment: false,
         );
       } on ProcessException {
@@ -314,7 +319,11 @@ class CodexCli extends _Cli {
     Duration timeout = _Cli.defaultTimeout,
     Map<String, String>? environment,
     @visibleForTesting bool? windows,
-  }) : super(executable, timeout, environment, windows);
+    @visibleForTesting (int, int)? pin = testedUpTo,
+  }) : _pin = pin,
+       super(executable, timeout, environment, windows);
+
+  final (int, int)? _pin;
 
   @override
   KapyAccountKind get kind => KapyAccountKind.codex;
@@ -332,14 +341,22 @@ class CodexCli extends _Cli {
     '.npm-global/bin',
   ];
 
-  /// The account's own catalogue, as Codex's model picker lists it.
+  /// The account's own catalogue, as Codex's model picker lists it, less the
+  /// models that bring a tool of their own.
+  ///
+  /// Some tools come from the catalogue rather than from a feature: in 0.160
+  /// a model's `experimental_supported_tools` (`send_user_message_async` and
+  /// `clock` on one of today's). A model is offered only when that list is
+  /// empty or holds only tools in [_reviewedTools]. A catalogue that cannot
+  /// be read, or that leaves nothing to offer, makes Codex unavailable: there
+  /// is no "default model" to fall back to, because nobody has read it.
   @override
   Future<List<KapyModel>> _models() async {
     final run = await _run(const [
       'debug',
       'models',
     ], maxOutput: _Cli._maxCatalogue);
-    if (run.exitCode != 0) return const [_fallback];
+    if (run.exitCode != 0) throw AnswerAccountRejected(kind);
     final catalogue = jsonDecode(run.stdout);
     final models = [
       for (final raw
@@ -348,23 +365,26 @@ class CodexCli extends _Cli {
         if (raw is Map &&
             raw['visibility'] == 'list' &&
             raw['slug'] is String &&
-            raw['display_name'] is String)
+            raw['display_name'] is String &&
+            _toolsReviewed(raw['experimental_supported_tools']))
           KapyModel(
             kind: KapyModelKind.codex,
             id: raw['slug'] as String,
             label: raw['display_name'] as String,
           ),
     ];
-    return models.isEmpty ? const [_fallback] : models;
+    if (models.isEmpty) throw AnswerAccountRejected(kind);
+    return models;
   }
 
-  /// Whatever Codex is set to use, for a Codex whose catalogue could not be
-  /// read. Sent without `--model`.
-  static const KapyModel _fallback = KapyModel(
-    kind: KapyModelKind.codex,
-    id: '',
-    label: 'Codex default',
-  );
+  /// The tools a catalogue entry may bring and still be offered. Empty: none
+  /// has been shown to be harmless, and one that reaches a person, a clock
+  /// or anything else is not assumed to be.
+  static const Set<String> _reviewedTools = {};
+
+  static bool _toolsReviewed(Object? tools) =>
+      tools == null ||
+      tools is List && tools.every((tool) => _reviewedTools.contains(tool));
 
   /// What turns Codex from an agent into a writer, checked against
   /// `codex exec --help` and `codex features list` (0.160).
@@ -379,10 +399,7 @@ class CodexCli extends _Cli {
   static final List<String> lockedDown = [
     '--sandbox',
     'read-only',
-    '--config',
-    'approval_policy="never"',
-    ..._settings,
-    ..._features,
+    ..._switches,
     '--ignore-user-config',
     '--ignore-rules',
     '--skip-git-repo-check',
@@ -392,6 +409,8 @@ class CodexCli extends _Cli {
   ];
 
   static const List<String> _settings = [
+    '--config',
+    'approval_policy="never"',
     '--config',
     'web_search="disabled"',
     '--config',
@@ -434,6 +453,31 @@ class CodexCli extends _Cli {
     for (final feature in _disabled) ...['--disable', feature],
   ];
 
+  /// Every `--config` and `--disable` an answer runs with, and the same ones
+  /// `features list` is read with: one list, so the gate cannot be shown a
+  /// different Codex from the one that answers.
+  static final List<String> _switches = [..._settings, ..._features];
+
+  /// The newest Codex, as major and minor, that the app will run; null while
+  /// no live canary has passed, and then no Codex is run and no model called.
+  ///
+  /// It is set to the canary's version (0.160 is the one everything here was
+  /// read against) only once the one canary after 19 Nov has passed for
+  /// every model family the picker offers: an injected note in an empty
+  /// directory, and no file made, no secret read, no tool run. After that it
+  /// rises only the same way, because a newer Codex can bring tools,
+  /// features and models nobody has read.
+  static const (int, int)? testedUpTo = null;
+
+  /// Whether `codex --version` (`codex-cli 0.160.0`) is [pin] or older. With
+  /// no pin, or a version that cannot be read, it is not.
+  static bool versionAccepted(String output, (int, int)? pin) {
+    final match = RegExp(r'(\d+)\.(\d+)\.\d+').firstMatch(output);
+    if (pin == null || match == null) return false;
+    final version = (int.parse(match[1]!), int.parse(match[2]!));
+    return version.$1 < pin.$1 || version.$1 == pin.$1 && version.$2 <= pin.$2;
+  }
+
   /// What `codex features list` may still show as on once [lockedDown] has
   /// been applied, each read in 0.160 and none of them able to run a command,
   /// reach a file, the web or a server, or talk to anyone: the app's own
@@ -473,13 +517,32 @@ class CodexCli extends _Cli {
     'unified_exec',
   };
 
-  Future<bool>? _featuresKnown;
+  Future<bool>? _vetted;
 
-  /// Whether every feature Codex has on under [lockedDown] is one that was
-  /// read. Asked once per [check], from Codex itself, with the same settings
-  /// and a run's own environment, and a Codex that cannot say is not known.
-  Future<bool> _allFeaturesKnown() => _featuresKnown ??= () async {
-    final run = await _run(['features', 'list', ..._settings, ..._features]);
+  /// Whether this Codex is one the app has read: not newer than
+  /// [testedUpTo] (and none at all while that is null), and with every feature it has on under [lockedDown] one
+  /// that was read. Asked once per [check], from Codex itself, and a Codex
+  /// that cannot say is not vetted.
+  ///
+  /// `features list` reads `config.toml` from Codex's home and cannot be told
+  /// to ignore it, while an answer does ignore it (`--ignore-user-config`).
+  /// So it runs with a home of its own, new and empty, and sees what an
+  /// answer sees; only an answer gets the real one, for its sign-in.
+  Future<bool> _isVetted() => _vetted ??= () async {
+    final version = await _run(const ['--version']);
+    if (version.exitCode != 0 || !versionAccepted(version.stdout, _pin)) {
+      return false;
+    }
+    final home = await Directory.systemTemp.createTemp('kapy-ai-home-');
+    final _Run run;
+    try {
+      run = await _run(
+        ['features', 'list', ..._switches],
+        environment: {'CODEX_HOME': home.path},
+      );
+    } finally {
+      await home.delete(recursive: true).catchError((_) => home);
+    }
     if (run.exitCode != 0) return false;
     final lines = run.stdout
         .split('\n')
@@ -499,29 +562,25 @@ class CodexCli extends _Cli {
 
   @override
   Future<LocalToolCheck> check() {
-    _featuresKnown = null;
+    _vetted = null;
     return super.check();
   }
 
-  /// Exits 0 only when signed in, and not at all when Codex has a feature
-  /// on that was not read.
+  /// Exits 0 only when signed in, and not at all when Codex is not vetted.
   @override
   Future<bool> _signedIn() async =>
-      await _allFeaturesKnown() &&
+      await _isVetted() &&
       (await _run(const ['login', 'status'])).exitCode == 0;
 
   /// The prompt goes in on stdin (`-`); Codex prints its progress on stderr
   /// and only the final message on stdout.
   @override
   Future<String?> _answer(KapyModel model, AnswerRequest request) async {
-    if (!await _allFeaturesKnown()) throw AnswerAccountRejected(kind);
+    if (model.id.isEmpty || !await _isVetted()) {
+      throw AnswerAccountRejected(kind);
+    }
     final run = await _run(
-      [
-        'exec',
-        if (model.id.isNotEmpty) ...['--model', model.id],
-        ...lockedDown,
-        '-',
-      ],
+      ['exec', '--model', model.id, ...lockedDown, '-'],
       stdin:
           '${answerInstructions(request.today)}\n\n'
           '${answerPrompt(request)}',

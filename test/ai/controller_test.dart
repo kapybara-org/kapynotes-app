@@ -8,6 +8,7 @@ import 'package:kapy_notes/ai/answer_engine.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/ai/kapy_ai_controller.dart';
 import 'package:kapy_notes/billing/billing.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 
@@ -373,6 +374,60 @@ void main() {
             .status,
         KapyAccountStatus.error,
       );
+    });
+  });
+
+  group('Windows', () {
+    test(
+      'Codex and Claude Code are not offered, and a stored one falls back',
+      () async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        store.data['kapyAi.v1'] = {'defaultModel': codex.model.toJson()};
+        final ai = await build(environment: const {'HOME': 'C:/Users/someone'});
+        await settle();
+        expect(ai.accounts.map((a) => a.kind), [KapyAccountKind.openRouter]);
+        expect(ai.defaultModel, FakeDeviceModel.apple);
+        ai.pickModel(claude.model);
+        await ai.ask('Lisbon?');
+        expect(codex.asked, isEmpty);
+        expect(claude.asked, isEmpty);
+      },
+    );
+  });
+
+  group('a model Codex no longer offers', () {
+    test('falls back, in a stored chat and as the default', () async {
+      const gone = KapyModel(
+        kind: KapyModelKind.codex,
+        id: 'gpt-6-luna',
+        label: 'GPT-6 Luna',
+      );
+      store.data['kapyAi.v1'] = {'defaultModel': gone.toJson()};
+      store.data['kapyAi.chats.v1'] = {
+        'chats': [
+          {
+            'id': 'c',
+            'title': 't',
+            'createdAt': 0,
+            'updatedAt': 0,
+            'model': gone.toJson(),
+            'messages': [],
+          },
+        ],
+      };
+      final ai = await build(environment: const {'HOME': '/Users/someone'});
+      ai.accounts;
+      await settle();
+      expect(
+        ai.accounts.firstWhere((a) => a.kind == KapyAccountKind.codex).models,
+        [codex.model],
+      );
+      expect(ai.defaultModel, FakeDeviceModel.apple);
+      ai.openChat('c');
+      expect(ai.model, FakeDeviceModel.apple);
+      await ai.ask('Lisbon?');
+      expect(codex.asked, isEmpty);
     });
   });
 
