@@ -425,6 +425,27 @@ future_feature under development false
       expect(left.stdout.toString().trim(), isEmpty);
     });
 
+    test('a program that keeps starting children leaves none behind', () async {
+      final cli = await fake(
+        beforeReply: 'while :; do sleep 28.91 & sleep 0.005; done',
+      );
+      await expectLater(
+        codexCli(
+          executable: cli.path,
+          timeout: const Duration(milliseconds: 600),
+        ).answer(_codexModel, _request()),
+        throwsA(isA<AnswerFailed>()),
+      );
+      final deadline = DateTime.now().add(const Duration(seconds: 5));
+      var left = await Process.run('pgrep', ['-f', 'sleep 28.91']);
+      while (left.stdout.toString().trim().isNotEmpty &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        left = await Process.run('pgrep', ['-f', 'sleep 28.91']);
+      }
+      expect(left.stdout.toString().trim(), isEmpty);
+    });
+
     test('the output cap kills the whole tree', () async {
       final cli = await fake(
         reply: 'x' * (70 * 1024),
