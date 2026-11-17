@@ -157,6 +157,7 @@ build_mac_direct() {
 
   info "Verifying the exported app is signed and hardened"
   codesign --verify --strict --deep --verbose=2 "$app"
+  verify_tool_runner "$app"
   # Distribution builds must not carry get-task-allow; it would fail notarisation.
   if codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q 'get-task-allow'; then
     echo "error: get-task-allow present in a distribution build" >&2
@@ -325,10 +326,39 @@ build_ios() {
   echo "  → $OUT/kapy-ios.ipa"
 }
 
+# KapyToolRunner.xpc runs Codex and Claude Code for the sandboxed app, so
+# it is the one piece of the app with no sandbox. It must be signed by our
+# team with the hardened runtime, and must not claim any entitlement.
+verify_tool_runner() {
+  local helper="$1/Contents/XPCServices/KapyToolRunner.xpc"
+  if [[ ! -d "$helper" ]]; then
+    echo "error: $helper missing from the Developer ID build" >&2
+    exit 1
+  fi
+  codesign --verify --strict --verbose=2 "$helper"
+  local details
+  details="$(codesign -d --verbose=2 "$helper" 2>&1)"
+  if ! grep -q 'TeamIdentifier=96V66447C6' <<<"$details" ||
+    ! grep -q 'flags=.*runtime' <<<"$details"; then
+    echo "error: $helper is not signed by our team with the hardened runtime" >&2
+    exit 1
+  fi
+  if codesign -d --entitlements - --xml "$helper" 2>/dev/null | grep -q '<key>'; then
+    echo "error: $helper claims entitlements; it must claim none" >&2
+    exit 1
+  fi
+}
+
 build_mac_store() {
   info "macOS $VERSION ($BUILD_NUMBER) → Mac App Store"
   prepare_macos
-  archive_macos "$ARCHIVES/kapy-appstore.xcarchive"
+  # The store takes no unsandboxed code, so this build has no tool runner and
+  # never offers Codex or Claude Code (lib/ai/kapy_ai_controller.dart).
+  archive_macos "$ARCHIVES/kapy-appstore.xcarchive" KAPY_TOOL_RUNNER=NO
+  if [[ -e "$ARCHIVES/kapy-appstore.xcarchive/Products/Applications/$APP_NAME.app/Contents/XPCServices/KapyToolRunner.xpc" ]]; then
+    echo "error: the Mac App Store archive contains KapyToolRunner.xpc" >&2
+    exit 1
+  fi
   rm -rf "$OUT/appstore"
   xcodebuild -exportArchive \
     -archivePath "$ARCHIVES/kapy-appstore.xcarchive" \

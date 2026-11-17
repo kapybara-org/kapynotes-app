@@ -6,6 +6,7 @@ import 'package:kapy_notes/ai/answer_engine.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/ai/local_tools.dart';
 import 'package:kapy_notes/ai/retrieval.dart';
+import 'package:kapy_notes/ai/tool_helper.dart';
 import 'package:kapy_notes/core/platform.dart';
 
 import 'fake_cli.dart';
@@ -760,7 +761,13 @@ future_feature under development false
       final check = await ClaudeCodeCli(executable: cli.path).check();
       expect(check.status, KapyAccountStatus.connected);
       expect(check.models.map((m) => m.id), ['sonnet', 'opus']);
-      expect(cli.runs().single.argv, ['auth', 'status']);
+      expect(
+        cli.runs().map((r) => r.argv),
+        unorderedEquals([
+          ['--version'],
+          ['auth', 'status'],
+        ]),
+      );
     });
 
     test('output past the cap is cut off', () async {
@@ -769,6 +776,164 @@ future_feature under development false
         ClaudeCodeCli(executable: cli.path).answer(_claudeModel, _request()),
         throwsA(isA<AnswerFailed>()),
       );
+    });
+  });
+
+  group('the version a check vetted', () {
+    test('Codex that says another version since is not run', () async {
+      final cli = await fake();
+      final codex = codexCli(executable: cli.path);
+      expect((await codex.check()).status, KapyAccountStatus.connected);
+      File('${cli.log.path}/version').writeAsStringSync('codex-cli 0.160.1');
+      await expectLater(
+        codex.answer(_codexModel, _request()),
+        throwsA(isA<AnswerAccountRejected>()),
+      );
+      expect(cli.answers(), isEmpty);
+    });
+
+    test('Claude Code that says another version since is not run', () async {
+      final cli = await fake(reply: '{"result":"x"}');
+      final claude = ClaudeCodeCli(executable: cli.path);
+      expect((await claude.check()).status, KapyAccountStatus.connected);
+      File(
+        '${cli.log.path}/version',
+      ).writeAsStringSync('2.1.400 (Claude Code)');
+      await expectLater(
+        claude.answer(_claudeModel, _request()),
+        throwsA(isA<AnswerAccountRejected>()),
+      );
+      expect(cli.answers(), isEmpty);
+    });
+
+    test('every answer asks again, and the next check vets anew', () async {
+      final cli = await fake(reply: '{"result":"x"}');
+      final claude = ClaudeCodeCli(executable: cli.path);
+      await claude.check();
+      await claude.answer(_claudeModel, _request());
+      await claude.answer(_claudeModel, _request());
+      final asked = cli.runs().where((r) => r.argv.first == '--version');
+      expect(asked, hasLength(3));
+      File(
+        '${cli.log.path}/version',
+      ).writeAsStringSync('2.1.400 (Claude Code)');
+      await claude.check();
+      expect(await claude.answer(_claudeModel, _request()), 'x');
+    });
+  });
+
+  group('through the helper, on a sandboxed Mac', () {
+    test('Codex: every run goes to the helper, by tool name', () async {
+      final helper = FakeToolHelper();
+      final codex = codexCli(helper: helper);
+      final check = await codex.check();
+      expect(check.status, KapyAccountStatus.connected);
+      expect(check.models.single.id, 'gpt-x');
+      expect(await codex.answer(_codexModel, _request()), 'helper answer');
+
+      final runs = helper.requests;
+      expect(runs.map((r) => r.arguments.first), [
+        '--version',
+        'features',
+        'login',
+        'debug',
+        'exec',
+      ]);
+      expect(runs.every((r) => r.tool == 'codex'), isTrue);
+      final listing = runs[1];
+      expect(listing.arguments, ['features', 'list', ...CodexCli.switches]);
+      expect(listing.freshHome, isTrue);
+      final exec = runs.last;
+      expect(exec.arguments, [
+        'exec',
+        '--model',
+        'gpt-x',
+        ...CodexCli.lockedDown,
+        '-',
+      ]);
+      expect(exec.expectedVersion, 'codex-cli 0.160.0');
+      expect(exec.freshHome, isFalse);
+      expect(exec.stdin, contains('<notes>'));
+      expect(exec.timeout, const Duration(seconds: 120));
+      expect(
+        runs.where((r) => r != exec).map((r) => r.expectedVersion),
+        everyElement(isNull),
+      );
+    });
+
+    test('Claude Code: the same, with the version it was checked at', () async {
+      final helper = FakeToolHelper();
+      final claude = ClaudeCodeCli(helper: helper);
+      expect((await claude.check()).status, KapyAccountStatus.connected);
+      expect(await claude.answer(_claudeModel, _request()), 'helper answer');
+      final runs = helper.requests;
+      expect(runs.map((r) => r.arguments.take(2).toList()), [
+        ['--version'],
+        ['auth', 'status'],
+        ['--print', '--model'],
+      ]);
+      expect(runs.every((r) => r.tool == 'claude'), isTrue);
+      expect(runs.last.arguments, containsAllInOrder(ClaudeCodeCli.lockedDown));
+      expect(runs.last.expectedVersion, '2.1.326 (Claude Code)');
+    });
+
+    test('a tool the helper cannot find is not connected', () async {
+      final helper = FakeToolHelper(
+        reply: (_) =>
+            (outcome: HelperOutcome.notInstalled, exitCode: -1, stdout: ''),
+      );
+      expect(
+        (await ClaudeCodeCli(helper: helper).check()).status,
+        KapyAccountStatus.notConnected,
+      );
+    });
+
+    test('a version that changed since the check is an account error, '
+        'and the next answer reads the version again', () async {
+      var changed = true;
+      final helper = FakeToolHelper(
+        reply: (request) => request.expectedVersion != null && changed
+            ? (outcome: HelperOutcome.versionChanged, exitCode: -1, stdout: '')
+            : null,
+      );
+      final claude = ClaudeCodeCli(helper: helper);
+      await claude.check();
+      await expectLater(
+        claude.answer(_claudeModel, _request()),
+        throwsA(isA<AnswerAccountRejected>()),
+      );
+      changed = false;
+      final before = helper.requests.length;
+      expect(await claude.answer(_claudeModel, _request()), 'helper answer');
+      expect(helper.requests[before].arguments, ['--version']);
+    });
+
+    test('how a run ended reaches the panel as it would here', () async {
+      for (final (outcome, matcher) in [
+        (
+          HelperOutcome.timedOut,
+          isA<AnswerFailed>().having((e) => e.message, 'm', contains('long')),
+        ),
+        (
+          HelperOutcome.tooLong,
+          isA<AnswerFailed>().having((e) => e.message, 'm', contains('more')),
+        ),
+        (HelperOutcome.refused, isA<AnswerAccountRejected>()),
+        (HelperOutcome.failed, isA<AnswerAccountRejected>()),
+      ]) {
+        final helper = FakeToolHelper(
+          reply: (request) => request.arguments.first == '--print'
+              ? (outcome: outcome, exitCode: -1, stdout: '')
+              : null,
+        );
+        final claude = ClaudeCodeCli(helper: helper);
+        await claude.check();
+        await expectLater(
+          claude.answer(_claudeModel, _request()),
+          throwsA(matcher),
+          reason: outcome.name,
+        );
+      }
     });
   });
 
@@ -805,7 +970,10 @@ endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\node_
       String shimText = npmShim,
     }) async {
       final node = await fake(reply: '{"result":"ok"}');
-      final dir = Directory.systemTemp.createTempSync('shim');
+      // Followed through its links, as the program is when it is found.
+      final dir = Directory(
+        Directory.systemTemp.createTempSync('shim').resolveSymbolicLinksSync(),
+      );
       addTearDown(() => dir.deleteSync(recursive: true));
       File('${dir.path}/$name.cmd').writeAsStringSync(shimText);
       final script = File('${dir.path}/node_modules/@vendor/tool/bin/tool.js');
