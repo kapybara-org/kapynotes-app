@@ -93,7 +93,8 @@ class Tag {
 
   /// Null for a payload missing anything this build needs, or sealed for
   /// another tag: a payload names its own id, so one moved or replayed onto
-  /// another record is refused.
+  /// another record is refused. A name past [tagNameMax] runes is cut, so
+  /// every list, merge and save here sees the same name.
   static Tag? fromPayload(String id, Object? raw) {
     if (raw is! Map || raw['id'] != id) return null;
     final name = Stamped.fromJson<String>(raw['name']);
@@ -105,7 +106,10 @@ class Tag {
     }
     return Tag(
       id: id,
-      name: name,
+      name: Stamped(
+        String.fromCharCodes(name.v.runes.take(tagNameMax)),
+        name.at,
+      ),
       colour: colour,
       order: order,
       createdAt: createdAt,
@@ -339,7 +343,7 @@ class TagStore extends ChangeNotifier {
   Tag? create(String name) {
     final trimmed = _validName(name);
     if (trimmed == null) return null;
-    final existing = _named(trimmed);
+    final existing = named(trimmed);
     if (existing != null) return existing;
     final now = _stamp();
     final live = tags;
@@ -368,7 +372,7 @@ class TagStore extends ChangeNotifier {
     final tag = _tags.live(id);
     final trimmed = _validName(name);
     if (tag == null || trimmed == null) return false;
-    if (_named(trimmed)?.id case final other? when other != id) return false;
+    if (named(trimmed)?.id case final other? when other != id) return false;
     if (tag.name.v != trimmed) {
       _update(tag.copyWith(name: Stamped(trimmed, _stamp())));
     }
@@ -434,7 +438,8 @@ class TagStore extends ChangeNotifier {
         return byAge != 0 ? byAge : a.id.compareTo(b.id);
       });
 
-  Tag? _named(String name) {
+  /// The live tag called [name], ignoring case and the space around it.
+  Tag? named(String name) {
     final wanted = name.trim().toLowerCase();
     for (final tag in _byAge()) {
       if (tag.name.v.trim().toLowerCase() == wanted) return tag;

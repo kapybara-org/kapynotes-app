@@ -47,17 +47,21 @@ class SidebarTimestamp {
   /// time today, Yesterday, the weekday within the week, then the date, with
   /// the year only when it is not this one. [today] spells out "Today" before
   /// the time, for a card, where the time stands without a column of dates
-  /// around it.
+  /// around it; without [clock], a card short of room, it is "Today" alone.
   static String glance(
     DateTime timestamp, {
     required DateTime now,
     required DateTime Function(DateTime) displayTime,
     bool today = false,
+    bool clock = true,
   }) {
     final shown = displayTime(timestamp);
     final current = displayTime(now);
     final days = _daysBetween(shown, current);
-    if (days <= 0) return today ? 'Today · ${_clock(shown)}' : _clock(shown);
+    if (days <= 0) {
+      if (!today) return _clock(shown);
+      return clock ? 'Today, ${_clock(shown)}' : 'Today';
+    }
     if (days == 1) return 'Yesterday';
     if (days < 7) return _weekdays[shown.weekday - 1];
     final day = '${shown.day} ${_months[shown.month - 1]}';

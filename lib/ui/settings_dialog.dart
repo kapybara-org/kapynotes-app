@@ -21,6 +21,7 @@ import '../data/notes_store.dart';
 import '../data/rates.dart';
 import '../data/release_history.dart';
 import '../data/shortcut_prefs.dart';
+import '../data/tags.dart';
 import '../data/time_zones.dart';
 import '../data/update_checker.dart';
 import '../data/voice_prefs.dart';
@@ -46,6 +47,7 @@ import 'notebook_paper.dart';
 import 'settings_rows.dart';
 import 'settings_search.dart';
 import 'sidebar_timestamp.dart';
+import 'tag_ui.dart';
 import 'tonal_button.dart';
 import 'voice_consent_sheet.dart';
 import 'voice_note_dialog.dart';
@@ -139,6 +141,8 @@ Future<void> showSettings(
   VoidCallback? onTranscriptionReady,
   CloudAccess? cloudAccess,
   HiddenNotesGate? hiddenNotes,
+  TagStore? tags,
+  List<TagEntry> Function()? listedTags,
   KapyAi? kapyAi,
   SettingsSection? section,
   String? reveal,
@@ -159,6 +163,8 @@ Future<void> showSettings(
     onTranscriptionReady: onTranscriptionReady,
     cloudAccess: cloudAccess,
     hiddenNotes: hiddenNotes,
+    tags: tags,
+    listedTags: listedTags,
     kapyAi: kapyAi,
     section: section,
     reveal: reveal,
@@ -211,6 +217,8 @@ class SettingsDialog extends StatefulWidget {
     this.onTranscriptionReady,
     this.cloudAccess,
     this.hiddenNotes,
+    this.tags,
+    this.listedTags,
     this.kapyAi,
     this.section,
     this.reveal,
@@ -253,6 +261,11 @@ class SettingsDialog extends StatefulWidget {
   /// for the PIN a desktop unlocks them with. Null only in isolated settings
   /// tests, which then refuse an export containing them.
   final HiddenNotesGate? hiddenNotes;
+
+  /// The tags Settings › Notes › Tags orders and changes, as the window
+  /// lists them.
+  final TagStore? tags;
+  final List<TagEntry> Function()? listedTags;
   final UpdateChecker? updates;
   final DesktopIntegration? desktopIntegration;
 
@@ -1619,13 +1632,15 @@ class _SettingsDialogState extends State<SettingsDialog>
           if (AppPlatform.isDesktop)
             _toggle(
               'hidden-notes-sidebar-toggle',
-              'Hidden Notes',
-              'Show the protected folder · ${hiddenKeys.isEmpty ? 'Settings only' : hiddenKeys}',
+              'Show Hidden in the notes filter',
+              hiddenKeys.isEmpty
+                  ? 'Hidden stays out of the notes filter while this is off'
+                  : '$hiddenKeys opens Hidden either way',
               value: widget.layoutPrefs.hiddenFolderVisible,
               onChanged: (value) =>
                   widget.layoutPrefs.hiddenFolderVisible = value,
               byDefault: true,
-              keywords: ['hidden', 'private', 'protected', 'folder', 'sidebar'],
+              keywords: ['hidden', 'private', 'protected', 'folder', 'filter'],
             ),
           if (_usesPin)
             _Setting(
@@ -1639,6 +1654,15 @@ class _SettingsDialogState extends State<SettingsDialog>
                 onPressed: () => unawaited(_changePin()),
               ),
             ),
+        ]),
+      if ((widget.tags, widget.listedTags) case (final store?, final listed?))
+        _Group('Tags', [
+          _Setting(
+            'tags-setting',
+            'Your tags',
+            keywords: ['tag', 'label', 'colour', 'color', 'order'],
+            row: TagSettings(store: store, listed: listed),
+          ),
         ]),
     ];
   }
