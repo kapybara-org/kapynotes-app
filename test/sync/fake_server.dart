@@ -320,6 +320,61 @@ class FakeServer {
     }
   }
 
+  // --- tasks --------------------------------------------------------------
+
+  /// False is a server from before protocol 6: no task index, and a 404 for
+  /// anyone who asks after one.
+  bool tasksServed = true;
+
+  /// Each account's task records by id, with the seq each was last written
+  /// at. Mirrors `server/src/tasks.ts`: last writer wins on `updatedAt`,
+  /// the pull pages by seq.
+  final Map<String, Map<String, ({WireTaskRecord record, int seq})>> tasks =
+      {};
+  final Map<String, int> _taskClocks = {};
+
+  TasksPushResult pushTasks(
+    String userId,
+    String device,
+    List<WireTaskRecord> records,
+  ) {
+    if (!tasksServed) _refuse(404, 'not found');
+    final mine = tasks.putIfAbsent(userId, () => {});
+    final applied = <String>[];
+    final conflicts = <WireTaskRecord>[];
+    for (final record in records) {
+      final stored = mine[record.id];
+      if (stored != null && !stored.record.updatedAt.isBefore(record.updatedAt)) {
+        conflicts.add(stored.record);
+        continue;
+      }
+      final seq = _taskClocks[userId] = (_taskClocks[userId] ?? 0) + 1;
+      mine[record.id] = (record: record, seq: seq);
+      applied.add(record.id);
+    }
+    if (applied.isNotEmpty && deliverLive) {
+      for (final socket in sockets.values.toList()) {
+        if (socket.userId != userId || socket.device == device) continue;
+        if (socket.protocol < 6) continue;
+        socket._send({'t': 'tasks'});
+      }
+    }
+    return TasksPushResult(applied: applied, conflicts: conflicts);
+  }
+
+  TasksPage pullTasks(String userId, int after) {
+    if (!tasksServed) _refuse(404, 'not found');
+    final rows = (tasks[userId]?.values ?? const <({WireTaskRecord record, int seq})>[])
+        .where((row) => row.seq > after)
+        .toList()
+      ..sort((a, b) => a.seq.compareTo(b.seq));
+    return TasksPage(
+      records: [for (final row in rows) row.record],
+      cursor: rows.isEmpty ? after : rows.last.seq,
+      hasMore: false,
+    );
+  }
+
   /// Tells these users' sockets that their list of spaces changed, and drops
   /// any subscription that no longer holds.
   void announceUsers(Iterable<String> userIds) {
@@ -1845,6 +1900,20 @@ class FakeApi implements SyncApi {
     _gate();
     _record('pullOps:$after');
     return server.pullOps(userId, space, after, limit);
+  }
+
+  @override
+  Future<TasksPushResult> pushTasks(List<WireTaskRecord> records) async {
+    _gate();
+    _record('pushTasks');
+    return server.pushTasks(userId, device, records);
+  }
+
+  @override
+  Future<TasksPage> pullTasks({int after = 0}) async {
+    _gate();
+    _record('pullTasks:$after');
+    return server.pullTasks(userId, after);
   }
 
   @override

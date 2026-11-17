@@ -616,6 +616,22 @@ class NoteDoc {
     return _tree.visibleIndexOf(target) + 1;
   }
 
+  /// Where the character [anchor] names now is, for something that belongs to
+  /// its line rather than to the character: a task. The character's own
+  /// offset while it stands; once it is deleted, the offset where it was, as
+  /// long as its line still stands; null when the line went too, or when the
+  /// character has not arrived here yet.
+  int? lineOffsetOf(Anchor anchor) {
+    final id = anchor.id;
+    if (id == null) return null;
+    final node = _tree.node(id);
+    if (node == null) return null;
+    if (!node.deleted) return _tree.visibleIndexOf(node);
+    if (!_tree.inStandingLine(node)) return null;
+    final before = _tree.previousVisible(node);
+    return before == null ? 0 : _tree.visibleIndexOf(before) + 1;
+  }
+
   // ---------------------------------------------------------------------------
   // Anchored registers
 

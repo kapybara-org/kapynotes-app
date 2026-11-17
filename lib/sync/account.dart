@@ -7,9 +7,11 @@ import '../billing/note_limit.dart';
 import '../billing/plan_terms.dart';
 import '../data/local_store.dart';
 import '../data/notes_store.dart';
+import '../data/task_index.dart';
 import 'auth_api.dart';
 import 'key_bundle.dart';
 import 'doc_store.dart';
+import 'task_sync.dart';
 import 'image_sync.dart';
 import 'joining.dart';
 import 'key_store.dart';
@@ -135,6 +137,10 @@ class Account extends ChangeNotifier {
   AccountState _accountState = AccountState.restoring;
   AccountUser? _user;
   String? _token;
+
+  /// The task index: what this account keeps about each checklist line
+  /// beyond its text. Kept on this device and synced while signed in.
+  late final TaskIndex tasks = TaskIndex(_store)..load();
 
   /// Where the merge state lives; in memory for a test.
   final DocStorage? _docStorage;
@@ -485,6 +491,13 @@ class Account extends ChangeNotifier {
           keyring: keyring,
           docs: docs,
           images: images,
+          tasks: TaskSync(
+            api: api,
+            vault: vault,
+            index: tasks,
+            docs: docs,
+            noteIsLive: (noteId) => _notes.byId(noteId) != null,
+          ),
           vault: vault,
         );
     _teardownSync();
@@ -542,6 +555,8 @@ class Account extends ChangeNotifier {
     _token = null;
     _user = null;
     _state.clearCursor();
+    // Its ids and its seal are the account's; the next account pulls its own.
+    tasks.clear();
     await _keys.clear();
     if (token != null) await _auth.signOut(token);
     _moveTo(AccountState.signedOut);
@@ -610,6 +625,7 @@ class Account extends ChangeNotifier {
     _user = null;
     _lastError = null;
     _state.clearCursor();
+    tasks.clear();
     await _keys.clear();
     _moveTo(AccountState.signedOut);
     return true;

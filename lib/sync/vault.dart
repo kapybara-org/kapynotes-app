@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' as hashes;
 import 'package:cryptography_plus/cryptography_plus.dart';
 
 import 'aead.dart';
@@ -137,6 +138,33 @@ class Vault {
 
   Future<SealedBox> seal(NotePayload payload) async =>
       (await sealAll([payload])).single;
+
+  /// The id of the task record for the line anchored at [anchor] in [noteId].
+  ///
+  /// The same on every device of the account, so two devices that meet one
+  /// line write one record; opaque to the server, which would otherwise learn
+  /// which note every task is in. HMAC-SHA256 under a key derived from the
+  /// master key for this alone, cut to 128 bits and marked as a version-8
+  /// UUID.
+  String taskRecordId(String noteId, String anchor) {
+    final key = _taskIdKey ??= hashes.Hmac(
+      hashes.sha256,
+      _masterKey,
+    ).convert(utf8.encode('kapynotes task record ids v1')).bytes;
+    final digest = hashes.Hmac(
+      hashes.sha256,
+      key,
+    ).convert(utf8.encode('$noteId\n$anchor')).bytes;
+    final bytes = Uint8List.fromList(digest.sublist(0, 16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x80;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = [for (final b in bytes) b.toRadixString(16).padLeft(2, '0')]
+        .join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
+  List<int>? _taskIdKey;
 
   /// Seals a batch under the master key in a single isolate hop.
   Future<List<SealedBox>> sealAll(List<NotePayload> payloads) =>

@@ -448,6 +448,98 @@ class OpsBatch {
   }
 }
 
+/// A task record as it crosses the wire. Mirrors `TaskRecord` in the
+/// contract: an id derived on the device, the writer's `updatedAt`, a
+/// tombstone, and the sealed [TaskEntry](../data/task_index.dart) payload.
+class WireTaskRecord {
+  const WireTaskRecord({
+    required this.id,
+    required this.updatedAt,
+    this.deletedAt,
+    this.payload,
+  });
+
+  final String id;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final SealedBox? payload;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'updatedAt': updatedAt.toUtc().toIso8601String(),
+    'deletedAt': deletedAt?.toUtc().toIso8601String(),
+    'payload': payload?.toJson(),
+  };
+
+  static WireTaskRecord? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final id = raw['id'];
+    final updatedAt = raw['updatedAt'];
+    final deletedAt = raw['deletedAt'];
+    if (id is! String || updatedAt is! String) return null;
+    final updated = DateTime.tryParse(updatedAt);
+    final deleted = deletedAt is String ? DateTime.tryParse(deletedAt) : null;
+    final payload = SealedBox.fromJson(raw['payload']);
+    if (updated == null || (deleted == null) == (payload == null)) return null;
+    return WireTaskRecord(
+      id: id,
+      updatedAt: updated,
+      deletedAt: deleted,
+      payload: payload,
+    );
+  }
+}
+
+/// `POST /tasks`'s answer: what was taken, and the stored copy of each
+/// record that lost, to merge and send again.
+class TasksPushResult {
+  const TasksPushResult({required this.applied, required this.conflicts});
+
+  final List<String> applied;
+  final List<WireTaskRecord> conflicts;
+
+  static TasksPushResult fromJson(Map<String, Object?> raw) {
+    final applied = raw['applied'];
+    final conflicts = raw['conflicts'];
+    return TasksPushResult(
+      applied: applied is List ? applied.whereType<String>().toList() : const [],
+      conflicts: conflicts is List
+          ? conflicts
+                .map(WireTaskRecord.fromJson)
+                .whereType<WireTaskRecord>()
+                .toList()
+          : const [],
+    );
+  }
+}
+
+/// One page of `GET /tasks`.
+class TasksPage {
+  const TasksPage({
+    required this.records,
+    required this.cursor,
+    required this.hasMore,
+  });
+
+  final List<WireTaskRecord> records;
+  final int cursor;
+  final bool hasMore;
+
+  static TasksPage? fromJson(Map<String, Object?> raw) {
+    final records = raw['records'];
+    final cursor = raw['cursor'];
+    if (records is! List || cursor is! int) return null;
+    return TasksPage(
+      records: records
+          .map(WireTaskRecord.fromJson)
+          .whereType<WireTaskRecord>()
+          .toList(),
+      cursor: cursor,
+      hasMore: raw['hasMore'] == true,
+    );
+  }
+}
+
 /// The engine tag on a server-written marker. Matches `ENGINE_MARKER`.
 const String markerEngine = 'tomb';
 
@@ -520,6 +612,13 @@ abstract class SyncApi {
   /// One page of one space's log past [after]. The fallback for a socket
   /// that cannot connect; the socket's catch-up is the same query.
   Future<OpsBatch> pullOps({required String space, int after, int limit});
+
+  /// Sends task records; protocol 6. A server older than that answers 404,
+  /// which arrives as [SyncRefusedException].
+  Future<TasksPushResult> pushTasks(List<WireTaskRecord> records);
+
+  /// The account's task records written past [after].
+  Future<TasksPage> pullTasks({int after = 0});
 
   /// A fresh socket to the server, not yet connected. The caller owns it:
   /// connects it, subscribes, pushes through it, and closes it.
@@ -661,6 +760,9 @@ const String attachmentMime = 'application/octet-stream';
 const int opsPushMax = 100;
 const int opsPullDefaultLimit = 500;
 
+/// Task records one push may carry. Matches `TASKS_PUSH_MAX`.
+const int tasksPushMax = 200;
+
 /// Names the device a request came from. Matches `DEVICE_HEADER`.
 const String deviceHeader = 'x-kapynotes-device';
 
@@ -671,9 +773,10 @@ const String deviceHeader = 'x-kapynotes-device';
 /// ([Space.hasLink]). A server tells anything before 4 426 in place of that
 /// refusal, because those builds answered it by asking again, forever; and it
 /// hides a link-kept space's notes from anything before 5, which would
-/// otherwise bring them home and end the space.
+/// otherwise bring them home and end the space. Version 6 reads the task
+/// index, and only it is woken by the socket's `tasks` frame.
 const String protocolHeader = 'x-kapynotes-protocol';
-const int protocolVersion = 5;
+const int protocolVersion = 6;
 
 /// The server's refusal of a space nobody in it has Pro for. Matches
 /// `ProRequired`, on HTTP status 402 and as a socket error naming the space.
@@ -736,6 +839,36 @@ class HttpSyncApi implements SyncApi {
       throw const SyncProtocolException('ops response was malformed');
     }
     return batch;
+  }
+
+  @override
+  Future<TasksPushResult> pushTasks(List<WireTaskRecord> records) async {
+    if (records.length > tasksPushMax) {
+      throw SyncProtocolException(
+        'push of ${records.length} tasks exceeds the $tasksPushMax limit',
+      );
+    }
+    return TasksPushResult.fromJson(
+      await _send(
+        'POST',
+        _baseUrl.resolve('tasks'),
+        payload: {'records': [for (final r in records) r.toJson()]},
+      ),
+    );
+  }
+
+  @override
+  Future<TasksPage> pullTasks({int after = 0}) async {
+    final page = TasksPage.fromJson(
+      await _send(
+        'GET',
+        _baseUrl.resolve('tasks').replace(queryParameters: {'after': '$after'}),
+      ),
+    );
+    if (page == null) {
+      throw const SyncProtocolException('tasks response was malformed');
+    }
+    return page;
   }
 
   @override

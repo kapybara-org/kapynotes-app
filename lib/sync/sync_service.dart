@@ -20,6 +20,7 @@ import 'spaces.dart';
 import 'sync_api.dart';
 import 'sync_socket.dart';
 import 'sync_state.dart';
+import 'task_sync.dart';
 import 'vault.dart';
 
 enum SyncStatus {
@@ -106,6 +107,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     required SpaceKeyring keyring,
     required DocStore docs,
     ImageSync? images,
+    TaskSync? tasks,
     Vault? vault,
     DateTime Function()? now,
     this.sendDelay = const Duration(milliseconds: 60),
@@ -122,6 +124,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
        _keyring = keyring,
        _docs = docs,
        _images = images,
+       _tasks = tasks,
        _vault = vault,
        _now = now ?? DateTime.now {
     _notes.addListener(_onNotesChanged);
@@ -139,6 +142,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   final SpaceKeyring _keyring;
   final DocStore _docs;
   final ImageSync? _images;
+  final TaskSync? _tasks;
   final DateTime Function() _now;
 
   /// How long after an edit the outbox drains. Short: this is the whole
@@ -600,6 +604,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       }
       _reconcileDirty();
       await _drain();
+      await _tasks?.run();
       _failures = 0;
       _lastError = null;
       _state.recordSync(_now());
@@ -770,6 +775,8 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         break;
       case 'presence':
         await _onPresence(message);
+      case 'tasks':
+        unawaited(_tasks?.run());
     }
   }
 
@@ -1097,6 +1104,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         _reconcileInto(record, current, spaceId);
       }
       _notes.markSynced(notes: [current]);
+      _tasks?.schedule();
     }
 
     for (final stone in _notes.dirtyTombstones) {
@@ -1123,6 +1131,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         OutboxEntry(id: _nextRequestId(), spaceId: spaceId, deleted: true),
       );
       _docs.markDirty(stone.id);
+      _tasks?.schedule();
     }
   }
 
@@ -1847,7 +1856,10 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       );
     }
     _state.recordCursor(batch.spaceId, batch.cursor);
-    if (touched.isNotEmpty) notifyListeners();
+    if (touched.isNotEmpty) {
+      _tasks?.schedule();
+      notifyListeners();
+    }
   }
 
   /// Writes a document back into the note list after a batch touched it.
@@ -2200,6 +2212,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     _presenceExpiryTimer?.cancel();
     _stopPolling();
     _disconnect();
+    _tasks?.dispose();
     _caretPulse.dispose();
     super.dispose();
   }
