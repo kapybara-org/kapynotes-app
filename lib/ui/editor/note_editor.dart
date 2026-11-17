@@ -54,6 +54,7 @@ import '../../data/note_attachment.dart';
 import 'package:file_selector/file_selector.dart';
 
 import '../../images/image_clipboard.dart';
+import '../../paste/clipboard_snapshot.dart';
 import '../../paste/image_download.dart';
 import '../../paste/note_text.dart';
 import '../../paste/paste_converter.dart';
@@ -1844,14 +1845,21 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final startingValue = _editableTextState()?.textEditingValue;
     final store = widget.images;
 
-    final (snapshot, paths) = await (
-      widget.clipboard.readSnapshot(),
+    // A note without markdown takes its words from the platform's own text
+    // call, as it always has; a markdown note takes them from the same read
+    // as the rest of what it converts.
+    final markdown = widget.markdownEnabled;
+    final (plainText, snapshot, paths) = await (
+      markdown ? Future<String?>.value() : _clipboardText(),
+      markdown || store != null
+          ? widget.clipboard.readSnapshot()
+          : Future.value(const ClipboardSnapshot()),
       store == null
           ? Future<List<String>>.value(const [])
           : widget.clipboard.readImageFiles(),
     ).wait;
     if (!mounted) return;
-    final capturedText = snapshot.text;
+    final capturedText = markdown ? snapshot.text : plainText;
 
     // A selection copied out of a note carries everything that was in it, so
     // it outranks the rest of the clipboard: the native bitmap alone would
@@ -1870,19 +1878,22 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       return;
     }
 
-    // Anything richer than plain words — a page, a document, an AI's answer,
-    // an editor's code — is read for what it says. Lone pictures and plain
-    // words take the paths below, as they always have.
-    final converted = await convertPasteInBackground(
-      snapshot,
-      markdown: widget.markdownEnabled,
-    );
+    // In a markdown note, anything richer than plain words — a page, a
+    // document, an AI's answer, an editor's code — is read for what it says,
+    // as markdown, which only reads well drawn. A note without markdown
+    // pastes as it always has. Lone pictures and plain words take the paths
+    // below either way.
+    final converted = markdown
+        ? await convertPasteInBackground(snapshot)
+        : null;
     if (!mounted) return;
-    final rich =
-        converted.kind != PasteKind.text && converted.kind != PasteKind.nothing;
-    if (rich && converted.output.hasWords) {
+    final rich = switch (converted?.kind) {
+      null || PasteKind.text || PasteKind.nothing => null,
+      _ => converted!.output,
+    };
+    if (rich != null && rich.hasWords) {
       _insertConvertedPaste(
-        converted.output,
+        rich,
         cause,
         clipboardText: capturedText,
         startingValue: startingValue,
@@ -1955,9 +1966,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
     if (!mounted) return;
     // Pictures and nothing else, from markup that only pointed at them.
-    if (rich && converted.output.images.isNotEmpty) {
+    if (rich != null && rich.images.isNotEmpty) {
       _insertConvertedPaste(
-        converted.output,
+        rich,
         cause,
         clipboardText: capturedText,
         startingValue: startingValue,
@@ -1965,9 +1976,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       return;
     }
     if (capturedText == null) return;
-    if (converted.kind == PasteKind.text) {
+    if (converted case PasteConversion(kind: PasteKind.text, :final output)) {
       _insertConvertedPaste(
-        converted.output,
+        output,
         cause,
         clipboardText: capturedText,
         startingValue: startingValue,
@@ -2000,7 +2011,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       note: value.text,
       selection: selection,
       output: store == null ? output.withoutPictures() : output,
-      markdown: widget.markdownEnabled,
       target: _pasteTargetAt(value.text, selection.start),
       clipboardText: clipboardText,
     );
@@ -2028,22 +2038,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           ref.copyWith(offset: ref.offset + delta),
       for (final picture in pictures) picture.ref,
     ], nextText);
-    if (insertion.formats.isNotEmpty) {
-      _nextFormats = normalizeNoteFormats([
-        ...rebaseNoteFormats(
-          oldText: value.text,
-          newText: nextText,
-          formats: _formats,
-          insertedFormats: const {},
-        ),
-        for (final range in insertion.formats)
-          NoteFormatRange(
-            start: insertion.start + range.start,
-            end: insertion.start + range.end,
-            format: range.format,
-          ),
-      ], nextText.length);
-    }
     _nextInsertedFormats = const {};
     editable.userUpdateTextEditingValue(
       value.copyWith(
@@ -2068,7 +2062,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     for (final table in analysis.tables) {
       if (offset > table.start && offset < table.end) return PasteTarget.table;
     }
-    if (!widget.markdownEnabled) return PasteTarget.text;
     final fence = RegExp(r'^\s*(```|~~~)');
     for (final block in analysis.blocks) {
       if (block.kind != MarkdownBlockKind.code) continue;
@@ -4744,14 +4737,31 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _focusNode.requestFocus();
   }
 
-  /// Copy and Cut from the keyboard, through the rich copy wherever there is
-  /// a store for what a paste brings back, and the field's own elsewhere.
+  /// Whether [selection] is copied in every form at once (see
+  /// [_copyRichSelection]) rather than as the field's own text.
+  ///
+  /// In a note without markdown only a selection that holds an attachment
+  /// is, so that words alone reach other apps, and come back in, exactly as
+  /// they always have. Either way there must be a store for what a paste
+  /// brings back.
+  bool _copiesRich(TextSelection selection) =>
+      widget.images != null &&
+      selection.isValid &&
+      !selection.isCollapsed &&
+      (widget.markdownEnabled ||
+          _attachments.any(
+            (ref) =>
+                ref.offset >= selection.start && ref.offset < selection.end,
+          ));
+
+  /// Copy and Cut from the keyboard, through the rich copy where
+  /// [_copiesRich] says, and the field's own elsewhere.
   void _handleCopyIntent(CopySelectionTextIntent intent) {
     if (intent.collapseSelection && widget.readOnly) return;
     final editable = _editableTextState();
     if (editable == null) return;
     final selection = editable.textEditingValue.selection;
-    if (widget.images == null || !selection.isValid || selection.isCollapsed) {
+    if (!_copiesRich(selection)) {
       if (intent.collapseSelection) {
         editable.cutSelection(intent.cause);
       } else {
@@ -4771,9 +4781,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     List<ContextMenuButtonItem> items,
     TextSelection selection,
   ) {
-    if (widget.images == null || !selection.isValid || selection.isCollapsed) {
-      return items;
-    }
+    if (!_copiesRich(selection)) return items;
     return [
       for (final item in items)
         switch (item.type) {

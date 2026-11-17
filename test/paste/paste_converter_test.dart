@@ -9,13 +9,9 @@ void main() {
       html: '<div style="color:#ccc">final x</div>',
       vscode: '{"mode":"dart"}',
     );
-    final markdown = convertPaste(snapshot, markdown: true);
-    expect(markdown.kind, PasteKind.code);
-    expect(markdown.output.text, '```dart\nfinal x = 1;\n  y();\n```');
-    expect(
-      convertPaste(snapshot, markdown: false).output.text,
-      'final x = 1;\n  y();',
-    );
+    final conversion = convertPaste(snapshot);
+    expect(conversion.kind, PasteKind.code);
+    expect(conversion.output.text, '```dart\nfinal x = 1;\n  y();\n```');
   });
 
   test('monospace HTML with nothing else to say is code', () {
@@ -26,7 +22,6 @@ void main() {
             '<div style="font-family:Menlo, monospace;color:#333">'
             '<span style="color:#a00">final</span> x = 1;</div>',
       ),
-      markdown: true,
     );
     expect(conversion.kind, PasteKind.code);
     expect(conversion.output.text, '```\nfinal x = 1;\n```');
@@ -37,13 +32,9 @@ void main() {
       text: 'Title\nItem',
       html: '<h1>Title</h1><ul><li>Item</li></ul>',
     );
-    final markdown = convertPaste(snapshot, markdown: true);
-    expect(markdown.kind, PasteKind.html);
-    expect(markdown.output.text, '# Title\n\n- Item');
-    expect(
-      convertPaste(snapshot, markdown: false).output.text,
-      'Title\n\n• Item',
-    );
+    final conversion = convertPaste(snapshot);
+    expect(conversion.kind, PasteKind.html);
+    expect(conversion.output.text, '# Title\n\n- Item');
   });
 
   test('HTML that only wraps the words loses to them', () {
@@ -54,7 +45,6 @@ void main() {
             '<meta charset="utf-8">'
             '<span style="color:black">Plain words</span>',
       ),
-      markdown: true,
     );
     expect(conversion.kind, PasteKind.text);
     expect(conversion.output.text, 'Plain words');
@@ -71,7 +61,6 @@ void main() {
             '<table><tr><th>a</th><th>b</th></tr>'
             '<tr><td>1</td><td>2</td></tr></table>',
       ),
-      markdown: true,
     );
     expect(conversion.kind, PasteKind.markdown);
     expect(conversion.output.text, text);
@@ -83,7 +72,6 @@ void main() {
         text: 'Plan\none\ntwo',
         html: '<h1>Plan</h1><ul><li><strong>one</strong></li><li>two</li></ul>',
       ),
-      markdown: true,
     );
     expect(conversion.kind, PasteKind.html);
     expect(conversion.output.text, '# Plan\n\n- **one**\n- two');
@@ -97,7 +85,6 @@ void main() {
             '<h1>Plan</h1><p><img src="https://e.com/p.png" alt="p"></p>'
             '<ul><li><strong>one</strong></li><li>two</li></ul>',
       ),
-      markdown: true,
     );
     expect(conversion.kind, PasteKind.html);
     expect(conversion.output.images, hasLength(1));
@@ -109,28 +96,15 @@ void main() {
         text: 'Big\nsmall',
         rtfHtml: '<h1>Big</h1><p>small</p>',
       ),
-      markdown: true,
     );
     expect(conversion.kind, PasteKind.rtf);
     expect(conversion.output.text, '# Big\n\nsmall');
   });
 
-  test('markdown text goes into a plain note in its own format', () {
-    final conversion = convertPaste(
-      const ClipboardSnapshot(text: '# Plan\n\n- one\n- two'),
-      markdown: false,
-    );
-    expect(conversion.kind, PasteKind.markdown);
-    expect(conversion.output.text, 'Plan\n\n• one\n• two');
-  });
-
   test('an empty clipboard pastes nothing', () {
+    expect(convertPaste(const ClipboardSnapshot()).kind, PasteKind.nothing);
     expect(
-      convertPaste(const ClipboardSnapshot(), markdown: true).kind,
-      PasteKind.nothing,
-    );
-    expect(
-      convertPaste(const ClipboardSnapshot(text: '  \n'), markdown: true).kind,
+      convertPaste(const ClipboardSnapshot(text: '  \n')).kind,
       PasteKind.nothing,
     );
   });
@@ -144,8 +118,8 @@ void main() {
       html: '<ul>${items.join()}</ul>',
     );
     expect(snapshot.html!.length, greaterThan(16 * 1024));
-    final background = await convertPasteInBackground(snapshot, markdown: true);
-    final direct = convertPaste(snapshot, markdown: true);
+    final background = await convertPasteInBackground(snapshot);
+    final direct = convertPaste(snapshot);
     expect(background.kind, PasteKind.html);
     expect(background.output.text, direct.output.text);
   });

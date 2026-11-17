@@ -9,7 +9,6 @@ import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/images/image_clipboard.dart';
 import 'package:kapy_notes/paste/clipboard_snapshot.dart';
 import 'package:kapy_notes/paste/markdown_text.dart';
-import 'package:kapy_notes/paste/paste_writers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -107,7 +106,6 @@ void main() {
               written = call;
               return null;
             }
-            if (call.method == 'readHtml') return fragment.html;
             return null;
           });
       addTearDown(
@@ -126,7 +124,9 @@ void main() {
         isTrue,
       );
 
-      final read = await clipboard.readFragment();
+      final read = await NoteClipboardFragment.fromSnapshot(
+        ClipboardSnapshot.fromChannel(arguments),
+      );
       expect(read?.body, anchor);
       expect(
         listEquals(read?.images.single.bytes, fragment.images[0].bytes),
@@ -495,7 +495,7 @@ void main() {
           '# Notes\n\n- [ ] milk\n- [x] eggs\n\n| a | b |\n| --- | --: |\n'
           '| 1 | 2 |\n\n```js\nlet x = 1;\n```\n\n'
           r'See [the docs](https://example.com) and $x^2$.';
-      final note = writeMarkdownPaste(readMarkdownPaste(markdown)).text;
+      final note = normalizeMarkdownPaste(markdown).text;
       expect(
         NoteClipboardFragment(
           body: note,

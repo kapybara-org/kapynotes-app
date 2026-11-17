@@ -73,11 +73,12 @@ change over time, so a recapture can differ; that is expected. Scripts pin which
 
 ## What each fixture pastes as
 
-`test/paste/fixture_pipeline_test.dart` runs every fixture through the paste pipeline twice, once for a markdown note and once
-for a plain one, and compares the result with `expected.md` and `expected.plain.txt` beside it. Each file says which
-representation the paste was read from, then the note's text with `⟦picture N⟧` where each picture goes, then the pictures
-and (for a plain note) the heading, bold and italic ranges. After changing the pipeline, or adding a fixture, rewrite them
-and read the diff, which is the review of what a paste from that source now looks like:
+`test/paste/fixture_pipeline_test.dart` runs every fixture through the paste pipeline a markdown note uses and compares the
+result with `expected.md` beside it. Each says which representation the paste was read from, then the note's text with
+`⟦picture N⟧` where each picture goes, then the pictures. The same test pastes every fixture into a note for real: a note
+without markdown takes none of the pipeline and gets the clipboard's picture, its picture files or its plain text exactly as
+it always has, and a markdown note gets the conversion. After changing the pipeline, or adding a fixture, rewrite the
+`expected.md` files and read the diff, which is the review of what a paste from that source now looks like:
 
 ```
 PASTE_FIXTURES_UPDATE=1 flutter test test/paste/fixture_pipeline_test.dart

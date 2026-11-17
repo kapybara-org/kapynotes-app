@@ -16,8 +16,8 @@ class PasteConversion {
   final PasteOutput output;
 }
 
-/// Reads what the clipboard holds into what goes into the note, written as
-/// markdown when [markdown] is on and in the editor's plain format when not.
+/// Reads what the clipboard holds into the markdown that goes into a
+/// markdown note.
 ///
 /// The richest representation that says something wins, in this order:
 /// code an editor copied (it is code, whatever its colours look like), HTML
@@ -26,18 +26,16 @@ class PasteConversion {
 /// copy button writes beats the HTML it renders alongside, since it says
 /// the same and is what the writer had; and HTML that is only a wrapper
 /// around words loses to the words.
-PasteConversion convertPaste(
-  ClipboardSnapshot snapshot, {
-  required bool markdown,
-}) {
-  final write = markdown ? writeMarkdownPaste : writePlainPaste;
+PasteConversion convertPaste(ClipboardSnapshot snapshot) {
   final text = snapshot.text == null ? null : cleanPastedText(snapshot.text!);
   final hasText = text != null && text.trim().isNotEmpty;
 
   if (snapshot.vscode != null && hasText) {
     return PasteConversion(
       PasteKind.code,
-      write([PasteCode(_trimCode(text), language: snapshot.vscodeMode)]),
+      writeMarkdownPaste([
+        PasteCode(_trimCode(text), language: snapshot.vscodeMode),
+      ]),
     );
   }
 
@@ -54,7 +52,7 @@ PasteConversion convertPaste(
     if (hasText && reader.readsAsCode(markup)) {
       return PasteConversion(
         PasteKind.code,
-        write([PasteCode(_trimCode(text))]),
+        writeMarkdownPaste([PasteCode(_trimCode(text))]),
       );
     }
     final blocks = reader.read(markup);
@@ -62,7 +60,7 @@ PasteConversion convertPaste(
       break;
     }
     if (!hasText || _hasStructure(blocks)) {
-      return PasteConversion(kind, write(blocks));
+      return PasteConversion(kind, writeMarkdownPaste(blocks));
     }
   }
 
@@ -70,30 +68,22 @@ PasteConversion convertPaste(
     return const PasteConversion(PasteKind.nothing, PasteOutput(text: ''));
   }
   if (looksLikeMarkdown(text)) {
-    return PasteConversion(
-      PasteKind.markdown,
-      markdown
-          ? normalizeMarkdownPaste(text)
-          : writePlainPaste(readMarkdownPaste(text)),
-    );
+    return PasteConversion(PasteKind.markdown, normalizeMarkdownPaste(text));
   }
   return PasteConversion(PasteKind.text, PasteOutput(text: text));
 }
 
 /// [convertPaste] away from the UI isolate when the clipboard is big enough
 /// for reading it to cost a frame.
-Future<PasteConversion> convertPasteInBackground(
-  ClipboardSnapshot snapshot, {
-  required bool markdown,
-}) {
+Future<PasteConversion> convertPasteInBackground(ClipboardSnapshot snapshot) {
   final size =
       (snapshot.html?.length ?? 0) +
       (snapshot.rtfHtml?.length ?? 0) +
       (snapshot.text?.length ?? 0);
   if (size < _backgroundThreshold) {
-    return Future.value(convertPaste(snapshot, markdown: markdown));
+    return Future.value(convertPaste(snapshot));
   }
-  return Isolate.run(() => convertPaste(snapshot, markdown: markdown));
+  return Isolate.run(() => convertPaste(snapshot));
 }
 
 const _backgroundThreshold = 16 * 1024;

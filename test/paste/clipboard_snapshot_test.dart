@@ -57,7 +57,7 @@ void main() {
     });
 
     expect(snapshot.types, ['public.html', 'public.utf8-plain-text']);
-    expect(snapshot.text, 'line one\nline two');
+    expect(snapshot.text, 'line one\r\nline two');
     expect(snapshot.html, '<p>Hello</p>');
     expect(snapshot.sourceUrl, 'https://example.com/page');
     expect(snapshot.rtfHtml, contains('file:///photo%20one.png'));

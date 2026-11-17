@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/paste/markdown_text.dart';
-import 'package:kapy_notes/paste/paste_writers.dart';
 
 void main() {
   group('looksLikeMarkdown', () {
@@ -65,32 +64,6 @@ void main() {
       const source =
           '* a\n* b\n\n1) one\n\n> quote\n\n| a | b |\n|---|---|\n| 1 | 2 |';
       expect(normalizeMarkdownPaste(source).text, source);
-    });
-  });
-
-  group('readMarkdownPaste, for a note without markdown', () {
-    test("math stays TeX and the markup becomes the note's own", () {
-      final output = writePlainPaste(
-        readMarkdownPaste(
-          'Area \\(\\pi r^2\\) and\n\\[E=mc^2\\]\n'
-          'cost \$5 and \$10, **bold**.\n\n- one\n- two',
-        ),
-      );
-      expect(
-        output.text,
-        'Area \\pi r^2 and\n\nE=mc^2\n\ncost \$5 and \$10, bold.\n\n• one\n• two',
-      );
-      expect(
-        [
-          for (final range in output.formats)
-            output.text.substring(range.start, range.end),
-        ],
-        ['bold'],
-      );
-    });
-
-    test('a line ends where it was ended', () {
-      expect(writePlainPaste(readMarkdownPaste('one\ntwo')).text, 'one\ntwo');
     });
   });
 

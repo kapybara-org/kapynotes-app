@@ -183,9 +183,6 @@ class FakeClipboard implements ImageClipboard {
   }
 
   @override
-  Future<NoteClipboardFragment?> readFragment() async => fragment;
-
-  @override
   Future<void> writeFragment(NoteClipboardFragment fragment) async {
     writes.add(fragment);
     _nextWrite?.complete();
@@ -204,12 +201,7 @@ class FakeClipboard implements ImageClipboard {
 
   @override
   Future<ClipboardSnapshot> readSnapshot() async =>
-      snapshot ??
-      ClipboardSnapshot(
-        text: (await Clipboard.getData(Clipboard.kTextPlain))?.text,
-        html: fragment?.html,
-        kapy: kapy,
-      );
+      snapshot ?? ClipboardSnapshot(html: fragment?.html, kapy: kapy);
 }
 
 Widget harness(
@@ -1659,18 +1651,14 @@ void main() {
         );
 
     testWidgets('Ctrl-C copies words alone with their styles', (tester) async {
-      const body = 'Plan\nbuy milk today';
-      const formats = [
-        NoteFormatRange(start: 0, end: 4, format: NoteFormat.heading),
-        NoteFormatRange(start: 9, end: 13, format: NoteFormat.bold),
-      ];
+      const body = '# Plan\nbuy **milk** today';
       final clipboard = FakeClipboard();
       final editorKey = GlobalKey<NoteEditorState>();
       await tester.pumpWidget(
         harness(
           body,
           attachments: const [],
-          formats: formats,
+          markdownEnabled: true,
           clipboard: clipboard,
           images: immediateStore,
           editorKey: editorKey,
@@ -1680,7 +1668,7 @@ void main() {
       await select(
         tester,
         editorKey,
-        const TextSelection(baseOffset: 0, extentOffset: 13),
+        const TextSelection(baseOffset: 0, extentOffset: 19),
       );
 
       final copied = await copyWithKey(
@@ -1688,12 +1676,58 @@ void main() {
         clipboard,
         LogicalKeyboardKey.keyC,
       );
-      expect(copied.body, 'Plan\nbuy milk');
-      expect(copied.markdown, isFalse);
-      expect(copied.formats, formats);
-      expect(copied.plainText, 'Plan\nbuy milk');
+      expect(copied.body, '# Plan\nbuy **milk**');
+      expect(copied.markdown, isTrue);
+      expect(copied.plainText, '# Plan\nbuy **milk**');
       expect(copied.html, '<h1>Plan</h1><p>buy <b>milk</b></p>');
     }, variant: windows);
+
+    testWidgets(
+      'without markdown, Ctrl-C copies words alone as the field does',
+      (tester) async {
+        final copiedText = <String?>[];
+        final messenger = tester.binding.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(SystemChannels.platform, (
+          call,
+        ) async {
+          if (call.method == 'Clipboard.setData') {
+            copiedText.add((call.arguments as Map)['text'] as String?);
+          }
+          return null;
+        });
+        addTearDown(
+          () =>
+              messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+        );
+        final clipboard = FakeClipboard();
+        final editorKey = GlobalKey<NoteEditorState>();
+        await tester.pumpWidget(
+          harness(
+            'Plan\nbuy milk today',
+            attachments: const [],
+            formats: const [
+              NoteFormatRange(start: 0, end: 4, format: NoteFormat.heading),
+              NoteFormatRange(start: 9, end: 13, format: NoteFormat.bold),
+            ],
+            clipboard: clipboard,
+            images: immediateStore,
+            editorKey: editorKey,
+          ),
+        );
+        await tester.pump();
+        await select(
+          tester,
+          editorKey,
+          const TextSelection(baseOffset: 0, extentOffset: 13),
+        );
+
+        await pressWithControl(tester, LogicalKeyboardKey.keyC);
+
+        expect(copiedText, ['Plan\nbuy milk']);
+        expect(clipboard.writes, isEmpty);
+      },
+      variant: windows,
+    );
 
     testWidgets('a markdown note copies its markdown, a picture as a label', (
       tester,
@@ -1818,6 +1852,7 @@ void main() {
         harness(
           body,
           attachments: const [],
+          markdownEnabled: true,
           clipboard: clipboard,
           images: immediateStore,
           editorKey: editorKey,
@@ -2316,6 +2351,7 @@ void main() {
         harness(
           '',
           attachments: const [],
+          markdownEnabled: true,
           clipboard: clipboard,
           editorKey: editorKey,
           onAttachmentsChanged: (attachments) => reported = attachments,
@@ -2334,7 +2370,7 @@ void main() {
           .state<EditableTextState>(find.byType(EditableText))
           .textEditingValue
           .text;
-      expect(text, 'Title\n\n• one\n\n$anchor\n\nafter');
+      expect(text, '# Title\n\n- **one**\n\n$anchor\n\nafter');
       expect(reported, hasLength(1));
       expect(reported!.single.offset, text.indexOf(anchor));
       expect(find.byType(NoteImageView), findsOneWidget);
@@ -2358,6 +2394,7 @@ void main() {
         harness(
           '',
           attachments: const [],
+          markdownEnabled: true,
           clipboard: clipboard,
           editorKey: editorKey,
           onAttachmentsChanged: (attachments) => reported = attachments,

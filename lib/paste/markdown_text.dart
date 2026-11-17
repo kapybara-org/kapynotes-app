@@ -192,23 +192,13 @@ String _withDollarMath(String prose) {
       });
 }
 
-/// Markdown text read into blocks, for a note written without markdown.
-///
-/// Read through the same HTML reader as everything else, with its line
-/// breaks kept: in a note a line ends where it was ended, where CommonMark
-/// would run the lines of a paragraph together. Math is set aside before
-/// the markdown is read, since TeX is full of what markdown would take as
-/// its own escapes and emphasis, and comes back as the math it was.
-List<PasteBlock> readMarkdownPaste(String source) =>
-    _readMarkdown(cleanPastedText(source), note: false);
-
 /// A note's own markdown read into blocks, the way the note's editor reads
-/// it rather than the way an AI's answer is read: math is only ever between
-/// dollars, and a `*` between two operands is multiplication, not emphasis.
-List<PasteBlock> readNoteMarkdown(String text) =>
-    _readMarkdown(text, note: true);
-
-List<PasteBlock> _readMarkdown(String source, {required bool note}) {
+/// it: math is only ever between dollars, a `*` between two operands is
+/// multiplication, not emphasis, and a line ends where it was ended, where
+/// CommonMark would run the lines of a paragraph together. Math is set aside
+/// before the markdown is read, since TeX is full of what markdown would
+/// take as its own escapes and emphasis, and comes back as the math it was.
+List<PasteBlock> readNoteMarkdown(String source) {
   final text = source.replaceAll(_marks, '');
   final String html;
   try {
@@ -218,29 +208,21 @@ List<PasteBlock> _readMarkdown(String source, {required bool note}) {
     for (final (from, to) in _readRanges(text).kept) {
       if (from < cursor) continue;
       masked
-        ..write(
-          _setMathAside(text.substring(cursor, from), maths, brackets: !note),
-        )
+        ..write(_setMathAside(text.substring(cursor, from), maths))
         ..write(text.substring(from, to));
       cursor = to;
     }
-    masked.write(_setMathAside(text.substring(cursor), maths, brackets: !note));
-    final parsed = note
-        ? maskOperatorAsterisks(masked.toString(), mask: _operator)
-        : masked.toString();
-    final rendered = _parser().parse(parsed).toHtml().replaceAllMapped(
-      _mathToken,
-      (match) {
-        final math = maths[int.parse(match[1]!)];
-        final kind = math.display ? 'math-display' : 'math-inline';
-        return '<span class="$kind" data-latex="${htmlEscape.convert(math.tex)}"></span>';
-      },
-    );
-    html = note
-        ? rendered
-              .replaceAll(String.fromCharCode(_operator), '*')
-              .replaceAll(_operatorInAddress, '*')
-        : rendered;
+    masked.write(_setMathAside(text.substring(cursor), maths));
+    html = _parser()
+        .parse(maskOperatorAsterisks(masked.toString(), mask: _operator))
+        .toHtml()
+        .replaceAllMapped(_mathToken, (match) {
+          final math = maths[int.parse(match[1]!)];
+          final kind = math.display ? 'math-display' : 'math-inline';
+          return '<span class="$kind" data-latex="${htmlEscape.convert(math.tex)}"></span>';
+        })
+        .replaceAll(String.fromCharCode(_operator), '*')
+        .replaceAll(_operatorInAddress, '*');
   } on Object {
     return [
       for (final paragraph in text.split(RegExp(r'\n{2,}')))
@@ -270,28 +252,16 @@ final _dollarMath = RegExp(
 );
 
 /// [prose] with each piece of math in it swapped for a token that markdown
-/// passes through untouched, the math itself added to [maths]. The \(…\)
-/// and \[…\] ChatGPT writes count as math only with [brackets].
-String _setMathAside(
-  String prose,
-  List<({String tex, bool display})> maths, {
-  required bool brackets,
-}) {
-  if (!prose.contains('\$') &&
-      !(brackets && (prose.contains(r'\[') || prose.contains(r'\(')))) {
-    return prose;
-  }
+/// passes through untouched, the math itself added to [maths].
+String _setMathAside(String prose, List<({String tex, bool display})> maths) {
+  if (!prose.contains('\$')) return prose;
   String Function(Match) aside({required bool display}) => (match) {
     final tex = match[1]!.trim();
     if (tex.isEmpty) return match[0]!;
     maths.add((tex: tex, display: display));
     return '\uE000${maths.length - 1}\uE001';
   };
-  var result = prose.replaceAllMapped(_dollarDisplayMath, aside(display: true));
-  if (brackets) {
-    result = result
-        .replaceAllMapped(_displayMath, aside(display: true))
-        .replaceAllMapped(_inlineMath, aside(display: false));
-  }
-  return result.replaceAllMapped(_dollarMath, aside(display: false));
+  return prose
+      .replaceAllMapped(_dollarDisplayMath, aside(display: true))
+      .replaceAllMapped(_dollarMath, aside(display: false));
 }

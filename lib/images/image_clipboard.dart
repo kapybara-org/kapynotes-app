@@ -466,17 +466,6 @@ class ImageClipboard {
   /// Everything the clipboard holds, read at once.
   Future<ClipboardSnapshot> readSnapshot() => ClipboardSnapshot.read();
 
-  /// A Kapy Notes rich fragment, when the clipboard carries one.
-  Future<NoteClipboardFragment?> readFragment() async {
-    try {
-      final html = await _richChannel.invokeMethod<String>('readHtml');
-      return NoteClipboardFragment.fromHtml(html);
-    } catch (error) {
-      debugPrint('KapyNotes: could not read rich clipboard data: $error');
-      return null;
-    }
-  }
-
   /// Publishes the rich fragment in every form at once: plain text, HTML,
   /// Kapy Notes' own type, and its first picture as a native image.
   Future<void> writeFragment(NoteClipboardFragment fragment) async {

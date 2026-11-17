@@ -27,6 +27,9 @@ class ClipboardSnapshot {
 
   /// The platform's own names for what was there.
   final List<String> types;
+
+  /// The plain text as the platform gave it, Windows' line ends and all, so
+  /// it matches what the platform's own text call gives.
   final String? text;
   final String? html;
 
@@ -135,7 +138,7 @@ class ClipboardSnapshot {
     final image = raw['image'];
     return ClipboardSnapshot(
       types: types is List ? [...types.whereType<String>()] : const [],
-      text: string('text')?.replaceAll('\r\n', '\n'),
+      text: string('text'),
       html: html,
       sourceUrl: sourceUrl,
       rtfHtml: string('rtfHtml'),
