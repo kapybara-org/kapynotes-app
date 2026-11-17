@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/stamped.dart';
+import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_index.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
@@ -91,8 +93,10 @@ class Device {
         api: api,
         vault: sharedVault(),
         index: library.index,
+        tags: TagStore(store),
         docs: library.docs,
         noteIsLive: (id) => notes.byId(id) != null,
+        deletedNotes: () => const [],
         delay: const Duration(milliseconds: 1),
       ),
       vault: sharedVault(),
