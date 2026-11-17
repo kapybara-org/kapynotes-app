@@ -128,7 +128,7 @@ class PlatformDeviceModel extends DeviceModel {
   @override
   Future<String> answer(KapyModel model, AnswerRequest request) async {
     final instructions = answerInstructions(request.today);
-    final prompt = answerPromptWithHistory(request);
+    final prompt = answerPrompt(request);
     try {
       return state.model == appleIntelligence
           ? await _apple.answer(instructions: instructions, prompt: prompt)

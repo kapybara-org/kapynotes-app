@@ -32,6 +32,7 @@ import 'notes_list.dart';
 import 'safety_dialogs.dart';
 import 'sidebar_timestamp.dart';
 import 'streak_badge.dart';
+import 'tag_ui.dart';
 import 'tonal_button.dart';
 import 'window_drag_area.dart';
 
@@ -147,9 +148,7 @@ class Sidebar extends StatelessWidget {
     this.engine,
     this.now = DateTime.now,
     this.cards = false,
-    this.onCardsChanged,
-    this.mediaFilter,
-    this.onMediaFilterChanged,
+    this.controls,
     this.pinnedOnly = false,
     this.onPinnedOnlyChanged,
   });
@@ -290,12 +289,11 @@ class Sidebar extends StatelessWidget {
 
   /// Whether the list beside the rail draws sticky cards rather than rows.
   final bool cards;
-  final ValueChanged<bool>? onCardsChanged;
 
-  /// The kinds of media the list beside the rail is narrowed to, every kind
-  /// when it is not. Null leaves the filter out, as the compact list does.
-  final Set<NoteMedia>? mediaFilter;
-  final ValueChanged<Set<NoteMedia>>? onMediaFilterChanged;
+  /// The notes filter and the list/cards switch, under the search beside the
+  /// rail: see [NotesListControls]. Null leaves them out, as the compact list
+  /// does.
+  final Widget? controls;
 
   /// Whether the list is showing every pinned note, after See all, rather
   /// than the four most recent over the rest.
@@ -305,9 +303,7 @@ class Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final mediaFilter = this.mediaFilter;
-    final onMediaFilterChanged = this.onMediaFilterChanged;
-    final onCardsChanged = this.onCardsChanged;
+    final controls = this.controls;
 
     // Solid, rather than the GlassSurface the toolbar and footer use: the
     // notes list stays put whatever the window is doing behind it. See
@@ -337,18 +333,10 @@ class Sidebar extends StatelessWidget {
               belowTabs: _showsTabs,
               besideRail: _besideRail,
             ),
-            if (_besideRail &&
-                mediaFilter != null &&
-                onMediaFilterChanged != null &&
-                onCardsChanged != null)
+            if (_besideRail && controls != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
-                child: NotesListControls(
-                  media: drawings ? null : mediaFilter,
-                  onMediaChanged: onMediaFilterChanged,
-                  cards: cards,
-                  onCardsChanged: onCardsChanged,
-                ),
+                child: controls,
               ),
             if (archiveMode && (notes.isNotEmpty || selecting))
               _ArchiveActions(
@@ -773,6 +761,36 @@ extension on Sidebar {
     );
     if (_specialMode) {
       section(notes);
+      if (hiddenMode) {
+        gap(12);
+        rows.add(
+          (_) => Padding(
+            key: const ValueKey('sidebar-hidden-locks-again'),
+            padding: const EdgeInsets.fromLTRB(20, 6, 18, 0),
+            child: Row(
+              children: [
+                KapyIcon(
+                  hiddenIcon,
+                  size: 13,
+                  strokeWidth: 1.8,
+                  color: palette.textTertiary,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    'Locks again when you leave Hidden',
+                    style: TextStyle(
+                      fontSize: AppTypeScale.small,
+                      height: 16 / AppTypeScale.small,
+                      color: palette.textTertiary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
     } else if (pinnedOnly) {
       heading(
         NotesListHeading(
@@ -2768,6 +2786,13 @@ class _NoteRowState extends State<NoteRow> {
           label: widget.pinned ? 'Unpin note' : 'Pin note',
           icon: widget.pinned ? KapyIcons.pinRounded : KapyIcons.pinOutlined,
         ),
+      if (TagShelf.maybeOf(context) != null)
+        const KapyMenuAction(
+          value: 'tags',
+          label: 'Tags',
+          icon: KapyIcons.tagRounded,
+          hint: '›',
+        ),
       if (widget.onShare != null)
         KapyMenuAction(
           value: 'share',
@@ -2935,6 +2960,9 @@ class _NoteRowState extends State<NoteRow> {
     if (choice == 'share') widget.onShare?.call();
     if (choice == 'pin') widget.onTogglePin?.call();
     if (choice == 'open-side') widget.onOpenToSide?.call();
+    if (choice == 'tags' && context.mounted) {
+      await showTagPickerAt(context, position, widget.note.id);
+    }
   }
 
   /// The desktop list's row or card, with its actions button while the
@@ -2942,15 +2970,19 @@ class _NoteRowState extends State<NoteRow> {
   Widget _boardFace({required String? snippet, required bool hasMenu}) {
     final note = widget.note;
     final people = widget.collaborators;
+    final card =
+        widget.style == NoteRowStyle.card ||
+        widget.style == NoteRowStyle.drawingCard;
+    String stamp({bool clock = true}) => SidebarTimestamp.glance(
+      note.updatedAt,
+      now: widget.now(),
+      displayTime: widget.displayTime,
+      today: card,
+      clock: clock,
+    );
+    final day = card && people.isEmpty ? stamp(clock: false) : null;
     final date = people.isEmpty
-        ? SidebarTimestamp.glance(
-            note.updatedAt,
-            now: widget.now(),
-            displayTime: widget.displayTime,
-            today:
-                widget.style == NoteRowStyle.card ||
-                widget.style == NoteRowStyle.drawingCard,
-          )
+        ? stamp()
         : typingStatusText([
                 for (final person in people)
                   if (person.typing) person.name,
@@ -2964,6 +2996,7 @@ class _NoteRowState extends State<NoteRow> {
         note: note,
         glance: glance,
         date: date,
+        day: day,
         snippet: snippet,
         selected: widget.selected,
         hovering: _hovering,
@@ -2975,6 +3008,7 @@ class _NoteRowState extends State<NoteRow> {
       NoteRowStyle.drawingCard => DrawingCardFace(
         note: note,
         date: date,
+        day: day,
         selected: widget.selected,
         hovering: _hovering,
         ringed: ringed,

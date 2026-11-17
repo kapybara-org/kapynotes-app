@@ -7,6 +7,7 @@ import 'package:kapy_notes/ui/kapy_ai/kapy_ai_chats.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_conversation.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_markdown.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
+import 'package:kapy_notes/ui/kapy_ai/punycode.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'fake_kapy_ai.dart';
@@ -104,6 +105,37 @@ void main() {
     kapyAiAvailable = true;
   });
   tearDown(() => kapyAiAvailable = wasAvailable);
+
+  group('Punycode', () {
+    for (final (host, ascii) in [
+      ('bücher.example', 'xn--bcher-kva.example'),
+      ('exаmple.com', 'xn--exmple-4nf.com'),
+      ('münchen.de', 'xn--mnchen-3ya.de'),
+      ('例え.jp', 'xn--r8jz45g.jp'),
+      ('пример.рф', 'xn--e1afmkfd.xn--p1ai'),
+      ('Ünï.com', 'xn--n-nga1b.com'),
+      ('Example.COM', 'example.com'),
+      ('a-b.example', 'a-b.example'),
+      ('例え。jp', 'xn--r8jz45g.jp'),
+    ]) {
+      test('$host is $ascii', () => expect(asciiHost(host), ascii));
+    }
+
+    test('the RFC 3492 sample strings', () {
+      expect(
+        punycode('\u4ed6\u4eec\u4e3a\u4ec0\u4e48\u4e0d\u8bf4\u4e2d\u6587'),
+        'ihqwcrb4cv8a8dqg056pqjye',
+      );
+      expect(
+        punycode(
+          '\u0644\u064a\u0647\u0645\u0627\u0628\u062a\u0643\u0644\u0645'
+          '\u0648\u0634\u0639\u0631\u0628\u064a\u061f',
+        ),
+        'egbpdaj6bu4bxfgehfvwxn',
+      );
+      expect(punycode('b\u00fccher'), 'bcher-kva');
+    });
+  });
 
   group('panel', () {
     testWidgets('asks with the note the chip names, and ↵ sends', (
@@ -956,6 +988,146 @@ void main() {
 
       tapLinksIn(tester, 'the docs');
       expect(launched, [Uri.parse('https://example.com/a')]);
+    });
+
+    testWidgets('a link shows the host it really goes to', (tester) async {
+      await show(
+        tester,
+        'See [the timetable](https://evil.example/login?next=1) and '
+        '[good.com](https://evil.example) and '
+        '[https://good.com/a](https://evil.example/a).',
+      );
+
+      expect(
+        find.textContaining('the timetable (evil.example)', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('good.com (evil.example)', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'https://good.com/a (evil.example)',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a link that already says its host does not repeat it', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        '[example.com](https://example.com/a) and '
+        '[www.example.com/docs](https://example.com/b) and '
+        '[https://example.com](https://www.example.com).',
+      );
+
+      expect(find.textContaining('(', findRichText: true), findsNothing);
+    });
+
+    testWidgets('mail shows its address unless the words are it', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        '[write to Ana](mailto:ana@example.com) and '
+        '[ana@example.com](mailto:ana@example.com).',
+      );
+
+      expect(
+        find.textContaining(
+          'write to Ana (ana@example.com)',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('ana@example.com (', findRichText: true),
+        findsNothing,
+      );
+    });
+
+    testWidgets('words that only look like another host are not trusted', (
+      tester,
+    ) async {
+      await show(tester, '[good.com@evil.example](https://evil.example).');
+
+      expect(
+        find.textContaining(
+          'good.com@evil.example (evil.example)',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'a lookalike host shows in Punycode, and its words do not pass',
+      (tester) async {
+        await show(
+          tester,
+          '[example.com](https://ex\u0430mple.com/login) and '
+          '[ex\u0430mple.com](https://ex\u0430mple.com) and '
+          '[b\u00fccher.example](https://xn--bcher-kva.example).',
+        );
+
+        expect(
+          find.textContaining(
+            'example.com (xn--exmple-4nf.com)',
+            findRichText: true,
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining(
+            'ex\u0430mple.com (xn--exmple-4nf.com)',
+            findRichText: true,
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('bücher.example (', findRichText: true),
+          findsNothing,
+        );
+      },
+    );
+
+    test('destination compares the Punycode forms', () {
+      Uri uri(String url) => KapyAiMarkdown.safeLink(url)!;
+      expect(
+        KapyAiMarkdown.destination(
+          uri('https://ex\u0430mple.com'),
+          'example.com',
+        ),
+        'xn--exmple-4nf.com',
+      );
+      expect(
+        KapyAiMarkdown.destination(
+          uri('https://b\u00fccher.example/a'),
+          'BÜCHER.example/x',
+        ),
+        'xn--bcher-kva.example',
+      );
+      expect(
+        KapyAiMarkdown.destination(
+          uri('https://xn--bcher-kva.example'),
+          'bücher.example',
+        ),
+        isNull,
+      );
+      expect(
+        KapyAiMarkdown.destination(uri('https://example.com'), 'exämple.com'),
+        'example.com',
+      );
+    });
+
+    testWidgets('a link left as plain words gets no host', (tester) async {
+      await show(tester, '[this](javascript:alert(1)) now.');
+
+      expect(find.textContaining('(', findRichText: true), findsNothing);
     });
 
     testWidgets('mailto opens when tapped', (tester) async {

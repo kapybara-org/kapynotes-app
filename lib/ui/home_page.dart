@@ -83,6 +83,8 @@ import 'tasks/tasks_sidebar.dart';
 import 'sidebar.dart';
 import 'sidebar_timestamp.dart';
 import 'settings_dialog.dart';
+import 'tag_colours.dart';
+import 'tag_ui.dart';
 import 'sidebar_swipe.dart';
 import 'spaces_rail.dart';
 import 'split_view.dart';
@@ -247,6 +249,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The kinds of media the list beside the rail is narrowed to. Not kept
   /// across launches, so a filter left on cannot pass for missing notes.
   Set<NoteMedia> _mediaFilter = NoteMedia.values.toSet();
+
+  /// The tags that list is narrowed to, kept the same way.
+  TagFilter _tagFilter = const TagFilter();
 
   /// Whether that list shows every pinned note, after See all.
   bool _pinnedOnly = false;
@@ -1693,7 +1698,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final archivingSelected = id == _selectedId;
     final closesPane = !_usesCompactLayout && _workspace.isSplit;
     widget.notes.archive(id);
-    Toast.show(context, 'Note moved to Archived Notes', icon: archiveIcon);
+    Toast.show(
+      context,
+      'Moved to Archive',
+      icon: archiveIcon,
+      action: 'View',
+      onAction: () => _viewArchived(id),
+    );
     if (!archivingSelected) return;
     // Its pane closed with it, and the pane beside it has the focus. Opening
     // the next note in the list there would take the place of a note the
@@ -1779,11 +1790,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ?.displayLabel;
     final discovery = AppPlatform.isMobile
         ? 'Pull down below Search to find it.'
+        : shortcut != null
+        ? 'Press $shortcut to find it.'
         : widget.prefs.hiddenFolderVisible
-        ? 'Open Hidden Notes from the sidebar.'
-        : shortcut == null
-        ? 'Show it from Settings to find it.'
-        : 'Show it from Settings or press $shortcut.';
+        ? 'Choose Hidden in the notes filter to find it.'
+        : 'Show it from Settings to find it.';
     Toast.show(context, 'Moved to Hidden Notes. $discovery', icon: hiddenIcon);
     if (!hidingSelected) return;
     if (closesPane) {
@@ -2005,7 +2016,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _checkedArchived.clear();
       _archiveQuery = '';
       if (entering) {
-        _setSelectedId(widget.notes.archivedNotes.firstOrNull?.id);
+        _setSelectedId(_narrowed(widget.notes.archivedNotes).firstOrNull?.id);
       } else {
         final previous = _selectedId;
         _workspace.reconcile(
@@ -2016,6 +2027,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
     });
     widget.prefs.lastOpenedNoteId = _selectedId;
+  }
+
+  /// The archive toast's View: Notes with Archive chosen, on the note that
+  /// was just filed there.
+  void _viewArchived(String id) {
+    if (!mounted || !(widget.notes.byId(id)?.isArchived ?? false)) return;
+    _showSpace(LibrarySpace.notes);
+    _toggleArchive();
+    setState(() => _setSelectedId(id));
+    widget.prefs.lastOpenedNoteId = id;
   }
 
   Future<void> _toggleHiddenNotes() async {
@@ -2037,7 +2058,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _selectingArchived = false;
       _checkedArchived.clear();
       _archiveQuery = '';
-      _setSelectedId(widget.notes.hiddenNotes.firstOrNull?.id);
+      _setSelectedId(_narrowed(widget.notes.hiddenNotes).firstOrNull?.id);
     });
     widget.prefs.lastOpenedNoteId = _selectedId;
   }
@@ -2058,10 +2079,124 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_usesCompactLayout && widget.notes.isEmpty) _scheduleInitialNote();
   }
 
-  void _toggleHiddenFolderVisibility() {
-    final hiding = widget.prefs.hiddenFolderVisible;
-    if (hiding && _hiddenMode) _leaveHiddenNotes();
-    widget.prefs.toggleHiddenFolder();
+  /// The Hidden Notes shortcut: Notes with Hidden chosen, behind its gate,
+  /// whether or not the filter lists Hidden; or, from Hidden, back out.
+  Future<void> _toggleHiddenFromShortcut() async {
+    if (_hiddenMode) return _leaveHiddenNotes();
+    await _toggleHiddenNotes();
+    if (!mounted || !_hiddenMode) return;
+    setState(() {
+      _tasksMode = false;
+      _drawingsOnly = false;
+      _sidebarTab = SidebarTab.mine;
+    });
+  }
+
+  /// Chooses which notes the list shows, from the notes filter.
+  void _setShow(NotesShow show) {
+    _pinnedOnly = false;
+    switch (show) {
+      case NotesShow.all:
+        if (_archiveMode) _toggleArchive();
+        if (_hiddenMode) _leaveHiddenNotes();
+      case NotesShow.archive:
+        if (!_archiveMode) _toggleArchive();
+      case NotesShow.hidden:
+        if (!_hiddenMode) unawaited(_toggleHiddenNotes());
+    }
+  }
+
+  /// The filter's ✕: All notes, every kind of media ticked. Hidden locks
+  /// again on the way out.
+  void _clearFilter() {
+    _setShow(NotesShow.all);
+    setState(() {
+      _mediaFilter = NoteMedia.values.toSet();
+      _tagFilter = const TagFilter();
+    });
+  }
+
+  /// The tags the lists offer, in the person's order, each with how many
+  /// notes carry it: the archived ones in Archive, and otherwise the rest,
+  /// with Hidden's only while Hidden is open. While it is locked no Hidden
+  /// note counts and a tag found only on Hidden notes is left out, so
+  /// neither gives Hidden away.
+  List<TagEntry> _listedTags() {
+    final store = widget.tags;
+    if (store == null) return const [];
+    final notes = widget.notes;
+    final counted = _countedNoteIds();
+    final open = {
+      ...counted,
+      for (final note in [...notes.notes, ...notes.archivedNotes]) note.id,
+    };
+    final counts = <String, int>{};
+    final seen = <String>{};
+    final shown = <String>{};
+    for (final noteId in store.noteIds) {
+      for (final tag in store.tagsOf(noteId)) {
+        seen.add(tag.id);
+        if (open.contains(noteId)) shown.add(tag.id);
+        if (counted.contains(noteId)) {
+          counts.update(tag.id, (n) => n + 1, ifAbsent: () => 1);
+        }
+      }
+    }
+    return [
+      for (final tag in store.tags)
+        if (!seen.contains(tag.id) || shown.contains(tag.id))
+          (tag: tag, count: counts[tag.id] ?? 0),
+    ];
+  }
+
+  /// The notes a tag's count counts: the archived ones in Archive, and
+  /// otherwise the rest, with Hidden's only while Hidden is open.
+  Set<String> _countedNoteIds() => {
+    for (final note
+        in _archiveMode
+            ? widget.notes.archivedNotes
+            : [
+                ...widget.notes.notes,
+                if (_hiddenMode) ...widget.notes.hiddenNotes,
+              ])
+      note.id,
+  };
+
+  /// How many of those carry no tag, for No tag.
+  int _untaggedCount() => _countedNoteIds()
+      .where((noteId) => widget.tags!.tagsOf(noteId).isEmpty)
+      .length;
+
+  /// The tag filter as far as the listed tags go.
+  TagFilter get _tagsNarrowed =>
+      _tagFilter.within([for (final entry in _listedTags()) entry.tag.id]);
+
+  /// A chip's tap: the list, narrowed to that tag alone.
+  void _filterToTag(String tagId) {
+    setState(() => _tagFilter = TagFilter(ids: {tagId}));
+    if (!_listShown) _setListShown(true);
+  }
+
+  Widget _withTags(Widget child) {
+    final store = widget.tags;
+    if (store == null) return child;
+    return ListenableBuilder(
+      listenable: store,
+      child: child,
+      builder: (context, child) => TagShelf(
+        store: store,
+        listed: _listedTags,
+        untagged: _untaggedCount,
+        isShared: (noteId) => widget.notes.byId(noteId)?.isShared ?? false,
+        onFilter: _filterToTag,
+        child: TagMarks(
+          marksOf: (noteId) => [
+            for (final tag in store.tagsOf(noteId)) tagMarkOf(tag),
+          ],
+          child: child!,
+        ),
+      ),
+    );
   }
 
   /// Whether opening [note] should place the cursor at its end and raise the
@@ -2466,6 +2601,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         onTranscriptionReady: _resumeTranscriptionsFromSettings,
         cloudAccess: widget.cloudAccess,
         hiddenNotes: widget.hiddenNotesGate,
+        tags: widget.tags,
+        listedTags: _listedTags,
       );
     } finally {
       if (mounted && _settingsOpen) setState(() => _settingsOpen = false);
@@ -2516,8 +2653,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  /// Whether Hidden has a place on the rail and in Go to: while the setting
-  /// that shows it is on and something is in it, and while it is open.
+  /// Whether Hidden is listed in the notes filter and in Go to: while the
+  /// setting that shows it is on and something is in it, and while it is
+  /// open.
   bool get _hiddenReachable =>
       _hiddenMode ||
       (widget.prefs.hiddenFolderVisible && widget.notes.hiddenNotes.isNotEmpty);
@@ -2535,14 +2673,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (_taskController != null) LibrarySpace.tasks,
         LibrarySpace.drawings,
         if (widget.account?.sharing != null) LibrarySpace.shared,
-        if (_hiddenReachable) LibrarySpace.hidden,
-        LibrarySpace.archive,
       ],
       recentIds: widget.prefs.recentlyOpenedNoteIds,
       displayTime: widget.prefs.displayTime,
       taskLabel: _taskNoteLabel,
       tasks: _taskController?.read(),
+      showHidden: _hiddenReachable,
       hiddenUnlocked: _hiddenMode,
+      settingsIndex: (lend) => SettingsDialog(
+        onIndex: lend,
+        kapyAi: _kapyAi,
+        account: widget.account,
+        notes: widget.notes,
+        layoutPrefs: widget.prefs,
+        shortcuts: widget.shortcuts,
+        rates: widget.rates,
+        updates: widget.updates,
+        desktopIntegration: widget.desktopIntegration,
+        voicePrefs: widget.voicePrefs,
+        localModels: widget.localModels,
+        deviceSummarizer: widget.deviceSummarizer,
+        deviceTranscriber: widget.deviceTranscriber,
+        cloudAccess: widget.cloudAccess,
+        hiddenNotes: widget.hiddenNotesGate,
+      ),
     );
     if (!mounted || choice == null) return;
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
@@ -2570,10 +2724,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _createNote(drawing: true);
       case GoToChoice(:final space):
         _showSpace(space);
+      case ShowNotesChoice(:final show):
+        _showNotes(show);
       case OpenSettingsChoice():
         _showSettings();
+      case RevealSettingChoice(:final section, :final reveal):
+        _showSettings(section: section, reveal: reveal);
       case SearchArchiveChoice(:final query):
-        _showSpace(LibrarySpace.archive);
+        _showNotes(NotesShow.archive);
         setState(() => _archiveQuery = query);
     }
   }
@@ -2593,19 +2751,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  /// Narrows [notes] to what the list is showing. The ordinary list is split
-  /// by whose the notes are once there is an account to have shared anything
-  /// with, or narrowed to drawings from the rail, and everything that walks
-  /// the list (the arrow keys, the note after an archived one) walks what is
-  /// on screen. The archive and Hidden Notes are folders of their own.
+  /// Narrows [notes] to the space the list is showing. The ordinary list is
+  /// split by whose the notes are once there is an account to have shared
+  /// anything with, or narrowed to drawings from the rail, and everything that
+  /// walks the list (the arrow keys, the note after an archived one) walks
+  /// what is on screen. Drawings keeps to drawings in the archive and Hidden
+  /// Notes too; from Notes, both hold every note of theirs.
   List<Note> _narrowed(List<Note> notes) {
-    if (_specialMode) return notes;
     if (_drawingsOnly) {
       return [
         for (final note in notes)
           if (note.isDrawing) note,
       ];
     }
+    if (_specialMode) return notes;
     final sharing = widget.account?.sharing;
     if (sharing == null) return notes;
     return [
@@ -2615,11 +2774,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// The space the rail shows as open.
-  LibrarySpace get _space => _archiveMode
-      ? LibrarySpace.archive
-      : _hiddenMode
-      ? LibrarySpace.hidden
-      : _tasksMode
+  LibrarySpace get _space => _tasksMode
       ? LibrarySpace.tasks
       : _drawingsOnly
       ? LibrarySpace.drawings
@@ -2627,9 +2782,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ? LibrarySpace.shared
       : LibrarySpace.notes;
 
-  /// How many notes the open space holds, for the bar over the list: all of
-  /// them, whatever the search has narrowed the list to.
-  int get _spaceCount => _narrowed(
+  /// Which notes the filter shows.
+  NotesShow get _show => _archiveMode
+      ? NotesShow.archive
+      : _hiddenMode
+      ? NotesShow.hidden
+      : NotesShow.all;
+
+  /// What the list is called over it and in the editor's toolbar: the space,
+  /// or Hidden or Archive while the filter has one chosen.
+  String get _listTitle => _specialMode ? _show.label : _space.title;
+
+  /// [notes] narrowed to the space and to the media the filter has ticked.
+  /// Drawings has no media filter: every item in it is a drawing.
+  List<Note> _filtered(List<Note> notes) {
+    final tags = widget.tags;
+    final byTag = tags == null ? const TagFilter() : _tagsNarrowed;
+    final byMedia =
+        !_drawingsOnly && _mediaFilter.length < NoteMedia.values.length;
+    return [
+      for (final note in _narrowed(notes))
+        if ((!byMedia || NoteMedia.shows(note, _mediaFilter)) &&
+            (!byTag.narrowed ||
+                byTag.matches([
+                  for (final tag in tags!.tagsOf(note.id)) tag.id,
+                ])))
+          note,
+    ];
+  }
+
+  /// How many notes match the filter, for the bar over the list, whatever
+  /// the search has narrowed the list to.
+  int get _matchingCount => _filtered(
     _archiveMode
         ? widget.notes.archivedNotes
         : _hiddenMode
@@ -2637,53 +2821,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         : widget.notes.notes,
   ).length;
 
-  /// Opens [space] from the rail, the way the tabs, the archive row and the
-  /// Hidden Notes row it replaces did: Hidden Notes asks for its gate on the
-  /// way in, and the archive and Hidden Notes are left the way they always
-  /// are.
+  /// Opens [space] from the rail with nothing narrowed, the way the tabs it
+  /// replaces did. Choosing the space already open is how the list goes back
+  /// to All notes, as the filter's ✕ does.
   void _showSpace(LibrarySpace space) {
-    if (space == _space) return;
     _pinnedOnly = false;
-    setState(() => _tasksMode = space == LibrarySpace.tasks);
-    switch (space) {
-      case LibrarySpace.tasks:
-        if (_archiveMode) _toggleArchive();
-        if (_hiddenMode) _leaveHiddenNotes();
-      case LibrarySpace.archive:
-        _toggleArchive();
-      case LibrarySpace.hidden:
-        unawaited(_toggleHiddenNotes());
-      case LibrarySpace.notes || LibrarySpace.drawings || LibrarySpace.shared:
-        if (_archiveMode) _toggleArchive();
-        if (_hiddenMode) _leaveHiddenNotes();
-        setState(() {
-          _drawingsOnly = space == LibrarySpace.drawings;
-          _sidebarTab = space == LibrarySpace.shared
-              ? SidebarTab.shared
-              : SidebarTab.mine;
-        });
-    }
+    _clearFilter();
+    setState(() {
+      _tasksMode = space == LibrarySpace.tasks;
+      _drawingsOnly = space == LibrarySpace.drawings;
+      _sidebarTab = space == LibrarySpace.shared
+          ? SidebarTab.shared
+          : SidebarTab.mine;
+    });
+  }
+
+  /// My notes with the filter on [show], as Go to and its key open Hidden
+  /// and Archive.
+  void _showNotes(NotesShow show) {
+    if (_space != LibrarySpace.notes) _showSpace(LibrarySpace.notes);
+    _setShow(show);
   }
 
   List<Note> get _visibleNotes {
-    var notes = _narrowed(
+    var notes = _filtered(
       _archiveMode
           ? widget.notes.searchArchived(_archiveQuery)
           : _hiddenMode
           ? widget.notes.hiddenNotes
           : widget.notes.search(''),
     );
-    final pinnedOnly = _showingPinnedOnly;
-    // Drawings has no media filter: every item in it is a drawing.
-    final filtered =
-        !_drawingsOnly && _mediaFilter.length < NoteMedia.values.length;
-    if (pinnedOnly || filtered) {
+    if (_showingPinnedOnly) {
       final pinned = widget.notes.pinnedNoteIds;
       notes = [
         for (final note in notes)
-          if ((!filtered || NoteMedia.shows(note, _mediaFilter)) &&
-              (!pinnedOnly || pinned.contains(note.id)))
-            note,
+          if (pinned.contains(note.id)) note,
       ];
     }
     final recent = widget.prefs.recentlyOpenedNoteIds;
@@ -2712,7 +2884,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       builder: (context, constraints) {
         final compact =
             AppPlatform.isMobile && constraints.maxWidth < kTwoPaneBreakpoint;
-        final page = compact ? _buildCompact(context) : _buildWide(context);
+        final page = _withTags(
+          compact ? _buildCompact(context) : _buildWide(context),
+        );
         final gesturePage = AppPlatform.isDesktop
             ? SidebarSwipe(
                 sidebarVisible: _listShown,
@@ -2740,6 +2914,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onNewTask: _taskController == null ? null : _newTask,
             onNewDrawing: () => _createNote(drawing: true),
             onShowSpace: _showSpace,
+            onShowArchive: () => _showNotes(NotesShow.archive),
             showsTasks: _taskController != null,
             showsShared: widget.account?.sharing != null,
             onNextNote: () => _cycleNote(1),
@@ -2767,7 +2942,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
             onRecordVoice: () => unawaited(_startVoiceRecording()),
             onToggleSidebar: _toggleList,
-            onToggleHiddenFolder: _toggleHiddenFolderVisibility,
+            onToggleHiddenFolder: () => unawaited(_toggleHiddenFromShortcut()),
             onToggleResults: widget.prefs.toggleResults,
             onToggleAlwaysOnTop: AppPlatform.isDesktop
                 ? widget.prefs.toggleAlwaysOnTop
@@ -2822,10 +2997,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   onSelected: _showSpace,
                   invitations: widget.account?.sharing?.invites.length,
                   openTasks: taskBoard?.open.length,
-                  showHidden: _hiddenReachable,
-                  hiddenShortcut: widget.shortcuts.bindingFor(
-                    ShortcutAction.toggleHiddenFolder,
-                  ),
                   streak: widget.notes.streak,
                   onSettingsPressed: _showSettings,
                   settingsShortcut: widget.shortcuts.bindingFor(
@@ -2939,17 +3110,36 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             engine: widget.engines.engine,
                             now: widget.notes.now,
                             cards: widget.prefs.noteCards,
-                            onCardsChanged: (cards) =>
-                                widget.prefs.noteCards = cards,
-                            mediaFilter: _mediaFilter,
-                            onMediaFilterChanged: (media) =>
-                                setState(() => _mediaFilter = media),
+                            controls: NotesListControls(
+                              show: _show,
+                              offersShow: space != LibrarySpace.shared,
+                              onShowChanged: _setShow,
+                              hiddenListed: _hiddenReachable,
+                              hiddenShortcut: widget.shortcuts
+                                  .bindingFor(ShortcutAction.toggleHiddenFolder)
+                                  ?.displayLabel,
+                              archivedCount: _narrowed(
+                                widget.notes.archivedNotes,
+                              ).length,
+                              media: space == LibrarySpace.drawings
+                                  ? null
+                                  : _mediaFilter,
+                              onMediaChanged: (media) =>
+                                  setState(() => _mediaFilter = media),
+                              onClear: _clearFilter,
+                              tags: widget.tags == null ? null : _tagsNarrowed,
+                              onTagsChanged: (tags) =>
+                                  setState(() => _tagFilter = tags),
+                              cards: widget.prefs.noteCards,
+                              onCardsChanged: (cards) =>
+                                  widget.prefs.noteCards = cards,
+                            ),
                             pinnedOnly: _showingPinnedOnly,
                             onPinnedOnlyChanged: (value) =>
                                 setState(() => _pinnedOnly = value),
                             windowBar: SidebarWindowBar(
-                              title: space.title,
-                              count: _spaceCount,
+                              title: _listTitle,
+                              count: _matchingCount,
                               noun: space == LibrarySpace.drawings
                                   ? 'drawing'
                                   : 'note',
@@ -3001,7 +3191,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                       )
                                     else ...[
                                       PageToolbar(
-                                        space: space.title,
+                                        space: _listTitle,
                                         section: pinned ? 'Pinned' : null,
                                         listVisible: listFits && listShown,
                                         onShowList: _toggleList,
@@ -3816,6 +4006,7 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onNewTask,
     required this.onNewDrawing,
     required this.onShowSpace,
+    required this.onShowArchive,
     required this.showsTasks,
     required this.showsShared,
     required this.onNextNote,
@@ -3852,6 +4043,7 @@ class _DesktopShortcuts extends StatelessWidget {
   /// Opens a section from its Go to key; Tasks and Shared only where they
   /// are on the rail.
   final ValueChanged<LibrarySpace> onShowSpace;
+  final VoidCallback onShowArchive;
   final bool showsTasks;
   final bool showsShared;
   final VoidCallback onNextNote;
@@ -3915,8 +4107,8 @@ class _DesktopShortcuts extends StatelessWidget {
         if (showsShared)
           ?shortcuts.bindingFor(ShortcutAction.showShared)?.activator: () =>
               onShowSpace(LibrarySpace.shared),
-        ?shortcuts.bindingFor(ShortcutAction.showArchive)?.activator: () =>
-            onShowSpace(LibrarySpace.archive),
+        ?shortcuts.bindingFor(ShortcutAction.showArchive)?.activator:
+            onShowArchive,
         ?shortcuts.bindingFor(ShortcutAction.nextNote)?.activator: onNextNote,
         ?shortcuts.bindingFor(ShortcutAction.previousNote)?.activator:
             onPreviousNote,

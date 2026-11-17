@@ -156,13 +156,6 @@ class OpenRouterAccount implements AnswerEngine {
                   'role': 'system',
                   'content': answerInstructions(request.today),
                 },
-                for (final message in request.history)
-                  {
-                    'role': message.role == KapyRole.user
-                        ? 'user'
-                        : 'assistant',
-                    'content': message.text,
-                  },
                 {'role': 'user', 'content': answerPrompt(request)},
               ],
             }),
