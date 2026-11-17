@@ -27,9 +27,7 @@ class TasksSidebar extends StatelessWidget {
     required this.onFilter,
     required this.labelOf,
     required this.windowBar,
-    required this.query,
-    required this.onQueryChanged,
-    this.searchFocusNode,
+    required this.onSearch,
     this.searchShortcut,
   });
 
@@ -38,9 +36,9 @@ class TasksSidebar extends StatelessWidget {
   final ValueChanged<TaskFilter> onFilter;
   final String Function(Note note) labelOf;
   final Widget windowBar;
-  final String query;
-  final ValueChanged<String> onQueryChanged;
-  final FocusNode? searchFocusNode;
+
+  /// Opens the ⌘K menu, from the field over the filters.
+  final VoidCallback onSearch;
   final ShortcutBinding? searchShortcut;
 
   @override
@@ -72,14 +70,9 @@ class TasksSidebar extends StatelessWidget {
           children: [
             windowBar,
             SidebarSearchField(
-              query: query,
-              onChanged: onQueryChanged,
-              archiveMode: false,
-              hiddenMode: false,
-              focusNode: searchFocusNode,
+              onSearch: onSearch,
               shortcut: searchShortcut,
               besideRail: true,
-              tasks: true,
             ),
             Expanded(
               child: ListView(

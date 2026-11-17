@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../crdt/note_doc.dart';
 import '../sync/doc_store.dart';
 import 'local_store.dart';
+import 'stamped.dart';
 import 'task_lines.dart';
 
 /// What a task's line says, as [TaskEntry.words] holds it: SHA-256 of the
@@ -16,38 +17,6 @@ String wordsDigest(String words) =>
 /// What every id minted on this device alone starts with: a task met while
 /// no account was there to name it. Never sent; see [TaskIndex.rekey].
 const String localTaskIdPrefix = 'local-';
-
-/// A value and the moment it was set, epoch milliseconds. Merged on its own:
-/// the later [at] wins, and a tie goes the same way on every device.
-@immutable
-class Stamped<T> {
-  const Stamped(this.v, this.at);
-
-  final T v;
-  final int at;
-
-  Stamped<T> merge(Stamped<T> other) {
-    if (other.at != at) return other.at > at ? other : this;
-    return jsonEncode(other.v).compareTo(jsonEncode(v)) > 0 ? other : this;
-  }
-
-  Map<String, Object?> toJson() => {'v': v, 'at': at};
-
-  static Stamped<T>? fromJson<T>(Object? raw) {
-    if (raw is! Map) return null;
-    final v = raw['v'];
-    final at = raw['at'];
-    if (v is! T || at is! int) return null;
-    return Stamped<T>(v, at);
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      other is Stamped<T> && other.v == v && other.at == at;
-
-  @override
-  int get hashCode => Object.hash(v, at);
-}
 
 /// What the index holds about one task beyond its line: the plaintext of a
 /// task record. Mirrors `TaskPayload` in packages/contract.
@@ -169,18 +138,7 @@ class TaskEntry {
     doNow: doNow.merge(other.doNow),
     doneAt: doneAt.merge(other.doneAt),
     dismissed: dismissed.merge(other.dismissed),
-    extra: {
-      for (final key in {...extra.keys, ...other.extra.keys})
-        key: !other.extra.containsKey(key)
-            ? extra[key]
-            : !extra.containsKey(key) ||
-                  jsonEncode(other.extra[key]).compareTo(
-                        jsonEncode(extra[key]),
-                      ) >
-                      0
-            ? other.extra[key]
-            : extra[key],
-    },
+    extra: mergeExtra(extra, other.extra),
   );
 
   Map<String, Object?> toPayload() => {
@@ -258,7 +216,8 @@ class TaskEntry {
 /// Every change carries an `updatedAt`, the record's last-writer-wins key on
 /// the server. Merging happens here, field by field, never on the server.
 class TaskIndex extends ChangeNotifier {
-  TaskIndex(this._store, {DateTime Function()? now}) : _now = now ?? DateTime.now;
+  TaskIndex(this._store, {DateTime Function()? now})
+    : _now = now ?? DateTime.now;
 
   final LocalStore _store;
   final DateTime Function() _now;
@@ -375,7 +334,10 @@ class TaskIndex extends ChangeNotifier {
 
   /// Brings a note's tasks into line with its text.
   ///
-  /// Each record of the note is found by its anchor. One whose anchor went
+  /// Each record of the note is found by its anchor, and waits while that
+  /// names a character another device wrote that has not arrived. One of
+  /// this device's own the document does not hold is gone for good, as when
+  /// another device's copy of the note won its seed. One whose anchor went
   /// with its line looks for an unclaimed line with the same words, since an
   /// edit that rewrote a stretch of the note takes every anchor in it along,
   /// and moves to that line's record; failing that it is deleted. Two that
@@ -407,7 +369,11 @@ class TaskIndex extends ChangeNotifier {
       });
     for (final entry in mine) {
       final anchor = parseAnchor(entry.anchor);
-      if (anchor != null && !doc.knows(anchor)) continue;
+      if (anchor != null &&
+          !doc.knows(anchor) &&
+          anchor.id!.replica != doc.replica) {
+        continue;
+      }
       final index = taskLineIndex(doc, lines, entry.anchor);
       if (index < 0) {
         orphans.add(entry);
@@ -426,9 +392,7 @@ class TaskIndex extends ChangeNotifier {
     for (final orphan in orphans) {
       _delete(orphan.id);
       changed = true;
-      final index = [
-        for (var i = 0; i < lines.length; i++) i,
-      ].firstWhere(
+      final index = [for (var i = 0; i < lines.length; i++) i].firstWhere(
         (i) => !claimed.containsKey(i) && digests[i] == orphan.words.v,
         orElse: () => -1,
       );
@@ -585,8 +549,10 @@ class TaskIndex extends ChangeNotifier {
   }
 
   /// A deleted record as the server holds it. A newer local change survives
-  /// it and goes up again.
+  /// it and goes up again. One this index never held, a tag record's say,
+  /// changes nothing.
   void applyRemoteDelete(String id, int updatedAt) {
+    if (!_entries.containsKey(id) && !_stones.containsKey(id)) return;
     if (_dirty.contains(id) && (_updatedAt[id] ?? _stones[id]!) > updatedAt) {
       return;
     }
