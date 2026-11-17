@@ -459,7 +459,7 @@ void main() {
   test('cloud transcription defaults to Soniox', () async {
     queue.enqueue(noteId, 'v1');
     await queue.drain();
-    expect(api.modelSent, CloudTranscriptionModel.soniox.id);
+    expect(api.modelSent, 'stt-async-v5');
   });
 
   test('offline shows waiting, not transcribing', () async {

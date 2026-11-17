@@ -520,7 +520,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Someone'), findsWidgets);
-    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.byKey(const ValueKey('sign-out')), findsOneWidget);
     second.dispose();
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

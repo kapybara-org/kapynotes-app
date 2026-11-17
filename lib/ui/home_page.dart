@@ -15,6 +15,7 @@ import '../audio/voice_recording_controller.dart';
 import '../billing/note_limit.dart';
 import '../crdt/text_diff.dart';
 import '../data/voice_prefs.dart';
+import '../speech/cloud_access.dart';
 import '../speech/local_model_store.dart';
 import '../speech/summarizer.dart';
 import '../speech/transcriber.dart';
@@ -108,6 +109,7 @@ class HomePage extends StatefulWidget {
     this.player,
     this.transcriptions,
     this.voicePrefs,
+    this.cloudAccess,
     this.localModels,
     this.deviceSummarizer,
     this.summarizer,
@@ -156,6 +158,7 @@ class HomePage extends StatefulWidget {
   final TranscriptionQueue? transcriptions;
 
   final VoicePrefs? voicePrefs;
+  final CloudAccess? cloudAccess;
 
   /// The speech models this device has downloaded, for the voice pane of
   /// settings to show and add to.
@@ -2278,7 +2281,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Opens the share sheet for a note. Before the account is unlocked there
-  /// is no key to share with, so Profile & sync opens instead, on whatever
+  /// is no key to share with, so Account & sync opens instead, on whatever
   /// step is missing, and says that step is why it opened.
   void _shareNote(String id) {
     _recordKapyActivity();
@@ -2293,7 +2296,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (sharing == null) {
       _showSettings(
-        section: SettingsSection.sync,
+        section: SettingsSection.account,
         notice: _stepBeforeSharing(account.state),
       );
       return;
@@ -2301,7 +2304,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     unawaited(showShareDialog(context, note: note, sharing: sharing));
   }
 
-  /// What stands between this account and sharing, as the step Profile & sync
+  /// What stands between this account and sharing, as the step Account & sync
   /// is about to show.
   static String _stepBeforeSharing(AccountState state) => switch (state) {
     AccountState.needsProfile => 'Choose your name first to share this note',
@@ -2344,7 +2347,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         deviceSummarizer: widget.deviceSummarizer,
         deviceTranscriber: widget.deviceTranscriber,
         onTranscriptionReady: _resumeTranscriptionsFromSettings,
-        authorizeHiddenNotes: widget.hiddenNotesGate.unlock,
+        cloudAccess: widget.cloudAccess,
+        hiddenNotes: widget.hiddenNotesGate,
       );
     } finally {
       if (mounted && _settingsOpen) setState(() => _settingsOpen = false);
@@ -2661,7 +2665,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   updates: widget.updates,
                   onAccountPressed: widget.account == null
                       ? null
-                      : () => _showSettings(section: SettingsSection.sync),
+                      : () => _showSettings(section: SettingsSection.account),
                   user: widget.account?.user,
                   syncStatus: widget.account?.sync?.status,
                 ),
