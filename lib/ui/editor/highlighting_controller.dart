@@ -244,23 +244,48 @@ class HighlightingController extends TextEditingController {
     required bool withComposing,
   }) {
     final base = style ?? const TextStyle();
-    final source = text;
-    if (source.isEmpty) return TextSpan(style: base);
+    if (text.isEmpty) return TextSpan(style: base);
+    final styling = _stylingFor(
+      context,
+      base,
+      withComposing && value.isComposingRangeValid ? value.composing : null,
+    );
+    final (children, placeholders) = _spansIn(styling, 0, text.length);
+    _formulaPlaceholders = placeholders;
+    return _NoteSpan(style: base, children: children);
+  }
 
-    final spans = spansFor(source);
+  /// Each line's runs, built a line at a time from the same styling as
+  /// [buildTextSpan]'s.
+  @visibleForTesting
+  List<List<InlineSpan>> lineSpans(BuildContext context, TextStyle style) {
+    final styling = _stylingFor(context, style, null);
+    final source = text;
+    final lines = <List<InlineSpan>>[];
+    var start = 0;
+    while (true) {
+      final end = _lineEndAt(source, start);
+      lines.add(_spansIn(styling, start, end).$1);
+      if (end == source.length) return lines;
+      start = end + 1;
+    }
+  }
+
+  /// What the note's text is styled by, worked out for the whole note so that
+  /// [_spansIn] can build any stretch of it.
+  _Styling _stylingFor(
+    BuildContext context,
+    TextStyle base,
+    TextRange? composing,
+  ) {
+    final source = text;
     final links = linksFor(source);
-    final checkedRanges = _checkedTextRanges(source);
     final analysis = markdownFor(source);
-    final markdownSpans = analysis.spans;
     final concealment = markdownConcealment();
-    final hidden = concealment.hidden;
-    final transparent = concealment.transparent;
     final scaler =
         MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
     final page = EditorMetrics.page;
-    final titleEnd = page ? _lineEndAt(source, 0) : 0;
     final boxes = page ? plainCheckboxes(source) : const <MarkdownOrnament>[];
-    final boxGlyphs = {for (final box in boxes) box.start};
     final stretches = page
         ? [
             ..._listStretches(analysis, base, scaler),
@@ -268,70 +293,142 @@ class HighlightingController extends TextEditingController {
           ]
         : _listStretches(analysis, base, scaler);
     if (page) stretches.sort((a, b) => a.start.compareTo(b.start));
-    final formulas = concealment.formulas;
-    final code = _codeTokens(analysis);
-    final composing = withComposing && value.isComposingRangeValid
-        ? value.composing
-        : null;
+    final copies = <String, int>{};
+    final colors = Theme.of(context).colorScheme;
+    return (
+      base: base,
+      scaler: scaler,
+      page: page,
+      titleEnd: page ? _lineEndAt(source, 0) : 0,
+      linkColor: colors.primary,
+      errorColor: colors.error,
+      composing: composing,
+      checked: _checkedTextRanges(source),
+      boxGlyphs: {for (final box in boxes) box.start},
+      spans: _Sorted(spansFor(source), (span) => (span.start, span.end)),
+      links: _Sorted(links, (link) => (link.start, link.end)),
+      markdown: _Sorted(analysis.spans, (span) => (span.start, span.end)),
+      hidden: _Sorted(concealment.hidden, (range) => (range.start, range.end)),
+      transparent: _Sorted(
+        concealment.transparent,
+        (range) => (range.start, range.end),
+      ),
+      stretches: _Sorted(stretches, (stretch) => (stretch.start, stretch.end)),
+      formulas: _Sorted(
+        concealment.formulas,
+        (formula) => (formula.start, formula.end),
+      ),
+      code: _Sorted(_codeTokens(analysis), (token) => (token.start, token.end)),
+      copies: {
+        for (final formula in concealment.formulas)
+          formula.start: copies.update(
+            formula.tex,
+            (copy) => copy + 1,
+            ifAbsent: () => 0,
+          ),
+      },
+    );
+  }
+
+  /// The runs that draw `[from, to)` of the note, with the boxes of the
+  /// formulas among them.
+  (List<InlineSpan>, List<(int, PlaceholderDimensions)>) _spansIn(
+    _Styling styling,
+    int from,
+    int to,
+  ) {
+    final source = text;
+    final base = styling.base;
+    final scaler = styling.scaler;
+    final page = styling.page;
+    final titleEnd = styling.titleEnd;
+    final linkColor = styling.linkColor;
+    final composing = styling.composing;
+    final spans = styling.spans.overlapping(from, to);
+    final links = styling.links.overlapping(from, to);
+    final markdownSpans = styling.markdown.overlapping(from, to);
+    final hidden = styling.hidden.overlapping(from, to);
+    final transparent = styling.transparent.overlapping(from, to);
+    final stretches = styling.stretches.overlapping(from, to);
+    final formulas = styling.formulas.overlapping(from, to);
+    final code = styling.code.overlapping(from, to);
+    bool overlaps(int start, int end) => start < to && end > from;
+    final checkedRanges = [
+      for (final range in styling.checked)
+        if (overlaps(range.start, range.end)) range,
+    ];
+    final formats = [
+      for (final format in _formats)
+        if (overlaps(format.start, format.end)) format,
+    ];
+    final misspellings = [
+      for (final suggestion in spellingSuggestions)
+        if (overlaps(suggestion.range.start, suggestion.range.end)) suggestion,
+    ];
+    final boxGlyphs = styling.boxGlyphs;
 
     // Cut the text at every span edge and at the composing-region edges, then
     // emit one run per segment. Doing it via a boundary set keeps the two
     // kinds of styling from having to know about each other.
-    final boundaries = <int>{0, source.length, titleEnd};
+    final boundaries = <int>{from, to};
+    void cut(int at) {
+      if (at > from && at < to) boundaries.add(at);
+    }
+
+    cut(titleEnd);
     for (final span in spans) {
-      boundaries.add(span.start.clamp(0, source.length));
-      boundaries.add(span.end.clamp(0, source.length));
+      cut(span.start);
+      cut(span.end);
     }
     for (final link in links) {
-      boundaries.add(link.start);
-      boundaries.add(link.end);
+      cut(link.start);
+      cut(link.end);
     }
-    for (final format in _formats) {
-      boundaries.add(format.start.clamp(0, source.length));
-      boundaries.add(format.end.clamp(0, source.length));
+    for (final format in formats) {
+      cut(format.start);
+      cut(format.end);
     }
     for (final range in checkedRanges) {
-      boundaries.add(range.start);
-      boundaries.add(range.end);
+      cut(range.start);
+      cut(range.end);
     }
-    for (final suggestion in spellingSuggestions) {
-      boundaries.add(suggestion.range.start.clamp(0, source.length));
-      boundaries.add(suggestion.range.end.clamp(0, source.length));
+    for (final suggestion in misspellings) {
+      cut(suggestion.range.start);
+      cut(suggestion.range.end);
     }
     for (final offset in _imageSpans.keys) {
-      if (offset < 0 || offset >= source.length) continue;
-      boundaries.add(offset);
-      boundaries.add(offset + 1);
+      if (offset < from || offset >= to) continue;
+      cut(offset);
+      cut(offset + 1);
     }
     for (final span in markdownSpans) {
-      boundaries.add(span.start);
-      boundaries.add(span.end);
+      cut(span.start);
+      cut(span.end);
     }
     for (final range in [...hidden, ...transparent]) {
-      boundaries.add(range.start.clamp(0, source.length));
-      boundaries.add(range.end.clamp(0, source.length));
+      cut(range.start);
+      cut(range.end);
     }
     for (final stretch in stretches) {
-      boundaries.add(stretch.start);
-      boundaries.add(stretch.end);
+      cut(stretch.start);
+      cut(stretch.end);
     }
     for (final formula in formulas) {
-      boundaries.add(formula.start + 1);
+      cut(formula.start + 1);
     }
     for (final token in code) {
-      boundaries.add(token.start);
-      boundaries.add(token.end);
+      cut(token.start);
+      cut(token.end);
     }
     if (composing != null) {
-      boundaries.add(composing.start.clamp(0, source.length));
-      boundaries.add(composing.end.clamp(0, source.length));
+      cut(composing.start);
+      cut(composing.end);
     }
 
     final cuts = boundaries.toList()..sort();
     final children = <InlineSpan>[];
     var spanIndex = 0;
     var linkIndex = 0;
-    final linkColor = Theme.of(context).colorScheme.primary;
     // Markdown spans nest, so the ones open over a segment are a set rather
     // than a single pointer: everything that has started, less everything
     // that has ended. Every span edge is a cut, so an open span always covers
@@ -344,7 +441,6 @@ class HighlightingController extends TextEditingController {
     var transparentIndex = 0;
     var stretchIndex = 0;
     var formulaIndex = 0;
-    final formulaCopies = <String, int>{};
     var codeIndex = 0;
     final placeholders = <(int, PlaceholderDimensions)>[];
 
@@ -412,11 +508,7 @@ class HighlightingController extends TextEditingController {
       if (formula != null && start == formula.start) {
         final (span, placeholder) = _formulaSpan(
           formula,
-          copy: formulaCopies.update(
-            formula.tex,
-            (copy) => copy + 1,
-            ifAbsent: () => 0,
-          ),
+          copy: styling.copies[formula.start]!,
           words: _markdownBlockStyle(
             base,
             base,
@@ -425,7 +517,13 @@ class HighlightingController extends TextEditingController {
           base: base,
           scaler: scaler,
           indent: formula.display
-              ? _indent(formula.start, hidden, stretches, base, scaler)
+              ? _indent(
+                  formula.start,
+                  styling.hidden.items,
+                  styling.stretches.items,
+                  base,
+                  scaler,
+                )
               : 0,
         );
         children.add(span);
@@ -454,7 +552,7 @@ class HighlightingController extends TextEditingController {
       final checked = checkedRanges.any(
         (range) => range.start <= start && range.end >= end,
       );
-      final misspelled = spellingSuggestions.any(
+      final misspelled = misspellings.any(
         (suggestion) =>
             suggestion.range.start <= start && suggestion.range.end >= end,
       );
@@ -484,7 +582,7 @@ class HighlightingController extends TextEditingController {
           _codeTokenStyle(code[codeIndex].kind),
         );
       }
-      final matchingFormats = _formats.where(
+      final matchingFormats = formats.where(
         (format) => format.start <= start && format.end >= end,
       );
       final activeFormats = [
@@ -537,7 +635,7 @@ class HighlightingController extends TextEditingController {
       if (misspelled && activeLink == null && !done) {
         segmentStyle = segmentStyle.copyWith(
           decoration: TextDecoration.underline,
-          decorationColor: Theme.of(context).colorScheme.error,
+          decorationColor: styling.errorColor,
           decorationStyle:
               defaultTargetPlatform == TargetPlatform.iOS ||
                   defaultTargetPlatform == TargetPlatform.macOS
@@ -608,8 +706,7 @@ class HighlightingController extends TextEditingController {
       );
     }
 
-    _formulaPlaceholders = placeholders;
-    return _NoteSpan(style: base, children: children);
+    return (children, placeholders);
   }
 
   static final _lineEnd = RegExp('[\r\n]');
@@ -1205,6 +1302,72 @@ class HighlightingController extends TextEditingController {
 /// Letter spacing over [start, end): see
 /// [HighlightingController._listStretches].
 typedef _Stretch = ({int start, int end, double spacing});
+
+/// What [HighlightingController._spansIn] styles the note's text by: see
+/// [HighlightingController._stylingFor].
+typedef _Styling = ({
+  TextStyle base,
+  TextScaler scaler,
+  bool page,
+  int titleEnd,
+  Color linkColor,
+  Color errorColor,
+  TextRange? composing,
+  List<TextRange> checked,
+  Set<int> boxGlyphs,
+  _Sorted<HighlightSpan> spans,
+  _Sorted<NoteLink> links,
+  _Sorted<MarkdownSpan> markdown,
+  _Sorted<TextRange> hidden,
+  _Sorted<TextRange> transparent,
+  _Sorted<_Stretch> stretches,
+  _Sorted<MarkdownMath> formulas,
+  _Sorted<CodeToken> code,
+  Map<int, int> copies,
+});
+
+/// Ranges in the order they start, with those that overlap a stretch of the
+/// note found by a binary search rather than a walk from the top.
+class _Sorted<T> {
+  _Sorted(this.items, this._extent) {
+    var reach = 0;
+    _reach = [
+      for (final item in items) reach = math.max(reach, _extent(item).$2),
+    ];
+  }
+
+  final List<T> items;
+  final (int, int) Function(T) _extent;
+
+  /// The furthest any of the first i + 1 items reaches.
+  late final List<int> _reach;
+
+  /// Those of [items] that overlap `[from, to)`, in order.
+  List<T> overlapping(int from, int to) {
+    final first = _search(_reach.length, (i) => _reach[i] > from);
+    final last = _search(items.length, (i) => _extent(items[i]).$1 >= to);
+    return [
+      for (var i = first; i < last; i++)
+        if (_extent(items[i]).$2 > from) items[i],
+    ];
+  }
+
+  /// The first of 0 to [count] at which [test] holds, given that once it
+  /// holds it holds for every one after; [count] when it never does.
+  static int _search(int count, bool Function(int) test) {
+    var low = 0;
+    var high = count;
+    while (low < high) {
+      final middle = (low + high) >> 1;
+      if (test(middle)) {
+        high = middle;
+      } else {
+        low = middle + 1;
+      }
+    }
+    return low;
+  }
+}
 
 /// The text the field draws, which works out its semantics information once
 /// and keeps it.
