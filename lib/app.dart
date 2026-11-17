@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'ai/device_model.dart';
 import 'ai/kapy_ai.dart';
 import 'ai/kapy_ai_controller.dart';
+import 'ai/kapy_chat_book.dart';
 import 'core/platform.dart';
 import 'core/popup_keyboard.dart';
 import 'core/appearance.dart';
@@ -64,6 +65,7 @@ class KapyNotesApp extends StatefulWidget {
     this.account,
     this.tasks,
     this.tags,
+    this.chats,
     this.recording,
     this.kapyAi,
     this.imageAcquirer,
@@ -90,6 +92,10 @@ class KapyNotesApp extends StatefulWidget {
 
   /// The person's tags and which notes carry them.
   final TagStore? tags;
+
+  /// Kapy AI's chats, which the account syncs; Kapy AI keeps its own where
+  /// this is left out.
+  final KapyChatBook? chats;
 
   /// Owns the microphone. Injectable so a test can hand over a recorder with
   /// no microphone behind it — the real one starts a one-second ticker that
@@ -272,6 +278,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           models: _localModels!,
         ),
         billing: widget.account?.billing,
+        chats: widget.chats,
         token: () => widget.account?.token,
       );
     }

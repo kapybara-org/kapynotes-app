@@ -210,7 +210,10 @@ class KapyChat {
     required this.updatedAt,
     required this.model,
     this.messages = const [],
-  });
+    DateTime? titleAt,
+    DateTime? modelAt,
+  }) : titleAt = titleAt ?? createdAt,
+       modelAt = modelAt ?? createdAt;
 
   final String id;
   final String title;
@@ -220,6 +223,12 @@ class KapyChat {
   /// The pick sticks to the chat.
   final KapyModel model;
   final List<KapyMessage> messages;
+
+  /// When the title and the model were last set, which is how two devices
+  /// that changed one each both keep theirs. [updatedAt] cannot say: an
+  /// answer moves it too.
+  final DateTime titleAt;
+  final DateTime modelAt;
 }
 
 /// What holds up the last question, drawn inline under it (kapy-ai-7/8).
@@ -305,6 +314,10 @@ abstract class KapyAi extends ChangeNotifier {
   /// desktop only (and only while their switches are on), OpenRouter
   /// everywhere.
   List<KapyAccountState> get accounts;
+
+  /// Whether the chats are syncing to the account's other devices right now:
+  /// Pro, and signed in with sync on. False keeps them on this device.
+  bool get chatsSync => false;
 
   /// Newest first.
   List<KapyChat> get chats;

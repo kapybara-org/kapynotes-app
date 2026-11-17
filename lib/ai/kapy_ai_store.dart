@@ -105,6 +105,8 @@ Map<String, Object?> chatToJson(KapyChat chat) => {
   'title': chat.title,
   'createdAt': chat.createdAt.millisecondsSinceEpoch,
   'updatedAt': chat.updatedAt.millisecondsSinceEpoch,
+  'titleAt': chat.titleAt.millisecondsSinceEpoch,
+  'modelAt': chat.modelAt.millisecondsSinceEpoch,
   'model': chat.model.toJson(),
   'messages': [for (final message in chat.messages) _messageToJson(message)],
 };
@@ -120,6 +122,8 @@ KapyChat? chatFromJson(Object? raw) {
     title: title,
     createdAt: _date(raw['createdAt']),
     updatedAt: _date(raw['updatedAt']),
+    titleAt: raw['titleAt'] is int ? _date(raw['titleAt']) : null,
+    modelAt: raw['modelAt'] is int ? _date(raw['modelAt']) : null,
     model: model,
     messages: [
       for (final message in (raw['messages'] as List?) ?? const [])

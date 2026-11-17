@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../ai/kapy_chat_book.dart';
+import '../ai/kapy_chat_records.dart';
 import '../data/tags.dart';
 import '../data/task_index.dart';
 import 'doc_store.dart';
@@ -10,10 +12,16 @@ import 'sync_api.dart';
 import 'vault.dart';
 
 /// Keeps the account's record stream in step with this device: the task
-/// index, read from changed notes' checklist lines, and the tags. One pass
-/// sends what both owe and takes in what the server has, under one cursor.
-/// A payload with a `kind` is a tag's or a note's tags, one without is a
-/// task. See `tasks.ts` and `tags.ts` in packages/contract.
+/// index, read from changed notes' checklist lines, the tags and, for an
+/// account with Pro, the Kapy AI chats. One pass sends what they owe and
+/// takes in what the server has, under one cursor. A payload with a `kind`
+/// is a tag's, a note's tags, a chat or a chat's message, one without is a
+/// task. See `tasks.ts`, `tags.ts` and `chats.ts` in packages/contract.
+///
+/// Chats ride it only while [chatsOn] says so, the plan's answer. Until then
+/// nothing of a chat is sent or taken in, and when it turns on the stream is
+/// read again from the start, since a pull in between may have passed some
+/// by.
 ///
 /// Never a reason for note sync to fail. A server that does not have the
 /// stream yet answers 404, and the records wait on this device until it does.
@@ -26,6 +34,8 @@ class TaskSync {
     required DocStore docs,
     required bool Function(String noteId) noteIsLive,
     required Iterable<String> Function() deletedNotes,
+    KapyChatBook? chats,
+    bool Function()? chatsOn,
     this.delay = const Duration(seconds: 1),
   }) : _api = api,
        _vault = vault,
@@ -33,8 +43,13 @@ class TaskSync {
        _tags = tags,
        _docs = docs,
        _noteIsLive = noteIsLive,
-       _deletedNotes = deletedNotes {
+       _deletedNotes = deletedNotes,
+       _chats = chats,
+       _chatsOn = chatsOn ?? (() => true) {
     _tags.addListener(_onTags);
+    _chats
+      ?..attach(() => !_disposed && _chatsOn(), run, _chatRecordId)
+      ..addListener(_onChats);
   }
 
   final SyncApi _api;
@@ -43,6 +58,8 @@ class TaskSync {
   final TagStore _tags;
   final DocStore _docs;
   final bool Function(String noteId) _noteIsLive;
+  final KapyChatBook? _chats;
+  final bool Function() _chatsOn;
 
   /// The notes deleted on this device that are gone for good.
   final Iterable<String> Function() _deletedNotes;
@@ -63,6 +80,20 @@ class TaskSync {
 
   void _onTags() {
     if (_tags.owes) schedule();
+  }
+
+  void _onChats() {
+    if (_chats?.owes ?? false) schedule();
+  }
+
+  /// Whether chats go up and come down in this pass.
+  bool get _chatsSync => _chats != null && _chatsOn();
+
+  /// The plan may have changed: a whole pass, with a pull, if it now has
+  /// chats to send or take in.
+  void planChanged() {
+    _chats?.refreshGate();
+    if (_chatsSync) unawaited(run());
   }
 
   /// A pass soon, after [delay], for a change on this device: it reads the
@@ -119,9 +150,15 @@ class TaskSync {
   /// task it is about under the same id.
   Future<void> _pass() async {
     _rekey();
+    final rewind = (_chats?.skipped ?? false) && _chatsSync;
+    if (rewind && _index.cursor > 0) {
+      _index.recordCursor(0);
+      _pullOwed = true;
+    }
     if (_pullOwed) {
       _pullOwed = false;
       await _pull();
+      if (rewind) _chats!.clearSkipped();
     }
     await _docs.load();
     _reconcile();
@@ -144,10 +181,13 @@ class TaskSync {
     );
   }
 
-  /// Sends what the task index and the tags owe. A record that loses comes
-  /// back as the server holds it, is merged in with a later `updatedAt`, and
-  /// goes up again: a few rounds at most, since only another device writing
-  /// the same record in the same moment can make one lose twice.
+  /// Sends what the task index and the tags owe, then what the chats owe, in
+  /// chunks of their own: a push over the account's limit is refused whole,
+  /// and a chunk that held a task or a tag with the chats would take it down
+  /// with them. A record that loses comes back as the server holds it, is
+  /// merged in with a later `updatedAt`, and goes up again: a few rounds at
+  /// most, since only another device writing the same record in the same
+  /// moment can make one lose twice.
   Future<void> _push() async {
     for (var round = 0; round < 3 && !_disposed; round++) {
       final owed = [
@@ -166,12 +206,26 @@ class TaskSync {
             acknowledge: () => _tags.acknowledge(item),
           ),
       ];
-      if (owed.isEmpty) return;
-      for (var i = 0; i < owed.length; i += tasksPushMax) {
-        final chunk = owed.sublist(
-          i,
-          i + tasksPushMax > owed.length ? owed.length : i + tasksPushMax,
-        );
+      final owedChats = [
+        if (_chatsSync)
+          for (final item in _chats!.owed())
+            (
+              id: _chatRecordId(item.key),
+              updatedAt: item.updatedAt,
+              payload: item.payload,
+              acknowledge: () => _chats.acknowledge(item),
+            ),
+      ];
+      if (owed.isEmpty && owedChats.isEmpty) return;
+      final chunks = [
+        for (final list in [owed, owedChats])
+          for (var i = 0; i < list.length; i += tasksPushMax)
+            list.sublist(
+              i,
+              i + tasksPushMax > list.length ? list.length : i + tasksPushMax,
+            ),
+      ];
+      for (final chunk in chunks) {
         final records = <WireTaskRecord>[];
         for (final item in chunk) {
           final at = DateTime.fromMillisecondsSinceEpoch(
@@ -196,6 +250,7 @@ class TaskSync {
         final result = await _api.pushTasks(records);
         _index.hold();
         _tags.hold();
+        _chats?.hold();
         try {
           for (final item in chunk) {
             if (result.applied.contains(item.id)) item.acknowledge();
@@ -203,6 +258,7 @@ class TaskSync {
         } finally {
           _index.release();
           _tags.release();
+          _chats?.release();
         }
         for (final conflict in result.conflicts) {
           await _take(conflict);
@@ -215,8 +271,10 @@ class TaskSync {
   Future<void> _pull() async {
     while (!_disposed) {
       final page = await _api.pullTasks(after: _index.cursor);
+      if (!_chatsSync && page.records.isNotEmpty) _chats?.markSkipped();
       _index.hold();
       _tags.hold();
+      _chats?.hold();
       try {
         for (final record in page.records) {
           await _take(record);
@@ -225,6 +283,7 @@ class TaskSync {
       } finally {
         _index.release();
         _tags.release();
+        _chats?.release();
       }
       if (!page.hasMore) break;
     }
@@ -245,6 +304,10 @@ class TaskSync {
         updatedAt,
         noteId: _noteOfRecord[record.id] ?? _findNoteOf(record.id),
       );
+      if (_chatsSync) {
+        final key = _chats!.keyOfRecord(record.id);
+        if (key != null) _chats.applyRemoteDelete(key, updatedAt);
+      }
       return;
     }
     final opened = await _vault.openRaw(payload, null);
@@ -282,9 +345,41 @@ class TaskSync {
           return;
         }
         _tags.applyRemoteNote(note, updatedAt);
+      case chatKind:
+        if (!_chatsSync) return;
+        _tags.dropUnknown(record.id);
+        final chat = ChatMeta.fromPayload(decoded);
+        if (chat == null || _vault.chatRecordId(chat.chatId) != record.id) {
+          debugPrint('KapyNotes: chat record ${record.id} is not one of ours');
+          return;
+        }
+        _chats!.applyRemoteChat(chat, updatedAt);
+      case chatMessageKind:
+        if (!_chatsSync) return;
+        _tags.dropUnknown(record.id);
+        final part = ChatMessagePart.fromPayload(decoded);
+        if (part == null ||
+            _vault.chatMessageRecordId(
+                  part.chatId,
+                  part.messageId,
+                  part.part,
+                ) !=
+                record.id) {
+          debugPrint('KapyNotes: chat record ${record.id} is not one of ours');
+          return;
+        }
+        _chats!.applyRemotePart(part, updatedAt);
       default:
         _tags.keepUnknown(record.id, updatedAt);
     }
+  }
+
+  /// A chat record's id under this account's key, from its key.
+  String _chatRecordId(String key) {
+    final parts = key.split(':');
+    return parts[0] == 'c'
+        ? _vault.chatRecordId(parts[1])
+        : _vault.chatMessageRecordId(parts[1], parts[2], int.parse(parts[3]));
   }
 
   String _noteTagsId(String noteId) => _noteTagsIds[noteId] ??= () {
@@ -304,6 +399,9 @@ class TaskSync {
 
   void dispose() {
     _tags.removeListener(_onTags);
+    _chats
+      ?..removeListener(_onChats)
+      ..detach();
     _disposed = true;
     _timer?.cancel();
     _timer = null;

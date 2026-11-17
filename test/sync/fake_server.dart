@@ -109,6 +109,9 @@ class FakeServer {
   /// catch-up alike, mirroring the real limit being smaller than the corpus.
   int pageSize = 200;
 
+  /// How many task records one pull returns.
+  int taskPageSize = 1 << 30;
+
   // --- sockets ------------------------------------------------------------
 
   /// Connected sockets, by device id.
@@ -333,12 +336,16 @@ class FakeServer {
       {};
   final Map<String, int> _taskClocks = {};
 
+  /// The record ids of each push to the task stream, in order.
+  final List<List<String>> taskPushes = [];
+
   TasksPushResult pushTasks(
     String userId,
     String device,
     List<WireTaskRecord> records,
   ) {
     if (!tasksServed) _refuse(404, 'not found');
+    taskPushes.add([for (final record in records) record.id]);
     final mine = tasks.putIfAbsent(userId, () => {});
     final applied = <String>[];
     final conflicts = <WireTaskRecord>[];
@@ -368,10 +375,11 @@ class FakeServer {
         .where((row) => row.seq > after)
         .toList()
       ..sort((a, b) => a.seq.compareTo(b.seq));
+    final page = rows.take(taskPageSize).toList();
     return TasksPage(
-      records: [for (final row in rows) row.record],
-      cursor: rows.isEmpty ? after : rows.last.seq,
-      hasMore: false,
+      records: [for (final row in page) row.record],
+      cursor: page.isEmpty ? after : page.last.seq,
+      hasMore: rows.length > page.length,
     );
   }
 

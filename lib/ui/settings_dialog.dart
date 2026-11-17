@@ -1941,7 +1941,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         _Setting(
           'kapy-ai-clear-history',
           'Clear chat history',
-          subtitle: ai.isPro
+          subtitle: ai.chatsSync
               ? 'Deletes every Kapy AI chat on all your devices'
               : 'Deletes every Kapy AI chat on this $word',
           keywords: ['delete chats', 'history', 'conversations'],
@@ -1977,14 +1977,14 @@ class _SettingsDialogState extends State<SettingsDialog>
     ];
   }
 
-  /// Asks once: on Pro this reaches every device.
+  /// Asks once: where chats sync this reaches every device.
   Future<void> _clearKapyHistory(KapyAi ai) async {
     final clear = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Clear chat history?'),
         content: Text(
-          ai.isPro
+          ai.chatsSync
               ? 'Every Kapy AI chat is deleted on all your devices. This '
                     'can’t be undone.'
               : 'Every Kapy AI chat on this $kapyDeviceWord is deleted. This '

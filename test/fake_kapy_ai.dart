@@ -119,6 +119,13 @@ class FakeKapyAi extends KapyAi {
   @override
   bool get isPro => _pro;
 
+  /// Set to say Pro's chats are not syncing (signed out, sync off): left
+  /// null, they sync whenever the account is Pro.
+  bool? syncing;
+
+  @override
+  bool get chatsSync => syncing ?? _pro;
+
   @override
   KapyModel get defaultModel => _default;
   @override

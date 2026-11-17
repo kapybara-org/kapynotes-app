@@ -261,6 +261,51 @@ void main() {
       expect(ai.calls, ['newChat']);
     });
 
+    testWidgets(
+      'a note hidden or gone here is "Note not available" in a synced chat, and does not open',
+      (tester) async {
+        final opened = <String>[];
+        final ai = FakeKapyAi();
+        ai.set(
+          current: _chat(
+            'c1',
+            'From the laptop',
+            messages: [
+              _question('Anything on therapy?'),
+              _answer(
+                'Yes.',
+                read: [
+                  KapyNoteRef(
+                    noteId: 'n1',
+                    title: 'Trip budget',
+                    edited: DateTime(2026, 11, 16),
+                  ),
+                  KapyNoteRef(
+                    noteId: 'hidden-here',
+                    title: '',
+                    edited: DateTime(2026, 11, 16),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        final controller = KapyAiPanelController()..open();
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          _harness(_panel(ai, controller, onOpenNote: opened.add)),
+        );
+
+        expect(find.text('Note not available'), findsOneWidget);
+        expect(find.text('Trip budget'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('kapy-ai-read-hidden-here')),
+        );
+        await tester.tap(find.byKey(const ValueKey('kapy-ai-read-n1')));
+        expect(opened, ['n1']);
+      },
+    );
+
     testWidgets('an answer shows the notes it read, and each opens', (
       tester,
     ) async {
@@ -852,6 +897,22 @@ void main() {
 
       expect(find.text('Chats sync across your devices'), findsOneWidget);
     });
+
+    testWidgets(
+      'Pro with sync off says they are kept here, not that they sync',
+      (tester) async {
+        final ai = FakeKapyAi(pro: true, chatList: chats)..syncing = false;
+        await tester.pumpWidget(
+          _harness(KapyAiChats(kapyAi: ai, now: _now, onOpened: () {})),
+        );
+
+        expect(find.text('Chats sync across your devices'), findsNothing);
+        expect(
+          find.text('Kept on this Mac. Sign in to sync them'),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('searches by title', (tester) async {
       await open(tester);

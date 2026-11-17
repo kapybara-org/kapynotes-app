@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:kapy_notes/ai/answer_engine.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/ai/kapy_ai_controller.dart';
+import 'package:kapy_notes/ai/kapy_chat_book.dart';
 import 'package:kapy_notes/ai/tool_helper.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -51,12 +52,14 @@ void main() {
     Billing? billing,
     List<Map<String, Object?>>? notes,
     LocalStore? local,
+    KapyChatBook? chats,
     Map<String, String> environment = const {},
     ToolHelper? toolHelper,
     bool realTools = false,
   }) async {
     final controller = KapyAiController(
       store: local ?? store,
+      chats: chats,
       notes: await notesWith(
         notes ?? [noteJson('lisbon', 'Lisbon trip\nflights')],
         store: local ?? store,
@@ -611,6 +614,131 @@ void main() {
       ai.enabled = false;
       expect((await build()).enabled, isFalse);
     });
+  });
+
+  group('chats and sync', () {
+    test(
+      'chats sync only while the book says so, and the controller follows',
+      () async {
+        final book = KapyChatBook(store);
+        final ai = await build(
+          billing: await billingOn(pro: true),
+          chats: book,
+        );
+        var told = 0;
+        ai.addListener(() => told++);
+        expect(ai.chatsSync, isFalse, reason: 'Pro, but nothing is syncing');
+
+        var on = true;
+        book.attach(() => on, () async {}, (key) => key);
+        expect(ai.chatsSync, isTrue);
+        expect(told, greaterThan(0));
+        on = false;
+        expect(ai.chatsSync, isFalse);
+        book.detach();
+        expect(ai.chatsSync, isFalse);
+      },
+    );
+
+    test(
+      'a rename and a model pick stamp their own time, and an answer moves neither',
+      () async {
+        var now = testNow;
+        final ai = KapyAiController(
+          store: store,
+          notes: await notesWith([
+            noteJson('lisbon', 'Lisbon trip\nflights'),
+          ], store: store),
+          device: device,
+          billing: await billingOn(pro: true),
+          token: () => 'session-token',
+          client: MockClient((request) async => server(request)),
+          secrets: secrets,
+          codex: codex,
+          claudeCode: claude,
+          apiBaseUrl: Uri.parse('https://api.test/'),
+          now: () => now,
+          environment: const {},
+        );
+        addTearDown(ai.dispose);
+        await ai.ask('Lisbon?');
+        final first = ai.current!;
+        expect(first.titleAt, first.createdAt);
+        expect(first.modelAt, first.createdAt);
+
+        now = now.add(const Duration(minutes: 5));
+        ai.renameChat(first.id, 'Lisbon plans');
+        expect(ai.current!.titleAt, now);
+        expect(ai.current!.modelAt, first.modelAt);
+
+        now = now.add(const Duration(minutes: 5));
+        ai.pickModel(FakeDeviceModel.apple);
+        expect(ai.current!.modelAt, now);
+        expect(ai.current!.titleAt, now.subtract(const Duration(minutes: 5)));
+
+        now = now.add(const Duration(minutes: 5));
+        await ai.ask('And Porto?');
+        expect(ai.current!.updatedAt, now);
+        expect(ai.current!.titleAt, now.subtract(const Duration(minutes: 10)));
+        expect(ai.current!.modelAt, now.subtract(const Duration(minutes: 5)));
+      },
+    );
+
+    test('a Hidden note never reaches what a chat would send', () async {
+      const secret = 'HIDDEN-SECRET-4410';
+      store.data['kapyAi.v1'] = {'cloudConsent': true};
+      final book = KapyChatBook(store);
+      final ai = await build(
+        billing: await billingOn(pro: true),
+        chats: book,
+        notes: [
+          noteJson('lisbon', 'Lisbon trip\nflights'),
+          noteJson('hidden', 'Lisbon $secret\nthe door code', hidden: true),
+        ],
+      );
+      await ai.ask('What is in my Lisbon notes?');
+      book.attach(() => true, () async {}, (key) => key);
+      final owed = book.owed();
+      expect(ai.current!.messages, hasLength(2), reason: 'it was answered');
+      expect(owed, isNotEmpty);
+      final sent = jsonEncode([for (final item in owed) item.payload]);
+      expect(sent, isNot(contains(secret)));
+      expect(sent, isNot(contains('door code')));
+      expect(sent, isNot(contains('"hidden"')));
+      expect(
+        sent,
+        contains('"noteId":"lisbon"'),
+        reason: 'the open note is listed',
+      );
+      expect(sent, isNot(contains('"title":"Lisbon trip"')));
+    });
+
+    test(
+      'Clear history and a deletion are remembered as deletions, and a chat that was never synced owes nothing',
+      () async {
+        final book = KapyChatBook(store);
+        final ai = await build(
+          billing: await billingOn(pro: true),
+          chats: book,
+        );
+        await ai.ask('One?');
+        ai.newChat();
+        await ai.ask('Two?');
+        final id = ai.current!.id;
+        ai.deleteChat(id);
+        expect(ai.chats, hasLength(1));
+        await ai.clearHistory();
+        expect(ai.chats, isEmpty);
+        expect(book.owed(), isEmpty);
+        expect(
+          (await build(
+            billing: await billingOn(pro: true),
+            chats: KapyChatBook(store),
+          )).chats,
+          isEmpty,
+        );
+      },
+    );
   });
 
   test('construction starts nothing', () async {

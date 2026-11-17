@@ -82,6 +82,31 @@ void main() {
     expect(back.messages.last.matching, 4);
   });
 
+  test(
+    'when the title and the model were set read back, and default to creation',
+    () {
+      final chat = KapyChat(
+        id: 'c1',
+        title: 'Trip',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+        updatedAt: DateTime.fromMillisecondsSinceEpoch(5000),
+        model: apple,
+        titleAt: DateTime.fromMillisecondsSinceEpoch(3000),
+        modelAt: DateTime.fromMillisecondsSinceEpoch(4000),
+      );
+      final back = chatFromJson(jsonDecode(jsonEncode(chatToJson(chat))))!;
+      expect(back.titleAt.millisecondsSinceEpoch, 3000);
+      expect(back.modelAt.millisecondsSinceEpoch, 4000);
+
+      final before = chatToJson(chat)
+        ..remove('titleAt')
+        ..remove('modelAt');
+      final old = chatFromJson(before)!;
+      expect(old.titleAt, old.createdAt);
+      expect(old.modelAt, old.createdAt);
+    },
+  );
+
   test('chats are newest first and deletions are remembered with when', () {
     final store = KapyAiStore(MemoryStore());
     KapyChat chat(String id, int at) => KapyChat(
