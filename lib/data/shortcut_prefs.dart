@@ -194,6 +194,21 @@ class ShortcutBinding {
     ].join(' + ');
   }
 
+  /// The binding as a keycap prints it: ⌘F, and ⌃⌥⇧⌘ in the order a Mac's
+  /// menus list them, or Ctrl+F elsewhere.
+  String get keycapLabel {
+    if (AppPlatform.isMacOS) {
+      return [
+        if (control) '⌃',
+        if (alt) '⌥',
+        if (shift) '⇧',
+        if (meta) '⌘',
+        keyLabel,
+      ].join();
+    }
+    return displayLabel.replaceAll(' + ', '+');
+  }
+
   Map<String, Object?> toJson() => {
     'logicalKey': logicalKey.keyId,
     'physicalKey': physicalKey.usbHidUsage,

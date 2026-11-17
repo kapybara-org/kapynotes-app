@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -9,20 +11,21 @@ void main() {
   test('dark theme keeps a restrained warm-neutral palette', () {
     const palette = KapyTheme.darkPalette;
 
-    expect(palette.editorBackground, const Color(0xFF202126));
+    expect(palette.editorBackground, const Color(0xFF23201C));
     expect(palette.gutterBackground, palette.editorBackground);
-    expect(palette.textPrimary, const Color(0xFFE8E7E4));
+    expect(palette.textPrimary, const Color(0xFFE2DCCF));
     expect(palette.paperFiber, Colors.transparent);
 
-    expect({
-      palette.number,
-      palette.keyword,
-      palette.unit,
-      palette.currency,
-      palette.function,
-      palette.variable,
-      palette.operator,
-    }, hasLength(4));
+    // Names and figures stay in the note's ink; only the operators and the
+    // units step back.
+    expect(
+      {palette.number, palette.keyword, palette.function, palette.variable},
+      {palette.textPrimary},
+    );
+    expect(
+      {palette.operator, palette.unit, palette.currency},
+      {palette.textTertiary},
+    );
     expect(
       {
         palette.chipNumber,
@@ -31,10 +34,10 @@ void main() {
         palette.chipBoolean,
         palette.chipOther,
       },
-      {const Color(0xFFB5C28D)},
+      {const Color(0xFFB3C79C)},
     );
-    expect(KapyTheme.dark().colorScheme.primary, const Color(0xFFE0A06B));
-    expect(KapyTheme.dark().textTheme.bodyMedium?.fontWeight, FontWeight.w300);
+    expect(KapyTheme.dark().colorScheme.primary, const Color(0xFF7D9468));
+    expect(KapyTheme.dark().textTheme.bodyMedium?.fontWeight, FontWeight.w400);
     expect(KapyTheme.dark().textTheme.titleMedium?.fontWeight, FontWeight.w400);
     expect(KapyTheme.dark().shadowColor, Colors.transparent);
     expect(KapyTheme.dark().dialogTheme.elevation, 0);
@@ -59,7 +62,7 @@ void main() {
     expect(filled.textStyle!.resolve({})!.fontWeight, FontWeight.w600);
     expect(
       (filled.shape!.resolve({})! as RoundedRectangleBorder).borderRadius,
-      BorderRadius.circular(AppRadii.button),
+      BorderRadius.circular(AppRadii.control),
     );
     expect(outlined.side!.resolve({})!.width, 1);
     expect(outlined.minimumSize!.resolve({})!.height, 36);
@@ -81,13 +84,15 @@ void main() {
     );
   });
 
-  test('Windows uses native, readable typography for small interface copy', () {
+  test('Windows keeps readable sizes for small interface copy', () {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
     final theme = KapyTheme.dark();
 
-    expect(theme.textTheme.bodyMedium?.fontFamily, 'Segoe UI');
+    // Figtree, as everywhere, with Segoe UI drawing whatever it lacks.
+    expect(theme.textTheme.bodyMedium?.fontFamily, AppFonts.ui);
+    expect(theme.textTheme.bodyMedium?.fontFamilyFallback?.first, 'Segoe UI');
     expect(theme.textTheme.bodyMedium?.fontWeight, FontWeight.w400);
     expect(theme.textTheme.bodySmall?.fontWeight, FontWeight.w400);
     expect(theme.textTheme.bodySmall?.fontSize, 12.5);
@@ -141,8 +146,10 @@ void main() {
       reason: 'dark text over a bright wallpaper loses contrast sooner',
     );
 
-    // The rim only exists on glass, so opaque chrome grows no edge.
-    expect(palette.glassHighlight.a, greaterThan(0));
+    // The rim only exists on light glass: opaque chrome grows no edge, and a
+    // lit edge on charcoal reads as an outline rather than a reflection.
+    expect(KapyTheme.translucentLightPalette.glassHighlight.a, greaterThan(0));
+    expect(palette.glassHighlight.a, 0);
     expect(KapyTheme.darkPalette.glassHighlight.a, 0);
     expect(palette.opaque.isGlass, isFalse);
     expect(palette.opaque.glassHighlight.a, 0);
@@ -185,6 +192,94 @@ void main() {
       reason: 'fibres read as noise on glass',
     );
   });
+
+  test('the Riverbank tokens copy and blend like every other colour', () {
+    const dark = KapyTheme.darkPalette;
+    const light = KapyTheme.lightPalette;
+    final tokens = <String, Color Function(CalcPalette)>{
+      'railBackground': (p) => p.railBackground,
+      'railBorder': (p) => p.railBorder,
+      'tonalBackground': (p) => p.tonalBackground,
+      'tonalForeground': (p) => p.tonalForeground,
+      'tonalKeyBackground': (p) => p.tonalKeyBackground,
+      'tonalKeyText': (p) => p.tonalKeyText,
+      'keycapBackground': (p) => p.keycapBackground,
+      'keycapBorder': (p) => p.keycapBorder,
+      'keycapText': (p) => p.keycapText,
+      'stickyMustard': (p) => p.stickyMustard,
+      'stickyTeal': (p) => p.stickyTeal,
+      'stickyOlive': (p) => p.stickyOlive,
+      'stickyRust': (p) => p.stickyRust,
+      'stickySage': (p) => p.stickySage,
+      'scrim': (p) => p.scrim,
+      'resultPillBackground': (p) => p.resultPillBackground,
+      'resultPillText': (p) => p.resultPillText,
+      'totalPillBackground': (p) => p.totalPillBackground,
+      'totalPillText': (p) => p.totalPillText,
+    };
+    const marker = Color(0xFF123456);
+    final copied = dark.copyWith();
+    final scrimOnly = dark.copyWith(scrim: marker);
+    final atDark = dark.lerp(light, 0);
+    final atLight = dark.lerp(light, 1);
+
+    for (final MapEntry(key: name, value: token) in tokens.entries) {
+      expect(token(copied), token(dark), reason: name);
+      expect(
+        token(scrimOnly),
+        name == 'scrim' ? marker : token(dark),
+        reason: name,
+      );
+      expect(token(atDark), isSameColorAs(token(dark)), reason: name);
+      expect(token(atLight), isSameColorAs(token(light)), reason: name);
+    }
+  });
+
+  test('a modal dims the window with the palette scrim', () {
+    expect(
+      KapyTheme.dark().drawerTheme.scrimColor,
+      KapyTheme.darkPalette.scrim,
+    );
+    expect(
+      KapyTheme.light().drawerTheme.scrimColor,
+      KapyTheme.lightPalette.scrim,
+    );
+  });
+
+  test('the interface is set in Figtree on every platform', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    ]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final text = KapyTheme.light().textTheme;
+      for (final style in [text.bodyMedium, text.labelLarge, text.titleSmall]) {
+        expect(style?.fontFamily, AppFonts.ui, reason: '$platform');
+        expect(
+          style?.fontFamilyFallback?.first,
+          AppPlatform.uiFontFamily,
+          reason: 'the system face draws what Figtree lacks on $platform',
+        );
+      }
+    }
+  });
+
+  test(
+    'the interface faces are bundled under the names the theme asks for',
+    () {
+      final pubspec = File('pubspec.yaml').readAsStringSync();
+
+      expect(pubspec, contains('- family: ${AppFonts.ui}\n'));
+      expect(pubspec, contains('- family: ${AppFonts.mono}\n'));
+      for (final file in RegExp(r'(assets/fonts/\S+)').allMatches(pubspec)) {
+        expect(File(file[1]!).existsSync(), isTrue, reason: file[1]);
+      }
+    },
+  );
 
   test('handwritten editor face stays restrained', () {
     expect(WritingFont.handwritten.fontFamily, 'Shantell Sans');

@@ -645,6 +645,33 @@ void main() {
     expect(windows.displayLabel, 'Shift + Delete');
   });
 
+  test('a keycap prints a chord the way the keyboard does', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    const everything = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyK,
+      physicalKey: PhysicalKeyboardKey.keyK,
+      meta: true,
+      control: true,
+      alt: true,
+      shift: true,
+    );
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    expect(
+      ShortcutPrefs.defaultFor(ShortcutAction.findNotes).keycapLabel,
+      '⌘F',
+    );
+    // The order a Mac's own menus print modifiers in.
+    expect(everything.keycapLabel, '⌃⌥⇧⌘K');
+
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    expect(
+      ShortcutPrefs.defaultFor(ShortcutAction.findNotes).keycapLabel,
+      'Ctrl+F',
+    );
+    expect(everything.keycapLabel, 'Ctrl+Alt+Shift+Win+K');
+  });
+
   test('Hidden Notes uses Cmd or Ctrl H', () {
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 

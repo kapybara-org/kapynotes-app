@@ -34,6 +34,7 @@ import 'package:kapy_notes/ui/editor/results_gutter.dart';
 import 'package:kapy_notes/ui/editor_panes.dart';
 import 'package:kapy_notes/ui/empty_state.dart';
 import 'package:kapy_notes/ui/hidden_notes_gate.dart';
+import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
@@ -2465,7 +2466,7 @@ void main() {
     final search = find.byKey(const ValueKey('sidebar-search-field'));
     expect(search, findsOneWidget);
     expect(tester.widget<TextField>(search).focusNode?.hasFocus, isTrue);
-    expect(find.text(binding.displayLabel), findsOneWidget);
+    expect(find.text(binding.keycapLabel), findsOneWidget);
 
     await tester.enterText(search, 'launch contrast');
     await tester.pumpAndSettle();
@@ -2524,6 +2525,32 @@ void main() {
     expect(sidebar.right - add.right, greaterThanOrEqualTo(12));
     expect(add.center.dy, closeTo(search.center.dy, 0.5));
   });
+
+  testWidgets(
+    'the search shortcut is a keycap that leaves the placeholder room',
+    (tester) async {
+      await pumpApp(tester);
+
+      final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
+      final field = tester.getRect(
+        find.byKey(const ValueKey('sidebar-search-field')),
+      );
+      final keycap = tester.getRect(find.byType(Keycap));
+
+      expect(
+        find.descendant(
+          of: find.byType(Keycap),
+          matching: find.text(binding.keycapLabel),
+        ),
+        findsOneWidget,
+      );
+      expect(keycap.right, lessThan(field.right));
+      expect(field.right - keycap.right, lessThanOrEqualTo(12));
+      expect(keycap.center.dy, closeTo(field.center.dy, 1));
+      // The hint used to fill the field and leave the placeholder no width.
+      expect(tester.getSize(find.text('Search notes')).width, greaterThan(40));
+    },
+  );
 
   group('draw mode', () {
     Finder plus() => find.byKey(const ValueKey('sidebar-new-note'));

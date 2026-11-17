@@ -211,9 +211,19 @@ flutter:
     - assets/branding/kapynotes_tray_windows.ico
     - assets/branding/kapynotes_tray_macos.png
     - assets/fonts/ShantellSans-OFL.txt
+    - assets/fonts/Figtree-OFL.txt
+    - assets/fonts/GeistMono-OFL.txt
   fonts:
     - family: Shantell Sans
       fonts:
         - asset: assets/fonts/ShantellSans-Variable.ttf
         - asset: assets/fonts/ShantellSans-Italic-Variable.ttf
           style: italic
+    - family: Figtree
+      fonts:
+        - asset: assets/fonts/Figtree-Variable.ttf
+        - asset: assets/fonts/Figtree-Italic-Variable.ttf
+          style: italic
+    - family: Geist Mono
+      fonts:
+        - asset: assets/fonts/GeistMono-Variable.ttf

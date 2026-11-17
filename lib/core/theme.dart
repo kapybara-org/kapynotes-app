@@ -51,6 +51,40 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// the whole page and a divider's weight would read as a form to fill in.
   final Color paperRuling;
 
+  /// The spaces rail down the window's left edge: a step behind the canvas,
+  /// with a hairline where it meets the notes list.
+  final Color railBackground;
+  final Color railBorder;
+
+  /// The tonal button: the calm primary action, a sage label on its own
+  /// quiet sage tint, and the chip that names its shortcut.
+  final Color tonalBackground;
+  final Color tonalForeground;
+  final Color tonalKeyBackground;
+  final Color tonalKeyText;
+
+  /// A key printed the way the keyboard prints it: ⌘F, /, esc.
+  final Color keycapBackground;
+  final Color keycapBorder;
+  final Color keycapText;
+
+  /// The sticky-note tints a note card can wear.
+  final Color stickyMustard;
+  final Color stickyTeal;
+  final Color stickyOlive;
+  final Color stickyRust;
+  final Color stickySage;
+
+  /// What dims the window behind a modal.
+  final Color scrim;
+
+  /// A calculation's result, set as a pill at the end of its line, and the
+  /// stronger pill the total line gets.
+  final Color resultPillBackground;
+  final Color resultPillText;
+  final Color totalPillBackground;
+  final Color totalPillText;
+
   /// How much of the desktop the window's chrome lets through: a multiplier on
   /// the alpha of every [GlassSurface]. 1 is fully opaque.
   ///
@@ -102,12 +136,12 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
 
   /// The glass rim: a hairline of light along the top edge of a translucent
   /// surface, the way a real pane catches the light. Nothing in an opaque
-  /// palette, so the chrome does not grow an edge with transparency off.
-  Color get glassHighlight => !isGlass
-      ? const Color(0x00000000)
-      : brightness == Brightness.dark
-      ? const Color(0x1FFFFFFF)
-      : const Color(0x8CFFFFFF);
+  /// palette, so the chrome does not grow an edge with transparency off, and
+  /// nothing in the dark, where a lit edge on charcoal reads as an outline
+  /// rather than a reflection.
+  Color get glassHighlight => isGlass && brightness == Brightness.light
+      ? const Color(0x8CFFFFFF)
+      : const Color(0x00000000);
 
   /// Which appearance the palette is drawn for, judged from its paper.
   Brightness get brightness =>
@@ -148,6 +182,25 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.hover,
     required this.paperFiber,
     required this.paperRuling,
+    required this.railBackground,
+    required this.railBorder,
+    required this.tonalBackground,
+    required this.tonalForeground,
+    required this.tonalKeyBackground,
+    required this.tonalKeyText,
+    required this.keycapBackground,
+    required this.keycapBorder,
+    required this.keycapText,
+    required this.stickyMustard,
+    required this.stickyTeal,
+    required this.stickyOlive,
+    required this.stickyRust,
+    required this.stickySage,
+    required this.scrim,
+    required this.resultPillBackground,
+    required this.resultPillText,
+    required this.totalPillBackground,
+    required this.totalPillText,
     this.translucency = 1,
     this.paperTranslucency = 1,
   });
@@ -183,6 +236,25 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? hover,
     Color? paperFiber,
     Color? paperRuling,
+    Color? railBackground,
+    Color? railBorder,
+    Color? tonalBackground,
+    Color? tonalForeground,
+    Color? tonalKeyBackground,
+    Color? tonalKeyText,
+    Color? keycapBackground,
+    Color? keycapBorder,
+    Color? keycapText,
+    Color? stickyMustard,
+    Color? stickyTeal,
+    Color? stickyOlive,
+    Color? stickyRust,
+    Color? stickySage,
+    Color? scrim,
+    Color? resultPillBackground,
+    Color? resultPillText,
+    Color? totalPillBackground,
+    Color? totalPillText,
     double? translucency,
     double? paperTranslucency,
   }) => CalcPalette(
@@ -215,6 +287,25 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     hover: hover ?? this.hover,
     paperFiber: paperFiber ?? this.paperFiber,
     paperRuling: paperRuling ?? this.paperRuling,
+    railBackground: railBackground ?? this.railBackground,
+    railBorder: railBorder ?? this.railBorder,
+    tonalBackground: tonalBackground ?? this.tonalBackground,
+    tonalForeground: tonalForeground ?? this.tonalForeground,
+    tonalKeyBackground: tonalKeyBackground ?? this.tonalKeyBackground,
+    tonalKeyText: tonalKeyText ?? this.tonalKeyText,
+    keycapBackground: keycapBackground ?? this.keycapBackground,
+    keycapBorder: keycapBorder ?? this.keycapBorder,
+    keycapText: keycapText ?? this.keycapText,
+    stickyMustard: stickyMustard ?? this.stickyMustard,
+    stickyTeal: stickyTeal ?? this.stickyTeal,
+    stickyOlive: stickyOlive ?? this.stickyOlive,
+    stickyRust: stickyRust ?? this.stickyRust,
+    stickySage: stickySage ?? this.stickySage,
+    scrim: scrim ?? this.scrim,
+    resultPillBackground: resultPillBackground ?? this.resultPillBackground,
+    resultPillText: resultPillText ?? this.resultPillText,
+    totalPillBackground: totalPillBackground ?? this.totalPillBackground,
+    totalPillText: totalPillText ?? this.totalPillText,
     translucency: translucency ?? this.translucency,
     paperTranslucency: paperTranslucency ?? this.paperTranslucency,
   );
@@ -253,6 +344,28 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       hover: mix(hover, other.hover),
       paperFiber: mix(paperFiber, other.paperFiber),
       paperRuling: mix(paperRuling, other.paperRuling),
+      railBackground: mix(railBackground, other.railBackground),
+      railBorder: mix(railBorder, other.railBorder),
+      tonalBackground: mix(tonalBackground, other.tonalBackground),
+      tonalForeground: mix(tonalForeground, other.tonalForeground),
+      tonalKeyBackground: mix(tonalKeyBackground, other.tonalKeyBackground),
+      tonalKeyText: mix(tonalKeyText, other.tonalKeyText),
+      keycapBackground: mix(keycapBackground, other.keycapBackground),
+      keycapBorder: mix(keycapBorder, other.keycapBorder),
+      keycapText: mix(keycapText, other.keycapText),
+      stickyMustard: mix(stickyMustard, other.stickyMustard),
+      stickyTeal: mix(stickyTeal, other.stickyTeal),
+      stickyOlive: mix(stickyOlive, other.stickyOlive),
+      stickyRust: mix(stickyRust, other.stickyRust),
+      stickySage: mix(stickySage, other.stickySage),
+      scrim: mix(scrim, other.scrim),
+      resultPillBackground: mix(
+        resultPillBackground,
+        other.resultPillBackground,
+      ),
+      resultPillText: mix(resultPillText, other.resultPillText),
+      totalPillBackground: mix(totalPillBackground, other.totalPillBackground),
+      totalPillText: mix(totalPillText, other.totalPillText),
       translucency: translucency + (other.translucency - translucency) * t,
       paperTranslucency:
           paperTranslucency + (other.paperTranslucency - paperTranslucency) * t,
@@ -381,14 +494,14 @@ class EditorMetrics {
 ///
 /// Keeping these steps close makes the app feel friendly without turning
 /// every panel into a pill. Borders, never shadows, separate one layer from
-/// another.
+/// another. Controls of every kind share one radius: buttons, icon actions,
+/// fields and toggles. Menus, floating panels and the cards inside a dialog
+/// share the next.
 class AppRadii {
   const AppRadii._();
 
-  static const double icon = 9;
-  static const double button = 11;
-  static const double control = 10;
-  static const double surface = 13;
+  static const double control = 9;
+  static const double surface = 12;
   static const double dialog = 18;
 }
 
@@ -466,6 +579,11 @@ class AppControlMetrics {
   /// be hittable. Below [iconButtonExtent] on touch only because a popover is
   /// already anchored under the thumb that opened it.
   static double get popoverActionExtent => _touch ? 40 : 26;
+
+  /// Height of a tonal button, and the side of one that is only an icon.
+  /// A step under [buttonHeight] on a desktop, because it sits in bars and
+  /// headers rather than at the foot of a dialog.
+  static double get tonalButtonHeight => _touch ? 44 : 30;
 
   /// The square a text field reserves for a leading or trailing glyph, and the
   /// padding above and below its text. Together these set how tall a field is:
@@ -561,8 +679,8 @@ class AppControlMetrics {
 ///
 /// Every size the chrome renders comes from here rather than from a literal at
 /// the call site. macOS keeps its compact 10–16px desktop rhythm. Windows gets
-/// a slightly larger optical column because Segoe UI is commonly rasterised at
-/// 96dpi there: the old 10.5px subtitles lost both shape and hierarchy. The
+/// a slightly larger optical column because type there is commonly rasterised
+/// at 96dpi: the old 10.5px subtitles lost both shape and hierarchy. The
 /// touch column is pitched to iOS Dynamic Type at its default Large setting,
 /// where 17 is body and 13 is the smallest size Apple sets anything a user is
 /// meant to actually read.
@@ -576,15 +694,25 @@ class AppTypeScale {
   static bool get _touch => !AppPlatform.hasPointer;
   static bool get _windows => AppPlatform.isWindows;
 
-  /// The smallest legible annotation: an uppercase section label, a keycap
-  /// hint. 10.5 is a real size on a Mac but too fine on a typical Windows
-  /// display and unreadable on a phone held at arm's length, so each gets a
-  /// larger floor suited to its viewing distance and rasterisation.
+  /// The smallest legible annotation: an uppercase section label, the key
+  /// chip in a tonal button. 10.5 is a real size on a Mac but too fine on a
+  /// typical Windows display and unreadable on a phone held at arm's length,
+  /// so each gets a larger floor suited to its viewing distance and
+  /// rasterisation.
   static double get micro => _touch
       ? 13
       : _windows
       ? 11.5
       : 10.5;
+
+  /// A keycap's legend: ⌘F, esc. Mono, and a half point over [micro] on a
+  /// Mac, where the keycap sits beside 13pt controls and has to read as a
+  /// key rather than a speck.
+  static double get keycap => _touch
+      ? 13
+      : _windows
+      ? 11.5
+      : 11;
 
   /// Metadata, list snippets, the helper line under a control.
   static double get caption => _touch
@@ -653,15 +781,66 @@ class AppTypeScale {
   static double get display => _touch ? 34 : 31;
 }
 
+/// The two faces the interface is set in, bundled so that every platform
+/// renders the same letters. The writing surface has its own: see
+/// [WritingFont].
+class AppFonts {
+  const AppFonts._();
+
+  /// Every control and label: menus, buttons, fields, lists.
+  static const String ui = 'Figtree';
+
+  /// Figures that have to line up and keys that have to look like keys:
+  /// calculation results and keycaps.
+  static const String mono = 'Geist Mono';
+
+  /// What draws the scripts and symbols Figtree does not have: the system's
+  /// own interface face first.
+  static List<String> get uiFallback => [
+    AppPlatform.uiFontFamily,
+    ...AppPlatform.uiFontFallback,
+  ];
+
+  /// The same for Geist Mono, which has no ⌘ or ⌥ of its own.
+  static const List<String> monoFallback = AppPlatform.monoFontFallback;
+}
+
 class KapyTheme {
   const KapyTheme._();
 
   /// A restrained copper accent, used sparingly for focus and active state.
   /// It echoes the warm caret in the visual reference without tinting every
-  /// calculator token or control.
+  /// calculator token or control. The dark theme's accent is Riverbank's
+  /// sage, which marks what is on, done or open: checkboxes, switches,
+  /// progress and the open note.
   static const brand = Color(0xFFC97849);
-  static const _darkAccent = Color(0xFFE0A06B);
+  static const _darkAccent = Color(0xFF7D9468);
   static const _lightAccent = Color(0xFFA85F38);
+
+  /// The accent the theme for [brightness] marks focus, the caret and what is
+  /// on with.
+  static Color accentFor(Brightness brightness) =>
+      brightness == Brightness.dark ? _darkAccent : _lightAccent;
+
+  /// A filled control's background in each state: [fill] at rest, with a
+  /// little of its [ink] laid over it when hovered or focused and a little
+  /// more while pressed, and [disabled] when it has nothing to do. The accent
+  /// button and the tonal one share it, so both answer the pointer alike.
+  static WidgetStateProperty<Color> fillStates(
+    Color fill, {
+    required Color ink,
+    required Color disabled,
+  }) => WidgetStateProperty.resolveWith((states) {
+    if (states.contains(WidgetState.disabled)) return disabled;
+    if (states.contains(WidgetState.pressed)) {
+      return Color.alphaBlend(ink.withValues(alpha: 0.13), fill);
+    }
+    if (states.contains(WidgetState.hovered) ||
+        states.contains(WidgetState.focused)) {
+      return Color.alphaBlend(ink.withValues(alpha: 0.07), fill);
+    }
+    return fill;
+  });
 
   static ThemeData light({
     bool transparency = false,
@@ -678,39 +857,62 @@ class KapyTheme {
     transparency ? glassPalette(Brightness.dark, amount) : darkPalette,
   );
 
-  /// Dark charcoal surfaces with a single warm accent and muted result ink.
-  /// The close values make the chrome recede so the note remains the clearest
-  /// layer in the window.
+  /// Riverbank dark: warm charcoal, cream ink and a sage accent.
+  ///
+  /// The window is a step behind the page and the rail a step behind the
+  /// window, so the note is the clearest layer. Nothing light is used for an
+  /// edge or a shadow: borders and dividers are warm darks, and buttons are
+  /// flat sage tints. In a calculation the names and figures stay in the
+  /// note's ink, and only the operators and units step back.
   static const CalcPalette darkPalette = CalcPalette(
-    number: Color(0xFFE5E4E1),
-    keyword: Color(0xFFD6A071),
-    unit: Color(0xFFC9CBC8),
-    currency: Color(0xFFC9CBC8),
-    function: Color(0xFFD6A071),
-    variable: Color(0xFFD6A071),
-    operator: Color(0xFF9C9DA2),
-    comment: Color(0xFF777980),
-    chipNumber: Color(0xFFB5C28D),
-    chipCurrency: Color(0xFFB5C28D),
-    chipUnit: Color(0xFFB5C28D),
-    chipBoolean: Color(0xFFB5C28D),
-    chipOther: Color(0xFFB5C28D),
-    textPrimary: Color(0xFFE8E7E4),
-    textSecondary: Color(0xFFA8A8AC),
-    textTertiary: Color(0xFF74767D),
-    separator: Color(0x16FFFFFF),
-    sidebarBackground: Color(0xFF191A1E),
-    editorBackground: Color(0xFF202126),
-    gutterBackground: Color(0xFF202126),
-    surfaceBackground: Color(0xFF1B1C20),
-    controlBackground: Color(0xFF24252A),
-    controlBorder: Color(0xFF303137),
-    selectedBackground: Color(0xFF2A2B30),
-    selectedBorder: Color(0xFFB77B55),
-    selection: Color(0x38E0A06B),
-    hover: Color(0xFF27282D),
+    number: Color(0xFFE2DCCF),
+    keyword: Color(0xFFE2DCCF),
+    unit: Color(0xFF8A8476),
+    currency: Color(0xFF8A8476),
+    function: Color(0xFFE2DCCF),
+    variable: Color(0xFFE2DCCF),
+    operator: Color(0xFF8A8476),
+    comment: Color(0xFF8A8476),
+    chipNumber: Color(0xFFB3C79C),
+    chipCurrency: Color(0xFFB3C79C),
+    chipUnit: Color(0xFFB3C79C),
+    chipBoolean: Color(0xFFB3C79C),
+    chipOther: Color(0xFFB3C79C),
+    textPrimary: Color(0xFFE2DCCF),
+    textSecondary: Color(0xFFA29A8A),
+    textTertiary: Color(0xFF8A8476),
+    separator: Color(0xFF35312B),
+    sidebarBackground: Color(0xFF1C1A17),
+    editorBackground: Color(0xFF23201C),
+    gutterBackground: Color(0xFF23201C),
+    surfaceBackground: Color(0xFF23201C),
+    controlBackground: Color(0xFF2A2722),
+    controlBorder: Color(0xFF312D27),
+    selectedBackground: Color(0xFF36322B),
+    selectedBorder: Color(0xFF7D9468),
+    selection: Color(0x4D7D9468),
+    hover: Color(0xFF2E2A25),
     paperFiber: Color(0x00000000),
-    paperRuling: Color(0x12FFFFFF),
+    paperRuling: Color(0xFF2E2A25),
+    railBackground: Color(0xFF171512),
+    railBorder: Color(0x0FE2DCCF),
+    tonalBackground: Color(0xFF2E3828),
+    tonalForeground: Color(0xFFC2D6AC),
+    tonalKeyBackground: Color(0xFF3A4733),
+    tonalKeyText: Color(0xFFA9C08F),
+    keycapBackground: Color(0xFF2B2823),
+    keycapBorder: Color(0xFF36322B),
+    keycapText: Color(0xFFA29A8A),
+    stickyMustard: Color(0xFF393425),
+    stickyTeal: Color(0xFF273133),
+    stickyOlive: Color(0xFF2B3125),
+    stickyRust: Color(0xFF372B26),
+    stickySage: Color(0xFF2B3326),
+    scrim: Color(0xB30B0A09),
+    resultPillBackground: Color(0xFF2B3326),
+    resultPillText: Color(0xFFB3C79C),
+    totalPillBackground: Color(0xFF7D9468),
+    totalPillText: Color(0xFF1C1A17),
   );
 
   /// A cool, clean paper palette rather than the previous warm stationery.
@@ -746,6 +948,25 @@ class KapyTheme {
     // the default, and dark paper stays completely clean.
     paperFiber: Color(0x085B5148),
     paperRuling: Color(0x12000000),
+    railBackground: Color(0xFFEFEADD),
+    railBorder: Color(0x0F2A2620),
+    tonalBackground: Color(0xFF56703C),
+    tonalForeground: Color(0xFFFCFAF4),
+    tonalKeyBackground: Color(0xFF445A2F),
+    tonalKeyText: Color(0xFFE6ECDB),
+    keycapBackground: Color(0xFFEFEADD),
+    keycapBorder: Color(0xFFE2DCCB),
+    keycapText: Color(0xFF6F695C),
+    stickyMustard: Color(0xFFF6E7A6),
+    stickyTeal: Color(0xFFD5E5E6),
+    stickyOlive: Color(0xFFDCE6C8),
+    stickyRust: Color(0xFFF5D9C7),
+    stickySage: Color(0xFFE6ECDB),
+    scrim: Color(0x33000000),
+    resultPillBackground: Color(0xFFE6ECDB),
+    resultPillText: Color(0xFF445A2F),
+    totalPillBackground: Color(0xFF56703C),
+    totalPillText: Color(0xFFFCFAF4),
   );
 
   /// Transparency mode.
@@ -806,8 +1027,8 @@ class KapyTheme {
   static ThemeData _build(Brightness brightness, CalcPalette palette) {
     final dark = brightness == Brightness.dark;
     final compactControls = AppPlatform.isDesktop;
-    final accent = dark ? _darkAccent : _lightAccent;
-    final onAccent = dark ? const Color(0xFF211A15) : Colors.white;
+    final accent = accentFor(brightness);
+    final onAccent = dark ? const Color(0xFF1C1A17) : Colors.white;
     final buttonHeight = AppControlMetrics.buttonHeight;
     final iconButtonExtent = AppControlMetrics.iconButtonExtent;
     final tapTarget = compactControls
@@ -830,13 +1051,8 @@ class KapyTheme {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: scheme,
-      // Use the face drawn for each operating system's interface. Flutter's
-      // Material default is Roboto even on Windows, where Segoe UI has clearer
-      // hinting and more familiar proportions at small desktop sizes.
-      fontFamily: AppPlatform.isWindows ? AppPlatform.uiFontFamily : null,
-      fontFamilyFallback: AppPlatform.isWindows
-          ? AppPlatform.uiFontFallback
-          : null,
+      fontFamily: AppFonts.ui,
+      fontFamilyFallback: AppFonts.uiFallback,
       scaffoldBackgroundColor: palette.editorBackground,
       // Desktop wants tighter controls than the phone default.
       visualDensity: AppPlatform.isDesktop
@@ -880,19 +1096,13 @@ class KapyTheme {
             fontWeight: FontWeight.w400,
           ),
           bodyLarge: base.textTheme.bodyLarge?.copyWith(
-            fontWeight: AppPlatform.isWindows
-                ? FontWeight.w400
-                : FontWeight.w300,
+            fontWeight: FontWeight.w400,
           ),
           bodyMedium: base.textTheme.bodyMedium?.copyWith(
-            fontWeight: AppPlatform.isWindows
-                ? FontWeight.w400
-                : FontWeight.w300,
+            fontWeight: FontWeight.w400,
           ),
           bodySmall: base.textTheme.bodySmall?.copyWith(
-            fontWeight: AppPlatform.isWindows
-                ? FontWeight.w400
-                : FontWeight.w300,
+            fontWeight: FontWeight.w400,
             fontSize: AppPlatform.isWindows ? AppTypeScale.caption : null,
             height: AppPlatform.isWindows ? 1.3 : null,
           ),
@@ -957,7 +1167,7 @@ class KapyTheme {
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        scrimColor: Colors.black.withValues(alpha: dark ? 0.38 : 0.20),
+        scrimColor: palette.scrim,
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: palette.surfaceBackground,
@@ -1017,7 +1227,7 @@ class KapyTheme {
           }),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadii.icon),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
           ),
         ),
@@ -1034,37 +1244,21 @@ class KapyTheme {
               tapTargetSize: tapTarget,
               elevation: 0,
               shadowColor: Colors.transparent,
-              backgroundColor: accent,
               foregroundColor: onAccent,
-              disabledBackgroundColor: palette.controlBackground,
               disabledForegroundColor: palette.textTertiary,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadii.button),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
                 fontWeight: FontWeight.w600,
               ),
             ).copyWith(
-              backgroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.disabled)) {
-                  return palette.controlBackground;
-                }
-                if (states.contains(WidgetState.pressed)) {
-                  return Color.alphaBlend(
-                    onAccent.withValues(alpha: 0.13),
-                    accent,
-                  );
-                }
-                if (states.contains(WidgetState.hovered) ||
-                    states.contains(WidgetState.focused)) {
-                  return Color.alphaBlend(
-                    onAccent.withValues(alpha: 0.07),
-                    accent,
-                  );
-                }
-                return accent;
-              }),
+              backgroundColor: fillStates(
+                accent,
+                ink: onAccent,
+                disabled: palette.controlBackground,
+              ),
               overlayColor: const WidgetStatePropertyAll(Colors.transparent),
               animationDuration: const Duration(milliseconds: 120),
             ),
@@ -1084,7 +1278,7 @@ class KapyTheme {
               foregroundColor: palette.textPrimary,
               side: BorderSide(color: palette.controlBorder),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadii.button),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
@@ -1128,7 +1322,7 @@ class KapyTheme {
               tapTargetSize: tapTarget,
               foregroundColor: accent,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadii.icon),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               textStyle: base.textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
@@ -1169,7 +1363,7 @@ class KapyTheme {
           visualDensity: VisualDensity.standard,
           side: BorderSide(color: palette.controlBorder),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadii.button),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           tapTargetSize: tapTarget,
           textStyle: base.textTheme.labelLarge?.copyWith(
