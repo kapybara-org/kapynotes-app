@@ -41,6 +41,7 @@ class TaskSync {
   Future<void>? _running;
   bool _again = false;
   bool _pullOwed = false;
+  bool _rekeyed = false;
   bool _disposed = false;
 
   /// A pass soon, after [delay], for a change on this device: it reads the
@@ -59,6 +60,14 @@ class TaskSync {
   Future<void> run() {
     _pullOwed = true;
     return _start();
+  }
+
+  /// The notes that changed read into the index now, with what that owes
+  /// sent on the usual schedule.
+  Future<void> reconcile() async {
+    await _docs.load();
+    _reconcile();
+    schedule();
   }
 
   Future<void> _start() {
@@ -84,30 +93,33 @@ class TaskSync {
 
   /// What the server has first, so a line another device already wrote a
   /// record for is not met again as new here; then the notes; then what
-  /// that owes.
+  /// that owes. Before any of it, the ids this device gave tasks while
+  /// signed out make way for the account's, so a pulled record meets the
+  /// task it is about under the same id.
   Future<void> _pass() async {
+    _rekey();
     if (_pullOwed) {
       _pullOwed = false;
       await _pull();
     }
     await _docs.load();
-    final changed = _index.scanned
-        ? _docs.takeChanged()
-        : {..._docs.takeChanged(), for (final r in _docs.records) r.noteId};
-    for (final noteId in changed) {
-      final record = _docs.get(noteId);
-      if (record == null || !_noteIsLive(noteId)) {
-        _index.forgetNote(noteId);
-      } else {
-        _index.reconcileNote(
-          noteId,
-          record.doc,
-          idFor: (anchor) => _vault.taskRecordId(noteId, anchor),
-        );
-      }
-    }
-    _index.markScanned();
+    _reconcile();
     await _push();
+  }
+
+  void _rekey() {
+    if (_rekeyed) return;
+    _rekeyed = true;
+    _index.rekey(_vault.taskRecordId);
+  }
+
+  void _reconcile() {
+    _rekey();
+    _index.reconcileDocs(
+      _docs,
+      noteIsLive: _noteIsLive,
+      idFor: _vault.taskRecordId,
+    );
   }
 
   /// Sends what is owed. A record that loses comes back as the server holds

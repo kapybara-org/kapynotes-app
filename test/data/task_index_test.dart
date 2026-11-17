@@ -318,4 +318,44 @@ void main() {
       expect(again.scanned, isTrue);
     });
   });
+
+  group('ids minted on this device', () {
+    String localId(String anchor) => '${localTaskIdPrefix}x$anchor';
+
+    test('a task under one goes without a stone', () {
+      write(doc, '☐ Alpha\n☐ Bravo');
+      index.reconcileNote(noteId, doc, idFor: localId);
+      write(doc, '☐ Alpha');
+      index.reconcileNote(noteId, doc, idFor: localId);
+
+      expect(index.entries.single.id, startsWith(localTaskIdPrefix));
+      expect(index.owed.map((o) => o.id), [index.entries.single.id]);
+    });
+
+    test('rekeying moves each task onto the account id, state and all, and '
+        'owes nothing for the id it leaves', () {
+      write(doc, '☐ Alpha\n☐ Bravo');
+      index.reconcileNote(noteId, doc, idFor: localId);
+      final alpha = entryWhoseLineReads('Alpha');
+      clock = clock.add(const Duration(minutes: 1));
+      index.update(
+        alpha.copyWith(dot: Stamped(true, clock.millisecondsSinceEpoch)),
+      );
+
+      index.rekey((noteId, anchor) => idFor(anchor));
+
+      expect(
+        {for (final e in index.entries) e.id},
+        {for (final e in index.entries) idFor(e.anchor)},
+      );
+      final moved = index.byId(idFor(alpha.anchor))!;
+      expect(moved.dot.v, isTrue);
+      expect(moved.addedAt, alpha.addedAt);
+      expect(
+        index.owed.map((o) => o.id).toSet(),
+        {for (final e in index.entries) e.id},
+      );
+      expect(index.owed.every((o) => o.entry != null), isTrue);
+    });
+  });
 }

@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
 import '../crdt/note_doc.dart';
+import '../sync/doc_store.dart';
 import 'local_store.dart';
 import 'task_lines.dart';
 
@@ -11,6 +12,10 @@ import 'task_lines.dart';
 /// words after the box, trimmed, first 16 hex digits.
 String wordsDigest(String words) =>
     sha256.convert(utf8.encode(words.trim())).toString().substring(0, 16);
+
+/// What every id minted on this device alone starts with: a task met while
+/// no account was there to name it. Never sent; see [TaskIndex.rekey].
+const String localTaskIdPrefix = 'local-';
 
 /// A value and the moment it was set, epoch milliseconds. Merged on its own:
 /// the later [at] wins, and a tie goes the same way on every device.
@@ -352,6 +357,11 @@ class TaskIndex extends ChangeNotifier {
 
   void _delete(String id) {
     if (_entries.remove(id) == null) return;
+    if (id.startsWith(localTaskIdPrefix)) {
+      _updatedAt.remove(id);
+      _dirty.remove(id);
+      return;
+    }
     _stones[id] = _nextUpdate(id);
     _updatedAt.remove(id);
     _dirty.add(id);
@@ -460,6 +470,56 @@ class TaskIndex extends ChangeNotifier {
         _write(next);
         changed = true;
       }
+    }
+    if (changed) _save();
+  }
+
+  /// Brings the tasks of every note whose document changed since the last
+  /// call into line with it, and of every note on the first. A note that is
+  /// gone, or keeps no document, loses its tasks.
+  void reconcileDocs(
+    DocStore docs, {
+    required bool Function(String noteId) noteIsLive,
+    required String Function(String noteId, String anchor) idFor,
+  }) {
+    final changed = _scanned
+        ? docs.takeChanged()
+        : {...docs.takeChanged(), for (final r in docs.records) r.noteId};
+    for (final noteId in changed) {
+      final record = docs.get(noteId);
+      if (record == null || !noteIsLive(noteId)) {
+        forgetNote(noteId);
+      } else {
+        reconcileNote(
+          noteId,
+          record.doc,
+          idFor: (anchor) => idFor(noteId, anchor),
+        );
+      }
+    }
+    markScanned();
+  }
+
+  /// Moves every task whose id is not the one [idFor] gives its line onto
+  /// that id, state and all: for the first pass after signing in, when the
+  /// ids this device minted on its own give way to the account's. The old
+  /// ids go without a stone, since the server never had them.
+  void rekey(String Function(String noteId, String anchor) idFor) {
+    var changed = false;
+    for (final entry in _entries.values.toList()) {
+      final id = idFor(entry.noteId, entry.anchor);
+      if (id == entry.id) continue;
+      _entries.remove(entry.id);
+      _updatedAt.remove(entry.id);
+      _dirty.remove(entry.id);
+      final moved = entry.movedTo(
+        id: id,
+        anchor: entry.anchor,
+        words: entry.words,
+      );
+      final existing = _entries[id];
+      _write(existing == null ? moved : existing.merge(moved));
+      changed = true;
     }
     if (changed) _save();
   }

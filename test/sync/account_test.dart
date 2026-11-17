@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/speech/speech_api.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
@@ -35,14 +36,20 @@ class Device {
     store = MemoryStore();
     notes = NotesStore(store);
     keys = KeyStore(InMemorySecureStore());
+    final syncState = SyncState(store);
     account = Account(
       auth: this.auth,
       syncApi: (_) => FakeApi(server),
       keys: keys,
       notes: notes,
-      state: SyncState(store),
+      state: syncState,
       store: store,
-      docStorage: MemoryDocStorage(),
+      tasks: TaskLibrary(
+        notes: notes,
+        store: store,
+        state: syncState,
+        storage: MemoryDocStorage(),
+      ),
     );
   }
 
@@ -237,14 +244,20 @@ void main() {
     d.dispose();
 
     // Same storage and keystore, new process.
+    final syncState = SyncState(d.store);
     final restarted = Account(
       auth: d.auth,
       syncApi: (_) => FakeApi(server),
       keys: d.keys,
       notes: d.notes,
-      state: SyncState(d.store),
+      state: syncState,
       store: d.store,
-      docStorage: MemoryDocStorage(),
+      tasks: TaskLibrary(
+        notes: d.notes,
+        store: d.store,
+        state: syncState,
+        storage: MemoryDocStorage(),
+      ),
     );
     await restarted.restore();
 
@@ -261,14 +274,20 @@ void main() {
     d.dispose();
 
     d.auth.sessionValid = false;
+    final syncState = SyncState(d.store);
     final restarted = Account(
       auth: d.auth,
       syncApi: (_) => FakeApi(server),
       keys: d.keys,
       notes: d.notes,
-      state: SyncState(d.store),
+      state: syncState,
       store: d.store,
-      docStorage: MemoryDocStorage(),
+      tasks: TaskLibrary(
+        notes: d.notes,
+        store: d.store,
+        state: syncState,
+        storage: MemoryDocStorage(),
+      ),
     );
     await restarted.restore();
 
@@ -291,14 +310,20 @@ void main() {
     d.dispose();
 
     d.auth.reachable = false;
+    final syncState = SyncState(d.store);
     final restarted = Account(
       auth: d.auth,
       syncApi: (_) => FakeApi(server),
       keys: d.keys,
       notes: d.notes,
-      state: SyncState(d.store),
+      state: syncState,
       store: d.store,
-      docStorage: MemoryDocStorage(),
+      tasks: TaskLibrary(
+        notes: d.notes,
+        store: d.store,
+        state: syncState,
+        storage: MemoryDocStorage(),
+      ),
     );
     await restarted.restore();
 
@@ -322,14 +347,20 @@ void main() {
     d.dispose();
 
     d.auth.sessionValid = false;
+    final syncState = SyncState(d.store);
     final restarted = Account(
       auth: d.auth,
       syncApi: (_) => FakeApi(server),
       keys: d.keys,
       notes: d.notes,
-      state: SyncState(d.store),
+      state: syncState,
       store: d.store,
-      docStorage: MemoryDocStorage(),
+      tasks: TaskLibrary(
+        notes: d.notes,
+        store: d.store,
+        state: syncState,
+        storage: MemoryDocStorage(),
+      ),
     );
     await restarted.restore();
 
