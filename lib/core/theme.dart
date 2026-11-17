@@ -222,10 +222,9 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   Color get codeChip =>
       _dark ? const Color(0xFF2E2A25) : const Color(0xFFEFEADD);
 
-  /// A quote's bar. Paper draws it in light only; the dark one takes the
-  /// same step between the separator and a checkbox's edge.
+  /// A quote's bar, Paper's.
   Color get quoteBar =>
-      _dark ? const Color(0xFF47423A) : const Color(0xFFD0C8B5);
+      _dark ? const Color(0xFF4A453D) : const Color(0xFFD0C8B5);
 
   /// The same palette with every surface solid: what High Contrast, Reduce
   /// Transparency and a desktop with no blur behind the window all ask for.
@@ -524,9 +523,12 @@ class EditorMetrics {
   /// [lineHeight] that may grow. Phones keep their own structure.
   static bool get page => !AppPlatform.isMobile;
 
-  /// One row of writing: Paper's 28px line and the 3px between rows on the
-  /// page, 29 on a phone.
-  static double get lineHeight => page ? 31 : 29;
+  /// How far in a quote's words start on the page, past its 3px bar and the
+  /// 14px after it.
+  static const double quoteIndent = 17;
+
+  /// One row of writing: Paper's 28px line on the page, 29 on a phone.
+  static double get lineHeight => page ? 28 : 29;
 
   /// The writing column on the page. A window narrower than this plus
   /// [padding] gives the column what it has.
@@ -538,21 +540,39 @@ class EditorMetrics {
   static const double titleRow = 48;
   static const double metaGap = 10;
   static const double metaRow = 16;
-  static const double metaBottom = 22;
+  static const double metaBottom = 10;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 
   /// A heading on the page, Paper's p-5-0: 22, 19 and 17 over 16px writing,
   /// each in a 28px line at the bottom of a row of 40 for the first level
-  /// and 36 below it, plus a body row's gap of 3. Set with proportional
-  /// leading, nearly all of what the row adds goes above the words. Deeper
-  /// levels are the writing's own size in the third level's row.
+  /// and 36 below it. Set with proportional leading, nearly all of what the
+  /// row adds goes above the words. Deeper levels are the writing's own size
+  /// in the third level's row.
   static double headingFontSize(int level) => switch (level) {
     <= 1 => 22,
     2 => 19,
     3 => 17,
     _ => 16,
   };
-  static double headingRow(int level) => level <= 1 ? 43 : 39;
+  static double headingRow(int level) => level <= 1 ? 40 : 36;
+
+  /// A fenced code block on the page, Paper's CYZ-0: 24px rows of code in a
+  /// panel under a 30px header and its 6px margin, 8px clear of the writing
+  /// above, with 10px of panel under the code and 8px clear below.
+  static const double codeRow = 24;
+  static const double codeGapBefore = 8;
+  static const double codeHeader = 30;
+  static const double codeHeaderMargin = 6;
+  static const double codePanelBottom = 10;
+  static const double codeGapAfter = 8;
+
+  /// The rows a hidden opening fence and a hidden closing fence keep.
+  static const double codeOpenRow =
+      codeGapBefore + codeHeader + codeHeaderMargin;
+  static const double codeCloseRow = codePanelBottom + codeGapAfter;
+
+  /// A table row on the page, Paper's CYZ-0: 36px and the 1px rule under it.
+  static const double tableRow = 37;
 
   /// How far Paper's link chip reaches past the address it holds, and the
   /// pill under inline code past its words.

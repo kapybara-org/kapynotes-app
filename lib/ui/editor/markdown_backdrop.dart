@@ -278,14 +278,17 @@ class RenderMarkdownBackdrop extends RenderBox {
         case MarkdownBlockKind.code:
           _paintCode(canvas, field, block, left, right, top, bottom, rowY);
         case MarkdownBlockKind.quote:
-          // Out in the margin, so a quote's words line up with the rest.
-          final x = left - _quoteIndent;
+          // The page's bar is Paper's: in the column, with the words past
+          // it and 2px of room above and below. A phone's is out in the
+          // margin, so the words line up with the rest.
+          final x = EditorMetrics.page ? left : left - EditorMetrics.quoteIndent;
+          final room = EditorMetrics.page ? 2.0 : 0.0;
           canvas.drawRRect(
             RRect.fromLTRBR(
               x,
-              top,
+              top - room,
               x + 3,
-              bottom - _rowGap,
+              bottom + room,
               const Radius.circular(2),
             ),
             Paint()..color = colors.quoteBar,
@@ -293,7 +296,7 @@ class RenderMarkdownBackdrop extends RenderBox {
         case MarkdownBlockKind.rule:
           // Not through its own \`---\` while that is shown as written.
           if (!concealment.hides(block.start, block.end)) continue;
-          final y = ((top + bottom - _rowGap) / 2).roundToDouble() + 0.5;
+          final y = ((top + bottom) / 2).roundToDouble() + 0.5;
           canvas.drawLine(
             Offset(left, y),
             Offset(right, y),
@@ -396,13 +399,8 @@ class RenderMarkdownBackdrop extends RenderBox {
     canvas.restore();
   }
 
-  /// The 3 at the bottom of every row that keeps one from the next.
-  static const double _rowGap = 3;
-
-  /// How far a quote's bar and a code block's panel reach out from the
-  /// writing: Paper's 3px bar and the 14 after it, and the 14 a code block's
-  /// panel has around its code.
-  static const double _quoteIndent = 17;
+  /// How far a code block's panel reaches out from the writing: the 14px
+  /// Paper's panel has around its code.
   static const double _codeInset = 14;
 
   /// Paper's code block: a panel a step below the page reaching [_codeInset]
@@ -425,11 +423,29 @@ class RenderMarkdownBackdrop extends RenderBox {
     final closeRows = close != null && concealment.hides(close.start, close.end)
         ? _rows(field, close.start, close.end)
         : null;
+    final open = fences?.open;
+    final openRows = open == null
+        ? null
+        : concealment.hides(open.start, open.end)
+        ? _rows(field, open.start, open.end)
+        : null;
+    // The rows a hidden fence keeps are Paper's gap, header and margin or
+    // its panel's foot and gap, at the size the note's text is.
+    final openScale = openRows == null
+        ? 1.0
+        : (openRows.$2 - openRows.$1) / EditorMetrics.codeOpenRow;
+    final closeScale = closeRows == null
+        ? 1.0
+        : (closeRows.$2 - closeRows.$1) / EditorMetrics.codeCloseRow;
     final panel = RRect.fromLTRBR(
       left - _codeInset,
-      top,
+      openRows == null
+          ? top
+          : rowY(openRows.$1) + EditorMetrics.codeGapBefore * openScale,
       right + _codeInset,
-      closeRows == null ? bottom - _rowGap : rowY(closeRows.$1) + 10 - _rowGap,
+      closeRows == null
+          ? bottom
+          : rowY(closeRows.$1) + EditorMetrics.codePanelBottom * closeScale,
       const Radius.circular(10),
     );
     canvas
@@ -441,11 +457,9 @@ class RenderMarkdownBackdrop extends RenderBox {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1,
       );
-    final open = fences?.open;
-    if (open == null || !concealment.hides(open.start, open.end)) return;
-    final header = _rows(field, open.start, open.end);
-    if (header == null) return;
-    final y = rowY(header.$2).roundToDouble() - _rowGap + 0.5;
+    if (openRows == null) return;
+    final y = (panel.top + EditorMetrics.codeHeader * openScale)
+        .roundToDouble();
     canvas.drawLine(
       Offset(panel.left, y),
       Offset(panel.right, y),
@@ -550,7 +564,7 @@ class RenderMarkdownBackdrop extends RenderBox {
     // Paper's table: rows ruled across with no lines between columns, the
     // header on a panel, all in a rounded edge.
     final top = bands.first.top;
-    final bottom = bands.last.bottom - _rowGap;
+    final bottom = bands.last.bottom;
     final width = geometry.width;
     final grid = Rect.fromLTRB(left, top, left + width, bottom);
     final outline = RRect.fromRectAndRadius(grid, const Radius.circular(10));
