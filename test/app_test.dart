@@ -4289,11 +4289,10 @@ void main() {
       const commandOrder = [
         'checklist',
         'bulletedList',
-        'image',
-        'voiceNote',
-        'table',
-        'divider',
-        'video',
+        'numberedList',
+        'heading1',
+        'heading2',
+        'heading3',
       ];
       final commandTops = [
         for (final command in commandOrder)
@@ -4308,7 +4307,13 @@ void main() {
         const Offset(0, -260),
       );
       await tester.pumpAndSettle();
-      const finalCommandOrder = ['video', 'numberedList', 'quote', 'codeBlock'];
+      const finalCommandOrder = [
+        'quote',
+        'codeBlock',
+        'formula',
+        'table',
+        'divider',
+      ];
       final finalCommandTops = [
         for (final command in finalCommandOrder)
           tester.getTopLeft(find.byKey(ValueKey('slash-command-$command'))).dy,
@@ -4319,7 +4324,18 @@ void main() {
           greaterThan(finalCommandTops[index - 1]),
         );
       }
-      expect(find.byKey(const ValueKey('slash-command-heading')), findsNothing);
+      // The inserts are one row of icons under the list, and a drawing is
+      // a note of its own rather than something to insert.
+      final inserts = tester.getRect(
+        find.byKey(const ValueKey('slash-command-inserts')),
+      );
+      for (final command in ['image', 'video', 'voiceNote']) {
+        final icon = tester.getRect(
+          find.byKey(ValueKey('slash-command-$command')),
+        );
+        expect(icon.center.dy, closeTo(inserts.center.dy, 1));
+      }
+      expect(find.byKey(const ValueKey('slash-command-drawing')), findsNothing);
     });
 
     testWidgets('sits the phone footer on the bottom edge of the screen', (

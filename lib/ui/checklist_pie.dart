@@ -14,6 +14,7 @@ class ChecklistPie extends StatelessWidget {
     required this.total,
     required this.fill,
     required this.check,
+    this.size = 14,
   });
 
   final int done;
@@ -24,7 +25,9 @@ class ChecklistPie extends StatelessWidget {
   final Color fill;
   final Color check;
 
-  static const double size = 14;
+  /// Its width and height. Drawn at 14; anything else scales the ring, the
+  /// wedge's inset and the check with it.
+  final double size;
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -34,7 +37,7 @@ class ChecklistPie extends StatelessWidget {
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
       builder: (context, share, _) => CustomPaint(
-        size: const Size.square(size),
+        size: Size.square(size),
         painter: _PiePainter(
           share,
           track: context.palette.switchTrackOff,
@@ -63,7 +66,7 @@ class _PiePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
     final radius = size.shortestSide / 2;
-    final scale = size.shortestSide / ChecklistPie.size;
+    final scale = size.shortestSide / 14;
     if (share >= 1) {
       canvas.drawCircle(center, radius, Paint()..color = fill);
       canvas.drawPath(

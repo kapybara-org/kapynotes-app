@@ -886,17 +886,40 @@ void main() {
       expect(controllerOf(tester).text, '☐ ');
     });
 
-    testWidgets('leaves headings to the text-style control', (tester) async {
+    testWidgets('turns the line into a heading of the chosen level', (
+      tester,
+    ) async {
       await tester.pumpWidget(harness('', autofocus: true));
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), '/heading');
       await tester.pump();
       await tester.pump();
+      for (final level in [1, 2, 3]) {
+        expect(
+          find.byKey(ValueKey('slash-command-heading$level')),
+          findsOneWidget,
+        );
+      }
+      await tester.tap(find.byKey(const ValueKey('slash-command-heading2')));
+      await tester.pumpAndSettle();
+      expect(controllerOf(tester).text, '## ');
+    });
 
-      expect(find.byKey(const ValueKey('slash-command-heading')), findsNothing);
-      expect(find.byKey(const ValueKey('slash-command-empty')), findsOneWidget);
-      expect(controllerOf(tester).text, '/heading');
+    testWidgets('a formula opens as display math around the caret', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness('', autofocus: true));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '/math');
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('math'), findsOneWidget, reason: 'the alias it found');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(controllerOf(tester).text, '\$\$\n\n\$\$');
+      expect(controllerOf(tester).selection.baseOffset, 3);
     });
 
     testWidgets('table insertion is one undoable editor change', (

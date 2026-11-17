@@ -4,13 +4,15 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
+import '../../core/platform.dart';
 import '../floating_surface.dart';
+import '../keycap.dart';
 import 'slash_commands.dart';
 
 enum _CommandGroup {
-  insert('Insert'),
   write('Write'),
-  blocks('Blocks');
+  blocks('Blocks'),
+  insert('Insert');
 
   const _CommandGroup(this.label);
 
@@ -25,6 +27,7 @@ class _SlashCommandDefinition {
     required this.description,
     required this.icon,
     this.trigger,
+    this.triggerNeedsMarkdown = false,
     this.aliases = const [],
     this.requiresMarkdown = false,
   });
@@ -41,55 +44,37 @@ class _SlashCommandDefinition {
   /// What typed at the start of a line does the same, shown where the
   /// command has no key of its own.
   final String? trigger;
+
+  /// Whether [trigger] only works with Markdown on, as a heading's "#" does.
+  final bool triggerNeedsMarkdown;
+
+  /// Everyday words for the command, found by what is typed after "/".
   final List<String> aliases;
   final bool requiresMarkdown;
 
-  String get searchText =>
-      '$label ${group.label} ${aliases.join(' ')}'.toLowerCase();
+  /// Whether every typed word starts a word of the name or an alias.
+  bool matches(List<String> query) {
+    final words = [...label.toLowerCase().split(' '), ...aliases];
+    return query.every((typed) => words.any((word) => word.startsWith(typed)));
+  }
+
+  /// The alias [query] found the command by, shown beside the name when the
+  /// name alone would not have matched.
+  String? matchedAlias(List<String> query) {
+    final named = label.toLowerCase().split(' ');
+    if (query.every((typed) => named.any((word) => word.startsWith(typed)))) {
+      return null;
+    }
+    for (final alias in aliases) {
+      if (query.any(alias.startsWith)) return alias;
+    }
+    return null;
+  }
 }
 
-/// In the order the menu lists them, a group at a time.
+/// In the order the menu lists them: Write, then Blocks, then the inserts
+/// in the icon row at the bottom.
 const _definitions = [
-  _SlashCommandDefinition(
-    type: SlashCommandType.image,
-    group: _CommandGroup.insert,
-    label: 'Image',
-    description: 'Take or choose a picture',
-    icon: KapyIcons.imageOutlined,
-    aliases: ['photo', 'picture', 'camera'],
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.video,
-    group: _CommandGroup.insert,
-    label: 'Video',
-    description: 'Choose a video',
-    icon: KapyIcons.videoOutlined,
-    aliases: ['movie'],
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.voiceNote,
-    group: _CommandGroup.insert,
-    label: 'Voice note',
-    description: 'Record audio here',
-    icon: KapyIcons.micRounded,
-    aliases: ['voice', 'audio', 'record'],
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.drawing,
-    group: _CommandGroup.insert,
-    label: 'Drawing',
-    description: 'Start a new drawing',
-    icon: KapyIcons.penRounded,
-    aliases: ['sketch', 'draw', 'pen'],
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.file,
-    group: _CommandGroup.insert,
-    label: 'File',
-    description: 'Attach any file to open on your other devices',
-    icon: KapyIcons.attachFileRounded,
-    aliases: ['attach', 'attachment', 'upload', 'document', 'pdf'],
-  ),
   _SlashCommandDefinition(
     type: SlashCommandType.checklist,
     group: _CommandGroup.write,
@@ -106,7 +91,7 @@ const _definitions = [
     description: 'Start an unordered list',
     icon: KapyIcons.bulletedListRounded,
     trigger: '-',
-    aliases: ['bullet', 'unordered'],
+    aliases: ['bullet', 'list'],
   ),
   _SlashCommandDefinition(
     type: SlashCommandType.numberedList,
@@ -115,35 +100,46 @@ const _definitions = [
     description: 'Start an ordered list',
     icon: KapyIcons.numberedListRounded,
     trigger: '1.',
-    aliases: ['number', 'ordered'],
+    requiresMarkdown: true,
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.heading1,
+    group: _CommandGroup.write,
+    label: 'Heading 1',
+    description: 'A large section heading',
+    icon: KapyIcons.heading1Rounded,
+    trigger: '#',
+    triggerNeedsMarkdown: true,
+    aliases: ['title', 'h1'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.heading2,
+    group: _CommandGroup.write,
+    label: 'Heading 2',
+    description: 'A medium section heading',
+    icon: KapyIcons.heading2Rounded,
+    trigger: '##',
+    triggerNeedsMarkdown: true,
+    aliases: ['h2'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.heading3,
+    group: _CommandGroup.write,
+    label: 'Heading 3',
+    description: 'A small section heading',
+    icon: KapyIcons.heading3Rounded,
+    trigger: '###',
+    aliases: ['h3'],
     requiresMarkdown: true,
   ),
   _SlashCommandDefinition(
     type: SlashCommandType.quote,
-    group: _CommandGroup.write,
+    group: _CommandGroup.blocks,
     label: 'Quote',
     description: 'Set text apart as a quote',
     icon: KapyIcons.quoteRounded,
     trigger: '>',
-    aliases: ['blockquote'],
-    requiresMarkdown: true,
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.table,
-    group: _CommandGroup.blocks,
-    label: 'Table',
-    description: 'Simple rows and columns',
-    icon: KapyIcons.tableRounded,
-    aliases: ['grid', 'rows', 'columns'],
-  ),
-  _SlashCommandDefinition(
-    type: SlashCommandType.divider,
-    group: _CommandGroup.blocks,
-    label: 'Divider',
-    description: 'Separate sections with a line',
-    icon: KapyIcons.dividerRounded,
-    trigger: '---',
-    aliases: ['rule', 'separator', 'line'],
+    aliases: ['cite'],
     requiresMarkdown: true,
   ),
   _SlashCommandDefinition(
@@ -153,8 +149,68 @@ const _definitions = [
     description: 'A fenced block of code',
     icon: KapyIcons.codeRounded,
     trigger: '```',
-    aliases: ['code', 'snippet'],
     requiresMarkdown: true,
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.formula,
+    group: _CommandGroup.blocks,
+    label: 'Formula',
+    description: 'Math set apart on lines of its own',
+    icon: KapyIcons.formulaRounded,
+    trigger: r'$$',
+    aliases: ['math', 'latex', 'equation'],
+    requiresMarkdown: true,
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.table,
+    group: _CommandGroup.blocks,
+    label: 'Table',
+    description: 'Simple rows and columns',
+    icon: KapyIcons.tableRounded,
+    trigger: '|',
+    aliases: ['grid'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.divider,
+    group: _CommandGroup.blocks,
+    label: 'Divider',
+    description: 'Separate sections with a line',
+    icon: KapyIcons.dividerRounded,
+    trigger: '---',
+    aliases: ['line', 'hr'],
+    requiresMarkdown: true,
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.image,
+    group: _CommandGroup.insert,
+    label: 'Image',
+    description: 'Take or choose a picture',
+    icon: KapyIcons.imageOutlined,
+    aliases: ['photo', 'picture', 'img'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.video,
+    group: _CommandGroup.insert,
+    label: 'Video',
+    description: 'Choose a video',
+    icon: KapyIcons.videoOutlined,
+    aliases: ['movie', 'clip'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.voiceNote,
+    group: _CommandGroup.insert,
+    label: 'Voice note',
+    description: 'Record audio here',
+    icon: KapyIcons.micRounded,
+    aliases: ['mic', 'record', 'audio'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.file,
+    group: _CommandGroup.insert,
+    label: 'File',
+    description: 'Attach any file to open on your other devices',
+    icon: KapyIcons.attachFileRounded,
+    aliases: ['attach', 'pdf'],
   ),
 ];
 
@@ -169,6 +225,7 @@ class SlashCommandMenuController extends ChangeNotifier {
   String _query = '';
   Set<SlashCommandType> _available = const {};
   Map<SlashCommandType, String> _hints = const {};
+  SlashCommandType? _last;
   bool _markdownEnabled = false;
   bool _choosingTable = false;
   int _selectedIndex = 0;
@@ -176,8 +233,19 @@ class SlashCommandMenuController extends ChangeNotifier {
   int _tableColumns = 2;
   ValueChanged<SlashCommandChoice>? _onSelected;
   ValueChanged<bool>? _onDismissed;
+  final _search = TextEditingController();
+  late final _searchFocus = FocusNode(
+    debugLabel: 'Commands search',
+    onKeyEvent: (node, event) =>
+        handleKeyEvent(event) ? KeyEventResult.handled : KeyEventResult.ignored,
+  );
+  bool _searching = false;
 
   bool get isVisible => _entry != null;
+
+  /// Whether the menu has its own search field, as it does from the "+",
+  /// and so holds the keyboard rather than the note.
+  bool get searching => _searching;
   Rect get anchor => _anchor;
   bool get markdownEnabled => _markdownEnabled;
   bool get choosingTable => _choosingTable;
@@ -185,19 +253,41 @@ class SlashCommandMenuController extends ChangeNotifier {
   int get tableRows => _tableRows;
   int get tableColumns => _tableColumns;
 
+  List<String> get _words => _query
+      .trim()
+      .toLowerCase()
+      .split(RegExp(r'\s+'))
+      .where((word) => word.isNotEmpty)
+      .toList(growable: false);
+
+  /// What is on offer for what is typed: the rows, in menu order, then the
+  /// inserts in the icon row.
   List<_SlashCommandDefinition> get _commands {
-    final available = _definitions.where(
-      (definition) => _available.contains(definition.type),
-    );
-    final words = _query
-        .trim()
-        .toLowerCase()
-        .split(RegExp(r'\s+'))
-        .where((word) => word.isNotEmpty);
-    if (words.isEmpty) return available.toList(growable: false);
-    return available
-        .where((definition) => words.every(definition.searchText.contains))
-        .toList(growable: false);
+    final words = _words;
+    return [
+      for (final definition in _definitions)
+        if (_available.contains(definition.type) && definition.matches(words))
+          definition,
+    ];
+  }
+
+  List<_SlashCommandDefinition> get _rows => [
+    for (final command in _commands)
+      if (command.group != _CommandGroup.insert) command,
+  ];
+
+  /// Where the highlight starts: on the command whose name begins with what
+  /// is typed, else the first match, and before anything is typed on the
+  /// command used last, so repeating it is "/" and Enter.
+  int _initialIndex() {
+    final commands = _commands;
+    final query = _query.trim().toLowerCase();
+    final index = query.isEmpty
+        ? commands.indexWhere((command) => command.type == _last)
+        : commands.indexWhere(
+            (command) => command.label.toLowerCase().startsWith(query),
+          );
+    return math.max(0, index);
   }
 
   void show(
@@ -207,23 +297,30 @@ class SlashCommandMenuController extends ChangeNotifier {
     required Set<SlashCommandType> available,
     required bool markdownEnabled,
     Map<SlashCommandType, String> hints = const {},
+    SlashCommandType? lastCommand,
+    bool search = false,
     required ValueChanged<SlashCommandChoice> onSelected,
     required ValueChanged<bool> onDismissed,
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
 
+    if (_entry == null) {
+      _searching = search;
+      _search.clear();
+    }
     final queryChanged = query != _query;
     _anchor = anchor;
     _query = query;
     _available = Set.unmodifiable(available);
     _hints = hints;
+    _last = lastCommand;
     _markdownEnabled = markdownEnabled;
     _onSelected = onSelected;
     _onDismissed = onDismissed;
-    if (queryChanged) {
+    if (queryChanged || _entry == null) {
       _choosingTable = false;
-      _selectedIndex = 0;
+      _selectedIndex = _initialIndex();
     }
     _clampSelection();
 
@@ -232,6 +329,12 @@ class SlashCommandMenuController extends ChangeNotifier {
         builder: (context) => _SlashCommandOverlay(controller: this),
       );
       overlay.insert(_entry!);
+      // The note keeps its focus until the field is there to take it.
+      if (_searching) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_searching) _searchFocus.requestFocus();
+        });
+      }
     }
     notifyListeners();
   }
@@ -242,9 +345,17 @@ class SlashCommandMenuController extends ChangeNotifier {
     dismissed?.call(userInitiated);
   }
 
+  void _searchChanged(String text) {
+    _query = text;
+    _choosingTable = false;
+    _selectedIndex = _initialIndex();
+    notifyListeners();
+  }
+
   void _remove() {
     _entry?.remove();
     _entry = null;
+    _searching = false;
     _choosingTable = false;
     _selectedIndex = 0;
     _onSelected = null;
@@ -343,13 +454,34 @@ class SlashCommandMenuController extends ChangeNotifier {
       return false;
     }
 
+    // Rows go up and down; past the last one is the icon row, which goes
+    // left and right.
     final visible = _commands;
-    if (key == LogicalKeyboardKey.arrowUp && visible.isNotEmpty) {
-      selectIndex((_selectedIndex - 1) % visible.length);
+    final rows = _rows.length;
+    final icons = visible.length - rows;
+    final onIcons = _selectedIndex >= rows;
+    if (key == LogicalKeyboardKey.arrowDown && visible.isNotEmpty) {
+      selectIndex(
+        onIcons || (_selectedIndex == rows - 1 && icons == 0)
+            ? 0
+            : _selectedIndex + 1,
+      );
       return true;
     }
-    if (key == LogicalKeyboardKey.arrowDown && visible.isNotEmpty) {
-      selectIndex((_selectedIndex + 1) % visible.length);
+    if (key == LogicalKeyboardKey.arrowUp && visible.isNotEmpty) {
+      selectIndex(switch (_selectedIndex) {
+        _ when onIcons => rows > 0 ? rows - 1 : _selectedIndex,
+        0 => icons > 0 ? rows : rows - 1,
+        final index => index - 1,
+      });
+      return true;
+    }
+    if (onIcons &&
+        icons > 0 &&
+        (key == LogicalKeyboardKey.arrowLeft ||
+            key == LogicalKeyboardKey.arrowRight)) {
+      final step = key == LogicalKeyboardKey.arrowRight ? 1 : -1;
+      selectIndex(rows + (_selectedIndex - rows + step) % icons);
       return true;
     }
     if ((key == LogicalKeyboardKey.enter ||
@@ -364,6 +496,8 @@ class SlashCommandMenuController extends ChangeNotifier {
   @override
   void dispose() {
     _remove();
+    _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 }
@@ -401,10 +535,10 @@ class _SlashCommandOverlayState extends State<_SlashCommandOverlay>
     if (!mounted || !_scroll.hasClients || widget.controller.choosingTable) {
       return;
     }
-    final top = _CommandList.rowTop(
-      widget.controller._commands,
-      widget.controller.selectedIndex,
-    );
+    final rows = widget.controller._rows;
+    final index = widget.controller.selectedIndex;
+    if (index >= rows.length) return;
+    final top = _CommandList.rowTop(rows, index);
     final bottom = top + _CommandList.rowHeight;
     final position = _scroll.position;
     if (top < position.pixels) {
@@ -456,11 +590,24 @@ class _SlashCommandOverlayState extends State<_SlashCommandOverlay>
                 scale: Tween(begin: 0.97, end: 1.0).animate(curve),
                 alignment: Alignment.topLeft,
                 child: ExcludeFocus(
+                  excluding: !widget.controller.searching,
                   child: FloatingSurface(
                     key: const ValueKey('slash-command-menu'),
                     padding: const EdgeInsets.all(6),
                     child: widget.controller.choosingTable
-                        ? _TableSizePicker(controller: widget.controller)
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Kept so the keyboard stays with the menu.
+                              if (widget.controller.searching)
+                                Offstage(
+                                  child: _SearchField(
+                                    controller: widget.controller,
+                                  ),
+                                ),
+                              _TableSizePicker(controller: widget.controller),
+                            ],
+                          )
                         : _CommandList(
                             controller: widget.controller,
                             scroll: _scroll,
@@ -482,17 +629,16 @@ class _CommandList extends StatelessWidget {
   final SlashCommandMenuController controller;
   final ScrollController scroll;
 
+  static const double width = 300;
   static const double rowHeight = 32;
-  static const double headerHeight = 26;
+  static const double headerHeight = 29;
 
-  /// Where row [index] of [commands] starts in the list, past the group
-  /// headers above it.
-  static double rowTop(List<_SlashCommandDefinition> commands, int index) {
+  /// Where row [index] of [rows] starts in the list, past the group headers
+  /// above it.
+  static double rowTop(List<_SlashCommandDefinition> rows, int index) {
     var top = 0.0;
-    for (var i = 0; i <= index && i < commands.length; i++) {
-      if (i == 0 || commands[i - 1].group != commands[i].group) {
-        top += headerHeight;
-      }
+    for (var i = 0; i <= index && i < rows.length; i++) {
+      if (i == 0 || rows[i - 1].group != rows[i].group) top += headerHeight;
       if (i < index) top += rowHeight;
     }
     return top;
@@ -502,76 +648,188 @@ class _CommandList extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final commands = controller._commands;
-    final heading = TextStyle(
-      color: palette.textTertiary,
-      fontSize: AppTypeScale.small,
-      fontWeight: FontWeight.w600,
-    );
-    if (commands.isEmpty) {
-      return SizedBox(
-        width: 260,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
-          child: Text(
-            'No matching commands',
-            key: const ValueKey('slash-command-empty'),
-            style: TextStyle(
-              color: palette.textSecondary,
-              fontSize: AppTypeScale.control,
-            ),
-          ),
-        ),
-      );
-    }
+    final rows = controller._rows;
+    final words = controller._words;
+    String? hint(_SlashCommandDefinition command) =>
+        controller._hints[command.type] ??
+        (command.triggerNeedsMarkdown && !controller.markdownEnabled
+            ? null
+            : command.trigger);
+    String? note(_SlashCommandDefinition command) => words.isEmpty
+        ? (command.type == controller._last ? 'last used' : null)
+        : command.matchedAlias(words);
     return SizedBox(
-      width: 260,
-      child: LayoutBuilder(
-        builder: (context, constraints) => ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: math.min(400.0, constraints.maxHeight),
-          ),
-          child: ListView(
-            key: const ValueKey('slash-command-list'),
-            controller: scroll,
-            padding: EdgeInsets.zero,
-            shrinkWrap: true,
-            children: [
-              for (final (index, command) in commands.indexed) ...[
-                if (index == 0 || commands[index - 1].group != command.group)
-                  Container(
-                    height: headerHeight,
-                    alignment: Alignment.bottomLeft,
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 5),
-                    child: Semantics(
-                      header: true,
-                      child: Text(command.group.label, style: heading),
-                    ),
-                  ),
-                _CommandRow(
-                  key: ValueKey('slash-command-${command.type.name}'),
-                  command: command,
-                  hint: controller._hints[command.type] ?? command.trigger,
-                  selected: index == controller.selectedIndex,
-                  markdownEnabled: controller.markdownEnabled,
-                  onHover: () => controller.selectIndex(index),
-                  onPressed: () => controller.activateIndex(index),
+      width: width,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (controller.searching) _SearchField(controller: controller),
+          if (commands.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
+              child: Text(
+                'No matching commands',
+                key: const ValueKey('slash-command-empty'),
+                style: TextStyle(
+                  color: palette.textSecondary,
+                  fontSize: AppTypeScale.control,
                 ),
-              ],
-            ],
-          ),
-        ),
+              ),
+            ),
+          if (rows.isNotEmpty)
+            Flexible(
+              child: ListView(
+                key: const ValueKey('slash-command-list'),
+                controller: scroll,
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                children: [
+                  for (final (index, command) in rows.indexed) ...[
+                    if (index == 0 || rows[index - 1].group != command.group)
+                      Container(
+                        height: headerHeight,
+                        alignment: Alignment.bottomLeft,
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 5),
+                        child: Semantics(
+                          header: true,
+                          label: command.group.label,
+                          excludeSemantics: true,
+                          child: Text(
+                            command.group.label.toUpperCase(),
+                            style: TextStyle(
+                              color: palette.textTertiary,
+                              fontSize: AppTypeScale.badge,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.44,
+                            ),
+                          ),
+                        ),
+                      ),
+                    _CommandRow(
+                      key: ValueKey('slash-command-${command.type.name}'),
+                      command: command,
+                      hint: hint(command),
+                      note: note(command),
+                      selected: index == controller.selectedIndex,
+                      markdownEnabled: controller.markdownEnabled,
+                      onHover: () => controller.selectIndex(index),
+                      onPressed: () => controller.activateIndex(index),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          if (commands.length > rows.length)
+            Container(
+              key: const ValueKey('slash-command-inserts'),
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+              decoration: rows.isEmpty
+                  ? null
+                  : BoxDecoration(
+                      border: Border(top: BorderSide(color: palette.separator)),
+                    ),
+              child: Row(
+                spacing: 4,
+                children: [
+                  for (final (offset, command)
+                      in commands.skip(rows.length).indexed)
+                    Expanded(
+                      child: _InsertButton(
+                        key: ValueKey('slash-command-${command.type.name}'),
+                        command: command,
+                        hint: hint(command),
+                        selected:
+                            rows.length + offset == controller.selectedIndex,
+                        onHover: () =>
+                            controller.selectIndex(rows.length + offset),
+                        onPressed: () =>
+                            controller.activateIndex(rows.length + offset),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          if (AppPlatform.isDesktop)
+            _KeyHints(
+              alongIcons:
+                  commands.isNotEmpty &&
+                  controller.selectedIndex >= rows.length,
+            ),
+        ],
       ),
     );
   }
 }
 
-/// One command on one line: its icon and name, and on the right the key
-/// that does the same, or what typed at the start of a line does.
+/// What the "+" opens Commands with: the caret stays in the note, so the
+/// search has a field of its own.
+class _SearchField extends StatelessWidget {
+  const _SearchField({required this.controller});
+
+  final SlashCommandMenuController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final style = TextStyle(
+      color: palette.textPrimary,
+      fontSize: AppTypeScale.body,
+      fontWeight: FontWeight.w500,
+    );
+    return Container(
+      height: 36,
+      margin: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: palette.separator)),
+      ),
+      child: Row(
+        children: [
+          KapyIcon(
+            KapyIcons.searchRounded,
+            size: 15,
+            color: palette.textTertiary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Material(
+              type: MaterialType.transparency,
+              child: TextField(
+                key: const ValueKey('slash-command-search'),
+                controller: controller._search,
+                focusNode: controller._searchFocus,
+                style: style,
+                cursorHeight: 16,
+                decoration: InputDecoration(
+                  hintText: 'Search commands',
+                  hintStyle: style.copyWith(color: palette.textTertiary),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                onChanged: controller._searchChanged,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One command on one line: its icon and name, a quiet note such as
+/// "last used", and on the right the key that does the same, or what typed
+/// at the start of a line does.
 class _CommandRow extends StatelessWidget {
   const _CommandRow({
     super.key,
     required this.command,
     required this.hint,
+    required this.note,
     required this.selected,
     required this.markdownEnabled,
     required this.onHover,
@@ -580,6 +838,7 @@ class _CommandRow extends StatelessWidget {
 
   final _SlashCommandDefinition command;
   final String? hint;
+  final String? note;
   final bool selected;
   final bool markdownEnabled;
   final VoidCallback onHover;
@@ -589,7 +848,13 @@ class _CommandRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final requiresMarkdown = command.requiresMarkdown && !markdownEnabled;
-    final hint = requiresMarkdown ? 'Markdown' : this.hint;
+    final hint = this.hint;
+    final note = this.note;
+    final quiet = TextStyle(
+      color: palette.textTertiary,
+      fontSize: AppTypeScale.caption,
+      fontWeight: FontWeight.w500,
+    );
     return Semantics(
       button: true,
       selected: selected,
@@ -602,15 +867,16 @@ class _CommandRow extends StatelessWidget {
         cursor: SystemMouseCursors.click,
         child: Material(
           color: selected ? palette.selectedBackground : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(8),
           child: InkWell(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(8),
             onTap: onPressed,
             child: SizedBox(
               height: _CommandList.rowHeight,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(
+                  spacing: 10,
                   children: [
                     KapyIcon(
                       command.icon,
@@ -619,37 +885,163 @@ class _CommandRow extends StatelessWidget {
                           ? palette.textPrimary
                           : palette.textSecondary,
                     ),
-                    const SizedBox(width: 10),
                     Expanded(
-                      child: Text(
-                        command.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: palette.textPrimary,
-                          fontSize: AppTypeScale.control,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      child: Row(
+                        spacing: 10,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              command.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: palette.textPrimary,
+                                fontSize: AppTypeScale.body,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          if (note != null)
+                            Text(note, maxLines: 1, style: quiet),
+                        ],
                       ),
                     ),
-                    if (hint != null)
-                      Text(
-                        hint,
-                        maxLines: 1,
-                        style: TextStyle(
-                          color: palette.textTertiary,
-                          fontFamily: requiresMarkdown ? null : AppFonts.mono,
-                          fontFamilyFallback: requiresMarkdown
-                              ? null
-                              : AppFonts.monoFallback,
-                          fontSize: AppTypeScale.small,
-                        ),
-                      ),
+                    if (requiresMarkdown)
+                      Text('Markdown', maxLines: 1, style: quiet)
+                    else if (hint != null)
+                      Keycap(hint),
                   ],
                 ),
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// An insert in the row at the bottom of the menu: its icon, with its name
+/// and key in a tooltip that also shows when the keyboard reaches it.
+class _InsertButton extends StatefulWidget {
+  const _InsertButton({
+    super.key,
+    required this.command,
+    required this.hint,
+    required this.selected,
+    required this.onHover,
+    required this.onPressed,
+  });
+
+  final _SlashCommandDefinition command;
+  final String? hint;
+  final bool selected;
+  final VoidCallback onHover;
+  final VoidCallback onPressed;
+
+  @override
+  State<_InsertButton> createState() => _InsertButtonState();
+}
+
+class _InsertButtonState extends State<_InsertButton> {
+  final _tooltip = GlobalKey<TooltipState>();
+
+  @override
+  void didUpdateWidget(_InsertButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selected && !oldWidget.selected) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _tooltip.currentState?.ensureTooltipVisible(),
+      );
+    } else if (!widget.selected && oldWidget.selected) {
+      Tooltip.dismissAllToolTips();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final command = widget.command;
+    final hint = widget.hint;
+    return Semantics(
+      button: true,
+      selected: widget.selected,
+      label: command.label,
+      hint: command.description,
+      excludeSemantics: true,
+      onTap: widget.onPressed,
+      child: Tooltip(
+        key: _tooltip,
+        message: hint == null ? command.label : '${command.label}  $hint',
+        child: MouseRegion(
+          onEnter: (_) => widget.onHover(),
+          cursor: SystemMouseCursors.click,
+          child: Material(
+            color: widget.selected
+                ? palette.selectedBackground
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: widget.onPressed,
+              child: SizedBox(
+                height: 34,
+                child: Center(
+                  child: KapyIcon(
+                    command.icon,
+                    size: 17,
+                    color: widget.selected
+                        ? palette.textPrimary
+                        : palette.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The keys that work the menu, under it on a desktop: up and down through
+/// the rows, or left and right [alongIcons].
+class _KeyHints extends StatelessWidget {
+  const _KeyHints({required this.alongIcons});
+
+  final bool alongIcons;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final style = TextStyle(
+      color: palette.textTertiary,
+      fontSize: AppTypeScale.caption,
+      fontWeight: FontWeight.w500,
+    );
+    return ExcludeSemantics(
+      child: Container(
+        key: const ValueKey('slash-command-keys'),
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: palette.separator)),
+        ),
+        child: Row(
+          spacing: 6,
+          children: [
+            for (final (key, action) in [
+              (alongIcons ? '←→' : '↑↓', 'move'),
+              ('↵', 'insert'),
+              ('esc', 'close'),
+            ]) ...[
+              Keycap(key),
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Text(action, style: style),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -810,7 +1202,7 @@ class _SlashMenuPosition extends SingleChildLayoutDelegate {
     );
     return BoxConstraints.loose(Size(width, height)).copyWith(
       maxWidth: math.min(348.0, width),
-      maxHeight: math.min(440.0, height),
+      maxHeight: math.min(540.0, height),
     );
   }
 

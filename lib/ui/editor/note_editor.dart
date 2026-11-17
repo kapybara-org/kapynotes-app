@@ -35,6 +35,7 @@ import '../../data/daily_separator.dart';
 import '../../data/attachment_limits.dart';
 import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
+import '../compact_icon_button.dart';
 import '../notebook_paper.dart';
 import '../celebrate.dart';
 import '../kapy_cursor_peek.dart';
@@ -145,7 +146,10 @@ class NoteEditor extends StatefulWidget {
     this.onOpenVoiceNote,
     this.recording,
     this.onRecordVoice,
-    this.onNewDrawing,
+    this.slashHint = false,
+    this.onSlashCommandUsed,
+    this.lastSlashCommand,
+    this.onSlashCommandChosen,
     this.voiceActionBusy = false,
     this.clipboard = const ImageClipboard(),
     this.imageAcquirer,
@@ -223,8 +227,18 @@ class NoteEditor extends StatefulWidget {
   /// Starts a recording, or stops the one running.
   final VoidCallback? onRecordVoice;
 
-  /// Starts a new drawing note, from the insert bar's Drawing.
-  final VoidCallback? onNewDrawing;
+  /// Whether an empty line holding the caret says to type "/" for commands.
+  /// Off once someone has used it a few times.
+  final bool slashHint;
+
+  /// Each time "/" typed at the start of a line opens Commands.
+  final VoidCallback? onSlashCommandUsed;
+
+  /// The command chosen last, highlighted when Commands opens.
+  final SlashCommandType? lastSlashCommand;
+
+  /// Each time a command is chosen from Commands.
+  final ValueChanged<SlashCommandType>? onSlashCommandChosen;
   final bool voiceActionBusy;
 
   /// Where a pasted picture comes from. Swapped in tests, which have no
@@ -403,6 +417,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   late HighlightingController _controller;
   final GlobalKey _textFieldKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
+
+  /// The empty line under the pointer, which shows its "+".
+  final _hoverLine = ValueNotifier<int?>(null);
+  final _lineMarks = ValueNotifier<List<_LineMark>>(const []);
+  bool _lineMarksScheduled = false;
+  late final _lineMarkSources = Listenable.merge([
+    _controller,
+    _focusNode,
+    _hoverLine,
+    _slashCommandMenu,
+  ]);
+
   late final FocusNode _focusNode = FocusNode(
     debugLabel: 'note-editor:${widget.noteId}',
   );
@@ -603,6 +629,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         (_) => resumeAt == null ? focusAtEnd() : focusHere(),
       );
     }
+    _lineMarkSources.addListener(_scheduleLineMarks);
   }
 
   @override
@@ -694,6 +721,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _lineMarkSources.removeListener(_scheduleLineMarks);
+    _lineMarks.dispose();
+    _hoverLine.dispose();
     LinkPopover.hide();
     KeywordTooltip.hide();
     _slashCommandMenu.dispose();
@@ -3060,8 +3090,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     SlashCommandType.divider,
     if (widget.images != null && !_videoActionBusy) SlashCommandType.video,
     if (widget.images != null && !_fileActionBusy) SlashCommandType.file,
-    if (widget.onNewDrawing != null) SlashCommandType.drawing,
     SlashCommandType.numberedList,
+    SlashCommandType.heading1,
+    SlashCommandType.heading2,
+    SlashCommandType.heading3,
+    SlashCommandType.formula,
     SlashCommandType.quote,
     SlashCommandType.codeBlock,
   };
@@ -3076,7 +3109,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   void _syncSlashCommandMenu() {
-    if (widget.readOnly || !_focusNode.hasFocus) {
+    if (widget.readOnly ||
+        (!_focusNode.hasFocus && !_slashCommandMenu.searching)) {
       _manualSlashMenuValue = null;
       _slashCommandMenu.hide();
       return;
@@ -3109,6 +3143,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _slashCommandMenu.hide();
       return;
     }
+    if (!_slashCommandMenu.isVisible) widget.onSlashCommandUsed?.call();
     _slashCommandRange = invocation.range;
     _slashCommandWasTyped = true;
     _manualSlashMenuValue = null;
@@ -3127,7 +3162,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
-  void _showSlashCommandMenu({required Rect anchor, required String query}) {
+  void _showSlashCommandMenu({
+    required Rect anchor,
+    required String query,
+    bool search = false,
+  }) {
     ContextMenuController.removeAny();
     LinkPopover.hide();
     _clearKeywordTooltip();
@@ -3141,14 +3180,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         for (final (command, action) in const [
           (SlashCommandType.image, ShortcutAction.insertImage),
           (SlashCommandType.voiceNote, ShortcutAction.recordVoiceNote),
-          (SlashCommandType.drawing, ShortcutAction.newDrawing),
+          (SlashCommandType.video, ShortcutAction.insertVideo),
+          (SlashCommandType.file, ShortcutAction.insertFile),
           (SlashCommandType.checklist, ShortcutAction.formatChecklist),
           (SlashCommandType.bulletedList, ShortcutAction.formatBullets),
         ])
           if (widget.shortcuts.bindingFor(action) case final binding?)
             command: binding.displayLabel,
       },
-      onSelected: (choice) => unawaited(_runSlashCommand(choice)),
+      lastCommand: widget.lastSlashCommand,
+      search: search,
+      onSelected: (choice) {
+        widget.onSlashCommandChosen?.call(choice.type);
+        unawaited(_runSlashCommand(choice));
+      },
       onDismissed: _slashCommandMenuDismissed,
     );
   }
@@ -3156,7 +3201,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// The touch footer's `/` opens the same menu without putting a slash in
   /// the note. A tap-opened popup gives the screen to its choices, so it puts
   /// the software keyboard away until a choice returns to the editor.
-  void _showInsertMenu() {
+  void _showInsertMenu({bool search = false}) {
     if (widget.readOnly) return;
     _dismissedSlashStart = null;
     _manualSlashMenuValue = null;
@@ -3172,7 +3217,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _slashCommandRange = TextRange.collapsed(caret);
       _slashCommandWasTyped = false;
       _manualSlashMenuValue = _controller.value;
-      _showSlashCommandMenu(anchor: anchor, query: '');
+      _showSlashCommandMenu(anchor: anchor, query: '', search: search);
     });
     // Off a phone nothing else changes, so nothing else would bring the
     // frame the menu waits for.
@@ -3182,6 +3227,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _slashCommandMenuDismissed(bool userInitiated) {
     if (userInitiated && _slashCommandWasTyped) {
       _dismissedSlashStart = _slashCommandRange?.start;
+    }
+    // Closing the menu the "+" opened gives the keyboard back to the note.
+    if (userInitiated && !_slashCommandWasTyped && !AppPlatform.isMobile) {
+      _focusNode.requestFocus();
     }
     _slashCommandRange = null;
     _slashCommandWasTyped = false;
@@ -3194,7 +3243,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     SlashCommandType.numberedList ||
     SlashCommandType.quote ||
     SlashCommandType.divider ||
-    SlashCommandType.codeBlock => true,
+    SlashCommandType.codeBlock ||
+    SlashCommandType.heading3 ||
+    SlashCommandType.formula => true,
     _ => false,
   };
 
@@ -3205,6 +3256,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         SlashCommandType.quote => 'Quotes',
         SlashCommandType.divider => 'Dividers',
         SlashCommandType.codeBlock => 'Code blocks',
+        SlashCommandType.heading3 => 'Third-level headings',
+        SlashCommandType.formula => 'Formulas',
         _ => 'This command',
       };
 
@@ -3256,6 +3309,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _slashCommandRange = null;
     _slashCommandWasTyped = false;
     _manualSlashMenuValue = null;
+    if (!AppPlatform.isMobile) _focusNode.requestFocus();
     if (range == null ||
         !range.isValid ||
         range.start < 0 ||
@@ -3376,9 +3430,34 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         if (typed) _consumeSlashCommand(range);
         widget.onRecordVoice?.call();
         break;
-      case SlashCommandType.drawing:
+      case SlashCommandType.formula:
+        _replaceCommandValue(
+          replaceWithSlashCommandBlock(
+            _controller.value,
+            range,
+            '\$\$\n\n\$\$',
+            selectionInBlock: const TextSelection.collapsed(offset: 3),
+          ),
+        );
+        break;
+      case SlashCommandType.heading1 ||
+          SlashCommandType.heading2 ||
+          SlashCommandType.heading3:
         if (typed) _consumeSlashCommand(range);
-        widget.onNewDrawing?.call();
+        final level = switch (choice.type) {
+          SlashCommandType.heading1 => 1,
+          SlashCommandType.heading2 => 2,
+          _ => 3,
+        };
+        if (markdown) {
+          _applyMarkdownEdit(applyMarkdownHeading(_controller.value, level));
+        } else {
+          _applyParagraphStyle(
+            level == 1
+                ? NoteParagraphStyle.heading
+                : NoteParagraphStyle.subtitle,
+          );
+        }
         break;
     }
   }
@@ -3888,7 +3967,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // Nothing left to raise a keyboard for. A retry still in flight would
     // otherwise put one up over a note nobody is writing in.
     _keyboardRetryTimer?.cancel();
-    _slashCommandMenu.hide();
+    // The menu the "+" opened holds the keyboard in its own search.
+    if (!_slashCommandMenu.searching) _slashCommandMenu.hide();
     _kapyPeekIdleTimer?.cancel();
     _clearKeywordTooltip();
     _kapyPeekIdleTimer = null;
@@ -5939,6 +6019,140 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
+  /// The faint "+" beside an empty line, the caret's or the pointer's, that
+  /// opens Commands there, and on the caret's empty line a hint saying what
+  /// "/" does.
+  Widget _emptyLineMarks(
+    EdgeInsets padding,
+    TextStyle style,
+    StrutStyle strut,
+    double rowHeight,
+  ) {
+    _scheduleLineMarks();
+    return ListenableBuilder(
+      listenable: Listenable.merge([_lineMarks, _scrollController]),
+      builder: (context, _) {
+        final y =
+            padding.top -
+            (_scrollController.hasClients ? _scrollController.offset : 0);
+        final palette = context.palette;
+        return Stack(
+          children: [
+            for (final mark in _lineMarks.value) ...[
+              Positioned(
+                left: padding.left - _lineCommandsExtent - 12,
+                top: y + mark.middle - _lineCommandsExtent / 2,
+                child: Semantics(
+                  button: true,
+                  label: 'Commands',
+                  onTap: () => _openCommandsAt(mark.line),
+                  excludeSemantics: true,
+                  child: ExcludeFocus(
+                    child: CompactIconButton(
+                      key: const ValueKey('line-commands'),
+                      tooltip: 'Commands',
+                      extent: _lineCommandsExtent,
+                      selected: mark.hovered,
+                      foregroundColor: mark.hovered
+                          ? palette.textPrimary
+                          : palette.lineCommand,
+                      onPressed: () => _openCommandsAt(mark.line),
+                      icon: KapyIcon(KapyIcons.addRounded, size: 16),
+                    ),
+                  ),
+                ),
+              ),
+              if (mark.caret && widget.slashHint)
+                Positioned(
+                  left: padding.left,
+                  top: y + mark.middle - rowHeight / 2,
+                  height: rowHeight,
+                  child: IgnorePointer(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Type / for commands',
+                        key: const ValueKey('slash-hint'),
+                        style: style.copyWith(color: palette.writingHint),
+                        strutStyle: strut,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  /// Measures the empty lines that get a "+" once the field has laid out,
+  /// since a line's place is only known then.
+  void _scheduleLineMarks() {
+    if (_lineMarksScheduled) return;
+    _lineMarksScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _lineMarksScheduled = false;
+      if (!mounted) return;
+      final editable = _fieldEditable();
+      final selection = _controller.selection;
+      final caretLine =
+          _focusNode.hasFocus &&
+              selection.isValid &&
+              selection.isCollapsed &&
+              !_slashCommandMenu.isVisible
+          ? _emptyLineAt(selection.baseOffset)
+          : null;
+      final hoverLine = _hoverLine.value;
+      final marks = editable == null || !editable.hasSize || _isEmpty
+          ? const <_LineMark>[]
+          : [
+              for (final line in {?caretLine, ?hoverLine})
+                (
+                  line: line,
+                  middle: editable
+                      .getLocalRectForCaret(TextPosition(offset: line))
+                      .center
+                      .dy,
+                  caret: line == caretLine,
+                  hovered: line == hoverLine,
+                ),
+            ];
+      if (!listEquals(marks, _lineMarks.value)) _lineMarks.value = marks;
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  static const double _lineCommandsExtent = 22;
+
+  /// Where the line holding [offset] starts, when there is nothing on it.
+  int? _emptyLineAt(int offset) {
+    final text = _controller.text;
+    if (offset < 0 || offset > text.length) return null;
+    final start = offset == 0 ? 0 : text.lastIndexOf('\n', offset - 1) + 1;
+    final end = text.indexOf('\n', start);
+    return (end < 0 ? text.length : end) == start ? start : null;
+  }
+
+  /// The empty line under the pointer at [global], if there is one.
+  int? _emptyLineUnder(Offset global, double rowHeight) {
+    final editable = _fieldEditable();
+    if (editable == null || !editable.hasSize) return null;
+    final line = _emptyLineAt(editable.getPositionForPoint(global).offset);
+    if (line == null) return null;
+    final middle = editable.localToGlobal(
+      editable.getLocalRectForCaret(TextPosition(offset: line)).center,
+    );
+    return (global.dy - middle.dy).abs() <= rowHeight / 2 ? line : null;
+  }
+
+  void _openCommandsAt(int line) {
+    _hoverLine.value = null;
+    _controller.selection = TextSelection.collapsed(offset: line);
+    _focusNode.requestFocus();
+    _showInsertMenu(search: !AppPlatform.isMobile);
+  }
+
   Map<int, NoteImageSpan> _tableRowSpacers({
     required MarkdownAnalysis? markdown,
     required double rowHeight,
@@ -6347,98 +6561,119 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                         children: [
                           SizedBox(
                             width: textPaneWidth,
-                            child: NotebookPaper(
-                              style: widget.paperStyle,
-                              lineHeight: offsets.lineHeight,
-                              topInset:
-                                  padding.top +
-                                  (title == null || offsets.tops.length < 2
-                                      ? 0
-                                      : offsets.tops[1]),
-                              scroll: _scrollController,
-                              child: Stack(
-                                children: [
-                                  if (_isEmpty)
-                                    _Placeholder(
-                                      padding: padding,
-                                      style: textStyle,
-                                      strut: strut,
-                                      writingFont: widget.writingFont,
-                                    ),
-                                  // A note with a table always needs it, even on
-                                  // a device with markdown switched off. A plain
-                                  // note gains no layer it did not have before.
-                                  if (widget.markdownEnabled ||
-                                      markdown.tables.isNotEmpty ||
-                                      checkboxes.isNotEmpty ||
-                                      chips.isNotEmpty)
-                                    Positioned.fill(
-                                      child: IgnorePointer(
-                                        child: MarkdownBackdrop(
-                                          analysis: markdown,
-                                          concealment: concealment,
-                                          grids: _tableGrids,
-                                          offsets: offsets,
-                                          scroll: _scrollController,
-                                          editable: _fieldEditable,
-                                          colors: MarkdownBackdropColors(
-                                            quiet: palette.textSecondary,
-                                            faint: palette.textTertiary
-                                                .withValues(alpha: 0.35),
-                                            panel: palette.controlBackground,
-                                            panelBorder: palette.controlBorder,
-                                            accent: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                            onAccent: Theme.of(
-                                              context,
-                                            ).colorScheme.onPrimary,
-                                            box: palette.checkboxBorder,
-                                            chip: palette.controlBackground,
+                            child: MouseRegion(
+                              opaque: false,
+                              onHover: widget.readOnly || !EditorMetrics.page
+                                  ? null
+                                  : (event) =>
+                                        _hoverLine.value = _emptyLineUnder(
+                                          event.position,
+                                          rowHeight,
+                                        ),
+                              onExit: (_) => _hoverLine.value = null,
+                              child: NotebookPaper(
+                                style: widget.paperStyle,
+                                lineHeight: offsets.lineHeight,
+                                topInset:
+                                    padding.top +
+                                    (title == null || offsets.tops.length < 2
+                                        ? 0
+                                        : offsets.tops[1]),
+                                scroll: _scrollController,
+                                child: Stack(
+                                  children: [
+                                    if (_isEmpty)
+                                      _Placeholder(
+                                        padding: padding,
+                                        style: textStyle,
+                                        strut: strut,
+                                        writingFont: widget.writingFont,
+                                      ),
+                                    // A note with a table always needs it, even on
+                                    // a device with markdown switched off. A plain
+                                    // note gains no layer it did not have before.
+                                    if (widget.markdownEnabled ||
+                                        markdown.tables.isNotEmpty ||
+                                        checkboxes.isNotEmpty ||
+                                        chips.isNotEmpty)
+                                      Positioned.fill(
+                                        child: IgnorePointer(
+                                          child: MarkdownBackdrop(
+                                            analysis: markdown,
+                                            concealment: concealment,
+                                            grids: _tableGrids,
+                                            offsets: offsets,
+                                            scroll: _scrollController,
+                                            editable: _fieldEditable,
+                                            colors: MarkdownBackdropColors(
+                                              quiet: palette.textSecondary,
+                                              faint: palette.textTertiary
+                                                  .withValues(alpha: 0.35),
+                                              panel: palette.controlBackground,
+                                              panelBorder:
+                                                  palette.controlBorder,
+                                              accent: Theme.of(
+                                                context,
+                                              ).colorScheme.primary,
+                                              onAccent: Theme.of(
+                                                context,
+                                              ).colorScheme.onPrimary,
+                                              box: palette.checkboxBorder,
+                                              chip: palette.controlBackground,
+                                            ),
+                                            checkboxes: checkboxes,
+                                            chips: chips,
+                                            markerRoom: _controller
+                                                .markdownMarkerRoom(
+                                                  textStyle,
+                                                  textScaler,
+                                                ),
                                           ),
-                                          checkboxes: checkboxes,
-                                          chips: chips,
-                                          markerRoom: _controller
-                                              .markdownMarkerRoom(
-                                                textStyle,
-                                                textScaler,
-                                              ),
                                         ),
                                       ),
-                                    ),
-                                  // Under the field, as its own highlight is.
-                                  Positioned.fill(
-                                    child: BlankLineHighlight(
-                                      editable: () =>
-                                          _editableTextState()?.renderEditable,
-                                      repaint: _selectionRepaint,
-                                    ),
-                                  ),
-                                  _buildField(
-                                    padding,
-                                    textStyle,
-                                    strut,
-                                    trailingGap,
-                                  ),
-                                  if (title != null)
+                                    // Under the field, as its own highlight is.
                                     Positioned.fill(
-                                      child: _titleMarks(title, padding),
-                                    ),
-                                  if (widget.remoteCarets case final source?)
-                                    Positioned.fill(
-                                      child: RemoteCaretLayer(
-                                        noteId: widget.noteId,
-                                        source: source,
-                                        controller: _controller,
-                                        scroll: _scrollController,
-                                        editable: _fieldEditable,
-                                        hover: _remoteHover,
-                                        tableCaretRect: _remoteTableCaretRect,
-                                        tableSelectionRects:
-                                            _remoteTableSelectionRects,
+                                      child: BlankLineHighlight(
+                                        editable: () => _editableTextState()
+                                            ?.renderEditable,
+                                        repaint: _selectionRepaint,
                                       ),
                                     ),
-                                ],
+                                    _buildField(
+                                      padding,
+                                      textStyle,
+                                      strut,
+                                      trailingGap,
+                                    ),
+                                    if (title != null)
+                                      Positioned.fill(
+                                        child: _titleMarks(title, padding),
+                                      ),
+                                    if (EditorMetrics.page && !widget.readOnly)
+                                      Positioned.fill(
+                                        child: _emptyLineMarks(
+                                          padding,
+                                          textStyle,
+                                          strut,
+                                          rowHeight,
+                                        ),
+                                      ),
+                                    if (widget.remoteCarets case final source?)
+                                      Positioned.fill(
+                                        child: RemoteCaretLayer(
+                                          noteId: widget.noteId,
+                                          source: source,
+                                          controller: _controller,
+                                          scroll: _scrollController,
+                                          editable: _fieldEditable,
+                                          hover: _remoteHover,
+                                          tableCaretRect: _remoteTableCaretRect,
+                                          tableSelectionRects:
+                                              _remoteTableSelectionRects,
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -6693,11 +6928,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           .bindingFor(ShortcutAction.recordVoiceNote)
                           ?.activator:
                       widget.onRecordVoice!,
-                if (!widget.readOnly && widget.images != null)
+                if (!widget.readOnly && widget.images != null) ...{
                   ?widget.shortcuts
                       .bindingFor(ShortcutAction.insertImage)
                       ?.activator: () =>
                       unawaited(pickAndInsertImages()),
+                  ?widget.shortcuts
+                      .bindingFor(ShortcutAction.insertVideo)
+                      ?.activator: () =>
+                      unawaited(pickAndInsertVideos()),
+                  ?widget.shortcuts
+                      .bindingFor(ShortcutAction.insertFile)
+                      ?.activator: () =>
+                      unawaited(pickAndInsertFileAttachments()),
+                },
                 ?widget.shortcuts
                         .bindingFor(ShortcutAction.openSettings)
                         ?.activator:
@@ -7490,3 +7734,7 @@ typedef _TitleLayout = ({
   double spacerTop,
   Rect? word,
 });
+
+/// An empty line with a "+" beside it: where it starts, its middle in the
+/// field, and whether the caret or the pointer is on it.
+typedef _LineMark = ({int line, double middle, bool caret, bool hovered});

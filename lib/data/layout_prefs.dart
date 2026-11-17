@@ -114,6 +114,11 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _keepRunningKey = 'keepRunningInBackground.v1';
   static const String _alwaysOnTopKey = 'alwaysOnTop.v1';
   static const String _loginItemDefaultKey = 'loginItemDefaulted.v1';
+  static const String _slashCommandUsesKey = 'slashCommandUses.v1';
+  static const String _lastSlashCommandKey = 'lastSlashCommand.v1';
+
+  /// How many times "/" opens Commands before an empty line stops saying so.
+  static const int slashHintUses = 3;
   static const String _lastOpenedNoteKey = 'selectedNote.v1';
   static const String _recentlyOpenedNotesKey = 'recentlyOpenedNotes.v1';
   static const String _caretKey = 'caret.v1';
@@ -165,6 +170,8 @@ class LayoutPrefs extends ChangeNotifier {
   String? _timeZoneId;
   bool _keepRunningInBackground = false;
   bool _loginItemDefaultApplied = false;
+  int _slashCommandUses = 0;
+  String? _lastSlashCommand;
   bool _alwaysOnTop = false;
   String? _lastOpenedNoteId;
   List<String> _recentlyOpenedNoteIds = const [];
@@ -376,6 +383,8 @@ class LayoutPrefs extends ChangeNotifier {
     _keepRunningInBackground =
         _store.read<bool>(_keepRunningKey) ?? AppPlatform.isDesktop;
     _loginItemDefaultApplied = _store.read<bool>(_loginItemDefaultKey) ?? false;
+    _slashCommandUses = _store.read<int>(_slashCommandUsesKey) ?? 0;
+    _lastSlashCommand = _store.read<String>(_lastSlashCommandKey);
     _alwaysOnTop = _store.read<bool>(_alwaysOnTopKey) ?? false;
     _lastOpenedNoteId = _readNoteId(_lastOpenedNoteKey);
     _recentlyOpenedNoteIds = _readRecentlyOpenedNoteIds();
@@ -735,6 +744,27 @@ class LayoutPrefs extends ChangeNotifier {
     if (_loginItemDefaultApplied) return;
     _loginItemDefaultApplied = true;
     _store.putNow(_loginItemDefaultKey, true);
+  }
+
+  /// Whether an empty line in the editor still says to type "/" for
+  /// commands: until someone has done it [slashHintUses] times.
+  bool get slashHint => _slashCommandUses < slashHintUses;
+
+  void noteSlashCommandUsed() {
+    if (!slashHint) return;
+    _slashCommandUses++;
+    _store.put(_slashCommandUsesKey, _slashCommandUses);
+    if (!slashHint) notifyListeners();
+  }
+
+  /// The command last chosen from Commands on this device, by name.
+  String? get lastSlashCommand => _lastSlashCommand;
+
+  set lastSlashCommand(String? value) {
+    if (value == _lastSlashCommand) return;
+    _lastSlashCommand = value;
+    _store.put(_lastSlashCommandKey, value ?? '');
+    notifyListeners();
   }
 
   void toggleAlwaysOnTop() => alwaysOnTop = !_alwaysOnTop;

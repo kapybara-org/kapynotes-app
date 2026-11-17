@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,7 +10,7 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
-import 'package:kapy_notes/ui/editor/insert_bar.dart';
+import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/markdown_backdrop.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
@@ -51,7 +52,7 @@ Widget _page(
   List<NoteFormatRange> formats = const [],
   bool readOnly = false,
   VoidCallback? onRecordVoice,
-  VoidCallback? onNewDrawing,
+  bool slashHint = false,
   ValueChanged<List<NoteFormatRange>>? onFormats,
   ValueChanged<String>? onBody,
   WritingFont writingFont = WritingFont.mixed,
@@ -81,7 +82,7 @@ Widget _page(
           },
           onSettingsPressed: () {},
           onRecordVoice: onRecordVoice,
-          onNewDrawing: onNewDrawing,
+          slashHint: slashHint,
           writingFont: writingFont,
           shortcuts: ShortcutPrefs(_MemoryStore())..load(),
         ),
@@ -200,9 +201,6 @@ void main() {
 
     await tester.pumpWidget(_page(_body, width: 500));
     await tester.pumpAndSettle();
-    // Too narrow for the bar's words, so it keeps its icons.
-    expect(find.text('Image'), findsNothing);
-    expect(tester.getRect(find.byType(InsertBar)).width, lessThan(500 - 32));
     expect(
       _editable(tester).localToGlobal(Offset.zero).dx,
       EditorMetrics.padding.left,
@@ -289,86 +287,102 @@ void main() {
     expect(link.fontSize, 12.5);
   });
 
-  testWidgets('the insert bar replaces the footer and does what it says', (
-    tester,
-  ) async {
+  testWidgets('no bar: an empty line has the "+" and the hint, which open '
+      'Commands', (tester) async {
     window(tester);
-    var recorded = 0;
-    var drawings = 0;
-    List<NoteFormatRange>? formats;
+    String? body;
+    final empty = _body.length + 1;
     await tester.pumpWidget(
-      _page(
-        _body,
-        onRecordVoice: () => recorded++,
-        onNewDrawing: () => drawings++,
-        onFormats: (value) => formats = value,
-      ),
+      _page('$_body\n\n', slashHint: true, onBody: (value) => body = value),
     );
     await tester.pumpAndSettle();
-
     expect(find.byType(NoteFooter), findsNothing);
-    expect(find.byType(InsertBar), findsOneWidget);
-    for (final label in [
-      'Image',
-      'Video',
-      'Voice',
-      'Drawing',
-      'Format',
-      'Commands',
-    ]) {
-      expect(find.text(label), findsOneWidget);
-    }
-    // Centred at the page's foot.
-    final bar = tester.getRect(find.byType(InsertBar));
-    expect(bar.center.dx, closeTo(600, 1));
-    expect(800 - bar.bottom, closeTo(InsertBar.bottom, 0.5));
-    expect(bar.height, closeTo(46, 1));
-
-    await tester.tap(find.text('Voice'));
-    await tester.tap(find.text('Drawing'));
-    expect((recorded, drawings), (1, 1));
 
     await tester.showKeyboard(find.byType(EditableText));
     final field = tester.widget<EditableText>(find.byType(EditableText));
-    final words = _body.indexOf('ahrefs');
-    field.controller.selection = TextSelection(
-      baseOffset: words,
-      extentOffset: words + 6,
+    field.controller.selection = TextSelection.collapsed(offset: empty);
+    await tester.pumpAndSettle();
+    final plus = find.byKey(const ValueKey('line-commands'));
+    final hint = find.byKey(const ValueKey('slash-hint'));
+    expect(plus, findsOneWidget);
+    expect(hint, findsOneWidget);
+    // In the margin, level with the hint, which starts where the words do.
+    expect(tester.getRect(plus).right, lessThan(tester.getRect(hint).left));
+    expect(
+      tester.getRect(plus).center.dy,
+      closeTo(tester.getRect(hint).center.dy, 2),
+    );
+    expect(tester.widget<CompactIconButton>(plus).selected, isFalse);
+
+    // A line with words has neither.
+    field.controller.selection = const TextSelection.collapsed(offset: 3);
+    await tester.pumpAndSettle();
+    expect(plus, findsNothing);
+    expect(hint, findsNothing);
+
+    // The pointer over an empty line brings the "+" alone, lit.
+    final editable = _editable(tester);
+    final line = editable.localToGlobal(
+      editable.getLocalRectForCaret(TextPosition(offset: empty)).center,
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: line + const Offset(80, 0));
+    addTearDown(mouse.removePointer);
+    await mouse.moveBy(const Offset(1, 0));
+    await tester.pumpAndSettle();
+    expect(plus, findsOneWidget);
+    expect(hint, findsNothing);
+    expect(tester.widget<CompactIconButton>(plus).selected, isTrue);
+
+    // Pressed as a screen reader would, it opens Commands with a search of
+    // its own, since the caret stays on the line.
+    final semantics = tester.ensureSemantics();
+    tester.semantics.tap(find.semantics.byLabel('Commands'));
+    await tester.pumpAndSettle();
+    semantics.dispose();
+    expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
+    expect(field.focusNode.hasFocus, isFalse, reason: 'the search has it');
+    await tester.enterText(
+      find.byKey(const ValueKey('slash-command-search')),
+      'todo',
     );
     await tester.pump();
-    await tester.tap(find.text('Format'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Bold'));
-    await tester.pumpAndSettle();
     expect(
-      formats,
-      contains(
-        isA<NoteFormatRange>()
-            .having((range) => range.format, 'format', NoteFormat.bold)
-            .having((range) => range.start, 'start', words),
+      find.descendant(
+        of: find.byKey(const ValueKey('slash-command-checklist')),
+        matching: find.text('todo'),
       ),
+      findsOneWidget,
+      reason: 'the alias it was found by',
     );
-
-    expect(
-      field.focusNode.hasFocus,
-      isTrue,
-      reason: 'formatting keeps the caret',
-    );
-    await tester.tap(find.text('Commands'));
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
-    expect(field.focusNode.hasFocus, isTrue, reason: 'the caret stays put');
+    expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
+    expect(body, endsWith('\n☐ \n'));
+    expect(field.focusNode.hasFocus, isTrue, reason: 'back in the note');
+
+    // Esc closes the menu and gives the keyboard back to the note too.
+    field.controller.selection = TextSelection.collapsed(
+      offset: field.controller.text.length,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(plus);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('slash-command-search')), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('slash-command-menu')), findsNothing);
+    expect(field.focusNode.hasFocus, isTrue);
   });
 
-  testWidgets('a read-only note has no insert bar and says why in its meta '
-      'row', (tester) async {
+  testWidgets('a read-only note has no "+" and says why in its meta row', (
+    tester,
+  ) async {
     window(tester);
     await tester.pumpWidget(_page(_body, readOnly: true));
     await tester.pumpAndSettle();
 
-    expect(find.byType(InsertBar), findsNothing);
+    expect(find.byKey(const ValueKey('line-commands')), findsNothing);
     expect(find.byKey(const ValueKey('view-only-status')), findsOneWidget);
   });
 
@@ -393,7 +407,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(NoteFooter), findsOneWidget);
-    expect(find.byType(InsertBar), findsNothing);
     expect(find.byType(NoteMetaRow), findsNothing);
     final field = _editable(tester);
     expect(

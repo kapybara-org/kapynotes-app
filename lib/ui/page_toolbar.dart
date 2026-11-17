@@ -44,6 +44,7 @@ class PageToolbar extends StatelessWidget {
     this.onTogglePin,
     this.moreActions = const [],
     this.updates,
+    this.center,
   });
 
   /// The breadcrumb: the space the list is showing, then the open note's
@@ -86,6 +87,10 @@ class PageToolbar extends StatelessWidget {
   /// the app does not update itself.
   final UpdateChecker? updates;
 
+  /// Centred in the bar's empty middle, such as Write | Draw on a new note,
+  /// where its going leaves nothing else to move.
+  final Widget? center;
+
   static const double height = 56;
 
   /// Narrower than this, Saved steps aside for the breadcrumb.
@@ -103,6 +108,7 @@ class PageToolbar extends StatelessWidget {
     final showListShortcut = this.showListShortcut;
     final newNoteShortcut = this.newNoteShortcut;
     final updates = this.updates;
+    final center = this.center;
 
     return Container(
       key: const ValueKey('page-toolbar'),
@@ -218,6 +224,7 @@ class PageToolbar extends StatelessWidget {
               ),
             ),
           ),
+          if (center != null) Center(child: center),
         ],
       ),
     );

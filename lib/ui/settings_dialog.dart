@@ -2532,7 +2532,6 @@ extension on ShortcutAction {
   _ShortcutGroup? get group => switch (this) {
     ShortcutAction.openApp || ShortcutAction.newNoteAnywhere => null,
     ShortcutAction.newNote ||
-    ShortcutAction.newDrawing ||
     ShortcutAction.findNotes ||
     ShortcutAction.nextNote ||
     ShortcutAction.previousNote ||
@@ -2552,6 +2551,8 @@ extension on ShortcutAction {
     ShortcutAction.resetEditorTextSize ||
     ShortcutAction.pasteAsPlainText => _ShortcutGroup.editor,
     ShortcutAction.insertImage ||
+    ShortcutAction.insertVideo ||
+    ShortcutAction.insertFile ||
     ShortcutAction.recordVoiceNote => _ShortcutGroup.insert,
     ShortcutAction.cycleTextStyle ||
     ShortcutAction.formatBold ||

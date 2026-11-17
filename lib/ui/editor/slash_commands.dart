@@ -17,7 +17,10 @@ enum SlashCommandType {
   numberedList,
   quote,
   codeBlock,
-  drawing,
+  heading1,
+  heading2,
+  heading3,
+  formula,
 }
 
 /// A chosen command. Tables carry the size picked in the menu.

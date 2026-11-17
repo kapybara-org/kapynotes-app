@@ -8,7 +8,6 @@ enum ShortcutAction {
   openApp,
   newNoteAnywhere,
   newNote,
-  newDrawing,
   findNotes,
   nextNote,
   previousNote,
@@ -27,6 +26,8 @@ enum ShortcutAction {
   decreaseEditorTextSize,
   resetEditorTextSize,
   insertImage,
+  insertVideo,
+  insertFile,
   cycleTextStyle,
   formatBold,
   formatItalic,
@@ -41,7 +42,6 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.openApp => 'Open Kapy Notes',
     ShortcutAction.newNoteAnywhere => 'New note from anywhere',
     ShortcutAction.newNote => 'New note',
-    ShortcutAction.newDrawing => 'New drawing',
     ShortcutAction.findNotes => 'Global search',
     ShortcutAction.nextNote => 'Next note',
     ShortcutAction.previousNote => 'Previous note',
@@ -60,6 +60,8 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.decreaseEditorTextSize => 'Decrease editor text',
     ShortcutAction.resetEditorTextSize => 'Reset editor text size',
     ShortcutAction.insertImage => 'Add an image',
+    ShortcutAction.insertVideo => 'Add a video',
+    ShortcutAction.insertFile => 'Attach a file',
     ShortcutAction.cycleTextStyle => 'Cycle text style',
     ShortcutAction.formatBold => 'Bold',
     ShortcutAction.formatItalic => 'Italic',
@@ -73,7 +75,6 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.openApp => 'Show or hide Kapy Notes from anywhere',
     ShortcutAction.newNoteAnywhere => 'Open a blank note from anywhere',
     ShortcutAction.newNote => 'Create and focus a blank note',
-    ShortcutAction.newDrawing => 'Start a blank drawing',
     ShortcutAction.findNotes =>
       'Search titles, nested content, and voice notes from the sidebar',
     ShortcutAction.nextNote => 'Switch forward through recently used notes',
@@ -104,6 +105,9 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.resetEditorTextSize =>
       'Return editor writing to its default size',
     ShortcutAction.insertImage => 'Choose a picture or take a photo',
+    ShortcutAction.insertVideo => 'Choose a video to play in the note',
+    ShortcutAction.insertFile =>
+      'Attach any file to open on your other devices',
     ShortcutAction.cycleTextStyle =>
       'Switch between Text, Heading, and Subtitle',
     ShortcutAction.formatBold => 'Toggle bold on the selection or new text',
@@ -500,13 +504,6 @@ class ShortcutPrefs extends ChangeNotifier {
         meta: useMeta,
         control: !useMeta,
       ),
-      ShortcutAction.newDrawing => ShortcutBinding(
-        logicalKey: LogicalKeyboardKey.keyD,
-        physicalKey: PhysicalKeyboardKey.keyD,
-        meta: useMeta,
-        control: !useMeta,
-        shift: true,
-      ),
       ShortcutAction.findNotes => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyF,
         physicalKey: PhysicalKeyboardKey.keyF,
@@ -649,6 +646,22 @@ class ShortcutPrefs extends ChangeNotifier {
       ShortcutAction.insertImage => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyI,
         physicalKey: PhysicalKeyboardKey.keyI,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      // M for movie: ⌘⇧V is Paste as plain text.
+      ShortcutAction.insertVideo => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyM,
+        physicalKey: PhysicalKeyboardKey.keyM,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      // A for attach: ⌘⇧F is taken by search in most apps.
+      ShortcutAction.insertFile => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyA,
+        physicalKey: PhysicalKeyboardKey.keyA,
         meta: useMeta,
         control: !useMeta,
         shift: true,

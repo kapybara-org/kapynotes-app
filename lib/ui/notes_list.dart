@@ -421,6 +421,7 @@ class NoteCardFace extends StatelessWidget {
                         total: glance.boxes,
                         fill: palette.selectedBorder,
                         check: tint,
+                        size: 12,
                       ),
                       const SizedBox(width: 6),
                     ],

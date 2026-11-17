@@ -55,6 +55,7 @@ import '../images/image_picker.dart';
 import '../video/video_picker.dart';
 import 'editor/note_editor.dart';
 import 'editor/image_insertion.dart';
+import 'editor/slash_commands.dart';
 import 'editor_panes.dart';
 import 'billing/note_limit_dialog.dart';
 import 'billing/pro_sheet.dart';
@@ -2502,7 +2503,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             focusNode: _desktopShortcutFocus,
             shortcuts: widget.shortcuts,
             onNewNote: _createInSpace,
-            onNewDrawing: () => _createNote(drawing: true),
             onFindNotes: _focusGlobalSearch,
             onNextNote: () => _cycleNote(1),
             onPreviousNote: () => _cycleNote(-1),
@@ -2750,6 +2750,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                     onMore: (action) =>
                                         _runPageAction(action, selected),
                                     updates: widget.updates,
+                                    center:
+                                        selected != null &&
+                                            _canChooseMode(selected)
+                                        ? NoteModeSwitch(
+                                            drawing: selected.isDrawing,
+                                            onChanged: (drawing) =>
+                                                _setDrawingMode(
+                                                  selected.id,
+                                                  drawing: drawing,
+                                                ),
+                                          )
+                                        : null,
                                   ),
                                   Expanded(child: _buildWideWorkspace()),
                                 ],
@@ -3106,7 +3118,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _buildCompactEditor(Note note) {
-    if (note.isDrawing) return _buildDrawing(note);
+    if (note.isDrawing) return _buildDrawing(note, modeSwitch: true);
     final editor = ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
@@ -3150,7 +3162,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           editorTextScale: widget.prefs.editorTextScale,
-          onNewDrawing: () => _createNote(drawing: true),
+          slashHint: widget.prefs.slashHint,
+          onSlashCommandUsed: widget.prefs.noteSlashCommandUsed,
+          lastSlashCommand: SlashCommandType.values
+              .asNameMap()[widget.prefs.lastSlashCommand],
+          onSlashCommandChosen: (command) =>
+              widget.prefs.lastSlashCommand = command.name,
           now: widget.notes.now,
           shortcuts: widget.shortcuts,
           spellCheckEnabled: widget.prefs.spellCheckEnabled,
@@ -3190,7 +3207,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     VoidCallback? onFocus,
   }) {
     if (note.isDrawing) return _buildDrawing(note, onFocus: onFocus);
-    final editor = ListenableBuilder(
+    return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
         // The wide layout already listens to the account around this body.
@@ -3238,7 +3255,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           displayTime: widget.prefs.displayTime,
           writingFont: widget.prefs.writingFont,
           editorTextScale: widget.prefs.editorTextScale,
-          onNewDrawing: () => _createNote(drawing: true),
+          slashHint: widget.prefs.slashHint,
+          onSlashCommandUsed: widget.prefs.noteSlashCommandUsed,
+          lastSlashCommand: SlashCommandType.values
+              .asNameMap()[widget.prefs.lastSlashCommand],
+          onSlashCommandChosen: (command) =>
+              widget.prefs.lastSlashCommand = command.name,
           now: widget.notes.now,
           shortcuts: widget.shortcuts,
           spellCheckEnabled: widget.prefs.spellCheckEnabled,
@@ -3273,7 +3295,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       ),
     );
-    return _withModeSwitch(note, editor);
   }
 
   /// Whether [note] can still become a drawing, or go back to being a page:
@@ -3284,7 +3305,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       note.isEmpty &&
       note.attachments.isEmpty;
 
-  /// The editor, with "Write | Draw" over its corner while the note is new.
+  /// The phone's editor, with "Write | Draw" over its corner while the note
+  /// is new.
   ///
   /// Always the same Stack, with or without the switch: the first keystroke
   /// takes the switch away, and a tree that changed shape under the editor
@@ -3328,7 +3350,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         )
       : EmptyState(onCreate: _createNote);
 
-  Widget _buildDrawing(Note note, {VoidCallback? onFocus}) {
+  /// A phone shows Write | Draw in the drawing's title row when
+  /// [modeSwitch]; a window shows it in the page toolbar.
+  Widget _buildDrawing(
+    Note note, {
+    VoidCallback? onFocus,
+    bool modeSwitch = false,
+  }) {
     final canWrite = _canWriteNote(note);
     return DrawingCanvas(
       key: ValueKey('drawing-${note.id}'),
@@ -3342,7 +3370,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
       readOnly: !canWrite,
       onFocus: onFocus,
-      onSwitchToWrite: _canChooseMode(note)
+      onSwitchToWrite: modeSwitch && _canChooseMode(note)
           ? () => _setDrawingMode(note.id, drawing: false)
           : null,
       onChanged: (drawing) => _updateDrawing(note.id, drawing: drawing),
@@ -3407,7 +3435,6 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.child,
     required this.focusNode,
     required this.onNewNote,
-    required this.onNewDrawing,
     required this.onFindNotes,
     required this.onNextNote,
     required this.onPreviousNote,
@@ -3432,7 +3459,6 @@ class _DesktopShortcuts extends StatelessWidget {
   final Widget child;
   final FocusNode focusNode;
   final VoidCallback onNewNote;
-  final VoidCallback onNewDrawing;
   final VoidCallback onFindNotes;
   final VoidCallback onNextNote;
   final VoidCallback onPreviousNote;
@@ -3462,8 +3488,6 @@ class _DesktopShortcuts extends StatelessWidget {
     return CallbackShortcuts(
       bindings: {
         ?shortcuts.bindingFor(ShortcutAction.newNote)?.activator: onNewNote,
-        ?shortcuts.bindingFor(ShortcutAction.newDrawing)?.activator:
-            onNewDrawing,
         ?shortcuts.bindingFor(ShortcutAction.findNotes)?.activator: onFindNotes,
         ?shortcuts.bindingFor(ShortcutAction.nextNote)?.activator: onNextNote,
         ?shortcuts.bindingFor(ShortcutAction.previousNote)?.activator:

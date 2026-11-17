@@ -109,6 +109,12 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// The edge of a checkbox that is not ticked, on the page.
   final Color checkboxBorder;
 
+  /// The "+" beside an empty line that opens Commands, at rest.
+  final Color lineCommand;
+
+  /// What an empty line says before anything is typed on it.
+  final Color writingHint;
+
   /// The title on a note's sticky card or list row, and the sage that marks
   /// a link inside the list, such as See all.
   final Color cardTitle;
@@ -256,6 +262,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.paneEdge,
     required this.switchTrackOff,
     required this.checkboxBorder,
+    required this.lineCommand,
+    required this.writingHint,
     required this.cardTitle,
     required this.accentText,
     required this.pageBorder,
@@ -325,6 +333,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? paneEdge,
     Color? switchTrackOff,
     Color? checkboxBorder,
+    Color? lineCommand,
+    Color? writingHint,
     Color? cardTitle,
     Color? accentText,
     Color? pageBorder,
@@ -391,6 +401,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     paneEdge: paneEdge ?? this.paneEdge,
     switchTrackOff: switchTrackOff ?? this.switchTrackOff,
     checkboxBorder: checkboxBorder ?? this.checkboxBorder,
+    lineCommand: lineCommand ?? this.lineCommand,
+    writingHint: writingHint ?? this.writingHint,
     cardTitle: cardTitle ?? this.cardTitle,
     accentText: accentText ?? this.accentText,
     pageBorder: pageBorder ?? this.pageBorder,
@@ -466,6 +478,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       paneEdge: mix(paneEdge, other.paneEdge),
       switchTrackOff: mix(switchTrackOff, other.switchTrackOff),
       checkboxBorder: mix(checkboxBorder, other.checkboxBorder),
+      lineCommand: mix(lineCommand, other.lineCommand),
+      writingHint: mix(writingHint, other.writingHint),
       cardTitle: mix(cardTitle, other.cardTitle),
       accentText: mix(accentText, other.accentText),
       pageBorder: mix(pageBorder, other.pageBorder),
@@ -1066,6 +1080,8 @@ class KapyTheme {
     paneEdge: Color(0xFF2C2924),
     switchTrackOff: Color(0xFF3A362F),
     checkboxBorder: Color(0xFF645D51),
+    lineCommand: Color(0xFF6B6458),
+    writingHint: Color(0xFF4F4A42),
     cardTitle: Color(0xFFD9D3C6),
     accentText: Color(0xFF9DB384),
     pageBorder: Color(0xFF2E2A25),
@@ -1141,6 +1157,8 @@ class KapyTheme {
     paneEdge: Color(0xFFE2DCCB),
     switchTrackOff: Color(0xFFDCD5C4),
     checkboxBorder: Color(0xFFB1A996),
+    lineCommand: Color(0xFFA39B8A),
+    writingHint: Color(0xFFBDB6A6),
     cardTitle: Color(0xFF2A2620),
     accentText: Color(0xFF56703C),
     pageBorder: Color(0xFFE6E0D0),
