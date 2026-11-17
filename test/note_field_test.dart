@@ -4,6 +4,7 @@
 // The platform side is FakeMacTextInput, which keeps the macOS plugin's model
 // and sends the deltas the plugin sends for an input method and the keyboard.
 import 'package:flutter/gestures.dart';
+import 'package:flutter/semantics.dart' show SemanticsAction;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
@@ -670,6 +671,75 @@ void main() {
       expect(ime.text.codeUnitAt(ime.text.length - 1) & 0xFC00, isNot(0xD800));
     }
   }, variant: _macOS);
+
+  testWidgets(
+    'assistive tools get a text field holding the window, and what they set '
+    'lands in the note',
+    (tester) async {
+      final handle = tester.ensureSemantics();
+      final text = _note(1000);
+      final field = await _pumpField(tester, text);
+      final controller = field.widget.controller;
+      final ime = FakeMacTextInput(tester);
+      final caret = _lineStart(text, 500);
+      await _select(tester, field, TextSelection.collapsed(offset: caret));
+      final start = _expectInSync(field, ime);
+
+      var node = tester.getSemantics(find.byType(NoteField));
+      expect(
+        node,
+        isSemantics(
+          isTextField: true,
+          isMultiline: true,
+          isFocused: true,
+          isReadOnly: false,
+          value: ime.text,
+        ),
+      );
+      expect(
+        node.textSelection,
+        TextSelection.collapsed(offset: caret - start),
+      );
+      expect(node.value.length, lessThan(text.length ~/ 4));
+
+      node.owner!.performAction(node.id, SemanticsAction.setSelection, {
+        'base': caret - start,
+        'extent': caret - start + 4,
+      });
+      await tester.pump();
+      expect(
+        controller.selection,
+        TextSelection(baseOffset: caret, extentOffset: caret + 4),
+      );
+
+      node = tester.getSemantics(find.byType(NoteField));
+      final windowStart = _expectInSync(field, ime);
+      final written = node.value.replaceFirst('Line 500,', 'Row 500,');
+      node.owner!.performAction(node.id, SemanticsAction.setText, written);
+      await tester.pump();
+      expect(controller.text, text.replaceFirst('Line 500,', 'Row 500,'));
+      expect(
+        controller.selection,
+        TextSelection.collapsed(offset: windowStart + written.length),
+      );
+      _expectInSync(field, ime);
+      expect(tester.getSemantics(find.byType(NoteField)).value, ime.text);
+      handle.dispose();
+    },
+    variant: _macOS,
+  );
+
+  testWidgets('a read-only note is a read-only text field to assistive tools', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await _pumpField(tester, _note(3), readOnly: true);
+    final node = tester.getSemantics(find.byType(NoteField));
+    expect(node, isSemantics(isTextField: true, isReadOnly: true));
+    expect(node.getSemanticsData().hasAction(SemanticsAction.setText), isFalse);
+    expect(node.getSemanticsData().hasAction(SemanticsAction.paste), isFalse);
+    handle.dispose();
+  });
 
   testWidgets('a caret moved out of view is scrolled into it', (tester) async {
     final text = _note(1000);

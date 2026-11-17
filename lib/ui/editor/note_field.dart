@@ -795,6 +795,89 @@ class NoteFieldState extends State<NoteField>
     );
   }
 
+  /// The field as assistive tools see it: a text field holding the window
+  /// the platform's input has, not the note, so that what VoiceOver and
+  /// dictation tools read and write is what typing goes through. Offsets
+  /// they hand back are the window's.
+  Widget _semantics(Widget child) {
+    final window = _windowValue;
+    final start = _window.start;
+    final selection = _value.selection;
+    final focused = widget.focusNode.hasFocus;
+    final selected = selection.isValid && !selection.isCollapsed;
+    final writable = !widget.readOnly;
+    final moves = focused && selection.isValid;
+    final direction = Directionality.maybeOf(context);
+    void move(Intent intent) =>
+        Actions.invoke(widget.focusNode.context!, intent);
+    int inNote(int offset) => (start + offset).clamp(0, _text.length);
+    return _FieldSemantics(
+      describe: (config) {
+        config
+          ..isTextField = true
+          ..isMultiline = true
+          ..isReadOnly = widget.readOnly
+          ..isFocused = focused
+          ..value = window.text
+          ..textDirection = direction
+          ..onTap = requestKeyboard
+          ..onSetSelection = (selection) => _setSelection(
+            TextSelection(
+              baseOffset: inNote(selection.baseOffset),
+              extentOffset: inNote(selection.extentOffset),
+            ),
+            SelectionChangedCause.keyboard,
+          );
+        if (window.selection.isValid) config.textSelection = window.selection;
+        if (writable) {
+          config.onSetText = (text) => userUpdateTextEditingValue(
+            TextEditingValue(
+              text: _text.replaceRange(start, _window.end, text),
+              selection: TextSelection.collapsed(offset: start + text.length),
+            ),
+            SelectionChangedCause.keyboard,
+          );
+          config.onPaste = () =>
+              unawaited(pasteText(SelectionChangedCause.keyboard));
+        }
+        if (selected) {
+          config.onCopy = () => copySelection(SelectionChangedCause.keyboard);
+          if (writable) {
+            config.onCut = () => cutSelection(SelectionChangedCause.keyboard);
+          }
+        }
+        if (!moves) return;
+        void Function(bool extend) by(Intent Function(bool extend) intent) =>
+            (extend) => move(intent(extend));
+        config.onMoveCursorForwardByCharacter = by(
+          (extend) => ExtendSelectionByCharacterIntent(
+            forward: true,
+            collapseSelection: !extend,
+          ),
+        );
+        config.onMoveCursorBackwardByCharacter = by(
+          (extend) => ExtendSelectionByCharacterIntent(
+            forward: false,
+            collapseSelection: !extend,
+          ),
+        );
+        config.onMoveCursorForwardByWord = by(
+          (extend) => ExtendSelectionToNextWordBoundaryIntent(
+            forward: true,
+            collapseSelection: !extend,
+          ),
+        );
+        config.onMoveCursorBackwardByWord = by(
+          (extend) => ExtendSelectionToNextWordBoundaryIntent(
+            forward: false,
+            collapseSelection: !extend,
+          ),
+        );
+      },
+      child: child,
+    );
+  }
+
   void _setSelection(TextSelection selection, SelectionChangedCause cause) =>
       userUpdateTextEditingValue(_value.copyWith(selection: selection), cause);
 
@@ -1974,19 +2057,21 @@ class NoteFieldState extends State<NoteField>
           focusNode: widget.focusNode,
           autofocus: widget.autofocus,
           includeSemantics: false,
-          child: TextFieldTapRegion(
-            onTapOutside: widget.focusNode.hasFocus ? _tappedOutside : null,
-            child: MouseRegion(
-              cursor: widget.mouseCursor,
-              child: CompositedTransformTarget(
-                link: _toolbarLink,
-                child: _gestures.build(
-                  child: CustomScrollView(
-                    controller: widget.scrollController,
-                    scrollBehavior: ScrollConfiguration.of(
-                      context,
-                    ).copyWith(overscroll: false),
-                    slivers: [NoteSliver(layout: layout)],
+          child: _semantics(
+            TextFieldTapRegion(
+              onTapOutside: widget.focusNode.hasFocus ? _tappedOutside : null,
+              child: MouseRegion(
+                cursor: widget.mouseCursor,
+                child: CompositedTransformTarget(
+                  link: _toolbarLink,
+                  child: _gestures.build(
+                    child: CustomScrollView(
+                      controller: widget.scrollController,
+                      scrollBehavior: ScrollConfiguration.of(
+                        context,
+                      ).copyWith(overscroll: false),
+                      slivers: [NoteSliver(layout: layout)],
+                    ),
                   ),
                 ),
               ),
@@ -1995,6 +2080,41 @@ class NoteFieldState extends State<NoteField>
         ),
       ),
     );
+  }
+}
+
+/// The field's own node in the semantics tree, described afresh with every
+/// build. The [Semantics] widget can't carry a text selection.
+class _FieldSemantics extends SingleChildRenderObjectWidget {
+  const _FieldSemantics({required this.describe, required super.child});
+
+  final void Function(SemanticsConfiguration config) describe;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderFieldSemantics(describe);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderFieldSemantics renderObject,
+  ) => renderObject.describe = describe;
+}
+
+class _RenderFieldSemantics extends RenderProxyBox {
+  _RenderFieldSemantics(this._describe);
+
+  void Function(SemanticsConfiguration config) _describe;
+  set describe(void Function(SemanticsConfiguration config) value) {
+    _describe = value;
+    markNeedsSemanticsUpdate();
+  }
+
+  @override
+  void describeSemanticsConfiguration(SemanticsConfiguration config) {
+    super.describeSemanticsConfiguration(config);
+    config.isSemanticBoundary = true;
+    _describe(config);
   }
 }
 
