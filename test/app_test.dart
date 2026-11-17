@@ -832,6 +832,99 @@ void main() {
       await tester.pumpAndSettle();
       expect(tags.tags, hasLength(1));
     });
+
+    testWidgets('on a phone the filter is a sheet whose Tags page narrows the '
+        'list live', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final hidden = notes.create(body: 'Private plan');
+      final trip = notes.create(body: 'Trip to Kochi');
+      notes.create(body: 'Groceries');
+      notes.hide(hidden.id);
+      final work = tags.create('Work')!;
+      final secret = tags.create('Secret')!;
+      tags.addTag(trip.id, work.id);
+      tags.addTag(hidden.id, secret.id);
+      await pumpApp(tester, size: const Size(390, 760), tags: tags);
+      await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('notes-filter-sheet')), findsOneWidget);
+      expect(find.byKey(const ValueKey('notes-filter-menu')), findsNothing);
+      expect(find.text('Show'), findsOneWidget);
+      expect(find.text('Media'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('tag-filter-${work.id}')), findsOneWidget);
+      expect(find.byKey(ValueKey('tag-filter-${secret.id}')), findsNothing);
+      await tester.tap(find.byKey(ValueKey('tag-filter-${work.id}')));
+      await tester.pumpAndSettle();
+      expect(find.text('Groceries'), findsNothing);
+      expect(find.text('Trip to Kochi'), findsWidgets);
+
+      await tester.tap(find.byKey(const ValueKey('notes-filter-back')));
+      await tester.pumpAndSettle();
+      expect(find.text('Work'), findsWidgets);
+      await tester.tap(find.byKey(const ValueKey('notes-filter-done')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('notes-filter-sheet')), findsNothing);
+      expect(find.text('Groceries'), findsNothing);
+    });
+
+    testWidgets('⌘K # filters by a tag, and Tag note… tags the open note', (
+      tester,
+    ) async {
+      final trip = notes.create(body: 'Trip to Kochi');
+      notes.create(body: 'Groceries');
+      final work = tags.create('Work')!;
+      tags.addTag(trip.id, work.id);
+      await pumpApp(tester, tags: tags);
+
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.findNotes)!,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        '#wo',
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+      expect(find.text('Groceries'), findsNothing);
+      expect(find.text('Trip to Kochi'), findsWidgets);
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-filter-clear')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Groceries').first);
+      await tester.pumpAndSettle();
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.findNotes)!,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'tag',
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        'Errands',
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      final groceries = notes.notes.firstWhere(
+        (note) => note.title == 'Groceries',
+      );
+      expect(namesOn(groceries.id), ['Errands']);
+    });
   });
 
   testWidgets('opens on the empty state and builds a note from it', (

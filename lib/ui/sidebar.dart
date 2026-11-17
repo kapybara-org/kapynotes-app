@@ -161,6 +161,7 @@ class Sidebar extends StatelessWidget {
   /// before one is opened.
   final Set<String> lockedNoteIds;
   final String? selectedId;
+
   /// The search the ⌘K menu carried into Archive, which the list is narrowed
   /// to; empty everywhere else.
   final String query;
@@ -333,7 +334,7 @@ class Sidebar extends StatelessWidget {
               belowTabs: _showsTabs,
               besideRail: _besideRail,
             ),
-            if (_besideRail && controls != null)
+            if (controls != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
                 child: controls,

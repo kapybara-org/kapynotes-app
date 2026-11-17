@@ -2175,6 +2175,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!_listShown) _setListShown(true);
   }
 
+  /// The person's tags around [child], or null where there are none.
+  TagShelf? _tagShelf(Widget child) {
+    final store = widget.tags;
+    if (store == null) return null;
+    return TagShelf(
+      store: store,
+      listed: _listedTags,
+      untagged: _untaggedCount,
+      isShared: (noteId) => widget.notes.byId(noteId)?.isShared ?? false,
+      onFilter: _filterToTag,
+      child: child,
+    );
+  }
+
   Widget _withTags(Widget child) {
     final store = widget.tags;
     if (store == null) return child;
@@ -2658,6 +2672,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _hiddenMode ||
       (widget.prefs.hiddenFolderVisible && widget.notes.hiddenNotes.isNotEmpty);
 
+  /// The notes filter and the list/cards switch, for the list beside the
+  /// rail. A phone's drawer has the filter alone, as its list has no cards.
+  Widget _notesControls(LibrarySpace space, {bool cards = true}) =>
+      NotesListControls(
+        show: _show,
+        offersShow: space != LibrarySpace.shared,
+        onShowChanged: _setShow,
+        hiddenListed: _hiddenReachable,
+        hiddenShortcut: widget.shortcuts
+            .bindingFor(ShortcutAction.toggleHiddenFolder)
+            ?.displayLabel,
+        archivedCount: _narrowed(widget.notes.archivedNotes).length,
+        media: space == LibrarySpace.drawings ? null : _mediaFilter,
+        onMediaChanged: (media) => setState(() => _mediaFilter = media),
+        onClear: _clearFilter,
+        tags: widget.tags == null ? null : _tagsNarrowed,
+        onTagsChanged: (tags) => setState(() => _tagFilter = tags),
+        cards: widget.prefs.noteCards,
+        onCardsChanged: cards
+            ? (cards) => widget.prefs.noteCards = cards
+            : null,
+      );
+
   /// Opens the ⌘K menu over whatever is on screen, and does what was chosen.
   Future<void> _openCommandMenu() async {
     _recordKapyActivity();
@@ -2678,6 +2715,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       tasks: _taskController?.read(),
       showHidden: _hiddenReachable,
       hiddenUnlocked: _hiddenMode,
+      tags: _tagShelf(const SizedBox.shrink()),
+      tagNote: _tasksMode ? null : widget.notes.byId(_selectedId),
       settingsIndex: (lend) => SettingsDialog(
         onIndex: lend,
         kapyAi: _kapyAi,
@@ -2724,6 +2763,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _showSpace(space);
       case ShowNotesChoice(:final show):
         _showNotes(show);
+      case FilterTagChoice(:final tagId):
+        if (_space != LibrarySpace.notes && _space != LibrarySpace.drawings) {
+          _showSpace(LibrarySpace.notes);
+        }
+        final filter = _tagsNarrowed;
+        setState(
+          () => _tagFilter = filter.copyWith(ids: {...filter.ids, tagId}),
+        );
+        if (!_listShown) _setListShown(true);
       case OpenSettingsChoice():
         _showSettings();
       case RevealSettingChoice(:final section, :final reveal):
@@ -3108,30 +3156,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             engine: widget.engines.engine,
                             now: widget.notes.now,
                             cards: widget.prefs.noteCards,
-                            controls: NotesListControls(
-                              show: _show,
-                              offersShow: space != LibrarySpace.shared,
-                              onShowChanged: _setShow,
-                              hiddenListed: _hiddenReachable,
-                              hiddenShortcut: widget.shortcuts
-                                  .bindingFor(ShortcutAction.toggleHiddenFolder)
-                                  ?.displayLabel,
-                              archivedCount: _narrowed(
-                                widget.notes.archivedNotes,
-                              ).length,
-                              media: space == LibrarySpace.drawings
-                                  ? null
-                                  : _mediaFilter,
-                              onMediaChanged: (media) =>
-                                  setState(() => _mediaFilter = media),
-                              onClear: _clearFilter,
-                              tags: widget.tags == null ? null : _tagsNarrowed,
-                              onTagsChanged: (tags) =>
-                                  setState(() => _tagFilter = tags),
-                              cards: widget.prefs.noteCards,
-                              onCardsChanged: (cards) =>
-                                  widget.prefs.noteCards = cards,
-                            ),
+                            controls: _notesControls(space),
                             pinnedOnly: _showingPinnedOnly,
                             onPinnedOnlyChanged: (value) =>
                                 setState(() => _pinnedOnly = value),
@@ -3602,6 +3627,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         ShortcutAction.deleteNote,
                       ),
                       updates: widget.updates,
+                      controls: _notesControls(_space, cards: false),
                     ),
                   ),
                 )
