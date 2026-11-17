@@ -118,7 +118,8 @@ Widget harness(
       startAtEnd: startAtEnd,
       writingFont: WritingFont.handwritten,
       shortcuts: shortcutPrefs,
-      onDocumentChanged: (body, formats, refs) => onChanged?.call(body, refs),
+      onDocumentChanged: (body, formats, refs, _) =>
+          onChanged?.call(body, refs),
       onSettingsPressed: () {},
     ),
   ),
@@ -269,7 +270,8 @@ void main() {
         await cursorAt(
           tester,
           gesture,
-          tester.getCenter(find.byType(NoteVoiceChip)),
+          // The page's pill, which stops short of the column's edge.
+          tester.getCenter(find.byKey(const ValueKey('voice-chip-pill'))),
         ),
         SystemMouseCursors.click,
       );
@@ -293,7 +295,15 @@ void main() {
       await tester.pumpAndSettle();
 
       final gesture = await mouse(tester);
-      await gesture.moveTo(tester.getCenter(find.text('Voice note')));
+      // Its length, which the page's pill shows in place of a label.
+      await gesture.moveTo(
+        tester.getCenter(
+          find.descendant(
+            of: find.byType(NoteVoiceChip),
+            matching: find.textContaining(':'),
+          ),
+        ),
+      );
       await tester.pump(const Duration(milliseconds: 600));
       await tester.pump();
 

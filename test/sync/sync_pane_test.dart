@@ -6,6 +6,7 @@ import 'package:kapy_notes/core/text_file_export.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
@@ -33,15 +34,21 @@ class MemoryStore extends LocalStore {
   final server = FakeServer();
   final store = MemoryStore();
   final notes = NotesStore(store);
+  final state = SyncState(store);
   return (
     account: Account(
       auth: auth ?? FakeAuth(),
       syncApi: (_) => FakeApi(server),
       keys: KeyStore(InMemorySecureStore()),
       notes: notes,
-      state: SyncState(store),
+      state: state,
       store: store,
-      docStorage: MemoryDocStorage(),
+      tasks: TaskLibrary(
+        notes: notes,
+        store: store,
+        state: state,
+        storage: MemoryDocStorage(),
+      ),
     ),
     notes: notes,
     server: server,
@@ -472,14 +479,20 @@ void main() {
       final store = MemoryStore();
       notes = NotesStore(store);
       await notes.load();
+      final syncState = SyncState(store);
       second = Account(
         auth: FakeAuth(),
         syncApi: (_) => FakeApi(first.server),
         keys: KeyStore(InMemorySecureStore()),
         notes: notes,
-        state: SyncState(store),
+        state: syncState,
         store: store,
-        docStorage: MemoryDocStorage(),
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          state: syncState,
+          storage: MemoryDocStorage(),
+        ),
       );
       await second.restore();
       await second.signIn(email: 'a@b.co', password: 'x');

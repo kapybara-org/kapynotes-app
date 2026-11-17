@@ -12,6 +12,7 @@ import 'audio/voice_player.dart';
 import 'data/voice_prefs.dart';
 import 'speech/apple_summarizer.dart';
 import 'speech/apple_transcriber.dart';
+import 'speech/cloud_access.dart';
 import 'speech/cloud_summarizer.dart';
 import 'speech/cloud_transcriber.dart';
 import 'speech/gemma_summarizer.dart';
@@ -30,6 +31,7 @@ import 'core/window_material.dart';
 import 'data/engine_provider.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
+import 'data/task_library.dart';
 import 'data/notes_store.dart';
 import 'data/onboarding.dart';
 import 'data/rates.dart';
@@ -56,6 +58,7 @@ class KapyNotesApp extends StatefulWidget {
     this.updates,
     this.desktopIntegration,
     this.account,
+    this.tasks,
     this.recording,
     this.imageAcquirer,
     this.lostImageRetriever,
@@ -75,6 +78,9 @@ class KapyNotesApp extends StatefulWidget {
 
   /// Null when the build has no server to sync with.
   final Account? account;
+
+  /// Every checklist line as a task, for Tasks; null leaves Tasks out.
+  final TaskLibrary? tasks;
 
   /// Owns the microphone. Injectable so a test can hand over a recorder with
   /// no microphone behind it — the real one starts a one-second ticker that
@@ -165,6 +171,11 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// settings has to say whether this machine can do it, and why not.
   DeviceTranscriber? _deviceTranscriber;
 
+  /// Which of the two engines the plan lets each saved choice use. Read by
+  /// both routers and the queue, so the free plan runs here without the
+  /// setting itself ever changing.
+  CloudAccess? _cloudAccess;
+
   /// Held separately from [_deviceSummarizer] because it is the one that owns
   /// memory: it has to be told when the app goes away.
   GemmaSummarizer? _gemma;
@@ -230,7 +241,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _gemma = GemmaSummarizer(models: _localModels!);
     _deviceSummarizer = DeviceSummarizer([AppleSummarizer(), _gemma!]);
     _summarizer = RoutingSummarizer(
-      engineOf: () => _voicePrefs?.summaryEngine ?? SummaryEngine.cloud,
+      engineOf: () => _cloudAccess?.summaries.engine ?? SummaryEngine.cloud,
       cloud: CloudSummarizer(() => widget.account?.speech),
       device: _deviceSummarizer!,
     );
@@ -245,8 +256,14 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         language: () => _voicePrefs?.language,
       ),
     ]);
+    _cloudAccess = CloudAccess(
+      prefs: _voicePrefs!,
+      device: _deviceTranscriber!,
+      billing: widget.account?.billing,
+    );
     _transcriber = RoutingTranscriber(
-      engineOf: () => _voicePrefs?.transcriptEngine ?? TranscriptEngine.cloud,
+      engineOf: () =>
+          _cloudAccess?.transcription.engine ?? TranscriptEngine.cloud,
       cloud: CloudTranscriber(
         () => widget.account?.speech,
         model: () =>
@@ -260,6 +277,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       notes: widget.notes,
       blobs: widget.notes.blobs,
       prefs: _voicePrefs!,
+      cloudAccess: _cloudAccess,
       api: () => widget.account?.speech,
       summarizer: () => _summarizer,
       transcriber: () => _transcriber,
@@ -283,7 +301,6 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
     widget.prefs.load();
     widget.shortcuts.load();
-    _voicePrefs?.load();
     _activateLoadedApp(capturedText: _launchController.text, intent: intent);
     setState(() {});
 
@@ -301,6 +318,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     LaunchIntent intent = LaunchIntent.open,
   }) {
     if (_ready) return;
+    _voicePrefs?.load();
     // A new install opens on a note that teaches itself rather than on a blank
     // page. Seeded ahead of the capture below so that a launch which arrives
     // with text still puts that text on screen, with the welcome underneath it
@@ -438,6 +456,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _transcriptionTimer?.cancel();
     _tempSweepTimer?.cancel();
     _transcriptions?.dispose();
+    _cloudAccess?.dispose();
     _voicePrefs?.dispose();
     _localModels?.dispose();
     unawaited(_gemma?.unload() ?? Future<void>.value());
@@ -573,6 +592,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
             updates: widget.updates,
             desktopIntegration: widget.desktopIntegration,
             account: widget.account,
+            tasks: widget.tasks,
             store: widget.store,
             welcomeNoteId: _welcomeNoteId,
             launchIntent: _launchIntent,

@@ -173,7 +173,8 @@ class NoteDoc {
   ///
   /// The text is diffed against the current text as one contiguous edit —
   /// a keystroke is exactly that — with a replacement becoming a delete run
-  /// then an insert run. Formats and attachments are compared *as rendered*
+  /// then an insert run, inside [near] when the editor said where it was;
+  /// see [diffTexts]. Formats and attachments are compared *as rendered*
   /// against what was passed in, so handing back `view.formats` unchanged
   /// costs nothing, and only a real change re-anchors and emits a register.
   ///
@@ -189,9 +190,10 @@ class NoteDoc {
     DateTime? archivedAt,
     DateTime? hiddenAt,
     DateTime? now,
+    TextEdit? near,
   }) {
     final ops = <Object?>[];
-    final edit = diffTexts(text, body);
+    final edit = diffTexts(text, body, near: near);
 
     if (edit.oldEnd > edit.start) {
       final victims = _tree.visible.sublist(edit.start, edit.oldEnd);
@@ -614,6 +616,22 @@ class NoteDoc {
     final target = node.deleted ? _tree.previousVisible(node) : node;
     if (target == null) return 0;
     return _tree.visibleIndexOf(target) + 1;
+  }
+
+  /// Where the character [anchor] names now is, for something that belongs to
+  /// its line rather than to the character: a task. The character's own
+  /// offset while it stands; once it is deleted, the offset where it was, as
+  /// long as its line still stands; null when the line went too, or when the
+  /// character has not arrived here yet.
+  int? lineOffsetOf(Anchor anchor) {
+    final id = anchor.id;
+    if (id == null) return null;
+    final node = _tree.node(id);
+    if (node == null) return null;
+    if (!node.deleted) return _tree.visibleIndexOf(node);
+    if (!_tree.inStandingLine(node)) return null;
+    final before = _tree.previousVisible(node);
+    return before == null ? 0 : _tree.visibleIndexOf(before) + 1;
   }
 
   // ---------------------------------------------------------------------------

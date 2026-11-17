@@ -732,6 +732,52 @@ TextRange _toWordEdges(String text, TextRange range) {
 /// steps the caret in; in the middle of a plain word it bolds the word;
 /// anywhere else the style is [MarkdownEdit.pending], for whatever is typed
 /// next.
+/// Wraps the selection in [marker] on both sides, as a pair of tildes strikes
+/// it through, or takes a pair off again when the selection sits just inside
+/// or just around one.
+TextEditingValue toggleMarkdownWrap(TextEditingValue value, String marker) {
+  final selection = value.selection;
+  if (!selection.isValid || selection.isCollapsed) return value;
+  final text = value.text;
+  final start = selection.start;
+  final end = selection.end;
+  final length = marker.length;
+  final words = text.substring(start, end);
+  if (words.length >= length * 2 &&
+      words.startsWith(marker) &&
+      words.endsWith(marker)) {
+    final inner = words.substring(length, words.length - length);
+    return TextEditingValue(
+      text: text.replaceRange(start, end, inner),
+      selection: TextSelection(
+        baseOffset: start,
+        extentOffset: start + inner.length,
+      ),
+    );
+  }
+  if (start >= length &&
+      end + length <= text.length &&
+      text.substring(start - length, start) == marker &&
+      text.substring(end, end + length) == marker) {
+    return TextEditingValue(
+      text: text
+          .replaceRange(end, end + length, '')
+          .replaceRange(start - length, start, ''),
+      selection: TextSelection(
+        baseOffset: start - length,
+        extentOffset: end - length,
+      ),
+    );
+  }
+  return TextEditingValue(
+    text: text.replaceRange(start, end, '$marker$words$marker'),
+    selection: TextSelection(
+      baseOffset: start + length,
+      extentOffset: end + length,
+    ),
+  );
+}
+
 MarkdownEdit toggleMarkdownEmphasis(
   TextEditingValue value,
   MarkdownAnalysis analysis, {

@@ -222,21 +222,23 @@ class Parser {
   final List<Token> _tokens;
   final UnitRegistry _registry;
 
-  /// Names currently bound in the document scope. Consulted so a user's own
-  /// variable always wins over a same-named unit (`h = 5` then `h * 2`).
-  final Set<String> _boundNames;
+  /// Whether a name is bound in the document scope. Consulted so a user's
+  /// own variable always wins over a same-named unit (`h = 5` then `h * 2`).
+  final bool Function(String name) _isBound;
 
   int _index = 0;
 
   Parser(
     String source, {
     required UnitRegistry registry,
-    Set<String> boundNames = const {},
+    bool Function(String name) isBound = _unbound,
   }) : _tokens = Lexer(
          source,
        ).tokenize().where((t) => t.isSignificant).toList(),
        _registry = registry,
-       _boundNames = boundNames;
+       _isBound = isBound;
+
+  static bool _unbound(String name) => false;
 
   Token get _current => _tokens[_index];
 
@@ -258,14 +260,13 @@ class Parser {
     final t = _peek(offset);
     return t.type == TokenType.identifier &&
         t.text.toLowerCase() == word &&
-        !_boundNames.contains(t.text);
+        !_isBound(t.text);
   }
 
   /// [_current] is an identifier with a built-in meaning the note has not
   /// replaced with a variable of its own.
   bool get _currentIsBuiltIn =>
-      _current.type == TokenType.identifier &&
-      !_boundNames.contains(_current.text);
+      _current.type == TokenType.identifier && !_isBound(_current.text);
 
   /// Parses a complete line, requiring that every token is consumed. Trailing
   /// garbage is a parse failure, which is what stops prose like
@@ -533,13 +534,12 @@ class Parser {
     if (calcKeywords.contains(unitWord) && !(allowIn && unitWord == 'in')) {
       return null;
     }
-    if (_boundNames.contains(unitFirst.text)) return null;
+    if (_isBound(unitFirst.text)) return null;
 
     var available = 0;
     while (available < 3) {
       final token = _peek(unitOffset + available);
-      if (token.type != TokenType.identifier ||
-          _boundNames.contains(token.text)) {
+      if (token.type != TokenType.identifier || _isBound(token.text)) {
         break;
       }
       available++;
@@ -677,7 +677,7 @@ class Parser {
   bool _isTimesLetter() {
     if (_current.type != TokenType.identifier) return false;
     if (_current.text.toLowerCase() != 'x') return false;
-    if (_boundNames.contains(_current.text)) return false;
+    if (_isBound(_current.text)) return false;
     final next = _peek();
     return next.type == TokenType.number ||
         next.type == TokenType.currencySymbol ||
@@ -803,7 +803,7 @@ class Parser {
     if (_current.type != TokenType.identifier) return null;
 
     final word = _current.text.toLowerCase();
-    if (_boundNames.contains(_current.text)) return null;
+    if (_isBound(_current.text)) return null;
     final isInch = word == 'in';
     if (isInch) {
       // `10 in cm` converts; `10 in` and `10 in + 2 in` are inches.
@@ -873,7 +873,7 @@ class Parser {
 
     if (token.type == TokenType.identifier) {
       final word = token.text.toLowerCase();
-      if (calcKeywords.contains(word) && !_boundNames.contains(token.text)) {
+      if (calcKeywords.contains(word) && !_isBound(token.text)) {
         throw CalcError('unexpected "${token.text}"');
       }
       if (_peek().type == TokenType.lparen) {

@@ -237,17 +237,19 @@ class NoteVoiceChip extends StatelessWidget {
               ),
               Text(formatVoiceDuration(ref.duration), style: small),
               if (label != 'Voice note')
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 280),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: small.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: _isTransient
-                          ? palette.textTertiary
-                          : palette.textMuted,
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 280),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: small.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: _isTransient
+                            ? palette.textTertiary
+                            : palette.textMuted,
+                      ),
                     ),
                   ),
                 ),

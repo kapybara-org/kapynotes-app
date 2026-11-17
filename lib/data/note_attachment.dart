@@ -115,6 +115,14 @@ sealed class NoteAttachmentRef {
           bytes: bytes,
           attachmentId: attachmentId,
         );
+      case NoteImageRef._linkedKind:
+        return NoteImageRef._linkedFromJson(
+          raw,
+          offset: offset,
+          hash: hash,
+          key: key,
+          mime: mime,
+        );
       case 'voice':
         return NoteVoiceRef._fromJson(
           raw,
@@ -178,8 +186,28 @@ sealed class NoteAttachmentRef {
 }
 
 /// An image. Everything attachments could be before voice notes existed.
+///
+/// Or a pasted picture known only by its address, while it can't be fetched:
+/// see [src].
 final class NoteImageRef extends NoteAttachmentRef {
   static const Object _keepPreview = Object();
+
+  /// The `kind` a picture known only by its address is written under.
+  ///
+  /// A kind of its own, so that a release which can't fetch it keeps the
+  /// record whole as a kind it doesn't know, as every release since 1.14
+  /// does, instead of reading it as a picture whose bytes it is missing.
+  static const String _linkedKind = 'linkedImage';
+
+  /// The server id written on a picture known only by its address.
+  ///
+  /// Nothing is stored under it, and this build never reads it back. It is
+  /// for releases 1.15 to 1.30, which keep a note from syncing until every
+  /// attachment in it has a server id: they keep this record as a kind they
+  /// don't know, and the id lets the note go. The nil UUID, which the server
+  /// never mints, so it can't name anybody's file.
+  static const String _linkedAttachmentId =
+      '00000000-0000-0000-0000-000000000000';
 
   /// Intrinsic size of the stored image, in pixels. Held so the editor can
   /// reserve the right box *before* any bytes are decoded — without it every
@@ -215,10 +243,11 @@ final class NoteImageRef extends NoteAttachmentRef {
   /// Where a pasted picture is still to be fetched from, while its bytes are
   /// not on this device: being downloaded, or waiting to be tried again.
   ///
-  /// Saved with the note, so a download cut short by quitting the app can
-  /// still be retried. It never leaves this device: a note waits to sync
-  /// until every picture in it is uploaded, and this one has nothing to
-  /// upload until it is fetched.
+  /// While it downloads, the note waits, so a picture that arrives syncs as
+  /// an ordinary one. Once a download has failed, or was cut short by
+  /// quitting the app, the note syncs with the address alone, so a picture
+  /// that can't be fetched never keeps its note from the other devices, and
+  /// any of them can try it again.
   final String? src;
 
   const NoteImageRef({
@@ -249,11 +278,13 @@ final class NoteImageRef extends NoteAttachmentRef {
   /// A generated preview is part of the image upload. Treating the full-size
   /// object alone as complete strands mobile readers without the lightweight
   /// object they are meant to fetch.
+  ///
+  /// A picture known only by its address has nothing to upload.
   @override
   bool get isUploaded =>
       !isPreparing &&
-      attachmentId != null &&
-      (thumbHash == null || thumbId != null);
+      (src != null ||
+          (attachmentId != null && (thumbHash == null || thumbId != null)));
 
   static NoteImageRef? _fromJson(
     Map<Object?, Object?> raw, {
@@ -290,6 +321,37 @@ final class NoteImageRef extends NoteAttachmentRef {
     );
   }
 
+  /// Reads a picture known only by its address. Its server id is the
+  /// stand-in older releases need, and is left behind here.
+  static NoteImageRef? _linkedFromJson(
+    Map<Object?, Object?> raw, {
+    required int offset,
+    required String hash,
+    required Uint8List key,
+    required String mime,
+  }) {
+    final src = raw['src'];
+    final size = raw['size'];
+    if (src is! String || src.isEmpty || size is! Map) return null;
+    final width = size['width'];
+    final height = size['height'];
+    if (width is! int || height is! int) return null;
+    final widthFactor = raw['widthFactor'];
+    return NoteImageRef(
+      offset: offset,
+      hash: hash,
+      key: key,
+      mime: mime,
+      width: width,
+      height: height,
+      bytes: 0,
+      widthFactor: widthFactor is num
+          ? clampImageWidthFactor(widthFactor.toDouble())
+          : 1,
+      src: src,
+    );
+  }
+
   @override
   NoteImageRef copyWith({
     int? offset,
@@ -318,25 +380,43 @@ final class NoteImageRef extends NoteAttachmentRef {
   );
 
   @override
-  Map<String, Object?> toJson() => {
-    // `kind` is omitted for images on purpose. It is the default on the way
-    // in, so writing it would change every existing note's bytes for nothing
-    // and make a no-op edit look like a real one to sync.
-    'offset': offset,
-    'hash': hash,
-    'key': base64.encode(key),
-    'mime': mime,
-    'width': width,
-    'height': height,
-    'bytes': bytes,
-    if (thumbHash != null) 'thumbHash': thumbHash,
-    // Omitted at full width, which is almost every image, so a note's record
-    // stays as small as it was.
-    if (widthFactor < 1) 'widthFactor': widthFactor,
-    if (attachmentId != null) 'attachmentId': attachmentId,
-    if (thumbId != null) 'thumbId': thumbId,
-    if (src != null) 'src': src,
-  };
+  Map<String, Object?> toJson() {
+    final src = this.src;
+    if (src != null) {
+      return {
+        'kind': _linkedKind,
+        'offset': offset,
+        'hash': hash,
+        'key': base64.encode(key),
+        'mime': mime,
+        // Not `width` and `height`: 1.13 reads any record holding both as a
+        // picture on the server, and an edit there would write this one back
+        // without its address.
+        'size': {'width': width, 'height': height},
+        if (widthFactor < 1) 'widthFactor': widthFactor,
+        'attachmentId': _linkedAttachmentId,
+        'src': src,
+      };
+    }
+    return {
+      // `kind` is omitted for images on purpose. It is the default on the way
+      // in, so writing it would change every existing note's bytes for nothing
+      // and make a no-op edit look like a real one to sync.
+      'offset': offset,
+      'hash': hash,
+      'key': base64.encode(key),
+      'mime': mime,
+      'width': width,
+      'height': height,
+      'bytes': bytes,
+      if (thumbHash != null) 'thumbHash': thumbHash,
+      // Omitted at full width, which is almost every image, so a note's
+      // record stays as small as it was.
+      if (widthFactor < 1) 'widthFactor': widthFactor,
+      if (attachmentId != null) 'attachmentId': attachmentId,
+      if (thumbId != null) 'thumbId': thumbId,
+    };
+  }
 
   @override
   bool operator ==(Object other) =>

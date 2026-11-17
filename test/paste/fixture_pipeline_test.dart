@@ -192,7 +192,7 @@ _paste(
           resultsVisible: true,
           writingFont: WritingFont.handwritten,
           shortcuts: ShortcutPrefs(_MemoryStore())..load(),
-          onDocumentChanged: (_, newFormats, refs) {
+          onDocumentChanged: (_, newFormats, refs, _) {
             formats = newFormats;
             attachments = refs;
           },

@@ -24,6 +24,7 @@ SpacesRail rail({
   LibrarySpace space = LibrarySpace.notes,
   ValueChanged<LibrarySpace>? onSelected,
   int? invitations,
+  int? openTasks,
   bool showHidden = false,
   WritingStreak? streak,
   VoidCallback? onAccountPressed,
@@ -34,6 +35,7 @@ SpacesRail rail({
   onSelected: onSelected ?? (_) {},
   onSettingsPressed: () {},
   invitations: invitations,
+  openTasks: openTasks,
   showHidden: showHidden,
   streak: streak,
   onAccountPressed: onAccountPressed,
@@ -49,6 +51,36 @@ void main() {
   setUpAll(loadTestFonts);
   setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
   tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+  testWidgets('Tasks sits after Notes once there is a task index, and counts '
+      'what is open on its badge', (tester) async {
+    await tester.pumpWidget(harness(rail()));
+    expect(find.byKey(const ValueKey('rail-tasks')), findsNothing);
+
+    LibrarySpace? asked;
+    await tester.pumpWidget(
+      harness(rail(openTasks: 10, onSelected: (open) => asked = open)),
+    );
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('rail-tasks'))).dy,
+      greaterThan(
+        tester.getTopLeft(find.byKey(const ValueKey('rail-notes'))).dy,
+      ),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('rail-tasks-badge')),
+        matching: find.text('10'),
+      ),
+      findsOneWidget,
+    );
+    expect(space(tester, 'tasks'), isSemantics(label: 'Tasks, 10 open'));
+    await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+    expect(asked, LibrarySpace.tasks);
+
+    await tester.pumpWidget(harness(rail(openTasks: 0)));
+    expect(find.byKey(const ValueKey('rail-tasks-badge')), findsNothing);
+  });
 
   testWidgets('a space asks to be opened, and the open one is marked', (
     tester,
@@ -212,6 +244,7 @@ void main() {
                 height: height,
                 child: rail(
                   invitations: 2,
+                  openTasks: 10,
                   showHidden: true,
                   streak: const WritingStreak(days: 3, wroteToday: true),
                   onAccountPressed: () {},
