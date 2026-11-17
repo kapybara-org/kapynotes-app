@@ -18,6 +18,7 @@ class CompactIconButton extends StatelessWidget {
     this.extent,
     this.radius = 6,
     this.tapTargetSize,
+    this.selectedBackground,
   });
 
   final Widget icon;
@@ -33,6 +34,10 @@ class CompactIconButton extends StatelessWidget {
   /// Overrides the platform's tap target, for a row that has measured its
   /// buttons edge to edge and cannot afford padding around each one.
   final MaterialTapTargetSize? tapTargetSize;
+
+  /// The surface while [selected], in place of the palette's selection: the
+  /// drawing dock marks its tool in the tonal sage.
+  final Color? selectedBackground;
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +70,9 @@ class CompactIconButton extends StatelessWidget {
                 if (states.contains(WidgetState.pressed)) {
                   return scheme.primary.withValues(alpha: 0.10);
                 }
-                if (selected) return palette.selectedBackground;
+                if (selected) {
+                  return selectedBackground ?? palette.selectedBackground;
+                }
                 if (states.contains(WidgetState.hovered) ||
                     states.contains(WidgetState.focused)) {
                   return palette.hover;

@@ -8,6 +8,9 @@ import '../core/editor_font.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
+import '../data/note_drawing.dart';
+import 'draw/drawing_geometry.dart';
+import 'draw/drawing_painter.dart';
 
 /// What a note can hold besides words, in the order the media filter lists
 /// them.
@@ -186,15 +189,31 @@ TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
 /// The small icons a card or row carries before its date: the media in the
 /// note, then whether it is read-only or shared.
 List<KapyIconData> _marksOf(
-  NoteGlance glance, {
+  Set<NoteMedia> media, {
   required bool locked,
   required bool shared,
 }) => [
-  for (final media in NoteMedia.values.reversed)
-    if (glance.media.contains(media)) media.icon,
+  for (final kind in NoteMedia.values.reversed)
+    if (media.contains(kind)) kind.icon,
   if (locked) KapyIcons.lockRounded,
   if (shared) KapyIcons.peopleOutlined,
 ];
+
+Border? _cardBorder(
+  CalcPalette palette, {
+  required bool selected,
+  required bool ringed,
+  Color? resting,
+}) => selected
+    ? Border.all(color: palette.selectedBorder, width: 1.5)
+    : ringed
+    ? Border.all(
+        color: palette.selectedBorder.withValues(alpha: 0.5),
+        width: 1.5,
+      )
+    : resting == null
+    ? null
+    : Border.all(color: resting);
 
 /// A tick box: the media menu's, and a note's while the archive is picking
 /// notes.
@@ -276,7 +295,7 @@ class NoteCardFace extends StatelessWidget {
     final preview =
         snippet ??
         (blank ? 'Empty' : glance.line ?? (note.isDrawing ? 'Sketch' : null));
-    final marks = _marksOf(glance, locked: locked, shared: shared);
+    final marks = _marksOf(glance.media, locked: locked, shared: shared);
     final tint = blank ? palette.surfaceBackground : stickyTint(palette, note);
     final picking = this.picking;
 
@@ -292,16 +311,12 @@ class NoteCardFace extends StatelessWidget {
                 )
               : tint,
           borderRadius: _cardRadius,
-          border: selected || picking == true
-              ? Border.all(color: palette.selectedBorder, width: 1.5)
-              : ringed
-              ? Border.all(
-                  color: palette.selectedBorder.withValues(alpha: 0.5),
-                  width: 1.5,
-                )
-              : blank
-              ? Border.all(color: palette.separator)
-              : null,
+          border: _cardBorder(
+            palette,
+            selected: selected || picking == true,
+            ringed: ringed,
+            resting: blank ? palette.separator : null,
+          ),
           boxShadow: _cardShadow(palette),
         ),
         child: Stack(
@@ -491,7 +506,7 @@ class NoteListRowFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final marks = _marksOf(glance, locked: locked, shared: shared);
+    final marks = _marksOf(glance.media, locked: locked, shared: shared);
     final summary = snippet ?? (note.isEmpty ? 'Empty' : glance.summary);
     final picking = this.picking;
     final marked = selected || picking == true;
@@ -592,6 +607,306 @@ class NoteListRowFace extends StatelessWidget {
   }
 }
 
+/// A drawing shrunk to fit a card or a row, centred, in the theme's ink.
+class DrawingThumbnail extends StatelessWidget {
+  const DrawingThumbnail({super.key, required this.drawing});
+
+  final NoteDrawing? drawing;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    painter: _ThumbnailPainter(
+      elements: drawing?.elements ?? const [],
+      ink: context.palette.textPrimary,
+      textStyle: Theme.of(context).textTheme.bodyLarge ?? const TextStyle(),
+    ),
+    child: const SizedBox.expand(),
+  );
+}
+
+class _ThumbnailPainter extends CustomPainter {
+  _ThumbnailPainter({
+    required this.elements,
+    required this.ink,
+    required this.textStyle,
+  });
+
+  final List<DrawElement> elements;
+  final Color ink;
+  final TextStyle textStyle;
+
+  static const double _margin = 8;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bounds = drawingBounds(elements);
+    if (bounds == null) return;
+    final zoom = math.min(
+      1.0,
+      math.min(
+        (size.width - _margin * 2) / math.max(bounds.width, 1),
+        (size.height - _margin * 2) / math.max(bounds.height, 1),
+      ),
+    );
+    canvas.clipRect(Offset.zero & size);
+    DrawingPainter(
+      elements: elements,
+      hidden: const {},
+      extra: const [],
+      selection: const [],
+      marquee: null,
+      pan: size.center(Offset.zero) - bounds.center * zoom,
+      zoom: zoom,
+      ink: ink,
+      grid: const Color(0x00000000),
+      accent: ink,
+      textStyle: textStyle,
+    ).paint(canvas, size);
+  }
+
+  @override
+  bool shouldRepaint(_ThumbnailPainter old) =>
+      !identical(old.elements, elements) ||
+      old.ink != ink ||
+      old.textStyle != textStyle;
+}
+
+/// A drawing as a card in the Drawings space: a thumbnail of it on the
+/// paper, its title in the handwriting face, and when it was last changed.
+class DrawingCardFace extends StatelessWidget {
+  const DrawingCardFace({
+    super.key,
+    required this.note,
+    required this.date,
+    required this.selected,
+    required this.hovering,
+    this.ringed = false,
+    this.locked = false,
+    this.shared = false,
+    this.picking,
+  });
+
+  static const double height = 148;
+
+  final Note note;
+  final String date;
+  final bool selected;
+  final bool hovering;
+  final bool ringed;
+  final bool locked;
+  final bool shared;
+  final bool? picking;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final picking = this.picking;
+    final marks = _marksOf(const {}, locked: locked, shared: shared);
+    return Transform.rotate(
+      angle: _stickyTilt(note),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(6, 6, 6, 10),
+        decoration: BoxDecoration(
+          color: hovering
+              ? Color.alphaBlend(
+                  palette.textPrimary.withValues(alpha: 0.04),
+                  palette.editorBackground,
+                )
+              : palette.editorBackground,
+          borderRadius: _cardRadius,
+          border: _cardBorder(
+            palette,
+            selected: selected || picking == true,
+            ringed: ringed,
+            resting: palette.separator,
+          ),
+          boxShadow: _cardShadow(palette),
+        ),
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: ColoredBox(
+                      color: palette.sidebarBackground,
+                      child: DrawingThumbnail(drawing: note.drawing),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        note.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: _handwritten(
+                          14,
+                          18,
+                          FontWeight.w500,
+                          palette.cardTitle,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          for (final mark in marks) ...[
+                            KapyIcon(
+                              mark,
+                              size: 13,
+                              strokeWidth: 1.8,
+                              color: palette.textMuted,
+                            ),
+                            const SizedBox(width: 5),
+                          ],
+                          Flexible(
+                            child: Text(
+                              date,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: _figtree(
+                                AppTypeScale.caption,
+                                14,
+                                FontWeight.w600,
+                                palette.textMuted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (picking != null)
+              Positioned(top: 4, right: 4, child: _PickBox(checked: picking)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A drawing as a row in the Drawings space: a small thumbnail of it, then
+/// its title over when it was last changed.
+class DrawingListRowFace extends StatelessWidget {
+  const DrawingListRowFace({
+    super.key,
+    required this.note,
+    required this.date,
+    required this.selected,
+    required this.hovering,
+    this.ringed = false,
+    this.locked = false,
+    this.shared = false,
+    this.picking,
+  });
+
+  final Note note;
+  final String date;
+  final bool selected;
+  final bool hovering;
+  final bool ringed;
+  final bool locked;
+  final bool shared;
+  final bool? picking;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final picking = this.picking;
+    final marked = selected || picking == true;
+    final marks = _marksOf(const {}, locked: locked, shared: shared);
+    return Container(
+      padding: const EdgeInsets.all(6.5),
+      decoration: BoxDecoration(
+        color: marked
+            ? palette.editorBackground
+            : hovering
+            ? palette.hover
+            : null,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: marked
+              ? palette.selectedBorder
+              : ringed
+              ? palette.selectedBorder.withValues(alpha: 0.5)
+              : Colors.transparent,
+          width: 1.5,
+        ),
+      ),
+      child: Row(
+        children: [
+          if (picking != null) ...[
+            _PickBox(checked: picking),
+            const SizedBox(width: 10),
+          ],
+          Container(
+            width: 56,
+            height: 40,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: palette.editorBackground,
+              border: Border.all(color: palette.separator),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: DrawingThumbnail(drawing: note.drawing),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  note.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _figtree(14, 18, FontWeight.w600, palette.cardTitle),
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    for (final mark in marks) ...[
+                      KapyIcon(
+                        mark,
+                        size: 13,
+                        strokeWidth: 1.8,
+                        color: palette.textMuted,
+                      ),
+                      const SizedBox(width: 5),
+                    ],
+                    Flexible(
+                      child: Text(
+                        date,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: _figtree(
+                          AppTypeScale.small,
+                          16,
+                          FontWeight.w500,
+                          palette.textTertiary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The heading over a group of notes: Pinned or Notes, with how many there
 /// are, and whatever the group offers at its far end.
 class NotesListHeading extends StatelessWidget {
@@ -599,6 +914,7 @@ class NotesListHeading extends StatelessWidget {
     super.key,
     required this.label,
     required this.count,
+    this.noun = 'note',
     this.height = 24,
     this.leading,
     this.trailing,
@@ -606,6 +922,9 @@ class NotesListHeading extends StatelessWidget {
 
   final String label;
   final int count;
+
+  /// What the list holds, for the count's spoken form: "3 drawings".
+  final String noun;
   final double height;
   final Widget? leading;
   final Widget? trailing;
@@ -639,7 +958,7 @@ class NotesListHeading extends StatelessWidget {
           ),
           const SizedBox(width: 7),
           Tooltip(
-            message: count == 1 ? '1 note' : '$count notes',
+            message: count == 1 ? '1 $noun' : '$count ${noun}s',
             child: Text(
               '$count',
               style: _figtree(
@@ -709,14 +1028,16 @@ class SeeAllLink extends StatelessWidget {
 class NotesListControls extends StatelessWidget {
   const NotesListControls({
     super.key,
-    required this.media,
-    required this.onMediaChanged,
+    this.media,
+    this.onMediaChanged,
     required this.cards,
     required this.onCardsChanged,
   });
 
-  final Set<NoteMedia> media;
-  final ValueChanged<Set<NoteMedia>> onMediaChanged;
+  /// Null leaves the filter out, as in Drawings, where every item is a
+  /// drawing.
+  final Set<NoteMedia>? media;
+  final ValueChanged<Set<NoteMedia>>? onMediaChanged;
   final bool cards;
   final ValueChanged<bool> onCardsChanged;
 
@@ -732,7 +1053,7 @@ class NotesListControls extends StatelessWidget {
           selected: on,
           label: forCards ? 'Cards' : 'List',
           excludeSemantics: true,
-          onTap: () => onCardsChanged(forCards),
+          onTap: on ? null : () => onCardsChanged(forCards),
           child: MouseRegion(
             cursor: on ? MouseCursor.defer : SystemMouseCursors.click,
             child: GestureDetector(
@@ -772,12 +1093,16 @@ class NotesListControls extends StatelessWidget {
       );
     }
 
+    final media = this.media;
+    final onMediaChanged = this.onMediaChanged;
     return Row(
       children: [
-        Flexible(
-          child: _MediaFilter(ticked: media, onChanged: onMediaChanged),
-        ),
-        const SizedBox(width: 4),
+        if (media != null && onMediaChanged != null) ...[
+          Flexible(
+            child: _MediaFilter(ticked: media, onChanged: onMediaChanged),
+          ),
+          const SizedBox(width: 4),
+        ],
         const Spacer(),
         Container(
           padding: const EdgeInsets.all(2),

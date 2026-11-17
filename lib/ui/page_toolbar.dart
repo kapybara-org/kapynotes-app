@@ -31,6 +31,7 @@ class PageToolbar extends StatelessWidget {
     required this.onMore,
     this.section,
     this.showListShortcut,
+    this.noun = 'note',
     this.newNoteShortcut,
     this.noteOpen = false,
     this.syncStatus,
@@ -55,6 +56,9 @@ class PageToolbar extends StatelessWidget {
   final String? showListShortcut;
   final VoidCallback onCreate;
   final String? newNoteShortcut;
+
+  /// What New makes here: a note, or a drawing in Drawings.
+  final String noun;
 
   /// Whether there is a note on the page for Saved to speak for.
   final bool noteOpen;
@@ -131,7 +135,7 @@ class PageToolbar extends StatelessWidget {
                     TonalButton(
                       key: const ValueKey('page-new-note'),
                       icon: KapyIcons.addRounded,
-                      tooltip: ['New note', ?newNoteShortcut].join('  '),
+                      tooltip: ['New $noun', ?newNoteShortcut].join('  '),
                       onPressed: onCreate,
                     ),
                     const SizedBox(width: 10),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -141,7 +142,8 @@ class Sidebar extends StatelessWidget {
     this.tab = SidebarTab.mine,
     this.onTabChanged,
     this.windowBar,
-    this.emptyMessage,
+    this.drawings = false,
+    this.onNewDrawing,
     this.engine,
     this.now = DateTime.now,
     this.cards = false,
@@ -267,10 +269,12 @@ class Sidebar extends StatelessWidget {
   /// one, the list is the compact layout's drawer, under the wordmark.
   final Widget? windowBar;
 
-  /// What the list says when there is nothing in it to show, in place of the
-  /// name of the folder it would otherwise give. A search that finds nothing
-  /// still says so.
-  final String? emptyMessage;
+  /// Whether the list is the Drawings space: every item a drawing, shown by
+  /// a thumbnail of it, with no media filter to narrow it by.
+  final bool drawings;
+
+  /// Starts a drawing from the empty Drawings space.
+  final VoidCallback? onNewDrawing;
 
   /// Works out the sums a card or row shows under a note's title.
   final CalcEngine? engine;
@@ -329,6 +333,7 @@ class Sidebar extends StatelessWidget {
               belowTabs: _showsTabs,
               besideRail: _besideRail,
               pinnedOnly: pinnedOnly,
+              drawings: drawings,
             ),
             if (_besideRail &&
                 mediaFilter != null &&
@@ -337,7 +342,7 @@ class Sidebar extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
                 child: NotesListControls(
-                  media: mediaFilter,
+                  media: drawings ? null : mediaFilter,
                   onMediaChanged: onMediaFilterChanged,
                   cards: cards,
                   onCardsChanged: onCardsChanged,
@@ -443,16 +448,20 @@ extension on Sidebar {
       !_specialMode && !_onSharedTab && query.trim().isEmpty;
 
   Widget _buildEmpty(BuildContext context) {
+    if (drawings && query.trim().isEmpty) {
+      return _DrawingsEmpty(onNewDrawing: onNewDrawing);
+    }
     final empty = _SidebarEmpty(
       message: query.trim().isEmpty
-          ? emptyMessage ??
-                (archiveMode
-                    ? 'Archived Notes is empty'
-                    : hiddenMode
-                    ? 'Hidden Notes is empty'
-                    : _onSharedTab
-                    ? 'Nothing shared with you yet'
-                    : 'No notes yet')
+          ? archiveMode
+                ? 'Archived Notes is empty'
+                : hiddenMode
+                ? 'Hidden Notes is empty'
+                : _onSharedTab
+                ? 'Nothing shared with you yet'
+                : 'No notes yet'
+          : drawings
+          ? 'No matching drawings'
           : 'No matching notes',
       detail: query.trim().isEmpty && _onSharedTab
           ? 'Notes other people share with you appear here'
@@ -685,7 +694,13 @@ extension on Sidebar {
     final groups = _noteGroups;
     final pinned = _shownPinned(groups);
     final rows = <WidgetBuilder>[];
-    final style = cards ? NoteRowStyle.card : NoteRowStyle.row;
+    final style = switch ((cards, drawings)) {
+      (true, true) => NoteRowStyle.drawingCard,
+      (true, false) => NoteRowStyle.card,
+      (false, true) => NoteRowStyle.drawingRow,
+      (false, false) => NoteRowStyle.row,
+    };
+    final noun = drawings ? 'drawing' : 'note';
     final onPinnedOnlyChanged = this.onPinnedOnlyChanged;
 
     void gap(double height) => rows.add((_) => SizedBox(height: height));
@@ -728,7 +743,10 @@ extension on Sidebar {
           (context) => Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: SizedBox(
-              height: AppControlMetrics.scaleBar(context, NoteCardFace.height),
+              height: AppControlMetrics.scaleBar(
+                context,
+                drawings ? DrawingCardFace.height : NoteCardFace.height,
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -758,6 +776,7 @@ extension on Sidebar {
         NotesListHeading(
           label: 'Pinned',
           count: groups.pinned.length,
+          noun: noun,
           height: 22,
           leading: Row(
             mainAxisSize: MainAxisSize.min,
@@ -790,6 +809,7 @@ extension on Sidebar {
             key: const ValueKey('sidebar-pinned-heading'),
             label: 'Pinned',
             count: groups.pinned.length,
+            noun: noun,
             height: 22,
             leading: pin,
             trailing:
@@ -829,8 +849,13 @@ extension on Sidebar {
         heading(
           NotesListHeading(
             key: const ValueKey('sidebar-notes-heading'),
-            label: groups.hasSharedSections && !_tabbed ? 'My notes' : 'Notes',
+            label: drawings
+                ? 'Drawings'
+                : groups.hasSharedSections && !_tabbed
+                ? 'My notes'
+                : 'Notes',
             count: groups.mine.length,
+            noun: noun,
           ),
         );
         section(groups.mine);
@@ -1756,11 +1781,15 @@ class SidebarWindowBar extends StatelessWidget {
     required this.count,
     required this.onCreate,
     required this.onHide,
+    this.noun = 'note',
     this.newNoteShortcut,
     this.hideShortcut,
   });
 
   final String title;
+
+  /// What the space holds and New makes: a note, or a drawing in Drawings.
+  final String noun;
 
   /// How many notes the space holds, whatever a search has narrowed the list
   /// to.
@@ -1842,8 +1871,8 @@ class SidebarWindowBar extends StatelessWidget {
                                 // read as just a number.
                                 Tooltip(
                                   message: count == 1
-                                      ? '1 note'
-                                      : '$count notes',
+                                      ? '1 $noun'
+                                      : '$count ${noun}s',
                                   child: Text(
                                     '$count',
                                     key: const ValueKey('sidebar-space-count'),
@@ -1867,14 +1896,14 @@ class SidebarWindowBar extends StatelessWidget {
                       TonalButton(
                         key: const ValueKey('sidebar-new-note'),
                         icon: KapyIcons.addRounded,
-                        label: label ? 'New note' : null,
+                        label: label ? 'New $noun' : null,
                         shortcut: keycap ? newNoteShortcut?.keycapLabel : null,
                         // Without its keycap the button still teaches the
                         // chord, on hover.
                         tooltip: keycap
                             ? null
                             : [
-                                'New note',
+                                'New $noun',
                                 ?newNoteShortcut?.displayLabel,
                               ].join('  '),
                         onPressed: onCreate,
@@ -2391,7 +2420,11 @@ class _SearchField extends StatefulWidget {
     this.belowTabs = false,
     this.besideRail = false,
     this.pinnedOnly = false,
+    this.drawings = false,
   });
+
+  /// Searching the Drawings space.
+  final bool drawings;
 
   /// Sits under the tabs rather than the title bar, and needs less room
   /// above it to read as part of the same header.
@@ -2455,6 +2488,8 @@ class _SearchFieldState extends State<_SearchField> {
         ? 'Find in Hidden…'
         : widget.pinnedOnly
         ? 'Find in pinned…'
+        : widget.drawings
+        ? 'Find a drawing…'
         : 'Find a note…';
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
@@ -2645,7 +2680,7 @@ class _SearchShortcutHint extends StatelessWidget {
 
 /// How a [NoteRow] draws its note: the compact list's row, or the desktop
 /// list's row or sticky card beside the spaces rail.
-enum NoteRowStyle { compact, row, card }
+enum NoteRowStyle { compact, row, card, drawingRow, drawingCard }
 
 /// One row in the note list.
 class NoteRow extends StatefulWidget {
@@ -2968,7 +3003,9 @@ class _NoteRowState extends State<NoteRow> {
             note.updatedAt,
             now: widget.now(),
             displayTime: widget.displayTime,
-            today: widget.style == NoteRowStyle.card,
+            today:
+                widget.style == NoteRowStyle.card ||
+                widget.style == NoteRowStyle.drawingCard,
           )
         : typingStatusText([
                 for (final person in people)
@@ -2978,31 +3015,52 @@ class _NoteRowState extends State<NoteRow> {
     final glance = NoteGlance.of(note, widget.engine);
     final picking = widget.selecting ? widget.checked : null;
     final ringed = widget.openElsewhere && !widget.selected;
-    final face = widget.style == NoteRowStyle.card
-        ? NoteCardFace(
-            note: note,
-            glance: glance,
-            date: date,
-            snippet: snippet,
-            selected: widget.selected,
-            hovering: _hovering,
-            ringed: ringed,
-            locked: widget.locked,
-            shared: widget.shared,
-            picking: picking,
-          )
-        : NoteListRowFace(
-            note: note,
-            glance: glance,
-            date: date,
-            snippet: snippet,
-            selected: widget.selected,
-            hovering: _hovering,
-            ringed: ringed,
-            locked: widget.locked,
-            shared: widget.shared,
-            picking: picking,
-          );
+    final face = switch (widget.style) {
+      NoteRowStyle.card => NoteCardFace(
+        note: note,
+        glance: glance,
+        date: date,
+        snippet: snippet,
+        selected: widget.selected,
+        hovering: _hovering,
+        ringed: ringed,
+        locked: widget.locked,
+        shared: widget.shared,
+        picking: picking,
+      ),
+      NoteRowStyle.drawingCard => DrawingCardFace(
+        note: note,
+        date: date,
+        selected: widget.selected,
+        hovering: _hovering,
+        ringed: ringed,
+        locked: widget.locked,
+        shared: widget.shared,
+        picking: picking,
+      ),
+      NoteRowStyle.drawingRow => DrawingListRowFace(
+        note: note,
+        date: date,
+        selected: widget.selected,
+        hovering: _hovering,
+        ringed: ringed,
+        locked: widget.locked,
+        shared: widget.shared,
+        picking: picking,
+      ),
+      NoteRowStyle.row || NoteRowStyle.compact => NoteListRowFace(
+        note: note,
+        glance: glance,
+        date: date,
+        snippet: snippet,
+        selected: widget.selected,
+        hovering: _hovering,
+        ringed: ringed,
+        locked: widget.locked,
+        shared: widget.shared,
+        picking: picking,
+      ),
+    };
     if (!hasMenu || !_hovering) return face;
     return Stack(
       children: [
@@ -3537,6 +3595,85 @@ class _SpaceHeader extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The Drawings space with nothing in it: what will go here, and the way to
+/// start.
+class _DrawingsEmpty extends StatelessWidget {
+  const _DrawingsEmpty({required this.onNewDrawing});
+
+  final VoidCallback? onNewDrawing;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    const handwritten = WritingFont.handwritten;
+    final onNewDrawing = this.onNewDrawing;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 96, 24, 24),
+      child: Column(
+        children: [
+          Transform.rotate(
+            angle: -3 * math.pi / 180,
+            child: Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: palette.editorBackground,
+                border: Border.all(color: palette.separator),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              alignment: Alignment.center,
+              child: KapyIcon(
+                KapyIcons.penRounded,
+                size: 30,
+                strokeWidth: 1.5,
+                color: palette.textTertiary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No drawings yet',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: handwritten.fontFamily,
+              fontFamilyFallback: handwritten.fontFamilyFallback,
+              fontVariations: handwritten.fontVariations,
+              fontSize: 16,
+              height: 22 / 16,
+              fontWeight: FontWeight.w600,
+              color: palette.textSubheading,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: 220,
+            child: Text(
+              'Sketches, diagrams and wireframes live here, apart from your '
+              'notes.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: AppTypeScale.small,
+                height: 18 / 13,
+                fontWeight: FontWeight.w500,
+                color: palette.textTertiary,
+              ),
+            ),
+          ),
+          if (onNewDrawing != null) ...[
+            const SizedBox(height: 16),
+            TonalButton(
+              key: const ValueKey('sidebar-empty-new-drawing'),
+              icon: KapyIcons.addRounded,
+              label: 'New drawing',
+              onPressed: onNewDrawing,
+            ),
+          ],
+        ],
       ),
     );
   }

@@ -58,10 +58,13 @@ void main() {
       .evaluate()
       .map((node) => node.getSemanticsData());
 
-  /// Every button on screen that is switched on, and has nothing to press.
+  /// Every button on screen that is switched on and has nothing to press,
+  /// other than the chosen option of a switch, which pressing would not
+  /// change.
   List<String> unpressable() => [
     for (final data in buttons())
       if (data.flagsCollection.isEnabled != Tristate.isFalse &&
+          data.flagsCollection.isSelected != Tristate.isTrue &&
           !data.hasAction(SemanticsAction.tap))
         '"${data.label}" ${data.tooltip}'.trim(),
   ];
@@ -70,8 +73,17 @@ void main() {
   /// its label alone, so a button named only by its tooltip is read there as
   /// "button" and nothing else.
   List<String> unnamed() => [
-    for (final data in buttons())
-      if (data.label.trim().isEmpty) 'tooltip "${data.tooltip}"',
+    for (final node
+        in find.semantics
+            .byPredicate(
+              (node) =>
+                  !node.isMergedIntoParent &&
+                  node.getSemanticsData().hasAction(SemanticsAction.tap),
+            )
+            .evaluate())
+      if (node.getSemanticsData() case final data
+          when data.label.trim().isEmpty && !data.flagsCollection.isTextField)
+        'tooltip "${data.tooltip}" value "${data.value}"',
   ];
 
   /// A test with the semantics tree on, as it is while VoiceOver runs.
@@ -108,6 +120,15 @@ void main() {
     expect(unnamed(), isEmpty, reason: 'with the media filter open');
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sidebar-new-note')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('draw-style')));
+    await tester.pumpAndSettle();
+    expect(unpressable(), isEmpty, reason: 'on a drawing');
+    expect(unnamed(), isEmpty, reason: 'on a drawing');
 
     for (final space in ['drawings', 'archive']) {
       await tester.tap(find.byKey(ValueKey('rail-$space')));
