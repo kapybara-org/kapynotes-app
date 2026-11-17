@@ -478,6 +478,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
       _selectedEditor?.beginAppendSession();
     });
+    // An idle app draws no frame of its own to run that in.
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   /// The half of a widget tap that is not the note it opened.

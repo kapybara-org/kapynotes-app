@@ -45,6 +45,7 @@ NoteLayout _layout(NoteLines lines) => NoteLayout(
         style: text.startsWith('#') ? _style.copyWith(fontSize: 30) : _style,
       ),
       placeholders: const [],
+      folded: false,
     );
   },
   style: _style,
@@ -211,8 +212,11 @@ void main() {
     addTearDown(scroll.dispose);
     await tester.pumpWidget(_view(layout, scroll));
 
-    layout.jumpToEnd();
+    var notified = 0;
+    scroll.addListener(() => notified++);
+    layout.jumpToEnd(scroll.position);
     await tester.pump();
+    expect(notified, greaterThan(0));
     final last = _line(tester, lines.length - 1);
     expect(
       last.localToGlobal(Offset(0, last.size.height)).dy,

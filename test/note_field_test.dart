@@ -850,7 +850,7 @@ void main() {
     tester,
   ) async {
     final text = _note(1000);
-    final field = await _pumpField(tester, text);
+    final field = await _pumpFieldAtStart(tester, text);
     final origin = tester.getTopLeft(find.byType(NoteField));
     expect(
       field.positionAt(_rowOf(tester, field, 3, dx: 0)).offset,

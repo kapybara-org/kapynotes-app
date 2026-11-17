@@ -10,10 +10,11 @@ import 'line_heights.dart';
 import 'note_lines.dart';
 
 /// What a line draws: its runs, and the size of each widget among them, in
-/// the order they come.
+/// the order they come. A [folded] line takes no room and draws nothing.
 typedef LineSpan = ({
   InlineSpan span,
   List<PlaceholderDimensions> placeholders,
+  bool folded,
 });
 
 /// How the field draws its caret: [width] wide, [height] tall or a row of
@@ -40,6 +41,23 @@ typedef NoteMarks = ({
   NoteCaret caret,
   ({LayerLink start, LayerLink end})? handles,
 });
+
+/// What a line shows past its writing, such as a calculation's result:
+/// [child], centred on the line's last row, or on its first with [firstRow],
+/// with its right edge at [right] in the line. When the writing on that row
+/// runs too near, the child moves out past [right] after it, as far as the
+/// line reaches, and covers the writing only once there's no room left.
+/// [leader], when given, fills the space between the writing and the child.
+typedef LineTrailing = ({
+  Widget child,
+  Widget? leader,
+  double right,
+  bool firstRow,
+});
+
+/// The space a line keeps between its writing, the leader of what it shows
+/// past the writing, and what it shows.
+const double lineTrailingGap = 12;
 
 /// Where a selection handle points in [paragraph], for the part of the
 /// selection a line holds, [range], in the line's own offsets: under the
@@ -122,6 +140,7 @@ class NoteLayout {
     required this.style,
     required this.strut,
     this.scaler = TextScaler.noScaling,
+    this.caretRoom = 0,
   });
 
   final NoteLines lines;
@@ -135,6 +154,24 @@ class NoteLayout {
   final StrutStyle strut;
 
   final TextScaler scaler;
+
+  /// The room each row keeps at its end for the caret, when [columnWidth]
+  /// is null.
+  final double caretRoom;
+
+  /// How wide the writing runs, when it's narrower than the lines: the room
+  /// past it is for what lines show beside their writing. The lines' width
+  /// less [caretRoom] when null.
+  double? get columnWidth => _columnWidth;
+  double? _columnWidth;
+  set columnWidth(double? value) {
+    if (value == _columnWidth) return;
+    _columnWidth = value;
+    _sliver?.markNeedsLayout();
+  }
+
+  /// What a line shows past its writing, built for the lines in view.
+  LineTrailing? Function(int line)? trailingOf;
 
   /// Paragraphs of lines shown before, by what they draw, so that a line
   /// scrolled back into view, or moved by an edit above it, isn't laid out
@@ -172,9 +209,11 @@ class NoteLayout {
     _sliver?.markNeedsPaint();
   }
 
-  /// How wide the lines are, once the sliver has been laid out.
+  /// How wide the writing runs, once the sliver has been laid out.
   double? get width => _width;
-  bool _toEnd = false;
+
+  /// A row of the note's base style.
+  double get rowHeight => _row;
 
   int get length => lines.length;
 
@@ -192,7 +231,7 @@ class NoteLayout {
 
   /// Lays [line] out, unless it is already, and records its height.
   double measure(int line) {
-    final height = paragraphOf(line).height;
+    final height = spanAt(line).folded ? 0.0 : paragraphOf(line).height;
     _heights!.measure(line, height);
     return height;
   }
@@ -210,11 +249,23 @@ class NoteLayout {
     _sliver?.markNeedsLayout();
   }
 
-  /// Scrolls so that the note's last line ends at the bottom of the viewport,
-  /// exactly, measuring the last screenful first.
-  void jumpToEnd() {
-    _toEnd = true;
-    _sliver?.markNeedsLayout();
+  /// Scrolls [position] so that the note's last line ends at the bottom of
+  /// the viewport, exactly, measuring the last screenful first. It scrolls
+  /// as a jump does, so what follows the scroll offset follows this too.
+  void jumpToEnd(ScrollPosition position) {
+    final heights = _heights;
+    final sliver = _sliver;
+    if (heights == null || sliver == null) return;
+    final constraints = sliver.constraints;
+    final viewport = constraints.viewportMainAxisExtent;
+    var covered = 0.0;
+    for (var line = length - 1; line >= 0 && covered < viewport; line--) {
+      covered += measure(line);
+    }
+    sliver._anchor = null;
+    position.jumpTo(
+      constraints.precedingScrollExtent + math.max(0, heights.total - viewport),
+    );
   }
 
   void _setWidth(double width) {
@@ -309,7 +360,12 @@ class NoteSliver extends SliverMultiBoxAdaptorWidget {
   NoteSliver({super.key, required this.layout})
     : super(
         delegate: SliverChildBuilderDelegate(
-          (context, line) => _NoteLine(layout, line, layout.spanAt(line)),
+          (context, line) => _NoteLine(
+            layout,
+            line,
+            layout.spanAt(line),
+            layout.trailingOf?.call(line),
+          ),
           childCount: layout.length,
           addAutomaticKeepAlives: false,
           addRepaintBoundaries: false,
@@ -398,30 +454,14 @@ class RenderNoteSliver extends RenderSliverMultiBoxAdaptor {
     childManager
       ..didStartLayout()
       ..setDidUnderflow(false);
-    final layout = _noteLayout.._setWidth(constraints.crossAxisExtent);
+    final layout = _noteLayout
+      .._setWidth(
+        _noteLayout.columnWidth ??
+            math.max(0.0, constraints.crossAxisExtent - _noteLayout.caretRoom),
+      );
     final heights = layout._heights!;
     final count = heights.length;
     assert(count == layout.length, 'The note was edited without edited().');
-
-    if (layout._toEnd) {
-      layout._toEnd = false;
-      final needed =
-          constraints.viewportMainAxisExtent +
-          constraints.remainingCacheExtent -
-          constraints.remainingPaintExtent;
-      var covered = 0.0;
-      for (var line = count - 1; line >= 0 && covered < needed; line--) {
-        covered += layout.measure(line);
-      }
-      _anchor = null;
-      final by =
-          math.max(0, heights.total - constraints.viewportMainAxisExtent) -
-          constraints.scrollOffset;
-      if (by.abs() > precisionErrorTolerance) {
-        geometry = SliverGeometry(scrollOffsetCorrection: by);
-        return;
-      }
-    }
 
     final anchor = _anchor;
     if (anchor != null && anchor.line < count) {
@@ -535,34 +575,53 @@ class RenderNoteSliver extends RenderSliverMultiBoxAdaptor {
 }
 
 class _NoteLine extends MultiChildRenderObjectWidget {
-  _NoteLine(this.layout, this.line, this.span)
+  _NoteLine(this.layout, this.line, this.span, this.trailing)
     : super(
-        children: WidgetSpan.extractFromInlineSpan(span.span, layout.scaler),
+        children: [
+          ...WidgetSpan.extractFromInlineSpan(span.span, layout.scaler),
+          ?trailing?.leader,
+          ?trailing?.child,
+        ],
       );
 
   final NoteLayout layout;
   final int line;
   final LineSpan span;
+  final LineTrailing? trailing;
+
+  LineTrailingPlacement? get _placement => switch (trailing) {
+    null => null,
+    final trailing => (
+      right: trailing.right,
+      firstRow: trailing.firstRow,
+      leader: trailing.leader != null,
+    ),
+  };
 
   @override
   RenderNoteLine createRenderObject(BuildContext context) =>
-      RenderNoteLine(layout, line, span);
+      RenderNoteLine(layout, line, span, _placement);
 
   @override
   void updateRenderObject(BuildContext context, RenderNoteLine renderObject) {
     renderObject
       ..noteLayout = layout
       ..line = line
-      ..span = span;
+      ..span = span
+      ..trailing = _placement;
   }
 }
 
-/// One line of the note: its paragraph, and the widgets set in it.
+/// Where a line puts what it shows past its writing; see [LineTrailing].
+typedef LineTrailingPlacement = ({double right, bool firstRow, bool leader});
+
+/// One line of the note: its paragraph, the widgets set in it, and what it
+/// shows past its writing, which comes after them among its children.
 class RenderNoteLine extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, TextParentData>,
         RenderInlineChildrenContainerDefaults {
-  RenderNoteLine(this._noteLayout, this._line, this._span);
+  RenderNoteLine(this._noteLayout, this._line, this._span, this._trailing);
 
   NoteLayout _noteLayout;
   set noteLayout(NoteLayout value) {
@@ -586,6 +645,21 @@ class RenderNoteLine extends RenderBox
     markNeedsLayout();
   }
 
+  LineTrailingPlacement? _trailing;
+  set trailing(LineTrailingPlacement? value) {
+    if (value == _trailing) return;
+    _trailing = value;
+    markNeedsLayout();
+  }
+
+  /// What the line shows past its writing, and the leader to it, and where
+  /// each is, once laid out.
+  RenderBox? get _trailingChild => _trailing == null ? null : lastChild;
+  RenderBox? get _leaderChild =>
+      _trailing?.leader ?? false ? childBefore(lastChild!) : null;
+  Offset? _trailingAt;
+  Offset? _leaderAt;
+
   TextPainter? _paragraph;
 
   /// The paragraph the line was last laid out with.
@@ -600,17 +674,66 @@ class RenderNoteLine extends RenderBox
   @override
   void performLayout() {
     final paragraph = _paragraph = _noteLayout.paragraphOf(_line);
+    // As a paragraph lays its inline widgets out: as wide as the line at
+    // most, and as tall as they like.
+    final inline = BoxConstraints(maxWidth: _noteLayout.width!);
     var child = firstChild;
-    for (final placeholder in _span.placeholders) {
-      if (child == null) break;
-      child.layout(BoxConstraints.tight(placeholder.size));
+    for (var i = 0; i < _span.placeholders.length && child != null; i++) {
+      child.layout(inline);
       child = childAfter(child);
     }
     positionInlineChildren(paragraph.inlinePlaceholderBoxes ?? const []);
+    _layOutTrailing(paragraph);
+  }
+
+  void _layOutTrailing(TextPainter paragraph) {
+    final trailing = _trailing;
+    final child = _trailingChild;
+    if (trailing == null || child == null) return;
+    child.layout(BoxConstraints(maxWidth: size.width), parentUsesSize: true);
+    final row = _row(paragraph, first: trailing.firstRow);
+    final start = row.right + lineTrailingGap;
+    final width = child.size.width;
+    var left = trailing.right - width;
+    if (left < start) left = math.min(start, size.width - width);
+    left = math.max(0.0, left);
+    _trailingAt = Offset(left, row.top + (row.height - child.size.height) / 2);
+    final leader = _leaderChild;
+    if (leader == null) return;
+    leader.layout(
+      BoxConstraints.tight(
+        Size(math.max(0.0, left - lineTrailingGap - start), row.height),
+      ),
+    );
+    _leaderAt = Offset(start, row.top);
+  }
+
+  /// The line's first or last row: as tall as the row, and as wide as the
+  /// writing on it.
+  Rect _row(TextPainter paragraph, {required bool first}) {
+    final length = _noteLayout.lines[_line].length;
+    final boxes = length == 0
+        ? const <TextBox>[]
+        : paragraph.getBoxesForSelection(
+            TextSelection(baseOffset: 0, extentOffset: length),
+            boxHeightStyle: BoxHeightStyle.max,
+          );
+    if (boxes.isEmpty) {
+      return Rect.fromLTWH(0, 0, 0, paragraph.preferredLineHeight);
+    }
+    final top = boxes.map((box) => box.top).reduce(first ? math.min : math.max);
+    final row = boxes.where((box) => (box.top - top).abs() < 0.5);
+    return Rect.fromLTRB(
+      row.map((box) => box.left).reduce(math.min),
+      top,
+      row.map((box) => box.right).reduce(math.max),
+      row.map((box) => box.bottom).reduce(math.max),
+    );
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
+    if (_span.folded) return;
     final layout = _noteLayout;
     final marks = layout.marks;
     final paragraph = _paragraph!;
@@ -653,7 +776,7 @@ class RenderNoteLine extends RenderBox
             paragraph,
             TextPosition(offset: extent - start, affinity: selection.affinity),
             marks.caret,
-            size.width,
+            layout.width!,
           )
         : null;
     if (caret != null && !marks.caret.aboveText) {
@@ -663,6 +786,12 @@ class RenderNoteLine extends RenderBox
     paintInlineChildren(context, offset);
     if (caret != null && marks.caret.aboveText) {
       _paintCaret(context.canvas, caret, offset, marks.caret, caretColor!);
+    }
+    if (_leaderChild case final leader?) {
+      context.paintChild(leader, offset + _leaderAt!);
+    }
+    if (_trailingChild case final child?) {
+      context.paintChild(child, offset + _trailingAt!);
     }
     final handles = marks.handles;
     if (handles == null || !selection.isValid) return;
@@ -677,7 +806,12 @@ class RenderNoteLine extends RenderBox
           link: link,
           offset:
               offset +
-              handlePointIn(paragraph, range, start: first, width: size.width),
+              handlePointIn(
+                paragraph,
+                range,
+                start: first,
+                width: layout.width!,
+              ),
         ),
         (context, offset) {},
         Offset.zero,
@@ -720,10 +854,30 @@ class RenderNoteLine extends RenderBox
   }
 
   @override
-  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
-      hitTestInlineChildren(result, position);
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    final trailing = _trailingChild;
+    final at = _trailingAt;
+    if (trailing != null &&
+        at != null &&
+        result.addWithPaintOffset(
+          offset: at,
+          position: position,
+          hitTest: (result, position) =>
+              trailing.hitTest(result, position: position),
+        )) {
+      return true;
+    }
+    return hitTestInlineChildren(result, position);
+  }
 
   @override
-  void applyPaintTransform(RenderBox child, Matrix4 transform) =>
-      defaultApplyPaintTransform(child, transform);
+  void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    final at = identical(child, _trailingChild)
+        ? _trailingAt
+        : identical(child, _leaderChild)
+        ? _leaderAt
+        : null;
+    if (at == null) return defaultApplyPaintTransform(child, transform);
+    transform.translateByDouble(at.dx, at.dy, 0, 1);
+  }
 }

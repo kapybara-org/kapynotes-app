@@ -9,9 +9,11 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/selection_bubble.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 late ShortcutPrefs _shortcuts;
@@ -61,7 +63,7 @@ Widget _editor(
 }
 
 TextEditingController _controller(WidgetTester tester) =>
-    tester.widget<TextField>(find.byType(TextField)).controller!;
+    tester.widget<NoteField>(noteField).controller;
 
 /// Selects [needle] and waits the bubble's settle out.
 Future<void> _select(WidgetTester tester, String needle) async {
@@ -392,14 +394,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 60));
       await tester.pumpAndSettle();
       expect(_bubble, findsOneWidget);
-      final editable = tester
-          .state<EditableTextState>(find.byType(EditableText))
-          .renderEditable;
-      final line = editable.localToGlobal(
-        Offset(
-          0,
-          editable.getBoxesForSelection(controller.selection).first.top,
-        ),
+      final editable = NoteDriver(tester);
+      final line = editable.toGlobal(
+        Offset(0, editable.boxesFor(controller.selection).first.top),
       );
       expect(
         tester.getRect(_bubble).bottom,

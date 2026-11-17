@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show BoxHeightStyle;
 
 import 'package:cupertino_ui/cupertino_ui.dart'
     show
@@ -44,6 +45,8 @@ class NoteField extends StatefulWidget {
     this.mouseCursor = SystemMouseCursors.text,
     this.contextMenuBuilder,
     this.magnifierConfiguration,
+    this.columnWidth,
+    this.trailingOf,
   });
 
   final HighlightingController controller;
@@ -85,6 +88,15 @@ class NoteField extends StatefulWidget {
   /// The magnifier shown while a finger moves the selection: the
   /// platform's, as [TextField] shows it, when null.
   final TextMagnifierConfiguration? magnifierConfiguration;
+
+  /// How wide the writing runs, when the field is wider: past it is room for
+  /// what [trailingOf] shows. The field's width, less room at the end of each
+  /// row for the caret, when null.
+  final double? columnWidth;
+
+  /// What a line shows past its writing, such as a calculation's result,
+  /// built while the line is in view.
+  final LineTrailing? Function(int line)? trailingOf;
 
   @override
   State<NoteField> createState() => NoteFieldState();
@@ -264,10 +276,12 @@ class NoteFieldState extends State<NoteField>
   void _ensureLayout() {
     final scaler = MediaQuery.textScalerOf(context);
     final current = _layout;
+    final caretRoom = 1 + widget.cursorWidth;
     if (current != null &&
         current.style == widget.style &&
         current.strut == widget.strut &&
-        current.scaler == scaler) {
+        current.scaler == scaler &&
+        current.caretRoom == caretRoom) {
       return;
     }
     _layout = NoteLayout(
@@ -276,6 +290,7 @@ class NoteFieldState extends State<NoteField>
       style: widget.style,
       strut: widget.strut,
       scaler: scaler,
+      caretRoom: caretRoom,
     );
   }
 
@@ -624,7 +639,7 @@ class NoteFieldState extends State<NoteField>
     connection.setEditableSizeAndTransform(box.size, box.getTransformTo(null));
     final selection = _value.selection;
     if (!selection.isValid) return;
-    final caret = _caretRect(TextPosition(offset: selection.start));
+    final caret = caretRectAt(TextPosition(offset: selection.start));
     if (caret == null) return;
     connection.setCaretRect(caret);
     connection.setComposingRect(_composingRect() ?? caret);
@@ -1010,7 +1025,7 @@ class NoteFieldState extends State<NoteField>
             start: start,
             width: layout.width ?? 0,
           ) +
-          Offset(0, _topOf(line) ?? 0);
+          Offset(0, lineTop(line) ?? 0);
     }
 
     final start = pointAt(selection.start, start: true);
@@ -1040,7 +1055,7 @@ class NoteFieldState extends State<NoteField>
     final view = (Offset.zero & box.size).inflate(0.5);
     bool inView(int offset) {
       final line = _lines.lineAt(offset);
-      final top = _topOf(line);
+      final top = lineTop(line);
       if (top == null) return false;
       final caret = layout
           .paragraphOf(line)
@@ -1148,11 +1163,11 @@ class NoteFieldState extends State<NoteField>
         Overlay.of(context, rootOverlay: true).context.findRenderObject()
             as RenderBox?;
     final toOverlay = box.getTransformTo(overlay);
-    final caret = _caretRect(position) ?? Rect.zero;
+    final caret = caretRectAt(position) ?? Rect.zero;
     final row = getLineAtOffset(position);
-    final rowStart = _caretRect(TextPosition(offset: row.baseOffset)) ?? caret;
+    final rowStart = caretRectAt(TextPosition(offset: row.baseOffset)) ?? caret;
     final rowEnd =
-        _caretRect(
+        caretRectAt(
           TextPosition(
             offset: row.extentOffset,
             affinity: TextAffinity.upstream,
@@ -1244,33 +1259,39 @@ class NoteFieldState extends State<NoteField>
     );
   }
 
-  /// The toolbar's editing items, on the platforms [EditableText] offers
-  /// each on.
-  List<ContextMenuButtonItem> get contextMenuButtonItems {
+  /// Whether the toolbar offers Copy, Cut, Paste and Select All, on the
+  /// platforms [EditableText] offers each on.
+  bool get copyEnabled =>
+      _value.selection.isValid && !_value.selection.isCollapsed;
+  bool get cutEnabled => copyEnabled && !widget.readOnly;
+  bool get pasteEnabled => !widget.readOnly;
+  bool get selectAllEnabled {
     final selection = _value.selection;
-    final selected = selection.isValid && !selection.isCollapsed
-        ? selection.textInside(_text)
-        : '';
-    final words = selected.trim().isNotEmpty;
-    final platform = defaultTargetPlatform;
-    const cause = SelectionChangedCause.toolbar;
-    void system(String method) =>
-        unawaited(SystemChannels.platform.invokeMethod<void>(method, selected));
-    final selectAllShows = switch (platform) {
+    return switch (defaultTargetPlatform) {
       TargetPlatform.macOS => false,
       TargetPlatform.iOS => _text.isNotEmpty && selection.isCollapsed,
       _ =>
         _text.isNotEmpty &&
             !(selection.start == 0 && selection.end == _text.length),
     };
+  }
+
+  /// The toolbar's editing items, on the platforms [EditableText] offers
+  /// each on.
+  List<ContextMenuButtonItem> get contextMenuButtonItems {
+    final selection = _value.selection;
+    final selected = copyEnabled ? selection.textInside(_text) : '';
+    final words = selected.trim().isNotEmpty;
+    final platform = defaultTargetPlatform;
+    const cause = SelectionChangedCause.toolbar;
+    void system(String method) =>
+        unawaited(SystemChannels.platform.invokeMethod<void>(method, selected));
     return EditableText.getEditableButtonItems(
       clipboardStatus: clipboardStatus.value,
-      onCopy: selected.isEmpty ? null : () => copySelection(cause),
-      onCut: selected.isEmpty || widget.readOnly
-          ? null
-          : () => cutSelection(cause),
-      onPaste: widget.readOnly ? null : () => pasteText(cause),
-      onSelectAll: selectAllShows ? () => selectAll(cause) : null,
+      onCopy: copyEnabled ? () => copySelection(cause) : null,
+      onCut: cutEnabled ? () => cutSelection(cause) : null,
+      onPaste: pasteEnabled ? () => pasteText(cause) : null,
+      onSelectAll: selectAllEnabled ? () => selectAll(cause) : null,
       onLookUp: words && platform == TargetPlatform.iOS
           ? () => system('LookUp.invoke')
           : null,
@@ -1352,9 +1373,9 @@ class NoteFieldState extends State<NoteField>
 
   /// The caret at [position], in the field's coordinates, if the field has
   /// been laid out.
-  Rect? _caretRect(TextPosition position) {
+  Rect? caretRectAt(TextPosition position) {
     final line = _lines.lineAt(position.offset);
-    final top = _topOf(line);
+    final top = lineTop(line);
     final width = _layout?.width;
     final caret = _caret;
     if (top == null || width == null || caret == null) return null;
@@ -1373,7 +1394,7 @@ class NoteFieldState extends State<NoteField>
     if (!_composing) return null;
     final composing = _value.composing;
     final line = _lines.lineAt(composing.start);
-    final top = _topOf(line);
+    final top = lineTop(line);
     if (top == null) return null;
     final start = _lines.startOf(line);
     final boxes = layout
@@ -1391,12 +1412,70 @@ class NoteFieldState extends State<NoteField>
         .translate(0, top);
   }
 
-  /// Where [line]'s top is in the field, once the field has been laid out.
-  double? _topOf(int line) {
+  /// Where [line]'s top is in the field, once the field has been laid out:
+  /// for the number of lines, where the last one ends.
+  double? lineTop(int line) {
     final heights = _layout?.heights;
     if (heights == null) return null;
     final scroll = widget.scrollController;
     return heights.topOf(line) - (scroll.hasClients ? scroll.offset : 0.0);
+  }
+
+  /// The field's box, once laid out.
+  RenderBox? get box {
+    final box = context.findRenderObject();
+    return box is RenderBox && box.attached && box.hasSize ? box : null;
+  }
+
+  /// The boxes around the text [selection] holds, row by row, in the field's
+  /// coordinates: on the lines within a screen of the view.
+  List<TextBox> boxesFor(TextSelection selection) {
+    final heights = _layout?.heights;
+    final box = this.box;
+    if (heights == null ||
+        box == null ||
+        !selection.isValid ||
+        selection.isCollapsed) {
+      return const [];
+    }
+    final scroll = widget.scrollController;
+    final scrolled = scroll.hasClients ? scroll.offset : 0.0;
+    final view = box.size.height;
+    final first = math.max(
+      _lines.lineAt(selection.start),
+      heights.lineAt(scrolled - view),
+    );
+    final last = math.min(
+      _lines.lineAt(selection.end),
+      heights.lineAt(scrolled + 2 * view),
+    );
+    final boxes = <TextBox>[];
+    for (var line = first; line <= last; line++) {
+      final start = _lines.startOf(line);
+      final from = math.max(selection.start, start) - start;
+      final to = math.min(selection.end, _lines.endOf(line)) - start;
+      if (from >= to) continue;
+      layout.measure(line);
+      final top = heights.topOf(line) - scrolled;
+      for (final box
+          in layout
+              .paragraphOf(line)
+              .getBoxesForSelection(
+                TextSelection(baseOffset: from, extentOffset: to),
+                boxHeightStyle: BoxHeightStyle.strut,
+              )) {
+        boxes.add(
+          TextBox.fromLTRBD(
+            box.left,
+            box.top + top,
+            box.right,
+            box.bottom + top,
+            box.direction,
+          ),
+        );
+      }
+    }
+    return boxes;
   }
 
   TextPosition _local(TextPosition position, int line) => TextPosition(
@@ -1433,10 +1512,10 @@ class NoteFieldState extends State<NoteField>
       if (scrollPosition.pixels >= scrollPosition.maxScrollExtent) {
         return false;
       }
-      layout.jumpToEnd();
+      layout.jumpToEnd(scrollPosition);
       return true;
     }
-    final caret = _caretRect(position);
+    final caret = caretRectAt(position);
     if (caret == null) return false;
     final shown = Rect.fromCenter(
       center: caret.center,
@@ -1845,7 +1924,10 @@ class NoteFieldState extends State<NoteField>
       widget.style,
       composing: _composing ? _value.composing : null,
     );
-    layout.restyled();
+    layout
+      ..columnWidth = widget.columnWidth
+      ..trailingOf = widget.trailingOf
+      ..restyled();
     final theme = Theme.of(context);
     final selectionStyle = DefaultSelectionStyle.of(context);
     final apple = _apple;
@@ -1904,14 +1986,7 @@ class NoteFieldState extends State<NoteField>
                     scrollBehavior: ScrollConfiguration.of(
                       context,
                     ).copyWith(overscroll: false),
-                    slivers: [
-                      // Each row keeps room at its end for the caret, as
-                      // [RenderEditable] keeps it.
-                      SliverPadding(
-                        padding: EdgeInsets.only(right: 1 + widget.cursorWidth),
-                        sliver: NoteSliver(layout: layout),
-                      ),
-                    ],
+                    slivers: [NoteSliver(layout: layout)],
                   ),
                 ),
               ),

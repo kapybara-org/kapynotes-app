@@ -279,6 +279,11 @@ class HighlightingController extends TextEditingController {
       return (
         span: TextSpan(style: style, children: children),
         placeholders: _placeholdersIn(start, end, formulas),
+        // A line inside a formula drawn as itself, which the formula's own
+        // line draws, as one paragraph of the whole note draws it in one row.
+        folded: styling.formulas
+            .overlapping(start, math.max(end, start + 1))
+            .any((formula) => formula.start < start && formula.end >= end),
       );
     };
   }
