@@ -1,6 +1,6 @@
 import 'dart:collection';
 import 'dart:math' as math;
-import 'dart:ui' show BoxHeightStyle;
+import 'dart:ui' show BoxHeightStyle, BoxWidthStyle, LineMetrics;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
@@ -13,12 +13,15 @@ import 'note_lines.dart';
 /// What a line draws: its runs, and the size of each widget among them, in
 /// the order they come. A [folded] line takes no room and draws nothing. A
 /// line with a [row] is exactly that tall, in pixels at the note's own text
-/// size, rather than as tall as the note's strut and its writing make it.
+/// size, rather than as tall as the note's strut and its writing make it. A
+/// line with an [inset] starts that far in from the column, and ends as far
+/// short of it.
 typedef LineSpan = ({
   InlineSpan span,
   List<PlaceholderDimensions> placeholders,
   bool folded,
   double? row,
+  double inset,
 });
 
 /// How the field draws its caret: [width] wide, [height] tall or a row of
@@ -310,21 +313,31 @@ class NoteLayout {
 
   TextPainter _paragraphFor(int line) {
     final drawn = spanAt(line);
-    final key = _Drawn(drawn.span, drawn.placeholders, drawn.row);
+    final key = _Drawn(drawn.span, drawn.placeholders, drawn.row, drawn.inset);
     final kept = _kept.remove(key);
     if (kept != null) return _kept[key] = kept;
+    // In one paragraph of the whole note, an empty line takes its height
+    // from its newline, in the base style. An empty paragraph would take the
+    // paragraph style's instead.
+    final text = lines[line].isEmpty
+        ? TextSpan(text: ' ', style: style)
+        : drawn.span;
+    final strutStyle = drawn.row == null ? strut : _forced(drawn.row!);
     final painter =
-        TextPainter(
-            // In one paragraph of the whole note, an empty line takes its
-            // height from its newline, in the base style. An empty paragraph
-            // would take the paragraph style's instead.
-            text: lines[line].isEmpty
-                ? TextSpan(text: ' ', style: style)
-                : drawn.span,
-            textDirection: TextDirection.ltr,
-            strutStyle: drawn.row == null ? strut : _forced(drawn.row!),
-            textScaler: scaler,
-          )
+        (drawn.inset == 0
+              ? TextPainter(
+                  text: text,
+                  textDirection: TextDirection.ltr,
+                  strutStyle: strutStyle,
+                  textScaler: scaler,
+                )
+              : InsetTextPainter(
+                  inset: scaler.scale(drawn.inset),
+                  text: text,
+                  textDirection: TextDirection.ltr,
+                  strutStyle: strutStyle,
+                  textScaler: scaler,
+                ))
           ..setPlaceholderDimensions(drawn.placeholders)
           ..layout(maxWidth: _width!);
     _kept[key] = painter;
@@ -375,21 +388,108 @@ class NoteLayout {
 /// What a line draws, as the key its paragraph is kept under.
 @immutable
 class _Drawn {
-  const _Drawn(this.span, this.placeholders, this.row);
+  const _Drawn(this.span, this.placeholders, this.row, this.inset);
 
   final InlineSpan span;
   final List<PlaceholderDimensions> placeholders;
   final double? row;
+  final double inset;
 
   @override
   bool operator ==(Object other) =>
       other is _Drawn &&
       other.span == span &&
       other.row == row &&
+      other.inset == inset &&
       listEquals(other.placeholders, placeholders);
 
   @override
-  int get hashCode => Object.hash(span, row, Object.hashAll(placeholders));
+  int get hashCode =>
+      Object.hash(span, row, inset, Object.hashAll(placeholders));
+}
+
+/// A line's paragraph set [inset] in from both edges of its column: it wraps
+/// [inset] short of each, and every place it is asked about or drawn is
+/// [inset] right of where the paragraph under it puts it, so that the line
+/// answers in its own, column coordinates, as a line with no inset does.
+class InsetTextPainter extends TextPainter {
+  InsetTextPainter({
+    required this.inset,
+    super.text,
+    super.textDirection,
+    super.strutStyle,
+    super.textScaler,
+  });
+
+  final double inset;
+
+  Offset get _in => Offset(inset, 0);
+
+  TextBox _shifted(TextBox box) => TextBox.fromLTRBD(
+    box.left + inset,
+    box.top,
+    box.right + inset,
+    box.bottom,
+    box.direction,
+  );
+
+  @override
+  void layout({double minWidth = 0.0, double maxWidth = double.infinity}) =>
+      super.layout(
+        minWidth: math.max(0.0, minWidth - 2 * inset),
+        maxWidth: math.max(0.0, maxWidth - 2 * inset),
+      );
+
+  @override
+  double get width => super.width + 2 * inset;
+
+  @override
+  Size get size => Size(width, height);
+
+  @override
+  List<TextBox>? get inlinePlaceholderBoxes =>
+      super.inlinePlaceholderBoxes?.map(_shifted).toList();
+
+  @override
+  void paint(Canvas canvas, Offset offset) => super.paint(canvas, offset + _in);
+
+  @override
+  TextPosition getPositionForOffset(Offset offset) =>
+      super.getPositionForOffset(offset - _in);
+
+  @override
+  Offset getOffsetForCaret(TextPosition position, Rect caretPrototype) =>
+      super.getOffsetForCaret(position, caretPrototype) + _in;
+
+  @override
+  List<TextBox> getBoxesForSelection(
+    TextSelection selection, {
+    BoxHeightStyle boxHeightStyle = BoxHeightStyle.tight,
+    BoxWidthStyle boxWidthStyle = BoxWidthStyle.tight,
+  }) => [
+    for (final box in super.getBoxesForSelection(
+      selection,
+      boxHeightStyle: boxHeightStyle,
+      boxWidthStyle: boxWidthStyle,
+    ))
+      _shifted(box),
+  ];
+
+  @override
+  List<LineMetrics> computeLineMetrics() => [
+    for (final line in super.computeLineMetrics())
+      LineMetrics(
+        hardBreak: line.hardBreak,
+        ascent: line.ascent,
+        descent: line.descent,
+        unscaledAscent: line.unscaledAscent,
+        height: line.height,
+        width: line.width,
+        left: line.left + inset,
+        baseline: line.baseline,
+        lineNumber: line.lineNumber,
+      ),
+  ];
 }
 
 /// The note's lines in a scroll view, each one a widget of its own, laid

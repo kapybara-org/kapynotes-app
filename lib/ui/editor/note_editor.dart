@@ -6510,6 +6510,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           EditorMetrics.codeHeader /
                           EditorMetrics.codeOpenRow,
                       child: _CodeBlockHeader(
+                        inset:
+                            (bottom - top) *
+                            EditorMetrics.codeInset /
+                            EditorMetrics.codeOpenRow,
                         language: header.fences.language,
                         onCopy: () =>
                             unawaited(_copyCode(header.block, header.fences)),
@@ -8280,61 +8284,70 @@ typedef _LineMark = ({int line, double middle, bool caret, bool hovered});
 
 /// A code block's header on the page: its language, and Copy.
 class _CodeBlockHeader extends StatelessWidget {
-  const _CodeBlockHeader({required this.language, required this.onCopy});
+  const _CodeBlockHeader({
+    required this.inset,
+    required this.language,
+    required this.onCopy,
+  });
 
+  /// How far in from the panel's edges the language and Copy sit.
+  final double inset;
   final String language;
   final VoidCallback onCopy;
 
   @override
   Widget build(BuildContext context) {
     final quiet = context.palette.textTertiary;
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            language,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: AppFonts.mono,
-              fontFamilyFallback: AppFonts.monoFallback,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w500,
-              color: quiet,
-            ),
-          ),
-        ),
-        Semantics(
-          button: true,
-          label: 'Copy code',
-          excludeSemantics: true,
-          onTap: onCopy,
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              key: const ValueKey('code-copy'),
-              behavior: HitTestBehavior.opaque,
-              onTap: onCopy,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  KapyIcon(KapyIcons.copyRounded, size: 13, color: quiet),
-                  const SizedBox(width: 5),
-                  Text(
-                    'Copy',
-                    style: TextStyle(
-                      fontFamily: AppFonts.ui,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: quiet,
-                    ),
-                  ),
-                ],
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: inset),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              language,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: AppFonts.mono,
+                fontFamilyFallback: AppFonts.monoFallback,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+                color: quiet,
               ),
             ),
           ),
-        ),
-      ],
+          Semantics(
+            button: true,
+            label: 'Copy code',
+            excludeSemantics: true,
+            onTap: onCopy,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                key: const ValueKey('code-copy'),
+                behavior: HitTestBehavior.opaque,
+                onTap: onCopy,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    KapyIcon(KapyIcons.copyRounded, size: 13, color: quiet),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Copy',
+                      style: TextStyle(
+                        fontFamily: AppFonts.ui,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: quiet,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

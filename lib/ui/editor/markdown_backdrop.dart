@@ -416,8 +416,8 @@ class RenderMarkdownBackdrop extends RenderBox {
     canvas.restore();
   }
 
-  /// How far a code block's panel reaches out from the writing: the 14px
-  /// Paper's panel has around its code.
+  /// How far a phone's code block panel reaches out from the writing: the
+  /// 14px Paper's panel has around its code.
   static const double _codeInset = 14;
 
   /// Paper's code block: a panel a step below the page reaching [_codeInset]
@@ -454,12 +454,15 @@ class RenderMarkdownBackdrop extends RenderBox {
     final closeScale = closeRows == null
         ? 1.0
         : (closeRows.$2 - closeRows.$1) / EditorMetrics.codeCloseRow;
+    // The page's panel is the column wide, with the code inset in it; a
+    // phone's reaches out into the margin, with the code on the column.
+    final reach = EditorMetrics.page ? 0.0 : _codeInset;
     final panel = RRect.fromLTRBR(
-      left - _codeInset,
+      left - reach,
       openRows == null
           ? top
           : rowY(openRows.$1) + EditorMetrics.codeGapBefore * openScale,
-      right + _codeInset,
+      right + reach,
       closeRows == null
           ? bottom
           : rowY(closeRows.$1) + EditorMetrics.codePanelBottom * closeScale,

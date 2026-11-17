@@ -15,6 +15,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/celebrate.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/editor/note_sliver.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
 import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
 import 'package:material_ui/material_ui.dart';
@@ -2250,6 +2251,161 @@ void main() {
         await tester.pumpAndSettle();
         expect(copy, findsNothing);
       });
+    });
+
+    group("a code block's lines are set in from its panel", () {
+      const fence = '\x60\x60\x60';
+      const note = 'Note\n${fence}python\nx = 1\nprint(x)\n$fence\nafter';
+      // Lines of the note: 2 is `x = 1`, 3 is `print(x)`, 5 is `after`.
+      const inset = EditorMetrics.codeInset;
+
+      Future<NoteDriver> pump(WidgetTester tester, [String body = note]) async {
+        tester.view.physicalSize = const Size(900, 600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(harness(body, writingFont: WritingFont.mixed));
+        await settleWithPageKapy(tester);
+        return NoteDriver(tester);
+      }
+
+      int at(WidgetTester tester, String needle) =>
+          controllerOf(tester).text.indexOf(needle);
+
+      testWidgets('the code starts inset, the text around it does not', (
+        tester,
+      ) async {
+        final field = await pump(tester);
+        final code = field.boxesFor(
+          TextSelection(
+            baseOffset: at(tester, 'x = 1'),
+            extentOffset: at(tester, 'x = 1') + 1,
+          ),
+        );
+        final plain = field.boxesFor(
+          TextSelection(
+            baseOffset: at(tester, 'after'),
+            extentOffset: at(tester, 'after') + 1,
+          ),
+        );
+        expect(code.single.left, closeTo(inset, 0.5));
+        expect(plain.single.left, closeTo(0, 0.5));
+      });
+
+      testWidgets(
+        'the caret stands where the code is, not where the column starts',
+        (tester) async {
+          final field = await pump(tester);
+          final start = at(tester, 'print(x)');
+          final first = field.caretRect(TextPosition(offset: start));
+          final later = field.caretRect(TextPosition(offset: start + 5));
+          expect(first.left, closeTo(inset, 1.5));
+          final advance = (later.left - first.left) / 5;
+          expect(advance, greaterThan(4));
+          final after = field.caretRect(
+            TextPosition(offset: at(tester, 'after')),
+          );
+          expect(after.left, closeTo(0, 1.5));
+        },
+      );
+
+      testWidgets('a tap lands on the character under it, and a tap in the '
+          "inset or past the end lands at the line's ends", (tester) async {
+        final field = await pump(tester);
+        final controller = controllerOf(tester);
+        final start = at(tester, 'print(x)');
+        final end = start + 'print(x)'.length;
+        final left = field.toGlobal(Offset.zero).dx;
+
+        // The caret in the block shows its fences, which moves the lines,
+        // so each tap finds its row afresh.
+        double rowOf(int offset) =>
+            centerOfRange(tester, offset, offset + 1).dy;
+
+        await tester.tapAt(centerOfRange(tester, start + 3, start + 4));
+        await tester.pump();
+        expect(controller.selection.isCollapsed, isTrue);
+        expect(controller.selection.baseOffset, anyOf(start + 3, start + 4));
+
+        await tester.tapAt(Offset(left + 3, rowOf(start)));
+        await tester.pump();
+        expect(controller.selection.baseOffset, start);
+
+        await tester.tapAt(Offset(left + 500, rowOf(start)));
+        await tester.pump();
+        expect(controller.selection.baseOffset, end);
+      });
+
+      testWidgets(
+        'a drag selects across the lines, from the inset to past the end',
+        (tester) async {
+          final field = await pump(tester);
+          final controller = controllerOf(tester);
+          final first = at(tester, 'x = 1');
+          final second = at(tester, 'print(x)');
+          final left = field.toGlobal(Offset.zero).dx;
+
+          final gesture = await tester.startGesture(
+            Offset(left + 3, centerOfRange(tester, first, first + 1).dy),
+            kind: PointerDeviceKind.mouse,
+          );
+          await tester.pump();
+          await gesture.moveTo(
+            Offset(left + 500, centerOfRange(tester, second, second + 1).dy),
+          );
+          await tester.pump();
+          await gesture.up();
+          await tester.pump();
+          expect(controller.selection.start, first);
+          expect(controller.selection.end, second + 'print(x)'.length);
+        },
+      );
+
+      testWidgets('a selection handle points at the selected code, and the '
+          'selection\'s boxes start in the inset', (tester) async {
+        final field = await pump(tester);
+        final start = at(tester, 'x = 1');
+        final paragraph = field.state.layout.paragraphOf(2);
+        final range = TextSelection(baseOffset: 0, extentOffset: 5);
+        final width = field.columnWidth;
+        final first = handlePointIn(
+          paragraph,
+          range,
+          start: true,
+          width: width,
+        );
+        final last = handlePointIn(
+          paragraph,
+          range,
+          start: false,
+          width: width,
+        );
+        expect(first.dx, closeTo(inset, 0.5));
+        final box = field
+            .boxesFor(TextSelection(baseOffset: start, extentOffset: start + 5))
+            .single;
+        expect(last.dx, closeTo(box.right, 0.5));
+        expect(box.left, closeTo(inset, 0.5));
+      });
+
+      testWidgets(
+        'a long line wraps inside the panel, every row in the inset',
+        (tester) async {
+          final long = List.filled(40, 'word').join(' ');
+          final field = await pump(
+            tester,
+            'Note\n${fence}python\n$long\n$fence\nafter',
+          );
+          final rows = field.state.layout.paragraphOf(2).computeLineMetrics();
+          expect(rows.length, greaterThan(1));
+          for (final row in rows) {
+            expect(row.left, closeTo(inset, 0.5));
+            expect(
+              row.left + row.width,
+              lessThanOrEqualTo(field.columnWidth - inset + 0.5),
+            );
+          }
+        },
+      );
     });
 
     group('as a golden', () {
