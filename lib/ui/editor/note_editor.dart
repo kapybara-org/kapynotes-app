@@ -6390,6 +6390,66 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
+  /// The language and Copy in the header of each fenced code block whose
+  /// fence is hidden, in the row the fence keeps, which the backdrop rules
+  /// off: Paper's code block.
+  Widget _codeHeaders(
+    EdgeInsets padding,
+    MarkdownAnalysis markdown,
+    MarkdownConcealment concealment,
+    LineOffsets offsets,
+    double width,
+  ) {
+    final headers = [
+      for (final block in markdown.blocks)
+        if (markdown.fencesOf(block) case final fences?
+            when concealment.hides(fences.open.start, fences.open.end))
+          (
+            block: block,
+            fences: fences,
+            line: '\n'
+                .allMatches(markdown.text.substring(0, fences.open.start))
+                .length,
+          ),
+    ];
+    if (headers.isEmpty) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: _scrollController,
+      builder: (context, _) {
+        final y =
+            padding.top -
+            (_scrollController.hasClients ? _scrollController.offset : 0);
+        final tops = offsets.tops;
+        return Stack(
+          children: [
+            for (final header in headers)
+              if (header.line + 1 < tops.length)
+                Positioned(
+                  left: padding.left,
+                  width: width,
+                  top: y + tops[header.line],
+                  height: tops[header.line + 1] - tops[header.line] - 3,
+                  child: _CodeBlockHeader(
+                    language: header.fences.language,
+                    onCopy: () =>
+                        unawaited(_copyCode(header.block, header.fences)),
+                  ),
+                ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _copyCode(MarkdownBlock block, MarkdownCodeFences fences) async {
+    final text = _controller.text;
+    final start = math.min(fences.open.end + 1, text.length);
+    final end = math.max(start, fences.close?.start ?? block.end);
+    final code = text.substring(start, end).replaceFirst(RegExp(r'\n$'), '');
+    await Clipboard.setData(ClipboardData(text: code));
+    if (mounted) Toast.show(context, 'Code copied');
+  }
+
   /// Measures the empty lines that get a "+" once the field has laid out,
   /// since a line's place is only known then.
   void _scheduleLineMarks() {
@@ -6762,6 +6822,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       base: textStyle,
                       scaler: textScaler,
                       fitToWidth: attachmentWidth,
+                      fill: EditorMetrics.page,
                       minRowHeight: rowHeight,
                       runStyle: (base, styles, words) {
                         final drawn = _controller.markdownRunStyle(
@@ -6938,11 +6999,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                             editable: _fieldEditable,
                                             colors: MarkdownBackdropColors(
                                               quiet: palette.textSecondary,
-                                              faint: palette.textTertiary
-                                                  .withValues(alpha: 0.35),
+                                              rule: palette.separator,
+                                              quoteBar: palette.quoteBar,
                                               panel: palette.controlBackground,
                                               panelBorder:
                                                   palette.controlBorder,
+                                              codePanel: palette.codePanel,
+                                              codeChip: palette.codeChip,
                                               accent: Theme.of(
                                                 context,
                                               ).colorScheme.primary,
@@ -6987,6 +7050,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                           textStyle,
                                           strut,
                                           rowHeight,
+                                        ),
+                                      ),
+                                    if (EditorMetrics.page &&
+                                        widget.markdownEnabled)
+                                      Positioned.fill(
+                                        child: _codeHeaders(
+                                          padding,
+                                          markdown,
+                                          concealment,
+                                          offsets,
+                                          contentWidth,
                                         ),
                                       ),
                                     if (widget.remoteCarets case final source?)
@@ -8084,3 +8158,64 @@ typedef _TitleLayout = ({
 /// An empty line with a "+" beside it: where it starts, its middle in the
 /// field, and whether the caret or the pointer is on it.
 typedef _LineMark = ({int line, double middle, bool caret, bool hovered});
+
+/// A code block's header on the page: its language, and Copy.
+class _CodeBlockHeader extends StatelessWidget {
+  const _CodeBlockHeader({required this.language, required this.onCopy});
+
+  final String language;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final quiet = context.palette.textTertiary;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            language,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: AppFonts.mono,
+              fontFamilyFallback: AppFonts.monoFallback,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w500,
+              color: quiet,
+            ),
+          ),
+        ),
+        Semantics(
+          button: true,
+          label: 'Copy code',
+          excludeSemantics: true,
+          onTap: onCopy,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              key: const ValueKey('code-copy'),
+              behavior: HitTestBehavior.opaque,
+              onTap: onCopy,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  KapyIcon(KapyIcons.copyRounded, size: 13, color: quiet),
+                  const SizedBox(width: 5),
+                  Text(
+                    'Copy',
+                    style: TextStyle(
+                      fontFamily: AppFonts.ui,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: quiet,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}

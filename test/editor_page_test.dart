@@ -220,7 +220,7 @@ void main() {
     );
   });
 
-  testWidgets('a heading is Shantell at 18 with room above it', (tester) async {
+  testWidgets('a heading is Shantell at 22 with room above it', (tester) async {
     window(tester);
     final start = _body.indexOf('Tool costs');
     await tester.pumpWidget(
@@ -239,20 +239,20 @@ void main() {
 
     final heading = (_spanAt(tester, start + 1) as TextSpan).style!;
     expect(heading.fontFamily, 'Shantell Sans');
-    expect(heading.fontSize, EditorMetrics.headingFontSize);
+    expect(heading.fontSize, EditorMetrics.headingFontSize(1));
     // Lines 3 and 5 are both plain rows, so their caret tops sit alike and
     // the distance between them is the two rows between.
     final (above, headingCaret) = _rows(tester, 3);
     final (bottom, _) = _rows(tester, 5);
     expect(
       bottom - above,
-      closeTo(EditorMetrics.lineHeight + EditorMetrics.headingLine, 1),
+      closeTo(EditorMetrics.lineHeight + EditorMetrics.headingRow(1), 1),
     );
     // The room is above the words: a plain row's caret starts at its top,
     // and the heading's well below the top of its row.
     expect(
       headingCaret - (above + EditorMetrics.lineHeight),
-      greaterThan(EditorMetrics.headingLine / 3),
+      greaterThan(EditorMetrics.headingRow(1) / 4),
     );
   });
 
