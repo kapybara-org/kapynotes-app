@@ -40,6 +40,7 @@ class TableGeometry {
     required TextScaler scaler,
     required MarkdownRunStyle runStyle,
     this.fitToWidth,
+    this.fill = false,
     this.minRowHeight = 0,
   }) {
     final fitting = fitToWidth != null;
@@ -94,6 +95,10 @@ class TableGeometry {
             minColumnWidth,
           )
         : [for (final width in natural) width + padding * 2];
+    if (fill && fitting) {
+      final spare = fitToWidth! - width;
+      if (spare > 0) columns[0] += spare;
+    }
 
     // Measured again inside the column each cell ended up with, so that words
     // too long for it wrap rather than spill over the next one.
@@ -110,12 +115,14 @@ class TableGeometry {
       for (final painter in _cells[row] ?? const <TextPainter>[]) {
         tallest = math.max(tallest, painter.height);
       }
-      _rowHeights[row] = math.max(minRowHeight, tallest + padding * 2);
+      _rowHeights[row] = math.max(minRowHeight, tallest + verticalPadding * 2);
     }
   }
 
-  /// The air between a cell's words and its column's edges.
-  static const double padding = 10;
+  /// The air between a cell's words and its column's edges, and above and
+  /// below them: Paper's 14 across and 36px rows.
+  static const double padding = 14;
+  static const double verticalPadding = 8;
 
   /// How wide one cell's words may be before they are cut short. A column wider
   /// than this crowds out every other one.
@@ -129,6 +136,10 @@ class TableGeometry {
 
   /// The width the table is fitted into, or null to let it be its natural size.
   final double? fitToWidth;
+
+  /// Whether a table narrower than [fitToWidth] is widened to it, its first
+  /// column taking what is spare, as Paper's page sets a table.
+  final bool fill;
 
   /// The shortest a row may be, whatever its words need. The editor passes the
   /// height of one row of text, since a table row occupies at least one line of
@@ -425,7 +436,7 @@ double placeholderLineOverhead({
   return _overheads[key] = math.max(0, next - top - asked);
 }
 
-typedef _Key = (int, TextStyle, TextScaler, double?, double);
+typedef _Key = (int, TextStyle, TextScaler, double?, bool, double);
 
 /// The geometry of a note's tables, kept for as long as the note and the style
 /// it is drawn in stay the same.
@@ -445,6 +456,7 @@ class TableGeometryCache {
     required TextScaler scaler,
     required MarkdownRunStyle runStyle,
     double? fitToWidth,
+    bool fill = false,
     double minRowHeight = 0,
   }) {
     // Any edit makes a new analysis, and every offset held here came from the
@@ -454,7 +466,7 @@ class TableGeometryCache {
       _analysis = analysis;
     }
     return _geometry.putIfAbsent(
-      (table.start, base, scaler, fitToWidth, minRowHeight),
+      (table.start, base, scaler, fitToWidth, fill, minRowHeight),
       () => TableGeometry(
         table: table,
         analysis: analysis,
@@ -462,6 +474,7 @@ class TableGeometryCache {
         scaler: scaler,
         runStyle: runStyle,
         fitToWidth: fitToWidth,
+        fill: fill,
         minRowHeight: minRowHeight,
       ),
     );
