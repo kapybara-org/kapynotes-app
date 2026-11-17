@@ -59,9 +59,9 @@ class TasksSidebar extends StatelessWidget {
         final byCount = counts[b]!.compareTo(counts[a]!);
         return byCount != 0
             ? byCount
-            : labelOf(notes[a]!).toLowerCase().compareTo(
-                labelOf(notes[b]!).toLowerCase(),
-              );
+            : labelOf(
+                notes[a]!,
+              ).toLowerCase().compareTo(labelOf(notes[b]!).toLowerCase());
       });
     return ColoredBox(
       color: palette.sidebarColor,
@@ -87,7 +87,12 @@ class TasksSidebar extends StatelessWidget {
                 children: [
                   _FilterRow(
                     key: const ValueKey('tasks-filter-all'),
-                    leading: (ink) => KapyIcon(KapyIcons.checklistRounded, size: 15, strokeWidth: 1.8, color: ink),
+                    leading: (ink) => KapyIcon(
+                      KapyIcons.checklistRounded,
+                      size: 15,
+                      strokeWidth: 1.8,
+                      color: ink,
+                    ),
                     label: 'All tasks',
                     count: board.open.length,
                     selected: filter == const TaskFilter.all(),
@@ -96,7 +101,12 @@ class TasksSidebar extends StatelessWidget {
                   const SizedBox(height: 2),
                   _FilterRow(
                     key: const ValueKey('tasks-filter-done'),
-                    leading: (ink) => KapyIcon(KapyIcons.checkRounded, size: 15, strokeWidth: 1.8, color: ink),
+                    leading: (ink) => KapyIcon(
+                      KapyIcons.checkRounded,
+                      size: 15,
+                      strokeWidth: 1.8,
+                      color: ink,
+                    ),
                     label: 'Done',
                     count: board.done.length,
                     selected: filter.done,
@@ -107,7 +117,12 @@ class TasksSidebar extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(4, 16, 4, 6),
                       child: Text(
                         'From notes',
-                        style: handStyle(14, 20, FontWeight.w600, palette.textSubheading),
+                        style: handStyle(
+                          14,
+                          20,
+                          FontWeight.w600,
+                          palette.textSubheading,
+                        ),
                       ),
                     ),
                   for (final id in ordered) ...[
@@ -395,7 +410,12 @@ class _MethodCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       line,
-                      style: uiStyle(12.5, 19, FontWeight.w500, palette.textSubheading),
+                      style: uiStyle(
+                        12.5,
+                        19,
+                        FontWeight.w500,
+                        palette.textSubheading,
+                      ),
                     ),
                   ),
                 ],
@@ -407,14 +427,22 @@ class _MethodCard extends StatelessWidget {
                 InkWell(
                   key: const ValueKey('tasks-read-fvp'),
                   onTap: () => unawaited(
-                    launchUrl(fvpInstructions, mode: LaunchMode.externalApplication),
+                    launchUrl(
+                      fvpInstructions,
+                      mode: LaunchMode.externalApplication,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         'Read about FVP',
-                        style: uiStyle(12.5, 16, FontWeight.w600, palette.accentText),
+                        style: uiStyle(
+                          12.5,
+                          16,
+                          FontWeight.w600,
+                          palette.accentText,
+                        ),
                       ),
                       const SizedBox(width: 4),
                       KapyIcon(
@@ -429,7 +457,12 @@ class _MethodCard extends StatelessWidget {
                 const Spacer(),
                 Text(
                   'The successor to Autofocus',
-                  style: uiStyle(11.5, 16, FontWeight.w500, palette.textTertiary),
+                  style: uiStyle(
+                    11.5,
+                    16,
+                    FontWeight.w500,
+                    palette.textTertiary,
+                  ),
                 ),
               ],
             ),

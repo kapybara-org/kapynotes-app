@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
@@ -25,8 +26,8 @@ String get doneShortcutLabel => AppPlatform.isMacOS ? '⌘↵' : 'Ctrl+↵';
 /// adds a task to the end of the list, Do now (or the questions that pick
 /// it), and the list in the order tasks were added. There are no dates to
 /// plan by and no sort: FVP needs the one fixed order.
-class TasksPage extends StatefulWidget {
-  const TasksPage({
+class TasksScreen extends StatefulWidget {
+  const TasksScreen({
     super.key,
     required this.controller,
     required this.filter,
@@ -52,10 +53,10 @@ class TasksPage extends StatefulWidget {
   final String? newTaskShortcut;
 
   @override
-  State<TasksPage> createState() => TasksPageState();
+  State<TasksScreen> createState() => TasksScreenState();
 }
 
-class TasksPageState extends State<TasksPage> {
+class TasksScreenState extends State<TasksScreen> {
   final _words = TextEditingController();
 
   /// Where the next scan starts after Do now was done or sent back: only
@@ -80,7 +81,7 @@ class TasksPageState extends State<TasksPage> {
   }
 
   @override
-  void didUpdateWidget(TasksPage oldWidget) {
+  void didUpdateWidget(TasksScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.addFocus != widget.addFocus) {
       oldWidget.addFocus.removeListener(_focusChanged);
@@ -137,8 +138,7 @@ class TasksPageState extends State<TasksPage> {
     return null;
   }
 
-  String? get _addInto =>
-      _targetChosen ? _target : widget.filter.noteId;
+  String? get _addInto => _targetChosen ? _target : widget.filter.noteId;
 
   Future<void> _add() async {
     final words = _words.text;
@@ -182,7 +182,10 @@ class TasksPageState extends State<TasksPage> {
     messenger?.showSnackBar(
       SnackBar(
         content: const Text('Task removed'),
-        action: SnackBarAction(label: 'Undo', onPressed: () => unawaited(undo())),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () => unawaited(undo()),
+        ),
       ),
     );
   }
@@ -289,7 +292,12 @@ class TasksPageState extends State<TasksPage> {
             children: [
               Text(
                 'The list',
-                style: handStyle(15, 22, FontWeight.w600, palette.textSubheading),
+                style: handStyle(
+                  15,
+                  22,
+                  FontWeight.w600,
+                  palette.textSubheading,
+                ),
               ),
               const SizedBox(width: 8),
               Text(
@@ -405,12 +413,22 @@ class TasksPageState extends State<TasksPage> {
                 children: [
                   Text(
                     'Done',
-                    style: handStyle(32, 40, FontWeight.w700, palette.textPrimary),
+                    style: handStyle(
+                      32,
+                      40,
+                      FontWeight.w700,
+                      palette.textPrimary,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Text(
                     '${board.done.length} completed',
-                    style: uiStyle(13, 16, FontWeight.w600, palette.textTertiary),
+                    style: uiStyle(
+                      13,
+                      16,
+                      FontWeight.w600,
+                      palette.textTertiary,
+                    ),
                   ),
                 ],
               ),
@@ -528,7 +546,11 @@ class _AddRow extends StatelessWidget {
       height: 40,
       padding: const EdgeInsets.only(left: 10, right: 6),
       decoration: BoxDecoration(
-        color: Color.lerp(palette.editorBackground, palette.controlBackground, 0.5),
+        color: Color.lerp(
+          palette.editorBackground,
+          palette.controlBackground,
+          0.5,
+        ),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -556,7 +578,12 @@ class _AddRow extends StatelessWidget {
                 style: uiStyle(16, 28, FontWeight.w500, palette.textPrimary),
                 decoration: InputDecoration.collapsed(
                   hintText: 'Add a task…',
-                  hintStyle: uiStyle(16, 28, FontWeight.w500, palette.textTertiary),
+                  hintStyle: uiStyle(
+                    16,
+                    28,
+                    FontWeight.w500,
+                    palette.textTertiary,
+                  ),
                 ),
               ),
             ),
@@ -626,7 +653,12 @@ class _NotePicker extends StatelessWidget {
                   target == null ? 'No note' : labelOf(target),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: uiStyle(12.5, 16, FontWeight.w600, palette.textSecondary),
+                  style: uiStyle(
+                    12.5,
+                    16,
+                    FontWeight.w600,
+                    palette.textSecondary,
+                  ),
                 ),
               ),
               if (chevron) ...[
@@ -724,13 +756,22 @@ class _DoNowCard extends StatelessWidget {
                 children: [
                   Text(
                     'DO NOW',
-                    style: uiStyle(11, 14, FontWeight.w700, palette.accentText)
-                        .copyWith(letterSpacing: 0.66),
+                    style: uiStyle(
+                      11,
+                      14,
+                      FontWeight.w700,
+                      palette.accentText,
+                    ).copyWith(letterSpacing: 0.66),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     item.words,
-                    style: uiStyle(20, 28, FontWeight.w600, palette.textPrimary),
+                    style: uiStyle(
+                      20,
+                      28,
+                      FontWeight.w600,
+                      palette.textPrimary,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -758,7 +799,12 @@ class _DoNowCard extends StatelessWidget {
                               borderRadius: BorderRadius.circular(9),
                             ),
                             foregroundColor: palette.textSecondary,
-                            textStyle: uiStyle(13, 16, FontWeight.w600, palette.textSecondary),
+                            textStyle: uiStyle(
+                              13,
+                              16,
+                              FontWeight.w600,
+                              palette.textSecondary,
+                            ),
                           ),
                           icon: KapyIcon(
                             KapyIcons.undoRounded,
@@ -854,11 +900,15 @@ class _PickButton extends StatelessWidget {
       style: TextButton.styleFrom(
         minimumSize: const Size(0, 36),
         padding: const EdgeInsets.symmetric(horizontal: 14),
-        backgroundColor: tonal ? palette.tonalBackground : palette.controlBackground,
+        backgroundColor: tonal
+            ? palette.tonalBackground
+            : palette.controlBackground,
         foregroundColor: ink,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
-          side: tonal ? BorderSide.none : BorderSide(color: palette.controlBorder),
+          side: tonal
+              ? BorderSide.none
+              : BorderSide(color: palette.controlBorder),
         ),
         textStyle: uiStyle(13, 16, FontWeight.w700, ink),
       ),
@@ -1023,7 +1073,12 @@ class _MoreThanCard extends StatelessWidget {
                     minimumSize: const Size(0, 26),
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     foregroundColor: palette.textTertiary,
-                    textStyle: uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary),
+                    textStyle: uiStyle(
+                      12.5,
+                      16,
+                      FontWeight.w500,
+                      palette.textTertiary,
+                    ),
                   ),
                   child: Text('+ $more more below'),
                 ),
@@ -1096,7 +1151,12 @@ class _CandidateRowState extends State<_CandidateRow> {
                   widget.item.words,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: uiStyle(14.5, 20, FontWeight.w500, palette.textPrimary),
+                  style: uiStyle(
+                    14.5,
+                    20,
+                    FontWeight.w500,
+                    palette.textPrimary,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -1111,7 +1171,12 @@ class _CandidateRowState extends State<_CandidateRow> {
                   ),
                   child: Text(
                     'Pick',
-                    style: uiStyle(12.5, 16, FontWeight.w700, palette.tonalForeground),
+                    style: uiStyle(
+                      12.5,
+                      16,
+                      FontWeight.w700,
+                      palette.tonalForeground,
+                    ),
                   ),
                 )
               else if (label != null)
@@ -1163,7 +1228,11 @@ class _Ring extends StatelessWidget {
 
 /// A box, ticked or not, the size and weight of a note's checkbox.
 class _Box extends StatelessWidget {
-  const _Box({required this.done, required this.onPressed, required this.label});
+  const _Box({
+    required this.done,
+    required this.onPressed,
+    required this.label,
+  });
 
   final bool done;
   final VoidCallback onPressed;

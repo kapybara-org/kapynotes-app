@@ -325,7 +325,9 @@ class _RailItemState extends State<_RailItem> {
               top: 2,
               right: 2,
               child: _Badge(
-                key: ValueKey('${(widget.key! as ValueKey<String>).value}-badge'),
+                key: ValueKey(
+                  '${(widget.key! as ValueKey<String>).value}-badge',
+                ),
                 count: widget.badge,
               ),
             ),

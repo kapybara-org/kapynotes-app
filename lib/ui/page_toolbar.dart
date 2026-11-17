@@ -173,49 +173,49 @@ class PageToolbar extends StatelessWidget {
                       ),
                     ...actions,
                   ] else ...[
-                  if (members.isNotEmpty)
-                    Flexible(
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 8, right: 6),
-                        child: MemberAvatars(
-                          members: members,
-                          present: present,
-                          currentUserId: currentUserId,
-                          onPressed: onShare,
+                    if (members.isNotEmpty)
+                      Flexible(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8, right: 6),
+                          child: MemberAvatars(
+                            members: members,
+                            present: present,
+                            currentUserId: currentUserId,
+                            onPressed: onShare,
+                          ),
                         ),
                       ),
+                    if (updates != null)
+                      UpdateRestartButton(
+                        updates: updates,
+                        wide: constraints.maxWidth >= _updateLabelWidth,
+                      ),
+                    if (noteOpen && constraints.maxWidth >= _savedWidth) ...[
+                      _SaveStatus(syncStatus),
+                      const SizedBox(width: 6),
+                    ],
+                    TonalButton(
+                      key: const ValueKey('page-share'),
+                      tall: true,
+                      icon: KapyIcons.personAddRounded,
+                      label: 'Share',
+                      tooltip: noteShared ? 'Manage sharing' : null,
+                      onPressed: onShare,
                     ),
-                  if (updates != null)
-                    UpdateRestartButton(
-                      updates: updates,
-                      wide: constraints.maxWidth >= _updateLabelWidth,
-                    ),
-                  if (noteOpen && constraints.maxWidth >= _savedWidth) ...[
-                    _SaveStatus(syncStatus),
                     const SizedBox(width: 6),
-                  ],
-                  TonalButton(
-                    key: const ValueKey('page-share'),
-                    tall: true,
-                    icon: KapyIcons.personAddRounded,
-                    label: 'Share',
-                    tooltip: noteShared ? 'Manage sharing' : null,
-                    onPressed: onShare,
-                  ),
-                  const SizedBox(width: 6),
-                  CompactIconButton(
-                    key: const ValueKey('page-pin'),
-                    tooltip: pinned ? 'Unpin note' : 'Pin note',
-                    extent: actionExtent,
-                    radius: 10,
-                    foregroundColor: pinned ? palette.clay : null,
-                    onPressed: onTogglePin,
-                    icon: KapyIcon(
-                      KapyIcons.pinOutlined,
-                      size: AppControlMetrics.iconAction,
-                      strokeWidth: 1.9,
+                    CompactIconButton(
+                      key: const ValueKey('page-pin'),
+                      tooltip: pinned ? 'Unpin note' : 'Pin note',
+                      extent: actionExtent,
+                      radius: 10,
+                      foregroundColor: pinned ? palette.clay : null,
+                      onPressed: onTogglePin,
+                      icon: KapyIcon(
+                        KapyIcons.pinOutlined,
+                        size: AppControlMetrics.iconAction,
+                        strokeWidth: 1.9,
+                      ),
                     ),
-                  ),
                   ],
                   const SizedBox(width: 6),
                   Builder(

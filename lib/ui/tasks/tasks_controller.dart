@@ -78,8 +78,8 @@ class TasksController extends ChangeNotifier {
     if (note == null || doc == null || entry == null) return null;
     if (doc.text != note.body || !canEdit(note)) return null;
     final lines = taskLines(note.body);
-    final index = taskLineIndex(doc, lines, entry.anchor);
-    return index < 0 ? null : (note, lines[index]);
+    final at = taskLineIndex(doc, lines, entry.anchor);
+    return at < 0 ? null : (note, lines[at]);
   }
 
   /// Replaces [start]..[end] of [note]'s text with [replacement], carrying
@@ -167,10 +167,8 @@ class TasksController extends ChangeNotifier {
       final note = notes.byId(item.note.id);
       if (note == null || canEdit(note)) return null;
       _change(item, (e) => e.copyWith(dismissed: Stamped(true, _stamp())));
-      return () async => _change(
-        item,
-        (e) => e.copyWith(dismissed: Stamped(false, _stamp())),
-      );
+      return () async =>
+          _change(item, (e) => e.copyWith(dismissed: Stamped(false, _stamp())));
     }
     final (note, line) = current;
     final last = line.end >= note.body.length;

@@ -59,8 +59,11 @@ void main() {
     return made;
   }
 
-  TaskBoard read() =>
-      TaskBoard.read(entries: index.entries, notes: notes, docOf: (id) => docs[id]);
+  TaskBoard read() => TaskBoard.read(
+    entries: index.entries,
+    notes: notes,
+    docOf: (id) => docs[id],
+  );
 
   List<String> words(List<TaskItem> items) => [for (final i in items) i.words];
 
@@ -83,9 +86,7 @@ void main() {
     note('a', 'Trip\n☐ Book flights\n☐ Learn phrases');
     final first = read().open.first;
     clock = clock.add(const Duration(hours: 1));
-    index.update(
-      first.entry.copyWith(enteredAt: clock.millisecondsSinceEpoch),
-    );
+    index.update(first.entry.copyWith(enteredAt: clock.millisecondsSinceEpoch));
 
     expect(words(read().open), ['Learn phrases', 'Book flights']);
   });
@@ -109,9 +110,7 @@ void main() {
     note('c', 'Secret\n☐ Hidden task', hiddenAt: DateTime(2026, 11, 2));
     note('d', 'Shop\n☐ Dismissed task');
     final dismissed = read().open.firstWhere((i) => i.note.id == 'd');
-    index.update(
-      dismissed.entry.copyWith(dismissed: const Stamped(true, 1)),
-    );
+    index.update(dismissed.entry.copyWith(dismissed: const Stamped(true, 1)));
 
     expect(words(read().open), ['Book flights']);
   });

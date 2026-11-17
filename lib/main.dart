@@ -147,6 +147,7 @@ Future<void> main() async {
       updates: updates,
       desktopIntegration: desktopIntegration,
       account: account,
+      tasks: tasks,
       // Here, where no test runs: see KapyNotesApp.deepLinks.
       deepLinks: DeepLinks.platform(),
     ),
@@ -160,6 +161,7 @@ Future<void> main() async {
   if (desktopIntegration != null) {
     unawaited(desktopIntegration.initialize(shortcuts));
   }
+  unawaited(tasks.load());
 }
 
 Future<void> _configureWindow(LayoutPrefs prefs) async {

@@ -118,7 +118,12 @@ class _DashedSquare extends CustomPainter {
 
 /// The note a task lives in, at the end of its row: its swatch and its name.
 class NoteMark extends StatelessWidget {
-  const NoteMark({super.key, required this.note, required this.label, this.onPressed});
+  const NoteMark({
+    super.key,
+    required this.note,
+    required this.label,
+    this.onPressed,
+  });
 
   final Note note;
   final String label;
