@@ -10,6 +10,8 @@ import '../data/notes_store.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/task_board.dart';
 import 'keycap.dart';
+import 'settings_dialog.dart' show SettingsIndex, SettingsSection;
+import 'settings_search.dart';
 import 'sidebar.dart' show archiveIcon;
 import 'sidebar_timestamp.dart';
 import 'spaces_rail.dart';
@@ -58,6 +60,19 @@ class OpenSettingsChoice extends CommandChoice {
   const OpenSettingsChoice();
 }
 
+/// Makes the widget that hands [CommandMenu] the settings search index.
+typedef SettingsHost = Widget Function(ValueChanged<SettingsIndex> lend);
+
+/// Open Settings on a setting a search found.
+class RevealSettingChoice extends CommandChoice {
+  const RevealSettingChoice(this.section, this.reveal);
+
+  final SettingsSection section;
+
+  /// The row to scroll to and light, or null for a whole category.
+  final String? reveal;
+}
+
 /// Open Archive with the search kept.
 class SearchArchiveChoice extends CommandChoice {
   const SearchArchiveChoice(this.query);
@@ -82,6 +97,7 @@ Future<CommandChoice?> showCommandMenu(
   required String Function(Note) taskLabel,
   TaskBoard? tasks,
   bool hiddenUnlocked = false,
+  SettingsHost? settingsIndex,
 }) {
   final dark = context.palette.brightness == Brightness.dark;
   return showDialog<CommandChoice>(
@@ -97,6 +113,7 @@ Future<CommandChoice?> showCommandMenu(
       taskLabel: taskLabel,
       tasks: tasks,
       hiddenUnlocked: hiddenUnlocked,
+      settingsIndex: settingsIndex,
       onChosen: (choice) => Navigator.of(context).pop(choice),
     ),
   );
@@ -115,6 +132,7 @@ class CommandMenu extends StatefulWidget {
     required this.onChosen,
     this.tasks,
     this.hiddenUnlocked = false,
+    this.settingsIndex,
   });
 
   final NotesStore notes;
@@ -127,6 +145,11 @@ class CommandMenu extends StatefulWidget {
   final ValueChanged<CommandChoice> onChosen;
   final TaskBoard? tasks;
   final bool hiddenUnlocked;
+
+  /// Builds the invisible settings that lend their search index, so Settings
+  /// results come from the same index as settings search. Null leaves them
+  /// out.
+  final SettingsHost? settingsIndex;
 
   /// How many of each kind the menu shows.
   static const int perKind = 3;
@@ -143,7 +166,7 @@ class _Line {
       choice = null,
       detail = null,
       task = null,
-      date = null,
+      trailing = null,
       keycap = null,
       muted = false;
 
@@ -153,7 +176,7 @@ class _Line {
     required CommandChoice this.choice,
     this.detail,
     this.task,
-    this.date,
+    this.trailing,
     this.keycap,
     this.muted = false,
   }) : heading = null;
@@ -168,7 +191,7 @@ class _Line {
 
   /// The note a task is in, named after the task's words.
   final Note? task;
-  final String? date;
+  final String? trailing;
   final String? keycap;
 
   /// In the quieter ink, as the row pointing into Archive is.
@@ -181,6 +204,8 @@ class _CommandMenuState extends State<CommandMenu> {
   final Map<int, GlobalKey> _rowKeys = {};
   late List<_Line> _lines = _build('');
   late int _highlight = _rows.firstOrNull ?? 0;
+
+  SettingsIndex? _settings;
 
   @override
   void dispose() {
@@ -220,9 +245,32 @@ class _CommandMenuState extends State<CommandMenu> {
         : KapyIcons.noteOutlined,
     title: note.title,
     detail: detail,
-    date: _date(note),
+    trailing: _date(note),
     choice: OpenNoteChoice(note),
   );
+
+  /// A setting as settings search shows it: its category and heading under
+  /// the name, and what it is set to at the end, as a key for a shortcut.
+  _Line _settingRow(SettingsSearchEntry<SettingsSection> entry) {
+    final heading = entry.group;
+    final target = entry.target;
+    final action = target != null && target.startsWith('shortcut-row-')
+        ? ShortcutAction.values.asNameMap()[target.substring(13)]
+        : null;
+    return _Line.row(
+      icon: entry.icon,
+      title: entry.title,
+      detail: entry.target == null
+          ? entry.description
+          : heading == null ||
+                heading.toLowerCase() == entry.title.toLowerCase()
+          ? entry.sectionLabel
+          : '${entry.sectionLabel} › $heading',
+      trailing: action == null ? entry.value : null,
+      keycap: action == null ? null : _keycap(action),
+      choice: RevealSettingChoice(entry.section, entry.target),
+    );
+  }
 
   List<_Line> _build(String query) {
     final text = query.trim();
@@ -311,7 +359,25 @@ class _CommandMenuState extends State<CommandMenu> {
         if (terms.every(task.words.toLowerCase().contains)) task,
     ].take(CommandMenu.perKind);
     final archived = notes.searchArchived(text).length;
+    final settings = [
+      for (final entry in searchSettings<SettingsSection>(
+        _settings?.call() ?? const [],
+        text,
+      ))
+        if (entry.elsewhere == null) entry,
+    ].take(CommandMenu.perKind);
+    final lowered = text.toLowerCase();
+    final settingsFirst =
+        settings.isNotEmpty &&
+        settings.first.title.toLowerCase().contains(lowered);
+    final settingsLines = [
+      if (settings.isNotEmpty) ...[
+        const _Line.heading('Settings'),
+        for (final entry in settings) _settingRow(entry),
+      ],
+    ];
     return [
+      if (settingsFirst) ...settingsLines,
       if (written.isNotEmpty) ...[
         const _Line.heading('Notes'),
         for (final note in written.take(CommandMenu.perKind))
@@ -331,6 +397,7 @@ class _CommandMenuState extends State<CommandMenu> {
         const _Line.heading('Drawings'),
         for (final note in drawings.take(CommandMenu.perKind)) _noteRow(note),
       ],
+      if (!settingsFirst) ...settingsLines,
       // Kapy AI's Ask row joins this section when the panel ships.
       _Line.heading('Use “$text”'),
       if (widget.tasks != null)
@@ -368,7 +435,8 @@ class _CommandMenuState extends State<CommandMenu> {
   void _move(int by) {
     final rows = _rows;
     if (rows.isEmpty) return;
-    final next = rows[(rows.indexOf(_highlight) + by).clamp(0, rows.length - 1)];
+    final next =
+        rows[(rows.indexOf(_highlight) + by).clamp(0, rows.length - 1)];
     setState(() => _highlight = next);
     final row = _rowKeys[next]?.currentContext;
     if (row == null) return;
@@ -407,7 +475,7 @@ class _CommandMenuState extends State<CommandMenu> {
     final dark = palette.brightness == Brightness.dark;
     final top = (MediaQuery.sizeOf(context).height * 0.1).clamp(16.0, 88.0);
     final terms = noteSearchTerms(_field.text);
-    return Align(
+    final menu = Align(
       alignment: Alignment.topCenter,
       child: Padding(
         padding: EdgeInsets.fromLTRB(16, top, 16, 16),
@@ -467,6 +535,9 @@ class _CommandMenuState extends State<CommandMenu> {
         ),
       ),
     );
+    final host = widget.settingsIndex;
+    if (host == null) return menu;
+    return Stack(children: [menu, host((index) => _settings = index)]);
   }
 
   Widget _searchField(CalcPalette palette) {
@@ -537,7 +608,7 @@ class _CommandMenuState extends State<CommandMenu> {
     final lit = index == _highlight;
     final detail = line.detail;
     final task = line.task;
-    final date = line.date;
+    final trailing = line.trailing;
     final keycap = line.keycap;
     return MouseRegion(
       onEnter: (_) => setState(() => _highlight = index),
@@ -624,7 +695,7 @@ class _CommandMenuState extends State<CommandMenu> {
                       Text.rich(
                         _marked(
                           detail,
-                          terms,
+                          line.choice is RevealSettingChoice ? const [] : terms,
                           TextStyle(
                             fontSize: 13,
                             height: 17 / 13,
@@ -638,9 +709,9 @@ class _CommandMenuState extends State<CommandMenu> {
                   ],
                 ),
               ),
-              if (date != null)
+              if (trailing != null)
                 Text(
-                  date,
+                  trailing,
                   style: TextStyle(
                     fontSize: 12,
                     height: 16 / 12,
@@ -663,7 +734,9 @@ class _CommandMenuState extends State<CommandMenu> {
     TextStyle style,
     CalcPalette palette,
   ) {
-    if (terms.isEmpty || text.isEmpty) return TextSpan(text: text, style: style);
+    if (terms.isEmpty || text.isEmpty) {
+      return TextSpan(text: text, style: style);
+    }
     final lower = text.toLowerCase();
     final marked = List<bool>.filled(text.length, false);
     for (final term in terms) {
@@ -720,7 +793,12 @@ class _CommandMenuState extends State<CommandMenu> {
         spacing: 16,
         children: [
           hint('↑↓', 'Move'),
-          hint('↵', 'Open'),
+          hint(
+            '↵',
+            _lines.elementAtOrNull(_highlight)?.choice is RevealSettingChoice
+                ? 'Open in Settings'
+                : 'Open',
+          ),
           const Spacer(),
           hint('esc', 'Close'),
         ],
