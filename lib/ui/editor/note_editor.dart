@@ -59,6 +59,7 @@ import 'package:file_selector/file_selector.dart';
 import '../../images/image_clipboard.dart';
 import '../../paste/clipboard_snapshot.dart';
 import '../../paste/image_download.dart';
+import '../../paste/markdown_text.dart' show cleanPastedText;
 import '../../paste/note_text.dart';
 import '../../paste/paste_converter.dart';
 import '../../paste/paste_insertion.dart';
@@ -85,6 +86,7 @@ import 'voice_recording_bar.dart';
 import 'voice_insertion.dart';
 import 'note_image_view.dart';
 import 'note_video_view.dart';
+import 'paste_feedback.dart';
 import 'remote_carets.dart';
 import 'inline_results.dart';
 import 'results_gutter.dart';
@@ -568,6 +570,19 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   final List<({String textBefore, NoteAttachmentRef ref})> _removedRefs = [];
   static const int _maxRemovedRefs = 20;
 
+  /// The last converted paste, until the note holds anything else: its wash
+  /// fades over what it wrote, and while [_pasteChipShown] its chip offers
+  /// the clipboard's plain text instead.
+  ConvertedPaste? _convertedPaste;
+
+  /// Whether the paste's chip is up, which it is until the next keystroke or
+  /// click.
+  bool _pasteChipShown = false;
+
+  /// Where the chip hangs from: the caret at the end of the paste, in the
+  /// field's own coordinates, measured after layout and on every scroll.
+  final _pasteCaret = ValueNotifier<Rect?>(null);
+
   bool _isEmpty = true;
 
   @override
@@ -733,6 +748,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _lineMarkSources.removeListener(_scheduleLineMarks);
     _lineMarks.dispose();
     _hoverLine.dispose();
+    _pasteCaret.dispose();
     LinkPopover.hide();
     KeywordTooltip.hide();
     _slashCommandMenu.dispose();
@@ -788,6 +804,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     LinkPopover.hide();
     _slashCommandMenu.hide();
     _selectionBubble.hide();
+    if (_pasteChipShown) _placePasteChip();
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
     _syncTableCellEditorPosition();
@@ -1214,6 +1231,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _onControllerChanged() {
     _recordKapyPeekActivity();
     final value = _controller.value;
+    if (_convertedPaste case final paste? when value.text != paste.text) {
+      setState(() {
+        _convertedPaste = null;
+        _pasteChipShown = false;
+      });
+    }
     _scheduleSlashCommandMenuSync();
     _reportCaret(value.selection);
     final previous = _lastValue;
@@ -2084,11 +2107,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final store = widget.images;
     final value = editable.textEditingValue;
     final selection = _selectionForPaste(value, startingValue);
+    final target = _pasteTargetAt(value.text, selection.start);
     final insertion = planPaste(
       note: value.text,
       selection: selection,
       output: store == null ? output.withoutPictures() : output,
-      target: _pasteTargetAt(value.text, selection.start),
+      target: target,
       clipboardText: clipboardText,
     );
     final nextText = value.text.replaceRange(
@@ -2130,6 +2154,98 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (store != null && pictures.isNotEmpty) {
       unawaited(_preparePastedImages(pictures, store));
     }
+
+    // Written as something other than the clipboard's plain text, which a
+    // code block or a table never is: the chip says so, and offers the plain
+    // text instead.
+    final plain = clipboardText ?? '';
+    final words = cleanPastedText(plain);
+    if (target != PasteTarget.text ||
+        words.trim().isEmpty ||
+        words == output.text) {
+      return;
+    }
+    final pasted = _controller.text;
+    _pasteCaret.value = null;
+    setState(() {
+      _convertedPaste = ConvertedPaste(
+        range: TextRange(
+          start: insertion.start,
+          end: pasted.length - value.text.length + insertion.end,
+        ),
+        text: pasted,
+        plainText:
+            value.text.substring(insertion.start, selection.start) + plain,
+      );
+      _pasteChipShown = true;
+    });
+  }
+
+  /// Plain text instead: what the paste wrote becomes the clipboard's plain
+  /// text, written as Paste as plain text writes it, in an edit of its own,
+  /// so one undo brings the formatted paste back.
+  void _pastePlainInstead() {
+    final paste = _convertedPaste;
+    if (paste == null) return;
+    _insertPastedText(
+      paste.plainText,
+      SelectionChangedCause.toolbar,
+      startingValue: _controller.value.copyWith(
+        selection: TextSelection(
+          baseOffset: paste.range.start,
+          extentOffset: paste.range.end,
+        ),
+      ),
+    );
+  }
+
+  void _dismissPasteChip() {
+    if (_pasteChipShown) setState(() => _pasteChipShown = false);
+  }
+
+  /// Measures where the paste's chip hangs from, as the field is scrolled
+  /// now: the caret at the end of the paste.
+  void _placePasteChip() {
+    final paste = _convertedPaste;
+    final editable = _fieldEditable();
+    _pasteCaret.value =
+        !_pasteChipShown ||
+            paste == null ||
+            editable == null ||
+            !editable.hasSize
+        ? null
+        : editable.getLocalRectForCaret(TextPosition(offset: paste.range.end));
+  }
+
+  /// The rows the last converted paste wrote, across the writing column, in
+  /// the page's coordinates: what its wash covers. Read as the wash paints,
+  /// so it moves with the note.
+  Rect? _pastedRows(ConvertedPaste paste, EdgeInsets padding, double width) {
+    final editable = _fieldEditable();
+    if (editable == null || !editable.hasSize) return null;
+    // Line breaks at either end of a paste only open a line for it or close
+    // the one it ends on; what it wrote is between them.
+    var (first, last) = (paste.range.start, paste.range.end);
+    while (first < last && paste.text.codeUnitAt(first) == 0x0A) {
+      first++;
+    }
+    while (last > first && paste.text.codeUnitAt(last - 1) == 0x0A) {
+      last--;
+    }
+    if (first == last) return null;
+    final top = editable.getBoxesForSelection(
+      TextSelection(baseOffset: first, extentOffset: first + 1),
+    );
+    final bottom = editable.getBoxesForSelection(
+      TextSelection(baseOffset: last - 1, extentOffset: last),
+    );
+    if (top.isEmpty || bottom.isEmpty) return null;
+    return Rect.fromLTRB(
+      0,
+      top.first.top,
+      width,
+      bottom.last.bottom,
+    ).shift(padding.topLeft);
   }
 
   /// What a paste may write where it lands: only words in a table, only the
@@ -6977,6 +7093,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 final chips = EditorMetrics.page
                     ? _controller.linkChips(_controller.text)
                     : const <TextRange>[];
+                // The chip follows the paste's caret once the field has laid
+                // it out, wherever this layout put it.
+                if (_pasteChipShown) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _placePasteChip();
+                  });
+                }
 
                 return Stack(
                   children: [
@@ -7055,6 +7178,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                                   textStyle,
                                                   textScaler,
                                                 ),
+                                          ),
+                                        ),
+                                      ),
+                                    if (_convertedPaste case final paste?)
+                                      Positioned.fill(
+                                        child: PasteWash(
+                                          key: ObjectKey(paste),
+                                          repaint: _scrollController,
+                                          rows: () => _pastedRows(
+                                            paste,
+                                            padding,
+                                            contentWidth,
                                           ),
                                         ),
                                       ),
@@ -7164,6 +7299,25 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                             height: 113,
                             excludeFromSemantics: true,
                           ),
+                        ),
+                      ),
+                    if (_pasteChipShown)
+                      Positioned.fill(
+                        child: ValueListenableBuilder(
+                          valueListenable: _pasteCaret,
+                          builder: (context, caret, _) => caret == null
+                              ? const SizedBox.shrink()
+                              : PasteChip(
+                                  key: ObjectKey(_convertedPaste),
+                                  caret: caret.shift(padding.topLeft),
+                                  shortcut: widget.shortcuts
+                                      .bindingFor(
+                                        ShortcutAction.pasteAsPlainText,
+                                      )
+                                      ?.keycapLabel,
+                                  onPlainText: _pastePlainInstead,
+                                  onDismissed: _dismissPasteChip,
+                                ),
                         ),
                       ),
                   ],
