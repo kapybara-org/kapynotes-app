@@ -123,5 +123,6 @@ final class KapyFlutterViewController: FlutterViewController {
     super.viewWillAppear()
     accessibilityTree.enable()
     AccessibilityText.routeWritesToEngine()
+    AccessibilityTextMirror.editIncrementally()
   }
 }

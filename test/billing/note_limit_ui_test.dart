@@ -8,6 +8,7 @@ import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
@@ -73,14 +74,20 @@ void main() {
     await notes.load();
     written = [for (var i = 0; i < 7; i++) notes.create(body: 'Note $i')];
 
+    final syncState = SyncState(store);
     account = Account(
       auth: FakeAuth(),
       syncApi: (_) => FakeApi(FakeServer()),
       keys: KeyStore(InMemorySecureStore()),
       notes: notes,
-      state: SyncState(store),
+      state: syncState,
       store: store,
-      docStorage: MemoryDocStorage(),
+      tasks: TaskLibrary(
+        notes: notes,
+        store: store,
+        state: syncState,
+        storage: MemoryDocStorage(),
+      ),
     );
     final terms = PlanTerms(store: store, api: _TermsApi());
     account.planTerms = terms;

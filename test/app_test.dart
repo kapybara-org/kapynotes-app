@@ -18,10 +18,13 @@ import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/images/image_picker.dart';
+import 'package:kapy_notes/speech/summarizer.dart';
+import 'package:kapy_notes/speech/transcriber.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
@@ -35,6 +38,7 @@ import 'package:kapy_notes/ui/editor/results_gutter.dart';
 import 'package:kapy_notes/ui/editor_panes.dart';
 import 'package:kapy_notes/ui/empty_state.dart';
 import 'package:kapy_notes/ui/hidden_notes_gate.dart';
+import 'package:kapy_notes/ui/home_page.dart';
 import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
@@ -160,6 +164,12 @@ class _HiddenGate implements HiddenNotesGate {
     unlockCalls++;
     return allowUnlock;
   }
+
+  @override
+  Future<bool> usesPin() async => false;
+
+  @override
+  Future<bool> changePin(BuildContext context) async => false;
 }
 
 /// The [TextField] of the note the editor is currently showing.
@@ -381,6 +391,44 @@ void main() {
       expect(tester.testTextInput.isVisible, isTrue);
     },
   );
+
+  group('voice choices survive a relaunch', () {
+    void saveChoices(LocalStore saved) {
+      saved.data['voice.transcriptEngine.v1'] = 'device';
+      saved.data['voice.summaryEngine.v1'] = 'device';
+      saved.data['voice.transcriptionDeclinedVersion.v1'] = 3;
+    }
+
+    void expectChoices(WidgetTester tester) {
+      final voice = tester.widget<HomePage>(find.byType(HomePage)).voicePrefs!;
+      expect(voice.transcriptEngine, TranscriptEngine.device);
+      expect(voice.summaryEngine, SummaryEngine.device);
+      expect(voice.transcriptionDeclinedVersion, 3);
+    }
+
+    testWidgets('when the notes load before the app starts', (tester) async {
+      saveChoices(store);
+      await pumpApp(tester);
+      expectChoices(tester);
+    });
+
+    testWidgets('when the notes load behind the first frame', (tester) async {
+      final deferredStore = DeferredMemoryStore();
+      saveChoices(deferredStore);
+      await tester.pumpWidget(
+        KapyNotesApp(
+          store: deferredStore,
+          notes: NotesStore(deferredStore),
+          rates: RatesRepository(deferredStore),
+          prefs: LayoutPrefs(deferredStore),
+          shortcuts: ShortcutPrefs(deferredStore),
+        ),
+      );
+      deferredStore.completeLoad();
+      await tester.pumpAndSettle();
+      expectChoices(tester);
+    });
+  });
 
   testWidgets('opens on the empty state and builds a note from it', (
     tester,
@@ -3138,15 +3186,21 @@ void main() {
     (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final syncState = SyncState(store);
       final account = Account(
         auth: FakeAuth(),
         syncApi: (_) =>
             FakeApi(FakeServer(), device: 'device-1', userId: 'user-1'),
         keys: KeyStore(InMemorySecureStore()),
         notes: notes,
-        state: SyncState(store),
+        state: syncState,
         store: store,
-        docStorage: MemoryDocStorage(),
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          state: syncState,
+          storage: MemoryDocStorage(),
+        ),
       );
       addTearDown(account.dispose);
       await tester.runAsync(account.restore);

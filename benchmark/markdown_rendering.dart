@@ -258,7 +258,7 @@ Widget _editor(String body) {
       resultsVisible: true,
       markdownEnabled: _markdown,
       autofocus: true,
-      onDocumentChanged: (_, _, _) {},
+      onDocumentChanged: (_, _, _, _) {},
       onSettingsPressed: () {},
       writingFont: WritingFont.handwritten,
       shortcuts: ShortcutPrefs(_MemoryStore())..load(),

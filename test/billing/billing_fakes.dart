@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/billing/billing_api.dart';
 import 'package:kapy_notes/billing/entitlements.dart';
 import 'package:kapy_notes/billing/purchase_store.dart';
@@ -37,6 +39,25 @@ Entitlements afterTrial({DateTime? endedAt}) => entitlementsFor(
   sync: false,
   noteLimit: 5,
   trialEndsAt: endedAt ?? DateTime.now().subtract(const Duration(days: 1)),
+);
+
+/// An account that is signed in when told to be.
+class FakeSession extends ChangeNotifier {
+  String? userId;
+
+  void signIn(String id) {
+    userId = id;
+    notifyListeners();
+  }
+}
+
+/// Billing for whoever [session] says, answered by [api], with no store.
+Billing billingFor(FakeSession session, BillingApi api) => Billing(
+  session: session,
+  userId: () => session.userId,
+  token: () => session.userId == null ? null : 'token-${session.userId}',
+  api: (_) => api,
+  store: FakePurchaseStore(supported: false),
 );
 
 /// The server's answer, scripted. Free until told otherwise.

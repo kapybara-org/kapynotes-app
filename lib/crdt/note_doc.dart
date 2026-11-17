@@ -173,7 +173,8 @@ class NoteDoc {
   ///
   /// The text is diffed against the current text as one contiguous edit —
   /// a keystroke is exactly that — with a replacement becoming a delete run
-  /// then an insert run. Formats and attachments are compared *as rendered*
+  /// then an insert run, inside [near] when the editor said where it was;
+  /// see [diffTexts]. Formats and attachments are compared *as rendered*
   /// against what was passed in, so handing back `view.formats` unchanged
   /// costs nothing, and only a real change re-anchors and emits a register.
   ///
@@ -189,9 +190,10 @@ class NoteDoc {
     DateTime? archivedAt,
     DateTime? hiddenAt,
     DateTime? now,
+    TextEdit? near,
   }) {
     final ops = <Object?>[];
-    final edit = diffTexts(text, body);
+    final edit = diffTexts(text, body, near: near);
 
     if (edit.oldEnd > edit.start) {
       final victims = _tree.visible.sublist(edit.start, edit.oldEnd);

@@ -20,6 +20,7 @@ import 'data/local_store.dart';
 import 'data/notes_store.dart';
 import 'data/rates.dart';
 import 'data/shortcut_prefs.dart';
+import 'data/task_library.dart';
 import 'data/update_checker.dart';
 import 'speech/speech_api.dart';
 import 'sync/account.dart';
@@ -60,6 +61,13 @@ Future<void> main() async {
   // Hoisted out of the constructor because the api needs the device id it
   // holds. `restore()` loads it before anything can call this closure.
   final syncState = SyncState(store);
+  // Whatever kSyncEnabled says: tasks work signed out, and in a build that
+  // never syncs. Shares the sync state's device id only where there is sync.
+  final tasks = TaskLibrary(
+    notes: notes,
+    store: store,
+    state: kSyncEnabled ? syncState : null,
+  );
   final account = kSyncEnabled
       ? Account(
           auth: HttpAuthApi(baseUrl: Uri.parse(kApiBaseUrl)),
@@ -72,6 +80,7 @@ Future<void> main() async {
           notes: notes,
           state: syncState,
           store: store,
+          tasks: tasks,
         )
       : null;
   // Built here rather than inside Account so that a build with no
@@ -138,6 +147,7 @@ Future<void> main() async {
       updates: updates,
       desktopIntegration: desktopIntegration,
       account: account,
+      tasks: tasks,
       // Here, where no test runs: see KapyNotesApp.deepLinks.
       deepLinks: DeepLinks.platform(),
     ),
@@ -151,6 +161,7 @@ Future<void> main() async {
   if (desktopIntegration != null) {
     unawaited(desktopIntegration.initialize(shortcuts));
   }
+  unawaited(tasks.load());
 }
 
 Future<void> _configureWindow(LayoutPrefs prefs) async {

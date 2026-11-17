@@ -2,19 +2,24 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
+import 'package:kapy_notes/speech/cloud_access.dart';
 import 'package:kapy_notes/speech/cloud_summarizer.dart';
 import 'package:kapy_notes/speech/cloud_transcriber.dart';
 import 'package:kapy_notes/speech/speech_api.dart';
 import 'package:kapy_notes/speech/speech_errors.dart';
+import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/speech/transcriber.dart';
 import 'package:kapy_notes/speech/transcription_queue.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
+
+import '../billing/billing_fakes.dart';
 
 class _MemoryStore extends LocalStore {
   _MemoryStore({super.fileName = 'queue-test.json'});
@@ -80,6 +85,32 @@ class _FakeLocalTranscriber implements Transcriber {
       segments: [TranscriptSegment(s: 0, e: 900, t: 'said here')],
     );
   }
+}
+
+/// A summariser that runs here, like Apple's model or Gemma.
+class _FakeLocalSummarizer implements Summarizer {
+  int calls = 0;
+
+  @override
+  Future<SummarizerReadiness> readiness() async => SummarizerReadiness.ready;
+
+  @override
+  Future<SummaryDraft> summarize({
+    required String text,
+    required String lang,
+    String? jobId,
+    String? instruction,
+  }) async {
+    calls++;
+    return const SummaryDraft(
+      engine: 'apple/foundation-models',
+      title: 'Summarised here',
+      points: ['Said here.'],
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class FakeSpeechApi implements SpeechApi {
@@ -755,6 +786,85 @@ void main() {
       expect(api.summarizeCalls, 1);
     },
   );
+
+  group('on the free plan', () {
+    late _FakeLocalTranscriber local;
+    late _FakeLocalSummarizer here;
+    late Billing billing;
+    late CloudAccess access;
+    late TranscriptionQueue free;
+
+    setUp(() async {
+      local = _FakeLocalTranscriber();
+      here = _FakeLocalSummarizer();
+      final session = FakeSession();
+      billing = billingFor(session, FakeBillingApi());
+      session.signIn('user-1');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      access = CloudAccess(prefs: prefs, device: local, billing: billing);
+      free = TranscriptionQueue(
+        store: queueStore,
+        notes: notes,
+        blobs: blobs,
+        prefs: prefs,
+        cloudAccess: access,
+        api: () => api,
+        summarizer: () => RoutingSummarizer(
+          engineOf: () => access.summaries.engine,
+          cloud: CloudSummarizer(() => api),
+          device: here,
+        ),
+        transcriber: () => RoutingTranscriber(
+          engineOf: () => access.transcription.engine,
+          cloud: CloudTranscriber(() => api),
+          device: local,
+        ),
+      );
+    });
+
+    tearDown(() {
+      access.dispose();
+      billing.dispose();
+    });
+
+    test(
+      'a transcript made here is summarised here, whatever was saved',
+      () async {
+        notes.updateAttachment(
+          noteId,
+          'v1',
+          (ref) => (ref as NoteVoiceRef).copyWith(
+            transcript: VoiceTranscript(
+              lang: 'en',
+              engine: 'sherpa/parakeet',
+              at: 1,
+              segments: const [TranscriptSegment(s: 0, e: 1, t: 'said here')],
+            ),
+          ),
+        );
+        free.enqueue(noteId, 'v1');
+        await free.drain();
+
+        expect(current()!.summary!.title, 'Summarised here');
+        expect(api.summarizeCalls, 0);
+        expect(prefs.summaryEngine, SummaryEngine.cloud);
+      },
+    );
+
+    test('a language this device cannot do goes to the cloud, its summary '
+        'stays here', () async {
+      local.state = TranscriberReadiness.unsupported;
+      prefs.language = 'hi';
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      free.enqueue(noteId, 'v1');
+      await free.drain();
+
+      expect(api.transcribeRequestIds, hasLength(1));
+      expect(current()!.summary!.title, 'Summarised here');
+      expect(api.summarizeCalls, 0);
+    });
+  });
 
   test('enqueueing the same recording twice does not queue it twice', () {
     queue.enqueue(noteId, 'v1');

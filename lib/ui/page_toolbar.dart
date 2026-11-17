@@ -45,6 +45,7 @@ class PageToolbar extends StatelessWidget {
     this.moreActions = const [],
     this.updates,
     this.center,
+    this.actions,
   });
 
   /// The breadcrumb: the space the list is showing, then the open note's
@@ -90,6 +91,10 @@ class PageToolbar extends StatelessWidget {
   /// Centred in the bar's empty middle, such as Write | Draw on a new note,
   /// where its going leaves nothing else to move.
   final Widget? center;
+
+  /// A page that is not a note puts its own actions where a note's saved
+  /// state, Share and Pin go. More stays.
+  final List<Widget>? actions;
 
   static const double height = 56;
 
@@ -160,49 +165,58 @@ class PageToolbar extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (members.isNotEmpty)
-                    Flexible(
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 8, right: 6),
-                        child: MemberAvatars(
-                          members: members,
-                          present: present,
-                          currentUserId: currentUserId,
-                          onPressed: onShare,
+                  if (actions case final actions?) ...[
+                    if (updates != null)
+                      UpdateRestartButton(
+                        updates: updates,
+                        wide: constraints.maxWidth >= _updateLabelWidth,
+                      ),
+                    ...actions,
+                  ] else ...[
+                    if (members.isNotEmpty)
+                      Flexible(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8, right: 6),
+                          child: MemberAvatars(
+                            members: members,
+                            present: present,
+                            currentUserId: currentUserId,
+                            onPressed: onShare,
+                          ),
                         ),
                       ),
+                    if (updates != null)
+                      UpdateRestartButton(
+                        updates: updates,
+                        wide: constraints.maxWidth >= _updateLabelWidth,
+                      ),
+                    if (noteOpen && constraints.maxWidth >= _savedWidth) ...[
+                      _SaveStatus(syncStatus),
+                      const SizedBox(width: 6),
+                    ],
+                    TonalButton(
+                      key: const ValueKey('page-share'),
+                      tall: true,
+                      icon: KapyIcons.personAddRounded,
+                      label: 'Share',
+                      tooltip: noteShared ? 'Manage sharing' : null,
+                      onPressed: onShare,
                     ),
-                  if (updates != null)
-                    UpdateRestartButton(
-                      updates: updates,
-                      wide: constraints.maxWidth >= _updateLabelWidth,
-                    ),
-                  if (noteOpen && constraints.maxWidth >= _savedWidth) ...[
-                    _SaveStatus(syncStatus),
                     const SizedBox(width: 6),
-                  ],
-                  TonalButton(
-                    key: const ValueKey('page-share'),
-                    tall: true,
-                    icon: KapyIcons.personAddRounded,
-                    label: 'Share',
-                    tooltip: noteShared ? 'Manage sharing' : null,
-                    onPressed: onShare,
-                  ),
-                  const SizedBox(width: 6),
-                  CompactIconButton(
-                    key: const ValueKey('page-pin'),
-                    tooltip: pinned ? 'Unpin note' : 'Pin note',
-                    extent: actionExtent,
-                    radius: 10,
-                    foregroundColor: pinned ? palette.clay : null,
-                    onPressed: onTogglePin,
-                    icon: KapyIcon(
-                      KapyIcons.pinOutlined,
-                      size: AppControlMetrics.iconAction,
-                      strokeWidth: 1.9,
+                    CompactIconButton(
+                      key: const ValueKey('page-pin'),
+                      tooltip: pinned ? 'Unpin note' : 'Pin note',
+                      extent: actionExtent,
+                      radius: 10,
+                      foregroundColor: pinned ? palette.clay : null,
+                      onPressed: onTogglePin,
+                      icon: KapyIcon(
+                        KapyIcons.pinOutlined,
+                        size: AppControlMetrics.iconAction,
+                        strokeWidth: 1.9,
+                      ),
                     ),
-                  ),
+                  ],
                   const SizedBox(width: 6),
                   Builder(
                     builder: (buttonContext) => CompactIconButton(
