@@ -7,12 +7,14 @@ import 'package:http/testing.dart';
 import 'package:kapy_notes/ai/answer_engine.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/ai/kapy_ai_controller.dart';
+import 'package:kapy_notes/ai/tool_helper.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 
 import 'ai_fakes.dart';
+import 'fake_cli.dart';
 
 const _usage = {
   'used': 3,
@@ -50,6 +52,8 @@ void main() {
     List<Map<String, Object?>>? notes,
     LocalStore? local,
     Map<String, String> environment = const {},
+    ToolHelper? toolHelper,
+    bool realTools = false,
   }) async {
     final controller = KapyAiController(
       store: local ?? store,
@@ -65,11 +69,12 @@ void main() {
         return server(request);
       }),
       secrets: secrets,
-      codex: codex,
-      claudeCode: claude,
+      codex: realTools ? null : codex,
+      claudeCode: realTools ? null : claude,
       apiBaseUrl: Uri.parse('https://api.test/'),
       now: () => testNow,
       environment: environment,
+      toolHelper: toolHelper ?? FakeToolHelper(answers: false),
     );
     addTearDown(controller.dispose);
     return controller;
@@ -428,6 +433,79 @@ void main() {
       expect(ai.model, FakeDeviceModel.apple);
       await ai.ask('Lisbon?');
       expect(codex.asked, isEmpty);
+    });
+  });
+
+  group('a sandboxed Mac with its helper', () {
+    const sandbox = {'APP_SANDBOX_CONTAINER_ID': 'com.kapybara.kapynotes'};
+
+    setUp(() {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    });
+
+    test('offers Codex and Claude Code and runs them there', () async {
+      final helper = FakeToolHelper();
+      final ai = await build(
+        environment: sandbox,
+        toolHelper: helper,
+        realTools: true,
+      );
+      ai.accounts;
+      await settle();
+      expect(ai.accounts.map((a) => a.kind), [
+        KapyAccountKind.codex,
+        KapyAccountKind.claudeCode,
+        KapyAccountKind.openRouter,
+      ]);
+      expect(helper.requests.map((r) => r.tool).toSet(), {'codex', 'claude'});
+      final claudeAccount = ai.accounts.firstWhere(
+        (a) => a.kind == KapyAccountKind.claudeCode,
+      );
+      expect(claudeAccount.status, KapyAccountStatus.connected);
+      // No Codex canary has passed, so no Codex version is accepted yet.
+      expect(
+        ai.accounts.firstWhere((a) => a.kind == KapyAccountKind.codex).status,
+        KapyAccountStatus.error,
+      );
+      expect(
+        helper.requests.where((r) => r.tool == 'codex').map((r) => r.arguments),
+        [
+          ['--version'],
+        ],
+      );
+
+      ai.pickModel(claudeAccount.models.first);
+      await ai.ask('Lisbon?');
+      await ai.proceed();
+      expect(ai.current!.messages.last.text, 'helper answer');
+      expect(helper.requests.last.expectedVersion, '2.1.326 (Claude Code)');
+    });
+
+    test(
+      'a helper that does not answer offers neither and runs nothing',
+      () async {
+        final helper = FakeToolHelper(answers: false);
+        final ai = await build(
+          environment: sandbox,
+          toolHelper: helper,
+          realTools: true,
+        );
+        ai.accounts;
+        await settle();
+        expect(helper.pings, 1);
+        expect(ai.accounts.map((a) => a.kind), [KapyAccountKind.openRouter]);
+        expect(helper.requests, isEmpty);
+      },
+    );
+
+    test('an app that is not sandboxed never asks the helper', () async {
+      final helper = FakeToolHelper();
+      final ai = await build(toolHelper: helper);
+      ai.accounts;
+      await settle();
+      expect(helper.pings, 0);
+      expect(ai.accounts.map((a) => a.kind), contains(KapyAccountKind.codex));
     });
   });
 
