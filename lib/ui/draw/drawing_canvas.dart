@@ -1093,45 +1093,50 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       if (!widget.readOnly) ...[
         Tooltip(
           message: 'Colour and size',
-          child: InkWell(
-            key: const ValueKey('draw-style'),
-            onTap: () => setState(() => _styleOpen = !_styleOpen),
-            borderRadius: BorderRadius.circular(9),
-            child: Container(
-              height: extent,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: _styleOpen
-                  ? BoxDecoration(
-                      color: palette.selectedBackground,
-                      borderRadius: BorderRadius.circular(9),
-                    )
-                  : null,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      color: _color == null
-                          ? palette.textPrimary
-                          : Color(_color!),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: palette.separator,
-                        width: 1.5,
-                        strokeAlign: BorderSide.strokeAlignOutside,
+          child: Semantics(
+            button: true,
+            expanded: _styleOpen,
+            label: AppPlatform.isDesktop ? 'Colour and size' : null,
+            child: InkWell(
+              key: const ValueKey('draw-style'),
+              onTap: () => setState(() => _styleOpen = !_styleOpen),
+              borderRadius: BorderRadius.circular(9),
+              child: Container(
+                height: extent,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: _styleOpen
+                    ? BoxDecoration(
+                        color: palette.selectedBackground,
+                        borderRadius: BorderRadius.circular(9),
+                      )
+                    : null,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: _color == null
+                            ? palette.textPrimary
+                            : Color(_color!),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: palette.separator,
+                          width: 1.5,
+                          strokeAlign: BorderSide.strokeAlignOutside,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  KapyIcon(
-                    KapyIcons.chevronDownRounded,
-                    size: 12,
-                    strokeWidth: 2,
-                    color: palette.textSecondary,
-                  ),
-                ],
+                    const SizedBox(width: 6),
+                    KapyIcon(
+                      KapyIcons.chevronDownRounded,
+                      size: 12,
+                      strokeWidth: 2,
+                      color: palette.textSecondary,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1298,31 +1303,36 @@ class _StylePanel extends StatelessWidget {
                 for (final (name, option) in drawColors)
                   Tooltip(
                     message: name,
-                    child: InkWell(
-                      key: ValueKey('draw-color-${option ?? 'ink'}'),
-                      customBorder: const CircleBorder(),
-                      onTap: () => onColor(option),
-                      child: Container(
-                        width: 30,
-                        height: 30,
-                        alignment: Alignment.center,
-                        decoration: option == color
-                            ? BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: palette.selectedBorder,
-                                  width: 2,
-                                ),
-                              )
-                            : null,
+                    child: Semantics(
+                      button: true,
+                      selected: option == color,
+                      label: AppPlatform.isDesktop ? name : null,
+                      child: InkWell(
+                        key: ValueKey('draw-color-${option ?? 'ink'}'),
+                        customBorder: const CircleBorder(),
+                        onTap: () => onColor(option),
                         child: Container(
-                          width: 20,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: option == null
-                                ? palette.textPrimary
-                                : Color(option),
-                            shape: BoxShape.circle,
+                          width: 30,
+                          height: 30,
+                          alignment: Alignment.center,
+                          decoration: option == color
+                              ? BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: palette.selectedBorder,
+                                    width: 2,
+                                  ),
+                                )
+                              : null,
+                          child: Container(
+                            width: 20,
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: option == null
+                                  ? palette.textPrimary
+                                  : Color(option),
+                              shape: BoxShape.circle,
+                            ),
                           ),
                         ),
                       ),

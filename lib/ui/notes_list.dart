@@ -987,9 +987,11 @@ class SeeAllLink extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Semantics(
+      container: true,
       button: true,
       label: 'See all pinned notes',
       excludeSemantics: true,
+      onTap: onPressed,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
@@ -1051,6 +1053,7 @@ class NotesListControls extends StatelessWidget {
           selected: on,
           label: forCards ? 'Cards' : 'List',
           excludeSemantics: true,
+          onTap: on ? null : () => onCardsChanged(forCards),
           child: MouseRegion(
             cursor: on ? MouseCursor.defer : SystemMouseCursors.click,
             child: GestureDetector(
@@ -1168,6 +1171,7 @@ class _MediaFilterState extends State<_MediaFilter> {
       expanded: open,
       label: 'Media filter, $label',
       excludeSemantics: true,
+      onTap: _toggle,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
