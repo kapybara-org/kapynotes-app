@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/crdt/note_doc.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/task_index.dart';
 import 'package:kapy_notes/data/task_lines.dart';
 
