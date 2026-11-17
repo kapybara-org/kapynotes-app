@@ -67,6 +67,7 @@ import 'notes_list.dart';
 import 'page_card.dart';
 import 'page_toolbar.dart';
 import 'sidebar.dart';
+import 'sidebar_timestamp.dart';
 import 'settings_dialog.dart';
 import 'sidebar_swipe.dart';
 import 'spaces_rail.dart';
@@ -1522,30 +1523,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   ///
   /// Returns whether anything was actually created, which is what the swipe
   /// cue needs in order not to announce a note that does not exist.
-  bool _createNote() {
+  bool _createNote({bool drawing = false}) {
     final recording = widget.recording;
     if (recording != null && recording.isRecording) {
       unawaited(
         recording.finishRecordingAndFlush().then((_) {
-          if (mounted) _createNoteNow();
+          if (mounted) _createNoteNow(drawing: drawing);
         }),
       );
       // The recording is about to land in the note that is open, so that note
       // will not be blank by the time this runs and a new one will follow.
       return true;
     }
-    return _createNoteNow();
+    return _createNoteNow(drawing: drawing);
   }
 
-  bool _createNoteNow() {
+  /// What New makes in the space on screen: a drawing in Drawings, a note
+  /// everywhere else.
+  bool _createInSpace() => _createNote(drawing: _drawingsOnly);
+
+  bool _createNoteNow({bool drawing = false}) {
     _recordKapyActivity();
     final creatingHidden = _hiddenMode;
-    final blank = _blankNoteAlreadyOpen();
+    final blank = drawing ? null : _blankNoteAlreadyOpen();
     if (blank == null && !(_noteLimit?.canCreate ?? true)) {
       unawaited(_explainNoteLimit(creating: true));
       return false;
     }
     final note = blank ?? widget.notes.create(hidden: creatingHidden);
+    if (drawing) widget.notes.setDrawingMode(note.id, drawing: true);
     if (blank == null) _freshNoteIds.add(note.id);
     setState(() {
       _query = '';
@@ -1554,13 +1560,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // A new note is the person's own, so it is listed where they can see
       // it being written.
       _sidebarTab = SidebarTab.mine;
-      _drawingsOnly = false;
+      _drawingsOnly = drawing;
       // And it is written on the page, so a list open over the page goes.
       _listOverlaid = false;
       _setSelectedId(note.id);
     });
     widget.prefs.lastOpenedNoteId = note.id;
-    _focusSelectedEditorAtEnd();
+    if (!drawing) _focusSelectedEditorAtEnd();
     return blank == null;
   }
 
@@ -2437,11 +2443,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : widget.notes.search(_query),
     );
     final pinnedOnly = _showingPinnedOnly;
-    if (pinnedOnly || _mediaFilter.length < NoteMedia.values.length) {
+    // Drawings has no media filter: every item in it is a drawing.
+    final filtered =
+        !_drawingsOnly && _mediaFilter.length < NoteMedia.values.length;
+    if (pinnedOnly || filtered) {
       final pinned = widget.notes.pinnedNoteIds;
       notes = [
         for (final note in notes)
-          if (NoteMedia.shows(note, _mediaFilter) &&
+          if ((!filtered || NoteMedia.shows(note, _mediaFilter)) &&
               (!pinnedOnly || pinned.contains(note.id)))
             note,
       ];
@@ -2492,7 +2501,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           builder: (context, _) => _DesktopShortcuts(
             focusNode: _desktopShortcutFocus,
             shortcuts: widget.shortcuts,
-            onNewNote: _createNote,
+            onNewNote: _createInSpace,
             onFindNotes: _focusGlobalSearch,
             onNextNote: () => _cycleNote(1),
             onPreviousNote: () => _cycleNote(-1),
@@ -2653,9 +2662,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       archiveShortcut: widget.shortcuts.bindingFor(
                         ShortcutAction.deleteNote,
                       ),
-                      emptyMessage: space == LibrarySpace.drawings
-                          ? 'No drawings yet'
-                          : null,
+                      drawings: space == LibrarySpace.drawings,
+                      onNewDrawing: () => _createNote(drawing: true),
                       engine: widget.engines.engine,
                       now: widget.notes.now,
                       cards: widget.prefs.noteCards,
@@ -2669,7 +2677,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       windowBar: SidebarWindowBar(
                         title: space.title,
                         count: _spaceCount,
-                        onCreate: _createNote,
+                        noun: space == LibrarySpace.drawings
+                            ? 'drawing'
+                            : 'note',
+                        onCreate: _createInSpace,
                         newNoteShortcut: widget.shortcuts.bindingFor(
                           ShortcutAction.newNote,
                         ),
@@ -2714,7 +2725,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                     listVisible: listFits && listShown,
                                     onShowList: _toggleList,
                                     showListShortcut: _sidebarShortcut,
-                                    onCreate: _createNote,
+                                    noun: space == LibrarySpace.drawings
+                                        ? 'drawing'
+                                        : 'note',
+                                    onCreate: _createInSpace,
                                     newNoteShortcut: widget.shortcuts
                                         .bindingFor(ShortcutAction.newNote)
                                         ?.displayLabel,
@@ -2849,7 +2863,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : _buildEditor(selected, key: _archiveEditorKey, active: true);
     }
     final panes = _workspace.panes;
-    if (panes.isEmpty) return EmptyState(onCreate: _createNote);
+    if (panes.isEmpty) return _emptyPage();
 
     return PaneSplitView(
       weights: _workspace.weights,
@@ -2879,11 +2893,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } else if (split) {
       body = EmptyPane(
         active: active,
-        onCreate: _createNote,
+        onCreate: _createInSpace,
         onShowNotes: _listShown ? null : () => _setListShown(true),
       );
     } else {
-      body = EmptyState(onCreate: _createNote);
+      body = _emptyPage();
     }
 
     return EditorPaneFrame(
@@ -3299,12 +3313,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.notes.setDrawingMode(id, drawing: drawing);
   }
 
+  /// The page with nothing open on it, which in Drawings points at New
+  /// drawing rather than offering a note.
+  Widget _emptyPage() => _drawingsOnly
+      ? EmptyState.drawings(
+          shortcut: widget.shortcuts
+              .bindingFor(ShortcutAction.newNote)
+              ?.keycapLabel,
+        )
+      : EmptyState(onCreate: _createNote);
+
   Widget _buildDrawing(Note note, {VoidCallback? onFocus}) {
     final canWrite = _canWriteNote(note);
     return DrawingCanvas(
       key: ValueKey('drawing-${note.id}'),
       drawing: note.drawing ?? NoteDrawing.empty,
       title: note.body,
+      edited: SidebarTimestamp.glance(
+        note.updatedAt,
+        now: widget.notes.now(),
+        displayTime: widget.prefs.displayTime,
+        today: true,
+      ),
       readOnly: !canWrite,
       onFocus: onFocus,
       onSwitchToWrite: _canChooseMode(note)

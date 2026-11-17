@@ -4866,7 +4866,7 @@ void main() {
       );
     });
 
-    testWidgets('Drawings lists only drawings, until a new note is made', (
+    testWidgets('Drawings lists only drawings, and New there makes one', (
       tester,
     ) async {
       store.data['notes.v1'] = [
@@ -4891,12 +4891,79 @@ void main() {
       expect(rowTitles(tester), unorderedEquals(['Words', 'Sketch']));
       expect(spaceTitle(tester), 'My notes');
 
-      // A new note is not a drawing yet, so the list goes back to show it.
+      // New in Drawings makes a drawing, so the list stays where it is.
       await openSpace(tester, 'drawings');
       await tester.tap(find.byKey(const ValueKey('sidebar-new-note')));
       await tester.pumpAndSettle();
-      expect(spaceTitle(tester), 'My notes');
+      expect(spaceTitle(tester), 'Drawings');
+      expect(spaceCount(tester), '2');
       expect(notes.notes, hasLength(3));
+      expect(notes.notes.where((note) => note.isDrawing), hasLength(2));
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+    });
+
+    testWidgets('every New in Drawings makes a drawing', (tester) async {
+      await notes.load();
+      notes.create(body: 'Words');
+      await pumpApp(tester);
+      await openSpace(tester, 'drawings');
+
+      // Each New opens a fresh drawing; the blank one before it is swept the
+      // way a blank note is, so what counts is the drawing that is open.
+      final opened = <String>[];
+      void expectNewDrawing() {
+        final canvas = tester.widget<DrawingCanvas>(find.byType(DrawingCanvas));
+        final id = (canvas.key! as ValueKey<String>).value.substring(
+          'drawing-'.length,
+        );
+        expect(opened, isNot(contains(id)));
+        expect(notes.byId(id)!.isDrawing, isTrue);
+        opened.add(id);
+      }
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-empty-new-drawing')));
+      await tester.pumpAndSettle();
+      expectNewDrawing();
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-new-note')));
+      await tester.pumpAndSettle();
+      expectNewDrawing();
+
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.newNote)!,
+      );
+      expectNewDrawing();
+
+      await tester.tap(notesToggleWithLabel('Hide notes'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('page-new-note')));
+      await tester.pumpAndSettle();
+      expectNewDrawing();
+
+      await tester.tap(notesToggleWithLabel('Show notes'));
+      await tester.pumpAndSettle();
+      expect(spaceTitle(tester), 'Drawings');
+      expect(notes.byId(opened.last), isNotNull);
+    });
+
+    testWidgets('Drawings has no media filter', (tester) async {
+      await notes.load();
+      notes.create(body: 'Words');
+      await pumpApp(tester);
+      expect(
+        find.byKey(const ValueKey('sidebar-media-filter')),
+        findsOneWidget,
+      );
+
+      await openSpace(tester, 'drawings');
+      expect(find.byKey(const ValueKey('sidebar-media-filter')), findsNothing);
+
+      await openSpace(tester, 'notes');
+      expect(
+        find.byKey(const ValueKey('sidebar-media-filter')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('Drawings says so while there are none', (tester) async {
