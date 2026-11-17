@@ -632,7 +632,32 @@ class MarkdownConcealment {
 
   /// Changes whenever what is shown does, for anything that caches a layout.
   final int key;
+
+  /// Whether all of [start, end) is hidden.
+  bool hides(int start, int end) {
+    var low = 0;
+    var high = hidden.length;
+    while (low < high) {
+      final middle = (low + high) >> 1;
+      if (hidden[middle].end <= start) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return low < hidden.length &&
+        hidden[low].start <= start &&
+        hidden[low].end >= end;
+  }
 }
+
+/// A fenced code block's fences: the opening one's line and the language it
+/// names, and the closing one's line when the block is closed.
+typedef MarkdownCodeFences = ({
+  TextRange open,
+  String language,
+  TextRange? close,
+});
 
 /// Everything the editor needs to know about a note read as markdown.
 ///
@@ -654,6 +679,35 @@ class MarkdownAnalysis {
   List<MarkdownLink> get links => _parts.links;
   List<MarkdownTask> get tasks => _parts.tasks;
   List<MarkdownBlock> get blocks => _parts.blocks;
+
+  /// [block]'s fences, when it is a fenced code block.
+  MarkdownCodeFences? fencesOf(MarkdownBlock block) {
+    if (block.kind != MarkdownBlockKind.code) return null;
+    var end = block.end;
+    if (end > block.start && text.codeUnitAt(end - 1) == 0x0A) end--;
+    final newline = text.indexOf('\n', block.start);
+    final openEnd = newline < 0 || newline > end ? end : newline;
+    final opening = text.substring(block.start, openEnd).trimLeft();
+    final marker = opening.startsWith('```')
+        ? '`'
+        : opening.startsWith('~~~')
+        ? '~'
+        : null;
+    if (marker == null) return null;
+    final fence =
+        opening.length - opening.replaceFirst(RegExp('^[`~]+'), '').length;
+    final lastStart = text.lastIndexOf('\n', end - 1) + 1;
+    final closing = text.substring(lastStart, end).trim();
+    final closed =
+        lastStart > block.start &&
+        closing.length >= fence &&
+        closing.split('').every((c) => c == marker);
+    return (
+      open: TextRange(start: block.start, end: openEnd),
+      language: opening.substring(fence).trim().split(RegExp(r'\s')).first,
+      close: closed ? TextRange(start: lastStart, end: end) : null,
+    );
+  }
 
   /// The syntax the editor hides, and when it shows it. Sorted by start.
   List<MarkdownConceal> get conceals => _parts.conceals;
