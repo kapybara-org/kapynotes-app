@@ -577,7 +577,7 @@ void main() {
     );
   });
 
-  testWidgets('desktop dark compact results divider hover', (tester) async {
+  testWidgets('desktop dark narrow results divider hover', (tester) async {
     await pumpForGolden(
       tester,
       size: const Size(600, 630),
@@ -594,8 +594,30 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile(
-        'goldens/desktop_dark_compact_results_divider_hover.png',
+        'goldens/desktop_dark_narrow_results_divider_hover.png',
       ),
+    );
+  });
+
+  testWidgets('desktop dark narrow, notes list over the page', (tester) async {
+    // The window a new install opens at, too narrow for the list beside the
+    // page: the rail and the page stay, and the list opens over the page.
+    await pumpForGolden(
+      tester,
+      size: LayoutPrefs.defaultWindowSize,
+      brightness: Brightness.dark,
+    );
+    await tester.tap(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Tooltip &&
+            (widget.message ?? '').startsWith('Show notes'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_narrow_list.png'),
     );
   });
 
@@ -828,8 +850,8 @@ void main() {
   });
 
   testWidgets('desktop dark, sidebar collapsed', (tester) async {
-    // The toolbar owns the window's left edge here, where macOS draws the
-    // traffic lights over it.
+    // The page starts a margin in from the rail, as in Paper's window with
+    // the list hidden.
     await pumpForGolden(
       tester,
       size: const Size(760, 520),

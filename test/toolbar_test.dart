@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
-import 'package:kapy_notes/core/window_chrome.dart';
 import 'package:kapy_notes/sync/presence.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
@@ -58,25 +57,6 @@ void main() {
   tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
   group('placement', () {
-    testWidgets('macOS starts the menu after its traffic lights', (
-      tester,
-    ) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
-      await tester.pumpWidget(
-        harness(
-          NoteToolbar(onToggleSidebar: () {}, onCreate: () {}, onShare: () {}),
-        ),
-      );
-
-      // The drawer's button leads here as it does everywhere else; the only
-      // difference is that the corner it leads from belongs to the window
-      // controls, so it begins where they end rather than underneath them.
-      expect(
-        tester.getTopLeft(findKapyIcon(KapyIcons.menuRounded)).dx,
-        greaterThanOrEqualTo(WindowChrome.trafficLightsWidth),
-      );
-    });
-
     for (final platform in [
       TargetPlatform.macOS,
       TargetPlatform.windows,
@@ -240,13 +220,13 @@ void main() {
       // Own initial, not the "Y" of the word standing in for the name.
       expect(find.text('A'), findsOneWidget);
       expect(find.text('B'), findsOneWidget);
-      // Left of the wordmark, beside the window controls rather than over them.
+      // Between the menu and the wordmark.
       final avatars = tester.getRect(
         find.byKey(const ValueKey('toolbar-members')),
       );
       expect(
         avatars.left,
-        greaterThanOrEqualTo(WindowChrome.trafficLightsWidth),
+        greaterThan(tester.getRect(findKapyIcon(KapyIcons.menuRounded)).right),
       );
       expect(
         avatars.right,

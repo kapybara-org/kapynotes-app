@@ -73,8 +73,9 @@ import 'window_drag_area.dart';
 import 'draw/drawing_canvas.dart';
 import 'draw/note_mode_switch.dart';
 
-/// Width at which the two-pane desktop layout gives way to the compact editor
-/// with a notes drawer. Mobile platforms always use the compact layout.
+/// The narrowest window that holds the notes list beside the page. Below it a
+/// phone switches to the compact editor with a notes drawer, while a desktop
+/// window keeps the rail and the page and opens the list over the page.
 const double kTwoPaneBreakpoint = 720;
 
 class HomePage extends StatefulWidget {
@@ -222,6 +223,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _openSessionScheduled = false;
   bool _drawerContentReady = false;
   bool _drawerOpen = false;
+
+  /// Whether the notes list is open over the page, in a desktop window too
+  /// narrow to hold it beside the page. See [_setListShown].
+  bool _listOverlaid = false;
+
   bool _settingsOpen = false;
   bool _archiveMode = false;
   bool _hiddenMode = false;
@@ -379,16 +385,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (mounted && _drawingsOnly && _usesCompactLayout) {
       setState(() => _drawingsOnly = false);
     }
-    // An open compact drawer is disposed when a desktop window crosses into
-    // the two-pane layout. Scaffold cannot report a closing transition after
-    // that disposal, so clear the transient flag here. Otherwise returning to
-    // a compact width builds a closed drawer whose toolbar still hides every
-    // edge action.
+    // An open compact drawer is disposed when a phone turns or a tablet's
+    // window widens into the two-pane layout. Scaffold cannot report a closing
+    // transition after that disposal, so clear the transient flag here.
+    // Otherwise returning to a compact width builds a closed drawer whose
+    // toolbar still hides every edge action.
     if (mounted && _drawerOpen && !_usesCompactLayout) {
       setState(() => _drawerOpen = false);
     }
-    // A narrow window shows only the focused pane's note. An empty pane has
-    // none, so focus a pane that does rather than show nothing at all.
+    // A list opened over the page stays open as the window widens, beside the
+    // page now that there is room for it.
+    if (mounted && _listOverlaid && _listFits) {
+      setState(() => _listOverlaid = false);
+      if (!widget.prefs.sidebarVisible) widget.prefs.toggleSidebar();
+    }
+    // A phone shows only the focused pane's note. An empty pane has none, so
+    // focus a pane that does rather than show nothing at all.
     if (mounted &&
         !_specialMode &&
         _usesCompactLayout &&
@@ -1007,10 +1019,55 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (available.isEmpty && _usesCompactLayout) _scheduleInitialNote();
   }
 
-  /// Read from the window because selection is also reconciled outside build.
-  bool get _usesCompactLayout {
+  /// Only a phone has a compact layout: a desktop window of any width keeps
+  /// the rail and the page.
+  bool get _usesCompactLayout => AppPlatform.isMobile && !_listFits;
+
+  /// Whether the window holds the notes list beside the page. Read from the
+  /// window because selection is also reconciled, and the list shown, outside
+  /// build.
+  bool get _listFits {
     final view = WidgetsBinding.instance.platformDispatcher.views.first;
-    return view.physicalSize.width / view.devicePixelRatio < kTwoPaneBreakpoint;
+    return view.physicalSize.width / view.devicePixelRatio >=
+        kTwoPaneBreakpoint;
+  }
+
+  /// Whether the notes list is on screen, beside the page or over it.
+  bool get _listShown =>
+      _listFits ? widget.prefs.sidebarVisible : _listOverlaid;
+
+  /// Shows or hides the notes list in the wide layout. Every control that does
+  /// either comes through here: the shortcut, the toolbar's button, the list's
+  /// own hide button and divider, a sideways swipe, an empty pane, and Find
+  /// notes.
+  ///
+  /// Where the window has room, the list stands beside the page and the
+  /// choice is [LayoutPrefs.sidebarVisible], which the settings switch shows.
+  /// Where it has not, the list opens over the page and takes the keyboard
+  /// into its search field, so nothing typed lands in the note it covers, and
+  /// closing it gives the keyboard back to the note.
+  void _setListShown(bool shown) {
+    if (_listFits) {
+      if (widget.prefs.sidebarVisible != shown) widget.prefs.toggleSidebar();
+      return;
+    }
+    if (shown == _listOverlaid) return;
+    setState(() => _listOverlaid = shown);
+    if (!shown) {
+      _focusSelectedEditorHere();
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocus.requestFocus();
+    });
+  }
+
+  void _toggleList() => _setListShown(!_listShown);
+
+  /// Puts away a list open over the page once a note is chosen from it. A
+  /// list beside the page stays where it is.
+  void _dismissListOverlay() {
+    if (_listOverlaid) _setListShown(false);
   }
 
   void _setSelectedId(String? id, {bool selectionPreview = false}) {
@@ -1209,7 +1266,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  void _selectFromSidebar(String id) => _select(id, focusEditor: false);
+  /// A press on a row. Beside the page the keyboard stays in the list, for
+  /// the arrows to walk on from there; over the page the note opens and the
+  /// list goes.
+  void _selectFromSidebar(String id) {
+    if (!_listOverlaid) {
+      _select(id, focusEditor: false);
+      return;
+    }
+    _dismissListOverlay();
+    _select(id);
+  }
 
   void _previewFromSidebar(String id) =>
       _select(id, focusEditor: false, selectionPreview: true);
@@ -1264,6 +1331,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void _openNoteToSide(String id) {
     if (_usesCompactLayout || _specialMode) return;
+    _dismissListOverlay();
     _afterRecordingLeaves(
       _workspace.displacedByOpenToSide(id),
       () => _openNoteToSideNow(id),
@@ -1484,6 +1552,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // it being written.
       _sidebarTab = SidebarTab.mine;
       _drawingsOnly = false;
+      // And it is written on the page, so a list open over the page goes.
+      _listOverlaid = false;
       _setSelectedId(note.id);
     });
     widget.prefs.lastOpenedNoteId = note.id;
@@ -2236,6 +2306,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// already mounted and can take the caret immediately. Unlike the deferred
   /// helper above, this does not depend on another frame being scheduled.
   void _enterSelectedEditorFromSidebar() {
+    _dismissListOverlay();
     if (_editorFocusSuppressed ||
         (_selectedId != null && _selectedId == _untouchedWelcomeId)) {
       return;
@@ -2266,7 +2337,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _focusGlobalSearch() {
     _recordKapyActivity();
     if (!_usesCompactLayout) {
-      if (!widget.prefs.sidebarVisible) widget.prefs.toggleSidebar();
+      _setListShown(true);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _searchFocus.requestFocus();
       });
@@ -2396,16 +2467,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // golden harness captures this boundary directly.
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < kTwoPaneBreakpoint;
+        final compact =
+            AppPlatform.isMobile && constraints.maxWidth < kTwoPaneBreakpoint;
         final page = compact ? _buildCompact(context) : _buildWide(context);
         final gesturePage = AppPlatform.isDesktop
             ? SidebarSwipe(
-                sidebarVisible: compact
-                    ? _drawerOpen
-                    : widget.prefs.sidebarVisible,
-                onToggle: compact
-                    ? _toggleCompactSidebarFromTrackpad
-                    : widget.prefs.toggleSidebar,
+                sidebarVisible: _listShown,
+                onToggle: _toggleList,
                 child: page,
               )
             : page;
@@ -2425,17 +2493,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onFindNotes: _focusGlobalSearch,
             onNextNote: () => _cycleNote(1),
             onPreviousNote: () => _cycleNote(-1),
-            onSplitEditor: compact || _specialMode || !_workspace.canSplit
+            onSplitEditor: _specialMode || !_workspace.canSplit
                 ? null
                 : _splitEditor,
             // Unbound with a single pane, so the chord closes nothing at all
             // rather than something the reader did not mean it to.
-            onClosePane: compact || _specialMode || !_workspace.isSplit
+            onClosePane: _specialMode || !_workspace.isSplit
                 ? null
                 : () => _closePane(_workspace.activePane),
             onFocusPane: [
               for (var index = 0; index < EditorWorkspace.maxPanes; index++)
-                compact || _specialMode || index >= _workspace.paneCount
+                _specialMode || index >= _workspace.paneCount
                     ? null
                     : () => _focusPane(index),
             ],
@@ -2447,9 +2515,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _selectedEditor?.pickAndInsertImages() ?? Future<void>.value(),
             ),
             onRecordVoice: () => unawaited(_startVoiceRecording()),
-            onToggleSidebar: compact
-                ? _toggleCompactSidebarFromTrackpad
-                : widget.prefs.toggleSidebar,
+            onToggleSidebar: _toggleList,
             onToggleHiddenFolder: _toggleHiddenFolderVisibility,
             onToggleResults: widget.prefs.toggleResults,
             onToggleAlwaysOnTop: AppPlatform.isDesktop
@@ -2462,17 +2528,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         );
       },
     );
-  }
-
-  void _toggleCompactSidebarFromTrackpad() {
-    final scaffold = _scaffoldKey.currentState;
-    if (scaffold == null) return;
-    if (scaffold.isDrawerOpen) {
-      scaffold.closeDrawer();
-      return;
-    }
-    FocusManager.instance.primaryFocus?.unfocus();
-    scaffold.openDrawer();
   }
 
   Widget _buildWide(BuildContext context) {
@@ -2500,7 +2555,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           listenable: _toolbarSources,
           builder: (context, _) {
             final space = _space;
-            final sidebarVisible = widget.prefs.sidebarVisible;
+            final listFits = _listFits;
+            final listShown = _listShown;
             return Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -2529,13 +2585,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
                 Expanded(
                   child: SplitView(
-                    sidebarVisible: sidebarVisible,
+                    sidebarVisible: listShown,
+                    overlay: !listFits,
                     sidebarWidth: widget.prefs.sidebarWidth,
                     minSidebarWidth: LayoutPrefs.minSidebarWidth,
                     maxSidebarWidth: LayoutPrefs.maxSidebarWidth,
                     onWidthChanged: (value) =>
                         widget.prefs.sidebarWidth = value,
-                    onHide: widget.prefs.toggleSidebar,
+                    onHide: () => _setListShown(false),
                     sidebar: Sidebar(
                       notes: _visibleNotes,
                       pinnedNoteIds: widget.notes.pinnedNoteIds,
@@ -2610,7 +2667,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         newNoteShortcut: widget.shortcuts.bindingFor(
                           ShortcutAction.newNote,
                         ),
-                        onHide: widget.prefs.toggleSidebar,
+                        onHide: () => _setListShown(false),
                         hideShortcut: widget.shortcuts.bindingFor(
                           ShortcutAction.toggleSidebar,
                         ),
@@ -2636,7 +2693,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             duration: const Duration(milliseconds: 160),
                             curve: Curves.easeOutCubic,
                             padding: EdgeInsets.fromLTRB(
-                              sidebarVisible ? 0 : pageInset,
+                              listFits && listShown ? 0 : pageInset,
                               pageInset,
                               pageInset,
                               pageInset,
@@ -2646,9 +2703,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               children: [
                                 NoteToolbar(
                                   mascotController: _kapyHeader,
-                                  sidebarVisible: sidebarVisible,
+                                  sidebarVisible: listShown,
                                   sidebarShortcut: _sidebarShortcut,
-                                  onToggleSidebar: widget.prefs.toggleSidebar,
+                                  onToggleSidebar: _toggleList,
                                   onCreate: _createNote,
                                   onShare: _shareSelected,
                                   members: _selectedMembers,
@@ -2664,7 +2721,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                       : _splitEditor,
                                   splitTooltip: _splitTooltip,
                                   updates: widget.updates,
-                                  atWindowLeftEdge: false,
                                 ),
                                 Expanded(child: _buildWideWorkspace()),
                               ],
@@ -2736,9 +2792,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       body = EmptyPane(
         active: active,
         onCreate: _createNote,
-        onShowNotes: widget.prefs.sidebarVisible
-            ? null
-            : widget.prefs.toggleSidebar,
+        onShowNotes: _listShown ? null : () => _setListShown(true),
       );
     } else {
       body = EmptyState(onCreate: _createNote);
@@ -2773,10 +2827,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       0.0,
       360.0,
     );
-    // Narrow desktop windows retain Flutter's draggable edge. Phones use the
-    // full-page observer below, which can begin anywhere without taking the
-    // editor's vertical-scroll or text-selection gestures away from it.
-    final drawerEdgeDragWidth = MediaQuery.sizeOf(context).width / 3;
     final overlayStyle = Theme.of(context).brightness == Brightness.dark
         ? SystemUiOverlayStyle.light
         : SystemUiOverlayStyle.dark;
@@ -2790,10 +2840,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         backgroundColor: palette.isGlass
             ? Colors.transparent
             : palette.editorBackground,
-        // Not over a drawing, where a stroke from the left edge is a stroke.
-        drawerEnableOpenDragGesture:
-            !AppPlatform.isMobile && !(selected?.isDrawing ?? false),
-        drawerEdgeDragWidth: drawerEdgeDragWidth,
+        // The full-page observer below opens it instead, from anywhere and
+        // without taking the editor's vertical-scroll or text-selection
+        // gestures away from it.
+        drawerEnableOpenDragGesture: false,
         onDrawerChanged: (isOpen) {
           setState(() {
             _drawerOpen = isOpen;
@@ -2856,7 +2906,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onRestoreChecked: _restoreChecked,
                       archivedCount: widget.notes.archivedNotes.length,
                       hiddenCount: widget.notes.hiddenNotes.length,
-                      showHiddenFolder: widget.prefs.hiddenFolderVisible,
                       streak: widget.notes.streak,
                       onShare: widget.account == null ? null : _shareNote,
                       sharing: widget.account?.sharing,
@@ -2876,9 +2925,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ),
                       archiveShortcut: widget.shortcuts.bindingFor(
                         ShortcutAction.deleteNote,
-                      ),
-                      hiddenShortcut: widget.shortcuts.bindingFor(
-                        ShortcutAction.toggleHiddenFolder,
                       ),
                       updates: widget.updates,
                     ),
@@ -2942,7 +2988,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
     );
 
-    if (!AppPlatform.isMobile) return compactPage;
     return MobilePageSwipe(
       enabled: !_drawerOpen,
       onOpenNotes: () {
@@ -2955,15 +3000,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _buildCompactEditor(Note note) {
-    // Narrow desktop windows still have a precise pointer and enough room for
-    // the results column to be resized. On Windows, the native minimum is an
-    // outer window size, so the Flutter client can be a few pixels narrower
-    // than that minimum. Platform capability is therefore the durable rule.
-    // Phones preserve the fixed mobile gutter, and wide phones get enough
-    // room for a grouped currency plus its three-letter code.
-    final compactWidth = MediaQuery.sizeOf(context).width;
-    final desktopResultsDivider = AppPlatform.isDesktop;
-    final mobileGutterWidth = compactWidth >= 400 ? 152.0 : 132.0;
     if (note.isDrawing) return _buildDrawing(note);
     final editor = ListenableBuilder(
       listenable: widget.engines,
@@ -2990,13 +3026,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialFormats: note.formats,
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
-          gutterWidth: desktopResultsDivider
-              ? widget.prefs.gutterWidth
-              : mobileGutterWidth,
-          resultsVisible: desktopResultsDivider
-              ? widget.prefs.resultsVisible
-              : true,
-          showDivider: desktopResultsDivider,
+          // A phone keeps a fixed results column, and a wide phone gets
+          // enough of one for a grouped currency and its three-letter code.
+          gutterWidth: MediaQuery.sizeOf(context).width >= 400 ? 152 : 132,
+          resultsVisible: true,
+          showDivider: false,
           autofocus: _readyToTypeIn(note),
           startAtEnd: _readyToTypeIn(note),
           initialCaret: _resumeCaretIn(note),
@@ -3035,15 +3069,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onDocumentChanged: (body, formats, attachments) =>
               _updateDocument(note.id, body, formats, attachments),
           storedDocument: () => _storedDocument(note.id),
-          onGutterWidthChanged: desktopResultsDivider
-              ? (value) => widget.prefs.gutterWidth = value
-              : (_) {},
-          onResultsVisibilityChanged: desktopResultsDivider
-              ? (value) => widget.prefs.resultsVisible = value
-              : (_) {},
-          onGutterWidthReset: desktopResultsDivider
-              ? widget.prefs.resetGutterWidth
-              : () {},
+          onGutterWidthChanged: (_) {},
+          onResultsVisibilityChanged: (_) {},
+          onGutterWidthReset: () {},
           onSettingsPressed: _showSettings,
         ),
       ),

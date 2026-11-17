@@ -81,7 +81,11 @@ DigitGrouping _autoGrouping(Locale locale, String? region) {
 /// behaves once its window is closed.
 class LayoutPrefs extends ChangeNotifier {
   static const Size defaultWindowSize = Size(600, 720);
-  static const Size minimumWindowSize = Size(520, 360);
+
+  /// The smallest window that still holds the spaces rail and a page: tall
+  /// enough for the rail with every space, the streak and the account on it,
+  /// and wide enough for the page's toolbar beside the rail.
+  static const Size minimumWindowSize = Size(520, 520);
 
   static const double minGutterWidth = 72;
   static const double maxGutterWidth = 480;

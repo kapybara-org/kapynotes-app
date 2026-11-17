@@ -46,6 +46,7 @@ import 'package:kapy_notes/ui/toolbar.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
 import 'kapy_icon_finder.dart';
+import 'quick_capture_test.dart' show stubLaunchIntent;
 import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 
@@ -600,7 +601,7 @@ void main() {
   });
 
   testWidgets(
-    'keeps Windows header actions after returning to a compact width',
+    'a list open over a narrow page stands beside it once the window widens',
     (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -609,26 +610,38 @@ void main() {
         of: find.byType(NoteToolbar),
         matching: findKapyIcon(icon),
       );
+      final barrier = find.byKey(const ValueKey('sidebar-overlay-barrier'));
 
       await pumpApp(tester, size: const Size(620, 620), sidebarVisible: false);
 
-      // Open the compact drawer, then let the window cross into the wide
-      // layout while it is open. The new compact Scaffold starts closed when
-      // the window is narrowed again, so its header actions must come back.
       await tester.tap(notesToggleWithLabel('Show notes'));
       await tester.pumpAndSettle();
-      expect(toolbarIcon(KapyIcons.menuRounded), findsNothing);
+      expect(find.byType(Sidebar), findsOneWidget);
+      expect(barrier, findsOneWidget);
 
+      // Still on screen with room to stand beside the page, so it does.
       tester.view.physicalSize = const Size(760, 620);
       await tester.pumpAndSettle();
-      expect(toolbarIcon(KapyIcons.menuRounded), findsOneWidget);
+      expect(barrier, findsNothing);
+      expect(prefs.sidebarVisible, isTrue);
+      expect(
+        tester.getRect(find.byType(Sidebar)).right,
+        lessThanOrEqualTo(tester.getRect(find.byType(NoteToolbar)).left),
+      );
 
+      // Narrowed again, the window folds it away and keeps every action.
       tester.view.physicalSize = const Size(622, 620);
       await tester.pumpAndSettle();
-
+      expect(find.byType(Sidebar), findsNothing);
+      expect(barrier, findsNothing);
       expect(toolbarIcon(KapyIcons.menuRounded), findsOneWidget);
       expect(toolbarIcon(KapyIcons.addRounded), findsOneWidget);
       expect(toolbarIcon(KapyIcons.peopleOutlined), findsOneWidget);
+
+      tester.view.physicalSize = const Size(760, 620);
+      await tester.pumpAndSettle();
+      expect(find.byType(Sidebar), findsOneWidget);
+      expect(barrier, findsNothing);
     },
   );
 
@@ -651,15 +664,15 @@ void main() {
         );
       }
 
-      // The drawer hides the note actions while it covers them. The pin is
-      // about the window, not the note, so it stays.
+      // The list opened over a narrow window's page leaves the toolbar, and
+      // the pin on it, where they were.
       await pumpApp(tester, size: const Size(700, 620));
       await tester.tap(notesToggleWithLabel('Show notes'));
       await tester.pumpAndSettle();
       expect(
         findKapyIcon(KapyIcons.pinOutlined),
         findsOneWidget,
-        reason: 'the pin went with the drawer',
+        reason: 'the pin went under the list',
       );
 
       // A phone has no window to float, so the control is absent rather than
@@ -2346,22 +2359,26 @@ void main() {
     expect(prefs.sidebarVisible, isFalse);
   });
 
-  testWidgets('the notes shortcut opens and closes the compact drawer', (
+  testWidgets('the notes shortcut opens and closes the list over a narrow page', (
     tester,
   ) async {
     await pumpApp(tester, size: const Size(600, 700));
-    notes.create(body: 'Compact note');
+    notes.create(body: 'Narrow note');
     await tester.pumpAndSettle();
 
-    final scaffold = tester.state<ScaffoldState>(find.byType(Scaffold).first);
     final binding = shortcuts.bindingFor(ShortcutAction.toggleSidebar)!;
-    expect(scaffold.isDrawerOpen, isFalse);
+    final search = find.byKey(const ValueKey('sidebar-search-field'));
+    expect(find.byType(Sidebar), findsNothing);
 
     await pressShortcut(tester, binding);
-    expect(scaffold.isDrawerOpen, isTrue);
+    expect(find.byType(Sidebar), findsOneWidget);
+    // The list takes the keyboard, so nothing typed lands in the note under it.
+    expect(tester.widget<TextField>(search).focusNode?.hasFocus, isTrue);
 
     await pressShortcut(tester, binding);
-    expect(scaffold.isDrawerOpen, isFalse);
+    expect(find.byType(Sidebar), findsNothing);
+    // A wide window's list is a choice of its own, and stays as it was.
+    expect(prefs.sidebarVisible, isTrue);
   });
 
   testWidgets('the hamburger tooltip includes its current shortcut', (
@@ -2384,8 +2401,10 @@ void main() {
   testWidgets(
     'toolbar settings sits beside notes, teaches its shortcut, and opens',
     (tester) async {
-      // A narrow window's toolbar. Beside the rail, settings is its gear.
-      await pumpApp(tester, size: const Size(600, 760));
+      // A phone's toolbar. Beside the rail, settings is the rail's gear.
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester, size: const Size(390, 844));
 
       final toolbar = find.byType(NoteToolbar);
       final menu = find.descendant(
@@ -2503,29 +2522,36 @@ void main() {
     );
   });
 
-  testWidgets('global search opens and focuses the compact notes drawer', (
-    tester,
-  ) async {
-    await pumpApp(tester, size: const Size(600, 760));
-    notes.create(body: 'Compact search result');
-    await tester.pumpAndSettle();
+  testWidgets(
+    'global search opens the list over a narrow page and focuses it',
+    (tester) async {
+      await pumpApp(tester, size: const Size(600, 760));
+      notes.create(body: 'Narrow search result');
+      await tester.pumpAndSettle();
 
-    await pressShortcut(
-      tester,
-      shortcuts.bindingFor(ShortcutAction.findNotes)!,
-    );
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.findNotes)!,
+      );
 
-    final search = find.byKey(const ValueKey('sidebar-search-field'));
-    expect(search, findsOneWidget);
-    expect(tester.widget<TextField>(search).focusNode?.hasFocus, isTrue);
-  });
+      final search = find.byKey(const ValueKey('sidebar-search-field'));
+      expect(search, findsOneWidget);
+      expect(tester.widget<TextField>(search).focusNode?.hasFocus, isTrue);
+      expect(
+        find.byKey(const ValueKey('sidebar-overlay-barrier')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('creates a note from the plus beside search', (tester) async {
-    // A narrow window's notes list. Beside the rail, New note sits in the bar
-    // over the list instead; see the spaces rail group.
+    // A phone's notes drawer. Beside the rail, New note sits in the bar over
+    // the list instead; see the spaces rail group.
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await notes.load();
     notes.create(body: 'Something written');
-    await pumpApp(tester, size: const Size(600, 760));
+    await pumpApp(tester, size: const Size(390, 844));
     await showNotesList(tester);
     final before = notes.notes.length;
     final search = find.byKey(const ValueKey('sidebar-search-field'));
@@ -2539,7 +2565,7 @@ void main() {
     expect(notes.notes, hasLength(before + 1));
   });
 
-  testWidgets('leaves breathing room around the sidebar search row', (
+  testWidgets('the list over a narrow page is the list beside a wide one', (
     tester,
   ) async {
     await notes.load();
@@ -2547,16 +2573,27 @@ void main() {
     await pumpApp(tester, size: const Size(600, 760));
     await showNotesList(tester);
 
+    final rail = tester.getRect(find.byType(SpacesRail));
     final sidebar = tester.getRect(find.byType(Sidebar));
+    final bar = tester.getRect(find.byType(SidebarWindowBar));
     final search = tester.getRect(
       find.byKey(const ValueKey('sidebar-search-field')),
     );
-    final add = tester.getRect(find.byKey(const ValueKey('sidebar-new-note')));
 
-    expect(search.top - sidebar.top, greaterThanOrEqualTo(12));
+    expect(sidebar.left, rail.right);
+    expect(sidebar.width, LayoutPrefs.defaultSidebarWidth);
+    expect(bar.top, sidebar.top);
+    expect(search.top, greaterThanOrEqualTo(bar.bottom));
     expect(search.left - sidebar.left, greaterThanOrEqualTo(12));
-    expect(sidebar.right - add.right, greaterThanOrEqualTo(12));
-    expect(add.center.dy, closeTo(search.center.dy, 0.5));
+    expect(sidebar.right - search.right, greaterThanOrEqualTo(12));
+    // New note sits in the bar, as it does beside the page.
+    expect(
+      find.descendant(
+        of: find.byType(SidebarWindowBar),
+        matching: find.byKey(const ValueKey('sidebar-new-note')),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
@@ -4039,7 +4076,7 @@ void main() {
   });
 
   group('compact editor', () {
-    testWidgets('keeps the results divider in compact desktop windows', (
+    testWidgets('keeps the results divider in a narrow desktop window', (
       tester,
     ) async {
       store.data['notes.v1'] = [
@@ -4363,6 +4400,8 @@ void main() {
         ];
         // Last opened is the default startup behavior.
         store.data['selectedNote.v1'] = 'created-last';
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
         await pumpApp(tester, size: const Size(420, 800));
 
@@ -4426,6 +4465,8 @@ void main() {
           'updatedAt': 2000,
         },
       ];
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
       await pumpApp(tester, size: const Size(420, 800));
       expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
@@ -4667,6 +4708,8 @@ void main() {
     testWidgets('creates a ready-to-type note when the store is empty', (
       tester,
     ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpApp(tester, size: const Size(420, 800));
 
       expect(notes.notes, hasLength(1));
@@ -4680,6 +4723,12 @@ void main() {
     testWidgets('restores editor focus and the keyboard on app resume', (
       tester,
     ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      // A phone asks on every resume whether a widget was tapped meanwhile.
+      // Nothing was.
+      stubLaunchIntent(null);
+      addTearDown(() => stubLaunchIntent(null, respond: false));
       await pumpApp(tester, size: const Size(420, 800));
 
       tester.testTextInput.hide();
@@ -5042,19 +5091,109 @@ void main() {
     });
   });
 
+  group('narrow window', () {
+    final barrier = find.byKey(const ValueKey('sidebar-overlay-barrier'));
+
+    testWidgets('keeps the rail and the page, and folds the list away', (
+      tester,
+    ) async {
+      await notes.load();
+      notes.create(body: 'Narrow note');
+      // The size every new window opens at.
+      await pumpApp(tester, size: LayoutPrefs.defaultWindowSize);
+
+      expect(find.byType(SpacesRail), findsOneWidget);
+      expect(find.byType(Scaffold), findsNothing);
+      // Shown, as far as a window with room for it is concerned.
+      expect(prefs.sidebarVisible, isTrue);
+      expect(find.byType(Sidebar), findsNothing);
+      expect(notesToggleWithLabel('Show notes'), findsOneWidget);
+      // The page stands a margin in from the rail, as in Paper's window with
+      // the list hidden.
+      expect(
+        tester.getRect(find.byType(NoteToolbar)).left,
+        tester.getRect(find.byType(SpacesRail)).right + 12,
+      );
+    });
+
+    testWidgets('opens the list over the page, and puts it away again', (
+      tester,
+    ) async {
+      await notes.load();
+      notes.create(body: 'First note');
+      notes.create(body: 'Second note');
+      await pumpApp(tester, size: const Size(600, 720));
+      final page = tester.getRect(find.byType(NoteToolbar));
+
+      Future<void> open() async {
+        await tester.tap(notesToggleWithLabel('Show notes'));
+        await tester.pumpAndSettle();
+        expect(find.byType(Sidebar), findsOneWidget);
+        expect(barrier, findsOneWidget);
+      }
+
+      // Over the page, which keeps its place and its width.
+      await open();
+      expect(tester.getRect(find.byType(NoteToolbar)), page);
+
+      // A click on the page beside it.
+      await tester.tapAt(Offset(page.right - 8, page.center.dy));
+      await tester.pumpAndSettle();
+      expect(find.byType(Sidebar), findsNothing);
+
+      await open();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byType(Sidebar), findsNothing);
+
+      await open();
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(find.byType(Sidebar), findsNothing);
+
+      // A note chosen from it opens ready to type.
+      await open();
+      await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Sidebar), findsNothing);
+      expect(barrier, findsNothing);
+      final field = tester.widget<TextField>(
+        find.descendant(
+          of: find.byType(NoteEditor),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(field.controller!.text, startsWith('First note'));
+      expect(field.focusNode!.hasFocus, isTrue);
+
+      // So does a new one.
+      await open();
+      final before = notes.notes.length;
+      await tester.tap(find.byKey(const ValueKey('sidebar-new-note')));
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(before + 1));
+      expect(find.byType(Sidebar), findsNothing);
+
+      // None of it touched the list a wide window shows.
+      expect(prefs.sidebarVisible, isTrue);
+    });
+  });
+
   group('window chrome', () {
     testWidgets(
-      'keeps the compact desktop toolbar clear of macOS window controls',
+      'keeps a narrow window\'s toolbar clear of macOS window controls',
       (tester) async {
         await pumpApp(tester, size: const Size(600, 630));
         notes.create();
         await tester.pumpAndSettle();
 
-        expect(find.byType(NoteToolbar), findsOneWidget);
+        // The rail still runs down the window's left edge and takes the
+        // traffic lights, as it does in a wide window.
+        expect(tester.getRect(find.byType(SpacesRail)).topLeft, Offset.zero);
         expect(
           tester.getTopLeft(notesToggleWithLabel('Show notes')).dx,
           greaterThanOrEqualTo(WindowChrome.trafficLightsWidth),
-          reason: 'the compact toolbar overlapped the macOS traffic lights',
+          reason: 'the toolbar overlapped the macOS traffic lights',
         );
       },
       skip: !WindowChrome.overlaysContent,

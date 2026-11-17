@@ -11,9 +11,9 @@ import 'package:material_ui/material_ui.dart';
 /// field is how you select text, and taking it would cost more than the
 /// gesture is worth. A two-finger swipe conflicts with nothing.
 ///
-/// Desktop keeps this observer above both responsive layouts, so the same
-/// two-finger gesture works in wide and narrow windows. Touchscreen compact
-/// layouts use their separate full-page swipe handling.
+/// The desktop keeps this observer above the whole window, so the same
+/// two-finger gesture opens the list beside the page in a wide window and over
+/// it in a narrow one. A phone's compact layout has its own full-page swipe.
 class SidebarSwipe extends StatefulWidget {
   const SidebarSwipe({
     super.key,

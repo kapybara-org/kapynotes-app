@@ -1,6 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
-/// A two-pane layout whose divider the user can drag.
+import '../core/theme.dart';
+
+/// The notes list and the page: side by side, with a divider the user can
+/// drag, where the window has room for both, and the list over the page where
+/// it has not.
 ///
 /// The width is owned by the caller so it can be persisted. A drag moves the
 /// divider here and reports where it ended, so each frame of it lays the
@@ -14,6 +18,7 @@ class SplitView extends StatefulWidget {
     required this.onWidthChanged,
     required this.onHide,
     required this.sidebarVisible,
+    this.overlay = false,
     this.minSidebarWidth = 150,
     this.maxSidebarWidth = 420,
   });
@@ -24,6 +29,12 @@ class SplitView extends StatefulWidget {
   final ValueChanged<double> onWidthChanged;
   final VoidCallback onHide;
   final bool sidebarVisible;
+
+  /// Whether the sidebar opens over the body rather than beside it, for a
+  /// window with no room for both. The body keeps its whole width, dimmed
+  /// behind the sidebar, and a click on it or Escape hides the sidebar again
+  /// through [onHide]. Nothing of the sidebar is built while it is hidden.
+  final bool overlay;
   final double minSidebarWidth;
   final double maxSidebarWidth;
 
@@ -32,6 +43,13 @@ class SplitView extends StatefulWidget {
 }
 
 class _SplitViewState extends State<SplitView> {
+  /// The least of the body the sidebar leaves beside it.
+  static const double _minBodyWidth = 320;
+
+  /// The least of the body an open overlay leaves in view, for the click that
+  /// closes it to land on.
+  static const double _minBodyInView = 48;
+
   bool _hovering = false;
 
   /// Where the divider is while it is being dragged.
@@ -48,19 +66,19 @@ class _SplitViewState extends State<SplitView> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final overlay = widget.overlay;
+
     return LayoutBuilder(
       builder: (context, constraints) {
+        final room =
+            constraints.maxWidth - (overlay ? _minBodyInView : _minBodyWidth);
         double clamped(double value) => value.clamp(
           widget.minSidebarWidth,
-          widget.maxSidebarWidth.clamp(
-            widget.minSidebarWidth,
-            (constraints.maxWidth - 320).clamp(
-              widget.minSidebarWidth,
-              widget.maxSidebarWidth,
-            ),
-          ),
+          room.clamp(widget.minSidebarWidth, widget.maxSidebarWidth),
         );
         final width = clamped(_dragWidth ?? widget.sidebarWidth);
+        final beside = widget.sidebarVisible && !overlay;
 
         return Stack(
           children: [
@@ -68,24 +86,27 @@ class _SplitViewState extends State<SplitView> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    curve: Curves.easeOutCubic,
-                    width: widget.sidebarVisible ? width : 0,
-                    child: ClipRect(
-                      child: OverflowBox(
-                        alignment: Alignment.centerLeft,
-                        minWidth: width,
-                        maxWidth: width,
-                        child: widget.sidebar,
+                  // Slides open and shut, but comes and goes at once with the
+                  // room for it, rather than squeezing the body as it goes.
+                  if (!overlay)
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      curve: Curves.easeOutCubic,
+                      width: beside ? width : 0,
+                      child: ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.centerLeft,
+                          minWidth: width,
+                          maxWidth: width,
+                          child: widget.sidebar,
+                        ),
                       ),
                     ),
-                  ),
                   Expanded(child: widget.body),
                 ],
               ),
             ),
-            if (widget.sidebarVisible)
+            if (beside)
               Positioned(
                 left: width - 7.5,
                 top: 0,
@@ -131,6 +152,37 @@ class _SplitViewState extends State<SplitView> {
                   ),
                 ),
               ),
+            if (overlay && widget.sidebarVisible) ...[
+              Positioned.fill(
+                child: ModalBarrier(
+                  key: const ValueKey('sidebar-overlay-barrier'),
+                  color: palette.scrim,
+                  onDismiss: widget.onHide,
+                ),
+              ),
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: width,
+                child: Actions(
+                  actions: {
+                    DismissIntent: CallbackAction<DismissIntent>(
+                      onInvoke: (_) => widget.onHide(),
+                    ),
+                  },
+                  child: DecoratedBox(
+                    position: DecorationPosition.foreground,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        right: BorderSide(color: palette.separator, width: 0.5),
+                      ),
+                    ),
+                    child: widget.sidebar,
+                  ),
+                ),
+              ),
+            ],
           ],
         );
       },
