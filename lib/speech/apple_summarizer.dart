@@ -110,6 +110,31 @@ class AppleSummarizer implements Summarizer {
     return written;
   }
 
+  /// Kapy AI's answer to a question about the person's notes.
+  ///
+  /// Its own method on the runner rather than [rewrite]: that one is told it
+  /// is reading a transcript, and an answer written under that rule talks
+  /// about "the transcript" instead of the notes it was given. [instructions]
+  /// and [prompt] arrive whole, so what Kapy AI asks for is written once, in
+  /// Dart, for every model that answers.
+  Future<String> answer({
+    required String instructions,
+    required String prompt,
+  }) async {
+    final answer = await _invoke('answer', {
+      'instructions': instructions,
+      'prompt': prompt,
+    });
+    final written = '${answer ?? ''}'.trim();
+    if (written.isEmpty) {
+      throw const SummarizerUnavailable(
+        SummarizerReadiness.unsupported,
+        'The model came back with nothing.',
+      );
+    }
+    return written;
+  }
+
   /// One call to the runner, with the readiness check and the one platform
   /// error worth translating. Both jobs need exactly this around them.
   Future<Object?> _invoke(String method, Map<String, Object?> arguments) async {
