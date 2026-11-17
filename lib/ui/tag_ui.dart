@@ -94,6 +94,10 @@ TextStyle _text(double size, FontWeight weight, Color color) => TextStyle(
   color: color,
 );
 
+/// Every refusal of a name says the same, so a tag the lists leave out
+/// while Hidden is locked reads as an ordinary clash.
+const chooseAnotherName = 'Choose another name';
+
 String notesCount(int count) => count == 1 ? '1 note' : '$count notes';
 
 /// A tag's colour as a dot, or a ring for No colour.
@@ -207,9 +211,15 @@ class _TagPickerState extends State<TagPicker> {
     setState(() => _problem = added ? null : _tooMany);
   }
 
-  /// A name another tag has, in any case, picks that tag, even one the
-  /// lists leave out while Hidden is locked.
+  /// A name another tag has, in any case, picks that tag. One the lists
+  /// leave out, found only on Hidden notes while Hidden is
+  /// locked, is neither picked nor shown by its name.
   void _create() {
+    final existing = _store.named(_query.text);
+    if (existing != null &&
+        !widget.shelf.listed().any((entry) => entry.tag.id == existing.id)) {
+      return setState(() => _problem = chooseAnotherName);
+    }
     if (_store.tagsOf(widget.noteId).length >= noteTagsMax) {
       return setState(() => _problem = _tooMany);
     }
@@ -735,25 +745,46 @@ class _TagNameFieldState extends State<TagNameField> {
         },
         child: Material(
           type: MaterialType.transparency,
-          child: TextField(
-            key: const ValueKey('tag-name-field'),
-            controller: _name,
-            autofocus: true,
-            inputFormatters: [LengthLimitingTextInputFormatter(tagNameMax)],
-            onChanged: (_) {
-              if (_refused) setState(() => _refused = false);
-            },
-            onSubmitted: (name) {
-              if (!widget.onSubmit(name)) setState(() => _refused = true);
-            },
-            style: _text(
-              13,
-              FontWeight.w500,
-              _refused
-                  ? Theme.of(context).colorScheme.error
-                  : palette.textPrimary,
-            ),
-            decoration: const InputDecoration.collapsed(hintText: 'Tag name'),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('tag-name-field'),
+                  controller: _name,
+                  autofocus: true,
+                  inputFormatters: [
+                    LengthLimitingTextInputFormatter(tagNameMax),
+                  ],
+                  onChanged: (_) {
+                    if (_refused) setState(() => _refused = false);
+                  },
+                  onEditingComplete: () {},
+                  onSubmitted: (name) {
+                    if (!widget.onSubmit(name)) setState(() => _refused = true);
+                  },
+                  style: _text(
+                    13,
+                    FontWeight.w500,
+                    _refused
+                        ? Theme.of(context).colorScheme.error
+                        : palette.textPrimary,
+                  ),
+                  decoration: const InputDecoration.collapsed(
+                    hintText: 'Tag name',
+                  ),
+                ),
+              ),
+              if (_refused)
+                Text(
+                  chooseAnotherName,
+                  key: const ValueKey('tag-name-refused'),
+                  style: _text(
+                    12,
+                    FontWeight.w500,
+                    Theme.of(context).colorScheme.error,
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -987,6 +1018,8 @@ class _TagSettingsState extends State<TagSettings> {
                             )
                           : Text(
                               entry.tag.name.v,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: _text(
                                 13,
                                 FontWeight.w500,
@@ -1033,6 +1066,7 @@ class _TagSettingsState extends State<TagSettings> {
                 Expanded(
                   child: TagNameField(
                     onSubmit: (name) {
+                      if (_store.named(name) != null) return false;
                       final made = _store.create(name) != null;
                       if (made) setState(() => _creating = false);
                       return made;

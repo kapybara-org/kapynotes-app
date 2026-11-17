@@ -23,6 +23,7 @@ import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/speech/transcriber.dart';
@@ -572,9 +573,19 @@ void main() {
         await openPicker(tester);
         expect(find.byKey(ValueKey('tag-row-${secret.id}')), findsNothing);
         await typeAndEnter(tester, 'secret');
-        expect(namesOn(open.id), ['Work', 'Secret']);
+        expect(find.text('Create “secret”'), findsOneWidget);
+        expect(find.text(chooseAnotherName), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('tag-picker')),
+            matching: find.textContaining(
+              RegExp('hidden', caseSensitive: false),
+            ),
+          ),
+          findsNothing,
+        );
+        expect(namesOn(open.id), ['Work']);
         expect(tags.tags, hasLength(2));
-        tags.removeTag(open.id, secret.id);
         await tester.tapAt(const Offset(1000, 700));
         await tester.pumpAndSettle();
 
@@ -585,8 +596,124 @@ void main() {
         await openTagsFilter(tester);
         expect(countOn(tester, work), '2');
         expect(countOn(tester, secret), '1');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        await openPicker(tester);
+        expect(find.byKey(ValueKey('tag-row-${secret.id}')), findsOneWidget);
+        await typeAndEnter(tester, 'secret');
+        expect(find.text(chooseAnotherName), findsNothing);
+        expect(find.byKey(const ValueKey('tag-create')), findsNothing);
+        expect(tags.tags, hasLength(2));
       },
     );
+
+    testWidgets(
+      'a name a locked Hidden tag holds is refused like any other clash',
+      (tester) async {
+        final hidden = notes.create(body: 'Private');
+        notes.create(body: 'Public');
+        notes.hide(hidden.id);
+        prefs.load();
+        prefs.hiddenFolderVisible = true;
+        final work = tags.create('Work')!;
+        tags.create('Home');
+        final secret = tags.create('Secret')!;
+        tags.addTag(hidden.id, secret.id);
+        await pumpApp(tester, tags: tags, hiddenNotesGate: _HiddenGate());
+
+        Future<void> refuses(String name) async {
+          final hiddenText = find.textContaining('Hidden');
+          final shown = hiddenText.evaluate().length;
+          await tester.enterText(
+            find.byKey(const ValueKey('tag-name-field')),
+            name,
+          );
+          await tester.testTextInput.receiveAction(TextInputAction.done);
+          await tester.pumpAndSettle();
+          expect(
+            tester
+                .widget<Text>(find.byKey(const ValueKey('tag-name-refused')))
+                .data,
+            chooseAnotherName,
+            reason: name,
+          );
+          expect(hiddenText, findsExactly(shown), reason: name);
+        }
+
+        Future<void> rename(String moreKey) async {
+          await tester.tap(find.byKey(ValueKey(moreKey)));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('tag-action-rename')));
+          await tester.pumpAndSettle();
+        }
+
+        await openTagsFilter(tester);
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(mouse.removePointer);
+        await mouse.addPointer(
+          location: tester.getCenter(
+            find.byKey(ValueKey('tag-filter-${work.id}')),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await rename('tag-filter-more-${work.id}');
+        await refuses('secret');
+        await refuses('HOME');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+
+        await openSettings(tester, section: SettingsSection.notes);
+        final row = find.byKey(ValueKey('settings-tag-${work.id}'));
+        await tester.ensureVisible(row);
+        await tester.pumpAndSettle();
+        await rename('settings-tag-more-${work.id}');
+        await refuses('Secret');
+        await refuses('home');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(row, findsOneWidget);
+        expect(find.byKey(const ValueKey('tag-name-field')), findsNothing);
+
+        await tester.tap(find.byKey(const ValueKey('settings-new-tag')));
+        await tester.pumpAndSettle();
+        await refuses('secret');
+        await refuses('Home');
+        expect(tags.tags.map((tag) => tag.name.v), ['Work', 'Home', 'Secret']);
+      },
+    );
+
+    testWidgets('a synced name arrives cut and sits on one line in Settings', (
+      tester,
+    ) async {
+      final long = Tag.fromPayload(
+        't1',
+        Tag(
+          id: 't1',
+          name: Stamped('W' * 40, 1),
+          colour: Stamped('teal', 1),
+          order: Stamped(0, 1),
+          createdAt: 1,
+        ).toPayload(),
+      )!;
+      tags.applyRemoteTag(long, 1);
+      await pumpApp(tester, tags: tags);
+      await openSettings(tester, section: SettingsSection.notes);
+
+      final name = find.descendant(
+        of: find.byKey(const ValueKey('settings-tag-t1')),
+        matching: find.text('W' * tagNameMax),
+      );
+      await tester.ensureVisible(name);
+      await tester.pumpAndSettle();
+      expect(name, findsOneWidget);
+      final text = tester.widget<Text>(name);
+      expect(text.maxLines, 1);
+      expect(text.overflow, TextOverflow.ellipsis);
+      expect(tester.getSize(name).height, lessThan(24));
+    });
 
     testWidgets('ticked tags narrow the list, any or all', (tester) async {
       final both = notes.create(body: 'Both');

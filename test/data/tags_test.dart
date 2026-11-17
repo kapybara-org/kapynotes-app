@@ -65,6 +65,16 @@ void main() {
       expect(tags.tags.map((t) => t.name.v), ['Work', 'x' * 32]);
     });
 
+    test('a synced name past 32 runes arrives cut to 32', () {
+      final tag = Tag.fromPayload(
+        't1',
+        remoteTag('t1', '🏷' * 40).toPayload(),
+      )!;
+      expect(tag.name.v, '🏷' * 32);
+      tags.applyRemoteTag(tag, 5);
+      expect(tags.byId('t1')!.name.v.runes, hasLength(tagNameMax));
+    });
+
     test('a rename to an empty, overlong or taken name changes nothing', () {
       final work = tags.create('Work')!;
       tags.create('Travel');
