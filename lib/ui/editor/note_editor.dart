@@ -6851,15 +6851,21 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                         (textPaneWidth - EditorMetrics.columnWidth) / 2,
                       )
                     : null;
+                // The field runs on past the column by what an attachment
+                // gives up to stay clear of the line under it, so that
+                // pictures, tables and formulas are the column wide.
+                final bleed = side == null
+                    ? 0.0
+                    : math.min(noteAttachmentColumnSlack, side - 1);
                 final padding = side == null
                     ? basePadding
-                    : basePadding.copyWith(left: side, right: side);
+                    : basePadding.copyWith(left: side, right: side - bleed);
 
                 // Must match the text field's own content box exactly, right
                 // down to the sliver it holds back for the caret.
                 final trailingGap = side == null
                     ? 16.0
-                    : side - EditorMetrics.caretMargin;
+                    : side - bleed - EditorMetrics.caretMargin;
                 final contentWidth = EditorMetrics.textLayoutWidth(
                   textPaneWidth - padding.left - trailingGap,
                 );
@@ -7133,6 +7139,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                               ).colorScheme.onPrimary,
                                               box: palette.checkboxBorder,
                                               chip: palette.controlBackground,
+                                              chipInk: palette.textMuted,
                                             ),
                                             checkboxes: checkboxes,
                                             chips: chips,

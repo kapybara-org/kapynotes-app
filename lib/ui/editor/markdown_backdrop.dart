@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/iconography.dart';
 import '../../core/theme.dart' show EditorMetrics;
 import 'markdown_syntax.dart';
 import 'note_field.dart';
@@ -24,6 +25,7 @@ class MarkdownBackdropColors {
     required this.onAccent,
     required this.box,
     required this.chip,
+    required this.chipInk,
   });
 
   /// Bullets, and an unticked box off the page.
@@ -48,6 +50,7 @@ class MarkdownBackdropColors {
   /// An unticked box's edge on the page, and the chip under a web address.
   final Color box;
   final Color chip;
+  final Color chipInk;
 
   @override
   bool operator ==(Object other) =>
@@ -62,7 +65,8 @@ class MarkdownBackdropColors {
       other.accent == accent &&
       other.onAccent == onAccent &&
       other.box == box &&
-      other.chip == chip;
+      other.chip == chip &&
+      other.chipInk == chipInk;
 
   @override
   int get hashCode => Object.hash(
@@ -77,6 +81,7 @@ class MarkdownBackdropColors {
     onAccent,
     box,
     chip,
+    chipInk,
   );
 }
 
@@ -262,11 +267,16 @@ class RenderMarkdownBackdrop extends RenderBox {
       ..clipRect(Rect.fromLTRB(0, visible.top, size.width, visible.bottom));
 
     final left = origin.dx;
-    // Across the writing and the room its rows keep for the caret.
+    // Across the writing and the room its rows keep for the caret. On the
+    // page, the column: the field runs on past it for attachments.
     final width = field.layout.width;
     final right =
         origin.dx +
-        (width == null ? box.size.width : width + field.layout.caretRoom);
+        (width == null
+            ? box.size.width
+            : EditorMetrics.page
+            ? math.min(width, EditorMetrics.columnWidth)
+            : width + field.layout.caretRoom);
     for (final block in _analysis.blocks) {
       if (!onScreen(block.start, block.end)) continue;
       if (block.kind == MarkdownBlockKind.quote && block.depth > 1) continue;
@@ -281,7 +291,9 @@ class RenderMarkdownBackdrop extends RenderBox {
           // The page's bar is Paper's: in the column, with the words past
           // it and 2px of room above and below. A phone's is out in the
           // margin, so the words line up with the rest.
-          final x = EditorMetrics.page ? left : left - EditorMetrics.quoteIndent;
+          final x = EditorMetrics.page
+              ? left
+              : left - EditorMetrics.quoteIndent;
           final room = EditorMetrics.page ? 2.0 : 0.0;
           canvas.drawRRect(
             RRect.fromLTRBR(
@@ -313,15 +325,20 @@ class RenderMarkdownBackdrop extends RenderBox {
         TextSelection(baseOffset: chip.start, extentOffset: chip.end),
       )) {
         final rect = box.toRect().shift(origin);
+        final left = rect.left - EditorMetrics.linkChipLead;
         canvas.drawRRect(
           RRect.fromLTRBR(
-            rect.left - EditorMetrics.linkChipReach,
+            left,
             rect.center.dy - _chipHeight / 2,
-            rect.right + EditorMetrics.linkChipReach,
+            rect.right + EditorMetrics.linkChipTrail,
             rect.center.dy + _chipHeight / 2,
             const Radius.circular(_chipHeight / 2),
           ),
           Paint()..color = colors.chip,
+        );
+        _paintLink(
+          canvas,
+          Offset(left + 8, rect.center.dy - EditorMetrics.linkChipIcon / 2),
         );
       }
     }
@@ -477,6 +494,56 @@ class RenderMarkdownBackdrop extends RenderBox {
 
   /// Paper's link chip is 28 tall.
   static const double _chipHeight = 28;
+
+  /// The link icon of a chip, with its top left at [at]: the app's own link
+  /// icon, whose paths are all absolute moves, lines and curves in a 24px
+  /// box.
+  static final _pathToken = RegExp(r'[MLC]|-?\d+\.?\d*');
+
+  void _paintLink(Canvas canvas, Offset at) {
+    const side = EditorMetrics.linkChipIcon;
+    const scale = side / 24;
+    final paint = Paint()
+      ..color = colors.chipInk
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 1.5 * scale;
+    for (final element in KapyIcons.linkRounded.paths) {
+      final path = Path();
+      final tokens = [
+        for (final m in _pathToken.allMatches(
+          (element[1] as Map<String, dynamic>)['d'] as String,
+        ))
+          m[0]!,
+      ];
+      var i = 0;
+      Offset point() {
+        final p = Offset(
+          double.parse(tokens[i]) * scale + at.dx,
+          double.parse(tokens[i + 1]) * scale + at.dy,
+        );
+        i += 2;
+        return p;
+      }
+
+      while (i < tokens.length) {
+        switch (tokens[i++]) {
+          case 'M':
+            final p = point();
+            path.moveTo(p.dx, p.dy);
+          case 'L':
+            final p = point();
+            path.lineTo(p.dx, p.dy);
+          default:
+            final a = point();
+            final b = point();
+            final c = point();
+            path.cubicTo(a.dx, a.dy, b.dx, b.dy, c.dx, c.dy);
+        }
+      }
+      canvas.drawPath(path, paint);
+    }
+  }
 
   /// Paper's bullets: a 6px dot, a 6px ring, then a 5px square.
   void _paintBullet(Canvas canvas, Offset center, MarkdownOrnament bullet) {

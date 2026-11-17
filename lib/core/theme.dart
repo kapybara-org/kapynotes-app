@@ -222,6 +222,10 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   Color get codeChip =>
       _dark ? const Color(0xFF2E2A25) : const Color(0xFFEFEADD);
 
+  /// The rail's icons and labels at rest. Paper's dark rail is a step
+  /// lighter than the tertiary ink the rest of the app shares.
+  Color get railInk => _dark ? const Color(0xFF8F8778) : textTertiary;
+
   /// A quote's bar, Paper's.
   Color get quoteBar =>
       _dark ? const Color(0xFF4A453D) : const Color(0xFFD0C8B5);
@@ -574,9 +578,12 @@ class EditorMetrics {
   /// A table row on the page, Paper's CYZ-0: 36px and the 1px rule under it.
   static const double tableRow = 37;
 
-  /// How far Paper's link chip reaches past the address it holds, and the
-  /// pill under inline code past its words.
-  static const double linkChipReach = 8;
+  /// How far Paper's link chip reaches before the address it holds: 8px, a
+  /// 14px link icon and 6px, then after it 12px. And how far the pill under
+  /// inline code reaches past its words.
+  static const double linkChipLead = 28;
+  static const double linkChipTrail = 12;
+  static const double linkChipIcon = 14;
   static const double codeChipReach = 6;
 
   static const EdgeInsets padding = EdgeInsets.symmetric(

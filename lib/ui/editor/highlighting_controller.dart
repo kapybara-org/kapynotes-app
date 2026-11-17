@@ -348,7 +348,13 @@ class HighlightingController extends TextEditingController {
       spans: _Sorted(spansFor(source), (span) => (span.start, span.end)),
       links: _Sorted(links, (link) => (link.start, link.end)),
       markdown: _Sorted(analysis.spans, (span) => (span.start, span.end)),
-      hidden: _Sorted(concealment.hidden, (range) => (range.start, range.end)),
+      hidden: _Sorted(
+        page
+            ? ([...concealment.hidden, ..._chipSchemes(source)]
+                ..sort((a, b) => a.start.compareTo(b.start)))
+            : concealment.hidden,
+        (range) => (range.start, range.end),
+      ),
       transparent: _Sorted(
         concealment.transparent,
         (range) => (range.start, range.end),
@@ -855,6 +861,23 @@ class HighlightingController extends TextEditingController {
     );
   }
 
+  static final _scheme = RegExp('^https?://');
+
+  /// The \`https://\` of each chip the caret is not in: Paper's pill shows the
+  /// address without it, and it comes back for whoever is editing the link.
+  List<TextRange> _chipSchemes(String source) {
+    final titleEnd = _lineEndAt(source, 0);
+    return [
+      for (final link in linksFor(source))
+        if (link.start >= titleEnd &&
+            _chipLink(link) &&
+            (selection.end < link.start || selection.start > link.end))
+          if (_scheme.firstMatch(source.substring(link.start, link.end))
+              case final scheme?)
+            TextRange(start: link.start, end: link.start + scheme.end),
+    ];
+  }
+
   /// The web addresses in [source] the page sets as chips: all but those in
   /// the title, which stay in the title's face.
   List<TextRange> linkChips(String source) {
@@ -909,7 +932,7 @@ class HighlightingController extends TextEditingController {
     TextScaler scaler,
   ) {
     final room = markdownMarkerRoom(base, scaler);
-    final reach = scaler.scale(EditorMetrics.linkChipReach);
+    final reach = scaler.scale(EditorMetrics.linkChipLead);
     double advance(int start, int end) =>
         _advance(source.substring(start, end), base, scaler);
     return [

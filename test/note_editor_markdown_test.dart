@@ -2144,7 +2144,7 @@ void main() {
           r'Click-through is $\frac{clicks}{shows}$, about 3.2% this week.'
           '\n'
           '\$\$\n'
-          r'E[rank] = \sum_i p_i \cdot r_i'
+          r'E[\mathrm{rank}] = \sum\nolimits_i p_i \cdot r_i'
           '\n'
           '\$\$\n'
           '## This week\n'

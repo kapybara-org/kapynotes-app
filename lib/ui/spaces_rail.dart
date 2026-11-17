@@ -285,7 +285,7 @@ class _RailItemState extends State<_RailItem> {
         ? palette.tonalForeground
         : lit
         ? palette.textSecondary
-        : palette.textTertiary;
+        : palette.railInk;
     final touch = !AppPlatform.hasPointer;
 
     final tile = AnimatedContainer(
@@ -349,7 +349,7 @@ class _RailItemState extends State<_RailItem> {
                         ? palette.textPrimary
                         : lit
                         ? palette.textSecondary
-                        : palette.textTertiary,
+                        : palette.railInk,
                     strong: selected,
                   ),
                 ),
