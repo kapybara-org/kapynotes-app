@@ -17,6 +17,7 @@ import 'settings_search.dart';
 import 'sidebar.dart' show archiveIcon, hiddenIcon;
 import 'sidebar_timestamp.dart';
 import 'spaces_rail.dart';
+import 'tag_colours.dart';
 import 'tag_ui.dart';
 import 'tasks/task_marks.dart';
 
@@ -102,7 +103,9 @@ class SearchArchiveChoice extends CommandChoice {
 /// listed only with [showHidden], and Archive. Hidden notes are searched
 /// only while [hiddenUnlocked], and [tasks] is null where there is no task
 /// list to search or add to. With [tags], # lists the tags to filter by, and
-/// [tagNote], the open note, can be tagged from the menu.
+/// [tagNote], the open note, can be tagged from the menu. A result shows the
+/// dot of the first of [marksOf]'s tags for its note: the dialog is a route
+/// of its own, so the page's own marks don't reach it.
 Future<CommandChoice?> showCommandMenu(
   BuildContext context, {
   required NotesStore notes,
@@ -118,27 +121,31 @@ Future<CommandChoice?> showCommandMenu(
   SettingsHost? settingsIndex,
   TagShelf? tags,
   Note? tagNote,
+  List<TagMark> Function(String noteId)? marksOf,
 }) {
   final dark = context.palette.brightness == Brightness.dark;
   return showDialog<CommandChoice>(
     context: context,
     barrierColor: dark ? const Color(0x990C0B09) : const Color(0x402A2620),
-    builder: (context) => CommandMenu(
-      notes: notes,
-      shortcuts: shortcuts,
-      space: space,
-      destinations: destinations,
-      recentIds: recentIds,
-      displayTime: displayTime,
-      taskLabel: taskLabel,
-      tasks: tasks,
-      showHidden: showHidden,
-      hiddenUnlocked: hiddenUnlocked,
-      settingsIndex: settingsIndex,
-      tags: tags,
-      tagNote: tagNote,
-      onChosen: (choice) => Navigator.of(context).pop(choice),
-    ),
+    builder: (context) {
+      final menu = CommandMenu(
+        notes: notes,
+        shortcuts: shortcuts,
+        space: space,
+        destinations: destinations,
+        recentIds: recentIds,
+        displayTime: displayTime,
+        taskLabel: taskLabel,
+        tasks: tasks,
+        showHidden: showHidden,
+        hiddenUnlocked: hiddenUnlocked,
+        settingsIndex: settingsIndex,
+        tags: tags,
+        tagNote: tagNote,
+        onChosen: (choice) => Navigator.of(context).pop(choice),
+      );
+      return marksOf == null ? menu : TagMarks(marksOf: marksOf, child: menu);
+    },
   );
 }
 
@@ -203,6 +210,7 @@ class _Line {
       task = null,
       trailing = null,
       keycap = null,
+      noteId = null,
       muted = false;
 
   const _Line.row({
@@ -215,6 +223,7 @@ class _Line {
     this.task,
     this.trailing,
     this.keycap,
+    this.noteId,
     this.muted = false,
   }) : heading = null;
 
@@ -236,6 +245,9 @@ class _Line {
   final Note? task;
   final String? trailing;
   final String? keycap;
+
+  /// The note a result opens, whose first tag's dot sits before its date.
+  final String? noteId;
 
   /// In the quieter ink, as the row pointing into Archive is.
   final bool muted;
@@ -294,6 +306,7 @@ class _CommandMenuState extends State<CommandMenu> {
     title: note.title,
     detail: detail,
     trailing: _date(note),
+    noteId: note.id,
     choice: OpenNoteChoice(note),
   );
 
@@ -736,6 +749,9 @@ class _CommandMenuState extends State<CommandMenu> {
       );
     }
     final lit = index == _highlight;
+    final mark = line.noteId == null
+        ? null
+        : TagMarks.of(context, line.noteId!).firstOrNull;
     final detail = line.detail;
     final task = line.task;
     final trailing = line.trailing;
@@ -840,6 +856,7 @@ class _CommandMenuState extends State<CommandMenu> {
                   ],
                 ),
               ),
+              if (mark != null) TagDot(mark.colour),
               if (trailing != null)
                 Text(
                   trailing,

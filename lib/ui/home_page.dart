@@ -2716,6 +2716,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       showHidden: _hiddenReachable,
       hiddenUnlocked: _hiddenMode,
       tags: _tagShelf(const SizedBox.shrink()),
+      marksOf: widget.tags == null
+          ? null
+          : (noteId) => [
+              for (final tag in widget.tags!.tagsOf(noteId)) tagMarkOf(tag),
+            ],
       tagNote: _tasksMode ? null : widget.notes.byId(_selectedId),
       settingsIndex: (lend) => SettingsDialog(
         onIndex: lend,

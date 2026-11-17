@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -367,6 +369,55 @@ void main() {
         child: const SizedBox.shrink(),
       );
     }
+
+    testWidgets('a result carries the dot of its first tag, in the dialog the '
+        'app opens', (tester) async {
+      await shelf(tester);
+      await tester.binding.setSurfaceSize(const Size(1000, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: Builder(
+              builder: (inner) {
+                context = inner;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      unawaited(
+        showCommandMenu(
+          context,
+          notes: notes,
+          shortcuts: shortcuts,
+          space: LibrarySpace.notes,
+          destinations: const [LibrarySpace.notes],
+          recentIds: [trip.id],
+          displayTime: (instant) => instant,
+          taskLabel: (note) => note.title,
+          marksOf: (noteId) => [
+            for (final tag in store.tagsOf(noteId)) tagMarkOf(tag),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(of: row('Trip budget'), matching: find.byType(TagDot)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row('Goals - Oct 2026'),
+          matching: find.byType(TagDot),
+        ),
+        findsNothing,
+      );
+    });
 
     testWidgets('# lists the tags with counts, letters narrow them, and ↵ '
         'chooses one to filter by', (tester) async {

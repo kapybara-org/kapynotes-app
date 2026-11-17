@@ -6,15 +6,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/theme.dart';
 import 'line_heights.dart';
 import 'note_lines.dart';
 
 /// What a line draws: its runs, and the size of each widget among them, in
-/// the order they come. A [folded] line takes no room and draws nothing.
+/// the order they come. A [folded] line takes no room and draws nothing. A
+/// line with a [row] is exactly that tall, in pixels at the note's own text
+/// size, rather than as tall as the note's strut and its writing make it.
 typedef LineSpan = ({
   InlineSpan span,
   List<PlaceholderDimensions> placeholders,
   bool folded,
+  double? row,
 });
 
 /// How the field draws its caret: [width] wide, [height] tall or a row of
@@ -306,7 +310,7 @@ class NoteLayout {
 
   TextPainter _paragraphFor(int line) {
     final drawn = spanAt(line);
-    final key = _Drawn(drawn.span, drawn.placeholders);
+    final key = _Drawn(drawn.span, drawn.placeholders, drawn.row);
     final kept = _kept.remove(key);
     if (kept != null) return _kept[key] = kept;
     final painter =
@@ -318,7 +322,7 @@ class NoteLayout {
                 ? TextSpan(text: ' ', style: style)
                 : drawn.span,
             textDirection: TextDirection.ltr,
-            strutStyle: strut,
+            strutStyle: drawn.row == null ? strut : _forced(drawn.row!),
             textScaler: scaler,
           )
           ..setPlaceholderDimensions(drawn.placeholders)
@@ -327,6 +331,17 @@ class NoteLayout {
     if (_kept.length > _keep) _kept.remove(_kept.keys.first);
     return painter;
   }
+
+  /// The strut that makes a row exactly [row] tall, at the size the note's
+  /// own strut gives a row of 28.
+  StrutStyle _forced(double row) => StrutStyle(
+    fontFamily: strut.fontFamily,
+    fontFamilyFallback: strut.fontFamilyFallback,
+    fontSize: strut.fontSize,
+    height: row * strut.height! / EditorMetrics.lineHeight,
+    forceStrutHeight: true,
+    leading: 0,
+  );
 
   /// A guess at [line]'s height before it is laid out: as many rows as its
   /// characters fill at an average advance.
@@ -360,19 +375,21 @@ class NoteLayout {
 /// What a line draws, as the key its paragraph is kept under.
 @immutable
 class _Drawn {
-  const _Drawn(this.span, this.placeholders);
+  const _Drawn(this.span, this.placeholders, this.row);
 
   final InlineSpan span;
   final List<PlaceholderDimensions> placeholders;
+  final double? row;
 
   @override
   bool operator ==(Object other) =>
       other is _Drawn &&
       other.span == span &&
+      other.row == row &&
       listEquals(other.placeholders, placeholders);
 
   @override
-  int get hashCode => Object.hash(span, Object.hashAll(placeholders));
+  int get hashCode => Object.hash(span, row, Object.hashAll(placeholders));
 }
 
 /// The note's lines in a scroll view, each one a widget of its own, laid

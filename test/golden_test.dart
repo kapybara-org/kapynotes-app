@@ -261,11 +261,17 @@ Future<void> pumpForGolden(
     unawaited(tester.binding.reassembleApplication());
     await tester.pump();
   }
+  // The mark is decoded at the size it is drawn, which is a cache entry of
+  // its own: warming the asset itself leaves the first image to draw it
+  // without one, and so an image that depends on which test ran before.
   await tester.runAsync(
-    () => precacheImage(
-      const AssetImage(AppLogo.assetPath),
-      tester.element(find.byType(KapyNotesApp)),
-    ),
+    () => Future.wait([
+      for (final image in tester.widgetList<Image>(find.byType(Image)))
+        if (image.image case ResizeImage(
+          imageProvider: AssetImage(assetName: AppLogo.assetPath),
+        ))
+          precacheImage(image.image, tester.element(find.byWidget(image))),
+    ]),
   );
   await tester.pumpAndSettle();
 }

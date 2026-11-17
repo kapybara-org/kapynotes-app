@@ -175,6 +175,16 @@ class HighlightingController extends TextEditingController {
 
   /// Deliberately silent, for the same reason as [setImageSpansDuringLayout].
   ///
+  /// How tall each table row is, by where its line starts, in pixels at the
+  /// note's own text size. The page lays a table's lines out at these exactly.
+  void setTableRowsDuringLayout(Map<int, double> value) {
+    _tableRows = value;
+  }
+
+  Map<int, double> _tableRows = const {};
+
+  /// Deliberately silent, for the same reason as [setImageSpansDuringLayout].
+  ///
   /// The width of the writing column a formula is drawn in: display math is
   /// centred across it, and any formula wider than it is drawn smaller.
   void setMathWidthDuringLayout(double value) {
@@ -291,6 +301,10 @@ class HighlightingController extends TextEditingController {
         folded: styling.formulas
             .overlapping(start, math.max(end, start + 1))
             .any((formula) => formula.start < start && formula.end >= end),
+        row: styling.rows
+            .overlapping(start, math.max(end, start + 1))
+            .firstOrNull
+            ?.row,
       );
     };
   }
@@ -363,7 +377,13 @@ class HighlightingController extends TextEditingController {
       spans: _Sorted(spansFor(source), (span) => (span.start, span.end)),
       links: _Sorted(links, (link) => (link.start, link.end)),
       markdown: _Sorted(analysis.spans, (span) => (span.start, span.end)),
-      hidden: _Sorted(concealment.hidden, (range) => (range.start, range.end)),
+      hidden: _Sorted(
+        page
+            ? ([...concealment.hidden, ..._chipSchemes(source)]
+                ..sort((a, b) => a.start.compareTo(b.start)))
+            : concealment.hidden,
+        (range) => (range.start, range.end),
+      ),
       transparent: _Sorted(
         concealment.transparent,
         (range) => (range.start, range.end),
@@ -374,6 +394,10 @@ class HighlightingController extends TextEditingController {
         (formula) => (formula.start, formula.end),
       ),
       code: _Sorted(_codeTokens(analysis), (token) => (token.start, token.end)),
+      rows: _Sorted(
+        page ? _forcedRows(analysis, concealment) : const [],
+        (rows) => (rows.start, rows.end),
+      ),
       copies: {
         for (final formula in concealment.formulas)
           formula.start: copies.update(
@@ -383,6 +407,63 @@ class HighlightingController extends TextEditingController {
           ),
       },
     );
+  }
+
+  /// The rows a code block and a table set by their own measure, which
+  /// the note's strut would otherwise round up to a row of writing: a code
+  /// block's lines, its fences while they are hidden, and a table's
+  /// delimiter line, which has nothing to show.
+  List<({int start, int end, double row})> _forcedRows(
+    MarkdownAnalysis analysis,
+    MarkdownConcealment concealment,
+  ) {
+    final rows = <({int start, int end, double row})>[];
+    for (final block in analysis.blocks) {
+      if (block.kind != MarkdownBlockKind.code) continue;
+      final fences = analysis.fencesOf(block);
+      final open = fences?.open;
+      final close = fences?.close;
+      final openHidden =
+          open != null && concealment.hides(open.start, open.end);
+      final closeHidden =
+          close != null && concealment.hides(close.start, close.end);
+      if (openHidden) {
+        rows.add((
+          start: open.start,
+          end: open.end,
+          row: EditorMetrics.codeOpenRow,
+        ));
+      }
+      rows.add((
+        start: openHidden ? open.end + 1 : block.start,
+        end: closeHidden ? close.start : block.end,
+        row: EditorMetrics.codeRow,
+      ));
+      if (closeHidden) {
+        rows.add((
+          start: close.start,
+          end: close.end,
+          row: EditorMetrics.codeCloseRow,
+        ));
+      }
+    }
+    for (final table in analysis.tables) {
+      for (final row in table.rows) {
+        if (_tableRows[row.start] case final height?) {
+          rows.add((start: row.start, end: row.end, row: height));
+        }
+      }
+      // Hidden, the delimiter line has nothing to show and no row of its own.
+      // Not zero, which a strut is entitled to read as no height given.
+      if (concealment.hides(table.delimiterStart, table.delimiterEnd)) {
+        rows.add((
+          start: table.delimiterStart,
+          end: table.delimiterEnd,
+          row: 0.01,
+        ));
+      }
+    }
+    return rows..sort((a, b) => a.start.compareTo(b.start));
   }
 
   /// The runs that draw `[from, to)` of the note, with the boxes of the
@@ -745,6 +826,7 @@ class HighlightingController extends TextEditingController {
           fontSize: _hiddenFontSize,
           color: const Color(0x00000000),
           decoration: TextDecoration.none,
+          letterSpacing: stretch?.spacing,
         );
       } else {
         if (unpainted) {
@@ -807,6 +889,23 @@ class HighlightingController extends TextEditingController {
     );
   }
 
+  static final _scheme = RegExp('^https?://');
+
+  /// The \`https://\` of each chip the caret is not in: Paper's pill shows the
+  /// address without it, and it comes back for whoever is editing the link.
+  List<TextRange> _chipSchemes(String source) {
+    final titleEnd = _lineEndAt(source, 0);
+    return [
+      for (final link in linksFor(source))
+        if (link.start >= titleEnd &&
+            _chipLink(link) &&
+            (selection.end < link.start || selection.start > link.end))
+          if (_scheme.firstMatch(source.substring(link.start, link.end))
+              case final scheme?)
+            TextRange(start: link.start, end: link.start + scheme.end),
+    ];
+  }
+
   /// The web addresses in [source] the page sets as chips: all but those in
   /// the title, which stay in the title's face.
   List<TextRange> linkChips(String source) {
@@ -861,7 +960,7 @@ class HighlightingController extends TextEditingController {
     TextScaler scaler,
   ) {
     final room = markdownMarkerRoom(base, scaler);
-    final reach = scaler.scale(EditorMetrics.linkChipReach);
+    final reach = scaler.scale(EditorMetrics.linkChipLead);
     double advance(int start, int end) =>
         _advance(source.substring(start, end), base, scaler);
     return [
@@ -1121,6 +1220,30 @@ class HighlightingController extends TextEditingController {
       final spacing = (width - advance(start, end)) / letters;
       if (spacing.abs() >= 0.01) {
         stretches.add((start: start, end: end, spacing: spacing));
+      }
+    }
+
+    // On the page a quote's words start where Paper's do, past its bar: the
+    // hidden `>` of each line takes that room.
+    if (EditorMetrics.page) {
+      var barredLine = -1;
+      for (final marker in analysis.containerMarkers) {
+        if (text[marker.start] != '>') continue;
+        final lineStart = marker.start == 0
+            ? 0
+            : text.lastIndexOf('\n', marker.start - 1) + 1;
+        if (lineStart == barredLine) continue;
+        barredLine = lineStart;
+        final end =
+            marker.end +
+            (marker.end < text.length && text[marker.end] == ' ' ? 1 : 0);
+        final letters =
+            end - marker.start + (marker.start == lineStart ? 0.5 : 0);
+        stretches.add((
+          start: marker.start,
+          end: end,
+          spacing: EditorMetrics.quoteIndent / letters,
+        ));
       }
     }
 
@@ -1419,6 +1542,7 @@ typedef _Styling = ({
   _Sorted<_Stretch> stretches,
   _Sorted<MarkdownMath> formulas,
   _Sorted<CodeToken> code,
+  _Sorted<({int start, int end, double row})> rows,
   Map<int, int> copies,
 });
 
