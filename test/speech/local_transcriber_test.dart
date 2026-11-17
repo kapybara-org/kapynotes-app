@@ -38,6 +38,29 @@ void main() {
       );
     });
 
+    test('a language the model never learned is not a download away', () async {
+      final models = LocalModelStore(
+        catalogue: const [parakeetTdt06bV3Int8],
+        directory: temp,
+      );
+      addTearDown(models.dispose);
+
+      expect(
+        await SherpaTranscriber(
+          models: models,
+          language: () => 'hi',
+        ).readiness(),
+        TranscriberReadiness.unsupported,
+      );
+      expect(
+        await SherpaTranscriber(
+          models: models,
+          language: () => 'de',
+        ).readiness(),
+        TranscriberReadiness.needsDownload,
+      );
+    });
+
     test('being asked to work without the model says what would fix it', () async {
       final models = LocalModelStore(
         catalogue: const [parakeetTdt06bV3Int8],
