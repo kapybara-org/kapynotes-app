@@ -14,7 +14,6 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
-import 'package:kapy_notes/ui/settings_rows.dart';
 
 import '../sync/fake_server.dart';
 import 'billing_fakes.dart';
@@ -31,7 +30,7 @@ class _Store extends LocalStore {
   void putNow(String key, Object? value) => data[key] = value;
 }
 
-/// Settings on Plan & usage, for an account that signed in with billing
+/// Settings on Account & sync, for an account that signed in with billing
 /// already following it — the order `main` wires them in.
 Future<Account> pumpSettings(
   WidgetTester tester, {
@@ -87,7 +86,7 @@ Future<Account> pumpSettings(
           rates: RatesRepository(store),
           notes: notes,
           account: account,
-          section: SettingsSection.plan,
+          section: SettingsSection.account,
         ),
       ),
     ),
@@ -97,22 +96,23 @@ Future<Account> pumpSettings(
 }
 
 void main() {
-  testWidgets('Plan & usage shows the current plan and opens its details', (
+  testWidgets('the plan row names the plan and opens Pro', (
     tester,
   ) async {
     final purchases = FakePurchaseStore();
     await pumpSettings(tester, purchases: purchases);
 
-    // Once in the navigation and once over the pane it opens.
-    expect(find.text('Plan & usage'), findsNWidgets(2));
     expect(find.byKey(const ValueKey('plan-current')), findsOneWidget);
     expect(find.text('Free plan'), findsOneWidget);
-    expect(find.text('Your plan and included cloud limits'), findsOneWidget);
+    expect(
+      find.text('Voice notes run on this device. Pro runs them in the cloud'),
+      findsOneWidget,
+    );
     // The store was told whose purchases these will be as soon as the
     // account signed in, not at the moment of buying.
     expect(purchases.log, contains('logIn user-1'));
 
-    await tester.tap(find.byKey(const ValueKey('plan-current')));
+    await tester.tap(find.byKey(const ValueKey('plan-get-pro')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('pro-buy')), findsOneWidget);
@@ -128,7 +128,10 @@ void main() {
     );
 
     expect(find.text('Pro trial'), findsOneWidget);
-    expect(find.text('Pro trial ends in 9 days'), findsOneWidget);
+    expect(
+      find.text('Ends in 9 days. Then sync, sharing and cloud voice stop'),
+      findsOneWidget,
+    );
 
     // Cancel the real trial-end timer before Flutter checks for leaked timers.
     final billing = account.billing;
@@ -154,12 +157,7 @@ void main() {
       expect(find.byKey(const ValueKey('plan-summary-usage')), findsOneWidget);
       expect(find.byKey(const ValueKey('plan-storage-usage')), findsOneWidget);
       // It explains usage without offering a purchase this build cannot make.
-      expect(
-        tester
-            .widget<SettingsRow>(find.byKey(const ValueKey('plan-current')))
-            .onTap,
-        isNull,
-      );
+      expect(find.byKey(const ValueKey('plan-get-pro')), findsNothing);
     },
   );
 
@@ -170,12 +168,6 @@ void main() {
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpSettings(tester, purchases: FakePurchaseStore(supported: false));
 
-    expect(find.byKey(const ValueKey('plan-current')), findsOneWidget);
-    expect(
-      tester
-          .widget<SettingsRow>(find.byKey(const ValueKey('plan-current')))
-          .onTap,
-      isNotNull,
-    );
+    expect(find.byKey(const ValueKey('plan-get-pro')), findsOneWidget);
   });
 }

@@ -10,6 +10,7 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/account/plan_group.dart';
 import 'package:kapy_notes/ui/account/sync_pane.dart';
 import 'package:kapy_notes/ui/safety_dialogs.dart';
 import 'package:material_ui/material_ui.dart';
@@ -77,7 +78,12 @@ void main() {
       MaterialApp(
         theme: KapyTheme.dark(),
         home: Scaffold(
-          body: SingleChildScrollView(child: SyncPane(account: account)),
+          body: SingleChildScrollView(
+            child: SyncPane(
+              account: account,
+              middle: [PlanGroup(account: account)],
+            ),
+          ),
         ),
       ),
     );
@@ -173,10 +179,13 @@ void main() {
     await signIn(tester);
     await pumpPane(tester);
 
-    expect(find.byKey(const ValueKey('sync-trial')), findsOneWidget);
-    expect(find.textContaining('ends in 4 days'), findsOneWidget);
+    expect(find.text('Pro trial'), findsOneWidget);
+    expect(
+      find.text('Ends in 4 days. Then sync, sharing and cloud voice stop'),
+      findsOneWidget,
+    );
     // Nothing to sell here, so nothing pretends to.
-    expect(find.byKey(const ValueKey('sync-get-pro')), findsNothing);
+    expect(find.byKey(const ValueKey('plan-get-pro')), findsNothing);
   });
 
   testWidgets('own notes held back for Pro say so, with the way to it', (
@@ -194,7 +203,7 @@ void main() {
 
     expect(account.sync!.personalNeedsPro, isTrue);
     expect(find.textContaining('Sync paused'), findsOneWidget);
-    expect(find.byKey(const ValueKey('sync-get-pro')), findsOneWidget);
+    expect(find.byKey(const ValueKey('plan-get-pro')), findsOneWidget);
   });
 
   test('starting to share on Free says what it needs', () {

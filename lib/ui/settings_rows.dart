@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
@@ -26,18 +28,10 @@ class SettingsMetrics {
       ? const EdgeInsets.fromLTRB(14, 12, 13, 12)
       : const EdgeInsets.symmetric(horizontal: 14, vertical: 10);
 
-  /// A radio sits closer to its own edge than a switch does.
-  static EdgeInsets get choicePadding => _touch
-      ? const EdgeInsets.fromLTRB(14, 12, 14, 12)
-      : const EdgeInsets.symmetric(horizontal: 14, vertical: 10);
-
   /// The least a row is tall with a pointer: a title and its line of
   /// description, with room around them, so a pane of rows reads as a list
   /// of settings rather than a form.
   static double get minRowHeight => _touch ? 0 : 54;
-  static double get iconSize => _touch ? 19 : 17;
-  static double get iconSlot => _touch ? 30 : 17;
-  static double get iconStroke => _touch ? 1.5 : 1.7;
   static double get gap => _touch ? 11 : 12;
   static double get titleSize => _touch
       ? 14.5
@@ -54,37 +48,64 @@ class SettingsMetrics {
       AppPlatform.isWindows ? AppTypeScale.caption : 11;
   static double get buttonLabelSize => _touch ? 12 : 12.5;
   static FontWeight get titleWeight => _touch ? _mediumWeight : FontWeight.w600;
-  static double get chevronSize => _touch ? 21 : 15;
+  static double get chevronSize => _touch ? 21 : 13;
+
+  /// The height of a control at the end of a row: a button, a menu, a well.
+  static double get controlHeight => _touch ? 32 : 28;
 
   /// Between one group and the heading of the next.
-  static double get groupGap => _touch ? 18 : 20;
-
-  /// Lines the dividers up under the copy rather than under the icons.
-  static double get dividerIndent => _touch ? 58 : 43;
+  static const double groupGap = 18;
 }
 
 /// The heading over a group, naming what the rows in it are about: a small
 /// handwritten heading with a pointer, small capitals on a phone.
 class SettingsLabel extends StatelessWidget {
-  const SettingsLabel(this.text, {super.key});
+  const SettingsLabel(this.text, {super.key, this.detail});
 
   /// In sentence case. The phone sets it in capitals.
   final String text;
 
+  /// A few words beside the heading, for a group whose rows share something
+  /// the heading alone does not say.
+  final String? detail;
+
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
+    final detail = this.detail;
     if (AppPlatform.hasPointer) {
       return Padding(
         padding: const EdgeInsets.only(left: 2, bottom: 8),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontFamily: 'Shantell Sans',
-            fontSize: SettingsMetrics.sectionLabelSize,
-            fontWeight: FontWeight.w600,
-            height: 18 / 14,
-            color: context.palette.textSubheading,
-          ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              text,
+              style: TextStyle(
+                fontFamily: 'Shantell Sans',
+                fontSize: SettingsMetrics.sectionLabelSize,
+                fontWeight: FontWeight.w600,
+                height: 18 / 14,
+                color: palette.textSubheading,
+              ),
+            ),
+            if (detail != null) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 16 / 12,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       );
     }
@@ -96,7 +117,7 @@ class SettingsLabel extends StatelessWidget {
           fontSize: SettingsMetrics.sectionLabelSize,
           fontWeight: _mediumWeight,
           letterSpacing: 0.65,
-          color: context.palette.textTertiary,
+          color: palette.textTertiary,
         ),
       ),
     );
@@ -120,7 +141,6 @@ class SettingsGroup extends StatelessWidget {
             Divider(
               height: pointer ? 1 : 0.5,
               thickness: pointer ? 1 : 0.5,
-              indent: SettingsMetrics.dividerIndent,
               color: palette.separator,
             ),
           children[index],
@@ -179,6 +199,21 @@ class SettingsNote extends StatelessWidget {
   }
 }
 
+/// The dot beside a setting that is no longer at its default.
+class SettingsChangedDot extends StatelessWidget {
+  const SettingsChangedDot({super.key});
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    key: const ValueKey('settings-changed-dot'),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.primary,
+      shape: BoxShape.circle,
+    ),
+    child: const SizedBox.square(dimension: 6),
+  );
+}
+
 /// A row's words: what it is, and — optionally — a line saying more.
 class SettingsRowCopy extends StatelessWidget {
   const SettingsRowCopy({
@@ -186,28 +221,57 @@ class SettingsRowCopy extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.titleColor,
+    this.changed = false,
+    this.tag,
   });
 
   final String title;
   final String? subtitle;
   final Color? titleColor;
 
+  /// Marks the setting as moved off its default.
+  final bool changed;
+
+  /// Where the setting applies, when that is narrower than everywhere:
+  /// "Mac and Windows".
+  final String? tag;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final pointer = AppPlatform.hasPointer;
     final subtitle = this.subtitle;
+    final tag = this.tag;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: SettingsMetrics.titleSize,
-            fontWeight: SettingsMetrics.titleWeight,
-            height: pointer ? 18 / SettingsMetrics.titleSize : null,
-            color: titleColor ?? palette.textPrimary,
-          ),
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: SettingsMetrics.titleSize,
+                  fontWeight: SettingsMetrics.titleWeight,
+                  height: pointer ? 18 / SettingsMetrics.titleSize : null,
+                  color: titleColor ?? palette.textPrimary,
+                ),
+              ),
+            ),
+            if (changed) ...[
+              const SizedBox(width: 7),
+              const SettingsChangedDot(),
+            ],
+            if (tag != null) ...[
+              const SizedBox(width: 7),
+              Text(
+                tag,
+                style: TextStyle(fontSize: 11, color: palette.textTertiary),
+              ),
+            ],
+          ],
         ),
         if (subtitle != null) ...[
           const SizedBox(height: 2),
@@ -228,23 +292,39 @@ class SettingsRowCopy extends StatelessWidget {
   }
 }
 
-/// The one row every other row is a kind of: an icon, its words, and
-/// whatever sits at the end.
+/// The one row every other row is a kind of: its words, and whatever sits
+/// at the end.
 class SettingsRow extends StatelessWidget {
   const SettingsRow({
     super.key,
-    this.icon,
     required this.title,
     this.subtitle,
+    this.tag,
     this.trailing,
+    this.wide = false,
+    this.below,
+    this.changed = false,
+    this.onReset,
     this.onTap,
     this.destructive = false,
   });
 
-  final KapyIconData? icon;
   final String title;
   final String? subtitle;
+  final String? tag;
   final Widget? trailing;
+
+  /// Whether [trailing] is too wide to sit beside the words on a phone or in
+  /// a narrow window, where it goes under them instead.
+  final bool wide;
+
+  /// Anything the row shows under its words: a download's progress.
+  final Widget? below;
+
+  /// Whether the setting is off its default, which puts a dot by its name and
+  /// — given [onReset] — the button that puts it back.
+  final bool changed;
+  final VoidCallback? onReset;
 
   /// Null leaves the row as a statement rather than a control.
   final VoidCallback? onTap;
@@ -254,35 +334,62 @@ class SettingsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
+    if (!wide || !AppPlatform.hasPointer) return _row(context, under: wide);
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _row(context, under: constraints.maxWidth < 560),
+    );
+  }
+
+  Widget _row(BuildContext context, {required bool under}) {
     final danger = Theme.of(context).colorScheme.error;
-    final icon = this.icon;
-    final trailing = this.trailing;
+    final onReset = changed ? this.onReset : null;
+    final control = this.trailing;
+    final trailing = onReset == null
+        ? control
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SettingsResetButton(onPressed: onReset),
+              if (control != null && !under) ...[
+                const SizedBox(width: 4),
+                control,
+              ],
+            ],
+          );
+    final below = this.below;
     final row = Container(
       constraints: BoxConstraints(minHeight: SettingsMetrics.minRowHeight),
       padding: SettingsMetrics.padding,
-      child: Row(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (icon != null) ...[
-            SizedBox(
-              width: SettingsMetrics.iconSlot,
-              child: KapyIcon(
-                icon,
-                size: SettingsMetrics.iconSize,
-                strokeWidth: SettingsMetrics.iconStroke,
-                color: destructive ? danger : palette.textSecondary,
+          Row(
+            children: [
+              Expanded(
+                child: SettingsRowCopy(
+                  title: title,
+                  subtitle: subtitle,
+                  tag: tag,
+                  changed: changed,
+                  titleColor: destructive ? danger : null,
+                ),
               ),
-            ),
-            SizedBox(width: SettingsMetrics.gap),
-          ],
-          Expanded(
-            child: SettingsRowCopy(
-              title: title,
-              subtitle: subtitle,
-              titleColor: destructive ? danger : null,
-            ),
+              if (under && onReset != null) ...[
+                SizedBox(width: SettingsMetrics.gap),
+                SettingsResetButton(onPressed: onReset),
+              ] else if (!under && trailing != null) ...[
+                SizedBox(width: SettingsMetrics.gap),
+                trailing,
+              ],
+            ],
           ),
-          if (trailing != null) ...[const SizedBox(width: 10), trailing],
+          if (under && control != null) ...[
+            const SizedBox(height: 10),
+            control,
+          ],
+          if (below != null) ...[const SizedBox(height: 10), below],
         ],
       ),
     );
@@ -295,67 +402,49 @@ class SettingsRow extends StatelessWidget {
   }
 }
 
-/// A row that opens something: a picker, a dialog, another pane.
-class SettingsNavigationRow extends StatelessWidget {
-  const SettingsNavigationRow({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final KapyIconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => SettingsRow(
-    icon: icon,
-    title: title,
-    subtitle: subtitle,
-    onTap: onTap,
-    trailing: KapyIcon(
-      KapyIcons.chevronRightRounded,
-      size: SettingsMetrics.chevronSize,
-      strokeWidth: AppPlatform.hasPointer ? 1.8 : 1.5,
-      color: context.palette.textTertiary,
-    ),
-  );
-}
-
 /// A row that is a switch, and flips from anywhere on it.
 class SettingsToggleRow extends StatelessWidget {
   const SettingsToggleRow({
     super.key,
-    required this.icon,
     required this.title,
     required this.subtitle,
     required this.value,
     required this.onChanged,
+    this.tag,
+    this.changed = false,
+    this.onReset,
   });
 
-  final KapyIconData icon;
   final String title;
   final String subtitle;
+  final String? tag;
   final bool value;
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<bool>? onChanged;
+  final bool changed;
+  final VoidCallback? onReset;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    toggled: value,
-    button: true,
-    child: InkWell(
-      onTap: () => onChanged(!value),
-      child: SettingsRow(
-        icon: icon,
-        title: title,
-        subtitle: subtitle,
-        trailing: ExcludeSemantics(child: SettingsSwitch(value: value)),
+  Widget build(BuildContext context) {
+    final onChanged = this.onChanged;
+    final row = SettingsRow(
+      title: title,
+      subtitle: subtitle,
+      tag: tag,
+      changed: changed,
+      onReset: onReset,
+      trailing: ExcludeSemantics(
+        child: SettingsSwitch(value: value, enabled: onChanged != null),
       ),
-    ),
-  );
+    );
+    return Semantics(
+      toggled: value,
+      button: true,
+      enabled: onChanged != null,
+      child: onChanged == null
+          ? row
+          : InkWell(onTap: () => onChanged(!value), child: row),
+    );
+  }
 }
 
 /// The small button at the end of a row.
@@ -365,44 +454,55 @@ class SettingsRowButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.prominent = false,
+    this.destructive = false,
   });
 
   final String label;
   final VoidCallback? onPressed;
+
+  /// The sage tint, for the one action a row is there to offer: Get Pro.
   final bool prominent;
+
+  /// Red, for an action that cannot be taken back.
+  final bool destructive;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final scheme = Theme.of(context).colorScheme;
+    final danger = Theme.of(context).colorScheme.error;
     final pointer = AppPlatform.hasPointer;
+    final (background, foreground, border) = prominent
+        ? (palette.tonalBackground, palette.tonalForeground, null)
+        : destructive
+        ? (
+            danger.withValues(alpha: 0.1),
+            danger,
+            danger.withValues(alpha: 0.25),
+          )
+        : (
+            palette.controlBackground,
+            palette.textPrimary,
+            palette.controlBorder,
+          );
     return TextButton(
       onPressed: onPressed,
       style: TextButton.styleFrom(
-        minimumSize: Size(0, pointer ? 28 : 30),
-        padding: EdgeInsets.symmetric(horizontal: pointer ? 11 : 12),
+        minimumSize: Size(0, SettingsMetrics.controlHeight),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        backgroundColor: prominent ? scheme.primary : palette.controlBackground,
-        foregroundColor: prominent
-            ? scheme.onPrimary
-            : pointer
-            ? palette.textSubheading
-            : palette.textSecondary,
+        backgroundColor: background,
+        foregroundColor: foreground,
         disabledForegroundColor: palette.textTertiary,
-        side: prominent
+        side: border == null
             ? null
-            : pointer
-            ? BorderSide(color: palette.separator)
-            : BorderSide(color: palette.controlBorder, width: 0.5),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(pointer ? AppRadii.control : 8),
-        ),
+            : BorderSide(color: border, width: pointer ? 1 : 0.5),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
       child: Text(
         label,
         style: TextStyle(
           fontSize: SettingsMetrics.buttonLabelSize,
-          fontWeight: SettingsMetrics.titleWeight,
+          fontWeight: _mediumWeight,
           height: pointer ? 16 / 12.5 : null,
         ),
       ),
@@ -410,60 +510,421 @@ class SettingsRowButton extends StatelessWidget {
   }
 }
 
+/// A row's current choice where the choice opens a list: "Last opened note",
+/// with the chevron that says a list is behind it.
+class SettingsMenuButton extends StatelessWidget {
+  const SettingsMenuButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 220),
+      child: TextButton(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          minimumSize: Size(0, SettingsMetrics.controlHeight),
+          padding: const EdgeInsets.only(left: 10, right: 8),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          backgroundColor: palette.wellBackground,
+          foregroundColor: palette.textPrimary,
+          side: BorderSide(color: palette.controlBorder),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: SettingsMetrics.buttonLabelSize),
+              ),
+            ),
+            const SizedBox(width: 6),
+            KapyIcon(
+              KapyIcons.chevronDownRounded,
+              size: 13,
+              color: palette.textTertiary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What a row is set to, said quietly at its end, with a chevron where the
+/// row opens somewhere.
+class SettingsValue extends StatelessWidget {
+  const SettingsValue(this.label, {super.key, this.chevron = true});
+
+  final String label;
+  final bool chevron;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 200),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: SettingsMetrics.buttonLabelSize,
+              color: palette.textDescription,
+            ),
+          ),
+        ),
+        if (chevron) ...[
+          const SizedBox(width: 6),
+          KapyIcon(
+            KapyIcons.chevronRightRounded,
+            size: SettingsMetrics.chevronSize,
+            color: palette.textTertiary,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Puts one setting back to its default.
+class SettingsResetButton extends StatelessWidget {
+  const SettingsResetButton({super.key, required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final extent = AppPlatform.hasPointer ? 24.0 : 34.0;
+    return IconButton(
+      key: const ValueKey('settings-reset'),
+      onPressed: onPressed,
+      tooltip: 'Back to default',
+      icon: const KapyIcon(KapyIcons.undoRounded, size: 14),
+      color: context.palette.textTertiary,
+      padding: EdgeInsets.zero,
+      constraints: BoxConstraints.tightFor(width: extent, height: extent),
+      style: IconButton.styleFrom(
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      ),
+    );
+  }
+}
+
+/// A choice between a few options a word can name — Light or Dark, Plain or
+/// Ruled — set side by side in a sunken track.
+class SettingsSegmented<T> extends StatelessWidget {
+  const SettingsSegmented({
+    super.key,
+    required this.options,
+    required this.selected,
+    required this.labelFor,
+    required this.keyFor,
+    required this.onSelected,
+    this.styleFor,
+    this.enabledFor,
+  });
+
+  final List<T> options;
+  final T selected;
+  final String Function(T option) labelFor;
+
+  /// Each option gets a key of its own, so a test can pick one by name.
+  final Key Function(T option) keyFor;
+  final ValueChanged<T> onSelected;
+
+  /// A label set in what it names, as each writing font is.
+  final TextStyle Function(T option)? styleFor;
+
+  /// Whether an option can be chosen. One that cannot is still shown, dimmed,
+  /// so the choice reads the same everywhere.
+  final bool Function(T option)? enabledFor;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final pointer = AppPlatform.hasPointer;
+    Widget segment(T option) {
+      final chosen = option == selected;
+      final enabled = enabledFor?.call(option) ?? true;
+      return Semantics(
+        button: true,
+        selected: chosen,
+        enabled: enabled,
+        inMutuallyExclusiveGroup: true,
+        child: InkWell(
+          key: keyFor(option),
+          onTap: enabled && !chosen ? () => onSelected(option) : null,
+          borderRadius: BorderRadius.circular(7),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+            height: pointer ? 26 : 30,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: chosen ? palette.segmentSelected : null,
+              borderRadius: BorderRadius.circular(7),
+              boxShadow: chosen
+                  ? [
+                      BoxShadow(
+                        color: palette.shadowAt(0x33),
+                        offset: const Offset(0, 1),
+                        blurRadius: 2,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Text(
+              labelFor(option),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: (styleFor?.call(option) ?? const TextStyle()).copyWith(
+                fontSize: SettingsMetrics.buttonLabelSize,
+                height: 1.2,
+                color: chosen
+                    ? palette.textPrimary
+                    : enabled
+                    ? palette.textDescription
+                    : palette.textTertiary.withValues(alpha: 0.6),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: palette.wellBackground,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: palette.controlBorder),
+      ),
+      child: Row(
+        mainAxisSize: pointer ? MainAxisSize.min : MainAxisSize.max,
+        children: [
+          for (final option in options) ...[
+            if (option != options.first) const SizedBox(width: 2),
+            if (pointer)
+              Flexible(child: segment(option))
+            else
+              Expanded(child: segment(option)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A value stepped down or up a notch at a time: note text size.
+class SettingsStepper extends StatelessWidget {
+  const SettingsStepper({
+    super.key,
+    required this.label,
+    required this.onDecrease,
+    required this.onIncrease,
+  });
+
+  final String label;
+
+  /// Null at the end of the range.
+  final VoidCallback? onDecrease;
+  final VoidCallback? onIncrease;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final height = AppPlatform.hasPointer ? 30.0 : 34.0;
+    Widget step(String glyph, String tooltip, Key key, VoidCallback? onTap) =>
+        Tooltip(
+          message: tooltip,
+          child: InkWell(
+            key: key,
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 30,
+              height: height - 2,
+              child: Center(
+                child: Text(
+                  glyph,
+                  style: TextStyle(
+                    fontSize: 15,
+                    height: 1,
+                    color: onTap == null
+                        ? palette.textTertiary.withValues(alpha: 0.5)
+                        : palette.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: palette.wellBackground,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: palette.controlBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          step('−', 'Smaller', const ValueKey('stepper-down'), onDecrease),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 44),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: AppPlatform.monoFontFallback.first,
+                fontFamilyFallback: AppPlatform.monoFontFallback,
+                fontSize: 12,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                color: palette.textPrimary,
+              ),
+            ),
+          ),
+          step('+', 'Larger', const ValueKey('stepper-up'), onIncrease),
+        ],
+      ),
+    );
+  }
+}
+
+/// How much of an allowance is gone, as a 14 px clock face filling in: the
+/// smallest mark that still reads as a proportion.
+class SettingsPie extends StatelessWidget {
+  const SettingsPie({super.key, required this.fraction});
+
+  /// Null while it is not known yet, which draws the empty face.
+  final double? fraction;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    size: const Size.square(14),
+    painter: _PiePainter(
+      fraction: (fraction ?? 0).clamp(0.0, 1.0),
+      fill: (fraction ?? 0) >= 1
+          ? Theme.of(context).colorScheme.error
+          : Theme.of(context).colorScheme.primary,
+      track: context.palette.textTertiary,
+    ),
+  );
+}
+
+class _PiePainter extends CustomPainter {
+  const _PiePainter({
+    required this.fraction,
+    required this.fill,
+    required this.track,
+  });
+
+  final double fraction;
+  final Color fill;
+  final Color track;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2;
+    canvas.drawCircle(
+      center,
+      radius - 0.75,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = track,
+    );
+    if (fraction <= 0) return;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius - 3),
+      -math.pi / 2,
+      2 * math.pi * fraction,
+      true,
+      Paint()..color = fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_PiePainter old) =>
+      old.fraction != fraction || old.fill != fill || old.track != track;
+}
+
 /// The switch drawn at the end of a toggle row. Not a [Switch]: the whole row
 /// is the control, and this only shows which way it is set.
 class SettingsSwitch extends StatelessWidget {
-  const SettingsSwitch({super.key, required this.value});
+  const SettingsSwitch({super.key, required this.value, this.enabled = true});
 
   final bool value;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final scheme = Theme.of(context).colorScheme;
     final pointer = AppPlatform.hasPointer;
-    return AnimatedContainer(
-      key: const ValueKey('compact-switch-indicator'),
-      duration: const Duration(milliseconds: 140),
-      curve: Curves.easeOutCubic,
-      width: pointer ? 34 : 44,
-      height: pointer ? 20 : 25,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: value
-            ? scheme.primary
-            : pointer
-            ? palette.switchTrackOff
-            : palette.controlBackground,
-        borderRadius: BorderRadius.circular(999),
-        border: pointer
-            ? null
-            : Border.all(
-                color: value ? Colors.transparent : palette.controlBorder,
-                width: 0.5,
-              ),
-      ),
-      child: AnimatedAlign(
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: AnimatedContainer(
+        key: const ValueKey('compact-switch-indicator'),
         duration: const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,
-        alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: value
-                ? (pointer ? palette.switchThumb : scheme.onPrimary)
-                : palette.textTertiary,
-            shape: BoxShape.circle,
-            boxShadow: pointer && value
-                ? [
-                    BoxShadow(
-                      color: palette.shadowAt(0x40),
-                      offset: Offset(0, 1),
-                      blurRadius: 2,
-                    ),
-                  ]
-                : null,
+        width: pointer ? 34 : 44,
+        height: pointer ? 20 : 25,
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: value
+              ? scheme.primary
+              : pointer
+              ? palette.switchTrackOff
+              : palette.controlBackground,
+          borderRadius: BorderRadius.circular(999),
+          border: pointer
+              ? null
+              : Border.all(
+                  color: value ? Colors.transparent : palette.controlBorder,
+                  width: 0.5,
+                ),
+        ),
+        child: AnimatedAlign(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: value
+                  ? (pointer ? palette.switchThumb : scheme.onPrimary)
+                  : palette.textTertiary,
+              shape: BoxShape.circle,
+              boxShadow: pointer && value
+                  ? [
+                      BoxShadow(
+                        color: palette.shadowAt(0x40),
+                        offset: const Offset(0, 1),
+                        blurRadius: 2,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: SizedBox.square(dimension: pointer ? 16 : 21),
           ),
-          child: SizedBox.square(dimension: pointer ? 16 : 21),
         ),
       ),
     );

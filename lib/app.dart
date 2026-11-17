@@ -259,12 +259,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _transcriber = RoutingTranscriber(
       engineOf: () =>
           _cloudAccess?.transcription.engine ?? TranscriptEngine.cloud,
-      cloud: CloudTranscriber(
-        () => widget.account?.speech,
-        model: () =>
-            _voicePrefs?.cloudTranscriptionModel ??
-            CloudTranscriptionModel.soniox,
-      ),
+      cloud: CloudTranscriber(() => widget.account?.speech),
       device: _deviceTranscriber!,
     );
     _transcriptions = TranscriptionQueue(
@@ -594,6 +589,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
             player: _player,
             transcriptions: _transcriptions,
             voicePrefs: _voicePrefs,
+            cloudAccess: _cloudAccess,
             localModels: _localModels,
             deviceSummarizer: _deviceSummarizer,
             deviceTranscriber: _deviceTranscriber,
