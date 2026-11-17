@@ -698,12 +698,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       );
       _controller.formats = _formats;
     }
-    if (widget.initialBody == _controller.text &&
+    // Taken whenever the store's text is the one this editor's is built on,
+    // even with a blank line opened for typing below it, so a picture that
+    // finishes loading in a note just opened shows up in it.
+    if (widget.initialBody == _storeBase &&
         !listEquals(widget.initialAttachments, _attachments)) {
-      _attachments = normalizeNoteAttachments(
-        widget.initialAttachments,
-        _controller.text,
+      final merge = mergeTexts(
+        base: _storeBase,
+        local: _controller.text,
+        remote: _storeBase,
       );
+      _attachments = normalizeNoteAttachments([
+        for (final ref in widget.initialAttachments)
+          ref.copyWith(offset: merge.mapRemoteStart(ref.offset)),
+      ], _controller.text);
     }
     _dailySeparatorFormatter
       ..enabled = widget.dailySeparatorsEnabled
