@@ -4,6 +4,12 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 
+// lib/data/note_attachment.dart as tagged, copied byte for byte with
+// `git show v1.14.0:lib/data/note_attachment.dart`: 1.14 is the first
+// release that keeps a kind it doesn't know, and 1.30 the latest.
+import '../fixtures/released/note_attachment_v1_14_0.dart' as v1_14;
+import '../fixtures/released/note_attachment_v1_30_0.dart' as v1_30;
+
 const anchor = NoteAttachmentRef.placeholder;
 
 NoteImageRef ref(int offset, {String hash = 'a'}) => NoteImageRef(
@@ -14,6 +20,20 @@ NoteImageRef ref(int offset, {String hash = 'a'}) => NoteImageRef(
   width: 800,
   height: 600,
   bytes: 1024,
+);
+
+/// A pasted picture whose download failed, at the anchor in `photo\n$anchor`.
+NoteImageRef linkedPicture({bool downloading = false}) => NoteImageRef(
+  offset: 6,
+  hash: 'h',
+  key: Uint8List(32),
+  mime: 'image/png',
+  width: 360,
+  height: 240,
+  bytes: 0,
+  widthFactor: 0.6,
+  isPreparing: downloading,
+  src: 'https://example.com/photo.png',
 );
 
 /// An edit with no caret to guide it — a sync, an import, a formatter.
@@ -448,6 +468,85 @@ void main() {
         lessThan(5),
         reason: 'small=${small}us large=${large}us',
       );
+    });
+  });
+
+  group('a picture known only by its address', () {
+    test('is written as a kind of its own, and reads back as itself', () {
+      final json = linkedPicture().toJson();
+      expect(json, {
+        'kind': 'linkedImage',
+        'offset': 6,
+        'hash': 'h',
+        'key': base64.encode(Uint8List(32)),
+        'mime': 'image/png',
+        'size': {'width': 360, 'height': 240},
+        'widthFactor': 0.6,
+        'attachmentId': '00000000-0000-0000-0000-000000000000',
+        'src': 'https://example.com/photo.png',
+      });
+      final back = NoteAttachmentRef.fromJson(jsonDecode(jsonEncode(json)));
+      expect(back, linkedPicture());
+      // The id is a stand-in for older releases: nothing is on the server.
+      expect(back!.attachmentId, isNull);
+    });
+
+    test('lets its note sync, except while it is downloading', () {
+      expect(linkedPicture().isUploaded, isTrue);
+      expect(linkedPicture(downloading: true).isUploaded, isFalse);
+    });
+
+    test('with no address or no size it is refused', () {
+      for (final field in ['src', 'size']) {
+        final json = linkedPicture().toJson()..remove(field);
+        expect(NoteAttachmentRef.fromJson(json), isNull);
+      }
+    });
+  });
+
+  group('a picture known only by its address, in released builds', () {
+    const body = 'photo\n$anchor';
+    final record =
+        jsonDecode(jsonEncode(linkedPicture().toJson()))
+            as Map<String, Object?>;
+
+    test('1.14 keeps it whole through an edit', () {
+      final read = v1_14.noteAttachmentsFromJson([record], body);
+      expect(read.single, isA<v1_14.NoteUnknownRef>());
+
+      final edited = v1_14.rebaseNoteAttachments(
+        oldText: body,
+        newText: 'my $body',
+        attachments: read,
+      );
+      expect(edited.single.toJson(), {...record, 'offset': 9});
+    });
+
+    test('1.30 keeps it whole through an edit, and lets the note sync', () {
+      final read = v1_30.noteAttachmentsFromJson([record], body);
+      expect(read.single, isA<v1_30.NoteUnknownRef>());
+      // From 1.15 a note waits to sync until every attachment in it is
+      // uploaded, which a release decides by its server id.
+      expect(read.single.isUploaded, isTrue);
+
+      final edited = v1_30.rebaseNoteAttachments(
+        oldText: body,
+        newText: 'my $body',
+        attachments: read,
+      );
+      expect(edited.single.toJson(), {...record, 'offset': 9});
+    });
+
+    test('what they write back is the same picture here', () {
+      for (final written in [
+        v1_14.noteAttachmentsFromJson([record], body).single.toJson(),
+        v1_30.noteAttachmentsFromJson([record], body).single.toJson(),
+      ]) {
+        expect(
+          NoteAttachmentRef.fromJson(jsonDecode(jsonEncode(written))),
+          linkedPicture(),
+        );
+      }
     });
   });
 }

@@ -659,62 +659,131 @@ void main() {
     expect(server.rows, hasLength(1));
   });
 
-  test(
-    'a note waits to sync while a pasted picture is still at its address',
-    () async {
-      final one = Device(server, name: 'one', dir: await dirFor('one'));
-      addTearDown(one.dispose);
-      await one.boot();
+  test('a note waits to sync while a pasted picture is downloading', () async {
+    final one = Device(server, name: 'one', dir: await dirFor('one'));
+    addTearDown(one.dispose);
+    await one.boot();
 
-      final id = one.notes.create().id;
-      final key = randomKey();
-      one.notes.updateDocument(id, 'photo\n$anchor', const [], [
-        NoteImageRef(
-          offset: 6,
-          hash: BlobStore.hashOf(
-            Uint8List.fromList('https://example.com/p.png'.codeUnits),
-          ),
-          key: key,
-          mime: 'image/png',
-          width: 4,
-          height: 3,
-          bytes: 0,
-          src: 'https://example.com/p.png',
+    final id = one.notes.create().id;
+    final key = randomKey();
+    one.notes.updateDocument(id, 'photo\n$anchor', const [], [
+      NoteImageRef(
+        offset: 6,
+        hash: BlobStore.hashOf(
+          Uint8List.fromList('https://example.com/p.png'.codeUnits),
         ),
-      ]);
+        key: key,
+        mime: 'image/png',
+        width: 4,
+        height: 3,
+        bytes: 0,
+        isPreparing: true,
+        src: 'https://example.com/p.png',
+      ),
+    ]);
 
-      await one.sync.syncNow();
-      await settle(server);
+    await one.sync.syncNow();
+    await settle(server);
 
-      final waiting = one.notes.notes.single;
-      expect(waiting.isDirty, isTrue);
-      expect((waiting.attachments.single as NoteImageRef).src, isNotNull);
-      expect(server.rows, isEmpty);
-      expect(server.blobs, isEmpty);
+    final waiting = one.notes.notes.single;
+    expect(waiting.isDirty, isTrue);
+    expect((waiting.attachments.single as NoteImageRef).src, isNotNull);
+    expect(server.rows, isEmpty);
+    expect(server.blobs, isEmpty);
 
-      final bytes = picture(5);
-      final hash = await one.images.put(bytes);
-      one.clock = one.clock.add(const Duration(minutes: 1));
-      one.notes.updateDocument(id, 'photo\n$anchor arrived', const [], [
-        NoteImageRef(
-          offset: 6,
-          hash: hash,
-          key: key,
-          mime: 'image/png',
-          width: 64,
-          height: 64,
-          bytes: bytes.length,
-        ),
-      ]);
-      await one.sync.syncNow();
-      await settle(server);
+    final bytes = picture(5);
+    final hash = await one.images.put(bytes);
+    one.clock = one.clock.add(const Duration(minutes: 1));
+    one.notes.updateDocument(id, 'photo\n$anchor arrived', const [], [
+      NoteImageRef(
+        offset: 6,
+        hash: hash,
+        key: key,
+        mime: 'image/png',
+        width: 64,
+        height: 64,
+        bytes: bytes.length,
+      ),
+    ]);
+    await one.sync.syncNow();
+    await settle(server);
 
-      expect(server.blobs, hasLength(1));
-      expect(server.rows, hasLength(1));
-      expect(one.notes.notes.single.isDirty, isFalse);
-      expect(one.notes.notes.single.attachments.single.isUploaded, isTrue);
-    },
-  );
+    expect(server.blobs, hasLength(1));
+    expect(server.rows, hasLength(1));
+    expect(one.notes.notes.single.isDirty, isFalse);
+    expect(one.notes.notes.single.attachments.single.isUploaded, isTrue);
+  });
+
+  test('a pasted picture that could not be fetched syncs as its address, and '
+      'the device that fetches it later uploads it for all of them', () async {
+    final one = Device(server, name: 'one', dir: await dirFor('one'));
+    final two = Device(server, name: 'two', dir: await dirFor('two'));
+    addTearDown(one.dispose);
+    addTearDown(two.dispose);
+    await one.boot();
+    await two.boot();
+
+    const address = 'https://example.com/p.png';
+    final id = one.notes.create().id;
+    final key = randomKey();
+    one.notes.updateDocument(id, 'photo\n$anchor', const [], [
+      NoteImageRef(
+        offset: 6,
+        hash: BlobStore.hashOf(Uint8List.fromList(address.codeUnits)),
+        key: key,
+        mime: 'image/png',
+        width: 360,
+        height: 240,
+        bytes: 0,
+        src: address,
+      ),
+    ]);
+    await one.sync.syncNow();
+    await settle(server);
+
+    // The words go at once, and nothing is uploaded: there is nothing yet.
+    expect(one.notes.notes.single.isDirty, isFalse);
+    expect(server.rows, hasLength(1));
+    expect(server.blobs, isEmpty);
+
+    await two.sync.syncNow();
+    final arrived = two.notes.notes.single.attachments.single as NoteImageRef;
+    expect(arrived.src, address);
+    expect(arrived.attachmentId, isNull);
+    expect((arrived.width, arrived.height), (360, 240));
+
+    // What Retry publishes there once the download works: the picture as
+    // the note's own, under the same key.
+    final bytes = picture(7);
+    final hash = await two.images.put(bytes);
+    two.clock = two.clock.add(const Duration(minutes: 1));
+    two.notes.updateAttachment(
+      id,
+      arrived.hash,
+      (current) => NoteImageRef(
+        offset: current.offset,
+        hash: hash,
+        key: key,
+        mime: 'image/png',
+        width: 64,
+        height: 64,
+        bytes: bytes.length,
+      ),
+      key: key,
+      touch: true,
+    );
+    await two.sync.syncNow();
+    await settle(server);
+    expect(server.blobs, hasLength(1));
+    expect(two.notes.notes.single.isDirty, isFalse);
+
+    await one.sync.syncNow();
+    final fetched = one.notes.notes.single.attachments.single as NoteImageRef;
+    expect(fetched.src, isNull);
+    expect(fetched.hash, hash);
+    expect(fetched.isUploaded, isTrue);
+    expect(await one.imageSync.fetch(hash), bytes);
+  });
 
   test('one picture in two notes is downloaded once', () async {
     final one = Device(server, name: 'one', dir: await dirFor('one'));

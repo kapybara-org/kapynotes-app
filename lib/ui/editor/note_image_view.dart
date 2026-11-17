@@ -12,6 +12,7 @@ import '../../data/note_attachment.dart';
 import '../../data/blob_store.dart';
 import '../../images/note_image_provider.dart';
 import '../context_menu.dart';
+import '../tonal_button.dart';
 import 'note_image_layout.dart';
 
 /// The sizes the menu offers, as a fraction of the writing column.
@@ -577,7 +578,8 @@ class _WidthHandle extends StatelessWidget {
 }
 
 /// A pasted picture whose bytes are still at the address it was pasted
-/// from: a quiet box while it downloads, and another try when that failed.
+/// from: where it is downloading from, and once that failed, another try or
+/// the page itself.
 class _RemoteImage extends StatelessWidget {
   const _RemoteImage({
     required this.address,
@@ -608,57 +610,119 @@ class _RemoteImage extends StatelessWidget {
         decoration: BoxDecoration(
           color: palette.controlBackground,
           borderRadius: radius,
-          border: Border.all(color: palette.separator, width: 0.5),
+          border: loading
+              ? null
+              : Border.all(color: palette.clay.withValues(alpha: 0.3)),
         ),
-        child: loading
-            ? const _ImageTransferCover(preparing: true, progress: null)
-            : Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    KapyIcon(
-                      KapyIcons.imageOutlined,
-                      size: compact ? 18 : 24,
-                      color: palette.textTertiary,
+        child: Center(
+          child: loading
+              ? DecoratedBox(
+                  key: const ValueKey('image-downloading'),
+                  decoration: BoxDecoration(
+                    color: palette.editorBackground.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
                     ),
-                    if (!compact) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        host.isEmpty
-                            ? "Couldn't load image"
-                            : "Couldn't load image from $host",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: AppTypeScale.caption,
-                          color: palette.textTertiary,
-                        ),
-                      ),
-                    ],
-                    Wrap(
-                      alignment: WrapAlignment.center,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (onRetry != null)
-                          TextButton(
-                            key: const ValueKey('retry-image-download'),
-                            onPressed: onRetry,
-                            child: const Text('Retry'),
+                        SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.75,
+                            color: palette.textPrimary,
+                            backgroundColor: palette.textPrimary.withValues(
+                              alpha: 0.2,
+                            ),
                           ),
-                        if (opensLink)
-                          TextButton(
-                            key: const ValueKey('open-image-address'),
-                            onPressed: () => unawaited(
-                              launchUrl(
-                                link,
-                                mode: LaunchMode.externalApplication,
+                        ),
+                        if (!compact) ...[
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              host.isEmpty
+                                  ? 'Downloading…'
+                                  : 'Downloading from $host…',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: AppTypeScale.body,
+                                fontWeight: FontWeight.w600,
+                                color: palette.textSubheading,
                               ),
                             ),
-                            child: const Text('Open link'),
                           ),
+                        ],
                       ],
                     ),
-                  ],
+                  ),
+                )
+              : Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 22),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      KapyIcon(
+                        KapyIcons.imageOutlined,
+                        size: compact ? 18 : 22,
+                        strokeWidth: 1.7,
+                        color: palette.textTertiary,
+                      ),
+                      if (!compact) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          host.isEmpty
+                              ? "Couldn't load image"
+                              : "Couldn't load image from $host",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: AppTypeScale.control,
+                            fontWeight: FontWeight.w600,
+                            color: palette.textSubheading,
+                          ),
+                        ),
+                      ],
+                      if (onRetry != null || opensLink)
+                        Padding(
+                          padding: EdgeInsets.only(top: compact ? 6 : 12),
+                          child: Wrap(
+                            spacing: 4,
+                            runSpacing: 4,
+                            alignment: WrapAlignment.center,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (onRetry != null)
+                                TonalButton(
+                                  key: const ValueKey('retry-image-download'),
+                                  onPressed: onRetry,
+                                  icon: KapyIcons.refreshOutlined,
+                                  label: 'Retry',
+                                ),
+                              if (opensLink)
+                                TextButton(
+                                  key: const ValueKey('open-image-address'),
+                                  onPressed: () => unawaited(
+                                    launchUrl(
+                                      link,
+                                      mode: LaunchMode.externalApplication,
+                                    ),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: palette.textSecondary,
+                                  ),
+                                  child: const Text('Open link'),
+                                ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
+        ),
       ),
     );
   }
