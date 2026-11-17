@@ -2675,6 +2675,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       recentIds: widget.prefs.recentlyOpenedNoteIds,
       displayTime: widget.prefs.displayTime,
       taskLabel: _taskNoteLabel,
+      withTags: _withTags,
+      openNote: widget.notes.byId(_selectedId ?? ''),
       tasks: _taskController?.read(),
       showHidden: _hiddenReachable,
       hiddenUnlocked: _hiddenMode,
@@ -2722,6 +2724,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _createNote(drawing: true);
       case GoToChoice(:final space):
         _showSpace(space);
+      case FilterTagChoice(:final tagId):
+        _showSpace(LibrarySpace.notes);
+        _filterToTag(tagId);
       case ShowNotesChoice(:final show):
         _showNotes(show);
       case OpenSettingsChoice():

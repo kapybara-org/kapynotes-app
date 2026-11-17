@@ -16,6 +16,8 @@ import 'settings_search.dart';
 import 'sidebar.dart' show archiveIcon, hiddenIcon;
 import 'sidebar_timestamp.dart';
 import 'spaces_rail.dart';
+import 'tag_colours.dart';
+import 'tag_ui.dart';
 import 'tasks/task_marks.dart';
 
 /// What a row of the ⌘K menu asks for. [showCommandMenu] returns it and the
@@ -34,6 +36,12 @@ class OpenNoteChoice extends CommandChoice {
 class OpenTaskChoice extends CommandChoice {
   const OpenTaskChoice(this.task);
   final TaskItem task;
+}
+
+/// Narrow My notes to one tag, as ticking it in the Notes filter does.
+class FilterTagChoice extends CommandChoice {
+  const FilterTagChoice(this.tagId);
+  final String tagId;
 }
 
 /// Start a note, holding [text] when it came from the field.
@@ -103,6 +111,8 @@ Future<CommandChoice?> showCommandMenu(
   required List<String> recentIds,
   required DateTime Function(DateTime) displayTime,
   required String Function(Note) taskLabel,
+  required Widget Function(Widget) withTags,
+  Note? openNote,
   TaskBoard? tasks,
   bool showHidden = false,
   bool hiddenUnlocked = false,
@@ -112,19 +122,22 @@ Future<CommandChoice?> showCommandMenu(
   return showDialog<CommandChoice>(
     context: context,
     barrierColor: dark ? const Color(0x990C0B09) : const Color(0x402A2620),
-    builder: (context) => CommandMenu(
-      notes: notes,
-      shortcuts: shortcuts,
-      space: space,
-      destinations: destinations,
-      recentIds: recentIds,
-      displayTime: displayTime,
-      taskLabel: taskLabel,
-      tasks: tasks,
-      showHidden: showHidden,
-      hiddenUnlocked: hiddenUnlocked,
-      settingsIndex: settingsIndex,
-      onChosen: (choice) => Navigator.of(context).pop(choice),
+    builder: (context) => withTags(
+      CommandMenu(
+        notes: notes,
+        shortcuts: shortcuts,
+        space: space,
+        destinations: destinations,
+        recentIds: recentIds,
+        displayTime: displayTime,
+        taskLabel: taskLabel,
+        openNote: openNote,
+        tasks: tasks,
+        showHidden: showHidden,
+        hiddenUnlocked: hiddenUnlocked,
+        settingsIndex: settingsIndex,
+        onChosen: (choice) => Navigator.of(context).pop(choice),
+      ),
     ),
   );
 }
@@ -140,6 +153,7 @@ class CommandMenu extends StatefulWidget {
     required this.displayTime,
     required this.taskLabel,
     required this.onChosen,
+    this.openNote,
     this.tasks,
     this.showHidden = false,
     this.hiddenUnlocked = false,
@@ -154,6 +168,9 @@ class CommandMenu extends StatefulWidget {
   final DateTime Function(DateTime) displayTime;
   final String Function(Note) taskLabel;
   final ValueChanged<CommandChoice> onChosen;
+
+  /// The note in the editor, the one Tag note… tags.
+  final Note? openNote;
   final TaskBoard? tasks;
   final bool showHidden;
   final bool hiddenUnlocked;
@@ -180,18 +197,39 @@ class _Line {
       task = null,
       trailing = null,
       keycap = null,
+      noteId = null,
+      tag = null,
+      ticked = false,
+      run = null,
       muted = false;
 
   const _Line.row({
     required KapyIconData this.icon,
     required this.title,
-    required CommandChoice this.choice,
+    this.choice,
     this.detail,
     this.task,
     this.trailing,
     this.keycap,
+    this.noteId,
+    this.run,
     this.muted = false,
-  }) : heading = null;
+  }) : heading = null,
+       tag = null,
+       ticked = false;
+
+  /// A tag in a list of tags: its dot, name and count, with a tick when the
+  /// note being tagged carries it.
+  _Line.tag(TagEntry this.tag, {this.choice, this.run, this.ticked = false})
+    : heading = null,
+      icon = null,
+      title = tag.tag.name.v,
+      detail = null,
+      task = null,
+      trailing = null,
+      keycap = null,
+      noteId = null,
+      muted = false;
 
   final String? heading;
   final KapyIconData? icon;
@@ -206,12 +244,22 @@ class _Line {
   final String? trailing;
   final String? keycap;
 
+  /// The note a result opens, whose first tag's dot sits before its date.
+  final String? noteId;
+  final TagEntry? tag;
+  final bool ticked;
+
+  /// What the row does where it stays in the menu, in place of [choice].
+  final VoidCallback? run;
+
   /// In the quieter ink, as the row pointing into Archive is.
   final bool muted;
 }
 
 class _CommandMenuState extends State<CommandMenu> {
   final TextEditingController _field = TextEditingController();
+  Note? _tagging;
+  String? _problem;
   final ScrollController _scroll = ScrollController();
   final Map<int, GlobalKey> _rowKeys = {};
   late List<_Line> _lines = _build('');
@@ -228,7 +276,7 @@ class _CommandMenuState extends State<CommandMenu> {
 
   List<int> get _rows => [
     for (var index = 0; index < _lines.length; index++)
-      if (_lines[index].choice != null) index,
+      if (_lines[index].choice != null || _lines[index].run != null) index,
   ];
 
   String? _keycap(ShortcutAction action) =>
@@ -258,6 +306,7 @@ class _CommandMenuState extends State<CommandMenu> {
     title: note.title,
     detail: detail,
     trailing: _date(note),
+    noteId: note.id,
     choice: OpenNoteChoice(note),
   );
 
@@ -286,7 +335,77 @@ class _CommandMenuState extends State<CommandMenu> {
 
   List<_Line> _build(String query) {
     final text = query.trim();
-    return text.isEmpty ? _beforeTyping() : _whileTyping(text);
+    final shelf = TagShelf.maybeOf(context);
+    final tagging = _tagging;
+    if (shelf != null && tagging != null) {
+      return _tagLines(shelf, tagging, text);
+    }
+    if (shelf != null && text.startsWith('#')) {
+      return _filterLines(shelf, text.substring(1).trim());
+    }
+    return text.isEmpty ? _beforeTyping() : _whileTyping(text, shelf);
+  }
+
+  /// Typing # lists the tags, and letters after it narrow them.
+  List<_Line> _filterLines(TagShelf shelf, String name) {
+    final lowered = name.toLowerCase();
+    final found = [
+      for (final entry in shelf.listed())
+        if (entry.tag.name.v.toLowerCase().contains(lowered)) entry,
+    ];
+    return [
+      if (found.isEmpty)
+        _Line.heading(name.isEmpty ? 'No tags yet' : 'No tag named “$name”')
+      else ...[
+        const _Line.heading('Filter by tag'),
+        for (final entry in found)
+          _Line.tag(entry, choice: FilterTagChoice(entry.tag.id)),
+      ],
+    ];
+  }
+
+  /// Tag note…: the field finds or creates a tag, and a row ticks or unticks
+  /// it on [note].
+  List<_Line> _tagLines(TagShelf shelf, Note note, String name) {
+    final tagger = NoteTagging(shelf, note.id);
+    final found = tagger.matches(name);
+    return [
+      for (final entry in found)
+        _Line.tag(
+          entry,
+          ticked: tagger.isOn(entry.tag.id),
+          run: () => _tag(tagger.toggle(entry.tag.id)),
+        ),
+      if (found.isEmpty && name.isNotEmpty)
+        _Line.row(
+          icon: KapyIcons.addRounded,
+          title: 'Create “$name”',
+          run: () => _tag(tagger.create(name), created: true),
+        ),
+    ];
+  }
+
+  void _tag(String? problem, {bool created = false}) {
+    if (created && problem == null) _field.clear();
+    setState(() {
+      _problem = problem;
+      _lines = _build(_field.text);
+      _rowKeys.clear();
+      if (created) _highlight = _rows.firstOrNull ?? 0;
+    });
+  }
+
+  void _startTagging(Note note) {
+    _field.clear();
+    _tagging = note;
+    _problem = null;
+    _search('');
+  }
+
+  void _stopTagging() {
+    _tagging = null;
+    _problem = null;
+    _search('');
   }
 
   List<_Line> _beforeTyping() {
@@ -365,7 +484,7 @@ class _CommandMenuState extends State<CommandMenu> {
   /// quoted phrases kept together, across My notes and Shared, and Hidden
   /// while it is unlocked. Up to [CommandMenu.perKind] of each kind, then what
   /// the words can become, then how many more Archive holds.
-  List<_Line> _whileTyping(String text) {
+  List<_Line> _whileTyping(String text, TagShelf? shelf) {
     final notes = widget.notes;
     final found = [
       ...notes.search(text),
@@ -396,7 +515,20 @@ class _CommandMenuState extends State<CommandMenu> {
         for (final entry in settings) _settingRow(entry),
       ],
     ];
+    final open = widget.openNote;
     return [
+      if (shelf != null &&
+          open != null &&
+          lowered.length >= 3 &&
+          'tag note'.startsWith(lowered)) ...[
+        const _Line.heading('Actions'),
+        _Line.row(
+          icon: KapyIcons.tagRounded,
+          title: 'Tag note…',
+          trailing: open.title,
+          run: () => _startTagging(open),
+        ),
+      ],
       if (settingsFirst) ...settingsLines,
       if (written.isNotEmpty) ...[
         const _Line.heading('Notes'),
@@ -469,8 +601,10 @@ class _CommandMenuState extends State<CommandMenu> {
   }
 
   void _choose(int index) {
-    final choice = _lines.elementAtOrNull(index)?.choice;
-    if (choice != null) widget.onChosen(choice);
+    final line = _lines.elementAtOrNull(index);
+    if (line == null) return;
+    if (line.run case final run?) return run();
+    if (line.choice case final choice?) widget.onChosen(choice);
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -483,6 +617,9 @@ class _CommandMenuState extends State<CommandMenu> {
       case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
           when event is KeyDownEvent:
         _choose(_highlight);
+      case LogicalKeyboardKey.backspace
+          when _tagging != null && _field.text.isEmpty:
+        _stopTagging();
       default:
         return KeyEventResult.ignored;
     }
@@ -543,6 +680,20 @@ class _CommandMenuState extends State<CommandMenu> {
                         children: [
                           for (var index = 0; index < _lines.length; index++)
                             _line(index, terms, palette, dark),
+                          if (_problem case final problem?)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+                              child: Text(
+                                problem,
+                                key: const ValueKey('command-menu-problem'),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 16 / 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -581,6 +732,27 @@ class _CommandMenuState extends State<CommandMenu> {
             strokeWidth: 1.8,
             color: palette.textSecondary,
           ),
+          if (_tagging case final note?)
+            Flexible(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: palette.separator,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'Tag note · ${note.title}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 16 / 12,
+                    fontWeight: FontWeight.w600,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ),
+            ),
           Expanded(
             child: Focus(
               onKeyEvent: _onKey,
@@ -595,7 +767,7 @@ class _CommandMenuState extends State<CommandMenu> {
                 style: style,
                 cursorHeight: 20,
                 decoration: InputDecoration.collapsed(
-                  hintText: 'Search…',
+                  hintText: _tagging == null ? 'Search…' : null,
                   hintStyle: style.copyWith(color: palette.textTertiary),
                 ),
               ),
@@ -626,6 +798,10 @@ class _CommandMenuState extends State<CommandMenu> {
       );
     }
     final lit = index == _highlight;
+    if (line.tag != null) return _tagRow(index, line, palette, dark);
+    final mark = line.noteId == null
+        ? null
+        : TagMarks.of(context, line.noteId!).firstOrNull;
     final detail = line.detail;
     final task = line.task;
     final trailing = line.trailing;
@@ -729,6 +905,7 @@ class _CommandMenuState extends State<CommandMenu> {
                   ],
                 ),
               ),
+              if (mark != null) TagDot(mark.colour),
               if (trailing != null)
                 Text(
                   trailing,
@@ -739,6 +916,68 @@ class _CommandMenuState extends State<CommandMenu> {
                   ),
                 ),
               if (keycap != null) Keycap(keycap),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tagRow(int index, _Line line, CalcPalette palette, bool dark) {
+    final entry = line.tag!;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _highlight = index),
+      child: GestureDetector(
+        key: _rowKeys.putIfAbsent(index, GlobalKey.new),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _choose(index),
+        child: Container(
+          key: ValueKey('command-menu-row-${line.title}'),
+          height: 30,
+          margin: const EdgeInsets.only(bottom: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: index == _highlight
+                ? (dark ? palette.separator : palette.controlBackground)
+                : null,
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Row(
+            spacing: 9,
+            children: [
+              TagDot(tagColourOf(entry.tag.colour.v)),
+              Expanded(
+                child: Text(
+                  line.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 16 / 13,
+                    fontWeight: FontWeight.w500,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                '${entry.count}',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 16 / 12,
+                  color: palette.textTertiary,
+                ),
+              ),
+              SizedBox(
+                width: 14,
+                child: line.ticked
+                    ? KapyIcon(
+                        KapyIcons.checkRounded,
+                        size: 14,
+                        strokeWidth: 1.8,
+                        color: Theme.of(context).colorScheme.primary,
+                      )
+                    : null,
+              ),
             ],
           ),
         ),
@@ -813,12 +1052,12 @@ class _CommandMenuState extends State<CommandMenu> {
         spacing: 16,
         children: [
           hint('↑↓', 'Move'),
-          hint(
-            '↵',
-            _lines.elementAtOrNull(_highlight)?.choice is RevealSettingChoice
-                ? 'Open in Settings'
-                : 'Open',
-          ),
+          hint('↵', switch (_lines.elementAtOrNull(_highlight)) {
+            _Line(choice: RevealSettingChoice()) => 'Open in Settings',
+            _Line(choice: FilterTagChoice()) => 'Filter notes',
+            _ when _tagging != null => 'Add or remove',
+            _ => 'Open',
+          }),
           const Spacer(),
           hint('esc', 'Close'),
         ],

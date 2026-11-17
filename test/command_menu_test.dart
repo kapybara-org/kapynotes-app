@@ -3,18 +3,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/task_board.dart';
+import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/command_menu.dart';
 import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
+import 'package:kapy_notes/ui/tag_colours.dart';
+import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -43,6 +47,7 @@ void main() {
   late ShortcutPrefs shortcuts;
   late TaskBoard board;
   late _MemoryStore memory;
+  late TagStore tags;
   CommandChoice? chosen;
 
   /// Notes about a trip to Sintra in every place a note can be: two notes,
@@ -57,6 +62,8 @@ void main() {
       storage: MemoryDocStorage(),
     );
     await notes.load();
+    tags = TagStore(store);
+    await tags.load();
     await library.load();
     notes.create(
       body: 'Goals - Oct 2026\nSee Sintra and Cascais before December',
@@ -89,46 +96,71 @@ void main() {
     });
   }
 
+  Widget tagged(Widget menu) => TagShelf(
+    store: tags,
+    listed: () => [
+      for (final tag in tags.tags)
+        (
+          tag: tag,
+          count: [
+            for (final note in notes.notes)
+              if (tags.tagsOf(note.id).any((on) => on.id == tag.id)) note,
+          ].length,
+        ),
+    ],
+    untagged: () => 0,
+    isShared: (_) => false,
+    onFilter: (_) {},
+    child: TagMarks(
+      marksOf: (noteId) => [
+        for (final tag in tags.tagsOf(noteId)) tagMarkOf(tag),
+      ],
+      child: menu,
+    ),
+  );
+
   Future<void> pumpMenu(
     WidgetTester tester, {
     LibrarySpace space = LibrarySpace.notes,
     bool hiddenUnlocked = false,
     bool withSettings = false,
     List<String> recentIds = const [],
+    Note? openNote,
+    bool withTags = false,
   }) async {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
+    final menu = CommandMenu(
+      notes: notes,
+      shortcuts: shortcuts,
+      space: space,
+      destinations: const [
+        LibrarySpace.notes,
+        LibrarySpace.tasks,
+        LibrarySpace.drawings,
+      ],
+      showHidden: true,
+      recentIds: recentIds,
+      displayTime: (instant) => instant,
+      taskLabel: (note) => note.title,
+      tasks: board,
+      hiddenUnlocked: hiddenUnlocked,
+      settingsIndex: withSettings
+          ? (lend) => SettingsDialog(
+              onIndex: lend,
+              layoutPrefs: LayoutPrefs(memory)..load(),
+              shortcuts: shortcuts,
+              rates: RatesRepository(memory),
+              notes: notes,
+            )
+          : null,
+      openNote: openNote,
+      onChosen: (choice) => chosen = choice,
+    );
     await tester.pumpWidget(
       MaterialApp(
         theme: KapyTheme.dark(),
-        home: Scaffold(
-          body: CommandMenu(
-            notes: notes,
-            shortcuts: shortcuts,
-            space: space,
-            destinations: const [
-              LibrarySpace.notes,
-              LibrarySpace.tasks,
-              LibrarySpace.drawings,
-            ],
-            showHidden: true,
-            recentIds: recentIds,
-            displayTime: (instant) => instant,
-            taskLabel: (note) => note.title,
-            tasks: board,
-            hiddenUnlocked: hiddenUnlocked,
-            settingsIndex: withSettings
-                ? (lend) => SettingsDialog(
-                    onIndex: lend,
-                    layoutPrefs: LayoutPrefs(memory)..load(),
-                    shortcuts: shortcuts,
-                    rates: RatesRepository(memory),
-                    notes: notes,
-                  )
-                : null,
-            onChosen: (choice) => chosen = choice,
-          ),
-        ),
+        home: Scaffold(body: withTags ? tagged(menu) : menu),
       ),
     );
     await tester.pumpAndSettle();
@@ -331,5 +363,132 @@ void main() {
 
     await type(tester, 'trip');
     expect(find.text('Settings'), findsNothing);
+  });
+
+  group('tags', () {
+    late Note trip;
+
+    Future<void> withTags(WidgetTester tester) async {
+      await setUpNotes(tester);
+      trip = notes.notes.firstWhere((note) => note.title == 'Trip budget');
+      final work = tags.create('Work')!;
+      tags.create('Travel');
+      tags.addTag(trip.id, work.id);
+    }
+
+    testWidgets('a result carries the dot of its first tag', (tester) async {
+      await withTags(tester);
+      await pumpMenu(tester, withTags: true, recentIds: [trip.id]);
+
+      expect(
+        find.descendant(of: row('Trip budget'), matching: find.byType(TagDot)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: row('Notes'), matching: find.byType(TagDot)),
+        findsNothing,
+      );
+    });
+
+    testWidgets('# lists the tags with their counts, and letters narrow it', (
+      tester,
+    ) async {
+      await withTags(tester);
+      await pumpMenu(tester, withTags: true);
+      await type(tester, '#');
+
+      expect(find.text('Filter by tag'), findsOneWidget);
+      expect(row('Work'), findsOneWidget);
+      expect(row('Travel'), findsOneWidget);
+      expect(
+        find.descendant(of: row('Work'), matching: find.text('1')),
+        findsOneWidget,
+      );
+      expect(find.text('Filter notes'), findsOneWidget);
+
+      await type(tester, '#tr');
+      expect(row('Work'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(
+        chosen,
+        isA<FilterTagChoice>().having(
+          (choice) => choice.tagId,
+          'tagId',
+          tags.named('Travel')!.id,
+        ),
+      );
+    });
+
+    testWidgets('# with no match says so and offers nothing else', (
+      tester,
+    ) async {
+      await withTags(tester);
+      await pumpMenu(tester, withTags: true);
+      await type(tester, '#zzz');
+
+      expect(find.text('No tag named “zzz”'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(chosen, isNull);
+    });
+
+    testWidgets('typing # without tags leaves search alone', (tester) async {
+      await setUpNotes(tester);
+      await pumpMenu(tester);
+      await type(tester, '#');
+
+      expect(find.text('Filter by tag'), findsNothing);
+      expect(find.text('Use “#”'), findsOneWidget);
+    });
+
+    testWidgets('Tag note… ticks and unticks tags on the open note, and a new '
+        'name creates one', (tester) async {
+      await withTags(tester);
+      await pumpMenu(tester, withTags: true, openNote: trip);
+      await type(tester, 'tag');
+
+      expect(find.text('Actions'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: row('Tag note…'),
+          matching: find.text('Trip budget'),
+        ),
+        findsOneWidget,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tag note · Trip budget'), findsOneWidget);
+      Finder tick(String name) => find.descendant(
+        of: row(name),
+        matching: findKapyIcon(KapyIcons.checkRounded),
+      );
+      expect(row('Work'), findsOneWidget);
+
+      expect(tick('Work'), findsOneWidget);
+      await tester.tap(row('Travel'));
+      await tester.pumpAndSettle();
+      expect(tick('Travel'), findsOneWidget);
+      await tester.tap(row('Work'));
+      await tester.pumpAndSettle();
+      expect(tags.tagsOf(trip.id).map((tag) => tag.name.v), ['Travel']);
+      expect(tick('Work'), findsNothing);
+
+      await type(tester, 'Garden');
+      await tester.tap(row('Create “Garden”'));
+      await tester.pumpAndSettle();
+      expect(
+        tags.tagsOf(trip.id).map((tag) => tag.name.v),
+        containsAll(['Travel', 'Garden']),
+      );
+      expect(chosen, isNull);
+    });
+
+    testWidgets('Tag note… is offered only with a note open', (tester) async {
+      await withTags(tester);
+      await pumpMenu(tester, withTags: true);
+      await type(tester, 'tag');
+
+      expect(row('Tag note…'), findsNothing);
+    });
   });
 }

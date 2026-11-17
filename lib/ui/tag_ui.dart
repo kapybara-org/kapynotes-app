@@ -158,6 +158,55 @@ class TagPopover extends StatelessWidget {
   }
 }
 
+/// Putting tags on one note and taking them off, with the words for what
+/// refuses: the Tags popover and ⌘K's Tag note… do it the same way.
+class NoteTagging {
+  const NoteTagging(this.shelf, this.noteId);
+
+  final TagShelf shelf;
+  final String noteId;
+
+  static const tooMany = 'A note takes at most $noteTagsMax tags.';
+
+  TagStore get _store => shelf.store;
+
+  List<TagEntry> matches(String query) {
+    final lowered = query.trim().toLowerCase();
+    return [
+      for (final entry in shelf.listed())
+        if (entry.tag.name.v.toLowerCase().contains(lowered)) entry,
+    ];
+  }
+
+  bool isOn(String tagId) =>
+      _store.tagsOf(noteId).any((tag) => tag.id == tagId);
+
+  /// Null when it worked, else why it did not.
+  String? toggle(String tagId) {
+    if (isOn(tagId)) {
+      _store.removeTag(noteId, tagId);
+      return null;
+    }
+    return _store.addTag(noteId, tagId) ? null : tooMany;
+  }
+
+  /// A name another tag has, in any case, picks that tag. One the lists
+  /// leave out, found only on Hidden notes while Hidden is locked, is
+  /// neither picked nor shown by its name. Null when it worked, else why not.
+  String? create(String name) {
+    final existing = _store.named(name);
+    if (existing != null &&
+        !shelf.listed().any((entry) => entry.tag.id == existing.id)) {
+      return chooseAnotherName;
+    }
+    if (_store.tagsOf(noteId).length >= noteTagsMax) return tooMany;
+    final tag = _store.create(name);
+    if (tag == null) return 'A tag name is 1 to $tagNameMax characters.';
+    _store.addTag(noteId, tag.id);
+    return null;
+  }
+}
+
 /// One field that finds or creates, over the tags with ticks for the ones on
 /// [noteId]. ↵ adds or takes off, ↑↓ move, esc closes.
 class TagPicker extends StatefulWidget {
@@ -181,9 +230,9 @@ class _TagPickerState extends State<TagPicker> {
   int _at = 0;
   String? _problem;
 
-  TagStore get _store => widget.shelf.store;
+  NoteTagging get _tagging => NoteTagging(widget.shelf, widget.noteId);
 
-  static const _tooMany = 'A note takes at most $noteTagsMax tags.';
+  TagStore get _store => widget.shelf.store;
 
   @override
   void dispose() {
@@ -191,54 +240,20 @@ class _TagPickerState extends State<TagPicker> {
     super.dispose();
   }
 
-  List<TagEntry> _matches() {
-    final query = _query.text.trim().toLowerCase();
-    return [
-      for (final entry in widget.shelf.listed())
-        if (entry.tag.name.v.toLowerCase().contains(query)) entry,
-    ];
-  }
+  void _toggle(String tagId) =>
+      setState(() => _problem = _tagging.toggle(tagId));
 
-  bool _isOn(String tagId) =>
-      _store.tagsOf(widget.noteId).any((tag) => tag.id == tagId);
-
-  void _toggle(String tagId) {
-    if (_isOn(tagId)) {
-      _store.removeTag(widget.noteId, tagId);
-      return setState(() => _problem = null);
-    }
-    final added = _store.addTag(widget.noteId, tagId);
-    setState(() => _problem = added ? null : _tooMany);
-  }
-
-  /// A name another tag has, in any case, picks that tag. One the lists
-  /// leave out, found only on Hidden notes while Hidden is locked, is
-  /// neither picked nor shown by its name.
   void _create() {
-    final existing = _store.named(_query.text);
-    if (existing != null &&
-        !widget.shelf.listed().any((entry) => entry.tag.id == existing.id)) {
-      return setState(() => _problem = chooseAnotherName);
-    }
-    if (_store.tagsOf(widget.noteId).length >= noteTagsMax) {
-      return setState(() => _problem = _tooMany);
-    }
-    final tag = _store.create(_query.text);
-    if (tag == null) {
-      return setState(
-        () => _problem = 'A tag name is 1 to $tagNameMax characters.',
-      );
-    }
-    _store.addTag(widget.noteId, tag.id);
-    _query.clear();
+    final problem = _tagging.create(_query.text);
+    if (problem == null) _query.clear();
     setState(() {
-      _problem = null;
-      _at = 0;
+      _problem = problem;
+      if (problem == null) _at = 0;
     });
   }
 
   void _activate() {
-    final matches = _matches();
+    final matches = _tagging.matches(_query.text);
     if (matches.isNotEmpty) {
       return _toggle(matches[_at.clamp(0, matches.length - 1)].tag.id);
     }
@@ -246,7 +261,7 @@ class _TagPickerState extends State<TagPicker> {
   }
 
   void _move(int by) {
-    final count = _matches().length;
+    final count = _tagging.matches(_query.text).length;
     if (count == 0) return;
     setState(() => _at = (_at + by).clamp(0, count - 1));
   }
@@ -256,7 +271,7 @@ class _TagPickerState extends State<TagPicker> {
     listenable: _store,
     builder: (context, _) {
       final palette = context.palette;
-      final matches = _matches();
+      final matches = _tagging.matches(_query.text);
       final query = _query.text.trim();
       Widget row({
         required Key key,
@@ -325,7 +340,7 @@ class _TagPickerState extends State<TagPicker> {
             leading: TagDot(tagColourOf(entry.tag.colour.v)),
             label: entry.tag.name.v,
             count: '${entry.count}',
-            ticked: _isOn(entry.tag.id),
+            ticked: _tagging.isOn(entry.tag.id),
             onTap: () => _toggle(entry.tag.id),
           ),
         if (matches.isEmpty && query.isNotEmpty)
