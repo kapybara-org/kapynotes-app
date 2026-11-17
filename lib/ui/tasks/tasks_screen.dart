@@ -1180,7 +1180,8 @@ class _CandidateRowState extends State<_CandidateRow> {
                   ),
                 )
               else if (label != null)
-                Flexible(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 220),
                   child: NoteMark(note: widget.item.note, label: label),
                 ),
             ],
@@ -1382,7 +1383,8 @@ class _TaskRowState extends State<_TaskRow> {
               ),
             if (label != null) ...[
               const SizedBox(width: 10),
-              Flexible(
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 220),
                 child: NoteMark(
                   note: item.note,
                   label: label,
@@ -1481,19 +1483,33 @@ class _DoneRow extends StatelessWidget {
           children: [
             _Box(done: true, onPressed: onUntick, label: item.words),
             const SizedBox(width: 12),
-            Flexible(
-              child: Text(
-                item.words,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: uiStyle(16, 28, FontWeight.w500, palette.textMuted),
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      item.words,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: uiStyle(
+                        16,
+                        28,
+                        FontWeight.w500,
+                        palette.textMuted,
+                      ),
+                    ),
+                  ),
+                  if (label != null) ...[
+                    const SizedBox(width: 12),
+                    NoteMark(
+                      note: item.note,
+                      label: label,
+                      onPressed: onOpenNote,
+                    ),
+                  ],
+                ],
               ),
             ),
-            if (label != null) ...[
-              const SizedBox(width: 12),
-              NoteMark(note: item.note, label: label, onPressed: onOpenNote),
-            ],
-            const Spacer(),
             SizedBox(
               width: 44,
               child: Text(
