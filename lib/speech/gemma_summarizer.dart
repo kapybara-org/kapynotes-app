@@ -141,6 +141,29 @@ class GemmaSummarizer implements Summarizer {
     return written;
   }
 
+  /// Kapy AI's answer to a question about the person's notes.
+  ///
+  /// Its own prompt rather than [rewrite]'s: the ground rules there tell the
+  /// model it is reading a transcript, and an answer written under them talks
+  /// about "the transcript" instead of the notes it was given. The caller
+  /// fits the notes to [maximumTranscriptChars].
+  Future<String> answer({
+    required String instructions,
+    required String prompt,
+  }) async {
+    final written = (await _queued(
+      '$instructions\n\n$prompt',
+      maxTokens: 520,
+    )).trim();
+    if (written.isEmpty) {
+      throw const SummarizerUnavailable(
+        SummarizerReadiness.unsupported,
+        'The model came back with nothing.',
+      );
+    }
+    return written;
+  }
+
   /// Runs one prompt, and only one at a time.
   ///
   /// Two of these at once would mean two copies of a multi-billion-parameter
