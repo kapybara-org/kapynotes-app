@@ -113,6 +113,15 @@ class TonalButton extends StatelessWidget {
     );
 
     final tooltip = this.tooltip;
-    return tooltip == null ? button : Tooltip(message: tooltip, child: button);
+    if (tooltip == null) return button;
+    if (label != null || !AppPlatform.isDesktop) {
+      return Tooltip(message: tooltip, child: button);
+    }
+    return MergeSemantics(
+      child: Tooltip(
+        message: tooltip,
+        child: Semantics(label: tooltip, child: button),
+      ),
+    );
   }
 }

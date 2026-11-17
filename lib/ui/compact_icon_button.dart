@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
 import '../core/theme.dart';
 
 /// The app-wide icon action used in toolbars, footers, and sidebars.
@@ -39,47 +40,49 @@ class CompactIconButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final extent = this.extent ?? AppControlMetrics.iconButtonExtent;
 
-    return Tooltip(
-      message: tooltip,
-      child: Semantics(
-        button: true,
-        selected: selected,
-        child: IconButton(
-          onPressed: onPressed,
-          icon: icon,
-          color: foregroundColor ?? palette.textSecondary,
-          padding: EdgeInsets.zero,
-          constraints: BoxConstraints.tightFor(width: extent, height: extent),
-          visualDensity: VisualDensity.standard,
-          style: ButtonStyle(
-            minimumSize: WidgetStatePropertyAll(Size.square(extent)),
-            maximumSize: WidgetStatePropertyAll(Size.square(extent)),
-            tapTargetSize:
-                tapTargetSize ?? AppControlMetrics.iconButtonTapTargetSize,
-            backgroundColor: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.disabled)) {
+    return MergeSemantics(
+      child: Tooltip(
+        message: tooltip,
+        child: Semantics(
+          label: AppPlatform.isDesktop ? tooltip : null,
+          selected: selected,
+          child: IconButton(
+            onPressed: onPressed,
+            icon: icon,
+            color: foregroundColor ?? palette.textSecondary,
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints.tightFor(width: extent, height: extent),
+            visualDensity: VisualDensity.standard,
+            style: ButtonStyle(
+              minimumSize: WidgetStatePropertyAll(Size.square(extent)),
+              maximumSize: WidgetStatePropertyAll(Size.square(extent)),
+              tapTargetSize:
+                  tapTargetSize ?? AppControlMetrics.iconButtonTapTargetSize,
+              backgroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.disabled)) {
+                  return Colors.transparent;
+                }
+                if (states.contains(WidgetState.pressed)) {
+                  return scheme.primary.withValues(alpha: 0.10);
+                }
+                if (selected) return palette.selectedBackground;
+                if (states.contains(WidgetState.hovered) ||
+                    states.contains(WidgetState.focused)) {
+                  return palette.hover;
+                }
                 return Colors.transparent;
-              }
-              if (states.contains(WidgetState.pressed)) {
-                return scheme.primary.withValues(alpha: 0.10);
-              }
-              if (selected) return palette.selectedBackground;
-              if (states.contains(WidgetState.hovered) ||
-                  states.contains(WidgetState.focused)) {
-                return palette.hover;
-              }
-              return Colors.transparent;
-            }),
-            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-            side: WidgetStateProperty.resolveWith((states) {
-              if (states.contains(WidgetState.focused)) {
-                return BorderSide(color: palette.selectedBorder, width: 1);
-              }
-              return BorderSide.none;
-            }),
-            shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(radius),
+              }),
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+              side: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.focused)) {
+                  return BorderSide(color: palette.selectedBorder, width: 1);
+                }
+                return BorderSide.none;
+              }),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(radius),
+                ),
               ),
             ),
           ),

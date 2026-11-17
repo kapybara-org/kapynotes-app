@@ -1,0 +1,194 @@
+import 'dart:ui' show Tristate;
+
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
+
+import 'golden_test.dart'
+    show goldenNotes, goldenPrefs, pumpForGolden, tapSettings;
+import 'test_fonts.dart';
+
+/// VoiceOver, Voice Control and AXPress press a control through its
+/// semantics tap action, never a pointer, so these press nothing else.
+void main() {
+  setUpAll(loadTestFonts);
+
+  Future<void> pumpWindow(
+    WidgetTester tester, {
+    bool sidebarVisible = true,
+  }) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1440, 900),
+      brightness: Brightness.dark,
+      sidebarVisible: sidebarVisible,
+    );
+  }
+
+  Future<void> press(
+    WidgetTester tester,
+    FinderBase<SemanticsNode> control,
+  ) async {
+    tester.semantics.tap(control);
+    await tester.pumpAndSettle();
+  }
+
+  SemanticsFinder labelled(String label) =>
+      find.semantics.byLabel(RegExp('^${RegExp.escape(label)}\$'));
+
+  SemanticsFinder tipped(String tooltip) => find.semantics.byPredicate(
+    (node) =>
+        node.getSemanticsData().flagsCollection.isButton &&
+        node.label.startsWith(tooltip),
+  );
+
+  String? spaceTitle(WidgetTester tester) => tester
+      .widget<Text>(find.byKey(const ValueKey('sidebar-space-title')))
+      .data;
+
+  /// The buttons the platform is sent: a node merged into its parent is part
+  /// of that parent's button, and only the parent reaches VoiceOver.
+  Iterable<SemanticsData> buttons() => find.semantics
+      .byPredicate(
+        (node) =>
+            !node.isMergedIntoParent &&
+            node.getSemanticsData().flagsCollection.isButton,
+      )
+      .evaluate()
+      .map((node) => node.getSemanticsData());
+
+  /// Every button on screen that is switched on, and has nothing to press.
+  List<String> unpressable() => [
+    for (final data in buttons())
+      if (data.flagsCollection.isEnabled != Tristate.isFalse &&
+          !data.hasAction(SemanticsAction.tap))
+        '"${data.label}" ${data.tooltip}'.trim(),
+  ];
+
+  /// Every button on screen with no name. macOS reads a button's name from
+  /// its label alone, so a button named only by its tooltip is read there as
+  /// "button" and nothing else.
+  List<String> unnamed() => [
+    for (final data in buttons())
+      if (data.label.trim().isEmpty) 'tooltip "${data.tooltip}"',
+  ];
+
+  /// A test with the semantics tree on, as it is while VoiceOver runs.
+  void testPress(String description, WidgetTesterCallback body) =>
+      testWidgets(description, (tester) async {
+        final semantics = tester.ensureSemantics();
+        try {
+          await body(tester);
+        } finally {
+          semantics.dispose();
+        }
+      });
+
+  testPress('every button in the window can be pressed', (tester) async {
+    await pumpWindow(tester);
+    for (final id in [for (var i = 0; i < 5; i++) goldenNotes.create().id]) {
+      goldenNotes.updateBody(id, 'Pinned');
+      goldenNotes.togglePinned(id);
+    }
+    await tester.pumpAndSettle();
+    expect(unpressable(), isEmpty, reason: 'with the list open');
+    expect(unnamed(), isEmpty, reason: 'with the list open');
+
+    await tester.tap(find.byKey(const ValueKey('page-more')));
+    await tester.pumpAndSettle();
+    expect(unpressable(), isEmpty, reason: 'with More open');
+    expect(unnamed(), isEmpty, reason: 'with More open');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('sidebar-media-filter')));
+    await tester.pumpAndSettle();
+    expect(unpressable(), isEmpty, reason: 'with the media filter open');
+    expect(unnamed(), isEmpty, reason: 'with the media filter open');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    for (final space in ['drawings', 'archive']) {
+      await tester.tap(find.byKey(ValueKey('rail-$space')));
+      await tester.pumpAndSettle();
+      expect(unpressable(), isEmpty, reason: 'in $space');
+      expect(unnamed(), isEmpty, reason: 'in $space');
+    }
+
+    await tapSettings(tester);
+    expect(unpressable(), isEmpty, reason: 'with Settings open');
+    expect(unnamed(), isEmpty, reason: 'with Settings open');
+  });
+
+  testPress('every button can be pressed with the list hidden', (tester) async {
+    await pumpWindow(tester, sidebarVisible: false);
+    expect(unpressable(), isEmpty);
+    expect(unnamed(), isEmpty);
+  });
+
+  testPress('a rail item opens its space when pressed', (tester) async {
+    await pumpWindow(tester);
+    await press(tester, labelled('Drawings'));
+    expect(spaceTitle(tester), 'Drawings');
+    await press(tester, labelled('Notes'));
+    expect(spaceTitle(tester), 'My notes');
+  });
+
+  testPress('a tonal button makes a note when pressed', (tester) async {
+    await pumpWindow(tester);
+    final before = goldenNotes.notes.length;
+    await press(tester, labelled('New note'));
+    expect(goldenNotes.notes, hasLength(before + 1));
+  });
+
+  testPress('a keycap is read with its button, never on its own', (
+    tester,
+  ) async {
+    await pumpWindow(tester);
+    expect(labelled('New note'), findsOne);
+    expect(find.semantics.byLabel(RegExp('⌘')), findsNothing);
+  });
+
+  testPress('an icon button is pressed by its name', (tester) async {
+    await pumpWindow(tester);
+    final note = goldenNotes.notes.single;
+
+    await press(tester, tipped('Pin note'));
+    expect(goldenNotes.pinnedNoteIds, contains(note.id));
+
+    await press(tester, tipped('Hide notes'));
+    expect(goldenPrefs.sidebarVisible, isFalse);
+    await press(tester, tipped('Show notes'));
+    expect(goldenPrefs.sidebarVisible, isTrue);
+  });
+
+  testPress('the list controls are pressed by their names', (tester) async {
+    await pumpWindow(tester);
+
+    await press(tester, labelled('List'));
+    expect(goldenPrefs.noteCards, isFalse);
+    await press(tester, labelled('Cards'));
+    expect(goldenPrefs.noteCards, isTrue);
+
+    await press(tester, find.semantics.byLabel(RegExp('^Media filter')));
+    expect(find.byKey(const ValueKey('media-filter-menu')), findsOneWidget);
+  });
+
+  testPress('See all is pressed by its name', (tester) async {
+    await pumpWindow(tester);
+    for (final id in [for (var i = 0; i < 5; i++) goldenNotes.create().id]) {
+      goldenNotes.updateBody(id, 'Pinned');
+      goldenNotes.togglePinned(id);
+    }
+    await tester.pumpAndSettle();
+
+    await press(tester, labelled('See all pinned notes'));
+    expect(labelled('See all pinned notes'), findsNothing);
+    expect(unpressable(), isEmpty);
+    expect(unnamed(), isEmpty);
+
+    await press(tester, tipped('Back to all notes'));
+    expect(labelled('See all pinned notes'), findsOne);
+  });
+}
