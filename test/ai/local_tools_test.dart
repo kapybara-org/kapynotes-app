@@ -409,8 +409,7 @@ future_feature under development false
         ),
       );
       expect(started.elapsed, lessThan(const Duration(seconds: 10)));
-      final left = await Process.run('pgrep', ['-f', 'sleep 29.31']);
-      expect(left.stdout.toString().trim(), isEmpty);
+      expect(await _survivors('sleep 29.31'), isEmpty);
     });
 
     test('a timeout kills grandchildren too', () async {
@@ -422,8 +421,21 @@ future_feature under development false
         ).answer(_codexModel, _request()),
         throwsA(isA<AnswerFailed>()),
       );
-      final left = await Process.run('pgrep', ['-f', 'sleep 28.77']);
-      expect(left.stdout.toString().trim(), isEmpty);
+      expect(await _survivors('sleep 28.77'), isEmpty);
+    });
+
+    test('a program that keeps starting children leaves none behind', () async {
+      final cli = await fake(
+        beforeReply: 'while :; do sleep 28.91 & sleep 0.005; done',
+      );
+      await expectLater(
+        codexCli(
+          executable: cli.path,
+          timeout: const Duration(milliseconds: 600),
+        ).answer(_codexModel, _request()),
+        throwsA(isA<AnswerFailed>()),
+      );
+      expect(await _survivors('sleep 28.91'), isEmpty);
     });
 
     test('the output cap kills the whole tree', () async {
@@ -435,8 +447,7 @@ future_feature under development false
         codexCli(executable: cli.path).answer(_codexModel, _request()),
         throwsA(isA<AnswerFailed>()),
       );
-      final left = await Process.run('pgrep', ['-f', 'sleep 28.78']);
-      expect(left.stdout.toString().trim(), isEmpty);
+      expect(await _survivors('sleep 28.78'), isEmpty);
     });
 
     test('signed out is an account error, not a failure', () async {
@@ -1108,4 +1119,15 @@ endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\node_
     );
     expect(cli.runs(), isEmpty);
   });
+}
+
+/// The pids still running [command], given up to 5 s to go.
+Future<String> _survivors(String command) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (true) {
+    final left = await Process.run('pgrep', ['-f', command]);
+    final pids = left.stdout.toString().trim();
+    if (pids.isEmpty || DateTime.now().isAfter(deadline)) return pids;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
 }
