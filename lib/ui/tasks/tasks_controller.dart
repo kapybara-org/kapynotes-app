@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../data/note.dart';
 import '../../data/note_attachment.dart';
 import '../../data/notes_store.dart';
+import '../../data/stamped.dart';
 import '../../crdt/note_doc.dart';
 import '../../data/task_board.dart';
 import '../../data/task_index.dart';

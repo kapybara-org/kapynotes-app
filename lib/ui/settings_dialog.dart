@@ -2922,6 +2922,8 @@ extension on ShortcutAction {
     ShortcutAction.newNoteAnywhere => _ShortcutGroup.fromAnywhere,
     ShortcutAction.newNote ||
     ShortcutAction.findNotes ||
+    ShortcutAction.newTask ||
+    ShortcutAction.newDrawing ||
     ShortcutAction.nextNote ||
     ShortcutAction.previousNote ||
     ShortcutAction.deleteNote ||
@@ -2931,6 +2933,11 @@ extension on ShortcutAction {
     ShortcutAction.focusFirstPane ||
     ShortcutAction.focusSecondPane ||
     ShortcutAction.focusThirdPane => _ShortcutGroup.panes,
+    ShortcutAction.showNotes ||
+    ShortcutAction.showTasks ||
+    ShortcutAction.showDrawings ||
+    ShortcutAction.showShared ||
+    ShortcutAction.showArchive ||
     ShortcutAction.toggleSidebar ||
     ShortcutAction.toggleHiddenFolder ||
     ShortcutAction.toggleResults ||
