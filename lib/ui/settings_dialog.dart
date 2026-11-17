@@ -1284,6 +1284,9 @@ class _SettingsDialogState extends State<SettingsDialog>
   String _keys(ShortcutAction action) =>
       widget.shortcuts.bindingFor(action)?.displayLabel ?? '';
 
+  String _keycaps(ShortcutAction action) =>
+      widget.shortcuts.bindingFor(action)?.keycapLabel ?? '';
+
   // ---------------------------------------------------------------------------
   // The settings themselves
 
@@ -1386,7 +1389,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       ShortcutAction.increaseEditorTextSize,
       ShortcutAction.decreaseEditorTextSize,
       ShortcutAction.resetEditorTextSize,
-    ].map(_keys).where((keys) => keys.isNotEmpty).join(' ');
+    ].map(_keycaps).where((keys) => keys.isNotEmpty).join(' ');
     return [
       _Group('Look', [
         _choice<AppearanceMode>(
@@ -1505,7 +1508,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   List<_Group> _notesGroups() {
     final prefs = widget.layoutPrefs;
     final rates = widget.rates;
-    final hiddenKeys = _keys(ShortcutAction.toggleHiddenFolder);
+    final hiddenKeys = _keycaps(ShortcutAction.toggleHiddenFolder);
     final zone =
         '${AppTimeZones.displayName(prefs.timeZoneId)} · '
         '${AppTimeZones.offsetLabel(prefs.timeZoneId)}';
@@ -2001,7 +2004,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     final prefs = widget.layoutPrefs;
     final integration = widget.desktopIntegration;
     String withKeys(String line, ShortcutAction action) {
-      final keys = _keys(action);
+      final keys = _keycaps(action);
       return keys.isEmpty ? line : '$line · $keys';
     }
 

@@ -790,31 +790,33 @@ class SettingsStepper extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final height = AppPlatform.hasPointer ? 30.0 : 34.0;
-    Widget step(String glyph, String tooltip, Key key, VoidCallback? onTap) =>
-        Tooltip(
-          message: tooltip,
-          child: InkWell(
-            key: key,
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: 30,
-              height: height - 2,
-              child: Center(
-                child: Text(
-                  glyph,
-                  style: TextStyle(
-                    fontSize: 15,
-                    height: 1,
-                    color: onTap == null
-                        ? palette.textTertiary.withValues(alpha: 0.5)
-                        : palette.textSecondary,
-                  ),
-                ),
-              ),
+    Widget step(
+      KapyIconData icon,
+      String tooltip,
+      Key key,
+      VoidCallback? onTap,
+    ) => Tooltip(
+      message: tooltip,
+      child: InkWell(
+        key: key,
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 30,
+          height: height - 2,
+          child: Center(
+            child: KapyIcon(
+              icon,
+              size: 14,
+              strokeWidth: 1.8,
+              color: onTap == null
+                  ? palette.textTertiary.withValues(alpha: 0.5)
+                  : palette.textSecondary,
             ),
           ),
-        );
+        ),
+      ),
+    );
     return Container(
       height: height,
       decoration: BoxDecoration(
@@ -825,9 +827,22 @@ class SettingsStepper extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          step('−', 'Smaller', const ValueKey('stepper-down'), onDecrease),
-          ConstrainedBox(
+          step(
+            KapyIcons.removeRounded,
+            'Smaller',
+            const ValueKey('stepper-down'),
+            onDecrease,
+          ),
+          Container(
             constraints: const BoxConstraints(minWidth: 44),
+            height: height - 2,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              border: Border.symmetric(
+                vertical: BorderSide(color: palette.controlBorder),
+              ),
+            ),
             child: Text(
               label,
               textAlign: TextAlign.center,
@@ -835,12 +850,18 @@ class SettingsStepper extends StatelessWidget {
                 fontFamily: AppPlatform.monoFontFallback.first,
                 fontFamilyFallback: AppPlatform.monoFontFallback,
                 fontSize: 12,
+                fontWeight: FontWeight.w500,
                 fontFeatures: const [FontFeature.tabularFigures()],
                 color: palette.textPrimary,
               ),
             ),
           ),
-          step('+', 'Larger', const ValueKey('stepper-up'), onIncrease),
+          step(
+            KapyIcons.addRounded,
+            'Larger',
+            const ValueKey('stepper-up'),
+            onIncrease,
+          ),
         ],
       ),
     );

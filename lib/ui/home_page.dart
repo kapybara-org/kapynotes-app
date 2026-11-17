@@ -3952,11 +3952,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       key: ValueKey('drawing-${note.id}'),
       drawing: note.drawing ?? NoteDrawing.empty,
       title: note.body,
-      edited: SidebarTimestamp.glance(
+      edited: SidebarTimestamp.edited(
         note.updatedAt,
         now: widget.notes.now(),
         displayTime: widget.prefs.displayTime,
-        today: true,
       ),
       readOnly: !canWrite,
       onFocus: onFocus,
