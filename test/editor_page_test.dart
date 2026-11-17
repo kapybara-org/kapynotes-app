@@ -1,5 +1,4 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
@@ -11,12 +10,13 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/compact_icon_button.dart';
-import 'package:kapy_notes/ui/editor/markdown_backdrop.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/note_header.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 class _MemoryStore extends LocalStore {
@@ -91,24 +91,23 @@ Widget _page(
   ),
 );
 
-RenderEditable _editable(WidgetTester tester) =>
-    tester.state<EditableTextState>(find.byType(EditableText)).renderEditable;
+NoteDriver _editable(WidgetTester tester) => NoteDriver(tester);
 
 /// Where line [line] of the note starts and the next one does, in the
 /// field's own coordinates, as the editor measured them for what it draws
 /// behind the text.
 (double, double) _rows(WidgetTester tester, int line) {
-  final tops = tester
-      .widget<MarkdownBackdrop>(find.byType(MarkdownBackdrop))
-      .offsets
-      .tops;
-  return (tops[line], tops[line + 1]);
+  final note = NoteDriver(tester);
+  final lines = note.state.lines;
+  double top(int line) =>
+      note.caretRect(TextPosition(offset: lines.startOf(line))).top;
+  return (top(line), top(line + 1));
 }
 
 InlineSpan _spanAt(WidgetTester tester, int offset) {
-  final field = tester.widget<EditableText>(find.byType(EditableText));
+  final field = tester.widget<NoteField>(noteField);
   final span = field.controller.buildTextSpan(
-    context: tester.element(find.byType(EditableText)),
+    context: tester.element(noteField),
     style: field.style,
     withComposing: false,
   );
@@ -137,7 +136,7 @@ void main() {
     expect(title.fontSize, 40);
     expect(title.fontWeight, FontWeight.w700);
     final (firstLine, secondLine) = _rows(tester, 1);
-    expect(secondLine - firstLine, EditorMetrics.lineHeight);
+    expect(secondLine - firstLine, moreOrLessEquals(EditorMetrics.lineHeight));
     expect(find.text('Edited today, 15:38'), findsOneWidget);
     expect(find.text('1 of 3 done'), findsOneWidget);
     final semantics = tester.ensureSemantics();
@@ -149,7 +148,7 @@ void main() {
     // below it. Line positions are where a caret's top goes, a few pixels
     // into the row.
     final meta = tester.getRect(find.byType(NoteMetaRow));
-    final field = _editable(tester).localToGlobal(Offset.zero);
+    final field = _editable(tester).toGlobal(Offset.zero);
     expect(
       meta.top - field.dy,
       closeTo(EditorMetrics.titleRow + EditorMetrics.metaGap, 0.5),
@@ -167,28 +166,22 @@ void main() {
       await tester.pumpWidget(_page(body));
       await tester.pumpAndSettle();
       final editable = _editable(tester);
-      final origin = editable.localToGlobal(Offset.zero);
-      final end = editable.getLocalRectForCaret(const TextPosition(offset: 7));
-      final under = editable.getLocalRectForCaret(
-        const TextPosition(offset: 8),
-      );
+      final origin = editable.toGlobal(Offset.zero);
+      final end = editable.caretRect(const TextPosition(offset: 7));
+      final under = editable.caretRect(const TextPosition(offset: 8));
       final meta = tester.getRect(find.byType(NoteMetaRow));
 
       expect(end.left, greaterThan(100), reason: body);
       expect(under.left, lessThan(2), reason: body);
       expect(origin.dy + under.top, greaterThanOrEqualTo(meta.bottom));
       // What the field draws reads as the note, letter and break included.
-      expect(editable.text!.toPlainText(), body);
+      expect(editable.span.toPlainText(), body);
 
       // A click past the end of the title puts the caret at its end.
       await tester.tapAt(origin + Offset(end.left + 120, end.center.dy));
       await tester.pumpAndSettle();
       expect(
-        tester
-            .widget<EditableText>(find.byType(EditableText))
-            .controller
-            .selection
-            .baseOffset,
+        tester.widget<NoteField>(noteField).controller.selection.baseOffset,
         7,
       );
     }
@@ -206,16 +199,13 @@ void main() {
     expect(body.fontSize, 16);
     expect(body.fontWeight, FontWeight.w500);
     final field = _editable(tester);
-    expect(
-      field.size.width,
-      closeTo(EditorMetrics.columnWidth + EditorMetrics.caretMargin, 0.5),
-    );
-    expect(field.localToGlobal(Offset.zero).dx, closeTo((1200 - 680) / 2, 2));
+    expect(field.columnWidth, closeTo(EditorMetrics.columnWidth, 0.5));
+    expect(field.toGlobal(Offset.zero).dx, closeTo((1200 - 680) / 2, 2));
 
     await tester.pumpWidget(_page(_body, width: 500));
     await tester.pumpAndSettle();
     expect(
-      _editable(tester).localToGlobal(Offset.zero).dx,
+      _editable(tester).toGlobal(Offset.zero).dx,
       EditorMetrics.padding.left,
     );
   });
@@ -267,7 +257,7 @@ void main() {
     final box = (_spanAt(tester, _body.indexOf('☐')) as TextSpan).style!;
     expect(box.color!.a, 0, reason: 'the glyph gives way to the drawn box');
     final words = _editable(tester)
-        .getBoxesForSelection(
+        .boxesFor(
           TextSelection(
             baseOffset: _body.indexOf('Automate'),
             extentOffset: _body.indexOf('Automate') + 1,
@@ -278,14 +268,14 @@ void main() {
 
     final field = _editable(tester);
     final glyph = field
-        .getBoxesForSelection(
+        .boxesFor(
           TextSelection(
             baseOffset: _body.indexOf('☐'),
             extentOffset: _body.indexOf('☐') + 1,
           ),
         )
         .first;
-    await tester.tapAt(field.localToGlobal(glyph.toRect().center));
+    await tester.tapAt(field.toGlobal(glyph.toRect().center));
     await tester.pumpAndSettle();
     expect(body, startsWith('SnowSEO Issues\n☑ Automate'));
   });
@@ -308,16 +298,16 @@ void main() {
     await tester.pumpWidget(_page(long, slashHint: true));
     await tester.pumpAndSettle();
 
-    await tester.showKeyboard(find.byType(EditableText));
-    final field = tester.widget<EditableText>(find.byType(EditableText));
+    await tester.showNoteKeyboard();
+    final field = tester.widget<NoteField>(noteField);
     field.controller.selection = TextSelection.collapsed(offset: long.length);
     await tester.pumpAndSettle();
     final scroll = tester.state<ScrollableState>(find.byType(Scrollable).first);
     expect(scroll.position.pixels, greaterThan(0));
 
     final editable = _editable(tester);
-    final caret = editable.localToGlobal(
-      editable.getLocalRectForCaret(TextPosition(offset: long.length)).center,
+    final caret = editable.toGlobal(
+      editable.caretRect(TextPosition(offset: long.length)).center,
     );
     final hint = find.byKey(const ValueKey('slash-hint'));
     expect(tester.getRect(hint).center.dy, closeTo(caret.dy, 2));
@@ -338,8 +328,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(NoteFooter), findsNothing);
 
-    await tester.showKeyboard(find.byType(EditableText));
-    final field = tester.widget<EditableText>(find.byType(EditableText));
+    await tester.showNoteKeyboard();
+    final field = tester.widget<NoteField>(noteField);
     field.controller.selection = TextSelection.collapsed(offset: empty);
     await tester.pumpAndSettle();
     final plus = find.byKey(const ValueKey('line-commands'));
@@ -362,8 +352,8 @@ void main() {
 
     // The pointer over an empty line brings the "+" alone, lit.
     final editable = _editable(tester);
-    final line = editable.localToGlobal(
-      editable.getLocalRectForCaret(TextPosition(offset: empty)).center,
+    final line = editable.toGlobal(
+      editable.caretRect(TextPosition(offset: empty)).center,
     );
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: line + const Offset(80, 0));
@@ -450,8 +440,8 @@ void main() {
     expect(find.byType(NoteMetaRow), findsNothing);
     final field = _editable(tester);
     expect(
-      field.getLocalRectForCaret(TextPosition(offset: _body.indexOf('☐'))).top -
-          field.getLocalRectForCaret(const TextPosition(offset: 1)).top,
+      field.caretRect(TextPosition(offset: _body.indexOf('☐'))).top -
+          field.caretRect(const TextPosition(offset: 1)).top,
       closeTo(29, 0.5),
     );
   });

@@ -1,5 +1,4 @@
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
-import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/calc/highlight.dart';
@@ -9,10 +8,13 @@ import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/sync/presence.dart';
 import 'package:kapy_notes/ui/collaborator_colors.dart';
+import 'package:kapy_notes/ui/editor/highlighting_controller.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/remote_carets.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 /// Other people's carets over the note, drawn from what the sync layer
@@ -94,16 +96,13 @@ RenderBox layer(WidgetTester tester) => tester.renderObject<RenderBox>(
   ),
 );
 
-RenderEditable field(WidgetTester tester) =>
-    tester.allRenderObjects.whereType<RenderEditable>().first;
+NoteDriver field(WidgetTester tester) => NoteDriver(tester);
 
 /// Where [offset]'s caret bar is drawn, in the layer's coordinates.
 Rect bar(WidgetTester tester, int offset) {
   final editable = field(tester);
-  final rect = editable.getLocalRectForCaret(TextPosition(offset: offset));
-  final origin = layer(
-    tester,
-  ).globalToLocal(editable.localToGlobal(Offset.zero));
+  final rect = editable.caretRect(TextPosition(offset: offset));
+  final origin = layer(tester).globalToLocal(editable.toGlobal(Offset.zero));
   final shifted = rect.shift(origin);
   return Rect.fromLTWH(shifted.left - 1, shifted.top, 2, shifted.height);
 }
@@ -164,8 +163,8 @@ void main() {
     addTearDown(pointer.removePointer);
     final editable = field(tester);
     await pointer.moveTo(
-      editable.localToGlobal(
-        editable.getLocalRectForCaret(const TextPosition(offset: 5)).center,
+      editable.toGlobal(
+        editable.caretRect(const TextPosition(offset: 5)).center,
       ),
     );
     await tester.pump();
@@ -226,13 +225,20 @@ void main() {
     tester,
   ) async {
     final source = FakeCaretSource();
-    final controller = TextEditingController(text: 'hidden source');
+    final controller = HighlightingController(
+      highlighter: Highlighter(CalcEngine().registry),
+      palette: KapyTheme.lightPalette,
+      writingFont: WritingFont.clean,
+      text: 'hidden source',
+    );
+    final focusNode = FocusNode();
     final scroll = ScrollController();
     final hover = ValueNotifier<Offset?>(null);
     addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
     addTearDown(scroll.dispose);
     addTearDown(hover.dispose);
-    RenderEditable? editable;
+    final field = GlobalKey<NoteFieldState>();
     const visibleCaret = Rect.fromLTWH(240, 8, 0, 18);
 
     await tester.pumpWidget(
@@ -241,14 +247,21 @@ void main() {
         home: Scaffold(
           body: Stack(
             children: [
-              TextField(controller: controller, scrollController: scroll),
+              NoteField(
+                key: field,
+                controller: controller,
+                focusNode: focusNode,
+                scrollController: scroll,
+                style: const TextStyle(fontSize: 16),
+                strut: const StrutStyle(fontSize: 16),
+              ),
               Positioned.fill(
                 child: RemoteCaretLayer(
                   noteId: 'note-1',
                   source: source,
                   controller: controller,
                   scroll: scroll,
-                  editable: () => editable,
+                  field: () => field.currentState,
                   hover: hover,
                   tableCaretRect: (_) => visibleCaret,
                 ),
@@ -258,7 +271,6 @@ void main() {
         ),
       ),
     );
-    editable = tester.allRenderObjects.whereType<RenderEditable>().first;
     source.show(
       RemoteCarets(
         text: controller.text,

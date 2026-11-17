@@ -50,7 +50,6 @@ void main() {
           body: TasksScreen(
             controller: tasks,
             filter: filter,
-            query: '',
             addFocus: addFocus,
             labelOf: (note) => note.title,
             onOpenNote: (_) {},
@@ -171,6 +170,29 @@ void main() {
     expect(tasks.read().open.single.doNow, isTrue);
     expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
   });
+
+  testWidgets(
+    'Not finished and Done sit at the right edge of the card, with the '
+    'note on the left',
+    (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
+      final open = tasks.read().open;
+      tasks.doNow(open[0], open);
+      await pumpScreen(tester);
+
+      final card = tester.getRect(find.byKey(const ValueKey('tasks-do-now')));
+      final done = tester.getRect(find.byKey(const ValueKey('tasks-done')));
+      final note = tester.getRect(
+        find.descendant(
+          of: find.byKey(const ValueKey('tasks-do-now')),
+          matching: find.text('Errands'),
+        ),
+      );
+      expect(card.right - done.right, lessThan(24));
+      expect(note.left - card.left, lessThan(60));
+    await settle(tester);
+    },
+  );
 
   testWidgets('Not finished sends Do now to the end of the list', (
     tester,

@@ -194,4 +194,64 @@ void main() {
       isNull,
     );
   });
+
+  group('a file a page names outside the temporary folder', () {
+    late Directory outside;
+    late File image;
+    final downloader = PastedImageDownloader(
+      client: MockClient((_) async => throw StateError('no network')),
+    );
+
+    setUp(() {
+      outside = Directory(
+        '${Directory.current.path}/.dart_tool',
+      ).createTempSync('kapy_paste_outside_');
+      image = File('${outside.path}/private.png')..writeAsBytesSync(png);
+      expect(
+        image.resolveSymbolicLinksSync().startsWith(
+          Directory.systemTemp.resolveSymbolicLinksSync(),
+        ),
+        isFalse,
+      );
+    });
+    tearDown(() => outside.deleteSync(recursive: true));
+
+    test('is not read', () async {
+      expect(await downloader.fetch(image.uri.toString()), isNull);
+    });
+
+    test('is read when the clipboard offered that file itself', () async {
+      final fetched = await downloader.fetch(
+        image.uri.toString(),
+        clipboardFiles: [image.path],
+      );
+      expect(fetched?.bytes, png);
+      expect(
+        await downloader.fetch(
+          image.uri.toString(),
+          clipboardFiles: ['${outside.path}/other.png'],
+        ),
+        isNull,
+      );
+    });
+
+    test(
+      'is not read through a link or a climb out of the temporary folder',
+      () async {
+        final temp = await Directory.systemTemp.createTemp('kapy_paste_');
+        addTearDown(() => temp.delete(recursive: true));
+        final link = Link('${temp.path}/clip.png')..createSync(image.path);
+        expect(await downloader.fetch(link.uri.toString()), isNull);
+
+        final climb = Uri.file(
+          '${temp.path}${Platform.pathSeparator}..'
+          '${Platform.pathSeparator}..${Platform.pathSeparator}..'
+          '${Platform.pathSeparator}..${Platform.pathSeparator}..'
+          '${Platform.pathSeparator}..${Platform.pathSeparator}..'
+          '${Platform.pathSeparator}..${image.path}',
+        );
+        expect(await downloader.fetch(climb.toString()), isNull);
+      },
+    );
+  });
 }

@@ -31,7 +31,6 @@ class TasksScreen extends StatefulWidget {
     super.key,
     required this.controller,
     required this.filter,
-    required this.query,
     required this.addFocus,
     required this.labelOf,
     required this.onOpenNote,
@@ -40,9 +39,6 @@ class TasksScreen extends StatefulWidget {
 
   final TasksController controller;
   final TaskFilter filter;
-
-  /// What the sidebar's field has narrowed the list to.
-  final String query;
   final FocusNode addFocus;
 
   /// A note's name as a task's mark shows it.
@@ -190,12 +186,6 @@ class TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  bool _matches(TaskItem item) {
-    final terms = widget.query.toLowerCase().split(RegExp(r'\s+'));
-    final words = item.words.toLowerCase();
-    return terms.every((term) => term.isEmpty || words.contains(term));
-  }
-
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.controller,
@@ -227,7 +217,6 @@ class TasksScreenState extends State<TasksScreen> {
       noteId: widget.filter.noteId,
     );
     final doNow = _doNow(open);
-    final shown = open.where(_matches).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -307,15 +296,15 @@ class TasksScreenState extends State<TasksScreen> {
             ],
           ),
         ),
-        if (shown.isEmpty)
+        if (open.isEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
             child: Text(
-              open.isEmpty ? 'Nothing on the list.' : 'No tasks match.',
+              'Nothing on the list.',
               style: uiStyle(14, 20, FontWeight.w500, palette.textTertiary),
             ),
           ),
-        for (final item in shown)
+        for (final item in open)
           _TaskRow(
             key: ValueKey(item.id),
             item: item,
@@ -393,9 +382,8 @@ class TasksScreenState extends State<TasksScreen> {
   Widget _done(TaskBoard board) {
     final palette = context.palette;
     final now = _tasks.now();
-    final done = board.done.where(_matches).toList();
     final days = <DateTime, List<TaskItem>>{};
-    for (final item in done) {
+    for (final item in board.done) {
       final at = item.doneAt!;
       (days[DateTime(at.year, at.month, at.day)] ??= []).add(item);
     }
@@ -776,17 +764,18 @@ class _DoNowCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      if (label != null)
-                        Flexible(
-                          child: NoteMark(
-                            note: item.note,
-                            label: label,
-                            onPressed: onOpenNote,
-                          ),
-                        )
-                      else
-                        const Spacer(),
-                      if (label != null) const Spacer(),
+                      Expanded(
+                        child: label == null
+                            ? const SizedBox.shrink()
+                            : Align(
+                                alignment: Alignment.centerLeft,
+                                child: NoteMark(
+                                  note: item.note,
+                                  label: label,
+                                  onPressed: onOpenNote,
+                                ),
+                              ),
+                      ),
                       Tooltip(
                         message: 'Moves it to the end of the list',
                         child: TextButton.icon(

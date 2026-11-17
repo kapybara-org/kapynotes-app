@@ -1,4 +1,5 @@
-# Desktop builds on every push and pull request — validation, not distribution.
+# Desktop builds on every pull request, and on pushes to main and release/**
+# — validation, not distribution.
 #
 # Windows is here because it cannot be built anywhere else: `flutter build
 # windows` needs a Windows host with Visual Studio's C++ workload, and macOS
@@ -11,13 +12,15 @@
 # desktop-release.yml, on a tag.
 #
 # Tags do not run this workflow. A `branches` filter makes a push event ignore
-# tags entirely, and `**` matches every branch including the slashed ones.
+# tags entirely.
 # Pushing a tag would otherwise build an unsigned DMG and installer here while
 # desktop-release.yml built signed ones from the same commit.
 #
-# Both jobs run on every branch and every pull request because this repository
-# is public, and standard runners are free for public repositories on all
-# three operating systems. Nothing here needs rationing.
+# A branch with a pull request is built once, by the pull_request event. A push
+# trigger on every branch started a second macOS job for the same commit, and
+# the macOS runner queue is the slow part of landing a pull request. main and
+# release/** still build on push, since no pull request covers a direct push or
+# the commit a merge creates.
 #
 # Pull requests from forks run with no secrets — GitHub withholds them — so
 # untrusted code cannot reach the signing keys this repository holds for
@@ -27,7 +30,8 @@ name: Desktop CI
 on:
   push:
     branches:
-      - '**'
+      - main
+      - 'release/**'
   pull_request:
   workflow_dispatch:
 

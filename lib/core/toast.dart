@@ -24,11 +24,16 @@ class Toast {
   @visibleForTesting
   static bool debugAnimateLifetimeInTests = false;
 
+  /// [action] names a button at the toast's end that runs [onAction], such
+  /// as View after a note is filed away. A toast with one stays a little
+  /// longer, so there is time to reach it.
   static void show(
     BuildContext context,
     String message, {
     KapyIconData? icon,
     bool isError = false,
+    String? action,
+    VoidCallback? onAction,
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
@@ -40,7 +45,8 @@ class Toast {
           icon ?? (isError ? KapyIcons.errorOutlined : KapyIcons.checkRounded),
       isError: isError,
       progress: false,
-      duration: const Duration(milliseconds: 1800),
+      duration: Duration(milliseconds: action == null ? 1800 : 4000),
+      action: action == null || onAction == null ? null : (action, onAction),
     );
   }
 
@@ -72,6 +78,7 @@ class Toast {
     required bool isError,
     required bool progress,
     required Duration? duration,
+    (String, VoidCallback)? action,
   }) {
     _dismiss();
     final generation = ++_generation;
@@ -82,6 +89,15 @@ class Toast {
         icon: icon,
         isError: isError,
         progress: progress,
+        action: action == null
+            ? null
+            : (
+                action.$1,
+                () {
+                  if (_generation == generation) _dismiss();
+                  action.$2();
+                },
+              ),
         duration: AppPlatform.isFlutterTest && !debugAnimateLifetimeInTests
             ? null
             : duration,
@@ -173,12 +189,14 @@ class _ToastBody extends StatefulWidget {
     required this.duration,
     required this.onElapsed,
     required this.onDisposed,
+    this.action,
   });
 
   final String message;
   final KapyIconData icon;
   final bool isError;
   final bool progress;
+  final (String, VoidCallback)? action;
   final Duration? duration;
   final VoidCallback onElapsed;
   final VoidCallback onDisposed;
@@ -235,6 +253,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
       left: 16,
       right: 16,
       child: IgnorePointer(
+        ignoring: widget.action == null,
         child: FadeTransition(
           opacity: curve,
           child: SlideTransition(
@@ -321,7 +340,31 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                                     ),
                               ),
                             ),
-                            const SizedBox(width: 3),
+                            if (widget.action case (
+                              final label,
+                              final onPressed,
+                            )) ...[
+                              const SizedBox(width: 4),
+                              TextButton(
+                                key: const ValueKey('toast-action'),
+                                onPressed: onPressed,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: palette.accentText,
+                                  minimumSize: const Size(0, 28),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  textStyle: TextStyle(
+                                    fontSize: AppTypeScale.body,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                child: Text(label),
+                              ),
+                            ] else
+                              const SizedBox(width: 3),
                           ],
                         ),
                       ),

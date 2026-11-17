@@ -781,8 +781,6 @@ class LayoutPrefs extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleHiddenFolder() => hiddenFolderVisible = !_hiddenFolderVisible;
-
   set noteCards(bool value) {
     if (value == _noteCards) return;
     _noteCards = value;

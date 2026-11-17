@@ -60,7 +60,7 @@ class SettingsMetrics {
 /// The heading over a group, naming what the rows in it are about: a small
 /// handwritten heading with a pointer, small capitals on a phone.
 class SettingsLabel extends StatelessWidget {
-  const SettingsLabel(this.text, {super.key, this.detail});
+  const SettingsLabel(this.text, {super.key, this.detail, this.caption});
 
   /// In sentence case. The phone sets it in capitals.
   final String text;
@@ -69,14 +69,17 @@ class SettingsLabel extends StatelessWidget {
   /// the heading alone does not say.
   final String? detail;
 
+  /// A line of its own under the heading, for a group whose heading needs a
+  /// sentence rather than a few words.
+  final String? caption;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final detail = this.detail;
+    final caption = this.caption;
     if (AppPlatform.hasPointer) {
-      return Padding(
-        padding: const EdgeInsets.only(left: 2, bottom: 8),
-        child: Row(
+      final heading = Row(
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
@@ -106,20 +109,56 @@ class SettingsLabel extends StatelessWidget {
               ),
             ],
           ],
-        ),
+        );
+      return Padding(
+        padding: const EdgeInsets.only(left: 2, bottom: 8),
+        child: caption == null
+            ? heading
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  heading,
+                  const SizedBox(height: 2),
+                  Text(
+                    caption,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 16 / 12,
+                      color: palette.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
       );
     }
+    final label = Text(
+      text.toUpperCase(),
+      style: TextStyle(
+        fontSize: SettingsMetrics.sectionLabelSize,
+        fontWeight: _mediumWeight,
+        letterSpacing: 0.65,
+        color: palette.textTertiary,
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.only(left: 3, bottom: 7),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontSize: SettingsMetrics.sectionLabelSize,
-          fontWeight: _mediumWeight,
-          letterSpacing: 0.65,
-          color: palette.textTertiary,
-        ),
-      ),
+      child: caption == null
+          ? label
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                label,
+                const SizedBox(height: 4),
+                Text(
+                  caption,
+                  style: TextStyle(
+                    fontSize: SettingsMetrics.noteSize,
+                    height: 1.4,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -751,31 +790,33 @@ class SettingsStepper extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final height = AppPlatform.hasPointer ? 30.0 : 34.0;
-    Widget step(String glyph, String tooltip, Key key, VoidCallback? onTap) =>
-        Tooltip(
-          message: tooltip,
-          child: InkWell(
-            key: key,
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: 30,
-              height: height - 2,
-              child: Center(
-                child: Text(
-                  glyph,
-                  style: TextStyle(
-                    fontSize: 15,
-                    height: 1,
-                    color: onTap == null
-                        ? palette.textTertiary.withValues(alpha: 0.5)
-                        : palette.textSecondary,
-                  ),
-                ),
-              ),
+    Widget step(
+      KapyIconData icon,
+      String tooltip,
+      Key key,
+      VoidCallback? onTap,
+    ) => Tooltip(
+      message: tooltip,
+      child: InkWell(
+        key: key,
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 30,
+          height: height - 2,
+          child: Center(
+            child: KapyIcon(
+              icon,
+              size: 14,
+              strokeWidth: 1.8,
+              color: onTap == null
+                  ? palette.textTertiary.withValues(alpha: 0.5)
+                  : palette.textSecondary,
             ),
           ),
-        );
+        ),
+      ),
+    );
     return Container(
       height: height,
       decoration: BoxDecoration(
@@ -786,9 +827,22 @@ class SettingsStepper extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          step('−', 'Smaller', const ValueKey('stepper-down'), onDecrease),
-          ConstrainedBox(
+          step(
+            KapyIcons.removeRounded,
+            'Smaller',
+            const ValueKey('stepper-down'),
+            onDecrease,
+          ),
+          Container(
             constraints: const BoxConstraints(minWidth: 44),
+            height: height - 2,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              border: Border.symmetric(
+                vertical: BorderSide(color: palette.controlBorder),
+              ),
+            ),
             child: Text(
               label,
               textAlign: TextAlign.center,
@@ -796,12 +850,18 @@ class SettingsStepper extends StatelessWidget {
                 fontFamily: AppPlatform.monoFontFallback.first,
                 fontFamilyFallback: AppPlatform.monoFontFallback,
                 fontSize: 12,
+                fontWeight: FontWeight.w500,
                 fontFeatures: const [FontFeature.tabularFigures()],
                 color: palette.textPrimary,
               ),
             ),
           ),
-          step('+', 'Larger', const ValueKey('stepper-up'), onIncrease),
+          step(
+            KapyIcons.addRounded,
+            'Larger',
+            const ValueKey('stepper-up'),
+            onIncrease,
+          ),
         ],
       ),
     );

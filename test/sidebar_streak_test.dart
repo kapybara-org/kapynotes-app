@@ -33,7 +33,7 @@ Sidebar sidebar(
   selectedId: null,
   query: query,
   displayTime: (t) => t,
-  onQueryChanged: (_) {},
+  onSearch: () {},
   onSelect: (_) {},
   onCreate: () {},
   archiveMode: archiveMode,

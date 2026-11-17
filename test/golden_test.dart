@@ -16,6 +16,9 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/tags.dart';
+import 'package:kapy_notes/data/task_library.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/update_checker.dart';
 import 'package:kapy_notes/data/blob_store.dart';
@@ -26,6 +29,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
 import 'fake_update_installer.dart';
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 const _body = '''
@@ -59,6 +63,10 @@ late LayoutPrefs goldenPrefs;
 /// The notes the image was built from, for the few images that have to change
 /// the list after it is on screen.
 late NotesStore goldenNotes;
+late TagStore goldenTags;
+
+/// The task list, for the images that ask for one with `withTasks`.
+late TaskLibrary goldenTasks;
 
 Future<void> pumpForGolden(
   WidgetTester tester, {
@@ -80,6 +88,9 @@ Future<void> pumpForGolden(
   /// Drawings in the store, the newest pinned, for the Drawings space.
   bool withDrawings = false,
   bool cards = true,
+
+  /// Tasks on the rail, read from the notes' checklist lines.
+  bool withTasks = false,
 
   /// Which build the image is of.
   ///
@@ -193,10 +204,21 @@ Future<void> pumpForGolden(
   final prefs = LayoutPrefs(store);
   goldenPrefs = prefs;
   goldenNotes = notes;
+  goldenTags = TagStore(store);
+  await goldenTags.load();
   final rates = RatesRepository(store);
   final shortcuts = ShortcutPrefs(store)..load();
+  final tasks = withTasks
+      ? goldenTasks = TaskLibrary(
+          notes: notes,
+          store: store,
+          storage: MemoryDocStorage(),
+          now: () => _goldenNow,
+        )
+      : null;
 
   await notes.load();
+  await tasks?.load();
   prefs.load();
   // These images document the app in use, where the notes list has been
   // opened at least once. A new install starts with it closed, which is what
@@ -227,6 +249,8 @@ Future<void> pumpForGolden(
       prefs: prefs,
       shortcuts: shortcuts,
       updates: updates,
+      tags: goldenTags,
+      tasks: tasks,
     ),
   );
   if (withImages) {
@@ -513,7 +537,7 @@ void main() {
     );
     final editor = find.descendant(
       of: find.byType(NoteEditor),
-      matching: find.byType(TextField),
+      matching: noteField,
     );
     final bounds = tester.getRect(editor);
     await tester.tapAt(
@@ -560,7 +584,9 @@ void main() {
       notes.archive(note.id);
     }
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('rail-archive')));
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
     await tester.pumpAndSettle();
   }
 
@@ -797,6 +823,39 @@ void main() {
 
   // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
   // long for one line, See all at the heading's end, and amounts in mono.
+  testWidgets('desktop dark tags', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+      withNote: false,
+    );
+    final work = goldenTags.create('Work')!;
+    final money = goldenTags.create('Money')!;
+    final travel = goldenTags.create('Travel')!;
+    for (final (body, tags) in [
+      ('Groceries\nMilk, eggs', <Tag>[]),
+      ('land\n₹75,60,000', [money]),
+      ('Trip budget\n₹28,000', [travel, money]),
+      ('Reading list\nThree books', <Tag>[]),
+      ('SnowSEO Issues\n☑ Crawl\n☐ Fix titles', [work]),
+    ]) {
+      final note = goldenNotes.create(body: body);
+      goldenTags.setTags(note.id, [for (final tag in tags) tag.id]);
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('tag-filter-${work.id}')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_tags.png'),
+    );
+  });
+
   testWidgets('desktop dark pinned cards', (tester) async {
     await pumpForGolden(
       tester,
@@ -859,29 +918,20 @@ void main() {
       brightness: Brightness.dark,
       sidebarVisible: false,
     );
-    final editor = find.descendant(
-      of: find.byType(NoteEditor),
-      matching: find.byType(TextField),
+    final note = NoteDriver(
+      tester,
+      find.descendant(of: find.byType(NoteEditor), matching: noteField),
     );
-    final field = tester.widget<TextField>(editor);
-    final editable = tester
-        .state<EditableTextState>(
-          find.descendant(
-            of: find.byType(NoteEditor),
-            matching: find.byType(EditableText),
-          ),
-        )
-        .renderEditable;
     final targetStart = _body.indexOf('Hotel');
-    final wordBox = editable
-        .getBoxesForSelection(
+    final wordBox = note
+        .boxesFor(
           TextSelection(
             baseOffset: targetStart,
             extentOffset: targetStart + 'Hotel'.length,
           ),
         )
         .first;
-    final start = editable.localToGlobal(
+    final start = note.toGlobal(
       Offset(wordBox.left + 1, (wordBox.top + wordBox.bottom) / 2),
     );
     final mouse = await tester.startGesture(
@@ -898,7 +948,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
-    expect(field.controller!.selection.isCollapsed, isFalse);
+    expect(note.value.selection.isCollapsed, isFalse);
     final bubble = tester.getRect(
       find.byKey(const ValueKey('selection-bubble')),
     );
@@ -1127,6 +1177,86 @@ void main() {
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/phone_note_actions.png'),
     );
+  });
+
+  group('⌘K menu', () {
+    /// The trip notes p-7-0 searches: two notes, two tasks in one of them, a
+    /// drawing, and one more in Archive. Pumped at Paper's 1440 × 900.
+    Future<void> pumpTrip(WidgetTester tester, Brightness brightness) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(1440, 900),
+        brightness: brightness,
+        withTasks: true,
+      );
+      final notes = goldenNotes;
+      notes.archive(notes.create(body: 'Sintra in 2024\nThe palace queue').id);
+      notes.create(
+        body: 'Goals - Oct 2026\nSee Sintra and Cascais before December',
+      );
+      final drawing = notes.create();
+      notes.setDrawingMode(drawing.id, drawing: true);
+      notes.updateDrawing(
+        drawing.id,
+        NoteDrawing.empty,
+        title: 'Sintra day route',
+      );
+      notes.create(
+        body:
+            'Trip budget\nGo to Sintra on a weekday. The weekend queues are '
+            'brutal.\n☐ Book the Sintra train tickets\n'
+            '☐ Ask Ana which Sintra palace to skip',
+      );
+      await tester.runAsync(goldenTasks.reconcileNow);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> openMenu(WidgetTester tester, [String text = '']) async {
+      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      await tester.pumpAndSettle();
+      if (text.isEmpty) return;
+      await tester.enterText(
+        find.byKey(const ValueKey('command-menu-field')),
+        text,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('before typing, dark', (tester) async {
+      await pumpTrip(tester, Brightness.dark);
+      await openMenu(tester);
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/command_menu_dark.png'),
+      );
+    });
+
+    testWidgets('while typing, dark', (tester) async {
+      await pumpTrip(tester, Brightness.dark);
+      await openMenu(tester, 'sintra');
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/command_menu_dark_typing.png'),
+      );
+    });
+
+    testWidgets('a setting, dark', (tester) async {
+      await pumpTrip(tester, Brightness.dark);
+      await openMenu(tester, 'text size');
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/command_menu_dark_settings.png'),
+      );
+    });
+
+    testWidgets('while typing, light', (tester) async {
+      await pumpTrip(tester, Brightness.light);
+      await openMenu(tester, 'sintra');
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/command_menu_light_typing.png'),
+      );
+    });
   });
 
   // The largest phone the app ships to, and the one where desktop-scale chrome
