@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- Recording a voice note. The sandbox treats the microphone as its own
+	     capability, so the usage string alone is not enough on macOS. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<!-- The export save panel and the import open panel. The sandbox grants
+	     access only to what the user picks in one, which is exactly the
+	     scope this feature wants. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<!-- Release.entitlements plus the keychain access group for the session
+	     and master key (see macOsKeychain in lib/sync/key_store.dart). Only
+	     the Developer ID archive in release.sh uses this file, because macOS
+	     honours the group only with the provisioning profile that authorises
+	     it, and refuses to sign or launch a build that claims it without
+	     one. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	</array>
+	<!-- Sparkle's Installer XPC service, which does the bundle swap the
+	     sandbox forbids the app itself. Both names are required; they are
+	     derived from the bundle id by Sparkle and must match exactly. -->
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+	</array>
+</dict>
+</plist>

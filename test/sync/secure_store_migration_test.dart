@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/sync/key_store.dart';
@@ -113,12 +113,22 @@ void main() {
       expect(await store.read(token), isNull);
     });
 
-    test('writes go to the new store only', () async {
+    test('a write clears the old copy, so it cannot come back', () async {
       final current = InMemorySecureStore();
+      final store = MigratingSecureStore(current, legacy);
 
-      await MigratingSecureStore(current, legacy).write(token, 'new-session');
+      await store.write(token, 'new-session');
+      await current.delete(token);
 
-      expect(await current.read(token), 'new-session');
+      expect(await legacy.read(token), isNull);
+      expect(await store.read(token), isNull);
+    });
+
+    test('a failed write leaves the old copy in place', () async {
+      final store = MigratingSecureStore(ReadOnlyStore(), legacy);
+
+      await expectLater(store.write(token, 'new-session'), throwsException);
+
       expect(await legacy.read(token), 'old-session');
     });
 
@@ -153,22 +163,62 @@ void main() {
       expect(platformSecureStore(), isA<PlatformSecureStore>());
     });
 
-    test('release builds claim only the team-prefixed group', () {
-      final entitlements = File(
-        'macos/Runner/Release.entitlements',
-      ).readAsStringSync();
-      final groups = RegExp(
-        r'<key>com\.apple\.security\.application-groups</key>\s*<array>(.*?)</array>',
+    test('only the Developer ID build claims a keychain group', () {
+      String read(String name) =>
+          File('macos/Runner/$name.entitlements').readAsStringSync();
+      final developerId = read('DeveloperID');
+      final group = RegExp(
+        r'\t<!--(?:(?!-->).)*-->\n\t<key>keychain-access-groups</key>\s*<array>\s*<string>(.*?)</string>\s*</array>\n',
         dotAll: true,
-      ).firstMatch(entitlements)!.group(1)!;
+      ).firstMatch(developerId)!;
 
       expect(
-        RegExp(
-          r'<string>(.*?)</string>',
-        ).allMatches(groups).map((m) => m.group(1)).toList(),
-        ['96V66447C6.com.kapybara.kapynotes'],
+        group.group(1),
+        r'$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)',
       );
-      expect(entitlements, isNot(contains('keychain-access-groups')));
+      expect(developerId.replaceFirst(group.group(0)!, ''), read('Release'));
     });
+  });
+
+  group('the file keychain', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    const channel = MethodChannel('kapynotes/file_keychain');
+    final calls = <MethodCall>[];
+
+    setUp(() {
+      calls.clear();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return call.method == 'read' ? 'old-session' : null;
+          });
+    });
+
+    tearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+
+    test(
+      'is read and emptied through the app channel, never written',
+      () async {
+        const store = FileKeychainStore();
+
+        expect(await store.read(token), 'old-session');
+        await store.delete(token);
+
+        expect(calls.map((c) => [c.method, c.arguments]), [
+          [
+            'read',
+            {'service': 'flutter_secure_storage_service', 'account': token},
+          ],
+          [
+            'delete',
+            {'service': 'flutter_secure_storage_service', 'account': token},
+          ],
+        ]);
+        expect(() => store.write(token, 'x'), throwsUnsupportedError);
+      },
+    );
   });
 }

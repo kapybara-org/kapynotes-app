@@ -3,12 +3,22 @@
 <plist version="1.0">
 <dict>
 	<!-- Direct download from kapynotes.com. Signed with the Developer ID
-	     Application cert, then notarised and stapled by release.sh. -->
+	     Application cert and the profile release.sh installs, then
+	     notarised and stapled by release.sh. Manual, so the export needs
+	     no Apple account: the profile is what authorises the keychain
+	     access group in DeveloperID.entitlements. -->
 	<key>method</key>
 	<string>developer-id</string>
 	<key>teamID</key>
 	<string>96V66447C6</string>
 	<key>signingStyle</key>
-	<string>automatic</string>
+	<string>manual</string>
+	<key>signingCertificate</key>
+	<string>Developer ID Application</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>com.kapybara.kapynotes</key>
+		<string>Kapy Notes Developer ID</string>
+	</dict>
 </dict>
 </plist>

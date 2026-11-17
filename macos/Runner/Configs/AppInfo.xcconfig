@@ -17,3 +17,9 @@ PRODUCT_COPYRIGHT = Copyright © 2026 Kapybara. All rights reserved.
 // configurations inherit it; Xcode can then manage signing automatically for
 // both the App Store and Developer ID builds.
 DEVELOPMENT_TEAM = 96V66447C6
+
+// The Release entitlements and provisioning profile, here so that only the
+// Runner target sees them. release.sh's Developer ID archive overrides both:
+// its keychain access group needs the profile that authorises it.
+KAPY_ENTITLEMENTS = Release
+KAPY_PROFILE =

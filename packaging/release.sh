@@ -112,19 +112,39 @@ prepare_macos() {
 
 archive_macos() {
   local archive="$1"
+  shift
   rm -rf "$archive"
   xcodebuild archive \
     -workspace "$ROOT/macos/Runner.xcworkspace" \
     -scheme Runner \
     -configuration Release \
     -archivePath "$archive" \
-    -destination 'generic/platform=macOS'
+    -destination 'generic/platform=macOS' \
+    "$@"
+}
+
+# The Developer ID profile is what authorises the keychain access group in
+# DeveloperID.entitlements, and the archive and the export find it by name
+# among the installed profiles. A profile holds no secret, so it is committed. It has to be
+# regenerated when the Developer ID certificate is renewed.
+install_macos_profile() {
+  local profile="$ROOT/packaging/Kapy_Notes_Developer_ID.provisionprofile"
+  local dir="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+  local uuid
+  uuid="$(security cms -D -i "$profile" | plutil -extract UUID raw -o - -)"
+  mkdir -p "$dir"
+  cp "$profile" "$dir/$uuid.provisionprofile"
 }
 
 build_mac_direct() {
   info "macOS $VERSION ($BUILD_NUMBER) → Developer ID, direct download"
   prepare_macos
-  archive_macos "$ARCHIVES/kapy-developerid.xcarchive"
+  install_macos_profile
+  archive_macos "$ARCHIVES/kapy-developerid.xcarchive" \
+    CODE_SIGN_STYLE=Manual \
+    "CODE_SIGN_IDENTITY=Developer ID Application" \
+    KAPY_ENTITLEMENTS=DeveloperID \
+    "KAPY_PROFILE=Kapy Notes Developer ID"
   rm -rf "$OUT/developerid"
   xcodebuild -exportArchive \
     -archivePath "$ARCHIVES/kapy-developerid.xcarchive" \
