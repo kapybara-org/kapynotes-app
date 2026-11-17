@@ -147,9 +147,7 @@ class Sidebar extends StatelessWidget {
     this.engine,
     this.now = DateTime.now,
     this.cards = false,
-    this.onCardsChanged,
-    this.mediaFilter,
-    this.onMediaFilterChanged,
+    this.controls,
     this.pinnedOnly = false,
     this.onPinnedOnlyChanged,
   });
@@ -284,12 +282,11 @@ class Sidebar extends StatelessWidget {
 
   /// Whether the list beside the rail draws sticky cards rather than rows.
   final bool cards;
-  final ValueChanged<bool>? onCardsChanged;
 
-  /// The kinds of media the list beside the rail is narrowed to, every kind
-  /// when it is not. Null leaves the filter out, as the compact list does.
-  final Set<NoteMedia>? mediaFilter;
-  final ValueChanged<Set<NoteMedia>>? onMediaFilterChanged;
+  /// The notes filter and the list/cards switch, under the search beside the
+  /// rail: see [NotesListControls]. Null leaves them out, as the compact list
+  /// does.
+  final Widget? controls;
 
   /// Whether the list is showing every pinned note, after See all, rather
   /// than the four most recent over the rest.
@@ -299,9 +296,7 @@ class Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final mediaFilter = this.mediaFilter;
-    final onMediaFilterChanged = this.onMediaFilterChanged;
-    final onCardsChanged = this.onCardsChanged;
+    final controls = this.controls;
 
     // Solid, rather than the GlassSurface the toolbar and footer use: the
     // notes list stays put whatever the window is doing behind it. See
@@ -335,18 +330,10 @@ class Sidebar extends StatelessWidget {
               pinnedOnly: pinnedOnly,
               drawings: drawings,
             ),
-            if (_besideRail &&
-                mediaFilter != null &&
-                onMediaFilterChanged != null &&
-                onCardsChanged != null)
+            if (_besideRail && controls != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
-                child: NotesListControls(
-                  media: drawings ? null : mediaFilter,
-                  onMediaChanged: onMediaFilterChanged,
-                  cards: cards,
-                  onCardsChanged: onCardsChanged,
-                ),
+                child: controls,
               ),
             if (archiveMode && (notes.isNotEmpty || selecting))
               _ArchiveActions(
@@ -771,6 +758,36 @@ extension on Sidebar {
     );
     if (_specialMode) {
       section(notes);
+      if (hiddenMode) {
+        gap(12);
+        rows.add(
+          (_) => Padding(
+            key: const ValueKey('sidebar-hidden-locks-again'),
+            padding: const EdgeInsets.fromLTRB(20, 6, 18, 0),
+            child: Row(
+              children: [
+                KapyIcon(
+                  hiddenIcon,
+                  size: 13,
+                  strokeWidth: 1.8,
+                  color: palette.textTertiary,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    'Locks again when you leave Hidden',
+                    style: TextStyle(
+                      fontSize: AppTypeScale.small,
+                      height: 16 / AppTypeScale.small,
+                      color: palette.textTertiary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
     } else if (pinnedOnly) {
       heading(
         NotesListHeading(

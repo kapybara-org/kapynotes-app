@@ -10,8 +10,10 @@ import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/note_drawing.dart';
 import 'checklist_pie.dart';
+import 'compact_icon_button.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
+import 'sidebar.dart' show archiveIcon, hiddenIcon;
 
 /// What a note can hold besides words, in the order the media filter lists
 /// them.
@@ -1016,20 +1018,63 @@ class SeeAllLink extends StatelessWidget {
   }
 }
 
-/// The media filter and the list/cards switch, on one row under the search.
+/// Which notes the list shows: the notes filter's first group. Hidden Notes
+/// and the archive are not places on the rail but this choice, so they combine
+/// with the media ticks and keep the space the list is in.
+enum NotesShow {
+  all,
+  hidden,
+  archive;
+
+  String get label => switch (this) {
+    NotesShow.all => 'All notes',
+    NotesShow.hidden => 'Hidden',
+    NotesShow.archive => 'Archive',
+  };
+}
+
+/// The notes filter and the list/cards switch, on one row under the search,
+/// with the ✕ that clears the filter while anything is narrowed.
 class NotesListControls extends StatelessWidget {
   const NotesListControls({
     super.key,
+    required this.show,
+    this.offersShow = true,
+    required this.onShowChanged,
+    required this.hiddenListed,
+    this.hiddenShortcut,
+    required this.archivedCount,
     this.media,
     this.onMediaChanged,
+    required this.onClear,
     required this.cards,
     required this.onCardsChanged,
   });
 
-  /// Null leaves the filter out, as in Drawings, where every item is a
+  final NotesShow show;
+
+  /// Whether the menu starts with the choice of which notes. Shared leaves it
+  /// out: Hidden Notes are only ever the person's own, and the archive is
+  /// one place for every note filed away.
+  final bool offersShow;
+  final ValueChanged<NotesShow> onShowChanged;
+
+  /// Whether the menu offers Hidden: while the setting that lists it is on
+  /// and something is in it, and whenever the list is showing it.
+  final bool hiddenListed;
+
+  /// The chord that opens Hidden, named on its row.
+  final String? hiddenShortcut;
+  final int archivedCount;
+
+  /// The kinds the list is narrowed to, every kind when it is not. Null
+  /// leaves the media group out, as in Drawings, where every item is a
   /// drawing.
   final Set<NoteMedia>? media;
   final ValueChanged<Set<NoteMedia>>? onMediaChanged;
+
+  /// Back to every note: All notes, every kind ticked.
+  final VoidCallback onClear;
   final bool cards;
   final ValueChanged<bool> onCardsChanged;
 
@@ -1086,16 +1131,48 @@ class NotesListControls extends StatelessWidget {
     }
 
     final media = this.media;
-    final onMediaChanged = this.onMediaChanged;
+    final everything = media == null ? 'All drawings' : NotesShow.all.label;
+    final narrowed =
+        show != NotesShow.all ||
+        (media != null && media.length < NoteMedia.values.length);
     return Row(
       children: [
-        if (media != null && onMediaChanged != null) ...[
-          Flexible(
-            child: _MediaFilter(ticked: media, onChanged: onMediaChanged),
+        Expanded(
+          child: Row(
+            children: [
+              Flexible(
+                child: _NotesFilter(
+                  show: show,
+                  offersShow: offersShow,
+                  onShowChanged: onShowChanged,
+                  hiddenListed: hiddenListed,
+                  hiddenShortcut: hiddenShortcut,
+                  archivedCount: archivedCount,
+                  media: media,
+                  onMediaChanged: onMediaChanged,
+                  everything: everything,
+                  narrowed: narrowed,
+                ),
+              ),
+              if (narrowed) ...[
+                const SizedBox(width: 4),
+                CompactIconButton(
+                  key: const ValueKey('sidebar-filter-clear'),
+                  tooltip: 'Back to $everything',
+                  extent: 28,
+                  foregroundColor: palette.textSecondary,
+                  onPressed: onClear,
+                  icon: const KapyIcon(
+                    KapyIcons.closeRounded,
+                    size: 14,
+                    strokeWidth: 1.8,
+                  ),
+                ),
+              ],
+              const SizedBox(width: 4),
+            ],
           ),
-          const SizedBox(width: 4),
-        ],
-        const Spacer(),
+        ),
         Container(
           padding: const EdgeInsets.all(2),
           decoration: BoxDecoration(
@@ -1111,23 +1188,43 @@ class NotesListControls extends StatelessWidget {
   }
 }
 
-/// One "All media" dropdown: every kind ticked by default, and unticking
-/// kinds narrows the list to notes holding a kind still ticked.
-class _MediaFilter extends StatefulWidget {
-  const _MediaFilter({required this.ticked, required this.onChanged});
+/// The notes filter's button and menu: one choice of which notes, then the
+/// media ticks. Every kind is ticked by default, and unticking kinds narrows
+/// the list to notes holding a kind still ticked.
+class _NotesFilter extends StatefulWidget {
+  const _NotesFilter({
+    required this.show,
+    required this.offersShow,
+    required this.onShowChanged,
+    required this.hiddenListed,
+    required this.hiddenShortcut,
+    required this.archivedCount,
+    required this.media,
+    required this.onMediaChanged,
+    required this.everything,
+    required this.narrowed,
+  });
 
-  final Set<NoteMedia> ticked;
-  final ValueChanged<Set<NoteMedia>> onChanged;
+  final NotesShow show;
+  final bool offersShow;
+  final ValueChanged<NotesShow> onShowChanged;
+  final bool hiddenListed;
+  final String? hiddenShortcut;
+  final int archivedCount;
+  final Set<NoteMedia>? media;
+  final ValueChanged<Set<NoteMedia>>? onMediaChanged;
+
+  /// What the button says while nothing is narrowed.
+  final String everything;
+  final bool narrowed;
 
   @override
-  State<_MediaFilter> createState() => _MediaFilterState();
+  State<_NotesFilter> createState() => _NotesFilterState();
 }
 
-class _MediaFilterState extends State<_MediaFilter> {
+class _NotesFilterState extends State<_NotesFilter> {
   final _menu = OverlayPortalController();
   final _link = LayerLink();
-
-  bool get _all => widget.ticked.length == NoteMedia.values.length;
 
   void _toggle() => setState(_menu.isShowing ? _menu.hide : _menu.show);
 
@@ -1135,125 +1232,146 @@ class _MediaFilterState extends State<_MediaFilter> {
     if (_menu.isShowing) setState(_menu.hide);
   }
 
+  void _choose(NotesShow show) {
+    _close();
+    if (show != widget.show) widget.onShowChanged(show);
+  }
+
   /// A kind is unticked only while another stays ticked: a list narrowed to
   /// nothing would look like a library that had lost its notes.
   void _tick(NoteMedia? media) {
-    final ticked = widget.ticked;
+    final ticked = widget.media!;
+    final onChanged = widget.onMediaChanged!;
     if (media == null) {
-      if (!_all) widget.onChanged(NoteMedia.values.toSet());
+      if (ticked.length < NoteMedia.values.length) {
+        onChanged(NoteMedia.values.toSet());
+      }
       return;
     }
     if (!ticked.contains(media)) {
-      widget.onChanged({...ticked, media});
+      onChanged({...ticked, media});
     } else if (ticked.length > 1) {
-      widget.onChanged({...ticked}..remove(media));
+      onChanged({...ticked}..remove(media));
     }
   }
 
-  Widget _button({
-    required bool open,
-    required bool narrowed,
-    required String label,
-    required Color ink,
-    required bool roomy,
-  }) {
-    final palette = context.palette;
-    return Semantics(
-      button: true,
-      expanded: open,
-      label: 'Media filter, $label',
-      excludeSemantics: true,
-      onTap: _toggle,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          key: const ValueKey('sidebar-media-filter'),
-          onTap: _toggle,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            height: 28,
-            padding: roomy
-                ? const EdgeInsets.only(left: 9, right: 8)
-                : const EdgeInsets.symmetric(horizontal: 6),
-            decoration: BoxDecoration(
-              color: narrowed
-                  ? palette.tonalBackground
-                  : palette.controlBackground,
-              border: Border.all(
-                color: open
-                    ? palette.selectedBorder
-                    : narrowed
-                    ? palette.tonalKeyBackground
-                    : palette.controlBorder,
-              ),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                KapyIcon(
-                  KapyIcons.filterRounded,
-                  size: 14,
-                  strokeWidth: 1.8,
-                  color: narrowed ? ink : palette.textSecondary,
-                ),
-                if (roomy) ...[
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _figtree(
-                        AppTypeScale.body,
-                        16,
-                        FontWeight.w600,
-                        ink,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  KapyIcon(
-                    KapyIcons.chevronDownRounded,
-                    size: 13,
-                    strokeWidth: 2,
-                    color: narrowed
-                        ? palette.tonalKeyText
-                        : palette.textTertiary,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  /// What the button says: one narrowed group names itself ("Archive",
+  /// "Voice, Image"); combined, each gives its first choice and how many
+  /// more ("Archive · Voice +1"). Where that runs out of [room], the choice
+  /// of notes goes, since the title over the list already names it.
+  String _label(TextStyle style, double room) {
+    final show = widget.show == NotesShow.all ? null : widget.show.label;
+    final ticked = [
+      for (final media in NoteMedia.values)
+        if (widget.media?.contains(media) ?? false) media.label,
+    ];
+    if (widget.media == null || ticked.length == NoteMedia.values.length) {
+      return show ?? widget.everything;
+    }
+    if (show == null) return ticked.join(', ');
+    final head = ticked.first;
+    final more = ticked.length - 1;
+    final kinds = more == 0 ? head : '$head +$more';
+    final both = '$show · $kinds';
+    final painter = TextPainter(
+      text: TextSpan(text: both, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout(maxWidth: room);
+    final fits = !painter.didExceedMaxLines;
+    painter.dispose();
+    return fits ? both : kinds;
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final open = _menu.isShowing;
-    final narrowed = !_all;
-    final label = narrowed
-        ? [
-            for (final media in NoteMedia.values)
-              if (widget.ticked.contains(media)) media.label,
-          ].join(', ')
-        : 'All media';
-    final ink = narrowed ? palette.tonalForeground : palette.textSubheading;
+    final narrowed = widget.narrowed;
+    final style = _figtree(
+      AppTypeScale.body,
+      16,
+      FontWeight.w600,
+      narrowed ? palette.tonalForeground : palette.textSubheading,
+    );
     final button = LayoutBuilder(
       // A list dragged to its narrowest keeps the filter's icon, which still
       // opens the menu and still turns sage when the list is narrowed.
-      builder: (context, constraints) => constraints.maxWidth < 28
-          ? const SizedBox.shrink()
-          : _button(
-              open: open,
-              narrowed: narrowed,
-              label: label,
-              ink: ink,
-              roomy: constraints.maxWidth >= 72,
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 28) return const SizedBox.shrink();
+        final roomy = constraints.maxWidth >= 72;
+        // The padding, border, filter icon and chevron around the label.
+        const chrome = 9 + 8 + 2 + 14 + 6 + 6 + 13;
+        final label = roomy
+            ? _label(style, constraints.maxWidth - chrome)
+            : widget.everything;
+        return Semantics(
+          button: true,
+          expanded: open,
+          label: 'Notes filter, $label',
+          excludeSemantics: true,
+          onTap: _toggle,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              key: const ValueKey('sidebar-notes-filter'),
+              onTap: _toggle,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                height: 28,
+                padding: roomy
+                    ? const EdgeInsets.only(left: 9, right: 8)
+                    : const EdgeInsets.symmetric(horizontal: 6),
+                decoration: BoxDecoration(
+                  color: narrowed
+                      ? palette.tonalBackground
+                      : palette.controlBackground,
+                  border: Border.all(
+                    color: open
+                        ? palette.selectedBorder
+                        : narrowed
+                        ? palette.tonalKeyBackground
+                        : palette.controlBorder,
+                  ),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    KapyIcon(
+                      KapyIcons.filterRounded,
+                      size: 14,
+                      strokeWidth: 1.8,
+                      color: narrowed ? style.color : palette.textSecondary,
+                    ),
+                    if (roomy) ...[
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: style,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      KapyIcon(
+                        KapyIcons.chevronDownRounded,
+                        size: 13,
+                        strokeWidth: 2,
+                        color: narrowed
+                            ? palette.tonalKeyText
+                            : palette.textTertiary,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
+          ),
+        );
+      },
     );
 
     return TapRegion(
@@ -1277,7 +1395,17 @@ class _MediaFilterState extends State<_MediaFilter> {
                   },
                   child: Focus(
                     autofocus: true,
-                    child: _MediaMenu(ticked: widget.ticked, onTick: _tick),
+                    child: _FilterMenu(
+                      show: widget.show,
+                      offersShow: widget.offersShow,
+                      onShow: _choose,
+                      hiddenListed: widget.hiddenListed,
+                      hiddenShortcut: widget.hiddenShortcut,
+                      archivedCount: widget.archivedCount,
+                      everything: widget.everything,
+                      media: widget.media,
+                      onTick: _tick,
+                    ),
                   ),
                 ),
               ),
@@ -1290,10 +1418,27 @@ class _MediaFilterState extends State<_MediaFilter> {
   }
 }
 
-class _MediaMenu extends StatelessWidget {
-  const _MediaMenu({required this.ticked, required this.onTick});
+class _FilterMenu extends StatelessWidget {
+  const _FilterMenu({
+    required this.show,
+    required this.offersShow,
+    required this.onShow,
+    required this.hiddenListed,
+    required this.hiddenShortcut,
+    required this.archivedCount,
+    required this.everything,
+    required this.media,
+    required this.onTick,
+  });
 
-  final Set<NoteMedia> ticked;
+  final NotesShow show;
+  final bool offersShow;
+  final ValueChanged<NotesShow> onShow;
+  final bool hiddenListed;
+  final String? hiddenShortcut;
+  final int archivedCount;
+  final String everything;
+  final Set<NoteMedia>? media;
 
   /// Null for All media.
   final ValueChanged<NoteMedia?> onTick;
@@ -1301,9 +1446,21 @@ class _MediaMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final media = this.media;
+    final hiddenShortcut = this.hiddenShortcut;
+    Widget choice(NotesShow choice, KapyIconData icon, {Widget? trailing}) =>
+        _ShowMenuRow(
+          key: ValueKey('notes-filter-${choice.name}'),
+          label: choice == NotesShow.all ? everything : choice.label,
+          icon: icon,
+          chosen: show == choice,
+          trailing: trailing,
+          onTap: () => onShow(choice),
+        );
+
     return Container(
-      key: const ValueKey('media-filter-menu'),
-      width: 200,
+      key: const ValueKey('notes-filter-menu'),
+      width: 232,
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: palette.controlBackground,
@@ -1322,28 +1479,163 @@ class _MediaMenu extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _MediaMenuRow(
-            key: const ValueKey('media-filter-all'),
-            label: 'All media',
-            ticked: ticked.length == NoteMedia.values.length,
-            onTap: () => onTick(null),
-          ),
-          Container(
-            height: 1,
-            margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            color: palette.separator,
-          ),
-          for (final media in NoteMedia.values) ...[
-            if (media != NoteMedia.values.first) const SizedBox(height: 1),
-            _MediaMenuRow(
-              key: ValueKey('media-filter-${media.name}'),
-              label: media.label,
-              icon: media.icon,
-              ticked: ticked.contains(media),
-              onTap: () => onTick(media),
+          if (offersShow) ...[
+            choice(
+              NotesShow.all,
+              media == null ? KapyIcons.penRounded : KapyIcons.noteOutlined,
+            ),
+            if (hiddenListed) ...[
+              const SizedBox(height: 1),
+              choice(
+                NotesShow.hidden,
+                hiddenIcon,
+                trailing: hiddenShortcut == null
+                    ? null
+                    : Text(
+                        hiddenShortcut,
+                        style: TextStyle(
+                          fontFamily: AppFonts.mono,
+                          fontFamilyFallback: AppFonts.monoFallback,
+                          fontSize: 11,
+                          height: 14 / 11,
+                          color: palette.textTertiary,
+                        ),
+                      ),
+              ),
+            ],
+            const SizedBox(height: 1),
+            choice(
+              NotesShow.archive,
+              archiveIcon,
+              trailing: Text(
+                '$archivedCount',
+                style: _figtree(
+                  AppTypeScale.small,
+                  16,
+                  FontWeight.w400,
+                  palette.textTertiary,
+                ),
+              ),
             ),
           ],
+          if (media != null) ...[
+            if (offersShow)
+              Container(
+                height: 1,
+                margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                color: palette.separator,
+              ),
+            _MediaMenuRow(
+              key: const ValueKey('media-filter-all'),
+              label: 'All media',
+              ticked: media.length == NoteMedia.values.length,
+              onTap: () => onTick(null),
+            ),
+            for (final kind in NoteMedia.values) ...[
+              const SizedBox(height: 1),
+              _MediaMenuRow(
+                key: ValueKey('media-filter-${kind.name}'),
+                label: kind.label,
+                icon: kind.icon,
+                ticked: media.contains(kind),
+                onTap: () => onTick(kind),
+              ),
+            ],
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// One of the menu's single choice of which notes: the chosen one lit, with
+/// a tick where the others show their shortcut or count.
+class _ShowMenuRow extends StatefulWidget {
+  const _ShowMenuRow({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.chosen,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final String label;
+  final KapyIconData icon;
+  final bool chosen;
+  final VoidCallback onTap;
+  final Widget? trailing;
+
+  @override
+  State<_ShowMenuRow> createState() => _ShowMenuRowState();
+}
+
+class _ShowMenuRowState extends State<_ShowMenuRow> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final chosen = widget.chosen;
+    final trailing = chosen
+        ? KapyIcon(
+            KapyIcons.checkRounded,
+            size: 14,
+            strokeWidth: 1.8,
+            color: palette.accentText,
+          )
+        : widget.trailing;
+    return Semantics(
+      selected: chosen,
+      button: true,
+      label: widget.label,
+      excludeSemantics: true,
+      onTap: widget.onTap,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovering = true),
+        onExit: (_) => setState(() => _hovering = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            height: 30,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: chosen
+                  ? palette.separator
+                  : _hovering
+                  ? palette.hover
+                  : null,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: Row(
+              children: [
+                KapyIcon(
+                  widget.icon,
+                  size: 15,
+                  strokeWidth: 1.8,
+                  color: chosen ? palette.textPrimary : palette.textSecondary,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _figtree(
+                      AppTypeScale.control,
+                      16,
+                      chosen ? FontWeight.w600 : FontWeight.w500,
+                      chosen ? palette.textPrimary : palette.textSubheading,
+                    ),
+                  ),
+                ),
+                if (trailing != null) ...[const SizedBox(width: 9), trailing],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

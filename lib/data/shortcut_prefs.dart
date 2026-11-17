@@ -54,7 +54,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.focusSecondPane => 'Focus pane 2',
     ShortcutAction.focusThirdPane => 'Focus pane 3',
     ShortcutAction.toggleSidebar => 'Toggle notes list',
-    ShortcutAction.toggleHiddenFolder => 'Toggle Hidden Notes folder',
+    ShortcutAction.toggleHiddenFolder => 'Show Hidden Notes',
     ShortcutAction.toggleResults => 'Toggle results',
     ShortcutAction.toggleAlwaysOnTop => 'Keep window on top',
     ShortcutAction.deleteNote => 'Archive current note',
@@ -95,7 +95,8 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.focusThirdPane => 'Move the keyboard to the third pane',
     ShortcutAction.toggleSidebar => 'Show or hide the notes list on the left',
     ShortcutAction.toggleHiddenFolder =>
-      'Reveal or hide Hidden Notes in the notes list',
+      'Open Notes with the Hidden filter on, asking for the PIN or '
+          'system lock first',
     ShortcutAction.toggleResults =>
       'Show or hide the results at the ends of calculating lines',
     ShortcutAction.toggleAlwaysOnTop =>
