@@ -4,93 +4,53 @@ import 'package:flutter/services.dart';
 import '../../calc/engine.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
-import 'line_metrics.dart';
 
-/// The fixed column of live results a phone keeps beside its text, one chip
-/// per calculated line. Everywhere else results sit at the ends of their
-/// lines; see `InlineResults`.
+/// The column a phone keeps beside its text for live results. Each result
+/// is part of its own line, which reaches across this column and puts the
+/// result at its right, [rightInset] in; everywhere else results sit at the
+/// ends of their lines.
 class ResultsGutter extends StatelessWidget {
-  const ResultsGutter({
-    super.key,
-    required this.results,
-    required this.offsets,
-    required this.scrollOffset,
-    required this.viewportHeight,
-    required this.padding,
-    required this.width,
-  });
+  const ResultsGutter({super.key});
 
-  final Map<int, LineResult> results;
-  final LineOffsets offsets;
-  final double scrollOffset;
-  final double viewportHeight;
-  final EdgeInsets padding;
-  final double width;
-
-  static const double _leftInset = 8;
-  static const double _rightInset = 16;
+  /// The room a result keeps from the column's left and right edges.
+  static const double leftInset = 8;
+  static const double rightInset = 16;
 
   @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final visibleHeight = viewportHeight - padding.vertical;
-    final columnWidth = width - _leftInset - _rightInset;
-
-    final chips = <Widget>[];
-    for (final entry in results.entries) {
-      final index = entry.key;
-      if (index >= offsets.tops.length) continue;
-
-      final top = offsets.tops[index] - scrollOffset;
-      // Only build what can be seen; a long note stays cheap to scroll.
-      if (top + offsets.lineHeight < -offsets.lineHeight ||
-          top > visibleHeight + offsets.lineHeight) {
-        continue;
-      }
-
-      chips.add(
-        Positioned(
-          top: top,
-          right: 0,
-          // No left bound: a hovered chip grows leftward, over the text.
-          height: offsets.lineHeight,
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: ResultChip(result: entry.value, collapsedWidth: columnWidth),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      color: palette.gutterColor,
-      padding: EdgeInsets.only(
-        top: padding.top,
-        bottom: padding.bottom,
-        right: _rightInset,
-        left: _leftInset,
-      ),
-      // Clip vertically so chips never spill into the fixed padding as the
-      // note scrolls, but leave the left edge open so an expanded chip can
-      // reach across the text.
-      child: ClipRect(
-        clipper: const VerticalClipper(),
-        clipBehavior: Clip.hardEdge,
-        child: Stack(clipBehavior: Clip.none, children: chips),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      ColoredBox(color: context.palette.gutterColor);
 }
 
-/// Clips top and bottom only.
-class VerticalClipper extends CustomClipper<Rect> {
-  const VerticalClipper();
+/// The faint rule a line runs from where its writing stops to its result:
+/// square dots a dot apart, across the middle of the row.
+class ResultLeader extends StatelessWidget {
+  const ResultLeader({super.key, required this.color});
+
+  final Color color;
 
   @override
-  Rect getClip(Size size) => Rect.fromLTRB(-4000, 0, size.width, size.height);
+  Widget build(BuildContext context) =>
+      IgnorePointer(child: CustomPaint(painter: _LeaderPainter(color)));
+}
+
+class _LeaderPainter extends CustomPainter {
+  const _LeaderPainter(this.color);
+
+  final Color color;
+
+  static const double _dot = 1;
 
   @override
-  bool shouldReclip(covariant CustomClipper<Rect> oldClipper) => false;
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final top = (size.height - _dot) / 2;
+    for (var x = 0.0; x + _dot <= size.width; x += _dot * 2) {
+      canvas.drawRect(Rect.fromLTWH(x, top, _dot, _dot), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LeaderPainter oldDelegate) => oldDelegate.color != color;
 }
 
 /// How a result is drawn.

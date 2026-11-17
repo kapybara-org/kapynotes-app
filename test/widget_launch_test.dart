@@ -14,9 +14,11 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 
 import 'app_test.dart' show MemoryStore;
 import 'quick_capture_test.dart' show stubLaunchIntent;
+import 'support/note_driver.dart';
 import 'test_fonts.dart';
 
 late MemoryStore store;
@@ -128,8 +130,8 @@ void main() {
 
     await pumpLaunch(tester, action: 'continueWriting');
 
-    final editor = tester.widget<TextField>(find.byType(TextField));
-    expect(editor.controller!.text, startsWith('Widget inbox'));
+    final editor = tester.widget<NoteField>(noteField);
+    expect(editor.controller.text, startsWith('Widget inbox'));
   });
 
   testWidgets('an ordinary launch opens no picker', (tester) async {

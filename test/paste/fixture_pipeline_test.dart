@@ -19,6 +19,9 @@ import 'package:kapy_notes/paste/paste_converter.dart';
 import 'package:kapy_notes/paste/paste_tree.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
+
+import '../support/note_driver.dart';
 
 /// Every captured clipboard in test/fixtures/paste goes through the whole
 /// paste pipeline a markdown note uses, and comes out as the committed
@@ -207,8 +210,10 @@ _paste(
   );
   await tester.pump();
   final note = tester
-      .state<EditableTextState>(find.byType(EditableText))
-      .textEditingValue
+      .state<NoteFieldState>(noteField)
+      .widget
+      .controller
+      .value
       .text;
   await tester.pumpWidget(const SizedBox());
   await tester.pump(const Duration(seconds: 3));
