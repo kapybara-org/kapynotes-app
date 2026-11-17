@@ -24,60 +24,83 @@ class SettingsMetrics {
 
   static EdgeInsets get padding => _touch
       ? const EdgeInsets.fromLTRB(14, 12, 13, 12)
-      : const EdgeInsets.fromLTRB(11, 8, 10, 8);
+      : const EdgeInsets.symmetric(horizontal: 14, vertical: 10);
 
   /// A radio sits closer to its own edge than a switch does.
   static EdgeInsets get choicePadding => _touch
       ? const EdgeInsets.fromLTRB(14, 12, 14, 12)
-      : const EdgeInsets.fromLTRB(11, 8, 11, 8);
-  static double get iconSize => _touch ? 19 : 16;
-  static double get iconSlot => _touch ? 30 : 25;
-  static double get gap => _touch ? 11 : 9;
+      : const EdgeInsets.symmetric(horizontal: 14, vertical: 10);
+
+  /// The least a row is tall with a pointer: a title and its line of
+  /// description, with room around them, so a pane of rows reads as a list
+  /// of settings rather than a form.
+  static double get minRowHeight => _touch ? 0 : 54;
+  static double get iconSize => _touch ? 19 : 17;
+  static double get iconSlot => _touch ? 30 : 17;
+  static double get iconStroke => _touch ? 1.5 : 1.7;
+  static double get gap => _touch ? 11 : 12;
   static double get titleSize => _touch
       ? 14.5
       : AppPlatform.isWindows
       ? AppTypeScale.control
-      : 12.5;
+      : 13.5;
   static double get subtitleSize => _touch
       ? 12.25
       : AppPlatform.isWindows
-      ? AppTypeScale.caption
-      : 10.75;
-  static double get sectionLabelSize =>
-      AppPlatform.isWindows ? AppTypeScale.micro : 10.5;
+      ? 12.5
+      : 12;
+  static double get sectionLabelSize => _touch ? 10.5 : 14;
   static double get noteSize =>
       AppPlatform.isWindows ? AppTypeScale.caption : 11;
-  static double get buttonLabelSize =>
-      AppPlatform.isWindows ? AppTypeScale.small : 12;
-  static FontWeight get titleWeight =>
-      AppPlatform.isWindows ? FontWeight.w500 : _mediumWeight;
-  static double get chevronSize => _touch ? 21 : 18;
+  static double get buttonLabelSize => _touch ? 12 : 12.5;
+  static FontWeight get titleWeight => _touch ? _mediumWeight : FontWeight.w600;
+  static double get chevronSize => _touch ? 21 : 15;
+
+  /// Between one group and the heading of the next.
+  static double get groupGap => _touch ? 18 : 20;
 
   /// Lines the dividers up under the copy rather than under the icons.
-  static double get dividerIndent => _touch ? 58 : 48;
+  static double get dividerIndent => _touch ? 58 : 43;
 }
 
-/// The small capitals over a group, naming what the rows in it are about.
+/// The heading over a group, naming what the rows in it are about: a small
+/// handwritten heading with a pointer, small capitals on a phone.
 class SettingsLabel extends StatelessWidget {
   const SettingsLabel(this.text, {super.key});
 
+  /// In sentence case. The phone sets it in capitals.
   final String text;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(left: 3, bottom: 7),
-    child: Text(
-      text,
-      style: TextStyle(
-        fontSize: SettingsMetrics.sectionLabelSize,
-        fontWeight: AppPlatform.isWindows ? FontWeight.w600 : _mediumWeight,
-        letterSpacing: 0.65,
-        color: AppPlatform.isWindows
-            ? context.palette.textSecondary
-            : context.palette.textTertiary,
+  Widget build(BuildContext context) {
+    if (AppPlatform.hasPointer) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 2, bottom: 8),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontFamily: 'Shantell Sans',
+            fontSize: SettingsMetrics.sectionLabelSize,
+            fontWeight: FontWeight.w600,
+            height: 18 / 14,
+            color: context.palette.textSubheading,
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(left: 3, bottom: 7),
+      child: Text(
+        text.toUpperCase(),
+        style: TextStyle(
+          fontSize: SettingsMetrics.sectionLabelSize,
+          fontWeight: _mediumWeight,
+          letterSpacing: 0.65,
+          color: context.palette.textTertiary,
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// A card of rows with hairlines between them.
@@ -89,21 +112,30 @@ class SettingsGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return KapyControlSurface(
-      child: Column(
-        children: [
-          for (var index = 0; index < children.length; index++) ...[
-            if (index > 0)
-              Divider(
-                height: 0.5,
-                thickness: 0.5,
-                indent: SettingsMetrics.dividerIndent,
-                color: palette.separator,
-              ),
-            children[index],
-          ],
+    final pointer = AppPlatform.hasPointer;
+    final rows = Column(
+      children: [
+        for (var index = 0; index < children.length; index++) ...[
+          if (index > 0)
+            Divider(
+              height: pointer ? 1 : 0.5,
+              thickness: pointer ? 1 : 0.5,
+              indent: SettingsMetrics.dividerIndent,
+              color: palette.separator,
+            ),
+          children[index],
         ],
-      ),
+      ],
+    );
+    if (!pointer) return KapyControlSurface(child: rows);
+    // The outline is drawn inside the card's box, as the design measures it,
+    // so the rows sit a hairline in from it.
+    return KapyControlSurface(
+      radius: AppRadii.surface,
+      padding: const EdgeInsets.all(1),
+      color: palette.cardBackground,
+      borderColor: palette.controlBorder,
+      child: rows,
     );
   }
 }
@@ -163,6 +195,7 @@ class SettingsRowCopy extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final pointer = AppPlatform.hasPointer;
     final subtitle = this.subtitle;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,6 +205,7 @@ class SettingsRowCopy extends StatelessWidget {
           style: TextStyle(
             fontSize: SettingsMetrics.titleSize,
             fontWeight: SettingsMetrics.titleWeight,
+            height: pointer ? 18 / SettingsMetrics.titleSize : null,
             color: titleColor ?? palette.textPrimary,
           ),
         ),
@@ -184,8 +218,8 @@ class SettingsRowCopy extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: SettingsMetrics.subtitleSize,
-              height: AppPlatform.isWindows ? 1.25 : null,
-              color: palette.textSecondary,
+              height: pointer ? 16 / SettingsMetrics.subtitleSize : null,
+              color: pointer ? palette.textDescription : palette.textSecondary,
             ),
           ),
         ],
@@ -224,7 +258,8 @@ class SettingsRow extends StatelessWidget {
     final danger = Theme.of(context).colorScheme.error;
     final icon = this.icon;
     final trailing = this.trailing;
-    final row = Padding(
+    final row = Container(
+      constraints: BoxConstraints(minHeight: SettingsMetrics.minRowHeight),
       padding: SettingsMetrics.padding,
       child: Row(
         children: [
@@ -234,6 +269,7 @@ class SettingsRow extends StatelessWidget {
               child: KapyIcon(
                 icon,
                 size: SettingsMetrics.iconSize,
+                strokeWidth: SettingsMetrics.iconStroke,
                 color: destructive ? danger : palette.textSecondary,
               ),
             ),
@@ -283,6 +319,7 @@ class SettingsNavigationRow extends StatelessWidget {
     trailing: KapyIcon(
       KapyIcons.chevronRightRounded,
       size: SettingsMetrics.chevronSize,
+      strokeWidth: AppPlatform.hasPointer ? 1.8 : 1.5,
       color: context.palette.textTertiary,
     ),
   );
@@ -338,25 +375,35 @@ class SettingsRowButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final scheme = Theme.of(context).colorScheme;
+    final pointer = AppPlatform.hasPointer;
     return TextButton(
       onPressed: onPressed,
       style: TextButton.styleFrom(
-        minimumSize: const Size(0, 30),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        minimumSize: Size(0, pointer ? 28 : 30),
+        padding: EdgeInsets.symmetric(horizontal: pointer ? 11 : 12),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         backgroundColor: prominent ? scheme.primary : palette.controlBackground,
-        foregroundColor: prominent ? scheme.onPrimary : palette.textSecondary,
+        foregroundColor: prominent
+            ? scheme.onPrimary
+            : pointer
+            ? palette.textSubheading
+            : palette.textSecondary,
         disabledForegroundColor: palette.textTertiary,
         side: prominent
             ? null
+            : pointer
+            ? BorderSide(color: palette.separator)
             : BorderSide(color: palette.controlBorder, width: 0.5),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(pointer ? AppRadii.control : 8),
+        ),
       ),
       child: Text(
         label,
         style: TextStyle(
           fontSize: SettingsMetrics.buttonLabelSize,
           fontWeight: SettingsMetrics.titleWeight,
+          height: pointer ? 16 / 12.5 : null,
         ),
       ),
     );
@@ -374,20 +421,27 @@ class SettingsSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final scheme = Theme.of(context).colorScheme;
+    final pointer = AppPlatform.hasPointer;
     return AnimatedContainer(
       key: const ValueKey('compact-switch-indicator'),
       duration: const Duration(milliseconds: 140),
       curve: Curves.easeOutCubic,
-      width: AppPlatform.hasPointer ? 34 : 44,
-      height: AppPlatform.hasPointer ? 18 : 25,
+      width: pointer ? 34 : 44,
+      height: pointer ? 20 : 25,
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
-        color: value ? scheme.primary : palette.controlBackground,
+        color: value
+            ? scheme.primary
+            : pointer
+            ? palette.switchTrackOff
+            : palette.controlBackground,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: value ? Colors.transparent : palette.controlBorder,
-          width: 0.5,
-        ),
+        border: pointer
+            ? null
+            : Border.all(
+                color: value ? Colors.transparent : palette.controlBorder,
+                width: 0.5,
+              ),
       ),
       child: AnimatedAlign(
         duration: const Duration(milliseconds: 140),
@@ -395,10 +449,21 @@ class SettingsSwitch extends StatelessWidget {
         alignment: value ? Alignment.centerRight : Alignment.centerLeft,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: value ? scheme.onPrimary : palette.textTertiary,
+            color: value
+                ? (pointer ? palette.textPrimary : scheme.onPrimary)
+                : palette.textTertiary,
             shape: BoxShape.circle,
+            boxShadow: pointer && value
+                ? const [
+                    BoxShadow(
+                      color: Color(0x40000000),
+                      offset: Offset(0, 1),
+                      blurRadius: 2,
+                    ),
+                  ]
+                : null,
           ),
-          child: SizedBox.square(dimension: AppPlatform.hasPointer ? 14 : 21),
+          child: SizedBox.square(dimension: pointer ? 16 : 21),
         ),
       ),
     );

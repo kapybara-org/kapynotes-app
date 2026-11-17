@@ -1156,8 +1156,8 @@ class _ReadyState extends State<_Ready> {
             onTap: () => unawaited(showProSheet(context, billing: billing)),
           ),
         ],
-        const SizedBox(height: 18),
-        const SettingsLabel('ACCOUNT'),
+        SizedBox(height: SettingsMetrics.groupGap),
+        const SettingsLabel('Account'),
         SettingsGroup(
           children: [
             SettingsRow(
@@ -1303,7 +1303,7 @@ class DeleteAccountSettings extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SettingsLabel('ACCOUNT DELETION'),
+          const SettingsLabel('Account deletion'),
           SettingsGroup(
             children: [
               SettingsRow(

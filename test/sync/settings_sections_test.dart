@@ -195,7 +195,7 @@ void main() {
     );
 
     // Both panes are in there, controls and all — not just the heading.
-    expect(find.text('SHARING'), findsOneWidget);
+    expect(find.text('Sharing'), findsOneWidget);
     expect(find.byKey(const ValueKey('join-code')), findsOneWidget);
     expect(find.text('Sync now'), findsOneWidget);
 

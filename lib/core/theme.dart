@@ -90,6 +90,22 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// that counts invitations.
   final Color clay;
 
+  /// The type ladder under the primary ink: a window or dialog's own title,
+  /// the heading over a group, the label of a row that is not selected, and
+  /// the line that describes what a row does.
+  final Color textHeading;
+  final Color textSubheading;
+  final Color textMuted;
+  final Color textDescription;
+
+  /// A card of rows inside a dialog, a step off the pane it sits on, and the
+  /// edge between a dialog's navigation and its pane.
+  final Color cardBackground;
+  final Color paneEdge;
+
+  /// A switch that is off: the track reads as a slot, not as a control.
+  final Color switchTrackOff;
+
   /// How much of the desktop the window's chrome lets through: a multiplier on
   /// the alpha of every [GlassSurface]. 1 is fully opaque.
   ///
@@ -207,6 +223,13 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.totalPillBackground,
     required this.totalPillText,
     required this.clay,
+    required this.textHeading,
+    required this.textSubheading,
+    required this.textMuted,
+    required this.textDescription,
+    required this.cardBackground,
+    required this.paneEdge,
+    required this.switchTrackOff,
     this.translucency = 1,
     this.paperTranslucency = 1,
   });
@@ -262,6 +285,13 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? totalPillBackground,
     Color? totalPillText,
     Color? clay,
+    Color? textHeading,
+    Color? textSubheading,
+    Color? textMuted,
+    Color? textDescription,
+    Color? cardBackground,
+    Color? paneEdge,
+    Color? switchTrackOff,
     double? translucency,
     double? paperTranslucency,
   }) => CalcPalette(
@@ -314,6 +344,13 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     totalPillBackground: totalPillBackground ?? this.totalPillBackground,
     totalPillText: totalPillText ?? this.totalPillText,
     clay: clay ?? this.clay,
+    textHeading: textHeading ?? this.textHeading,
+    textSubheading: textSubheading ?? this.textSubheading,
+    textMuted: textMuted ?? this.textMuted,
+    textDescription: textDescription ?? this.textDescription,
+    cardBackground: cardBackground ?? this.cardBackground,
+    paneEdge: paneEdge ?? this.paneEdge,
+    switchTrackOff: switchTrackOff ?? this.switchTrackOff,
     translucency: translucency ?? this.translucency,
     paperTranslucency: paperTranslucency ?? this.paperTranslucency,
   );
@@ -375,6 +412,13 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       totalPillBackground: mix(totalPillBackground, other.totalPillBackground),
       totalPillText: mix(totalPillText, other.totalPillText),
       clay: mix(clay, other.clay),
+      textHeading: mix(textHeading, other.textHeading),
+      textSubheading: mix(textSubheading, other.textSubheading),
+      textMuted: mix(textMuted, other.textMuted),
+      textDescription: mix(textDescription, other.textDescription),
+      cardBackground: mix(cardBackground, other.cardBackground),
+      paneEdge: mix(paneEdge, other.paneEdge),
+      switchTrackOff: mix(switchTrackOff, other.switchTrackOff),
       translucency: translucency + (other.translucency - translucency) * t,
       paperTranslucency:
           paperTranslucency + (other.paperTranslucency - paperTranslucency) * t,
@@ -949,6 +993,13 @@ class KapyTheme {
     totalPillBackground: Color(0xFF7D9468),
     totalPillText: Color(0xFF1C1A17),
     clay: Color(0xFFCF7A57),
+    textHeading: Color(0xFFDAD4C7),
+    textSubheading: Color(0xFFD3CCBE),
+    textMuted: Color(0xFFB2AA9A),
+    textDescription: Color(0xFF9C9485),
+    cardBackground: Color(0xFF292621),
+    paneEdge: Color(0xFF2C2924),
+    switchTrackOff: Color(0xFF3A362F),
   );
 
   /// A cool, clean paper palette rather than the previous warm stationery.
@@ -1004,6 +1055,13 @@ class KapyTheme {
     totalPillBackground: Color(0xFF56703C),
     totalPillText: Color(0xFFFCFAF4),
     clay: Color(0xFFD0663B),
+    textHeading: Color(0xFF292B30),
+    textSubheading: Color(0xFF3F4248),
+    textMuted: Color(0xFF55585E),
+    textDescription: Color(0xFF6B6D73),
+    cardBackground: Color(0xFFF2F1ED),
+    paneEdge: Color(0xFFE2E0DA),
+    switchTrackOff: Color(0xFFDAD8D2),
   );
 
   /// Transparency mode.
@@ -1208,6 +1266,7 @@ class KapyTheme {
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: palette.surfaceBackground,
+        barrierColor: palette.scrim,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         shadowColor: Colors.transparent,

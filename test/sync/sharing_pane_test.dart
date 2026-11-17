@@ -67,7 +67,7 @@ void main() {
     await tester.pumpWidget(harness(app.account));
     await tester.pumpAndSettle();
 
-    expect(find.text('SHARING'), findsOneWidget);
+    expect(find.text('Sharing'), findsOneWidget);
     expect(find.textContaining('Sign in'), findsOneWidget);
     expect(find.byKey(const ValueKey('join-code')), findsNothing);
     app.account.dispose();

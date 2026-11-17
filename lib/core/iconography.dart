@@ -576,4 +576,72 @@ class KapyIcons {
     0xE086,
     HugeIcons.strokeRoundedZoomInArea,
   );
+
+  // The settings dialog's rail and General pane, as Riverbank draws them.
+  static const paintBoardOutlined = KapyIconData(
+    0xE0C0,
+    HugeIcons.strokeRoundedPaintBoard,
+  );
+  static const commandOutlined = KapyIconData(
+    0xE0C1,
+    HugeIcons.strokeRoundedCommand,
+  );
+  static const refreshOutlined = KapyIconData(
+    0xE0C2,
+    HugeIcons.strokeRoundedRefresh,
+  );
+  static const textCursorOutlined = KapyIconData(
+    0xE0C3,
+    HugeIcons.strokeRoundedInputCursorText,
+  );
+  static const spellCheckOutlined = KapyIconData(0xE0C4, [
+    [
+      'path',
+      {
+        'd':
+            'M5.992 13h9m1 1.857l-2.61-7.033C12.187 4.607 11.59 2.998 10.55 3S8.918 4.612 7.732 7.833L3.993 18m9.999 1.393s1.2.652 1.8 1.607c0 0 1.8-3.75 4.2-5',
+        'stroke': 'currentColor',
+        'strokeWidth': '1.5',
+        'strokeLinecap': 'round',
+        'strokeLinejoin': 'round',
+      },
+    ],
+  ]);
+  static const hashtagOutlined = KapyIconData(
+    0xE0C5,
+    HugeIcons.strokeRoundedHashtag,
+  );
+  static const uploadOutlined = KapyIconData(
+    0xE0C6,
+    HugeIcons.strokeRoundedUpload04,
+  );
+  static const lockKeyOutlined = KapyIconData(
+    0xE0C7,
+    HugeIcons.strokeRoundedLockKey,
+  );
+  static const computerOutlined = KapyIconData(
+    0xE0C8,
+    HugeIcons.strokeRoundedComputer,
+  );
+  static const panelColumnsOutlined = KapyIconData(0xE0C9, [
+    [
+      'path',
+      {
+        'd':
+            'M20.109 3.891C21.5 5.282 21.5 7.521 21.5 12c0 4.478 0 6.718-1.391 8.109S16.479 21.5 12 21.5c-4.478 0-6.718 0-8.109-1.391S2.5 16.479 2.5 12c0-4.478 0-6.718 1.391-8.109S7.521 2.5 12 2.5c4.478 0 6.718 0 8.109 1.391',
+        'stroke': 'currentColor',
+        'strokeWidth': '1.5',
+        'strokeLinecap': 'round',
+        'strokeLinejoin': 'round',
+      },
+    ],
+    [
+      'path',
+      {
+        'd': 'M8.5 2.5v19m7-19v19',
+        'stroke': 'currentColor',
+        'strokeWidth': '1.5',
+      },
+    ],
+  ]);
 }

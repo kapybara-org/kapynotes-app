@@ -111,7 +111,7 @@ void main() {
       );
 
       // Local summaries now sit with the recording settings they affect.
-      expect(find.text('RECORDINGS & SUMMARIES'), findsOneWidget);
+      expect(find.text('Recordings & summaries'), findsOneWidget);
       expect(find.text('ON THIS DEVICE'), findsNothing);
       expect(find.text('Gemma 4 E2B · 2.6 GB'), findsOneWidget);
       // The licence has to be named and reachable, not merely implied.

@@ -16,14 +16,15 @@ InputDecoration kapyFieldDecoration(
   BoxConstraints? suffixIconConstraints,
   EdgeInsetsGeometry? contentPadding,
   Color? fillColor,
+  double? borderWidth,
+  double? radius,
 }) {
   final palette = context.palette;
   final error = Theme.of(context).colorScheme.error;
-  OutlineInputBorder border(Color color, {double width = 1}) =>
-      OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        borderSide: BorderSide(color: color, width: width),
-      );
+  OutlineInputBorder border(Color color, {double? width}) => OutlineInputBorder(
+    borderRadius: BorderRadius.circular(radius ?? AppRadii.control),
+    borderSide: BorderSide(color: color, width: width ?? borderWidth ?? 1),
+  );
 
   return InputDecoration(
     hintText: hintText,
