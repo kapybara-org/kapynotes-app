@@ -250,6 +250,7 @@ class TaskSync {
         final result = await _api.pushTasks(records);
         _index.hold();
         _tags.hold();
+        _chats?.hold();
         try {
           for (final item in chunk) {
             if (result.applied.contains(item.id)) item.acknowledge();
@@ -257,6 +258,7 @@ class TaskSync {
         } finally {
           _index.release();
           _tags.release();
+          _chats?.release();
         }
         for (final conflict in result.conflicts) {
           await _take(conflict);

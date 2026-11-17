@@ -108,17 +108,24 @@ class KapyChatBook extends ChangeNotifier {
     _skipped = raw['skipped'] == true;
   }
 
-  void _saveLedger() => _store.put(_key, {
-    'known': [
-      for (final entry in _known.entries)
-        {'k': entry.key, 'at': entry.value.at, 'sig': entry.value.sig},
-    ],
-    'synced': _synced,
-    'meta': [for (final meta in _meta.values) meta.toPayload()],
-    'parked': [for (final part in _parked.values) part.toPayload()],
-    'localDeleted': _localDeleted.toList(),
-    'skipped': _skipped,
-  });
+  void _saveLedger() {
+    if (_held) {
+      _ledgerOwed = true;
+      return;
+    }
+    _ledgerOwed = false;
+    _store.put(_key, {
+      'known': [
+        for (final entry in _known.entries)
+          {'k': entry.key, 'at': entry.value.at, 'sig': entry.value.sig},
+      ],
+      'synced': _synced,
+      'meta': [for (final meta in _meta.values) meta.toPayload()],
+      'parked': [for (final part in _parked.values) part.toPayload()],
+      'localDeleted': _localDeleted.toList(),
+      'skipped': _skipped,
+    });
+  }
 
   // -------------------------------------------------------------------------
   // The chats
@@ -525,30 +532,33 @@ class KapyChatBook extends ChangeNotifier {
   }
 
   bool _held = false;
-  bool _pending = false;
+  bool _chatsOwed = false;
+  bool _ledgerOwed = false;
 
-  /// Defers the writes until [release], so a pull of many records writes
-  /// once instead of once per record. Listeners are still told of each change.
+  /// Defers the writes until [release], so a pull or a push of many records
+  /// writes once instead of once per record. Listeners are still told of
+  /// each change.
   void hold() => _held = true;
 
   void release() {
     _held = false;
-    if (_pending) _persist();
+    if (_chatsOwed) _writeChats();
+    if (_ledgerOwed) _saveLedger();
   }
 
   void _finish() {
-    if (_held) {
-      _pending = true;
-    } else {
-      _persist();
-    }
+    _writeChats();
+    _saveLedger();
     notifyListeners();
   }
 
-  void _persist() {
-    _pending = false;
+  void _writeChats() {
+    if (_held) {
+      _chatsOwed = true;
+      return;
+    }
+    _chatsOwed = false;
     _chatStore.writeChats(_chats!, _deleted);
-    _saveLedger();
   }
 
   /// Signing out: the chats stay, and everything is owed again to the next

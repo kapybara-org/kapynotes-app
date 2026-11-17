@@ -1185,6 +1185,65 @@ void main() {
     );
   });
 
+  group('the ledger waits for the hold', () {
+    test(
+      'saves the ledger about once per chunk, not once per record',
+      () async {
+        final laptop = Device(server, name: 'laptop');
+        await laptop.boot();
+        for (var i = 0; i < 200; i++) {
+          laptop.chats.put(chat(title: 'Chat $i', minute: i));
+        }
+        laptop.store.puts.clear();
+        await laptop.pass();
+
+        final records = stored().length;
+        expect(records, greaterThanOrEqualTo(600));
+        final chunks = (records / tasksPushMax).ceil();
+        expect(
+          laptop.store.puts['kapyAi.chatSync.v1'] ?? 0,
+          lessThanOrEqualTo(chunks + 3),
+          reason:
+              'a chunk each, and the pass marking and clearing what it owes',
+        );
+        laptop.dispose();
+      },
+    );
+
+    test('a pull of many deleted chats saves the ledger once a page', () async {
+      final laptop = Device(server, name: 'laptop');
+      await laptop.boot();
+      final made = [
+        for (var i = 0; i < 100; i++) chat(title: 'Chat $i', minute: i),
+      ];
+      for (final one in made) {
+        laptop.chats.put(one);
+      }
+      await laptop.pass();
+      final phone = Device(server, name: 'phone');
+      await phone.boot();
+      await phone.pass();
+      expect(phone.chats.chats, hasLength(100));
+
+      for (final one in made) {
+        laptop.chats.delete(one.id);
+      }
+      await laptop.pass();
+      server.taskPageSize = 50;
+      phone.store.puts.clear();
+      await phone.pass();
+
+      expect(phone.chats.chats, isEmpty);
+      final pages = (stored().length / 50).ceil();
+      expect(
+        phone.store.puts['kapyAi.chatSync.v1'] ?? 0,
+        lessThanOrEqualTo(pages + 2),
+      );
+      laptop.dispose();
+      phone.dispose();
+    });
+  });
+
   group('what a push holds', () {
     test('chats go in chunks of their own, after the tasks and tags', () async {
       final laptop = Device(server, name: 'laptop');
