@@ -95,11 +95,14 @@ import 'slash_command_menu.dart';
 import 'slash_commands.dart';
 import '../../sync/presence.dart';
 
+/// [edit] is where in the old body the change happened, as the editor saw
+/// it; null when it cannot say. See [NotesStore.updateDocument].
 typedef NoteDocumentChanged =
     void Function(
       String body,
       List<NoteFormatRange> formats,
       List<NoteAttachmentRef> attachments,
+      TextEdit? edit,
     );
 
 /// A note as the store holds it, for [NoteEditor.storedDocument].
@@ -964,13 +967,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _commit(
     String text,
     List<NoteFormatRange> formats,
-    List<NoteAttachmentRef> attachments,
-  ) {
+    List<NoteAttachmentRef> attachments, {
+    TextEdit? edit,
+  }) {
     final stored = _stored.body;
     if (stored == _storeBase) {
       _storeBase = text;
       _storeShadow = text;
-      widget.onDocumentChanged(text, formats, attachments);
+      widget.onDocumentChanged(text, formats, attachments, edit);
       return;
     }
     final merge = mergeTexts(base: _storeBase, local: text, remote: stored);
@@ -992,6 +996,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         for (final ref in attachments)
           ref.copyWith(offset: merge.mapLocalStart(ref.offset)),
       ],
+      null,
     );
     _remotePending = true;
     _scheduleTake();
@@ -1339,7 +1344,35 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _evaluate();
     });
     unawaited(_requestSpellCheck(value.text));
-    _commit(value.text, updatedFormats, updatedAttachments);
+    _commit(
+      value.text,
+      updatedFormats,
+      updatedAttachments,
+      edit: previous.text == _storeBase ? _editBetween(previous, value) : null,
+    );
+  }
+
+  /// Where the change from [before] to [after] happened, as far as the
+  /// selections tell: from where the earlier of the two starts to where both
+  /// end. Diffed inside, a line deleted between two that start alike is the
+  /// line the writer deleted, not the end of one and the start of the next.
+  static TextEdit? _editBetween(
+    TextEditingValue before,
+    TextEditingValue after,
+  ) {
+    final was = before.selection;
+    final now = after.selection;
+    if (!was.isValid || !now.isValid) return null;
+    final tail = math.min(
+      before.text.length - was.end,
+      after.text.length - now.end,
+    );
+    if (tail < 0) return null;
+    return (
+      start: math.min(was.start, now.start),
+      oldEnd: before.text.length - tail,
+      newEnd: after.text.length - tail,
+    );
   }
 
   Future<void> _requestSpellCheck([String? requestedText]) async {

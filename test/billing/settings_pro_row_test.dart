@@ -7,6 +7,7 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/sync/account.dart';
@@ -46,6 +47,7 @@ Future<Account> pumpSettings(
   final notes = NotesStore(store);
   final api = FakeBillingApi();
   if (answer != null) api.answer = answer;
+  final syncState = SyncState(store);
   final account = Account(
     auth: FakeAuth(
       id: 'user-1',
@@ -56,9 +58,14 @@ Future<Account> pumpSettings(
     syncApi: (_) => FakeApi(server, device: 'device-1', userId: 'user-1'),
     keys: KeyStore(InMemorySecureStore()),
     notes: notes,
-    state: SyncState(store),
+    state: syncState,
     store: store,
-    docStorage: MemoryDocStorage(),
+    tasks: TaskLibrary(
+      notes: notes,
+      store: store,
+      state: syncState,
+      storage: MemoryDocStorage(),
+    ),
   );
   account.billing = Billing(
     session: account,

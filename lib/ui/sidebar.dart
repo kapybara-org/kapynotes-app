@@ -322,7 +322,7 @@ class Sidebar extends StatelessWidget {
                 invitations: sharing!.invites.length,
                 onChanged: onTabChanged!,
               ),
-            _SearchField(
+            SidebarSearchField(
               query: query,
               onChanged: onQueryChanged,
               onCreate: onCreate,
@@ -1784,9 +1784,14 @@ class SidebarWindowBar extends StatelessWidget {
     this.noun = 'note',
     this.newNoteShortcut,
     this.hideShortcut,
+    this.countLabel,
   });
 
   final String title;
+
+  /// Said after the count, as Tasks says "10 open". Without it the figure
+  /// stands alone.
+  final String? countLabel;
 
   /// What the space holds and New makes: a note, or a drawing in Drawings.
   final String noun;
@@ -1870,11 +1875,12 @@ class SidebarWindowBar extends StatelessWidget {
                                 // "3 notes", where the bare figure would be
                                 // read as just a number.
                                 Tooltip(
-                                  message: count == 1
-                                      ? '1 $noun'
-                                      : '$count ${noun}s',
+                                  message: [
+                                    count == 1 ? '1 $noun' : '$count ${noun}s',
+                                    ?countLabel,
+                                  ].join(' '),
                                   child: Text(
-                                    '$count',
+                                    [count, ?countLabel].join(' '),
                                     key: const ValueKey('sidebar-space-count'),
                                     maxLines: 1,
                                     style: TextStyle(
@@ -2408,8 +2414,10 @@ class _BelowInvitations extends StatelessWidget {
   }
 }
 
-class _SearchField extends StatefulWidget {
-  const _SearchField({
+/// The field at the top of the list that narrows it as you type.
+class SidebarSearchField extends StatefulWidget {
+  const SidebarSearchField({
+    super.key,
     required this.query,
     required this.onChanged,
     required this.archiveMode,
@@ -2421,10 +2429,14 @@ class _SearchField extends StatefulWidget {
     this.besideRail = false,
     this.pinnedOnly = false,
     this.drawings = false,
+    this.tasks = false,
   });
 
   /// Searching the Drawings space.
   final bool drawings;
+
+  /// Searching the tasks in Tasks.
+  final bool tasks;
 
   /// Sits under the tabs rather than the title bar, and needs less room
   /// above it to read as part of the same header.
@@ -2448,16 +2460,16 @@ class _SearchField extends StatefulWidget {
   final ShortcutBinding? shortcut;
 
   @override
-  State<_SearchField> createState() => _SearchFieldState();
+  State<SidebarSearchField> createState() => _SidebarSearchFieldState();
 }
 
-class _SearchFieldState extends State<_SearchField> {
+class _SidebarSearchFieldState extends State<SidebarSearchField> {
   late final TextEditingController _controller = TextEditingController(
     text: widget.query,
   );
 
   @override
-  void didUpdateWidget(_SearchField oldWidget) {
+  void didUpdateWidget(SidebarSearchField oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Creating a note clears the search; reflect that in the field.
     if (widget.query != _controller.text) {
@@ -2490,6 +2502,8 @@ class _SearchFieldState extends State<_SearchField> {
         ? 'Find in pinned…'
         : widget.drawings
         ? 'Find a drawing…'
+        : widget.tasks
+        ? 'Find a task…'
         : 'Find a note…';
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
@@ -2594,6 +2608,8 @@ class _SearchFieldState extends State<_SearchField> {
                     ? 'Search Archived Notes'
                     : widget.hiddenMode
                     ? 'Search Hidden Notes'
+                    : widget.tasks
+                    ? 'Search tasks'
                     : 'Search notes',
                 hintStyle: TextStyle(
                   fontSize: AppTypeScale.control,
