@@ -560,7 +560,9 @@ void main() {
       notes.archive(note.id);
     }
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('rail-archive')));
+    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
     await tester.pumpAndSettle();
   }
 

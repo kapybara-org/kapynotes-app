@@ -25,7 +25,6 @@ SpacesRail rail({
   ValueChanged<LibrarySpace>? onSelected,
   int? invitations,
   int? openTasks,
-  bool showHidden = false,
   WritingStreak? streak,
   VoidCallback? onAccountPressed,
   AccountUser? user,
@@ -36,7 +35,6 @@ SpacesRail rail({
   onSettingsPressed: () {},
   invitations: invitations,
   openTasks: openTasks,
-  showHidden: showHidden,
   streak: streak,
   onAccountPressed: onAccountPressed,
   user: user,
@@ -88,15 +86,15 @@ void main() {
     LibrarySpace? asked;
     await tester.pumpWidget(
       harness(
-        rail(space: LibrarySpace.archive, onSelected: (open) => asked = open),
+        rail(space: LibrarySpace.drawings, onSelected: (open) => asked = open),
       ),
     );
 
-    expect(space(tester, 'archive'), isSemantics(isSelected: true));
+    expect(space(tester, 'drawings'), isSemantics(isSelected: true));
     expect(space(tester, 'notes'), isSemantics(isSelected: false));
 
-    await tester.tap(find.byKey(const ValueKey('rail-drawings')));
-    expect(asked, LibrarySpace.drawings);
+    await tester.tap(find.byKey(const ValueKey('rail-notes')));
+    expect(asked, LibrarySpace.notes);
   });
 
   testWidgets('Shared waits for an account, then counts its invitations', (
@@ -124,13 +122,12 @@ void main() {
     );
   });
 
-  testWidgets('Hidden takes a place only when it is asked to', (tester) async {
-    await tester.pumpWidget(harness(rail()));
+  testWidgets('Hidden and the archive are filter choices, not places', (
+    tester,
+  ) async {
+    await tester.pumpWidget(harness(rail(openTasks: 1, invitations: 0)));
     expect(find.byKey(const ValueKey('rail-hidden')), findsNothing);
-
-    await tester.pumpWidget(harness(rail(showHidden: true)));
-    expect(find.byKey(const ValueKey('rail-hidden')), findsOneWidget);
-    expect(find.byTooltip('Hidden Notes'), findsOneWidget);
+    expect(find.byKey(const ValueKey('rail-archive')), findsNothing);
   });
 
   testWidgets('a run of days shows as a flame, and no run shows nothing', (
@@ -175,7 +172,7 @@ void main() {
       expect(find.byKey(const ValueKey('rail-account')), findsNothing);
     });
 
-    testWidgets('shows who is signed in, and opens Profile & sync', (
+    testWidgets('shows who is signed in, and opens Account & sync', (
       tester,
     ) async {
       var opened = 0;
@@ -245,7 +242,6 @@ void main() {
                 child: rail(
                   invitations: 2,
                   openTasks: 10,
-                  showHidden: true,
                   streak: const WritingStreak(days: 3, wroteToday: true),
                   onAccountPressed: () {},
                 ),

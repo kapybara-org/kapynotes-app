@@ -14,6 +14,7 @@ import 'compact_icon_button.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
 import 'sidebar.dart' show archiveIcon, hiddenIcon;
+import 'tag_colours.dart';
 
 /// What a note can hold besides words, in the order the media filter lists
 /// them.
@@ -137,23 +138,8 @@ class NoteGlance {
   }
 }
 
-/// Which sticky note a card is drawn on, and how far it leans. Both follow
-/// the moment the note was made rather than its place in the list, so a card
-/// keeps its colour as the list reorders around it, and on every device.
-int _stickySeed(Note note) =>
-    (note.createdAt.millisecondsSinceEpoch ~/ 1000 * 2654435761) & 0x7fffffff;
-
-const _stickyTilts = [-1.2, 1.0, 0.8, -0.8, -0.6, 1.1, 0.9, -1.1, -0.9, 0.7];
-
-Color stickyTint(CalcPalette palette, Note note) => [
-  palette.stickyMustard,
-  palette.stickyTeal,
-  palette.stickyOlive,
-  palette.stickyRust,
-][_stickySeed(note) % 4];
-
-double _stickyTilt(Note note) =>
-    _stickyTilts[_stickySeed(note) ~/ 4 % _stickyTilts.length] * math.pi / 180;
+/// How far the open note's card leans; every other card sits straight.
+const _selectedTilt = -math.pi / 180;
 
 const _cardRadius = BorderRadius.only(
   topLeft: Radius.circular(6),
@@ -261,8 +247,9 @@ class _PickBox extends StatelessWidget {
   }
 }
 
-/// A note as a sticky card: its title in the handwriting face, a line of it
-/// or how far its checklist has got, and when it was last changed.
+/// A note as a card of three fixed lines: its title in the handwriting face,
+/// a line of it, and the meta row. It sits on its first tag's colour, or on
+/// the plain card when it has none.
 class NoteCardFace extends StatelessWidget {
   const NoteCardFace({
     super.key,
@@ -271,6 +258,7 @@ class NoteCardFace extends StatelessWidget {
     required this.date,
     required this.selected,
     required this.hovering,
+    this.day,
     this.snippet,
     this.ringed = false,
     this.locked = false,
@@ -286,7 +274,10 @@ class NoteCardFace extends StatelessWidget {
   /// When it was changed, or who is in it right now.
   final String date;
 
-  /// The line a search matched, in place of the card's own preview.
+  /// [date] without its time of day, for a meta row short of room.
+  final String? day;
+
+  /// The line a search matched, in place of the card's own text.
   final String? snippet;
   final bool selected;
   final bool hovering;
@@ -299,165 +290,265 @@ class NoteCardFace extends StatelessWidget {
   /// Ticked or not while the archive is picking notes; null otherwise.
   final bool? picking;
 
+  /// What a card with no line of text says instead, by what the note holds.
+  String get _noText {
+    final media = glance.media;
+    if (note.isEmpty) return 'No text yet';
+    if (note.isDrawing) return 'Drawing';
+    if (media.contains(NoteMedia.voice)) return 'Voice note';
+    if (media.contains(NoteMedia.image)) return 'Image';
+    if (media.contains(NoteMedia.video)) return 'Video';
+    return 'No text yet';
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final blank = note.isEmpty;
-    final title = _handwritten(14, 18, FontWeight.w500, palette.cardTitle);
+    final tags = NoteTags.of(context, note.id);
+    final colour = tags.firstOrNull?.colour;
+    final tint = colour?.card(palette) ?? palette.surfaceBackground;
     final glance = this.glance;
     final result = snippet == null ? glance.amount ?? glance.result : null;
-    final preview =
-        snippet ??
-        (blank ? 'Empty' : glance.line ?? (note.isDrawing ? 'Sketch' : null));
-    final marks = _marksOf(glance.media, locked: locked, shared: shared);
-    final tint = blank ? palette.surfaceBackground : stickyTint(palette, note);
+    final text = snippet ?? glance.line;
     final picking = this.picking;
+    final types = [
+      for (final kind in NoteMedia.values.reversed)
+        if (glance.media.contains(kind)) kind.icon,
+    ].take(2).toList();
 
-    return Transform.rotate(
-      angle: _stickyTilt(note),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
-        decoration: BoxDecoration(
-          color: hovering
-              ? Color.alphaBlend(
-                  palette.textPrimary.withValues(alpha: 0.04),
-                  tint,
-                )
-              : tint,
-          borderRadius: _cardRadius,
-          border: _cardBorder(
-            palette,
-            selected: selected || picking == true,
-            ringed: ringed,
-            resting: blank ? palette.separator : null,
-          ),
-          boxShadow: _cardShadow(palette),
+    final card = Container(
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+      decoration: BoxDecoration(
+        color: hovering
+            ? Color.alphaBlend(
+                palette.textPrimary.withValues(alpha: 0.04),
+                tint,
+              )
+            : tint,
+        borderRadius: _cardRadius,
+        border: _cardBorder(
+          palette,
+          selected: selected || picking == true,
+          ringed: ringed,
+          resting: colour == null ? palette.separator : null,
         ),
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // The title takes two lines where it needs them and the card
-                // has room, and a line of the note follows only under a title
-                // that fits on one. Anything a larger text size pushes past
-                // the card is cut at its edge rather than overflowing it.
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final heading = note.title;
-                      final scaler = MediaQuery.textScalerOf(context);
-                      final painter = TextPainter(
-                        text: TextSpan(text: heading, style: title),
-                        textDirection: Directionality.of(context),
-                        textScaler: scaler,
-                        maxLines: 1,
-                      )..layout(maxWidth: constraints.maxWidth);
-                      final oneLine = !painter.didExceedMaxLines;
-                      painter.dispose();
-                      final roomy =
-                          constraints.maxHeight >= scaler.scale(18 + 3 + 15);
-                      return ClipRect(
-                        child: OverflowBox(
-                          alignment: Alignment.topLeft,
-                          maxHeight: double.infinity,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                heading,
-                                maxLines:
-                                    constraints.maxHeight >=
-                                        scaler.scale(36 + 6)
-                                    ? 2
-                                    : 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: title,
-                              ),
-                              if (oneLine && roomy && glance.boxes == 0) ...[
-                                if (result != null || preview != null)
-                                  const SizedBox(height: 3),
-                                if (result != null)
-                                  Text(
-                                    result,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontFamily: AppFonts.mono,
-                                      fontFamilyFallback: AppFonts.monoFallback,
-                                      fontSize: 12,
-                                      height: 15 / 12,
-                                      leadingDistribution:
-                                          TextLeadingDistribution.even,
-                                      fontWeight: FontWeight.w600,
-                                      color: palette.resultPillText,
-                                    ),
-                                  )
-                                else if (preview != null)
-                                  Text(
-                                    preview,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: _figtree(
-                                      AppTypeScale.caption,
-                                      15,
-                                      FontWeight.w500,
-                                      blank
-                                          ? palette.textTertiary
-                                          : palette.textMuted,
-                                    ),
-                                  ),
-                              ],
-                            ],
+        boxShadow: _cardShadow(palette),
+      ),
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Anything a larger text size pushes past the card is cut at
+              // its edge, so the meta row always keeps its place at the foot.
+              Expanded(
+                child: ClipRect(
+                  child: OverflowBox(
+                    alignment: Alignment.topLeft,
+                    maxHeight: double.infinity,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          note.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _handwritten(
+                            14,
+                            18,
+                            FontWeight.w500,
+                            palette.cardTitle,
                           ),
                         ),
-                      );
-                    },
+                        const SizedBox(height: 3),
+                        Text(
+                          result ?? text ?? _noText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: result != null
+                              ? TextStyle(
+                                  fontFamily: AppFonts.mono,
+                                  fontFamilyFallback: AppFonts.monoFallback,
+                                  fontSize: 12,
+                                  height: 15 / 12,
+                                  leadingDistribution:
+                                      TextLeadingDistribution.even,
+                                  fontWeight: FontWeight.w600,
+                                  color: palette.resultPillText,
+                                )
+                              : _figtree(
+                                  12,
+                                  15,
+                                  FontWeight.w500,
+                                  palette.textMuted,
+                                ).copyWith(
+                                  fontStyle: text == null
+                                      ? FontStyle.italic
+                                      : null,
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                Row(
-                  children: [
-                    if (glance.boxes > 0) ...[
-                      ChecklistPie(
-                        done: glance.done,
-                        total: glance.boxes,
-                        fill: palette.selectedBorder,
-                        check: tint,
-                        size: 12,
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    for (final mark in marks) ...[
-                      KapyIcon(
-                        mark,
-                        size: 13,
-                        strokeWidth: 1.8,
-                        color: palette.textMuted,
-                      ),
-                      const SizedBox(width: 5),
-                    ],
-                    Flexible(
-                      child: Text(
-                        date,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _figtree(
-                          AppTypeScale.caption,
-                          14,
-                          FontWeight.w600,
-                          palette.textMuted,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              ),
+              _MetaRow(
+                date: date,
+                day: day,
+                done: glance.done,
+                boxes: glance.boxes,
+                types: types,
+                locked: locked,
+                shared: shared,
+                tags: tags,
+                ground: tint,
+              ),
+            ],
+          ),
+          if (picking != null)
+            Positioned(top: 0, right: 0, child: _PickBox(checked: picking)),
+        ],
+      ),
+    );
+    return selected
+        ? Transform.rotate(angle: _selectedTilt, child: card)
+        : card;
+  }
+}
+
+/// A card's last line, in the date's quiet style: the checklist's pie and
+/// the date on the left; the note's type glyphs, then its first tag's dot
+/// and name, on the right, with its other tags as dots behind the first.
+///
+/// Short of room it drops the tag's name, then the time, then the second
+/// type glyph, and only then cuts the date short.
+class _MetaRow extends StatelessWidget {
+  const _MetaRow({
+    required this.date,
+    required this.day,
+    required this.types,
+    required this.locked,
+    required this.shared,
+    required this.tags,
+    required this.ground,
+    this.done = 0,
+    this.boxes = 0,
+  });
+
+  final String date;
+  final String? day;
+  final int done;
+  final int boxes;
+
+  /// Up to two glyphs for what the note holds besides words.
+  final List<KapyIconData> types;
+  final bool locked;
+  final bool shared;
+  final List<TagMark> tags;
+  final Color ground;
+
+  static const double _glyph = 13;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final style = DefaultTextStyle.of(
+      context,
+    ).style.merge(_figtree(11.5, 14, FontWeight.w600, palette.textMuted));
+    final direction = Directionality.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    final first = tags.firstOrNull;
+    final flags = [
+      if (locked) KapyIcons.lockRounded,
+      if (shared) KapyIcons.peopleOutlined,
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        double widthOf(String text) {
+          final painter = TextPainter(
+            text: TextSpan(text: text, style: style),
+            textDirection: direction,
+            textScaler: scaler,
+            maxLines: 1,
+          )..layout();
+          final width = painter.width;
+          painter.dispose();
+          return width;
+        }
+
+        var named = first != null;
+        var when = date;
+        var shown = types;
+        bool fits() {
+          final glyphs = shown.length + flags.length;
+          final parts = [
+            if (glyphs > 0) glyphs * _glyph + (glyphs - 1) * 4,
+            if (first != null)
+              TagDots.widthFor(tags.length) +
+                  (named ? 4 + widthOf(first.name) : 0),
+          ];
+          final right = parts.isEmpty
+              ? 0
+              : parts.reduce((a, b) => a + b) + (parts.length - 1) * 4 + 8;
+          return (boxes > 0 ? 12 + 5 : 0) + widthOf(when) + right <=
+              constraints.maxWidth;
+        }
+
+        if (named && !fits()) named = false;
+        if (day != null && !fits()) when = day!;
+        if (shown.length > 1 && !fits()) shown = shown.take(1).toList();
+
+        final right = [
+          for (final glyph in [...shown, ...flags])
+            KapyIcon(
+              glyph,
+              size: _glyph,
+              strokeWidth: 1.8,
+              color: palette.textMuted,
+            ),
+          if (first != null)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TagDots(tags: tags, ground: ground),
+                if (named) ...[
+                  const SizedBox(width: 4),
+                  Text(first.name, maxLines: 1, style: style),
+                ],
               ],
             ),
-            if (picking != null)
-              Positioned(top: 0, right: 0, child: _PickBox(checked: picking)),
+        ];
+        return Row(
+          children: [
+            if (boxes > 0) ...[
+              ChecklistPie(
+                done: done,
+                total: boxes,
+                fill: palette.textMuted,
+                check: ground,
+                size: 12,
+              ),
+              const SizedBox(width: 5),
+            ],
+            Expanded(
+              child: Text(
+                when,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            ),
+            if (right.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              for (final (index, part) in right.indexed) ...[
+                if (index > 0) const SizedBox(width: 4),
+                part,
+              ],
+            ],
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -496,13 +587,15 @@ class NoteListRowFace extends StatelessWidget {
     final summary = snippet ?? (note.isEmpty ? 'Empty' : glance.summary);
     final picking = this.picking;
     final marked = selected || picking == true;
+    final first = NoteTags.of(context, note.id).firstOrNull;
+    final tint = first?.colour?.card(palette) ?? palette.surfaceBackground;
     // The border is always there, clear until the row is open or ringed, so
     // opening a note does not nudge its text.
     return Container(
       padding: const EdgeInsets.all(6.5),
       decoration: BoxDecoration(
         color: marked
-            ? stickyTint(palette, note)
+            ? tint
             : hovering
             ? palette.hover
             : null,
@@ -529,6 +622,17 @@ class NoteListRowFace extends StatelessWidget {
               children: [
                 Row(
                   children: [
+                    // Untagged rows keep the dot's room, so titles line up.
+                    SizedBox(
+                      width: TagDots.size,
+                      child: first == null
+                          ? null
+                          : TagDots(
+                              tags: [first],
+                              ground: marked ? tint : palette.sidebarBackground,
+                            ),
+                    ),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         note.title,
@@ -558,6 +662,7 @@ class NoteListRowFace extends StatelessWidget {
                 const SizedBox(height: 3),
                 Row(
                   children: [
+                    const SizedBox(width: TagDots.size + 8),
                     for (final mark in marks) ...[
                       KapyIcon(
                         mark,
@@ -657,8 +762,9 @@ class _ThumbnailPainter extends CustomPainter {
       old.textStyle != textStyle;
 }
 
-/// A drawing as a card in the Drawings space: a thumbnail of it on the
-/// paper, its title in the handwriting face, and when it was last changed.
+/// A drawing as a card in the Drawings space: a thumbnail of it, its title in
+/// the handwriting face, and the meta row with no type glyph, on its first
+/// tag's colour or the plain card.
 class DrawingCardFace extends StatelessWidget {
   const DrawingCardFace({
     super.key,
@@ -666,6 +772,7 @@ class DrawingCardFace extends StatelessWidget {
     required this.date,
     required this.selected,
     required this.hovering,
+    this.day,
     this.ringed = false,
     this.locked = false,
     this.shared = false,
@@ -676,6 +783,9 @@ class DrawingCardFace extends StatelessWidget {
 
   final Note note;
   final String date;
+
+  /// [date] without its time of day, for a meta row short of room.
+  final String? day;
   final bool selected;
   final bool hovering;
   final bool ringed;
@@ -687,96 +797,81 @@ class DrawingCardFace extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final picking = this.picking;
-    final marks = _marksOf(const {}, locked: locked, shared: shared);
-    return Transform.rotate(
-      angle: _stickyTilt(note),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(6, 6, 6, 10),
-        decoration: BoxDecoration(
-          color: hovering
-              ? Color.alphaBlend(
-                  palette.textPrimary.withValues(alpha: 0.04),
-                  palette.editorBackground,
-                )
-              : palette.editorBackground,
-          borderRadius: _cardRadius,
-          border: _cardBorder(
-            palette,
-            selected: selected || picking == true,
-            ringed: ringed,
-            resting: palette.separator,
-          ),
-          boxShadow: _cardShadow(palette),
+    final tags = NoteTags.of(context, note.id);
+    final colour = tags.firstOrNull?.colour;
+    final tint = colour?.card(palette) ?? palette.editorBackground;
+    final card = Container(
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 10),
+      decoration: BoxDecoration(
+        color: hovering
+            ? Color.alphaBlend(
+                palette.textPrimary.withValues(alpha: 0.04),
+                tint,
+              )
+            : tint,
+        borderRadius: _cardRadius,
+        border: _cardBorder(
+          palette,
+          selected: selected || picking == true,
+          ringed: ringed,
+          resting: colour == null ? palette.separator : null,
         ),
-        child: Stack(
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: ColoredBox(
-                      color: palette.sidebarBackground,
-                      child: DrawingThumbnail(drawing: note.drawing),
+        boxShadow: _cardShadow(palette),
+      ),
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: ColoredBox(
+                    color: palette.sidebarBackground,
+                    child: DrawingThumbnail(drawing: note.drawing),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 7),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      note.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _handwritten(
+                        14,
+                        18,
+                        FontWeight.w500,
+                        palette.cardTitle,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 2),
+                    _MetaRow(
+                      date: date,
+                      day: day,
+                      types: const [],
+                      locked: locked,
+                      shared: shared,
+                      tags: tags,
+                      ground: tint,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 7),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        note.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _handwritten(
-                          14,
-                          18,
-                          FontWeight.w500,
-                          palette.cardTitle,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          for (final mark in marks) ...[
-                            KapyIcon(
-                              mark,
-                              size: 13,
-                              strokeWidth: 1.8,
-                              color: palette.textMuted,
-                            ),
-                            const SizedBox(width: 5),
-                          ],
-                          Flexible(
-                            child: Text(
-                              date,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: _figtree(
-                                AppTypeScale.caption,
-                                14,
-                                FontWeight.w600,
-                                palette.textMuted,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (picking != null)
-              Positioned(top: 4, right: 4, child: _PickBox(checked: picking)),
-          ],
-        ),
+              ),
+            ],
+          ),
+          if (picking != null)
+            Positioned(top: 4, right: 4, child: _PickBox(checked: picking)),
+        ],
       ),
     );
+    return selected
+        ? Transform.rotate(angle: _selectedTilt, child: card)
+        : card;
   }
 }
 
@@ -1289,11 +1384,13 @@ class _NotesFilterState extends State<_NotesFilter> {
     final palette = context.palette;
     final open = _menu.isShowing;
     final narrowed = widget.narrowed;
-    final style = _figtree(
-      AppTypeScale.body,
-      16,
-      FontWeight.w600,
-      narrowed ? palette.tonalForeground : palette.textSubheading,
+    final style = DefaultTextStyle.of(context).style.merge(
+      _figtree(
+        AppTypeScale.body,
+        16,
+        FontWeight.w600,
+        narrowed ? palette.tonalForeground : palette.textSubheading,
+      ),
     );
     final button = LayoutBuilder(
       // A list dragged to its narrowest keeps the filter's icon, which still

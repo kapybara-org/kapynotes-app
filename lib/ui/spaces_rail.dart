@@ -86,7 +86,7 @@ class SpacesRail extends StatelessWidget {
   /// an app store owns updates.
   final UpdateChecker? updates;
 
-  /// Opens Profile & sync. Null leaves the account off the rail, as a build
+  /// Opens Account & sync. Null leaves the account off the rail, as a build
   /// with no sync server has no account to show.
   final VoidCallback? onAccountPressed;
 
@@ -521,7 +521,7 @@ class _RailSettings extends StatelessWidget {
   }
 }
 
-/// Who is signed in, with a dot that says how sync is doing. Opens Profile
+/// Who is signed in, with a dot that says how sync is doing. Opens Account
 /// & sync.
 class _RailAccount extends StatelessWidget {
   const _RailAccount({required this.onPressed, this.user, this.syncStatus});
@@ -601,11 +601,11 @@ class _RailAccount extends StatelessWidget {
     }
 
     return Tooltip(
-      message: [name.isEmpty ? 'Profile & sync' : name, ?status].join('\n'),
+      message: [name.isEmpty ? 'Account & sync' : name, ?status].join('\n'),
       child: Semantics(
         container: true,
         button: true,
-        label: ['Profile & sync', ?status].join(', '),
+        label: ['Account & sync', ?status].join(', '),
         child: InkWell(
           key: const ValueKey('rail-account'),
           onTap: onPressed,

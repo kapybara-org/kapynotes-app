@@ -68,13 +68,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color keycapBorder;
   final Color keycapText;
 
-  /// The sticky-note tints a note card can wear.
-  final Color stickyMustard;
-  final Color stickyTeal;
-  final Color stickyOlive;
-  final Color stickyRust;
-  final Color stickySage;
-
   /// What dims the window behind a modal.
   final Color scrim;
 
@@ -248,11 +241,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.keycapBackground,
     required this.keycapBorder,
     required this.keycapText,
-    required this.stickyMustard,
-    required this.stickyTeal,
-    required this.stickyOlive,
-    required this.stickyRust,
-    required this.stickySage,
     required this.scrim,
     required this.resultPillBackground,
     required this.resultPillText,
@@ -321,11 +309,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? keycapBackground,
     Color? keycapBorder,
     Color? keycapText,
-    Color? stickyMustard,
-    Color? stickyTeal,
-    Color? stickyOlive,
-    Color? stickyRust,
-    Color? stickySage,
     Color? scrim,
     Color? resultPillBackground,
     Color? resultPillText,
@@ -391,11 +374,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     keycapBackground: keycapBackground ?? this.keycapBackground,
     keycapBorder: keycapBorder ?? this.keycapBorder,
     keycapText: keycapText ?? this.keycapText,
-    stickyMustard: stickyMustard ?? this.stickyMustard,
-    stickyTeal: stickyTeal ?? this.stickyTeal,
-    stickyOlive: stickyOlive ?? this.stickyOlive,
-    stickyRust: stickyRust ?? this.stickyRust,
-    stickySage: stickySage ?? this.stickySage,
     scrim: scrim ?? this.scrim,
     resultPillBackground: resultPillBackground ?? this.resultPillBackground,
     resultPillText: resultPillText ?? this.resultPillText,
@@ -467,11 +445,6 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       keycapBackground: mix(keycapBackground, other.keycapBackground),
       keycapBorder: mix(keycapBorder, other.keycapBorder),
       keycapText: mix(keycapText, other.keycapText),
-      stickyMustard: mix(stickyMustard, other.stickyMustard),
-      stickyTeal: mix(stickyTeal, other.stickyTeal),
-      stickyOlive: mix(stickyOlive, other.stickyOlive),
-      stickyRust: mix(stickyRust, other.stickyRust),
-      stickySage: mix(stickySage, other.stickySage),
       scrim: mix(scrim, other.scrim),
       resultPillBackground: mix(
         resultPillBackground,
@@ -1074,11 +1047,6 @@ class KapyTheme {
     keycapBackground: Color(0xFF2B2823),
     keycapBorder: Color(0xFF36322B),
     keycapText: Color(0xFFA29A8A),
-    stickyMustard: Color(0xFF393425),
-    stickyTeal: Color(0xFF273133),
-    stickyOlive: Color(0xFF2B3125),
-    stickyRust: Color(0xFF372B26),
-    stickySage: Color(0xFF2B3326),
     scrim: Color(0xB30B0A09),
     resultPillBackground: Color(0xFF2B3326),
     resultPillText: Color(0xFFB3C79C),
@@ -1153,11 +1121,6 @@ class KapyTheme {
     keycapBackground: Color(0xFFEFEADD),
     keycapBorder: Color(0xFFD9D2C1),
     keycapText: Color(0xFF6F695C),
-    stickyMustard: Color(0xFFF4EBC8),
-    stickyTeal: Color(0xFFDCE8E6),
-    stickyOlive: Color(0xFFE6EBD5),
-    stickyRust: Color(0xFFF2E0D4),
-    stickySage: Color(0xFFE3EBD8),
     scrim: Color(0x332A2620),
     resultPillBackground: Color(0xFFE3EBD8),
     resultPillText: Color(0xFF445A2F),

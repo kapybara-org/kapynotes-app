@@ -169,7 +169,7 @@ void main() {
     final prefs = LayoutPrefs(store)..load();
     expect(prefs.hiddenFolderVisible, isTrue);
 
-    prefs.toggleHiddenFolder();
+    prefs.hiddenFolderVisible = false;
 
     expect(prefs.hiddenFolderVisible, isFalse);
     expect((LayoutPrefs(store)..load()).hiddenFolderVisible, isFalse);

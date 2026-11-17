@@ -3031,15 +3031,19 @@ class _NoteRowState extends State<NoteRow> {
   Widget _boardFace({required String? snippet, required bool hasMenu}) {
     final note = widget.note;
     final people = widget.collaborators;
+    final card =
+        widget.style == NoteRowStyle.card ||
+        widget.style == NoteRowStyle.drawingCard;
+    String stamp({bool clock = true}) => SidebarTimestamp.glance(
+      note.updatedAt,
+      now: widget.now(),
+      displayTime: widget.displayTime,
+      today: card,
+      clock: clock,
+    );
+    final day = card && people.isEmpty ? stamp(clock: false) : null;
     final date = people.isEmpty
-        ? SidebarTimestamp.glance(
-            note.updatedAt,
-            now: widget.now(),
-            displayTime: widget.displayTime,
-            today:
-                widget.style == NoteRowStyle.card ||
-                widget.style == NoteRowStyle.drawingCard,
-          )
+        ? stamp()
         : typingStatusText([
                 for (final person in people)
                   if (person.typing) person.name,
@@ -3053,6 +3057,7 @@ class _NoteRowState extends State<NoteRow> {
         note: note,
         glance: glance,
         date: date,
+        day: day,
         snippet: snippet,
         selected: widget.selected,
         hovering: _hovering,
@@ -3064,6 +3069,7 @@ class _NoteRowState extends State<NoteRow> {
       NoteRowStyle.drawingCard => DrawingCardFace(
         note: note,
         date: date,
+        day: day,
         selected: widget.selected,
         hovering: _hovering,
         ringed: ringed,

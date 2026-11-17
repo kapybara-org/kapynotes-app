@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/editor_font.dart';
 import '../../core/theme.dart';
 import '../../data/note.dart';
-import '../notes_list.dart';
+import '../tag_colours.dart';
 
 /// What the Tasks sidebar narrows the page to: every open task, the Done
 /// view, or one note's tasks.
@@ -49,8 +49,8 @@ TextStyle uiStyle(double size, double line, FontWeight weight, Color color) =>
       color: color,
     );
 
-/// A note's quiet mark: its card's colour, as a small square. A dashed one, with
-/// no colour, stands for no note.
+/// A note's quiet mark: its first tag's dot colour, as a small square, or a
+/// plain one when it has no coloured tag. A dashed one stands for no note.
 class NoteSwatch extends StatelessWidget {
   const NoteSwatch({super.key, required this.note, this.size = 10});
 
@@ -72,7 +72,11 @@ class NoteSwatch extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: stickyTint(palette, note),
+        color:
+            NoteTags.of(context, note.id).firstOrNull?.colour?.dot(palette) ??
+            (palette.brightness == Brightness.dark
+                ? const Color(0xFF3A3530)
+                : const Color(0xFFD9D2C1)),
         border: Border.all(color: palette.textPrimary.withAlpha(0x24)),
         borderRadius: BorderRadius.circular(radius),
       ),
