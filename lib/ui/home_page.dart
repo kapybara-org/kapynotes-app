@@ -1788,9 +1788,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final shortcut = widget.shortcuts
         .bindingFor(ShortcutAction.toggleHiddenFolder)
         ?.displayLabel;
-    final discovery = AppPlatform.isMobile
-        ? 'Pull down below Search to find it.'
-        : shortcut != null
+    final discovery = AppPlatform.hasPointer && shortcut != null
         ? 'Press $shortcut to find it.'
         : widget.prefs.hiddenFolderVisible
         ? 'Choose Hidden in the notes filter to find it.'
@@ -3592,8 +3590,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onHide: (id) => unawaited(_hideNote(id)),
                       onUnhide: _unhideNote,
                       onTogglePin: _specialMode ? null : _togglePinnedNote,
-                      onArchiveToggle: _toggleArchive,
-                      onHiddenToggle: () => unawaited(_toggleHiddenNotes()),
                       archiveMode: _archiveMode,
                       hiddenMode: _hiddenMode,
                       onDelete: _deleteNote,
@@ -3606,8 +3602,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       onCheckAll: _checkAllArchived,
                       onDeleteChecked: () => unawaited(_deleteChecked()),
                       onRestoreChecked: _restoreChecked,
-                      archivedCount: widget.notes.archivedNotes.length,
-                      hiddenCount: widget.notes.hiddenNotes.length,
                       streak: widget.notes.streak,
                       onShare: widget.account == null ? null : _shareNote,
                       sharing: widget.account?.sharing,

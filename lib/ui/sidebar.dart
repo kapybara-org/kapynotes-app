@@ -64,12 +64,6 @@ const KapyIconData hiddenIcon = KapyIcons.lockRounded;
 /// Returns a note from Hidden Notes to the ordinary list.
 const KapyIconData unhideIcon = KapyIcons.unlockRounded;
 
-/// Mobile starts at the notes, with the protected folder one pull above them.
-///
-/// A scroll position is session state, so every fresh app launch conceals the
-/// row again without turning its visibility into a saved preference.
-const _mobileNotesCenterKey = ValueKey<String>('sidebar-mobile-notes-start');
-
 /// The two halves of a signed-in library.
 ///
 /// A note belongs to whoever owns the space it is in. The person's own notes,
@@ -114,8 +108,6 @@ class Sidebar extends StatelessWidget {
     this.onHide,
     this.onUnhide,
     this.onTogglePin,
-    this.onArchiveToggle,
-    this.onHiddenToggle,
     this.onShare,
     this.sharing,
     this.onSettingsPressed,
@@ -125,8 +117,6 @@ class Sidebar extends StatelessWidget {
     this.updates,
     this.archiveMode = false,
     this.hiddenMode = false,
-    this.archivedCount = 0,
-    this.hiddenCount = 0,
     this.onDelete,
     this.onDeleteAll,
     this.selecting = false,
@@ -200,8 +190,6 @@ class Sidebar extends StatelessWidget {
   final ValueChanged<String>? onHide;
   final ValueChanged<String>? onUnhide;
   final ValueChanged<String>? onTogglePin;
-  final VoidCallback? onArchiveToggle;
-  final VoidCallback? onHiddenToggle;
 
   /// Null where there is nothing to share to: a build without a server.
   /// The row then shows no share affordance rather than one that opens onto
@@ -227,8 +215,6 @@ class Sidebar extends StatelessWidget {
   final UpdateChecker? updates;
   final bool archiveMode;
   final bool hiddenMode;
-  final int archivedCount;
-  final int hiddenCount;
 
   /// Throws one note away for good. Only ever supplied in the archive.
   final ValueChanged<String>? onDelete;
@@ -381,12 +367,9 @@ class Sidebar extends StatelessWidget {
                 ),
               ),
             ),
-            if (onSettingsPressed != null || onArchiveToggle != null)
+            if (onSettingsPressed != null)
               _SidebarFooter(
-                onSettingsPressed: onSettingsPressed,
-                onArchivePressed: onArchiveToggle,
-                showingArchive: archiveMode,
-                archivedCount: archivedCount,
+                onSettingsPressed: onSettingsPressed!,
                 settingsShortcut: settingsShortcut,
                 updates: updates,
               ),
@@ -411,11 +394,6 @@ extension on Sidebar {
   bool get _showsTabs => _tabbed && !_besideRail;
 
   bool get _onSharedTab => _tabbed && tab == SidebarTab.shared;
-
-  /// Hidden Notes are always the person's own, so the way into them sits
-  /// over their own notes rather than over other people's.
-  bool get _showMobileHiddenEntry =>
-      AppPlatform.isMobile && onHiddenToggle != null && !_onSharedTab;
 
   bool get _hasPinned =>
       !_specialMode && notes.any((note) => pinnedNoteIds.contains(note.id));
@@ -442,7 +420,7 @@ extension on Sidebar {
     if (drawings && query.trim().isEmpty) {
       return _DrawingsEmpty(onNewDrawing: onNewDrawing);
     }
-    final empty = _SidebarEmpty(
+    return _SidebarEmpty(
       message: query.trim().isEmpty
           ? archiveMode
                 ? 'Archived Notes is empty'
@@ -457,18 +435,6 @@ extension on Sidebar {
       detail: query.trim().isEmpty && _onSharedTab
           ? 'Notes other people share with you appear here'
           : null,
-    );
-    if (!_showMobileHiddenEntry) return empty;
-    return CustomScrollView(
-      center: hiddenMode ? null : _mobileNotesCenterKey,
-      slivers: [
-        _mobileHiddenSliver(),
-        SliverFillRemaining(
-          key: _mobileNotesCenterKey,
-          hasScrollBody: false,
-          child: empty,
-        ),
-      ],
     );
   }
 
@@ -485,44 +451,12 @@ extension on Sidebar {
       ),
     );
 
-    if (!_showMobileHiddenEntry) {
-      return ListView.builder(
-        padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-        itemCount: notes.length,
-        itemBuilder: rowBuilder,
-      );
-    }
-    return CustomScrollView(
-      center: hiddenMode ? null : _mobileNotesCenterKey,
-      slivers: [
-        _mobileHiddenSliver(),
-        SliverPadding(
-          key: _mobileNotesCenterKey,
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              rowBuilder,
-              childCount: notes.length,
-            ),
-          ),
-        ),
-      ],
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+      itemCount: notes.length,
+      itemBuilder: rowBuilder,
     );
   }
-
-  Widget _mobileHiddenSliver() => SliverToBoxAdapter(
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-      child: SizedBox(
-        height: NoteFooter.height,
-        child: _HiddenEntry(
-          showingHidden: hiddenMode,
-          count: hiddenCount,
-          onPressed: onHiddenToggle!,
-        ),
-      ),
-    ),
-  );
 
   /// Whether the reader may change [note]: their own always, a shared one
   /// only where the space says so. The row's rule, and the keyboard's.
@@ -995,28 +929,10 @@ extension on Sidebar {
           ),
         };
 
-    if (!_showMobileHiddenEntry) {
-      return ListView.builder(
-        padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-        itemCount: entries.length,
-        itemBuilder: entryBuilder,
-      );
-    }
-    return CustomScrollView(
-      center: hiddenMode ? null : _mobileNotesCenterKey,
-      slivers: [
-        _mobileHiddenSliver(),
-        SliverPadding(
-          key: _mobileNotesCenterKey,
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              entryBuilder,
-              childCount: entries.length,
-            ),
-          ),
-        ),
-      ],
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+      itemCount: entries.length,
+      itemBuilder: entryBuilder,
     );
   }
 }
@@ -1383,120 +1299,31 @@ class _NoteCount extends StatelessWidget {
 
 class _SidebarFooter extends StatelessWidget {
   const _SidebarFooter({
-    this.onSettingsPressed,
-    this.onArchivePressed,
-    required this.showingArchive,
-    required this.archivedCount,
+    required this.onSettingsPressed,
     this.settingsShortcut,
     this.updates,
   });
 
-  final VoidCallback? onSettingsPressed;
-  final VoidCallback? onArchivePressed;
-  final bool showingArchive;
-  final int archivedCount;
+  final VoidCallback onSettingsPressed;
   final ShortcutBinding? settingsShortcut;
   final UpdateChecker? updates;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final onArchivePressed = this.onArchivePressed;
-    final onSettingsPressed = this.onSettingsPressed;
-    final rows =
-        (onArchivePressed == null ? 0 : 1) +
-        (onSettingsPressed == null ? 0 : 1);
     return Container(
-      height: AppControlMetrics.scaleBar(context, NoteFooter.height * rows),
+      height: AppControlMetrics.scaleBar(context, NoteFooter.height),
       decoration: BoxDecoration(
         border: Border(top: BorderSide(color: palette.separator, width: 0.5)),
       ),
-      child: Column(
-        children: [
-          if (onArchivePressed != null)
-            Expanded(
-              child: _ArchiveEntry(
-                showingArchive: showingArchive,
-                count: archivedCount,
-                onPressed: onArchivePressed,
-              ),
-            ),
-          if (onSettingsPressed != null)
-            Expanded(
-              child: InstalledVersion(
-                updates: updates,
-                builder: (context, version, updateWaiting) => _SettingsEntry(
-                  key: const ValueKey('sidebar-settings'),
-                  onPressed: onSettingsPressed,
-                  version: version,
-                  hasUpdate: updateWaiting,
-                  shortcut: settingsShortcut,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HiddenEntry extends StatelessWidget {
-  const _HiddenEntry({
-    required this.showingHidden,
-    required this.count,
-    required this.onPressed,
-  });
-
-  final bool showingHidden;
-  final int count;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final label = showingHidden ? 'All notes' : 'Hidden Notes';
-    return Tooltip(
-      message: label,
-      child: Semantics(
-        button: true,
-        label: label,
-        child: InkWell(
-          key: ValueKey(
-            showingHidden ? 'sidebar-all-notes' : 'sidebar-hidden-notes',
-          ),
-          onTap: onPressed,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                KapyIcon(
-                  showingHidden ? KapyIcons.notesRounded : hiddenIcon,
-                  size: AppControlMetrics.footerIconControl,
-                  color: palette.textSecondary,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: AppTypeScale.control,
-                      color: palette.textSecondary,
-                    ),
-                  ),
-                ),
-                if (!showingHidden && count > 0)
-                  Text(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: AppTypeScale.small,
-                      color: palette.textTertiary,
-                    ),
-                  ),
-              ],
-            ),
-          ),
+      child: InstalledVersion(
+        updates: updates,
+        builder: (context, version, updateWaiting) => _SettingsEntry(
+          key: const ValueKey('sidebar-settings'),
+          onPressed: onSettingsPressed,
+          version: version,
+          hasUpdate: updateWaiting,
+          shortcut: settingsShortcut,
         ),
       ),
     );
@@ -1601,64 +1428,6 @@ class _ArchiveActions extends StatelessWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _ArchiveEntry extends StatelessWidget {
-  const _ArchiveEntry({
-    required this.showingArchive,
-    required this.count,
-    required this.onPressed,
-  });
-
-  final bool showingArchive;
-  final int count;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final label = showingArchive ? 'All notes' : 'Archived Notes';
-    return Semantics(
-      button: true,
-      label: label,
-      child: InkWell(
-        key: ValueKey(showingArchive ? 'sidebar-all-notes' : 'sidebar-archive'),
-        onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: [
-              KapyIcon(
-                showingArchive ? KapyIcons.notesRounded : archiveIcon,
-                size: AppControlMetrics.footerIconControl,
-                color: palette.textSecondary,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.control,
-                    color: palette.textSecondary,
-                  ),
-                ),
-              ),
-              if (!showingArchive && count > 0)
-                Text(
-                  '$count',
-                  style: TextStyle(
-                    fontSize: AppTypeScale.small,
-                    color: palette.textTertiary,
-                  ),
-                ),
-            ],
-          ),
-        ),
       ),
     );
   }
