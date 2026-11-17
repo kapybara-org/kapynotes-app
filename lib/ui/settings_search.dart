@@ -204,6 +204,7 @@ class SettingsSearchField extends StatelessWidget {
               fillColor: pointer ? palette.surfaceBackground : null,
               borderWidth: pointer ? 1.5 : null,
               radius: pointer ? 10 : null,
+              neutralFocus: pointer,
               // InputDecorator gives its prefix the whole adornment slot.
               // Center loosens those constraints so the glyph keeps its
               // intended size.
