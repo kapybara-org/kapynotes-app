@@ -5,6 +5,22 @@ import '../speech/transcriber.dart';
 import '../speech/summary_instructions.dart';
 import 'local_store.dart';
 
+/// The languages offered by name, keyed by the ISO-639-1 code
+/// [VoicePrefs.language] holds: the ones a provider detects least reliably
+/// are the ones somebody will want to state once and forget.
+const Map<String, String> speechLanguages = {
+  'en': 'English',
+  'es': 'Spanish',
+  'fr': 'French',
+  'de': 'German',
+  'hi': 'Hindi',
+  'pt': 'Portuguese',
+  'it': 'Italian',
+  'nl': 'Dutch',
+  'ja': 'Japanese',
+  'zh': 'Chinese',
+};
+
 /// Everything the user has decided about voice notes.
 ///
 /// Lives in the main [LocalStore], which is already read at launch, so a user
