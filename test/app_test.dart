@@ -18,6 +18,7 @@ import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -111,6 +112,7 @@ Future<void> pumpApp(
   HiddenNotesGate? hiddenNotesGate,
   ImageFileAcquirer? imageAcquirer,
   Account? account,
+  TagStore? tags,
 }) async {
   // Almost everything here speaks for somebody who has opened the app before,
   // and they have already met the welcome note. The tests about a genuinely
@@ -140,6 +142,7 @@ Future<void> pumpApp(
       hiddenNotesGate: hiddenNotesGate,
       imageAcquirer: imageAcquirer,
       account: account,
+      tags: tags,
     ),
   );
   await tester.pumpAndSettle();
@@ -428,6 +431,30 @@ void main() {
       await tester.pumpAndSettle();
       expectChoices(tester);
     });
+  });
+
+  testWidgets('a build with no sync keeps its tags across a relaunch', (
+    tester,
+  ) async {
+    final tags = TagStore(store);
+    await tags.load();
+    await pumpApp(tester, tags: tags);
+    final note = notes.create(body: 'Trip to Kochi');
+    final shown = tester.widget<HomePage>(find.byType(HomePage)).tags!;
+    shown.addTag(note.id, shown.create('Travel')!.id);
+    await tester.pumpWidget(const SizedBox());
+
+    notes = NotesStore(store);
+    prefs = LayoutPrefs(store);
+    rates = RatesRepository(store);
+    shortcuts = ShortcutPrefs(store);
+    final relaunched = TagStore(store);
+    expect(await relaunched.load(), isTrue);
+    await pumpApp(tester, tags: relaunched);
+    final home = tester.widget<HomePage>(find.byType(HomePage));
+    expect(home.account, isNull);
+    expect(home.tags, same(relaunched));
+    expect(relaunched.tagsOf(note.id).map((t) => t.name.v), ['Travel']);
   });
 
   testWidgets('opens on the empty state and builds a note from it', (
@@ -3174,6 +3201,7 @@ void main() {
         notes: notes,
         state: syncState,
         store: store,
+        tags: TagStore(store),
         tasks: TaskLibrary(
           notes: notes,
           store: store,

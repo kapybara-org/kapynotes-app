@@ -22,6 +22,7 @@ class AccountDevice {
     : store = store ?? MemoryStore(),
       auth = FakeAuth(id: userId) {
     notes = NotesStore(this.store);
+    tags = TagStore(this.store);
     final state = SyncState(this.store);
     tasks = TaskLibrary(
       notes: notes,
@@ -37,6 +38,7 @@ class AccountDevice {
       state: state,
       store: this.store,
       tasks: tasks,
+      tags: tags,
     );
   }
 
@@ -45,9 +47,8 @@ class AccountDevice {
   final FakeAuth auth;
   late final NotesStore notes;
   late final TaskLibrary tasks;
+  late final TagStore tags;
   late final Account account;
-
-  TagStore get tags => account.tags;
 
   Future<void> boot() async {
     await notes.load();

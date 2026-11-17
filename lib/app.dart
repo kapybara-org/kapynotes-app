@@ -31,6 +31,7 @@ import 'core/window_material.dart';
 import 'data/engine_provider.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
+import 'data/tags.dart';
 import 'data/task_library.dart';
 import 'data/notes_store.dart';
 import 'data/onboarding.dart';
@@ -59,6 +60,7 @@ class KapyNotesApp extends StatefulWidget {
     this.desktopIntegration,
     this.account,
     this.tasks,
+    this.tags,
     this.recording,
     this.imageAcquirer,
     this.lostImageRetriever,
@@ -81,6 +83,9 @@ class KapyNotesApp extends StatefulWidget {
 
   /// Every checklist line as a task, for Tasks; null leaves Tasks out.
   final TaskLibrary? tasks;
+
+  /// The person's tags and which notes carry them.
+  final TagStore? tags;
 
   /// Owns the microphone. Injectable so a test can hand over a recorder with
   /// no microphone behind it — the real one starts a one-second ticker that
@@ -588,6 +593,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
             desktopIntegration: widget.desktopIntegration,
             account: widget.account,
             tasks: widget.tasks,
+            tags: widget.tags,
             store: widget.store,
             welcomeNoteId: _welcomeNoteId,
             launchIntent: _launchIntent,

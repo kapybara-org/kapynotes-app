@@ -66,6 +66,7 @@ class Account extends ChangeNotifier {
     required SyncState state,
     required LocalStore store,
     required TaskLibrary tasks,
+    required TagStore tags,
     SyncService Function({
       required SyncApi api,
       required Vault vault,
@@ -79,7 +80,7 @@ class Account extends ChangeNotifier {
        _state = state,
        _store = store,
        _tasks = tasks,
-       tags = TagStore(store),
+       _tags = tags,
        _syncServiceFactory = syncServiceFactory;
 
   final AuthApi _auth;
@@ -144,7 +145,7 @@ class Account extends ChangeNotifier {
   final TaskLibrary _tasks;
 
   /// The person's tags and which notes carry them, synced while signed in.
-  final TagStore tags;
+  final TagStore _tags;
   SyncService? _sync;
   Sharing? _sharing;
   Joining? _joining;
@@ -204,7 +205,7 @@ class Account extends ChangeNotifier {
     // A build from before tags read the record stream past any tag records
     // without keeping them, so the first time this one runs it reads the
     // stream again from the start. Tasks merge again to no effect.
-    if (!await tags.load() && _tasks.index.cursor > 0) {
+    if (!await _tags.load() && _tasks.index.cursor > 0) {
       _tasks.index.recordCursor(0);
     }
     final token = await _keys.readToken();
@@ -470,7 +471,7 @@ class Account extends ChangeNotifier {
     if (_accountState != AccountState.needsAccountDecision) return;
     if (!keepLocalNotes) {
       _notes.forgetEverything();
-      tags.clear();
+      _tags.clear();
     }
     _state.adopt(_user!.id);
     await _resume();
@@ -499,7 +500,7 @@ class Account extends ChangeNotifier {
             api: api,
             vault: vault,
             index: _tasks.index,
-            tags: tags,
+            tags: _tags,
             docs: docs,
             noteIsLive: (noteId) => _notes.byId(noteId) != null,
             deletedNotes: () => [
@@ -569,7 +570,7 @@ class Account extends ChangeNotifier {
     // Its ids and its seal are the account's; the next account pulls its own,
     // and until then the library rebuilds the index from the documents.
     _tasks.index.clear();
-    tags.forgetAccount();
+    _tags.forgetAccount();
     await _keys.clear();
     if (token != null) await _auth.signOut(token);
     _moveTo(AccountState.signedOut);
@@ -639,7 +640,7 @@ class Account extends ChangeNotifier {
     _lastError = null;
     _state.clearCursor();
     _tasks.index.clear();
-    tags.forgetAccount();
+    _tags.forgetAccount();
     await _keys.clear();
     _moveTo(AccountState.signedOut);
     return true;

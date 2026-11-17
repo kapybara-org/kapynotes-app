@@ -31,6 +31,7 @@ import '../data/daily_separator.dart';
 import '../data/editor_workspace.dart';
 import '../data/layout_prefs.dart';
 import '../data/local_store.dart';
+import '../data/tags.dart';
 import '../data/task_library.dart';
 import '../data/note.dart';
 import '../data/note_drawing.dart';
@@ -102,6 +103,7 @@ class HomePage extends StatefulWidget {
     this.desktopIntegration,
     this.account,
     this.tasks,
+    this.tags,
     required this.store,
     this.welcomeNoteId,
     this.launchIntent = LaunchIntent.open,
@@ -134,6 +136,9 @@ class HomePage extends StatefulWidget {
 
   /// Every checklist line as a task, for Tasks. Null leaves Tasks out.
   final TaskLibrary? tasks;
+
+  /// The person's tags and which notes carry them.
+  final TagStore? tags;
   final LocalStore store;
 
   /// The welcome note seeded by this launch, if this launch seeded one.

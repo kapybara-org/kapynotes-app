@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/speech/speech_api.dart';
 import 'package:kapy_notes/sync/account.dart';
@@ -44,6 +45,7 @@ class Device {
       notes: notes,
       state: syncState,
       store: store,
+      tags: TagStore(store),
       tasks: TaskLibrary(
         notes: notes,
         store: store,
@@ -252,6 +254,7 @@ void main() {
       notes: d.notes,
       state: syncState,
       store: d.store,
+      tags: TagStore(d.store),
       tasks: TaskLibrary(
         notes: d.notes,
         store: d.store,
@@ -282,6 +285,7 @@ void main() {
       notes: d.notes,
       state: syncState,
       store: d.store,
+      tags: TagStore(d.store),
       tasks: TaskLibrary(
         notes: d.notes,
         store: d.store,
@@ -318,6 +322,7 @@ void main() {
       notes: d.notes,
       state: syncState,
       store: d.store,
+      tags: TagStore(d.store),
       tasks: TaskLibrary(
         notes: d.notes,
         store: d.store,
@@ -355,6 +360,7 @@ void main() {
       notes: d.notes,
       state: syncState,
       store: d.store,
+      tags: TagStore(d.store),
       tasks: TaskLibrary(
         notes: d.notes,
         store: d.store,
