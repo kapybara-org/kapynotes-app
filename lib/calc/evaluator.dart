@@ -18,6 +18,11 @@ class CalcScope {
   final Map<String, CalcValue> _variables = {};
   CalcValue? _prev;
   CalcValue? _runningSum;
+
+  /// The sum of the results that read nothing from the note's other lines,
+  /// which is the figure the note's footer shows: a line worked out from
+  /// another's result would otherwise be counted twice.
+  CalcValue? _ownSum;
   int _numericCount = 0;
 
   /// The defined names, sorted and joined, so that scopes defining the same
@@ -76,23 +81,43 @@ class CalcScope {
     return Arith.scale(sum, 1 / _numericCount);
   }
 
+  /// The sum of the results that read nothing from other lines.
+  CalcValue? get ownSum => _ownSum;
+
+  /// Whether the line being traced read a variable, `prev`, `sum` or `avg`:
+  /// whether its answer is worked out from the note's other lines.
+  bool get tracedReadsResults {
+    final trace = _trace!;
+    return trace._values.isNotEmpty ||
+        trace._readsPrev ||
+        trace._readsSum ||
+        trace._readsCount;
+  }
+
   /// Folds a line's result into the running aggregates. Values that cannot
   /// join the sum (a boolean, or a unit that does not match) update `prev`
-  /// but are left out of `sum`/`avg` rather than poisoning them.
-  void record(CalcValue value) {
+  /// but are left out of `sum`/`avg` rather than poisoning them. A [derived]
+  /// result, one worked out from other lines, joins them but not [ownSum].
+  void record(CalcValue value, {bool derived = false}) {
     _prev = value;
-    if (value is BooleanValue || value is DateTimeValue) return;
-    final sum = _runningSum;
-    if (sum == null) {
-      _runningSum = value;
-      _numericCount = 1;
-      return;
-    }
-    try {
-      _runningSum = Arith.add(sum, value);
+    final joined = _joined(_runningSum, value);
+    if (joined != null) {
+      _runningSum = joined;
       _numericCount++;
+    }
+    if (derived) return;
+    _ownSum = _joined(_ownSum, value) ?? _ownSum;
+  }
+
+  /// [sum] with [value] added, or null where [value] cannot join it: a
+  /// boolean or a date, or mixed dimensions, which leave the sum intact.
+  static CalcValue? _joined(CalcValue? sum, CalcValue value) {
+    if (value is BooleanValue || value is DateTimeValue) return null;
+    if (sum == null) return value;
+    try {
+      return Arith.add(sum, value);
     } on CalcError {
-      // Mixed dimensions: keep the existing running total intact.
+      return null;
     }
   }
 
