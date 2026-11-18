@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import 'markdown_editing.dart';
 import 'markdown_syntax.dart';
 
 /// How a run of a cell's words is drawn, given the markdown over them.
@@ -87,7 +88,18 @@ class TableGeometry {
       _cells[row] = painters;
     }
 
-    columns = fitting
+    charWidth = _averageCharWidth(base, scaler);
+    final dashes = markdownTableDashes(analysis.text, table);
+    final set = [
+      for (var c = 0; c < count; c++)
+        c < dashes.length ? markdownTableColumnWidth(dashes[c]) : null,
+    ];
+    columns = fitting && set.any((width) => width != null)
+        ? _preferred([
+            for (var c = 0; c < count; c++)
+              (set[c] == null ? natural[c] : set[c]! * charWidth) + padding * 2,
+          ], fitToWidth!)
+        : fitting
         ? _fitted(
             [for (final width in natural) width + padding * 2],
             [for (final width in longestWord) width + padding * 2],
@@ -95,7 +107,8 @@ class TableGeometry {
             minColumnWidth,
           )
         : [for (final width in natural) width + padding * 2];
-    if (fill && fitting) {
+    // A table someone has sized keeps those sizes rather than stretching.
+    if (fill && fitting && set.every((width) => width == null)) {
       final spare = fitToWidth! - width;
       if (spare > 0) columns[0] += spare;
     }
@@ -126,6 +139,7 @@ class TableGeometry {
       fill = measured.fill,
       minRowHeight = measured.minRowHeight {
     columns = measured.columns;
+    charWidth = measured.charWidth;
     for (var i = 0; i < table.rows.length; i++) {
       final row = measured.table.rows[i];
       final cells = measured._cells[row];
@@ -149,6 +163,34 @@ class TableGeometry {
   static const double minColumnWidth = padding * 2 + 24;
 
   final MarkdownTable table;
+
+  /// One character of the cells' face, on average: what one dash past the
+  /// third in the delimiter row is worth when a column's width is set.
+  late final double charWidth;
+
+  static double _averageCharWidth(TextStyle base, TextScaler scaler) {
+    const sample = 'abcdefghijklmnopqrstuvwxyz';
+    final painter = TextPainter(
+      text: TextSpan(text: sample, style: base),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    )..layout();
+    final width = painter.width / sample.length;
+    painter.dispose();
+    return width;
+  }
+
+  /// Widths someone set, kept while they fit in [available], and all scaled
+  /// down together when they do not: a set width is a preference, and a table
+  /// never runs out of the column it is written in.
+  static List<double> _preferred(List<double> wanted, double available) {
+    final total = wanted.fold<double>(0, (sum, width) => sum + width);
+    if (total <= available) return wanted;
+    return [
+      for (final width in wanted)
+        math.max(minColumnWidth, width * available / total),
+    ];
+  }
 
   /// The width the table is fitted into, or null to let it be its natural size.
   final double? fitToWidth;
