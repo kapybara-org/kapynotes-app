@@ -170,7 +170,7 @@ if [[ "$DEVICE_FAMILY" == "1,2" ]]; then
 else
   fail "TARGETED_DEVICE_FAMILY is '$DEVICE_FAMILY', expected '1,2'"
 fi
-if [[ "$(setting SDK_VERSION)" == 26.* || "$(setting SDKROOT)" == *iPhoneOS26.* ]]; then
+if (( "$(setting SDK_VERSION | cut -d. -f1)" >= 26 )); then
   pass "Release target resolves to the iOS 26 SDK"
 else
   fail "Release target is not resolving to the iOS 26 SDK"
