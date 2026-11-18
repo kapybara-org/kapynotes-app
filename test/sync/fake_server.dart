@@ -67,6 +67,12 @@ class FakeServer {
   /// Calls to let through before [failNext] is thrown.
   int failAfter = 0;
 
+  /// Key bundle fetches to fail as offline before one is answered.
+  int failKeyFetches = 0;
+
+  /// How many ids each attachment URL request asked about.
+  final List<int> urlBatches = [];
+
   /// Thrown after the next removal is applied, as when its answer is lost.
   SyncException? loseRemovalAnswer;
 
@@ -1113,9 +1119,8 @@ class FakeServer {
       if (invite?.email != email) continue;
       // A blocked sender's invitation does not exist, however its link
       // travelled, and the rules are agreed to before joining.
-      if (user(
-        userId,
-      ).blocks.contains(user(space.ownerId).email.toLowerCase())) {
+      if (user(userId).blocks
+          .contains(user(space.ownerId).email.toLowerCase())) {
         _refuse(404, 'no such invitation');
       }
       _requireTerms(userId);
@@ -1224,6 +1229,11 @@ class FakeServer {
               space.keys.containsKey(m.key),
         );
     if (orphaned) {
+      // Like the server: only the owner, or an account that reset.
+      if (space.members[userId] != SpaceRole.owner &&
+          user(userId).bundle?.changes.reset == null) {
+        _refuse(403, 'not allowed');
+      }
       space.keys
         ..clear()
         ..addAll(spaceKeys);
@@ -2130,6 +2140,10 @@ class FakeApi implements SyncApi {
   @override
   Future<KeyBundle?> fetchKeyBundle() async {
     _gate(keys: true);
+    if (server.failKeyFetches > 0) {
+      server.failKeyFetches--;
+      throw const SyncTransientException('offline');
+    }
     return server.user(userId).bundle;
   }
 
@@ -2583,6 +2597,11 @@ class FakeApi implements SyncApi {
   @override
   Future<Map<String, Uri>> attachmentUrls(List<String> ids) async {
     _gate();
+    server.urlBatches.add(ids.length);
+    // Like the server's request schema.
+    if (ids.length > 100) {
+      throw const SyncRefusedException(400, 'invalid request', {});
+    }
     // Like the server, only for members of the space an attachment is in.
     bool member(String id) =>
         server.spaces[server.attachments[id]?.spaceId]?.members.containsKey(

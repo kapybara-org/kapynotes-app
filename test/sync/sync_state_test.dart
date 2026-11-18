@@ -58,19 +58,22 @@ void main() {
 
   tearDown(() => docs.dispose());
 
-  test('a cursor reaches disk only once the documents it describes have', () async {
-    docs.create('note', 'space');
-    state.recordCursor('space', 7);
-    expect(state.cursorFor('space'), 7);
+  test(
+    'a cursor reaches disk only once the documents it describes have',
+    () async {
+      docs.create('note', 'space');
+      state.recordCursor('space', 7);
+      expect(state.cursorFor('space'), 7);
 
-    final flushing = docs.flush();
-    await Future<void>.delayed(Duration.zero);
-    expect(_savedCursors(store)['space'], isNot(7), reason: 'still writing');
+      final flushing = docs.flush();
+      await Future<void>.delayed(Duration.zero);
+      expect(_savedCursors(store)['space'], isNot(7), reason: 'still writing');
 
-    storage.gate.complete();
-    await flushing;
-    expect(_savedCursors(store)['space'], 7);
-  });
+      storage.gate.complete();
+      await flushing;
+      expect(_savedCursors(store)['space'], 7);
+    },
+  );
 
   test('a record that failed to write keeps its cursor off disk', () async {
     docs.create('note', 'space');
@@ -102,6 +105,36 @@ void main() {
     expect(_savedCursors(store)['space'], 9);
   });
 
+  test(
+    'a rejoin stays owed on disk until the outbox it queued is written',
+    () async {
+      state.adoptPersonalSpace('space');
+      state.beginRejoin(2);
+      expect(_saved(store)['rejoinOwed'], isTrue);
+
+      // The rejoin queues every note's state, and the app quits before the
+      // document store has written it.
+      docs.create('note', 'space');
+      state.rejoinDone();
+      expect(state.owesRejoin, isFalse);
+      final flushing = docs.flush();
+      await Future<void>.delayed(Duration.zero);
+      expect((SyncState(store)..load()).owesRejoin, isTrue);
+
+      storage
+        ..failing = true
+        ..gate.complete();
+      await flushing;
+      expect((SyncState(store)..load()).owesRejoin, isTrue);
+
+      storage.failing = false;
+      await docs.flush();
+      final relaunched = SyncState(store)..load();
+      expect(relaunched.owesRejoin, isFalse);
+      expect(relaunched.keyGeneration, 2);
+    },
+  );
+
   test('the repair starts once, from the beginning of every log followed', () {
     store.data['sync.v1'] = {
       'deviceId': 'device',
@@ -128,17 +161,20 @@ void main() {
     expect(_saved(store)['repairVersion'], SyncState.logRepairVersion);
   });
 
-  test('forgetting a space saves none of the others ahead of their documents', () async {
-    store.data['sync.v1'] = {
-      'deviceId': 'device',
-      'opCursors': {'a': 1, 'b': 1},
-      'repairVersion': SyncState.logRepairVersion,
-    };
-    state.load();
-    state.recordCursor('a', 5);
+  test(
+    'forgetting a space saves none of the others ahead of their documents',
+    () async {
+      store.data['sync.v1'] = {
+        'deviceId': 'device',
+        'opCursors': {'a': 1, 'b': 1},
+        'repairVersion': SyncState.logRepairVersion,
+      };
+      state.load();
+      state.recordCursor('a', 5);
 
-    state.forgetSpace('b');
-    expect(_savedCursors(store), {'a': 1});
-    expect(state.cursorFor('a'), 5);
-  });
+      state.forgetSpace('b');
+      expect(_savedCursors(store), {'a': 1});
+      expect(state.cursorFor('a'), 5);
+    },
+  );
 }

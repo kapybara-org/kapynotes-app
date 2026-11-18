@@ -43,6 +43,11 @@ class SyncState {
   int _keyGeneration = 1;
   bool _rejoinOwed = false;
 
+  /// [_rejoinOwed] as last written to disk. Like [_savedRepairOwed], it is
+  /// cleared there only by [cursorsToSave], once the outboxes the rejoin
+  /// queued are on disk too.
+  bool _savedRejoinOwed = false;
+
   /// The one-off repair this build runs. Builds before it could skip ops
   /// while applying the log, or lose them on the way up, so a device that
   /// ran one reads every log again from the start and republishes what it
@@ -137,6 +142,7 @@ class SyncState {
         ? keyGeneration
         : 1;
     _rejoinOwed = stored['rejoinOwed'] == true;
+    _savedRejoinOwed = _rejoinOwed;
   }
 
   /// Records which space is the personal one.
@@ -164,10 +170,12 @@ class SyncState {
     final generation = _generation;
     final cursors = Map<String, int>.of(_cursors);
     final owed = Set<String>.of(_repairOwed);
+    final rejoin = _rejoinOwed;
     return () {
       if (generation != _generation) return;
       if (mapEquals(cursors, _savedCursors) &&
-          setEquals(owed, _savedRepairOwed)) {
+          setEquals(owed, _savedRepairOwed) &&
+          rejoin == _savedRejoinOwed) {
         return;
       }
       _savedCursors
@@ -176,6 +184,7 @@ class SyncState {
       _savedRepairOwed
         ..clear()
         ..addAll(owed);
+      _savedRejoinOwed = rejoin;
       _save();
     };
   }
@@ -213,11 +222,11 @@ class SyncState {
   }
 
   /// The personal space's notes have been queued for the server in full.
-  void rejoinDone() {
-    if (!_rejoinOwed) return;
-    _rejoinOwed = false;
-    _save();
-  }
+  ///
+  /// Held in memory only, like [repairDone]: the outboxes it queued are
+  /// written after a delay, so it reaches disk through [cursorsToSave] once
+  /// they have. A launch after a crash in between owes the rejoin still.
+  void rejoinDone() => _rejoinOwed = false;
 
   /// Whether [spaceId] still owes the server a complete copy of its notes.
   bool owesRepair(String spaceId) => _repairOwed.contains(spaceId);
@@ -278,6 +287,7 @@ class SyncState {
     _savedRepairOwed
       ..clear()
       ..addAll(_repairOwed);
+    _savedRejoinOwed = _rejoinOwed;
     _save();
   }
 
@@ -292,7 +302,7 @@ class SyncState {
     'deviceId': _deviceId,
     'lastSyncedAt': _lastSyncedAt?.millisecondsSinceEpoch,
     if (_keyGeneration > 1) 'keyGeneration': _keyGeneration,
-    if (_rejoinOwed) 'rejoinOwed': true,
+    if (_savedRejoinOwed) 'rejoinOwed': true,
   });
 
   /// 16 bytes from the platform CSPRNG, hex. Long enough that two installs

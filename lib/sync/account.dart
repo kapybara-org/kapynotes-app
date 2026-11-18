@@ -475,15 +475,25 @@ class Account extends ChangeNotifier {
   /// The server said encryption was reset elsewhere. A key this device
   /// already holds that opens the new bundle — an older build that was
   /// unlocked with the new passphrase — is simply kept. Any other is let go.
+  ///
+  /// Sync is halted by then and calls nothing again, so a fetch that fails
+  /// is asked again on a backoff of its own until it is answered.
   Future<void> _onKeysChanged(SyncKeysChangedException error) async {
+    _keysChangedTimer?.cancel();
+    _keysChangedTimer = null;
     final token = _token;
     if (token == null) return;
     final KeyBundle? bundle;
     try {
       bundle = await _syncApiFor(token).fetchKeyBundle();
     } on SyncException {
+      if (_token != token || _keysChangedTimer != null) return;
+      final delay = keysChangedRetry * (1 << _keysChangedFailures.clamp(0, 6));
+      _keysChangedFailures++;
+      _keysChangedTimer = Timer(delay, () => unawaited(_onKeysChanged(error)));
       return;
     }
+    _keysChangedFailures = 0;
     if (_token != token || bundle == null) return;
     if (bundle.generation <= _state.keyGeneration) return;
     _bundle = bundle;
@@ -501,6 +511,13 @@ class Account extends ChangeNotifier {
     await _keys.forgetMasterKey();
     _moveTo(AccountState.keysChanged);
   }
+
+  /// The first wait before [_onKeysChanged] asks for the bundle again after
+  /// a failed fetch, doubled with each failure in a row, to about five
+  /// minutes.
+  Duration keysChangedRetry = const Duration(seconds: 5);
+  Timer? _keysChangedTimer;
+  int _keysChangedFailures = 0;
 
   /// What the sync status line says. A device waiting for the passphrase
   /// set by a reset elsewhere has no sync running, and still says why.
@@ -701,6 +718,9 @@ class Account extends ChangeNotifier {
   }
 
   void _teardownSync() {
+    _keysChangedTimer?.cancel();
+    _keysChangedTimer = null;
+    _keysChangedFailures = 0;
     final images = _images;
     _joining?.dispose();
     _joining = null;
@@ -954,9 +974,8 @@ class Account extends ChangeNotifier {
     final name = await deviceName(_user?.name);
     if (name == null || _token != token) return;
     try {
-      await _syncApiFor(
-        token,
-      ).reportDevice(name: name, platform: thisDevicePlatform);
+      await _syncApiFor(token)
+          .reportDevice(name: name, platform: thisDevicePlatform);
       _putForThisAccount(_reportedEntry, now);
     } on SyncException {
       // Only ever a nicer sentence on another device; the next pass retries.
@@ -987,9 +1006,8 @@ class Account extends ChangeNotifier {
     final token = _token;
     if (token == null) return (proof: null, problem: KeyCodeProblem.offline);
     try {
-      final proof = await _syncApiFor(
-        token,
-      ).verifyKeyProof(action, code.replaceAll(RegExp(r'\s'), ''));
+      final proof = await _syncApiFor(token)
+          .verifyKeyProof(action, code.replaceAll(RegExp(r'\s'), ''));
       return (proof: proof, problem: null);
     } on SyncRefusedException catch (error) {
       return (

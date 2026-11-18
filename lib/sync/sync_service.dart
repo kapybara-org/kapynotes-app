@@ -195,6 +195,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   String? _lastError;
   bool _disposed = false;
 
+  /// Whether this run has asked the server which of the personal notes'
+  /// attachments survived a reset, as a rejoin does before anything goes
+  /// back up. See [ImageSync.forgetSwept].
+  bool _sweptChecked = false;
+  bool _checkingSwept = false;
+
   /// Spaces the socket has subscribed to on this connection.
   final Set<String> _subscribed = {};
 
@@ -1620,8 +1626,19 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           unawaited(syncNow());
         }
       case 'content-key-epoch':
-        await _adoptServerKey(vault, record.noteId, body);
-        _scheduleSend();
+        if (await _adoptServerKey(vault, record.noteId, body)) {
+          _scheduleSend();
+          return;
+        }
+        // No key this account holds opens the note's current one, as for a
+        // note a rescue had to leave behind. Sending again would only be
+        // refused again.
+        _stick(
+          record,
+          entry,
+          "A shared note can't sync any more. Its text is kept on this "
+          'device.',
+        );
       case 'stale-key-generation':
       case 'not a member of this space':
       case 'move-raced':
@@ -1635,50 +1652,59 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         // The entry stays exactly as it is, to go once the space is covered.
         _holdForPro(entry.spaceId);
       default:
-        // Something this build cannot answer. The entry is replaced by a
-        // snapshot of the whole document, which carries every op it held,
-        // and the failure is shown rather than retried in a loop.
         debugPrint('KapyNotes: push refused: $code');
-        record.outbox.remove(entry);
-        if (entry.deleted == null) {
-          record.outbox.insert(
-            0,
-            OutboxEntry(
-              id: _nextRequestId(),
-              spaceId: entry.spaceId,
-              snapshot: record.doc.toSnapshot(),
-              covers: _state.cursorFor(entry.spaceId),
-              seed: !record.seeded,
-              from: entry.from,
-            ),
-          );
-        }
-        _docs.markDirty(record.noteId);
-        _stuck[record.noteId] = _notes.byId(record.noteId)?.updatedAt;
-        _stuckError = code.contains('too large')
-            ? 'A note is too large to sync. Shorten it to sync it again.'
-            : 'A note could not sync ($code).';
-        _settle();
+        _stick(
+          record,
+          entry,
+          code.contains('too large')
+              ? 'A note is too large to sync. Shorten it to sync it again.'
+              : 'A note could not sync ($code).',
+        );
     }
+  }
+
+  /// Something this build cannot answer. The entry is replaced by a
+  /// snapshot of the whole document, which carries every op it held, and
+  /// [problem] is shown rather than the entry retried in a loop.
+  void _stick(DocRecord record, OutboxEntry entry, String problem) {
+    record.outbox.remove(entry);
+    if (entry.deleted == null) {
+      record.outbox.insert(
+        0,
+        OutboxEntry(
+          id: _nextRequestId(),
+          spaceId: entry.spaceId,
+          snapshot: record.doc.toSnapshot(),
+          covers: _state.cursorFor(entry.spaceId),
+          seed: !record.seeded,
+          from: entry.from,
+        ),
+      );
+    }
+    _docs.markDirty(record.noteId);
+    _stuck[record.noteId] = _notes.byId(record.noteId)?.updatedAt;
+    _stuckError = problem;
+    _settle();
   }
 
   /// The server holds a newer content key for a note this device is about
   /// to write. Take it, keep the local text, and let the write go up under it.
-  Future<void> _adoptServerKey(
+  /// False when there is no key to take that this device can open.
+  Future<bool> _adoptServerKey(
     Vault vault,
     String noteId,
     Map<String, Object?> body,
   ) async {
     final spaceId = body['spaceId'];
-    if (spaceId is! String) return;
+    if (spaceId is! String) return false;
     await _keyring.refresh(_api, vault);
     final space = _keyring.byId(spaceId);
     final spaceKey = _keyring.keyFor(spaceId);
-    if (space == null || spaceKey == null) return;
+    if (space == null || spaceKey == null) return false;
     for (final wire in await _api.fetchNoteKeys(spaceId)) {
       if (wire.noteId != noteId) continue;
       final content = await unwrapKey(wire.wrapped, spaceKey);
-      if (content == null) return;
+      if (content == null) return false;
       _docs.get(noteId)?.keys[wire.contentKeyEpoch] = content;
       _notes.adoptKey(
         noteId,
@@ -1686,17 +1712,18 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         contentKeyEpoch: wire.contentKeyEpoch,
         contentKeyGeneration: wire.contentKeyGeneration ?? wire.keyGeneration,
       );
-      return;
+      return true;
     }
     // No row at all: the server expects a fresh key at epoch one.
     final local = _notes.byId(noteId);
-    if (local == null) return;
+    if (local == null) return false;
     _notes.adoptKey(
       noteId,
       contentKey: local.contentKey ?? randomKey(),
       contentKeyEpoch: 1,
       contentKeyGeneration: space.keyGeneration,
     );
+    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -1758,6 +1785,14 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _state.repairDone(spaceId);
       return;
     }
+    final images = _images;
+    if (rejoin && !_sweptChecked && images != null) {
+      if (!_checkingSwept) {
+        _checkingSwept = true;
+        unawaited(_forgetSwept(spaceId, images));
+      }
+      return;
+    }
     if (rejoin) {
       for (final note in _notes.allNotes) {
         if ((note.spaceId ?? personalId) != spaceId) continue;
@@ -1788,6 +1823,23 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       _scheduleReconcile();
     }
     _scheduleSend();
+  }
+
+  /// The first half of a rejoin with pictures in it: ids the server swept
+  /// are let go where this device can upload the picture again, and the
+  /// notes go back up once that is settled. Asked again on the next pass if
+  /// the server could not be reached.
+  Future<void> _forgetSwept(String spaceId, ImageSync images) async {
+    final personalId = _keyring.personal?.id;
+    final notes = [
+      for (final note in _notes.allNotes)
+        if ((note.spaceId ?? personalId) == spaceId) note,
+    ];
+    final done = await images.forgetSwept(notes);
+    _checkingSwept = false;
+    if (_disposed || !done) return;
+    _sweptChecked = true;
+    await _inLogOrder(() async => _republishIfOwed(spaceId));
   }
 
   /// The server holds [deviceSeq] of this device's pushes for [record]'s
@@ -1975,6 +2027,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     if (record == null) return;
     final at = touch.at ?? _now();
     final local = _notes.byId(noteId);
+    // A note new to this device of which nothing could be opened, as one a
+    // rescue left under a key nobody holds any more: there is nothing to
+    // show, and an empty note would only invite a write nobody could read.
+    if (local == null && touch.arrived && !touch.changed && !touch.deleted) {
+      return;
+    }
 
     if (touch.deleted) {
       if (local != null &&
@@ -2200,10 +2258,14 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// of each note it holds a copy of. Viewers keep their copies and can read
   /// on; a note this device has no copy of stays under the old key.
   ///
-  /// Only a device holding the space's notes does it, so a member still
-  /// waiting for their first grant never mints a key over notes they lack.
+  /// Only the owner or an account that reset its own encryption may, as on
+  /// the server, and only from a device holding the space's notes, so a
+  /// member still waiting for their first grant never mints a key over notes
+  /// they lack. A note whose key moved on past the copy here is kept as a
+  /// private note; see [_keepLeftOut].
   Future<bool> _rescue(Space space) async {
     if (space.spaceKey != null) return false;
+    if (!space.isOwner && _state.keyGeneration <= 1) return false;
     final me = _keyring.userId;
     final someoneCanGrant = space.members.any(
       (member) => member.userId != me && member.canEdit && member.hasKey,
@@ -2236,7 +2298,45 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       },
     );
     _keyring.remember(space.id, newKey);
+    await _keepLeftOut(space.id, space.keyGeneration + 1, held);
     return true;
+  }
+
+  /// Notes a rescue had to leave under the old key, because the server held a
+  /// newer key for them than this device ever had. Nobody can open them under
+  /// the new one, and a write from here would go up under a key nobody else
+  /// holds, so each is replaced here by a personal note with the same words,
+  /// which reaches this account's other devices. A note the server has no
+  /// key for yet is not one of them; it goes up under a new key of its own. This device's copy of each becomes a
+  /// private note, so its words still reach this account's other devices.
+  Future<void> _keepLeftOut(
+    String spaceId,
+    int generation,
+    List<Note> held,
+  ) async {
+    final List<WireNoteKey> rows;
+    try {
+      rows = await _api.fetchNoteKeys(spaceId);
+    } on SyncException catch (error) {
+      debugPrint(
+        'KapyNotes: rescue could not check its notes: ${error.message}',
+      );
+      return;
+    }
+    final behind = {
+      for (final row in rows)
+        if (row.keyGeneration != generation) row.noteId,
+    };
+    var kept = 0;
+    for (final note in held) {
+      if (!behind.contains(note.id)) continue;
+      if (_notes.keepAsOwn(note.id) == null) continue;
+      _docs.remove(note.id);
+      kept++;
+    }
+    if (kept > 0) {
+      debugPrint('KapyNotes: rescue kept $kept note(s) as personal notes');
+    }
   }
 
   /// Ends a team space and brings its notes home: every note moves to the

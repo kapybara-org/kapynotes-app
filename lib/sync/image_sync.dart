@@ -249,6 +249,98 @@ class ImageSync {
     );
   }
 
+  /// Ids asked about in one request by [forgetSwept]; the most the server
+  /// takes at once.
+  static const int sweptBatch = 100;
+
+  /// Before a device that comes back after a reset publishes its notes again:
+  /// lets go of each server id among [notes] that the server no longer has,
+  /// when this device holds the bytes to upload again.
+  ///
+  /// A reset leaves pictures where they are, but those of notes no device
+  /// brought back within 30 days are swept with the rest of what it set
+  /// aside. An id that is gone and has no bytes here stays as it is: nothing
+  /// could replace it, and another device that holds the picture can.
+  ///
+  /// False when the server could not be asked, with nothing changed, so the
+  /// caller can ask again on its next pass.
+  Future<bool> forgetSwept(List<Note> notes) async {
+    final ids = <String>{
+      for (final note in notes)
+        for (final ref in note.attachments)
+          if (ref is! NoteUnknownRef) ...[
+            ?ref.attachmentId,
+            if (ref is NoteImageRef) ?ref.thumbId,
+          ],
+    }.toList();
+    if (ids.isEmpty) return true;
+
+    final kept = <String>{};
+    try {
+      for (var start = 0; start < ids.length; start += sweptBatch) {
+        final end = start + sweptBatch < ids.length
+            ? start + sweptBatch
+            : ids.length;
+        kept.addAll((await _api.attachmentUrls(ids.sublist(start, end))).keys);
+      }
+    } on SyncTransientException {
+      return false;
+    } on SyncException catch (error) {
+      // Not a question this server can answer, which is no reason to keep
+      // the notes from going back up: the ids stay as they are.
+      debugPrint('KapyNotes: rejoin could not check attachments: $error');
+      return true;
+    }
+
+    var cleared = 0;
+    var unrecoverable = 0;
+    for (final note in notes) {
+      for (final ref in note.attachments) {
+        if (ref is NoteUnknownRef) continue;
+        final id = ref.attachmentId;
+        final (thumbId, thumbHash) = ref is NoteImageRef
+            ? (ref.thumbId, ref.thumbHash)
+            : (null, null);
+        final mainGone = id != null && !kept.contains(id);
+        final thumbGone = thumbId != null && !kept.contains(thumbId);
+        if (!mainGone && !thumbGone) continue;
+        final clearMain = mainGone && await _store.has(ref.hash);
+        final clearThumb =
+            thumbGone && thumbHash != null && await _store.has(thumbHash);
+        if (mainGone && !clearMain) unrecoverable++;
+        if (thumbGone && !clearThumb) unrecoverable++;
+        if (!clearMain && !clearThumb) continue;
+        final updated = _notes.updateAttachment(
+          note.id,
+          ref.hash,
+          (current) {
+            final json = {...current.toJson()};
+            if (clearMain && json['attachmentId'] == id) {
+              json.remove('attachmentId');
+            }
+            if (clearThumb && json['thumbId'] == thumbId) {
+              json.remove('thumbId');
+            }
+            return NoteAttachmentRef.fromJson(json) ?? current;
+          },
+          touch: true,
+          key: ref.key,
+        );
+        if (updated) {
+          if (clearMain) cleared++;
+          if (clearThumb) cleared++;
+        }
+      }
+    }
+    if (cleared > 0 || unrecoverable > 0) {
+      debugPrint(
+        'KapyNotes: rejoin found ${ids.length - kept.length} attachments '
+        'gone: $cleared to upload again, $unrecoverable not on this device',
+      );
+    }
+    return true;
+  }
+
   /// Fetches the bytes behind [hash], decrypts them, and caches them on disk.
   ///
   /// The hash is looked up across every local note, because an image is

@@ -134,6 +134,36 @@ void main() {
   });
 
   test(
+    'a device offline as it learns of a reset asks again until it can',
+    () async {
+      final a = await unlocked('first passphrase', create: true);
+      a.notes.create(body: 'From A');
+      await settle([a]);
+      final b = await unlocked('first passphrase');
+      await settle([a, b]);
+      await a.account.signOut();
+      await a.account.signIn(email: 'someone@example.com', password: 'x');
+      expect(await reset(a, 'new passphrase'), isA<KeyChangeDone>());
+
+      b.account.keysChangedRetry = const Duration(milliseconds: 1);
+      server.failKeyFetches = 3;
+      b.notes.create(body: 'Written on B while offline');
+      await settle([b]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await pumpEventQueue();
+
+      expect(server.failKeyFetches, 0);
+      expect(b.account.state, AccountState.keysChanged);
+      expect(b.account.resetElsewhere, isNotNull);
+      expect(await b.account.unlock('new passphrase'), isTrue);
+      await settle([a, b]);
+      expect(bodies(b), containsAll(['From A', 'Written on B while offline']));
+      a.dispose();
+      b.dispose();
+    },
+  );
+
+  test(
     'a device already holding the new key carries on without asking',
     () async {
       final a = await unlocked('first passphrase', create: true);
@@ -262,6 +292,61 @@ void main() {
     expect(seen.identityResetAt, isNotNull);
     a.dispose();
     bob.dispose();
+  });
+
+  test('a note whose key moved on past this device becomes a personal '
+      'note instead of a write nobody could read', () async {
+    final a = await unlocked('first passphrase', create: true);
+    final viewer = await unlocked(
+      'viewer passphrase',
+      create: true,
+      auth: FakeAuth(id: 'user-2', email: 'user-2@example.com', name: 'Vi'),
+    );
+    final note = a.notes.create(body: 'Lagging note');
+    await settle([a]);
+    final space = await a.account.sharing!.shareNoteWith(
+      note.id,
+      email: 'user-2@example.com',
+      role: SpaceRole.viewer,
+    );
+    await viewer.account.sharing!.acceptInvite(server.outbox.single.token);
+    await settle([a, viewer]);
+
+    // An editor since gone moved the note's key on while this device was
+    // away, so the copy here is a version behind.
+    final keys = server.spaces[space.id]!.noteKeys;
+    final old = keys[note.id]!;
+    keys[note.id] = FakeNoteKey(
+      wrapped: old.wrapped,
+      keyGeneration: old.keyGeneration,
+      contentKeyEpoch: old.contentKeyEpoch + 1,
+      contentKeyGeneration: old.contentKeyGeneration,
+    );
+
+    await a.account.signOut();
+    await a.account.signIn(email: 'someone@example.com', password: 'x');
+    expect(await reset(a, 'new passphrase'), isA<KeyChangeDone>());
+    await settle([a]);
+
+    final stored = server.spaces[space.id]!;
+    expect(stored.keyGeneration, 2);
+    expect(stored.noteKeys[note.id]!.keyGeneration, 1);
+    final copies = [
+      for (final n in a.notes.notes)
+        if (n.spaceId == null && n.body == 'Lagging note') n,
+    ];
+    expect(copies, hasLength(1));
+    expect(a.notes.byId(note.id), isNull);
+    expect(onServer(), contains(copies.single.id));
+
+    a.notes.updateBody(copies.single.id, 'Lagging note, edited');
+    await settle([a]);
+    expect(server.refusals, isNot(contains('content-key-epoch')));
+    expect(a.account.sync!.status, isNot(SyncStatus.failed));
+    expect(stored.noteKeys[note.id]!.keyGeneration, 1);
+    expect(stored.notes[note.id]!.deletedAt, isNull);
+    a.dispose();
+    viewer.dispose();
   });
 
   test('a space only this account could grant in is rotated, and its '
