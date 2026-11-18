@@ -1718,6 +1718,16 @@ void main() {
       expect(bob.sharing.invites, hasLength(1));
     });
 
+    test('nor from someone you have blocked', () async {
+      await shareWithBob('One');
+      await bob.sharing.blockPerson(alice.email);
+      await aliceShares('Two', role: SpaceRole.viewer);
+      await bob.sharing.refresh();
+      await settle(server);
+      expect(bob.sharing.invites, isEmpty, reason: 'the server hides it');
+      expect(bob.sharing.teams, hasLength(1));
+    });
+
     test(
       'a refused automatic accept is tried once and left to the person',
       () async {
