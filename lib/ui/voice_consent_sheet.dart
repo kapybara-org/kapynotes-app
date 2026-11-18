@@ -67,7 +67,7 @@ class _SpeechConsentSheet extends StatelessWidget {
               ),
               _Point(
                 text:
-                    'Turn transcription off anytime in Settings › Voice notes.',
+                    'Turn transcription off anytime in Settings › Voice & AI.',
               ),
               const SizedBox(height: 12),
               Text(

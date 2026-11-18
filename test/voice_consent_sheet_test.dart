@@ -32,6 +32,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('DeepSeek'), findsNothing);
+    expect(find.textContaining('Settings › Voice & AI'), findsOneWidget);
   });
 
   for (final (name, size) in [
