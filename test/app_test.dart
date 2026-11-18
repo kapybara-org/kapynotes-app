@@ -50,7 +50,9 @@ import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_swipe.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
+import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/tag_ui.dart';
+import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:kapy_notes/ui/page_card.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/toolbar.dart';
@@ -5520,6 +5522,121 @@ void main() {
       expect(find.byType(NoteRow), findsNothing);
       expect(find.text('No drawings yet'), findsOneWidget);
       expect(spaceCount(tester), '0');
+    });
+
+    testWidgets('Drawings never keeps a note on the page, and Notes gets '
+        'it back', (tester) async {
+      await notes.load();
+      notes.create(body: 'Words');
+      await pumpApp(tester);
+      expect(openNoteBody(tester), 'Words');
+
+      await openSpace(tester, 'drawings');
+      expect(find.text('No drawings yet'), findsOneWidget);
+      expect(find.byType(EmptyState), findsOneWidget);
+      expect(noteField, findsNothing);
+      expect(find.byType(DrawingCanvas), findsNothing);
+
+      await openSpace(tester, 'notes');
+      expect(openNoteBody(tester), 'Words');
+    });
+
+    testWidgets('Drawings opens its own first drawing in place of the note, '
+        'and Notes gets the note back', (tester) async {
+      store.data['notes.v1'] = [
+        {'id': 'words', 'body': 'Words', 'createdAt': 2000, 'updatedAt': 2000},
+        {
+          'id': 'sketch',
+          'body': 'Sketch',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+          'drawing': {'elements': <Object?>[]},
+        },
+      ];
+      prefs.lastOpenedNoteId = 'words';
+      await pumpApp(tester);
+      expect(openNoteBody(tester), 'Words');
+
+      await openSpace(tester, 'drawings');
+      expect(noteField, findsNothing);
+      expect(find.byType(DrawingCanvas), findsOneWidget);
+
+      await openSpace(tester, 'notes');
+      expect(find.byType(DrawingCanvas), findsNothing);
+      expect(openNoteBody(tester), 'Words');
+    });
+
+    for (final leave in ['hidden', 'archived']) {
+      testWidgets('a note $leave while Drawings has it parked does not come '
+          'back on the page in Notes', (tester) async {
+        store.data['notes.v1'] = [
+          {
+            'id': 'words',
+            'body': 'Words',
+            'createdAt': 2000,
+            'updatedAt': 2000,
+          },
+          {
+            'id': 'sketch',
+            'body': 'Sketch',
+            'createdAt': 1000,
+            'updatedAt': 1000,
+            'drawing': {'elements': <Object?>[]},
+          },
+        ];
+        prefs.lastOpenedNoteId = 'words';
+        await pumpApp(tester);
+        expect(openNoteBody(tester), 'Words');
+
+        await openSpace(tester, 'drawings');
+        expect(find.byType(DrawingCanvas), findsOneWidget);
+        if (leave == 'hidden') {
+          notes.hide('words');
+        } else {
+          notes.archive('words');
+        }
+        await tester.pumpAndSettle();
+
+        await openSpace(tester, 'notes');
+        expect(noteField, findsNothing);
+        expect(find.text('Words'), findsNothing);
+        expect(find.byType(DrawingCanvas), findsOneWidget);
+      });
+    }
+
+    testWidgets('Drawings with nothing to open offers no action on the note '
+        'it is not showing', (tester) async {
+      await notes.load();
+      notes.create(body: 'Words');
+      await pumpApp(tester);
+      VoidCallback? press(String key) =>
+          tester.widget<CompactIconButton>(find.byKey(ValueKey(key))).onPressed;
+      Future<void> openMore() async {
+        await tester.tap(find.byKey(const ValueKey('page-more')));
+        await tester.pumpAndSettle();
+      }
+
+      expect(press('page-pin'), isNotNull);
+      await openMore();
+      expect(find.byKey(const ValueKey('page-more-hide')), findsOneWidget);
+      expect(find.byKey(const ValueKey('page-more-archive')), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      await openSpace(tester, 'drawings');
+      expect(press('page-pin'), isNull);
+      expect(
+        tester
+            .widget<TonalButton>(find.byKey(const ValueKey('page-share')))
+            .onPressed,
+        isNull,
+      );
+      await openMore();
+      expect(find.byKey(const ValueKey('page-more-hide')), findsNothing);
+      expect(find.byKey(const ValueKey('page-more-archive')), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text('Words'), findsNothing);
     });
 
     testWidgets('the archive opens from the filter, and its ✕ leaves it', (
