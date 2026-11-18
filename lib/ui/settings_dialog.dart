@@ -3085,7 +3085,7 @@ class _AppearancePreview extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: palette.wellBackground,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
         border: Border.all(color: palette.controlBorder),
       ),
       child: NotebookPaper(
@@ -3137,7 +3137,9 @@ class _AppearancePreview extends StatelessWidget {
                           ),
                           decoration: BoxDecoration(
                             color: palette.tonalBackground,
-                            borderRadius: BorderRadius.circular(7),
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.compact,
+                            ),
                           ),
                           child: Text(
                             ResultFormatter.sample(prefs.digitGrouping),
@@ -3462,7 +3464,7 @@ class _Keycap extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: recording ? null : palette.surfaceBackground,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadii.compact),
         border: Border.all(
           color: recording
               ? Theme.of(context).colorScheme.primary
@@ -3532,7 +3534,7 @@ class _ShortcutFilter extends StatelessWidget {
                   ),
                   fillColor: palette.surfaceBackground,
                   borderWidth: 1.5,
-                  radius: 10,
+                  radius: AppRadii.control,
                   neutralFocus: !pressing,
                   prefixIcon: Padding(
                     padding: const EdgeInsets.only(left: 10, right: 8),
@@ -3570,7 +3572,7 @@ class _ShortcutFilter extends StatelessWidget {
                 : palette.textPrimary,
             side: BorderSide(color: palette.controlBorder),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
           ),
         ),
@@ -3630,7 +3632,7 @@ class _ShortcutRow extends StatelessWidget {
       child: InkWell(
         key: ValueKey('shortcut-${action.name}'),
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadii.compact),
         child: Opacity(
           opacity: onPressed == null ? 0.45 : 1,
           child: _Keycap(
@@ -3742,7 +3744,7 @@ class _SheetGrabber extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: context.palette.textTertiary.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
         ),
         child: const SizedBox(width: 38, height: 4),
       ),
@@ -3844,7 +3846,7 @@ class _CategoryRow extends StatelessWidget {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: KapyIcon(section.icon, size: 18, color: accent),
               ),
@@ -3930,7 +3932,7 @@ class _RailItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    const corners = BorderRadius.all(Radius.circular(9));
+    const corners = BorderRadius.all(Radius.circular(AppRadii.control));
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Semantics(
@@ -4070,7 +4072,11 @@ class _SheetPage extends StatelessWidget {
               ],
             ),
           ),
-          Divider(height: 0.5, thickness: 0.5, color: palette.separator),
+          Divider(
+            height: AppHairline.of(context),
+            thickness: AppHairline.of(context),
+            color: palette.separator,
+          ),
           Expanded(
             child: _withFlash(
               SingleChildScrollView(
@@ -4114,7 +4120,7 @@ class _ScrollingPane extends StatelessWidget {
       controller: controller,
       thumbVisibility: AppPlatform.hasPointer,
       thickness: 3,
-      radius: const Radius.circular(999),
+      radius: const Radius.circular(AppRadii.pill),
       child: SingleChildScrollView(
         controller: controller,
         padding: AppPlatform.hasPointer
@@ -4297,7 +4303,7 @@ class _ModelProgress extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
           child: SizedBox(
             height: 4,
             child: Stack(
@@ -4503,7 +4509,7 @@ class _UpdateRow extends StatelessWidget {
                       : palette.controlBackground,
                   foregroundColor: palette.textPrimary,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(7),
+                    borderRadius: BorderRadius.circular(AppRadii.compact),
                   ),
                 ),
                 child: Text(
@@ -4839,8 +4845,8 @@ class _DefaultNotePickerDialog extends StatelessWidget {
         child: ListView.separated(
           itemCount: notes.length + 1,
           separatorBuilder: (_, _) => Divider(
-            height: 0.5,
-            thickness: 0.5,
+            height: AppHairline.of(context),
+            thickness: AppHairline.of(context),
             color: context.palette.separator,
           ),
           itemBuilder: (context, index) {
@@ -4938,7 +4944,7 @@ class _TimeZonePickerDialogState extends State<_TimeZonePickerDialog> {
                 ),
                 isDense: true,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
               ),
               onChanged: (value) => setState(() => _query = value),
@@ -4955,8 +4961,8 @@ class _TimeZonePickerDialogState extends State<_TimeZonePickerDialog> {
                   : ListView.separated(
                       itemCount: options.length,
                       separatorBuilder: (_, _) => Divider(
-                        height: 0.5,
-                        thickness: 0.5,
+                        height: AppHairline.of(context),
+                        thickness: AppHairline.of(context),
                         color: context.palette.separator,
                       ),
                       itemBuilder: (context, index) {
