@@ -363,9 +363,50 @@ class Sharing extends ChangeNotifier {
     _sync.requestSync();
   }
 
-  /// Leaving a space. The notes already on this device are the user's to
-  /// keep; nothing here pretends otherwise.
-  Future<void> leave(String spaceId) async {
+  /// Changes what a member may do, Editor or View only. Owner only.
+  ///
+  /// A server from before this answers 404 for the route. With one other
+  /// person in the space, the notes then move to the pair space for them at
+  /// the new access, which they join from a fresh invitation.
+  Future<void> changeAccess(
+    String spaceId,
+    String userId,
+    SpaceRole role,
+  ) async {
+    final space = _keyring.byId(spaceId);
+    if (space == null || !space.isOwner) {
+      throw const SyncRefusedException(403, 'owner-only', {});
+    }
+    if (role == SpaceRole.owner) {
+      throw const SyncProtocolException('ownership moves by transfer');
+    }
+    try {
+      await _api.changeRole(spaceId, userId, role);
+    } on SyncRefusedException catch (error) {
+      final others = space.othersThan(this.userId);
+      if (error.status != 404 ||
+          error.code == 'not a member' ||
+          others.length != 1 ||
+          space.invites.isNotEmpty) {
+        rethrow;
+      }
+      for (final note in notesIn(spaceId)) {
+        if (note.isHidden) continue;
+        await shareNoteWith(note.id, email: others.single.email, role: role);
+      }
+    }
+    await refresh();
+  }
+
+  /// Leaving a space. By default each of its notes is first kept as a
+  /// private copy, attachments included; if any copy cannot be made, nothing
+  /// is left.
+  Future<void> leave(String spaceId, {bool keepCopies = true}) async {
+    if (keepCopies) {
+      for (final note in notesIn(spaceId)) {
+        if (!note.isHidden) await makePrivateCopy(note.id);
+      }
+    }
     await _api.removeMember(spaceId, userId);
     await refresh();
     _sync.requestSync();

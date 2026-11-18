@@ -433,8 +433,7 @@ class DocStore {
   /// outlives any one sign-in, and a test that loads it inside the fake
   /// clock and syncs on the real one would otherwise wait on a microtask the
   /// fake clock never runs.
-  Future<void> load() =>
-      _loaded ? Future<void>.value() : _loading ??= _load();
+  Future<void> load() => _loaded ? Future<void>.value() : _loading ??= _load();
 
   Future<void> _load() async {
     try {

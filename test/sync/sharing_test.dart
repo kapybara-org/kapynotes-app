@@ -652,6 +652,89 @@ void main() {
       expect(ours.body, 'Ours');
     });
 
+    test(
+      'the owner changes what someone may do, and nobody else can',
+      () async {
+        final note = await shareWithBob('Ours');
+        final spaceId = alice.notes.byId(note.id)!.spaceId!;
+        await expectLater(
+          bob.sharing.changeAccess(spaceId, alice.userId, SpaceRole.viewer),
+          throwsA(isA<SyncRefusedException>()),
+        );
+
+        await alice.sharing.changeAccess(spaceId, bob.userId, SpaceRole.viewer);
+        expect(
+          alice.sharing
+              .spaceOf(alice.notes.byId(note.id)!)!
+              .members
+              .firstWhere((m) => m.userId == bob.userId)
+              .role,
+          SpaceRole.viewer,
+        );
+        await bob.sharing.refresh();
+        expect(bob.sharing.canEdit(bob.notes.byId(note.id)!), isFalse);
+        expect(
+          bob.notes.byId(note.id)!.spaceId,
+          spaceId,
+          reason: 'nothing moved',
+        );
+
+        await alice.sharing.changeAccess(spaceId, bob.userId, SpaceRole.member);
+        await bob.sharing.refresh();
+        expect(bob.sharing.canEdit(bob.notes.byId(note.id)!), isTrue);
+      },
+    );
+
+    test(
+      'a server without role changes moves the note to a pair space at the new access',
+      () async {
+        final note = await shareWithBob('Ours');
+        final spaceId = alice.notes.byId(note.id)!.spaceId!;
+        server.roleChangeServed = false;
+
+        await alice.sharing.changeAccess(spaceId, bob.userId, SpaceRole.viewer);
+        final moved = alice.sharing.spaceOf(alice.notes.byId(note.id)!)!;
+        expect(moved.id, isNot(spaceId));
+        expect(moved.invites.single.email, bob.email);
+        expect(moved.invites.single.role, SpaceRole.viewer);
+        expect(alice.notes.byId(note.id)!.body, 'Ours');
+      },
+    );
+
+    test(
+      'leaving keeps a private copy of each note, unless asked not to',
+      () async {
+        final note = await shareWithBob('Kept');
+        final spaceId = bob.notes.byId(note.id)!.spaceId!;
+        bob.tick();
+        await bob.sharing.leave(spaceId);
+        bob.tick(2);
+        await bob.sync.syncNow();
+        final copy = bob.notes.notes.single;
+        expect(copy.id, isNot(note.id));
+        expect(copy.isShared, isFalse);
+        expect(copy.body, 'Kept');
+        expect(
+          server.rowsIn(bob.keyring.personal!.id)[copy.id]!.isTombstone,
+          isFalse,
+          reason: 'the copy is in Bob\'s own space',
+        );
+        // What Alice's devices then do with an emptied pair space is the
+        // skipped trip-home case below (KAP-82).
+        expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isFalse);
+      },
+    );
+
+    test('leaving without copies keeps nothing of the space', () async {
+      final note = await shareWithBob('Gone');
+      final spaceId = bob.notes.byId(note.id)!.spaceId!;
+      bob.tick();
+      await bob.sharing.leave(spaceId, keepCopies: false);
+      bob.tick(2);
+      await bob.sync.syncNow();
+      expect(bob.notes.notes, isEmpty);
+    });
+
     test('only the owner can move a note on to another space', () async {
       final note = await shareWithBob('Ours');
       final spaceId = bob.notes.byId(note.id)!.spaceId;
@@ -669,49 +752,47 @@ void main() {
       expect(bob.notes.byId(note.id)!.spaceId, spaceId);
     });
 
-    test('an old editor whose move is refused over the socket', () async {
-      final note = await shareWithBob('Ours');
-      final spaceId = bob.notes.byId(note.id)!.spaceId;
-      await alice.goLive();
-      await bob.goLive();
-      int refused() => server.refusals.where((c) => c == 'owner-only').length;
+    // 1.32.0 re-sent such a move with each later push; that was proven at
+    // 7377085 (#75). Builds since #78 hold a refused note until its next edit.
+    test(
+      'a move refused over the socket waits for the note\'s next edit',
+      () async {
+        final note = await shareWithBob('Ours');
+        final spaceId = bob.notes.byId(note.id)!.spaceId;
+        await alice.goLive();
+        await bob.goLive();
+        int refused() => server.refusals.where((c) => c == 'owner-only').length;
 
-      // 1.32.0's unshareNote, which let any editor do this.
-      bob.notes.moveToSpace(note.id, spaceId: null, contentKey: null);
-      await until(() => refused() > 0, reason: 'the move was never refused');
-      await settle(server);
-      expect(bob.sync.status, SyncStatus.failed);
-      expect(bob.sync.lastError, 'owner-only');
-
-      // Typing in another note sends the refused move again with each
-      // acknowledged push, and the rest still syncs.
-      final other = bob.notes.create(body: 'Groceries');
-      final before = refused();
-      for (var i = 0; i < 3; i++) {
-        bob.tick();
-        bob.notes.updateBody(other.id, 'Groceries $i');
+        // What 1.32.0's unshareNote let any editor do.
+        bob.notes.moveToSpace(note.id, spaceId: null, contentKey: null);
+        await until(() => refused() > 0, reason: 'the move was never refused');
         await settle(server);
-      }
-      expect(refused(), greaterThan(before));
-      expect(refused() - before, lessThanOrEqualTo(2 * 3));
-      expect(server.rows.containsKey(other.id), isTrue);
+        expect(bob.sync.status, SyncStatus.failed);
+        expect(bob.sync.lastError, contains('owner-only'));
 
-      // Once the typing stops, so do the refusals.
-      final idle = refused();
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      await settle(server);
-      expect(refused(), idle);
+        // Typing in another note syncs it and leaves the refused move alone.
+        final other = bob.notes.create(body: 'Groceries');
+        final before = refused();
+        for (var i = 0; i < 3; i++) {
+          bob.tick();
+          bob.notes.updateBody(other.id, 'Groceries $i');
+          await settle(server);
+        }
+        expect(refused(), before);
+        expect(server.rows.containsKey(other.id), isTrue);
+        expect(bob.sync.lastError, contains('owner-only'));
 
-      expect(bob.sync.status, isNot(SyncStatus.signedOut));
-      final kept = bob.notes.byId(note.id)!;
-      expect(kept.spaceId, isNull);
-      expect(kept.body, 'Ours');
-      alice.tick(2);
-      await alice.sync.syncNow();
-      final ours = alice.notes.byId(note.id)!;
-      expect(ours.spaceId, spaceId);
-      expect(ours.body, 'Ours');
-    });
+        expect(bob.sync.status, isNot(SyncStatus.signedOut));
+        final kept = bob.notes.byId(note.id)!;
+        expect(kept.spaceId, isNull);
+        expect(kept.body, 'Ours');
+        alice.tick(2);
+        await alice.sync.syncNow();
+        final ours = alice.notes.byId(note.id)!;
+        expect(ours.spaceId, spaceId);
+        expect(ours.body, 'Ours');
+      },
+    );
 
     test('stop sharing brings every note home and ends the space', () async {
       final a = await shareWithBob('One');

@@ -333,6 +333,9 @@ class FakeServer {
   /// anyone who asks after one.
   bool tasksServed = true;
 
+  /// False is a server from before members' roles could change: a 404.
+  bool roleChangeServed = true;
+
   /// Set to refuse task pushes as an account at the row cap is refused.
   bool tasksFull = false;
 
@@ -1157,6 +1160,29 @@ class FakeServer {
     space.keyGeneration = generation;
     space.rotationPending = false;
     announceSpace(spaceId);
+  }
+
+  /// Like `PUT /spaces/:id/members/:userId`.
+  Space changeRole(
+    String userId,
+    String spaceId,
+    String target,
+    SpaceRole role,
+  ) {
+    if (!roleChangeServed) _refuse(404, 'not found');
+    final space = _member(userId, spaceId);
+    if (space.members[userId] != SpaceRole.owner) {
+      _refuse(403, 'only the owner can do this');
+    }
+    if (target == userId) _refuse(400, 'already the owner');
+    if (role == SpaceRole.owner) _refuse(400, 'invalid request');
+    final theirs = space.members[target];
+    if (theirs == null) _refuse(404, 'not a member');
+    if (theirs != role) {
+      space.members[target] = role;
+      announceSpace(spaceId);
+    }
+    return _wire(space, userId);
   }
 
   Space transfer(String userId, String spaceId, String target) {
@@ -2068,6 +2094,16 @@ class FakeApi implements SyncApi {
   Future<void> removeMember(String spaceId, String userId) async {
     _gate();
     server.removeMember(this.userId, spaceId, userId);
+  }
+
+  @override
+  Future<Space> changeRole(
+    String spaceId,
+    String userId,
+    SpaceRole role,
+  ) async {
+    _gate();
+    return server.changeRole(this.userId, spaceId, userId, role);
   }
 
   @override
