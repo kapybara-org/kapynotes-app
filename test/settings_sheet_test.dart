@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
@@ -345,7 +346,30 @@ void main() {
     );
   });
 
-  testWidgets('settings subtitles stay on one line', (tester) async {
+  testWidgets('a phone gives a settings subtitle two lines', (tester) async {
+    const copy = 'How Kapy Notes looks: theme, paper, fonts and text size';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.dark(),
+        home: const Center(
+          child: SizedBox(
+            width: 380,
+            child: SettingsRowCopy(title: 'Appearance', subtitle: copy),
+          ),
+        ),
+      ),
+    );
+
+    final subtitle = tester.renderObject<RenderParagraph>(
+      find.descendant(of: find.text(copy), matching: find.byType(RichText)),
+    );
+    expect(subtitle.maxLines, 2);
+    expect(subtitle.didExceedMaxLines, isFalse);
+    expect(subtitle.getMaxIntrinsicWidth(double.infinity), greaterThan(380));
+  });
+
+  testWidgets('desktop settings subtitles stay on one line', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     await tester.pumpWidget(
       MaterialApp(
         theme: KapyTheme.dark(),

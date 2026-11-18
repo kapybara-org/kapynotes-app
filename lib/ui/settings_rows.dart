@@ -312,8 +312,8 @@ class SettingsRowCopy extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             subtitle,
-            maxLines: 1,
-            softWrap: false,
+            maxLines: pointer ? 1 : 2,
+            softWrap: !pointer,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: SettingsMetrics.subtitleSize,
