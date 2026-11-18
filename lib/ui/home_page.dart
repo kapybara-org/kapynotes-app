@@ -2677,8 +2677,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       (widget.prefs.hiddenFolderVisible && widget.notes.hiddenNotes.isNotEmpty);
 
   /// The notes filter and the list/cards switch, for the list beside the
-  /// rail. A phone's drawer has the filter alone, as its list has no cards.
-  Widget _notesControls(LibrarySpace space, {bool cards = true}) =>
+  /// rail. A phone's filter row has the filter and the tags instead.
+  Widget _notesControls(LibrarySpace space, {bool phone = false}) =>
       NotesListControls(
         show: _show,
         offersShow: space != LibrarySpace.shared,
@@ -2694,9 +2694,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         tags: widget.tags == null ? null : _tagsNarrowed,
         onTagsChanged: (tags) => setState(() => _tagFilter = tags),
         cards: widget.prefs.noteCards,
-        onCardsChanged: cards
-            ? (cards) => widget.prefs.noteCards = cards
-            : null,
+        onCardsChanged: phone
+            ? null
+            : (cards) => widget.prefs.noteCards = cards,
+        phone: phone,
       );
 
   /// Opens the ⌘K menu over whatever is on screen, and does what was chosen.
@@ -3596,7 +3597,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _phoneList() {
     final palette = context.palette;
     return ColoredBox(
-      color: palette.isGlass ? Colors.transparent : palette.sidebarColor,
+      color: palette.isGlass ? Colors.transparent : palette.paperColor,
       child: ListenableBuilder(
         listenable: _toolbarSources,
         builder: (context, _) {
@@ -3663,7 +3664,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  /// The phone's home for Notes, Drawings and Shared: the list beside the
+  /// rail, drawn for a phone under the space's large title.
   Widget _phoneNotes() => Sidebar(
+    phone: true,
+    windowBar: PhoneListTitle(
+      title: !_specialMode && _space == LibrarySpace.notes
+          ? 'Notes'
+          : _listTitle,
+      count: _matchingCount,
+    ),
     notes: _visibleNotes,
     pinnedNoteIds: widget.notes.pinnedNoteIds,
     lockedNoteIds: _noteLimit?.lockedIds ?? const {},
@@ -3673,7 +3683,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     onSearch: _openCommandMenu,
     onClearQuery: () => setState(() => _archiveQuery = ''),
     onSelect: _select,
-    onCreate: _createNote,
     onArchive: _archiveNote,
     onRestore: _restoreNote,
     onHide: (id) => unawaited(_hideNote(id)),
@@ -3691,17 +3700,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     onCheckAll: _checkAllArchived,
     onDeleteChecked: () => unawaited(_deleteChecked()),
     onRestoreChecked: _restoreChecked,
-    streak: widget.notes.streak,
     onShare: widget.account == null ? null : _shareNote,
     sharing: widget.account?.sharing,
     collaborators: widget.account?.sync?.collaboratorsByNote ?? const {},
     onOpenSpace: widget.account?.sharing == null ? null : _openSpace,
     tab: _sidebarTab,
     onTabChanged: _setSidebarTab,
-    onSettingsPressed: _showSettings,
-    searchPlaceholder: _searchPlaceholder,
-    updates: widget.updates,
-    controls: _notesControls(_space, cards: false),
+    searchPlaceholder: _kapyAiOn
+        ? _searchPlaceholder
+        : _taskController == null
+        ? 'Search notes'
+        : 'Search notes and tasks',
+    drawings: _space == LibrarySpace.drawings,
+    onNewDrawing: () => _createNote(drawing: true),
+    engine: widget.engines.engine,
+    now: widget.notes.now,
+    controls: _notesControls(_space, phone: true),
   );
 
   /// A note's page on a phone: back, then the note's own actions, over the

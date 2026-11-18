@@ -1214,20 +1214,24 @@ void main() {
     );
   });
 
-  testWidgets('phone notes drawer', (tester) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(390, 760),
-      brightness: Brightness.dark,
-      platform: TargetPlatform.iOS,
-    );
-    await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/phone_drawer.png'),
-    );
-  });
+  for (final brightness in Brightness.values) {
+    testWidgets('phone notes home, ${brightness.name}', (tester) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(393, 852),
+        brightness: brightness,
+        platform: TargetPlatform.iOS,
+        withPinnedNote: true,
+        withTasks: true,
+      );
+      await tester.tap(find.byKey(const ValueKey('page-back')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/phone_notes_home_${brightness.name}.png'),
+      );
+    });
+  }
 
   testWidgets('phone note actions', (tester) async {
     await pumpForGolden(

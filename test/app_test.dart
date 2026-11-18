@@ -872,8 +872,8 @@ void main() {
       expect(tags.tags, hasLength(1));
     });
 
-    testWidgets('on a phone the filter is a sheet whose Tags page narrows the '
-        'list live', (tester) async {
+    testWidgets('on a phone the filter is a popover whose Tags page narrows '
+        'the list live', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       final hidden = notes.create(body: 'Private plan');
@@ -889,7 +889,9 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('notes-filter-sheet')), findsOneWidget);
+      final popover = find.byKey(const ValueKey('notes-filter-popover'));
+      expect(popover, findsOneWidget);
+      expect(tester.getSize(popover).width, 262);
       expect(find.byKey(const ValueKey('notes-filter-menu')), findsNothing);
       expect(find.text('Show'), findsOneWidget);
       expect(find.text('Media'), findsOneWidget);
@@ -908,7 +910,7 @@ void main() {
       expect(find.text('Work'), findsWidgets);
       await tester.tap(find.byKey(const ValueKey('notes-filter-done')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('notes-filter-sheet')), findsNothing);
+      expect(find.byKey(const ValueKey('notes-filter-popover')), findsNothing);
       expect(find.text('Groceries'), findsNothing);
     });
 
@@ -3414,27 +3416,6 @@ void main() {
     });
   });
 
-  testWidgets('creates a note from the plus beside search', (tester) async {
-    // A phone's notes drawer. Beside the rail, New note sits in the bar over
-    // the list instead; see the spaces rail group.
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    await notes.load();
-    notes.create(body: 'Something written');
-    await pumpApp(tester, size: const Size(390, 844));
-    await showNotesList(tester);
-    final before = notes.notes.length;
-    final search = find.byKey(const ValueKey('sidebar-search-field'));
-    final add = find.byKey(const ValueKey('sidebar-new-note'));
-
-    expect(add, findsOneWidget);
-    expect(tester.getCenter(add).dx, greaterThan(tester.getRect(search).right));
-
-    await tester.tap(add);
-    await tester.pumpAndSettle();
-    expect(notes.notes, hasLength(before + 1));
-  });
-
   testWidgets('the list over a narrow page is the list beside a wide one', (
     tester,
   ) async {
@@ -5673,6 +5654,132 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('page-back')));
       await tester.pumpAndSettle();
       expect(find.byType(NavigationBar), findsOneWidget);
+    });
+  });
+
+  group('phone home', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    testWidgets('pinned notes are cards over the recent rows', (tester) async {
+      final trip = notes.create(body: 'Lisbon trip\nFour days in May');
+      final reading = notes.create(body: 'Reading list\nThe Overstory');
+      notes.create(body: 'Groceries\nOat milk, lemons');
+      notes.togglePinned(trip.id);
+      notes.togglePinned(reading.id);
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
+      expect(find.text('Pinned'), findsOneWidget);
+      expect(find.text('Recent'), findsOneWidget);
+      final cards = find.descendant(
+        of: find.byKey(const ValueKey('phone-pinned')),
+        matching: find.byType(NoteCardFace),
+      );
+      expect(cards, findsNWidgets(2));
+      expect(tester.getSize(cards.first).width, (393 - 40 - 12) / 2);
+      final row = find.widgetWithText(NoteListRowFace, 'Groceries');
+      expect(row, findsOneWidget);
+      expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
+    });
+
+    testWidgets('a row swipes left to Pin and Archive', (tester) async {
+      final groceries = notes.create(body: 'Groceries\nOat milk');
+      final offsite = notes.create(body: 'Team offsite');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      await tester.drag(
+        find.widgetWithText(NoteRow, 'Groceries'),
+        const Offset(-200, 0),
+      );
+      await tester.pumpAndSettle();
+      final pin = find.byKey(ValueKey('swipe-pin-${groceries.id}'));
+      expect(tester.getSize(pin).height, greaterThanOrEqualTo(44));
+      await tester.tap(pin);
+      await tester.pumpAndSettle();
+      expect(notes.pinnedNoteIds, contains(groceries.id));
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('phone-pinned')),
+          matching: find.text('Groceries'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.drag(
+        find.widgetWithText(NoteRow, 'Team offsite'),
+        const Offset(-200, 0),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('swipe-archive-${offsite.id}')));
+      await tester.pumpAndSettle();
+      expect(notes.archivedNotes.map((note) => note.id), [offsite.id]);
+    });
+
+    testWidgets('a short swipe springs back and a tap still opens the note', (
+      tester,
+    ) async {
+      notes.create(body: 'Groceries');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      await tester.drag(
+        find.widgetWithText(NoteRow, 'Groceries'),
+        const Offset(-30, 0),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'Groceries'));
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteEditor), findsOneWidget);
+    });
+
+    testWidgets('the search field and a pull down both open Quick find', (
+      tester,
+    ) async {
+      notes.create(body: 'Groceries');
+      await pumpApp(tester, size: const Size(393, 852));
+      await showNotesList(tester);
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-search-field')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+
+      await tester.fling(
+        find.widgetWithText(NoteRow, 'Groceries'),
+        const Offset(0, 300),
+        1000,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+    });
+
+    testWidgets('a tag pill narrows the list, and a second tap widens it', (
+      tester,
+    ) async {
+      final tags = TagStore(store);
+      final trip = notes.create(body: 'Trip to Kochi');
+      notes.create(body: 'Groceries');
+      final travel = tags.create('Trip')!;
+      tags.addTag(trip.id, travel.id);
+      await pumpApp(tester, size: const Size(393, 852), tags: tags);
+      await showNotesList(tester);
+
+      final pill = find.byKey(ValueKey('phone-tag-${travel.id}'));
+      expect(tester.getSize(pill).height, greaterThanOrEqualTo(44));
+      await tester.tap(pill);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsNothing);
+      expect(find.widgetWithText(NoteRow, 'Trip to Kochi'), findsOneWidget);
+
+      await tester.tap(pill);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Groceries'), findsOneWidget);
     });
   });
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -139,6 +140,7 @@ class Sidebar extends StatelessWidget {
     this.engine,
     this.now = DateTime.now,
     this.cards = false,
+    this.phone = false,
     this.controls,
     this.pinnedOnly = false,
     this.onPinnedOnlyChanged,
@@ -282,6 +284,11 @@ class Sidebar extends StatelessWidget {
   /// Whether the list beside the rail draws sticky cards rather than rows.
   final bool cards;
 
+  /// A phone's home: a large title over the list, pinned notes as cards in
+  /// a sideways row, the rest as rows that swipe, and a pull down for
+  /// Quick find. Only beside a [windowBar], which is the phone's title.
+  final bool phone;
+
   /// The notes filter and the list/cards switch, under the search beside the
   /// rail: see [NotesListControls]. Null leaves them out, as the compact list
   /// does.
@@ -301,7 +308,7 @@ class Sidebar extends StatelessWidget {
     // notes list stays put whatever the window is doing behind it. See
     // [CalcPalette.sidebarColor].
     return ColoredBox(
-      color: palette.sidebarColor,
+      color: phone ? palette.paperColor : palette.sidebarColor,
       // Colour runs to the window edges; content stays clear of the status
       // bar, home indicator and any display cutout.
       child: SafeArea(
@@ -325,10 +332,13 @@ class Sidebar extends StatelessWidget {
               placeholder: searchPlaceholder,
               belowTabs: _showsTabs,
               besideRail: _besideRail,
+              phone: phone,
             ),
             if (controls != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                padding: phone
+                    ? const EdgeInsets.only(bottom: 2)
+                    : const EdgeInsets.fromLTRB(18, 0, 18, 12),
                 child: controls,
               ),
             if (archiveMode && (notes.isNotEmpty || selecting))
@@ -629,22 +639,23 @@ extension on Sidebar {
       (true, true) => NoteRowStyle.drawingCard,
       (true, false) => NoteRowStyle.card,
       (false, true) => NoteRowStyle.drawingRow,
-      (false, false) => NoteRowStyle.row,
+      (false, false) => phone ? NoteRowStyle.touch : NoteRowStyle.row,
     };
+    final margin = phone ? 20.0 : 18.0;
     final noun = drawings ? 'drawing' : 'note';
     final onPinnedOnlyChanged = this.onPinnedOnlyChanged;
 
     void gap(double height) => rows.add((_) => SizedBox(height: height));
 
     void heading(Widget heading) {
-      if (rows.isNotEmpty) gap(18);
+      if (rows.isNotEmpty) gap(phone ? 22 : 18);
       rows.add(
         (_) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          padding: EdgeInsets.symmetric(horizontal: margin),
           child: heading,
         ),
       );
-      gap(cards ? 12 : 4);
+      gap(cards || phone ? 12 : 4);
     }
 
     void section(Iterable<Note> notes, {bool pinned = false}) {
@@ -655,6 +666,52 @@ extension on Sidebar {
         pinned: pinned,
         style: style,
       );
+      if (phone && pinned && !drawings) {
+        rows.add(
+          (context) => SizedBox(
+            height: AppControlMetrics.scaleBar(
+              context,
+              NoteCardFace.squareHeight,
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) => ListView.separated(
+                key: const ValueKey('phone-pinned'),
+                scrollDirection: Axis.horizontal,
+                padding: EdgeInsets.symmetric(horizontal: margin),
+                itemCount: list.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (_, index) => SizedBox(
+                  width: (constraints.maxWidth - margin * 2 - 12) / 2,
+                  child: _row(
+                    list[index],
+                    shared: sharing != null && list[index].isShared,
+                    pinned: true,
+                    style: NoteRowStyle.square,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        return;
+      }
+      if (phone && !cards) {
+        for (final (index, each) in list.indexed) {
+          if (index > 0) {
+            rows.add(
+              (context) => Divider(
+                height: 1,
+                thickness: 0.5,
+                indent: margin,
+                endIndent: margin,
+                color: context.palette.separator,
+              ),
+            );
+          }
+          rows.add((_) => note(each));
+        }
+        return;
+      }
       if (!cards) {
         for (final (index, each) in list.indexed) {
           if (index > 0) gap(2);
@@ -672,7 +729,7 @@ extension on Sidebar {
         final pair = list.skip(index).take(2).toList();
         rows.add(
           (context) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
+            padding: EdgeInsets.symmetric(horizontal: margin),
             child: SizedBox(
               height: AppControlMetrics.scaleBar(
                 context,
@@ -763,6 +820,40 @@ extension on Sidebar {
         ),
       );
       section(groups.pinned, pinned: true);
+    } else if (phone) {
+      if (groups.pinned.isNotEmpty) {
+        heading(const _PhoneHeading('Pinned'));
+        section(groups.pinned, pinned: true);
+      }
+      for (final id in groups.spaceOrder) {
+        heading(
+          _SpaceHeader(
+            key: ValueKey('space-header-$id'),
+            space: sharing?.spaceById(id),
+            currentUserId: sharing?.userId ?? '',
+            present: {
+              for (final note in groups.bySpace[id]!)
+                for (final person in collaborators[note.id] ?? const [])
+                  person.userId,
+            },
+            attention:
+                id != null &&
+                (sharing?.trust.warningsFor(id).isNotEmpty ?? false),
+            onTap: id == null || onOpenSpace == null
+                ? null
+                : () => onOpenSpace!(id),
+          ),
+        );
+        section(groups.bySpace[id]!);
+      }
+      if (groups.mine.isNotEmpty) {
+        if (groups.pinned.isNotEmpty || groups.spaceOrder.isNotEmpty) {
+          heading(const _PhoneHeading('Recent'));
+        } else {
+          gap(8);
+        }
+        section(groups.mine);
+      }
     } else {
       if (pinned.isNotEmpty) {
         heading(
@@ -823,13 +914,17 @@ extension on Sidebar {
       }
     }
 
+    final list = ListView.builder(
+      physics: phone ? const AlwaysScrollableScrollPhysics() : null,
+      // A phone's list clears the floating bar and its +.
+      padding: EdgeInsets.only(top: 4, bottom: phone ? 120 : 40),
+      itemCount: rows.length,
+      itemBuilder: (context, index) => rows[index](context),
+    );
+    final ground = phone ? palette.paperColor : palette.sidebarColor;
     return Stack(
       children: [
-        ListView.builder(
-          padding: const EdgeInsets.only(top: 4, bottom: 40),
-          itemCount: rows.length,
-          itemBuilder: (context, index) => rows[index](context),
-        ),
+        if (phone) _PullToFind(onPulled: onSearch, child: list) else list,
         Positioned(
           left: 0,
           right: 0,
@@ -841,10 +936,7 @@ extension on Sidebar {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    palette.sidebarColor.withValues(alpha: 0),
-                    palette.sidebarColor,
-                  ],
+                  colors: [ground.withValues(alpha: 0), ground],
                   stops: const [0, 0.85],
                 ),
               ),
@@ -2246,7 +2338,11 @@ class SidebarSearchField extends StatelessWidget {
     this.placeholder = 'Search',
     this.belowTabs = false,
     this.besideRail = false,
+    this.phone = false,
   });
+
+  /// A phone's field: a quiet well, the entry to Quick find.
+  final bool phone;
 
   final VoidCallback onSearch;
   final String query;
@@ -2298,7 +2394,9 @@ class SidebarSearchField extends StatelessWidget {
     if (besideRail) {
       final end = _end(palette, 20);
       return Padding(
-        padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+        padding: phone
+            ? const EdgeInsets.fromLTRB(20, 4, 20, 6)
+            : const EdgeInsets.fromLTRB(18, 0, 18, 12),
         child: Semantics(
           button: true,
           label: searching ? 'Search, $query' : placeholder,
@@ -2312,18 +2410,26 @@ class SidebarSearchField extends StatelessWidget {
                 key: const ValueKey('sidebar-search-box'),
                 height: 40,
                 padding: const EdgeInsets.only(left: 14, right: 10),
-                decoration: BoxDecoration(
-                  color: palette.surfaceBackground,
-                  border: Border.all(color: palette.controlBorder, width: 1.5),
-                  borderRadius: BorderRadius.circular(AppRadii.surface),
-                  boxShadow: [
-                    BoxShadow(
-                      color: palette.shadowAt(0x4D),
-                      offset: Offset(0, 1),
-                      blurRadius: 2,
-                    ),
-                  ],
-                ),
+                decoration: phone
+                    ? BoxDecoration(
+                        color: palette.wellBackground,
+                        borderRadius: BorderRadius.circular(12),
+                      )
+                    : BoxDecoration(
+                        color: palette.surfaceBackground,
+                        border: Border.all(
+                          color: palette.controlBorder,
+                          width: 1.5,
+                        ),
+                        borderRadius: BorderRadius.circular(AppRadii.surface),
+                        boxShadow: [
+                          BoxShadow(
+                            color: palette.shadowAt(0x4D),
+                            offset: Offset(0, 1),
+                            blurRadius: 2,
+                          ),
+                        ],
+                      ),
                 child: Row(
                   children: [
                     KapyIcon(
@@ -2339,7 +2445,7 @@ class SidebarSearchField extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: phone ? 16 : 14,
                           color: searching
                               ? palette.textPrimary
                               : palette.textTertiary,
@@ -2438,9 +2544,10 @@ class SidebarSearchField extends StatelessWidget {
   }
 }
 
-/// How a [NoteRow] draws its note: the compact list's row, or the desktop
-/// list's row or sticky card beside the spaces rail.
-enum NoteRowStyle { compact, row, card, drawingRow, drawingCard }
+/// How a [NoteRow] draws its note: the compact list's row, the desktop
+/// list's row or sticky card beside the spaces rail, or a phone's row and
+/// pinned card.
+enum NoteRowStyle { compact, row, card, drawingRow, drawingCard, touch, square }
 
 /// One row in the note list.
 class NoteRow extends StatefulWidget {
@@ -2770,6 +2877,7 @@ class _NoteRowState extends State<NoteRow> {
     final people = widget.collaborators;
     final card =
         widget.style == NoteRowStyle.card ||
+        widget.style == NoteRowStyle.square ||
         widget.style == NoteRowStyle.drawingCard;
     String stamp({bool clock = true}) => SidebarTimestamp.glance(
       note.updatedAt,
@@ -2790,7 +2898,8 @@ class _NoteRowState extends State<NoteRow> {
     final picking = widget.selecting ? widget.checked : null;
     final ringed = widget.openElsewhere && !widget.selected;
     final face = switch (widget.style) {
-      NoteRowStyle.card => NoteCardFace(
+      NoteRowStyle.card || NoteRowStyle.square => NoteCardFace(
+        square: widget.style == NoteRowStyle.square,
         note: note,
         glance: glance,
         date: date,
@@ -2824,7 +2933,10 @@ class _NoteRowState extends State<NoteRow> {
         shared: widget.shared,
         picking: picking,
       ),
-      NoteRowStyle.row || NoteRowStyle.compact => NoteListRowFace(
+      NoteRowStyle.row ||
+      NoteRowStyle.compact ||
+      NoteRowStyle.touch => NoteListRowFace(
+        touch: widget.style == NoteRowStyle.touch,
         note: note,
         glance: glance,
         date: date,
@@ -3011,6 +3123,32 @@ class _NoteRowState extends State<NoteRow> {
         ),
       ),
     );
+    if (widget.style == NoteRowStyle.touch && !widget.selecting) {
+      final onTogglePin = widget.onTogglePin;
+      final onArchive = widget.onArchive;
+      return _SwipeActions(
+        actions: [
+          if (onTogglePin != null)
+            (
+              key: 'pin',
+              label: widget.pinned ? 'Unpin' : 'Pin',
+              icon: KapyIcons.pinOutlined,
+              background: palette.clay,
+              onPressed: onTogglePin,
+            ),
+          if (onArchive != null)
+            (
+              key: 'archive',
+              label: 'Archive',
+              icon: KapyIcons.archiveOutlined,
+              background: palette.textSecondary,
+              onPressed: onArchive,
+            ),
+        ],
+        id: widget.note.id,
+        child: row,
+      );
+    }
     // Dragged onto the panes, to open beside a note there or in its place.
     // Only where there is a pointer to drag with and panes to take it.
     if (widget.onOpenToSide == null ||
@@ -3519,6 +3657,274 @@ class _IconButton extends StatelessWidget {
       foregroundColor: onPressed == null
           ? context.palette.textTertiary
           : context.palette.textSecondary,
+    );
+  }
+}
+
+/// A heading over a phone's list: Pinned, Recent.
+class _PhoneHeading extends StatelessWidget {
+  const _PhoneHeading(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    header: true,
+    child: Text(
+      label,
+      style: TextStyle(
+        fontFamily: AppFonts.ui,
+        fontSize: 15,
+        height: 20 / 15,
+        fontWeight: FontWeight.w500,
+        color: context.palette.textSecondary,
+      ),
+    ),
+  );
+}
+
+/// A phone list's title: the space's name large, its count beside it, and
+/// the clay underline the note page draws.
+class PhoneListTitle extends StatelessWidget {
+  const PhoneListTitle({super.key, required this.title, required this.count});
+
+  final String title;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+      child: Semantics(
+        header: true,
+        label: '$title, $count',
+        excludeSemantics: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Flexible(
+                  child: Text(
+                    title,
+                    key: const ValueKey('phone-list-title'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: AppFonts.title,
+                      fontFamilyFallback: AppFonts.uiFallback,
+                      fontSize: 28,
+                      height: 36 / 28,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontFamily: AppFonts.ui,
+                    fontSize: 15,
+                    color: palette.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(width: 44, height: 2, color: palette.clay),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens Quick find when the list is pulled down past its top, once per
+/// pull: iOS's bounce and Android's stretch alike.
+class _PullToFind extends StatefulWidget {
+  const _PullToFind({required this.onPulled, required this.child});
+
+  final VoidCallback onPulled;
+  final Widget child;
+
+  static const double distance = 72;
+
+  @override
+  State<_PullToFind> createState() => _PullToFindState();
+}
+
+class _PullToFindState extends State<_PullToFind> {
+  double _pull = 0;
+  bool _fired = false;
+
+  bool _onScroll(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    switch (notification) {
+      case ScrollStartNotification():
+        _pull = 0;
+        _fired = false;
+      case OverscrollNotification(:final overscroll, dragDetails: _?)
+          when overscroll < 0:
+        _pull -= overscroll;
+      case ScrollUpdateNotification(:final metrics, dragDetails: _?):
+        if (metrics.pixels < metrics.minScrollExtent) {
+          _pull = metrics.minScrollExtent - metrics.pixels;
+        }
+      default:
+    }
+    if (!_fired && _pull >= _PullToFind.distance) {
+      _fired = true;
+      widget.onPulled();
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      NotificationListener<ScrollNotification>(
+        onNotification: _onScroll,
+        child: widget.child,
+      );
+}
+
+typedef _SwipeAction = ({
+  String key,
+  String label,
+  KapyIconData icon,
+  Color background,
+  VoidCallback onPressed,
+});
+
+/// A phone row that slides left to show its actions, Pin and Archive,
+/// which VoiceOver and TalkBack offer as actions on the row too.
+class _SwipeActions extends StatefulWidget {
+  const _SwipeActions({
+    required this.id,
+    required this.actions,
+    required this.child,
+  });
+
+  final String id;
+  final List<_SwipeAction> actions;
+  final Widget child;
+
+  static const double actionWidth = 76;
+
+  @override
+  State<_SwipeActions> createState() => _SwipeActionsState();
+}
+
+class _SwipeActionsState extends State<_SwipeActions>
+    with SingleTickerProviderStateMixin {
+  late final _open = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+  );
+
+  double get _extent => widget.actions.length * _SwipeActions.actionWidth;
+
+  @override
+  void dispose() {
+    _open.dispose();
+    super.dispose();
+  }
+
+  void _settle(double velocity) {
+    final open = velocity < -300 || (velocity <= 300 && _open.value > 0.5);
+    unawaited(_open.animateTo(open ? 1 : 0, curve: Curves.easeOutCubic));
+  }
+
+  void _run(_SwipeAction action) {
+    _open.value = 0;
+    action.onPressed();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.actions.isEmpty) return widget.child;
+    final palette = context.palette;
+    final foreground = palette.paperColor;
+    return Semantics(
+      customSemanticsActions: {
+        for (final action in widget.actions)
+          CustomSemanticsAction(label: action.label): action.onPressed,
+      },
+      child: GestureDetector(
+        onHorizontalDragUpdate: (details) =>
+            _open.value -= details.primaryDelta! / _extent,
+        onHorizontalDragEnd: (details) => _settle(details.primaryVelocity ?? 0),
+        child: ClipRect(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    for (final action in widget.actions)
+                      SizedBox(
+                        width: _SwipeActions.actionWidth,
+                        child: Material(
+                          color: action.background,
+                          child: InkWell(
+                            key: ValueKey('swipe-${action.key}-${widget.id}'),
+                            onTap: () => _run(action),
+                            child: ExcludeSemantics(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                spacing: 4,
+                                children: [
+                                  KapyIcon(
+                                    action.icon,
+                                    size: 20,
+                                    strokeWidth: 1.8,
+                                    color: foreground,
+                                  ),
+                                  Text(
+                                    action.label,
+                                    style: TextStyle(
+                                      fontFamily: AppFonts.ui,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w500,
+                                      color: foreground,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              AnimatedBuilder(
+                animation: _open,
+                builder: (context, child) => Transform.translate(
+                  offset: Offset(-_open.value * _extent, 0),
+                  child: child,
+                ),
+                child: ListenableBuilder(
+                  listenable: _open,
+                  builder: (context, child) => _open.value == 0
+                      ? child!
+                      : GestureDetector(
+                          onTap: () => _settle(1000),
+                          behavior: HitTestBehavior.opaque,
+                          child: AbsorbPointer(child: child),
+                        ),
+                  child: ColoredBox(
+                    color: palette.paperColor,
+                    child: widget.child,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
