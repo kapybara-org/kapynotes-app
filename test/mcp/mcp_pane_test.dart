@@ -26,7 +26,9 @@ void main() {
 
   setUp(() async {
     f = McpFixture();
-    scratch = Directory('${Directory.systemTemp.createTempSync('mcp').path}/kapy-mcpb');
+    scratch = Directory(
+      '${Directory.systemTemp.createTempSync('mcp').path}/kapy-mcpb',
+    );
     addTearDown(() => scratch.parent.deleteSync(recursive: true));
     service = McpService(
       store: f.store,
@@ -59,14 +61,23 @@ void main() {
         ),
       ),
     );
-    await tester.pumpWidget(scoped ? McpScope(service: service, child: pane) : pane);
+    await tester.pumpWidget(
+      scoped ? McpScope(service: service, child: pane) : pane,
+    );
   }
 
   testWidgets('is off until turned on, then shows its address', (tester) async {
     await pumpPane(tester);
     expect(find.text('Off. No assistant can reach your notes'), findsOneWidget);
     final copy = find.byKey(const ValueKey('mcp-connect-claudeCode'));
-    expect(tester.widget<TextButton>(find.descendant(of: copy, matching: find.byType(TextButton))).onPressed, isNull);
+    expect(
+      tester
+          .widget<TextButton>(
+            find.descendant(of: copy, matching: find.byType(TextButton)),
+          )
+          .onPressed,
+      isNull,
+    );
 
     await tester.runAsync(() => service.setEnabled(true));
     await tester.pump();
@@ -74,56 +85,71 @@ void main() {
     await tester.runAsync(() => service.setEnabled(false));
   });
 
-  testWidgets('connecting Claude Code copies its command and masks the token', (tester) async {
+  testWidgets('connecting Claude Code copies its command and masks the token', (
+    tester,
+  ) async {
     await tester.runAsync(() => service.setEnabled(true));
     await pumpPane(tester);
     await tester.tap(find.text('Copy command'));
     await tester.pumpAndSettle();
 
-    expect(clipboard, startsWith('claude mcp add --transport http --scope user kapy-notes http://${service.address}/mcp'));
+    expect(
+      clipboard,
+      startsWith(
+        'claude mcp add --transport http --scope user kapy-notes http://${service.address}/mcp',
+      ),
+    );
     final token = RegExp(r'kapy_[A-Za-z0-9_-]{43}').firstMatch(clipboard!)![0]!;
     expect(find.textContaining('kapy_'), findsOneWidget);
     expect(find.textContaining(token), findsNothing);
     expect(find.textContaining('••••'), findsOneWidget);
     expect(
-      find.text('Copied. Paste it in Terminal, then ask Claude about your notes'),
+      find.text(
+        'Copied. Paste it in Terminal, then ask Claude about your notes',
+      ),
       findsOneWidget,
     );
     await tester.runAsync(() => service.setEnabled(false));
   });
 
-  testWidgets('when Claude doesn’t open, its file is deleted and its token revoked', (tester) async {
-    final opened = <String>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/url_launcher'),
-      (call) async {
-        opened.add((call.arguments as Map)['url'] as String);
-        return false;
-      },
-    );
-    await tester.runAsync(() => service.setEnabled(true));
-    await pumpPane(tester);
-    final add = find.text('Add to Claude');
-    await tester.ensureVisible(add);
-    await tester.pumpAndSettle();
-    await tester.runAsync(() async {
-      await tester.tap(add);
-      for (var i = 0; i < 100 && opened.isEmpty; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-    });
-    await tester.pump();
+  testWidgets(
+    'when Claude doesn’t open, its file is deleted and its token revoked',
+    (tester) async {
+      final opened = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/url_launcher'),
+        (call) async {
+          opened.add((call.arguments as Map)['url'] as String);
+          return false;
+        },
+      );
+      await tester.runAsync(() => service.setEnabled(true));
+      await pumpPane(tester);
+      final add = find.text('Add to Claude');
+      await tester.ensureVisible(add);
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(add);
+        for (var i = 0; i < 100 && opened.isEmpty; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
 
-    expect(opened.single, endsWith('/Kapy%20Notes.mcpb'));
-    final file = File(Uri.parse(opened.single).toFilePath());
-    expect(file.path, startsWith(scratch.path));
-    expect(file.existsSync(), isFalse);
-    expect(file.parent.existsSync(), isFalse);
-    expect(service.connections, isEmpty);
-    expect(find.text('Claude didn’t open. Install Claude, then try again'), findsOneWidget);
-    await tester.runAsync(() => service.setEnabled(false));
-  });
+      expect(opened.single, endsWith('/Kapy%20Notes.mcpb'));
+      final file = File(Uri.parse(opened.single).toFilePath());
+      expect(file.path, startsWith(scratch.path));
+      expect(file.existsSync(), isFalse);
+      expect(file.parent.existsSync(), isFalse);
+      expect(service.connections, isEmpty);
+      expect(
+        find.text('Claude didn’t open. Install Claude, then try again'),
+        findsOneWidget,
+      );
+      await tester.runAsync(() => service.setEnabled(false));
+    },
+  );
 
   testWidgets('a connected app can be revoked', (tester) async {
     await tester.runAsync(() => service.setEnabled(true));
@@ -147,12 +173,19 @@ void main() {
         request.headers
           ..set('authorization', 'Bearer $token')
           ..contentType = ContentType.json;
-        request.add(utf8.encode(jsonEncode({
-          'jsonrpc': '2.0',
-          'id': 1,
-          'method': 'tools/call',
-          'params': {'name': 'read_note', 'arguments': {'id': f.plain}},
-        })));
+        request.add(
+          utf8.encode(
+            jsonEncode({
+              'jsonrpc': '2.0',
+              'id': 1,
+              'method': 'tools/call',
+              'params': {
+                'name': 'read_note',
+                'arguments': {'id': f.plain},
+              },
+            }),
+          ),
+        );
         await (await request.close()).drain<void>();
         client.close();
       }, _RealHttp());
@@ -170,15 +203,63 @@ void main() {
     await tester.runAsync(() => service.setEnabled(false));
   });
 
-  testWidgets('where the server can’t run, says where assistants connect', (tester) async {
+  testWidgets('an assistant’s archive shows Undo, which brings the note back', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      await service.setEnabled(true);
+      service.setAllowWrites(true);
+      final token = await service.connect(McpClientKind.codex);
+      await HttpOverrides.runWithHttpOverrides(() async {
+        final client = HttpClient();
+        final request = await client.postUrl(Uri.parse(service.url!));
+        request.headers
+          ..set('authorization', 'Bearer $token')
+          ..contentType = ContentType.json;
+        request.add(
+          utf8.encode(
+            jsonEncode({
+              'jsonrpc': '2.0',
+              'id': 1,
+              'method': 'tools/call',
+              'params': {
+                'name': 'update_note',
+                'arguments': {'id': f.plain, 'archived': true},
+              },
+            }),
+          ),
+        );
+        await (await request.close()).drain<void>();
+        client.close();
+      }, _RealHttp());
+    });
+    await pumpPane(tester);
+    expect(find.text('Archived “Trip budget”'), findsOneWidget);
+    final undo = find.text('Undo');
+    await tester.ensureVisible(undo);
+    await tester.pumpAndSettle();
+    await tester.tap(undo);
+    await tester.pump();
+    expect(f.notes.byId(f.plain)!.isArchived, isFalse);
+    expect(find.text('Undo'), findsNothing);
+    await tester.runAsync(() => service.setEnabled(false));
+  });
+
+  testWidgets('where the server can’t run, says where assistants connect', (
+    tester,
+  ) async {
     await pumpPane(tester, scoped: false);
     expect(
-      find.text('Assistants connect through Kapy Notes on your Mac or Windows PC.'),
+      find.text(
+        'Assistants connect through Kapy Notes on your Mac or Windows PC.',
+      ),
       findsOneWidget,
     );
   });
 
-  testWidgets('settings search finds it by the words people use', (tester) async {
+  testWidgets('settings search finds it by the words people use', (
+    tester,
+  ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     tester.view.physicalSize = const Size(1000, 800);

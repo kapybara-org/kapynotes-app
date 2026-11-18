@@ -139,6 +139,11 @@ class FakeKapyAi extends KapyAi {
   DeviceModelState get device => deviceState;
   @override
   void downloadDeviceModel() => calls.add('downloadDeviceModel');
+  bool onMobileData = false;
+  @override
+  Future<bool> deviceDownloadOnMobileData() async => onMobileData;
+  @override
+  void downloadDeviceModelOnWifi() => calls.add('downloadDeviceModelOnWifi');
   @override
   void cancelDeviceDownload() => calls.add('cancelDeviceDownload');
   @override
