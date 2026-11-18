@@ -698,8 +698,27 @@ void main() {
         expect(moved.invites.single.email, bob.email);
         expect(moved.invites.single.role, SpaceRole.viewer);
         expect(alice.notes.byId(note.id)!.body, 'Ours');
+        expect(
+          server.spaces[spaceId]?.members.containsKey(bob.userId) ?? false,
+          isFalse,
+          reason: 'out of the space at the old access',
+        );
       },
     );
+
+    test('any other 404 is passed back, with nothing moved or sent', () async {
+      final note = await shareWithBob('Ours');
+      final spaceId = alice.notes.byId(note.id)!.spaceId!;
+      final sent = server.outbox.length;
+      server.failNext = const SyncRefusedException(404, 'no such space', {});
+      await expectLater(
+        alice.sharing.changeAccess(spaceId, bob.userId, SpaceRole.viewer),
+        throwsA(isA<SyncRefusedException>()),
+      );
+      expect(alice.notes.byId(note.id)!.spaceId, spaceId);
+      expect(alice.sharing.teams, hasLength(1));
+      expect(server.outbox, hasLength(sent));
+    });
 
     test(
       'leaving keeps a private copy of each note, unless asked not to',
@@ -724,6 +743,69 @@ void main() {
         expect(server.rowsIn(spaceId)[note.id]!.isTombstone, isFalse);
       },
     );
+
+    test(
+      'a leave that fails copies nothing, so a retry makes one set',
+      () async {
+        final note = await shareWithBob('Once');
+        final spaceId = bob.notes.byId(note.id)!.spaceId!;
+        bob.tick();
+        server.failNext = const SyncTransientException('offline');
+        await expectLater(
+          bob.sharing.leave(spaceId),
+          throwsA(isA<SyncTransientException>()),
+        );
+        expect(bob.notes.notes.where((n) => !n.isShared), isEmpty);
+        expect(bob.notes.byId(note.id)!.spaceId, spaceId);
+
+        await bob.sharing.leave(spaceId);
+        bob.tick(2);
+        await bob.sync.syncNow();
+        expect(bob.notes.notes.single.body, 'Once');
+        expect(bob.notes.notes.single.isShared, isFalse);
+      },
+    );
+
+    test('a failure after the removal keeps every note', () async {
+      final note = await shareWithBob('Safe');
+      final spaceId = bob.notes.byId(note.id)!.spaceId!;
+      bob.tick();
+      server.failNext = const SyncTransientException('offline');
+      server.failAfter = 1;
+      await expectLater(
+        bob.sharing.leave(spaceId),
+        throwsA(isA<SyncTransientException>()),
+      );
+      expect(
+        server.spaces[spaceId]?.members.containsKey(bob.userId),
+        isNot(true),
+      );
+      bob.tick(2);
+      await bob.sync.syncNow();
+      expect(bob.notes.notes.single.body, 'Safe');
+      expect(bob.notes.notes.single.isShared, isFalse);
+    });
+
+    test('a hidden note in the space stays hidden in its copy', () async {
+      final note = await shareWithBob('Seen');
+      final spaceId = bob.notes.byId(note.id)!.spaceId!;
+      final at = DateTime.utc(2026, 11, 1);
+      bob.notes.importNotes([
+        Note(
+          id: 'hidden-1',
+          body: 'Unseen',
+          createdAt: at,
+          updatedAt: at,
+          hiddenAt: at,
+          spaceId: spaceId,
+        ),
+      ]);
+      bob.tick();
+      await bob.sharing.leave(spaceId);
+      final copy = bob.notes.hiddenNotes.singleWhere((n) => !n.isShared);
+      expect(copy.body, 'Unseen');
+      expect(copy.id, isNot('hidden-1'));
+    });
 
     test('leaving without copies keeps nothing of the space', () async {
       final note = await shareWithBob('Gone');

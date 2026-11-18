@@ -1009,22 +1009,21 @@ class NotesStore extends ChangeNotifier {
   /// Only for the one moment a note's history first reaches a device that
   /// holds an older copy with edits of its own: those words are not lost,
   /// and they are not merged over newer ones either.
-  void keepCopy(Note local) {
-    _notes = List.unmodifiable([
-      Note(
-        id: newId(),
-        body: local.body,
-        formats: local.formats,
-        attachments: local.attachments,
-        drawing: local.drawing,
-        createdAt: local.createdAt,
-        updatedAt: _now(),
-        archivedAt: local.archivedAt,
-        hiddenAt: local.hiddenAt,
-      ),
-      ..._notes,
-    ]);
+  Note keepCopy(Note local) {
+    final copy = Note(
+      id: newId(),
+      body: local.body,
+      formats: local.formats,
+      attachments: local.attachments,
+      drawing: local.drawing,
+      createdAt: local.createdAt,
+      updatedAt: _now(),
+      archivedAt: local.archivedAt,
+      hiddenAt: local.hiddenAt,
+    );
+    _notes = List.unmodifiable([copy, ..._notes]);
     _persist();
+    return copy;
   }
 
   /// Writes notes an import decided to apply.

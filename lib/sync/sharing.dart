@@ -267,6 +267,13 @@ class Sharing extends ChangeNotifier {
     if (note == null || !note.isShared) {
       throw const SyncProtocolException('no such shared note');
     }
+    _notes.keepCopy(await _detached(note));
+  }
+
+  /// [note] with its attachments' bytes on this device and their server ids
+  /// dropped, so a copy uploads them again under itself. Throws when a
+  /// download fails.
+  Future<Note> _detached(Note note) async {
     final attachments = <NoteAttachmentRef>[];
     for (final ref in note.attachments) {
       final hashes = [
@@ -287,7 +294,7 @@ class Sharing extends ChangeNotifier {
         )!,
       );
     }
-    _notes.keepCopy(note.copyWith(attachments: attachments));
+    return note.copyWith(attachments: attachments);
   }
 
   /// A new note straight into a shared space.
@@ -365,9 +372,10 @@ class Sharing extends ChangeNotifier {
 
   /// Changes what a member may do, Editor or View only. Owner only.
   ///
-  /// A server from before this answers 404 for the route. With one other
-  /// person in the space, the notes then move to the pair space for them at
-  /// the new access, which they join from a fresh invitation.
+  /// A server from before this has no such route, which answers a plain 404.
+  /// With one other person in the space, the notes then move to the pair
+  /// space for them at the new access, which they join from a fresh
+  /// invitation, and they leave this one.
   Future<void> changeAccess(
     String spaceId,
     String userId,
@@ -384,30 +392,39 @@ class Sharing extends ChangeNotifier {
       await _api.changeRole(spaceId, userId, role);
     } on SyncRefusedException catch (error) {
       final others = space.othersThan(this.userId);
+      final notes = notesIn(spaceId);
       if (error.status != 404 ||
-          error.code == 'not a member' ||
+          error.code != 'server returned 404' ||
           others.length != 1 ||
-          space.invites.isNotEmpty) {
+          space.invites.isNotEmpty ||
+          notes.any((note) => note.isHidden)) {
         rethrow;
       }
-      for (final note in notesIn(spaceId)) {
-        if (note.isHidden) continue;
+      for (final note in notes) {
         await shareNoteWith(note.id, email: others.single.email, role: role);
       }
+      await _api.removeMember(spaceId, userId);
     }
     await refresh();
   }
 
-  /// Leaving a space. By default each of its notes is first kept as a
-  /// private copy, attachments included; if any copy cannot be made, nothing
-  /// is left.
+  /// Leaving a space. By default each of its notes stays as a private copy,
+  /// attachments included, hidden ones still hidden. The copies are written
+  /// to disk before the server is asked, so nothing is ever lost; if leaving
+  /// then fails, they are deleted again, so a retry makes one set.
   Future<void> leave(String spaceId, {bool keepCopies = true}) async {
-    if (keepCopies) {
-      for (final note in notesIn(spaceId)) {
-        if (!note.isHidden) await makePrivateCopy(note.id);
+    final sources = keepCopies ? notesIn(spaceId) : const <Note>[];
+    final detached = [for (final note in sources) await _detached(note)];
+    final copies = [for (final note in detached) _notes.keepCopy(note)];
+    await _notes.flush();
+    try {
+      await _api.removeMember(spaceId, userId);
+    } catch (_) {
+      for (final copy in copies) {
+        _notes.delete(copy.id);
       }
+      rethrow;
     }
-    await _api.removeMember(spaceId, userId);
     await refresh();
     _sync.requestSync();
   }
