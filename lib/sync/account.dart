@@ -1183,7 +1183,7 @@ class Account extends ChangeNotifier {
     KeyBundle bundle;
     try {
       try {
-        bundle = await api.resetEncryption(
+        final landed = await api.resetEncryption(
           expectedVersion: read.version,
           proof: proof,
           wrappedMasterKey: setup.wrappedMasterKey,
@@ -1191,6 +1191,17 @@ class Account extends ChangeNotifier {
           recoveryWrappedMasterKey: setup.recoveryWrappedMasterKey,
           identity: reset._identity,
           device: device,
+        );
+        bundle = KeyBundle(
+          wrappedMasterKey: setup.wrappedMasterKey,
+          kdf: setup.kdf,
+          recoveryWrappedMasterKey: setup.recoveryWrappedMasterKey,
+          identity: reset._identity,
+          version: landed.version,
+          generation: landed.generation,
+          changes: KeyChanges(
+            reset: KeyChange(at: DateTime.now(), device: device),
+          ),
         );
       } on SyncRefusedException catch (error) {
         if (error.code == 'proof-required') return const KeyChangeNeedsCode();

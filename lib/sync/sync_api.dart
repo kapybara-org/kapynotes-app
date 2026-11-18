@@ -691,8 +691,9 @@ abstract class SyncApi {
 
   /// Replaces the master key itself, if the bundle is still at
   /// [expectedVersion]. The server moves the old copy aside and starts the
-  /// account's next key generation. Returns the new bundle.
-  Future<KeyBundle> resetEncryption({
+  /// account's next key generation. Returns the bundle's new version and
+  /// generation.
+  Future<({int version, int generation})> resetEncryption({
     required int expectedVersion,
     required String proof,
     required SealedBox wrappedMasterKey,
@@ -1068,7 +1069,7 @@ class HttpSyncApi implements SyncApi {
   }
 
   @override
-  Future<KeyBundle> resetEncryption({
+  Future<({int version, int generation})> resetEncryption({
     required int expectedVersion,
     required String proof,
     required SealedBox wrappedMasterKey,
@@ -1077,23 +1078,22 @@ class HttpSyncApi implements SyncApi {
     required WireIdentity identity,
     required String? device,
   }) async {
-    final bundle = KeyBundle.fromJson(
-      await _send(
-        'POST',
-        _baseUrl.resolve('keys/reset'),
-        payload: {
-          'expectedVersion': expectedVersion,
-          'proof': proof,
-          'wrappedMasterKey': wrappedMasterKey.toJson(),
-          'kdf': kdf.toJson(),
-          'recoveryWrappedMasterKey': recoveryWrappedMasterKey.toJson(),
-          'identity': identity.toJson(),
-          'device': device,
-        },
-      ),
+    final body = await _send(
+      'POST',
+      _baseUrl.resolve('keys/reset'),
+      payload: {
+        'expectedVersion': expectedVersion,
+        'proof': proof,
+        'wrappedMasterKey': wrappedMasterKey.toJson(),
+        'kdf': kdf.toJson(),
+        'recoveryWrappedMasterKey': recoveryWrappedMasterKey.toJson(),
+        'identity': identity.toJson(),
+        'device': device,
+      },
     );
-    if (bundle == null) throw const SyncProtocolException('no bundle');
-    return bundle;
+    final generation = body['generation'];
+    if (generation is! int) throw const SyncProtocolException('no generation');
+    return (version: _version(body), generation: generation);
   }
 
   @override

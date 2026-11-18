@@ -2284,7 +2284,7 @@ class FakeApi implements SyncApi {
   }
 
   @override
-  Future<KeyBundle> resetEncryption({
+  Future<({int version, int generation})> resetEncryption({
     required int expectedVersion,
     required String proof,
     required SealedBox wrappedMasterKey,
@@ -2297,7 +2297,7 @@ class FakeApi implements SyncApi {
     _record('resetEncryption:$expectedVersion');
     final old = _changeable(expectedVersion);
     _useProof(proof, KeyProofAction.reset);
-    return server.resetKeys(
+    final bundle = server.resetKeys(
       userId,
       old: old,
       wrappedMasterKey: wrappedMasterKey,
@@ -2306,6 +2306,7 @@ class FakeApi implements SyncApi {
       identity: identity,
       device: device,
     );
+    return (version: bundle.version, generation: bundle.generation);
   }
 
   @override
