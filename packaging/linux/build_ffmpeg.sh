@@ -103,12 +103,26 @@ echo "$FFMPEG_SHA256  $WORK/download/ffmpeg.tar.xz" | sha256sum -c --quiet
 tar -xJf "$WORK/download/ffmpeg.tar.xz" -C "$WORK"
 src="$WORK/ffmpeg-$FFMPEG_VERSION"
 
+# The components the commands above use, by configure's names, which are not
+# always the names -f takes: raw s16le is the pcm_s16le demuxer and muxer,
+# and .m4a is written by the ipod muxer. `./configure --list-demuxers` (and
+# --list-muxers, --list-filters, ...) shows the names. Add to these lists when
+# the app starts using another piece of ffmpeg.
+protocols=(file pipe)
+demuxers=(pcm_s16le mov wav)
+muxers=(ipod mp4 mov pcm_s16le wav)
+decoders=(aac pcm_s16le)
+encoders=(aac pcm_s16le)
+parsers=(aac)
+filters=(aresample aformat anull atempo atrim volume)
+
+list() { local IFS=,; echo "$*"; }
+
 # --disable-autodetect keeps out every library configure would otherwise pick
 # up from the build machine (X11, ALSA, zlib, iconv, VA-API, ...), so the
 # result links the same on any runner. --toolchain=hardened adds PIE,
 # stack protector, FORTIFY_SOURCE and full RELRO. x86 assembly would need
 # nasm and buys nothing measurable for speech-sized audio.
-# shellcheck disable=SC2054 # the commas are configure's list syntax
 config=(
   --disable-everything
   --disable-autodetect
@@ -127,13 +141,13 @@ config=(
   --enable-libpulse
   --enable-indev=pulse
   --enable-outdev=pulse
-  --enable-protocol=file,pipe
-  --enable-demuxer=s16le,mov,wav
-  --enable-muxer=ipod,mp4,mov,s16le,wav
-  --enable-decoder=aac,pcm_s16le
-  --enable-encoder=aac,pcm_s16le
-  --enable-parser=aac
-  --enable-filter=aresample,aformat,anull,atempo,atrim,volume
+  --enable-protocol="$(list "${protocols[@]}")"
+  --enable-demuxer="$(list "${demuxers[@]}")"
+  --enable-muxer="$(list "${muxers[@]}")"
+  --enable-decoder="$(list "${decoders[@]}")"
+  --enable-encoder="$(list "${encoders[@]}")"
+  --enable-parser="$(list "${parsers[@]}")"
+  --enable-filter="$(list "${filters[@]}")"
 )
 
 (

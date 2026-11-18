@@ -465,10 +465,11 @@ build_mac_unsigned() {
   echo "  → $dmg (unsigned — will not open on another Mac)"
 }
 
-# The three Linux downloads for this machine's arch. ffmpeg is built first
-# (or reused from build/linux/ffmpeg) because every package ships it in
-# libexec/ for voice notes; packaging/linux/package.sh explains the layout and
-# which libraries the portable packages carry.
+# The three Linux downloads for this machine's arch. Every package ships an
+# ffmpeg in libexec/ for voice notes, built after the app (so a compile error
+# in the app shows first) or reused from build/linux/ffmpeg;
+# packaging/linux/package.sh explains the layout and which libraries the
+# portable packages carry.
 build_linux() {
   local arch flutter_arch
   arch="$(uname -m)"
@@ -478,9 +479,9 @@ build_linux() {
     *) echo "error: no Linux build for $arch" >&2; exit 1 ;;
   esac
   info "Linux $VERSION ($BUILD_NUMBER) → tar.gz, .deb and AppImage for $arch, unsigned"
-  "$ROOT/packaging/linux/build_ffmpeg.sh"
   # shellcheck disable=SC2046
   "$FLUTTER" build linux --release $(dart_size_flags "linux-$arch")
+  "$ROOT/packaging/linux/build_ffmpeg.sh"
   "$ROOT/packaging/linux/package.sh" \
     "$ROOT/build/linux/$flutter_arch/release/bundle" "$VERSION" "$OUT"
 }

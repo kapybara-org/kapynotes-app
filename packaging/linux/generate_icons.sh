@@ -2,7 +2,7 @@
 #
 # Writes linux/runner/resources/icons/<N>.png, the hicolor app icons the
 # runner's CMake installs as share/icons/hicolor/<N>x<N>/apps/
-# com.kapybara.kapynotes.png. Run it after a brand change and commit the
+# com.kapybara.kapynotes.png, and assets/branding/kapynotes_tray_linux.png. Run it after a brand change and commit the
 # result; builds only copy the PNGs. Needs ImageMagick (convert, identify).
 #
 # Linux does not mask app icons the way macOS, iOS and Android do, so the
@@ -33,5 +33,8 @@ done
 for size in 128 256 512; do
   convert "$MASTER" -filter Lanczos -resize "${size}x${size}" -strip "PNG32:$DEST/$size.png"
 done
+
+# The tray indicator is the 64 px icon; see assets/branding/README.md.
+cp "$DEST/64.png" assets/branding/kapynotes_tray_linux.png
 
 identify -format '%f %wx%h\n' "$DEST"/*.png

@@ -22,8 +22,8 @@
 # release/** still build on push, since no pull request covers a direct push or
 # the commit a merge creates.
 #
-# Linux builds here too, on x86_64 and aarch64. Its jobs are not required
-# checks yet.
+# Linux builds here too, on x86_64 and aarch64, and the x86_64 packages are
+# then started on clean distros. Neither Linux job is a required check yet.
 #
 # Pull requests from forks run with no secrets — GitHub withholds them — so
 # untrusted code cannot reach the signing keys this repository holds for
@@ -217,9 +217,9 @@ jobs:
           path: build/linux/ffmpeg/${{ matrix.arch }}
           key: linux-ffmpeg-${{ matrix.runner }}-${{ hashFiles('packaging/linux/build_ffmpeg.sh') }}
 
-      # Builds ffmpeg if the cache missed, then the obfuscated release bundle
-      # with its symbols split out (as on every other platform), then the
-      # three packages. FLUTTER overrides the script's default SDK path.
+      # Builds the obfuscated release bundle with its symbols split out (as on
+      # every other platform), then ffmpeg if the cache missed, then the three
+      # packages. FLUTTER overrides the script's default SDK path.
       - name: Build Linux packages
         env:
           FLUTTER: flutter
@@ -262,3 +262,71 @@ jobs:
             build/release/KapyNotes-*.deb
             build/release/KapyNotes-*.AppImage
           if-no-files-found: error
+
+  # Starts the x86_64 packages on distros that have never seen a build
+  # toolchain: each container gets only a desktop baseline (GTK 3, libpulse,
+  # Mesa, a font) and the test's own Xvfb and D-Bus, never the libraries the
+  # portable packages bundle, so a library the bundle forgot fails here rather
+  # than on a user's machine. The .deb goes in through apt, which proves its
+  # Depends. packaging/linux/smoke_test.sh holds the checks and runs the same
+  # locally. The host entry mounts the AppImage through FUSE for real on a
+  # 24.04 machine without libfuse2, which is what the static runtime is for.
+  linux-smoke:
+    needs: linux
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-22.04
+            image: ubuntu:22.04
+          - name: ubuntu-24.04
+            image: ubuntu:24.04
+          - name: debian-12
+            image: debian:12
+          - name: fedora
+            image: fedora:latest
+          - name: appimage-fuse
+            image: ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x86_64-unsigned
+          path: dist
+
+      - name: Start the packages in a clean ${{ matrix.image }}
+        if: matrix.image != ''
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w "${{ matrix.image }}" bash -c \
+            'packaging/linux/smoke_test.sh baseline && packaging/linux/smoke_test.sh all dist smoke-out'
+
+      - name: Mount the AppImage through FUSE
+        if: matrix.image == ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fuse3 xvfb x11-utils x11-apps dbus
+          if dpkg -s libfuse2t64 >/dev/null 2>&1 || dpkg -s libfuse2 >/dev/null 2>&1; then
+            sudo apt-get remove -y libfuse2t64 libfuse2 || true
+          fi
+          ! ldconfig -p | grep -q 'libfuse.so.2'
+          SMOKE_FUSE=1 packaging/linux/smoke_test.sh appimage dist/KapyNotes-*.AppImage smoke-out
+
+      # The containers have no ImageMagick on purpose; the runner does.
+      - name: Convert screenshots
+        if: always()
+        run: |
+          command -v convert >/dev/null || { sudo apt-get update && sudo apt-get install -y imagemagick; }
+          for xwd in smoke-out/*.xwd; do
+            [ -e "$xwd" ] && convert "xwd:$xwd" "${xwd%.xwd}.png" && rm "$xwd"
+          done
+          true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-smoke-${{ matrix.name }}
+          path: smoke-out
+          if-no-files-found: warn
