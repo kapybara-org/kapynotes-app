@@ -397,6 +397,10 @@ class KapyIcons {
     HugeIcons.strokeRoundedGlobe02,
   );
   static const pinOutlined = KapyIconData(0xE04C, HugeIcons.strokeRoundedPin);
+  static const keepOnTop = KapyIconData(
+    0xE0E3,
+    HugeIcons.strokeRoundedPictureInPictureOn,
+  );
   static const pinRounded = KapyIconData(0xE04D, HugeIcons.strokeRoundedPin02);
   static const radioCheckedRounded = KapyIconData(
     0xE04E,
