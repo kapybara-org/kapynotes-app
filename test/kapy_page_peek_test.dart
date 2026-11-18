@@ -1,0 +1,224 @@
+import 'dart:math' as math;
+
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/ui/kapy_page_peek.dart';
+import 'package:material_ui/material_ui.dart';
+
+final _kapy = find.byKey(KapyPagePeek.imageKey);
+
+Widget _host({
+  bool Function()? held,
+  math.Random? random,
+  bool disableAnimations = false,
+}) => MaterialApp(
+  builder: (context, child) => MediaQuery(
+    data: MediaQuery.of(context).copyWith(disableAnimations: disableAnimations),
+    child: child!,
+  ),
+  home: Scaffold(
+    body: Stack(
+      children: [
+        Positioned(
+          right: -6,
+          bottom: 0,
+          child: KapyPagePeek(held: held, random: random),
+        ),
+      ],
+    ),
+  ),
+);
+
+Future<void> _wait(WidgetTester tester, Duration time) async {
+  await tester.pump(time);
+  await tester.pump();
+}
+
+Future<void> _slide(WidgetTester tester) => _wait(tester, KapyPagePeek.slide);
+
+void main() {
+  testWidgets('Kapy starts out of sight', (tester) async {
+    await tester.pumpWidget(_host());
+    expect(_kapy, findsNothing);
+  });
+
+  testWidgets('peeks only once the window has been idle for the threshold', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host());
+
+    await _wait(
+      tester,
+      KapyPagePeek.idleBeforePeek - const Duration(seconds: 1),
+    );
+    expect(_kapy, findsNothing);
+
+    await _wait(tester, const Duration(seconds: 1));
+    expect(_kapy, findsOneWidget);
+    await _slide(tester);
+    final size = tester.getSize(_kapy);
+    expect(size, const Size(KapyPagePeek.width, KapyPagePeek.height));
+    expect(tester.getRect(_kapy).right, 806);
+  });
+
+  testWidgets('slides in from the edge and out again, not a cut', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host());
+    await _wait(tester, KapyPagePeek.idleBeforePeek);
+    final start = tester.getRect(_kapy).left;
+    await _wait(tester, KapyPagePeek.slide ~/ 2);
+    final middle = tester.getRect(_kapy).left;
+    await _slide(tester);
+    final end = tester.getRect(_kapy).left;
+    expect(start, greaterThan(middle));
+    expect(middle, greaterThan(end));
+    expect(start - end, closeTo(KapyPagePeek.width, 0.5));
+
+    await _wait(tester, KapyPagePeek.stay);
+    await _wait(tester, KapyPagePeek.slide ~/ 2);
+    expect(tester.getRect(_kapy).left, greaterThan(end));
+    expect(_kapy, findsOneWidget);
+  });
+
+  testWidgets('hides again after its time', (tester) async {
+    await tester.pumpWidget(_host());
+    await _wait(tester, KapyPagePeek.idleBeforePeek);
+    await _slide(tester);
+    await _wait(tester, KapyPagePeek.stay - const Duration(milliseconds: 100));
+    expect(_kapy, findsOneWidget);
+
+    await _wait(tester, const Duration(milliseconds: 100));
+    await _slide(tester);
+    expect(_kapy, findsNothing);
+  });
+
+  testWidgets('returns at a random 2 to 5 minute interval while idle', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host(random: math.Random(1)));
+    await _wait(tester, KapyPagePeek.idleBeforePeek);
+    await _slide(tester);
+    await _wait(tester, KapyPagePeek.stay + KapyPagePeek.slide);
+    expect(_kapy, findsNothing);
+
+    await _wait(tester, KapyPagePeek.minInterval - const Duration(seconds: 1));
+    expect(_kapy, findsNothing);
+    await _wait(
+      tester,
+      KapyPagePeek.maxInterval -
+          KapyPagePeek.minInterval +
+          const Duration(seconds: 2),
+    );
+    expect(_kapy, findsOneWidget);
+    await _slide(tester);
+    expect(tester.getRect(_kapy).right, 806);
+  });
+
+  testWidgets('any key or pointer input sends it away, and the wait starts '
+      'again', (tester) async {
+    await tester.pumpWidget(_host());
+    await _wait(tester, KapyPagePeek.idleBeforePeek);
+    await _slide(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
+    await _wait(tester, KapyPagePeek.slide ~/ 2);
+    expect(_kapy, findsOneWidget, reason: 'it leaves on the same slide');
+    await _slide(tester);
+    expect(_kapy, findsNothing);
+
+    await _wait(
+      tester,
+      KapyPagePeek.idleBeforePeek - const Duration(seconds: 1),
+    );
+    expect(_kapy, findsNothing);
+    await _wait(tester, const Duration(seconds: 1));
+    expect(_kapy, findsOneWidget);
+    await _slide(tester);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(10, 10));
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(const Offset(20, 20));
+    await _slide(tester);
+    expect(_kapy, findsNothing);
+  });
+
+  testWidgets('never shows while the person keeps typing', (tester) async {
+    await tester.pumpWidget(_host());
+    for (var i = 0; i < 20; i++) {
+      await _wait(tester, const Duration(seconds: 30));
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      expect(_kapy, findsNothing);
+    }
+  });
+
+  testWidgets('holds back while a pointer is down, as in a drag', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host());
+    final touch = await tester.startGesture(const Offset(100, 100));
+    await _wait(tester, KapyPagePeek.idleBeforePeek * 3);
+    expect(_kapy, findsNothing);
+
+    await touch.up();
+    await _wait(tester, KapyPagePeek.idleBeforePeek);
+    expect(_kapy, findsOneWidget);
+  });
+
+  testWidgets('holds back while the host says so, and while a dialog is open', (
+    tester,
+  ) async {
+    var held = true;
+    await tester.pumpWidget(_host(held: () => held));
+    await _wait(tester, KapyPagePeek.idleBeforePeek * 2);
+    expect(_kapy, findsNothing);
+
+    held = false;
+    await _wait(tester, KapyPagePeek.retryWhenHeld);
+    expect(_kapy, findsOneWidget);
+    await _slide(tester);
+    await _wait(tester, KapyPagePeek.stay + KapyPagePeek.slide);
+    expect(_kapy, findsNothing);
+
+    final context = tester.element(find.byType(Scaffold));
+    showDialog<void>(
+      context: context,
+      builder: (_) => const AlertDialog(title: Text('Open')),
+    );
+    await tester.pump();
+    await _wait(tester, KapyPagePeek.maxInterval * 2);
+    expect(_kapy, findsNothing);
+
+    Navigator.of(context).pop();
+    await tester.pump();
+    await _wait(tester, KapyPagePeek.retryWhenHeld);
+    expect(_kapy, findsOneWidget);
+  });
+
+  testWidgets('with Reduce Motion on it fades where it would slide', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host(disableAnimations: true));
+    await _wait(tester, KapyPagePeek.idleBeforePeek);
+    await _wait(tester, KapyPagePeek.slide ~/ 3);
+    final rect = tester.getRect(_kapy);
+    expect(rect.right, 806);
+    final opacity = tester.widget<Opacity>(
+      find.ancestor(of: _kapy, matching: find.byType(Opacity)),
+    );
+    expect(opacity.opacity, inExclusiveRange(0, 1));
+
+    await _slide(tester);
+    expect(tester.getRect(_kapy), rect);
+    expect(
+      tester
+          .widget<Opacity>(
+            find.ancestor(of: _kapy, matching: find.byType(Opacity)),
+          )
+          .opacity,
+      1,
+    );
+  });
+}
