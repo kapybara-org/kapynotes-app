@@ -502,7 +502,9 @@ class TasksPushResult {
     final applied = raw['applied'];
     final conflicts = raw['conflicts'];
     return TasksPushResult(
-      applied: applied is List ? applied.whereType<String>().toList() : const [],
+      applied: applied is List
+          ? applied.whereType<String>().toList()
+          : const [],
       conflicts: conflicts is List
           ? conflicts
                 .map(WireTaskRecord.fromJson)
@@ -672,6 +674,9 @@ abstract class SyncApi {
     required SealedToPublicKey spaceKey,
   });
   Future<void> removeMember(String spaceId, String userId);
+
+  /// Owner only: what a member may do. A server from before this answers 404.
+  Future<Space> changeRole(String spaceId, String userId, SpaceRole role);
   Future<List<WireNoteKey>> fetchNoteKeys(String spaceId);
   Future<void> rotate({
     required String spaceId,
@@ -852,7 +857,9 @@ class HttpSyncApi implements SyncApi {
       await _send(
         'POST',
         _baseUrl.resolve('tasks'),
-        payload: {'records': [for (final r in records) r.toJson()]},
+        payload: {
+          'records': [for (final r in records) r.toJson()],
+        },
       ),
     );
   }
@@ -1004,6 +1011,19 @@ class HttpSyncApi implements SyncApi {
   @override
   Future<void> removeMember(String spaceId, String userId) =>
       _send('DELETE', _baseUrl.resolve('spaces/$spaceId/members/$userId'));
+
+  @override
+  Future<Space> changeRole(
+    String spaceId,
+    String userId,
+    SpaceRole role,
+  ) async => _space(
+    await _send(
+      'PUT',
+      _baseUrl.resolve('spaces/$spaceId/members/$userId'),
+      payload: {'role': role.name},
+    ),
+  );
 
   @override
   Future<List<WireNoteKey>> fetchNoteKeys(String spaceId) async {
