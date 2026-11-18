@@ -1513,11 +1513,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The final preview is committed and focused by [_handleHardwareKey] when
   /// that modifier is released.
   void _cycleNote(int delta) {
-    // Start with the exact order painted by the sidebar. Pins and shared
-    // spaces can lift rows out of the store's order, and "next" must always
-    // mean the row visibly below the active note.
-    final sidebarOrder = SidebarNoteGroups(
-      notes: _visibleNotes,
+    // Walk the notes most recently opened first, grouped as the sidebar
+    // groups them, so pins and shared spaces still lead and one Ctrl+Tab
+    // toggles between the last two notes. The list itself keeps its
+    // last-edited order.
+    final visible = _visibleNotes;
+    final opened = widget.prefs.recentlyOpenedNoteIds;
+    final byId = {for (final note in visible) note.id: note};
+    final openedIds = opened.toSet();
+    final switchOrder = SidebarNoteGroups(
+      notes: [
+        for (final id in opened) ?byId[id],
+        for (final note in visible)
+          if (!openedIds.contains(note.id)) note,
+      ],
       pinnedNoteIds: widget.notes.pinnedNoteIds,
       sharing: widget.account?.sharing,
       specialMode: _specialMode,
@@ -1528,7 +1537,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       currentId: _selectedId,
       // A note already visible in another pane is still a note the user can
       // switch to. Selecting it activates that pane instead of duplicating it.
-      eligibleIds: sidebarOrder.map((note) => note.id),
+      eligibleIds: switchOrder.map((note) => note.id),
       delta: delta,
     );
     if (next == null) return;
@@ -3045,36 +3054,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   List<Note> get _visibleNotes {
-    var notes = _filtered(
+    final notes = _filtered(
       _archiveMode
           ? widget.notes.searchArchived(_archiveQuery)
           : _hiddenMode
           ? widget.notes.hiddenNotes
           : widget.notes.search(''),
     );
-    if (_showingPinnedOnly) {
-      final pinned = widget.notes.pinnedNoteIds;
-      notes = [
-        for (final note in notes)
-          if (pinned.contains(note.id)) note,
-      ];
-    }
-    final recent = widget.prefs.recentlyOpenedNoteIds;
-    if (notes.length < 2 || recent.isEmpty) return notes;
-
-    final rank = <String, int>{
-      for (var index = 0; index < recent.length; index++) recent[index]: index,
-    };
-    final indexed = notes.indexed.toList();
-    indexed.sort((a, b) {
-      final aRank = rank[a.$2.id];
-      final bRank = rank[b.$2.id];
-      if (aRank != null && bRank != null) return aRank.compareTo(bRank);
-      if (aRank != null) return -1;
-      if (bRank != null) return 1;
-      return a.$1.compareTo(b.$1);
-    });
-    return List.unmodifiable(indexed.map((entry) => entry.$2));
+    if (!_showingPinnedOnly) return notes;
+    final pinned = widget.notes.pinnedNoteIds;
+    return [
+      for (final note in notes)
+        if (pinned.contains(note.id)) note,
+    ];
   }
 
   @override

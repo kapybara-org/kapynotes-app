@@ -6,6 +6,11 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Settings → MCP: a server on 127.0.0.1 only, off until the person
+	     turns it on. The sandbox refuses even a loopback listener without
+	     this. -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 	<!-- Recording a voice note. The sandbox treats the microphone as its own
 	     capability, so the usage string alone is not enough on macOS. -->
 	<key>com.apple.security.device.audio-input</key>

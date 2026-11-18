@@ -74,6 +74,8 @@ class Desk {
     TagStore? tags,
     bool readOnly = false,
     Widget? below,
+    Brightness brightness = Brightness.dark,
+    DateTime Function()? now,
   }) async {
     attachments = initialAttachments;
     AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
@@ -94,6 +96,7 @@ class Desk {
       resultsVisible: results,
       markdownEnabled: true,
       readOnly: readOnly,
+      now: now,
       autofocus: true,
       onDocumentChanged: (_, _, refs, _) => attachments = refs,
       onSettingsPressed: () {},
@@ -102,7 +105,9 @@ class Desk {
     );
     await tester.pumpWidget(
       MaterialApp(
-        theme: KapyTheme.dark(),
+        theme: brightness == Brightness.dark
+            ? KapyTheme.dark()
+            : KapyTheme.light(),
         home: Scaffold(
           bottomNavigationBar: below,
           body: Padding(

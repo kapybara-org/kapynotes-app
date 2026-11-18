@@ -36,6 +36,7 @@ class NotesStore extends ChangeNotifier {
   static const String _pinnedKey = 'pinnedNoteIds.v1';
   static const String _writingDaysKey = 'writingDays.v1';
   static const String _nameHereKey = 'nameHereNoteIds.v1';
+  static const String _privateCopiesKey = 'privateCopies.v1';
   static const int _nameHereLimit = 200;
 
   final LocalStore _store;
@@ -293,7 +294,27 @@ class NotesStore extends ChangeNotifier {
     List<NoteFormatRange> formats, [
     List<NoteAttachmentRef>? attachments,
     TextEdit? edit,
-  ]) {
+  ]) => _writeDocument(id, body, formats, attachments, edit, authored: true);
+
+  /// Writes [body] on the person's behalf, as an assistant connected over MCP
+  /// does: saved and synced exactly as typing is, but not counted towards the
+  /// writing streak, which is the person's own. [edit] must leave existing
+  /// formats and attachments where they were, as an append or a same-length
+  /// swap does.
+  void updateForAssistant(String id, String body, TextEdit edit) {
+    final existing = byId(id);
+    if (existing == null) return;
+    _writeDocument(id, body, existing.formats, null, edit, authored: false);
+  }
+
+  void _writeDocument(
+    String id,
+    String body,
+    List<NoteFormatRange> formats,
+    List<NoteAttachmentRef>? attachments,
+    TextEdit? edit, {
+    required bool authored,
+  }) {
     final index = indexOf(id);
     if (index < 0) return;
     final existing = _notes[index];
@@ -323,7 +344,7 @@ class NotesStore extends ChangeNotifier {
       attachments: images,
       updatedAt: at,
     );
-    _recordWriting([WritingStreak.dayOf(at)]);
+    if (authored) _recordWriting([WritingStreak.dayOf(at)]);
     _replace(index, updatedNote, toFront: true);
   }
 
@@ -1009,22 +1030,50 @@ class NotesStore extends ChangeNotifier {
   /// Only for the one moment a note's history first reaches a device that
   /// holds an older copy with edits of its own: those words are not lost,
   /// and they are not merged over newer ones either.
-  void keepCopy(Note local) {
-    _notes = List.unmodifiable([
-      Note(
-        id: newId(),
-        body: local.body,
-        formats: local.formats,
-        attachments: local.attachments,
-        drawing: local.drawing,
-        createdAt: local.createdAt,
-        updatedAt: _now(),
-        archivedAt: local.archivedAt,
-        hiddenAt: local.hiddenAt,
-      ),
-      ..._notes,
-    ]);
+  Note keepCopy(Note local) {
+    final copy = Note(
+      id: newId(),
+      body: local.body,
+      formats: local.formats,
+      attachments: local.attachments,
+      drawing: local.drawing,
+      createdAt: local.createdAt,
+      updatedAt: _now(),
+      archivedAt: local.archivedAt,
+      hiddenAt: local.hiddenAt,
+    );
+    _notes = List.unmodifiable([copy, ..._notes]);
     _persist();
+    return copy;
+  }
+
+  /// A private copy of [source] for leaving its space: the one an earlier
+  /// attempt made, while it is still here, or a new one. [made] says which.
+  ({Note note, bool made}) privateCopyOf(Note source) {
+    final raw = _store.data[_privateCopiesKey];
+    final copies = <String, String>{
+      if (raw is Map)
+        for (final MapEntry(:key, :value) in raw.entries)
+          if (key is String && value is String && indexOf(value) >= 0)
+            key: value,
+    };
+    final existing = byId(copies[source.id]);
+    if (existing != null) return (note: existing, made: false);
+    final copy = keepCopy(source);
+    _store.put(_privateCopiesKey, {...copies, source.id: copy.id});
+    return (note: copy, made: true);
+  }
+
+  /// Forgets the copies made of [sourceIds] once their leave is done, so a
+  /// later leave copies whatever those notes say by then.
+  void forgetPrivateCopies(Iterable<String> sourceIds) {
+    final raw = _store.data[_privateCopiesKey];
+    if (raw is! Map) return;
+    final done = sourceIds.toSet();
+    _store.put(_privateCopiesKey, {
+      for (final MapEntry(:key, :value) in raw.entries)
+        if (!done.contains(key)) key: value,
+    });
   }
 
   /// Writes notes an import decided to apply.
