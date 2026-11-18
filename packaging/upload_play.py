@@ -55,6 +55,7 @@
 # permanent from that moment on.
 
 import base64
+import http.client
 import json
 import os
 import subprocess
@@ -476,20 +477,89 @@ def validate(bundle):
         die("bundle preflight failed; nothing was uploaded")
 
 
+UPLOAD_CHUNK = 16 * 1024 * 1024
+UPLOAD_STALL_LIMIT = 6
+
+
+def upload_bundle(edit_id, bundle):
+    """Send the bundle as a resumable upload, 16 MB at a time.
+
+    Google's front end drops a single-request upload of a bundle this size
+    (190 MB for 1.32.0) without a response. A resumable session survives that:
+    after a dropped chunk, Play reports how many bytes it holds and the upload
+    carries on from there. Only forward progress resets the retry budget, so a
+    session that stops taking bytes fails after UPLOAD_STALL_LIMIT tries, with
+    the wait between them growing each time.
+    """
+    size = os.path.getsize(bundle)
+
+    def send(url, method, data, headers):
+        request = urllib.request.Request(url, data=data, method=method)
+        request.add_header("Authorization", "Bearer " + TOKEN)
+        for name, value in headers.items():
+            request.add_header(name, value)
+        return urllib.request.urlopen(request, timeout=300)
+
+    def held(error):
+        span = error.headers.get("Range")
+        return int(span.split("-")[1]) + 1 if span else 0
+
+    session = send(
+        f"{UPLOAD_API}/applications/{PACKAGE_NAME}/edits/{edit_id}/bundles?uploadType=resumable",
+        "POST", b"",
+        {"X-Upload-Content-Type": "application/octet-stream",
+         "X-Upload-Content-Length": str(size),
+         "Content-Type": "application/json; charset=UTF-8"},
+    ).headers["Location"]
+
+    offset = 0
+    stalled = 0
+    with open(bundle, "rb") as handle:
+        while True:
+            handle.seek(offset)
+            chunk = handle.read(UPLOAD_CHUNK)
+            span = f"bytes {offset}-{offset + len(chunk) - 1}/{size}"
+            holding = None
+            try:
+                with send(session, "PUT", chunk,
+                          {"Content-Range": span,
+                           "Content-Type": "application/octet-stream"}) as response:
+                    return json.loads(response.read().decode())
+            except urllib.error.HTTPError as error:
+                if error.code != 308:
+                    die(f"bundle upload failed: HTTP {error.code} {error.read().decode()[:400]}")
+                holding = held(error)
+            except (OSError, http.client.HTTPException) as error:
+                print(f"  chunk at byte {offset} dropped ({type(error).__name__})")
+                try:
+                    with send(session, "PUT", b"", {"Content-Range": f"bytes */{size}"}) as response:
+                        return json.loads(response.read().decode())
+                except urllib.error.HTTPError as status:
+                    if status.code == 308:
+                        holding = held(status)
+                except (OSError, http.client.HTTPException):
+                    pass
+
+            if holding is not None and holding > offset:
+                offset = holding
+                stalled = 0
+                print(f"  {offset * 100 // size}% sent")
+                continue
+            if holding is not None:
+                offset = holding
+            stalled += 1
+            if stalled >= UPLOAD_STALL_LIMIT:
+                die(f"bundle upload made no progress in {stalled} tries; Play holds {offset} of {size} bytes")
+            time.sleep(5 * stalled)
+
+
 def upload(bundle, track):
     name, _ = pubspec_version()
     info(f"Uploading {os.path.basename(bundle)} to '{track}'")
     edit = call("POST", f"{API}/applications/{PACKAGE_NAME}/edits", body={})
     edit_id = edit["id"]
 
-    with open(bundle, "rb") as handle:
-        blob = handle.read()
-    uploaded = call(
-        "POST",
-        f"{UPLOAD_API}/applications/{PACKAGE_NAME}/edits/{edit_id}/bundles?uploadType=media",
-        data=blob, content_type="application/octet-stream",
-    )
-    version_code = uploaded["versionCode"]
+    version_code = upload_bundle(edit_id, bundle)["versionCode"]
     print(f"  bundle accepted as versionCode {version_code}")
 
     call(
