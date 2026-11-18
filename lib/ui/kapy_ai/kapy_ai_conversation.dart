@@ -299,7 +299,7 @@ class _Answer extends StatelessWidget {
               tooltip: 'Copy',
               extent: 28,
               iconSize: 15,
-              radius: 8,
+              radius: AppRadii.control,
               color: palette.textTertiary,
               onPressed: () {
                 unawaited(Clipboard.setData(ClipboardData(text: message.text)));

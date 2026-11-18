@@ -3584,7 +3584,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 foregroundColor: palette.textTertiary,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 textStyle: uiStyle(
                   12.5,
