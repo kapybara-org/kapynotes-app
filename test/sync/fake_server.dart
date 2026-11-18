@@ -57,6 +57,9 @@ class FakeServer {
   /// paths.
   SyncException? failNext;
 
+  /// Thrown by the next stop-sharing call alone, after its moves went up.
+  SyncException? failStop;
+
   /// Calls to let through before [failNext] is thrown.
   int failAfter = 0;
 
@@ -2148,6 +2151,11 @@ class FakeApi implements SyncApi {
   @override
   Future<void> stopSharing(String spaceId, List<WireNote> notes) async {
     _gate();
+    final failure = server.failStop;
+    if (failure != null) {
+      server.failStop = null;
+      throw failure;
+    }
     server.stopSharing(userId, spaceId, notes);
   }
 
