@@ -1001,9 +1001,11 @@ class NotesStore extends ChangeNotifier {
         // about the note where it is now.
         if (local.spaceId != incoming.spaceId) {
           // Nothing to remove, but the record still travels.
-        } else if (local.updatedAt.isAfter(incoming.deletedAt)) {
+        } else if (local.isDirty &&
+            local.updatedAt.isAfter(incoming.deletedAt)) {
           // A local edit newer than the remote delete resurrects the note; it
-          // is still dirty, so the next push sends it back up.
+          // is still dirty, so the next push sends it back up. A clean copy
+          // goes whatever its clock says.
           continue;
         } else {
           removed.add(index);

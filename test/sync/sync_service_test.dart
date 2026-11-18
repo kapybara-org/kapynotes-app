@@ -860,6 +860,27 @@ void main() {
   });
 
   group('two devices holding the same note', () {
+    test('a delete from a device whose clock runs slow still takes the note', () async {
+      server.now = () => DateTime.utc(2026, 9, 1);
+      final fast = Device(server, name: 'fast', startAt: DateTime.utc(2026, 9, 1, 6));
+      final slow = Device(server, name: 'slow', startAt: DateTime.utc(2026, 8, 31, 18));
+      await fast.boot();
+      await slow.boot();
+      await fast.goLive();
+      await slow.goLive();
+      final note = fast.notes.create(body: 'Delete me');
+      await until(() => slow.bodyOf(note.id) == 'Delete me');
+
+      slow.notes.delete(note.id);
+      await settle(server);
+      await until(
+        () => fast.notes.byId(note.id) == null,
+        reason: 'the fast clock kept a note deleted elsewhere',
+      );
+      fast.dispose();
+      slow.dispose();
+    });
+
     /// A note both devices already have — restored from a backup, or from
     /// the store as it was before sync existed.
     Note held(String id, String body, DateTime at) =>
