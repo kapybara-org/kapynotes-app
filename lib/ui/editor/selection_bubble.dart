@@ -208,17 +208,25 @@ class _SelectionBubbleOverlay extends StatelessWidget {
         safeArea: MediaQuery.paddingOf(context),
       ),
       children: [
+        // Part of the note's field for taps, as the platform's own toolbar
+        // is: a click on the bubble is not a click outside the note, which
+        // would take its focus, and the bubble with it, before the click
+        // lands.
         LayoutId(
           id: _BubbleLayout.bubble,
-          child: ExcludeFocus(
-            excluding: !controller.editingLink,
-            child: _Bubble(controller: controller),
+          child: TextFieldTapRegion(
+            child: ExcludeFocus(
+              excluding: !controller.editingLink,
+              child: _Bubble(controller: controller),
+            ),
           ),
         ),
         if (controller.blocksOpen)
           LayoutId(
             id: _BubbleLayout.menu,
-            child: ExcludeFocus(child: _BlockMenu(controller: controller)),
+            child: TextFieldTapRegion(
+              child: ExcludeFocus(child: _BlockMenu(controller: controller)),
+            ),
           ),
       ],
     ),
