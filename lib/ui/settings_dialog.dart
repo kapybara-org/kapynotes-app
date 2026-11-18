@@ -42,6 +42,7 @@ import 'export_import.dart';
 import 'hidden_notes_gate.dart';
 import 'kapy_ai/kapy_ai_parts.dart';
 import 'kapy_ai/kapy_ai_settings.dart';
+import 'mcp_pane.dart';
 import 'model_terms_sheet.dart';
 import 'notebook_paper.dart';
 import 'settings_rows.dart';
@@ -61,6 +62,7 @@ enum SettingsSection {
   appearance,
   notes,
   voice,
+  mcp,
   window,
   shortcuts,
   account,
@@ -78,6 +80,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.appearance => 'Appearance',
     SettingsSection.notes => 'Notes',
     SettingsSection.voice => 'Voice & AI',
+    SettingsSection.mcp => mcpSectionLabel,
     SettingsSection.window => 'Window',
     SettingsSection.shortcuts => 'Shortcuts',
     SettingsSection.account => 'Account & sync',
@@ -88,6 +91,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.appearance => KapyIcons.paintBoardOutlined,
     SettingsSection.notes => KapyIcons.noteOutlined,
     SettingsSection.voice => KapyIcons.micRounded,
+    SettingsSection.mcp => mcpSectionIcon,
     SettingsSection.window => KapyIcons.computerOutlined,
     SettingsSection.shortcuts => KapyIcons.commandOutlined,
     SettingsSection.account => KapyIcons.accountCircleOutlined,
@@ -107,6 +111,7 @@ extension SettingsSectionCopy on SettingsSection {
           ? 'Voice notes, transcripts, summaries and Kapy AI, and where each '
                 'one runs'
           : 'Voice notes, transcripts and summaries, and where each one runs',
+    SettingsSection.mcp => mcpSectionSummary,
     SettingsSection.window =>
       'What the window shows, and what happens when it closes',
     SettingsSection.shortcuts =>
@@ -636,7 +641,9 @@ class _SettingsDialogState extends State<SettingsDialog>
     // recording works without an account, and the pane says so rather than
     // hiding and leaving the user to wonder where the setting went.
     SettingsSection.voice => widget.voicePrefs != null,
-    SettingsSection.appearance || SettingsSection.notes => true,
+    SettingsSection.appearance ||
+    SettingsSection.notes ||
+    SettingsSection.mcp => true,
   };
 
   List<SettingsSection> get _sections =>
@@ -1370,7 +1377,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     SettingsSection.window => _windowGroups(),
     SettingsSection.shortcuts => _shortcutGroups(),
     SettingsSection.about => _aboutGroups(),
-    SettingsSection.account => const [],
+    SettingsSection.account || SettingsSection.mcp => const [],
   };
 
   /// The slider's left end is Off, and the rest of it is the amount from its
@@ -2274,6 +2281,7 @@ class _SettingsDialogState extends State<SettingsDialog>
         ),
       if (sections.contains(SettingsSection.account))
         ..._accountSearchEntries(widget.account!),
+      ...mcpSearchEntries(McpScope.maybeOf(context)),
       // Settings that live where they are used. Found here, and said where.
       SettingsSearchEntry(
         section: SettingsSection.notes,
@@ -2864,6 +2872,7 @@ class _SettingsDialogState extends State<SettingsDialog>
       ..._fromGroups(_appearanceGroups()),
     ],
     SettingsSection.shortcuts => _shortcutsPane(),
+    SettingsSection.mcp => const [McpPane()],
     SettingsSection.account => [
       SyncPane(
         account: widget.account!,

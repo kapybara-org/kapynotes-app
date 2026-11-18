@@ -261,7 +261,27 @@ class NotesStore extends ChangeNotifier {
     List<NoteFormatRange> formats, [
     List<NoteAttachmentRef>? attachments,
     TextEdit? edit,
-  ]) {
+  ]) => _writeDocument(id, body, formats, attachments, edit, authored: true);
+
+  /// Writes [body] on the person's behalf, as an assistant connected over MCP
+  /// does: saved and synced exactly as typing is, but not counted towards the
+  /// writing streak, which is the person's own. [edit] must leave existing
+  /// formats and attachments where they were, as an append or a same-length
+  /// swap does.
+  void updateForAssistant(String id, String body, TextEdit edit) {
+    final existing = byId(id);
+    if (existing == null) return;
+    _writeDocument(id, body, existing.formats, null, edit, authored: false);
+  }
+
+  void _writeDocument(
+    String id,
+    String body,
+    List<NoteFormatRange> formats,
+    List<NoteAttachmentRef>? attachments,
+    TextEdit? edit, {
+    required bool authored,
+  }) {
     final index = indexOf(id);
     if (index < 0) return;
     final existing = _notes[index];
@@ -291,7 +311,7 @@ class NotesStore extends ChangeNotifier {
       attachments: images,
       updatedAt: at,
     );
-    _recordWriting([WritingStreak.dayOf(at)]);
+    if (authored) _recordWriting([WritingStreak.dayOf(at)]);
     _replace(index, updatedNote, toFront: true);
   }
 
