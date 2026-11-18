@@ -90,7 +90,7 @@ import 'note_video_view.dart';
 import 'paste_feedback.dart';
 import 'remote_carets.dart';
 import 'note_field.dart';
-import 'note_sliver.dart' show LineTrailing;
+import 'note_sliver.dart' show LineTrailing, lineTrailingGap;
 import 'results_gutter.dart';
 import 'editor_context_menu.dart';
 import 'selection_bubble.dart';
@@ -181,7 +181,7 @@ class NoteEditor extends StatefulWidget {
     this.idlePeekHeld,
     required this.engine,
     required this.highlighter,
-    this.gutterWidth,
+    this.keepResultRoom = false,
     required this.resultsVisible,
     required this.onDocumentChanged,
     this.storedDocument,
@@ -336,9 +336,10 @@ class NoteEditor extends StatefulWidget {
   final CalcEngine engine;
   final Highlighter highlighter;
 
-  /// How wide a phone's results gutter is. Null puts each result at the end
-  /// of its own line instead, which takes no width from the writing.
-  final double? gutterWidth;
+  /// Whether a line with a result wraps its writing short of it and shows it
+  /// at the right of its first row, as a phone does. Otherwise the result
+  /// follows the writing at the end of its line, on a leader.
+  final bool keepResultRoom;
   final bool resultsVisible;
   final NoteDocumentChanged onDocumentChanged;
 
@@ -7308,19 +7309,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // Results sit at the ends of their lines and take no width
-                // from the writing. A phone reserves its gutter only when a
-                // line calculates, so prose, checklists, and journals keep the
-                // full writing width.
+                // Results take width only from their own lines, so prose,
+                // checklists, and journals keep the full writing width.
                 final resultsVisible =
                     widget.resultsVisible && _results.isNotEmpty;
-                final gutterWidth = resultsVisible
-                    ? (widget.gutterWidth ?? 0).clamp(
-                        0.0,
-                        (constraints.maxWidth - 160).clamp(0.0, 480.0),
-                      )
-                    : 0.0;
-                final textPaneWidth = constraints.maxWidth - gutterWidth;
+                final textPaneWidth = constraints.maxWidth;
 
                 // The page centres a column of [EditorMetrics.columnWidth].
                 final side = EditorMetrics.page
@@ -7540,9 +7533,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 final chips = EditorMetrics.page
                     ? _controller.linkChips(_controller.text)
                     : const <TextRange>[];
-                // The field reaches across the results column, which is where
-                // each line puts its result on a phone.
-                final fieldWidth = constraints.maxWidth - padding.left;
                 final leaderColor = palette.textTertiary.withValues(alpha: 0.3);
 
                 // The chip follows the paste's caret once the field has laid
@@ -7652,11 +7642,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                 ),
                               ),
                             ),
-                            if (gutterWidth > 0)
-                              SizedBox(
-                                width: gutterWidth,
-                                child: const ResultsGutter(),
-                              ),
                           ],
                         ),
                       ),
@@ -7669,18 +7654,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           trailingOf: resultsVisible
                               ? (line) => switch (_results[line]) {
                                   null => null,
-                                  final result when gutterWidth > 0 => (
+                                  final result when widget.keepResultRoom => (
                                     child: ResultChip(
                                       result: result,
-                                      collapsedWidth:
-                                          gutterWidth -
-                                          ResultsGutter.leftInset -
-                                          ResultsGutter.rightInset,
+                                      collapsedWidth: contentWidth / 2,
                                     ),
                                     leader: null,
-                                    right:
-                                        fieldWidth - ResultsGutter.rightInset,
+                                    right: contentWidth,
                                     firstRow: true,
+                                    room:
+                                        math.min(
+                                          ResultChip.widthOf(context, result),
+                                          contentWidth / 2,
+                                        ) +
+                                        lineTrailingGap,
                                   ),
                                   final result => (
                                     child: ResultChip(
@@ -7694,6 +7681,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     ),
                                     right: contentWidth,
                                     firstRow: false,
+                                    room: 0.0,
                                   ),
                                 }
                               : null,

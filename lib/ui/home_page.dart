@@ -3871,9 +3871,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialFormats: note.formats,
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
-          // A phone keeps a fixed results column, and a wide phone gets
-          // enough of one for a grouped currency and its three-letter code.
-          gutterWidth: MediaQuery.sizeOf(context).width >= 400 ? 152 : 132,
+          keepResultRoom: true,
           resultsVisible: true,
           autofocus: _readyToTypeIn(note),
           startAtEnd: _readyToTypeIn(note),
