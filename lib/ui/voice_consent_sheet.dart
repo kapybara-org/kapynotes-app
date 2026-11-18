@@ -32,48 +32,53 @@ class _SpeechConsentSheet extends StatelessWidget {
       title: const Text('Turn on transcription?'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'To transcribe a recording, Kapy Notes sends its audio through '
-              'our server to the cloud model you select: Soniox directly, or '
-              'Microsoft and NVIDIA models through OpenRouter. Kapy Notes '
-              'does not store the uploaded audio on its server.',
-              style: TextStyle(color: palette.textPrimary, height: 1.45),
-            ),
-            const SizedBox(height: 12),
-            _Point(
-              text:
-                  'OpenRouter requests require zero-data-retention providers. '
-                  'Soniox files and jobs are deleted after processing; if '
-                  'cleanup fails, Soniox automatically deletes them within '
-                  '30 days.',
-            ),
-            _Point(
-              text:
-                  'Cloud summaries send the transcript text to DeepSeek '
-                  'through OpenRouter.',
-            ),
-            _Point(
-              text:
-                  'Existing recordings stay as voice memos until you choose '
-                  'to transcribe them.',
-            ),
-            _Point(text: 'All other note content stays end-to-end encrypted.'),
-            _Point(
-              text: 'Turn transcription off anytime in Settings › Voice notes.',
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Version $speechConsentVersion',
-              style: TextStyle(
-                fontSize: AppTypeScale.caption,
-                color: palette.textTertiary,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'To transcribe a recording, Kapy Notes sends its audio through '
+                'our server to the cloud model you select: Soniox directly, or '
+                'Microsoft and NVIDIA models through OpenRouter. Kapy Notes '
+                'does not store the uploaded audio on its server.',
+                style: TextStyle(color: palette.textPrimary, height: 1.45),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              _Point(
+                text:
+                    'OpenRouter requests require zero-data-retention providers. '
+                    'Soniox files and jobs are deleted after processing; if '
+                    'cleanup fails, Soniox automatically deletes them within '
+                    '30 days.',
+              ),
+              _Point(
+                text:
+                    'Cloud summaries send the transcript text to MiniMax M3.1 '
+                    'Flash through OpenRouter.',
+              ),
+              _Point(
+                text:
+                    'Existing recordings stay as voice memos until you choose '
+                    'to transcribe them.',
+              ),
+              _Point(
+                text: 'All other note content stays end-to-end encrypted.',
+              ),
+              _Point(
+                text:
+                    'Turn transcription off anytime in Settings › Voice notes.',
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Version $speechConsentVersion',
+                style: TextStyle(
+                  fontSize: AppTypeScale.caption,
+                  color: palette.textTertiary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
