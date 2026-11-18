@@ -170,10 +170,12 @@ if [[ "$DEVICE_FAMILY" == "1,2" ]]; then
 else
   fail "TARGETED_DEVICE_FAMILY is '$DEVICE_FAMILY', expected '1,2'"
 fi
-if (( "$(setting SDK_VERSION | cut -d. -f1)" >= 26 )); then
-  pass "Release target resolves to the iOS 26 SDK"
+RELEASE_SDK_VERSION="$(setting SDK_VERSION)"
+RELEASE_SDK_MAJOR="${RELEASE_SDK_VERSION%%.*}"
+if [[ "$RELEASE_SDK_MAJOR" =~ ^[0-9]+$ ]] && (( 10#$RELEASE_SDK_MAJOR >= 26 )); then
+  pass "Release target resolves to the iOS 26+ SDK ($RELEASE_SDK_VERSION)"
 else
-  fail "Release target is not resolving to the iOS 26 SDK"
+  fail "Release target must resolve to the iOS 26+ SDK; found '$RELEASE_SDK_VERSION'"
 fi
 
 printf '\nPrivacy and native resources\n'
