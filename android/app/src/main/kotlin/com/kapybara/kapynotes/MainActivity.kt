@@ -2,6 +2,9 @@ package com.kapybara.kapynotes
 
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
 import com.google.android.play.core.splitcompat.SplitCompat
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -63,6 +66,37 @@ class MainActivity : FlutterFragmentActivity() {
      */
     override fun getDartEntrypointArgs(): List<String> = listOfNotNull(takeLaunchName(intent))
 
+    /**
+     * A recreated activity (after process death, or with "Don't keep
+     * activities") has already acted on the widget tap that started it, yet
+     * it comes back with that tap's intent, and its restored Flutter fragment
+     * comes back with the action from [getDartEntrypointArgs] in its
+     * arguments. Dart would start again on either, so a Capture would reopen
+     * the camera over the photo being returned and a Dictate would restart
+     * without a tap. Both are cleared before `super.onCreate`, inside which
+     * the restored fragment attaches, configures the engine and starts Dart.
+     */
+    override fun onCreate(savedInstanceState: Bundle?) {
+        if (savedInstanceState != null) {
+            intent?.action = null
+            supportFragmentManager.registerFragmentLifecycleCallbacks(
+                object : FragmentManager.FragmentLifecycleCallbacks() {
+                    override fun onFragmentPreAttached(
+                        fm: FragmentManager,
+                        f: Fragment,
+                        context: Context,
+                    ) {
+                        if (f.tag != FLUTTER_FRAGMENT_TAG) return
+                        f.arguments?.remove(DART_ENTRYPOINT_ARGS)
+                        fm.unregisterFragmentLifecycleCallbacks(this)
+                    }
+                },
+                false,
+            )
+        }
+        super.onCreate(savedInstanceState)
+    }
+
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         noteTitles?.close()
         noteTitles = null
@@ -109,5 +143,11 @@ class MainActivity : FlutterFragmentActivity() {
 
     companion object {
         private const val CHANNEL = "kapynotes/quick_capture"
+
+        /** FlutterFragmentActivity's tag for its fragment, private there. */
+        private const val FLUTTER_FRAGMENT_TAG = "flutter_fragment"
+
+        /** FlutterFragment's argument key for Dart's arguments, protected there. */
+        private const val DART_ENTRYPOINT_ARGS = "dart_entrypoint_args"
     }
 }
