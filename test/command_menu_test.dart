@@ -461,6 +461,41 @@ void main() {
     });
   });
 
+  group('on a touch screen', () {
+    testWidgets('no row hints at a keyboard shortcut, as one on a desktop '
+        'does', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await setUpNotes(tester);
+      await pumpMenu(tester);
+      expect(find.byType(Keycap), findsWidgets);
+
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      await tester.pumpWidget(const SizedBox());
+      await pumpMenu(tester);
+      expect(row('New note'), findsOneWidget);
+      expect(find.byType(Keycap), findsNothing);
+
+      await type(tester, 'sintra');
+      expect(find.byType(Keycap), findsNothing);
+    });
+
+    testWidgets('Go to has no Tasks, which a desktop lists', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await setUpNotes(tester);
+      await pumpMenu(tester);
+      expect(row('Tasks'), findsOneWidget);
+
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      await tester.pumpWidget(const SizedBox());
+      await pumpMenu(tester);
+      expect(row('Notes'), findsOneWidget);
+      expect(row('Drawings'), findsOneWidget);
+      expect(row('Tasks'), findsNothing);
+    });
+  });
+
   group('tags', () {
     late TagStore store;
     late Tag work;
