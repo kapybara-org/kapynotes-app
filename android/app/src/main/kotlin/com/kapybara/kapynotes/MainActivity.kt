@@ -53,6 +53,16 @@ class MainActivity : FlutterFragmentActivity() {
             }
     }
 
+    /**
+     * A cold start's widget action, handed to Dart as it starts rather than
+     * asked for over [CHANNEL]. At that moment this thread is bringing up the
+     * window and the keyboard, and an answer that waits for it can miss Dart's
+     * deadline, which drops the action. Taken off the same intent as
+     * [pendingLaunch], and called before [configureFlutterEngine], so the
+     * channel never answers it a second time.
+     */
+    override fun getDartEntrypointArgs(): List<String> = listOfNotNull(takeLaunchName(intent))
+
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         noteTitles?.close()
         noteTitles = null

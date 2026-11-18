@@ -15,6 +15,7 @@ import 'core/deep_links.dart';
 import 'core/desktop_integration.dart';
 import 'core/focus_hold.dart';
 import 'core/platform.dart';
+import 'core/quick_capture.dart';
 import 'core/window_placement.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
@@ -32,8 +33,9 @@ import 'sync/key_store.dart';
 import 'sync/sync_api.dart';
 import 'sync/sync_state.dart';
 
-Future<void> main() async {
+Future<void> main([List<String> args = const []]) async {
   WidgetsFlutterBinding.ensureInitialized();
+  QuickCapture.startedWith(args);
   // After the binding has claimed the view-focus callback, so it wraps the
   // framework's handler rather than being replaced by it.
   if (AppPlatform.isMacOS) {
@@ -171,7 +173,6 @@ Future<void> main() async {
   if (desktopIntegration != null) {
     unawaited(desktopIntegration.initialize(shortcuts));
   }
-  unawaited(tasks.load());
   unawaited(tags.load());
 }
 
