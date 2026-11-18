@@ -76,6 +76,10 @@ jobs:
       # with macOS system fonts by design, so they cannot pass on Windows.
       - run: flutter analyze
 
+      # The one test that needs Windows itself: the memory probe calls kernel32,
+      # and only a Windows host shows that it reads a real number.
+      - run: flutter test test/core/device_memory_windows_test.dart
+
       # The same flags release.sh passes on every other platform: an
       # obfuscated snapshot with its symbols split out is about a sixth
       # smaller. See the header of packaging/release.sh.

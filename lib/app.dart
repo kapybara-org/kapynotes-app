@@ -412,6 +412,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         library: McpLibrary(
           notes: widget.notes,
           engine: () => engines.engine,
+          tags: widget.tags,
           canCreate: () => widget.account?.noteLimit?.canCreate ?? true,
           isLocked: (note) =>
               widget.account?.noteLimit?.isLocked(note) ?? false,

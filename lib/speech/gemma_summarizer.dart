@@ -90,6 +90,9 @@ class GemmaSummarizer implements Summarizer {
   @override
   Future<SummarizerReadiness> readiness() async {
     if (!isPossibleHere) return SummarizerReadiness.unsupported;
+    // Before the download check: a copy fetched under an older, lower gate
+    // must not be loaded on a machine the current one turns away.
+    if (!await hasEnoughMemory()) return SummarizerReadiness.unsupported;
     if (!await _isInstalled()) return SummarizerReadiness.needsDownload;
     return SummarizerReadiness.ready;
   }
