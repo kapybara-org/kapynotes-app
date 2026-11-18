@@ -218,8 +218,9 @@ Future<void> sendShortcut(WidgetTester tester, ShortcutBinding binding) async {
 }
 
 Future<void> revealFormatting(WidgetTester tester) async {
-  final toggle = find.byKey(const ValueKey('formatting-toggle'));
-  await tester.tap(toggle);
+  tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+  addTearDown(tester.view.resetViewInsets);
+  tester.widget<NoteField>(find.byType(NoteField)).focusNode.requestFocus();
   await tester.pumpAndSettle();
 }
 
@@ -655,10 +656,10 @@ void main() {
       expect(bodies.last, 'a word b');
     });
 
-    testWidgets('the footer writes headings and lists as markdown', (
+    testWidgets('the bar writes headings and lists as markdown', (
       tester,
     ) async {
-      // The footer's tools are a phone's.
+      // The bar is a phone's.
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await tester.pumpWidget(harness('Groceries', autofocus: true));
@@ -670,13 +671,6 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('format-style')));
       await tester.pumpAndSettle();
       expect(controllerOf(tester).text, '# Groceries');
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('format-style')),
-          matching: find.text('H1'),
-        ),
-        findsOneWidget,
-      );
 
       await tester.tap(find.byKey(const ValueKey('format-style')));
       await tester.pumpAndSettle();
@@ -983,21 +977,6 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
 
       expect(controllerOf(tester).text, '/table');
-    });
-
-    testWidgets('the mobile footer opens the same insert menu', (tester) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      await tester.pumpWidget(harness('', autofocus: true));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const ValueKey('insert-menu')), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('insert-menu')));
-      await tester.pump();
-      await tester.pump();
-
-      expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
-      expect(find.byKey(const ValueKey('slash-command-table')), findsOneWidget);
     });
 
     testWidgets('the table picker fits above a compact software keyboard', (

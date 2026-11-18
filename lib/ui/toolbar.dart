@@ -31,9 +31,6 @@ class NoteToolbar extends StatelessWidget {
     this.sidebarShortcut,
     this.settingsShortcut,
     this.showActions = true,
-    this.alwaysOnTop = false,
-    this.onToggleAlwaysOnTop,
-    this.alwaysOnTopShortcut,
     this.newNoteShortcut,
     this.mascotController,
     this.members = const [],
@@ -67,17 +64,6 @@ class NoteToolbar extends StatelessWidget {
   final String? settingsShortcut;
   final bool showActions;
 
-  /// Whether the window is currently floating over other applications.
-  final bool alwaysOnTop;
-
-  /// Null on platforms with no such concept, which is how the pin stays off
-  /// the toolbar on phones rather than sitting there doing nothing.
-  final VoidCallback? onToggleAlwaysOnTop;
-
-  /// The chord currently bound to the toggle, for the tooltip. Read from
-  /// preferences rather than written here, because the binding is editable.
-  final String? alwaysOnTopShortcut;
-
   /// The current chord for a new note, taught by the + button's tooltip.
   final String? newNoteShortcut;
 
@@ -109,9 +95,6 @@ class NoteToolbar extends StatelessWidget {
 
   static double get height => AppControlMetrics.toolbarHeight;
 
-  /// Between the lockup and the pin, and mirrored on the other side.
-  static const double _pinGap = 5;
-
   /// Between an edge action and the bar's edge.
   static const double _edgeGap = 9;
 
@@ -123,8 +106,6 @@ class NoteToolbar extends StatelessWidget {
     final topInset = MediaQuery.paddingOf(context).top;
     // Grows with Dynamic Type so the wordmark is never cropped by its own bar.
     final barHeight = AppControlMetrics.scaleBar(context, height);
-
-    final pinned = onToggleAlwaysOnTop;
 
     return GlassSurface(
       color: palette.surfaceBackground.withMultipliedAlpha(0.94),
@@ -163,22 +144,10 @@ class NoteToolbar extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Balances the pin on the other side, so the lockup keeps
-                        // the exact centre of the toolbar rather than being
-                        // shouldered off it — two tests hold that to half a
-                        // pixel, and it is the reason the title bar reads as
-                        // centred at any window width.
-                        // Not gated on showActions: that hides the note actions
-                        // while the drawer covers them, and the pin is about the
-                        // window rather than the note.
-                        if (pinned != null)
-                          SizedBox(
-                            width: AppControlMetrics.iconButtonExtent + _pinGap,
-                          ),
-                        // The lockup carries its own drag region rather than
-                        // sitting inside one with the pin: DragToMoveArea waits
-                        // out the double-tap timeout before it yields, so a
-                        // button beneath it answers late on every single click.
+                        // The lockup carries its own drag region:
+                        // DragToMoveArea waits out the double-tap timeout
+                        // before it yields, so a button beneath it answers late
+                        // on every single click.
                         WindowDragArea(
                           child: AppWordmark(
                             key: const ValueKey('toolbar-app-wordmark'),
@@ -193,22 +162,6 @@ class NoteToolbar extends StatelessWidget {
                                   ),
                           ),
                         ),
-                        if (pinned != null) ...[
-                          const SizedBox(width: _pinGap),
-                          _ToolbarButton(
-                            icon: alwaysOnTop
-                                ? KapyIcons.pinRounded
-                                : KapyIcons.pinOutlined,
-                            tooltip: [
-                              alwaysOnTop
-                                  ? 'Stop keeping on top'
-                                  : 'Keep on top',
-                              ?alwaysOnTopShortcut,
-                            ].join('  '),
-                            selected: alwaysOnTop,
-                            onPressed: pinned,
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -412,7 +365,6 @@ class _ToolbarButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
-    this.selected = false,
   });
 
   final KapyIconData icon;
@@ -420,7 +372,6 @@ class _ToolbarButton extends StatelessWidget {
 
   /// Null greys the action out rather than removing it.
   final VoidCallback? onPressed;
-  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -428,11 +379,8 @@ class _ToolbarButton extends StatelessWidget {
     return CompactIconButton(
       tooltip: tooltip,
       onPressed: onPressed,
-      selected: selected,
       foregroundColor: onPressed == null
           ? palette.textTertiary
-          : selected
-          ? palette.textPrimary
           : palette.textSecondary,
       icon: KapyIcon(icon, size: AppControlMetrics.iconAction),
     );

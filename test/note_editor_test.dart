@@ -23,7 +23,6 @@ import 'package:kapy_notes/ui/celebrate.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
-import 'package:kapy_notes/ui/editor/note_footer.dart';
 import 'package:kapy_notes/ui/editor/results_gutter.dart';
 import 'package:kapy_notes/ui/editor/editor_context_menu.dart';
 
@@ -217,12 +216,12 @@ Future<void> sendShortcut(WidgetTester tester, ShortcutBinding binding) async {
   }
 }
 
-/// Reveals the formatting cluster through its explicit toggle on every
-/// platform. Pointer users can leave the button after clicking without losing
-/// the tools, just like touch users can.
+/// Puts the phone's keyboard up on the note, which is what raises the
+/// formatting bar above it.
 Future<void> revealFormatting(WidgetTester tester) async {
-  final toggle = find.byKey(const ValueKey('formatting-toggle'));
-  await tester.tap(toggle);
+  tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+  addTearDown(tester.view.resetViewInsets);
+  tester.widget<NoteField>(find.byType(NoteField)).focusNode.requestFocus();
   await tester.pumpAndSettle();
 }
 
@@ -1221,70 +1220,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('starts the controls at the left', (tester) async {
-    _onPhone();
-    await tester.pumpWidget(harness('2 + 2'));
-    await tester.pumpAndSettle();
-
-    final footer = tester.getRect(find.byType(NoteFooter));
-    final formatting = tester.getRect(
-      find.byKey(const ValueKey('note-formatting-controls')),
-    );
-
-    // Left-anchored, in reading order, rather than floating in the middle.
-    expect(formatting.left, closeTo(footer.left + 8, 1));
-    expect(
-      formatting.center.dx,
-      lessThan(footer.center.dx),
-      reason: 'the controls belong at the edge the eye starts from',
-    );
-  });
-
-  testWidgets('the formatting button keeps tools open until clicked again', (
-    tester,
-  ) async {
-    _onPhone();
-    await tester.pumpWidget(harness('2 + 2'));
-    await tester.pumpAndSettle();
-
-    final toggle = find.byKey(const ValueKey('formatting-toggle'));
-    final style = find.byKey(const ValueKey('format-style'));
-    double revealFactor() => tester
-        .widgetList<Align>(
-          find.ancestor(of: style, matching: find.byType(Align)),
-        )
-        .singleWhere((align) => align.widthFactor != null)
-        .widthFactor!;
-
-    final mouse = await tester.createGesture(
-      kind: PointerDeviceKind.mouse,
-      pointer: 92,
-    );
-    await mouse.addPointer(location: Offset.zero);
-    addTearDown(mouse.removePointer);
-
-    await mouse.moveTo(tester.getCenter(toggle));
-    await mouse.down(tester.getCenter(toggle));
-    await mouse.up();
-    await tester.pumpAndSettle();
-    expect(revealFactor(), 1);
-
-    await mouse.moveTo(tester.getCenter(noteField));
-    await tester.pumpAndSettle();
-    expect(
-      revealFactor(),
-      1,
-      reason: 'leaving the footer must not undo an explicit click',
-    );
-
-    await mouse.moveTo(tester.getCenter(toggle));
-    await mouse.down(tester.getCenter(toggle));
-    await mouse.up();
-    await tester.pumpAndSettle();
-    expect(revealFactor(), 0);
-  });
-
-  testWidgets('the controls do not move when the nesting buttons appear', (
+  testWidgets('orders the bar from the line tools to the marks and links', (
     tester,
   ) async {
     _onPhone();
@@ -1292,43 +1228,29 @@ void main() {
     await tester.pumpAndSettle();
     await revealFormatting(tester);
 
-    double boldLeft() =>
-        tester.getRect(find.byKey(const ValueKey('format-bold'))).left;
-
-    final before = boldLeft();
-    expect(find.byKey(const ValueKey('format-indent')), findsNothing);
-
-    // Putting the caret on a list line grows the row from five buttons to
-    // seven. Centred, that used to slide everything already there sideways by
-    // a full button — so the control someone had just pressed left from under
-    // the finger that pressed it.
-    await tester.tap(find.byKey(const ValueKey('format-bullets')));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const ValueKey('format-indent')), findsOneWidget);
-    expect(
-      boldLeft(),
-      closeTo(before, 0.01),
-      reason: 'a row that grows rightward leaves what is already in it alone',
-    );
-  });
-
-  testWidgets('puts the line tools before the ones that mark a word', (
-    tester,
-  ) async {
-    _onPhone();
-    await tester.pumpWidget(harness('2 + 2'));
-    await tester.pumpAndSettle();
-    await revealFormatting(tester);
-
+    final bar = tester.getRect(find.byKey(const ValueKey('phone-format-bar')));
+    expect(bar.height, 44);
     double leftOf(String key) => tester.getRect(find.byKey(ValueKey(key))).left;
-
-    // Style, checklist, bulleted list, bold, italic: what changes the whole
-    // line first, what changes a word after it.
-    expect(leftOf('format-checklist'), greaterThan(leftOf('format-style')));
-    expect(leftOf('format-bullets'), greaterThan(leftOf('format-checklist')));
-    expect(leftOf('format-bold'), greaterThan(leftOf('format-bullets')));
-    expect(leftOf('format-italic'), greaterThan(leftOf('format-bold')));
+    final order = [
+      'format-style',
+      'format-bold',
+      'format-italic',
+      'format-checklist',
+      'format-bullets',
+      'format-numbered',
+      'format-quote',
+      'format-code',
+      'format-link',
+      'format-attach',
+    ];
+    for (var i = 1; i < order.length; i++) {
+      expect(
+        leftOf(order[i]),
+        greaterThan(leftOf(order[i - 1])),
+        reason: order[i],
+      );
+    }
+    expect(find.byKey(const ValueKey('format-indent')), findsNothing);
   });
 
   testWidgets('leaves settings to the notes list', (tester) async {
@@ -2410,41 +2332,12 @@ void main() {
     expect(field.controller.text, '${uncheckedPrefix}Task');
   });
 
-  testWidgets('footer hints and actions follow a changed shortcut live', (
-    tester,
-  ) async {
+  testWidgets('a changed shortcut works at once', (tester) async {
     _onPhone();
     await tester.pumpWidget(harness('Task', autofocus: true));
     await tester.pumpAndSettle();
-    expect(
-      find.byTooltip(
-        'Text style: Text · ${shortcutPrefs.bindingFor(ShortcutAction.cycleTextStyle)!.displayLabel}',
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byTooltip(
-        'Bold · ${shortcutPrefs.bindingFor(ShortcutAction.formatBold)!.displayLabel}',
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byTooltip(
-        'Italic · ${shortcutPrefs.bindingFor(ShortcutAction.formatItalic)!.displayLabel}',
-      ),
-      findsOneWidget,
-    );
     final original = shortcutPrefs.bindingFor(ShortcutAction.formatBullets)!;
-    expect(
-      find.byTooltip('Bulleted list · ${original.displayLabel}'),
-      findsOneWidget,
-    );
-    expect(
-      find.byTooltip(
-        'Checklist · ${shortcutPrefs.bindingFor(ShortcutAction.formatChecklist)!.displayLabel}',
-      ),
-      findsOneWidget,
-    );
+    expect(original, isNotNull);
 
     const replacement = ShortcutBinding(
       logicalKey: LogicalKeyboardKey.keyU,
@@ -2455,10 +2348,6 @@ void main() {
     shortcutPrefs.update(ShortcutAction.formatBullets, replacement);
     await tester.pumpAndSettle();
 
-    expect(
-      find.byTooltip('Bulleted list · ${replacement.displayLabel}'),
-      findsOneWidget,
-    );
     final field = tester.widget<NoteField>(noteField);
     field.controller.selection = const TextSelection(
       baseOffset: 0,
@@ -2656,6 +2545,7 @@ void main() {
     _onPhone();
     await tester.pumpWidget(harness('plain\n• item', autofocus: true));
     await tester.pumpAndSettle();
+    await revealFormatting(tester);
     final field = tester.widget<NoteField>(noteField);
 
     field.controller.selection = const TextSelection.collapsed(offset: 2);
@@ -2665,14 +2555,11 @@ void main() {
     field.controller.selection = const TextSelection.collapsed(offset: 9);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('format-indent')), findsOneWidget);
+    expect(find.byKey(const ValueKey('format-style')), findsNothing);
     // Already at the margin, so there is nowhere to step out to.
-    final outdent = tester.widget<IconButton>(
-      find.descendant(
-        of: find.byKey(const ValueKey('format-outdent')),
-        matching: find.byType(IconButton),
-      ),
-    );
-    expect(outdent.onPressed, isNull);
+    await tester.tap(find.byKey(const ValueKey('format-outdent')));
+    await tester.pumpAndSettle();
+    expect(field.controller.text, 'plain\n• item');
   });
 
   testWidgets('continues and exits a checklist with Enter', (tester) async {
@@ -3534,7 +3421,7 @@ total to usd''';
     }
 
     testWidgets(
-      'the footer pins keyboard dismissal outside its formatting scroller',
+      'the bar pins keyboard dismissal outside its scrolling buttons',
       (tester) async {
         AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -3556,21 +3443,18 @@ total to usd''';
 
         const dismissKey = ValueKey('dismiss-keyboard');
         expect(find.byKey(dismissKey), findsNothing);
+        expect(find.byKey(const ValueKey('phone-format-bar')), findsNothing);
 
         await setKeyboard(tester, 300);
         final dismiss = find.byKey(dismissKey);
-        final footer = find.byType(NoteFooter);
+        final bar = find.byKey(const ValueKey('phone-format-bar'));
         expect(dismiss, findsOneWidget);
         final pinned = tester.getRect(dismiss);
-        expect(pinned.right, closeTo(tester.getRect(footer).right - 8, 0.1));
-
-        await tester.tap(find.byKey(const ValueKey('formatting-toggle')));
-        await tester.pumpAndSettle();
+        expect(pinned.right, closeTo(tester.getRect(bar).right, 0.1));
 
         final formattingScroll = find.byKey(
-          const ValueKey('note-formatting-scroll'),
+          const ValueKey('phone-format-scroll'),
         );
-        expect(formattingScroll, findsOneWidget);
         expect(
           tester
               .widget<SingleChildScrollView>(formattingScroll)
