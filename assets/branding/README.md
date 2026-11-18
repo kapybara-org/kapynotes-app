@@ -24,8 +24,7 @@ the designer's production pack, copied in as delivered because its 16 and
 Android mipmaps (adaptive foreground, monochrome themed layer, legacy circle)
 and `windows/runner/resources/app_icon.ico`. The iOS Any icon is flattened
 to drop its alpha channel (`tool/flatten_png.swift`), which the App Store
-rejects. `android/app/src/main/res/drawable/ic_stat_kapynotes.xml` is the
-24 dp notification icon.
+rejects.
 
 The header animation, the disk image and the Windows installer carry the mark
 too; redraw them after a brand change with

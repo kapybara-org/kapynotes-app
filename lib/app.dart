@@ -32,11 +32,13 @@ import 'core/quick_capture.dart';
 import 'core/deep_links.dart';
 import 'core/theme.dart';
 import 'core/window_material.dart';
+import 'data/auto_titles.dart';
 import 'data/engine_provider.dart';
 import 'data/layout_prefs.dart';
 import 'data/local_store.dart';
 import 'data/tags.dart';
 import 'data/task_library.dart';
+import 'data/note.dart';
 import 'data/notes_store.dart';
 import 'data/onboarding.dart';
 import 'data/rates.dart';
@@ -68,6 +70,7 @@ class KapyNotesApp extends StatefulWidget {
     this.chats,
     this.recording,
     this.kapyAi,
+    this.titleModel,
     this.imageAcquirer,
     this.lostImageRetriever,
     this.hiddenNotesGate,
@@ -105,6 +108,10 @@ class KapyNotesApp extends StatefulWidget {
   /// Kapy AI, for a test to hand over. Left out, a build that carries it
   /// makes its own.
   final KapyAi? kapyAi;
+
+  /// What names new notes, for a test to hand over. Left out, the model
+  /// this platform has.
+  final TitleModel? titleModel;
 
   /// Native image boundaries, injectable for launch and recovery tests.
   final ImageFileAcquirer? imageAcquirer;
@@ -170,6 +177,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// Kapy AI, built only in builds that carry it. Held here for the reason
   /// [_localModels] is: closing the panel must not drop a chat mid-answer.
   KapyAi? _kapyAi;
+  late final TitleModel _titleModel = widget.titleModel ?? platformTitleModel();
 
   /// The speech models on this device. Held here rather than in the settings
   /// dialog so that closing settings does not abandon a download of two
@@ -384,7 +392,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         widget.notes.isEmpty) {
       // HomePage can create this after its first frame, but doing it before the
       // handoff avoids flashing an empty state and reconnecting the keyboard.
-      widget.notes.create();
+      widget.notes.create(body: Note.blankBody, authored: false);
     }
     widget.rates.loadCache();
     _engines = EngineProvider(widget.rates, widget.prefs, widget.notes.now);
@@ -650,6 +658,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
             lostImageRetriever: widget.lostImageRetriever,
             hiddenNotesGate: _hiddenNotesGate,
             kapyAi: _kapyAi,
+            titleModel: _titleModel,
           ),
         ),
       ),

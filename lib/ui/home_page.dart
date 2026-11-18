@@ -28,6 +28,7 @@ import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/engine_provider.dart';
 import '../data/attachment_limits.dart';
+import '../data/auto_titles.dart';
 import '../data/daily_separator.dart';
 import '../data/editor_workspace.dart';
 import '../data/layout_prefs.dart';
@@ -128,6 +129,7 @@ class HomePage extends StatefulWidget {
     this.lostImageRetriever,
     required this.hiddenNotesGate,
     this.kapyAi,
+    this.titleModel,
   });
 
   /// Kapy settles into sleep after a full minute without local interaction.
@@ -206,6 +208,9 @@ class HomePage extends StatefulWidget {
   /// Kapy AI: its panel, its button beside the pin, and ⌘J. Null, or the
   /// feature not built in, leaves all three out.
   final KapyAi? kapyAi;
+
+  /// The model on this device that names new notes. Null names none.
+  final TitleModel? titleModel;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -363,6 +368,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _kapyAiWasOn = _kapyAiOn;
     _kapyAi?.addListener(_onKapyAi);
+    if (widget.titleModel case final model?) {
+      _namer = NoteNamer(
+        notes: widget.notes,
+        prefs: widget.prefs,
+        model: model,
+        mayName: _mayNameNote,
+      );
+    }
     _untouchedWelcomeId = widget.welcomeNoteId;
     final openingId =
         widget.prefs.resolveOpeningNoteId(
@@ -407,6 +420,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void dispose() {
     widget.account?.sync?.leaveNote(_selectedId);
+    _namer?.dispose();
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
@@ -444,6 +458,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // remain half-open when the app returns.
       _commitNoteSwitch(focusEditor: false);
       _kapyIdleTimer?.cancel();
+      _namer?.left(_selectedId);
     }
   }
 
@@ -790,7 +805,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Switched to a drawing while recording, or taken for one elsewhere: the
     // recording goes into a note of its own rather than into a title.
     if (widget.notes.byId(noteId)?.isDrawing ?? false) {
-      noteId = widget.notes.create().id;
+      noteId = widget.notes.create(body: Note.blankBody, authored: false).id;
     }
     final blobs = widget.notes.blobs;
     final hash = await blobs.adoptFile(
@@ -1144,6 +1159,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _archiveEditorKey = GlobalKey<NoteEditorState>();
         _compactEditorKey = GlobalKey<NoteEditorState>();
         widget.account?.sync?.leaveNote(previous);
+        _namer?.left(previous);
         _scheduleDiscardAbandonedBlanks();
       }
       _selectedId = id;
@@ -1167,6 +1183,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final next = _workspace.selectedNoteId;
     if (previous != next) {
       widget.account?.sync?.leaveNote(previous);
+      _namer?.left(previous);
       _compactEditorKey = GlobalKey<NoteEditorState>();
       _showTabOf(next);
     }
@@ -1257,6 +1274,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _selectedId = _workspace.selectedNoteId;
     if (previous != _selectedId) {
       widget.account?.sync?.leaveNote(previous);
+      _namer?.left(previous);
       _compactEditorKey = GlobalKey<NoteEditorState>();
     }
     final open = _workspace.openNoteIds;
@@ -1638,9 +1656,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return false;
     }
     final note =
-        blank ?? widget.notes.create(body: body, hidden: creatingHidden);
+        blank ??
+        widget.notes.create(
+          body: drawing || body.isNotEmpty ? body : Note.blankBody,
+          authored: body.isNotEmpty,
+          hidden: creatingHidden,
+        );
     if (drawing) widget.notes.setDrawingMode(note.id, drawing: true);
-    if (blank == null) _freshNoteIds.add(note.id);
+    if (blank == null) {
+      _freshNoteIds.add(note.id);
+    } else {
+      widget.notes.startAsNew(blank.id);
+    }
     setState(() {
       _archiveQuery = '';
       _archiveMode = false;
@@ -2310,7 +2337,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // until it is next built.
     if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
     widget.notes.updateDocument(id, body, formats, attachments, edit);
+    _namer?.typed(id);
   }
+
+  NoteNamer? _namer;
+
+  /// Whether the namer may give [note] a title: this device may write it,
+  /// nobody else is in it, and the person is not in its title themselves.
+  bool _mayNameNote(Note note) =>
+      _canWriteNote(note) &&
+      !(_mountedEditorFor(note.id)?.selectionInTitle ?? false) &&
+      (!note.isShared ||
+          (widget.account?.sync?.caretsFor(note.id).isEmpty ?? true));
 
   /// The note as the store holds it this instant. An editor reads it on
   /// every edit: another device's words reach the store before the page has
@@ -2648,6 +2686,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         notice: notice,
         reveal: reveal,
         kapyAi: _kapyAi,
+        namer: _namer,
         account: widget.account,
         notes: widget.notes,
         layoutPrefs: widget.prefs,
@@ -2775,6 +2814,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       settingsIndex: (lend) => SettingsDialog(
         onIndex: lend,
         kapyAi: _kapyAi,
+        namer: _namer,
         account: widget.account,
         notes: widget.notes,
         layoutPrefs: widget.prefs,
@@ -3839,6 +3879,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           resultsVisible: true,
           autofocus: _readyToTypeIn(note),
           startAtEnd: _readyToTypeIn(note),
+          namedByPerson: !(_namer?.willName(note) ?? false),
+          onDefaultTitleEntered: () => _namer?.personNaming(note.id),
           initialCaret: _resumeCaretIn(note),
           onCaretChanged: (offset) =>
               widget.prefs.rememberCaret(note.id, offset),
@@ -3932,6 +3974,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           autofocus:
               active && !_selectionAutofocusSuppressed && _readyToTypeIn(note),
           startAtEnd: active && _readyToTypeIn(note),
+          namedByPerson: !(_namer?.willName(note) ?? false),
+          onDefaultTitleEntered: () => _namer?.personNaming(note.id),
           initialCaret: _resumeCaretIn(note),
           onCaretChanged: (offset) =>
               widget.prefs.rememberCaret(note.id, offset),

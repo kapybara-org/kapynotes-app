@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -69,6 +70,16 @@ late TagStore goldenTags;
 
 /// The task list, for the images that ask for one with `withTasks`.
 late TaskLibrary goldenTasks;
+
+/// A model on the device that is never asked, so Settings shows the row on.
+class _GoldenTitles implements TitleModel {
+  @override
+  Future<String?> unavailableReason() async => null;
+
+  @override
+  Future<String> name({required String instructions, required String prompt}) =>
+      Completer<String>().future;
+}
 
 Future<void> pumpForGolden(
   WidgetTester tester, {
@@ -253,6 +264,7 @@ Future<void> pumpForGolden(
       updates: updates,
       tags: goldenTags,
       tasks: tasks,
+      titleModel: _GoldenTitles(),
     ),
   );
   if (withImages) {
