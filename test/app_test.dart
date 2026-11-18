@@ -1041,6 +1041,9 @@ void main() {
         'Flights to Lisbon are 900 for two, the hotel near Alfama is 120 a '
         'night, and the train to Sintra is cheap';
 
+    // Naming is off by default; these speak for someone who turned it on.
+    setUp(() => prefs.autoTitlesEnabled = true);
+
     Future<TextEditingController> newNote(WidgetTester tester) async {
       await tester.tap(findKapyIcon(KapyIcons.addRounded).first);
       await tester.pumpAndSettle();
@@ -3675,6 +3678,7 @@ void main() {
       store.data['notes.v1'] = [
         {'id': 'old-blank', 'body': '', 'createdAt': 1000, 'updatedAt': 2000},
       ];
+      prefs.autoTitlesEnabled = true;
       await pumpApp(tester, titleModel: _InstantTitles('Unused'));
       await tester.tap(plus());
       await tester.pumpAndSettle();
@@ -5058,7 +5062,6 @@ void main() {
 
         expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
         expect(find.byType(ResultLeader), findsWidgets);
-        expect(find.byType(ResultsGutter), findsNothing);
         // The writing keeps the whole pane: nothing beside it but its margin.
         final field = tester.getRect(noteField);
         final pane = tester.getRect(find.byType(NoteEditor));
@@ -5101,7 +5104,7 @@ void main() {
       },
     );
 
-    testWidgets('keeps the results column on phones', (tester) async {
+    testWidgets('keeps results beside their lines on phones', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       store.data['notes.v1'] = [
@@ -5116,8 +5119,19 @@ void main() {
       await pumpApp(tester, size: const Size(420, 800));
 
       expect(find.widgetWithText(ResultChip, '42'), findsOneWidget);
-      expect(find.byType(ResultsGutter), findsOneWidget);
       expect(find.byType(ResultLeader), findsNothing);
+    });
+
+    testWidgets('the phone notes filter is a 44 pt target', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await pumpApp(tester, size: const Size(390, 844));
+      await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+      await tester.pumpAndSettle();
+
+      final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
+      expect(filter, findsOneWidget);
+      expect(tester.getSize(filter).height, greaterThanOrEqualTo(44));
     });
 
     testWidgets('gives prose-only phone notes the full writing width', (
@@ -5136,7 +5150,6 @@ void main() {
 
       await pumpApp(tester, size: const Size(420, 800));
 
-      expect(find.byType(ResultsGutter), findsNothing);
       final editable = tester.getRect(noteField);
       expect(
         editable.width,
@@ -5161,7 +5174,6 @@ void main() {
 
       await pumpApp(tester, size: const Size(1100, 760));
 
-      expect(find.byType(ResultsGutter), findsNothing);
       expect(find.byType(ResultLeader), findsNothing);
       final field = tester.widget<NoteField>(
         find.descendant(of: find.byType(NoteEditor), matching: noteField),

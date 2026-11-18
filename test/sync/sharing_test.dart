@@ -1347,6 +1347,244 @@ void main() {
     });
   });
 
+  group('people', () {
+    String carol() => server.user('user-3').email;
+
+    Future<Note> privateNote(String body) async {
+      final note = alice.notes.create(body: body);
+      await alice.sync.syncNow();
+      alice.tick();
+      return note;
+    }
+
+    Matcher refused(String code) => throwsA(
+      isA<SyncRefusedException>().having((e) => e.code, 'code', code),
+    );
+
+    test('lists who you share with and who shares with you', () async {
+      final note = await shareWithBob('Ours');
+      final mine = await privateNote('Mine');
+      await alice.sharing.addPerson(mine.id, carol(), role: SpaceRole.viewer);
+
+      final people = alice.sharing.people;
+      expect(people.map((p) => p.email), unorderedEquals([bob.email, carol()]));
+      expect(people.firstWhere((p) => p.email == carol()).isInvited, isTrue);
+      expect(alice.sharing.notesSharedWith(bob.email).single.id, note.id);
+      expect(alice.sharing.notesSharedWith(carol()).single.id, mine.id);
+      expect(alice.sharing.notesSharedFrom(bob.email), isEmpty);
+
+      expect(bob.sharing.people.single.email, alice.email);
+      expect(bob.sharing.people.single.isInvited, isFalse);
+      expect(bob.sharing.notesSharedFrom(alice.email).single.id, note.id);
+      expect(bob.sharing.notesSharedWith(alice.email), isEmpty);
+    });
+
+    test(
+      'a private note goes to the space that is exactly that person',
+      () async {
+        final first = await shareWithBob('One');
+        final second = await privateNote('Two');
+        await alice.sharing.addPerson(second.id, bob.email);
+        expect(
+          alice.notes.byId(second.id)!.spaceId,
+          alice.notes.byId(first.id)!.spaceId,
+        );
+        expect(alice.sharing.teams, hasLength(1));
+
+        final third = await privateNote('Three');
+        await alice.sharing.addPerson(
+          third.id,
+          bob.email,
+          role: SpaceRole.viewer,
+        );
+        expect(alice.sharing.teams, hasLength(2), reason: 'another access');
+      },
+    );
+
+    test(
+      'only this note moves it to a space for its people and the new one',
+      () async {
+        final note = await shareWithBob('One');
+        final other = await privateNote('Two');
+        await alice.sharing.addPerson(other.id, bob.email);
+        final pair = alice.notes.byId(note.id)!.spaceId!;
+        final sent = server.outbox.length;
+
+        await alice.sharing.addPerson(note.id, carol());
+        final moved = alice.sharing.spaceOf(alice.notes.byId(note.id)!)!;
+        expect(moved.id, isNot(pair));
+        expect(
+          moved.invites.map((i) => i.email),
+          unorderedEquals([carol(), bob.email]),
+        );
+        expect(alice.notes.byId(other.id)!.spaceId, pair);
+        expect(
+          alice.sharing.spaceById(pair)!.invites,
+          isEmpty,
+          reason: 'Carol is never offered the other note',
+        );
+        expect(server.outbox.sublist(sent).map((m) => m.to), [
+          carol(),
+          bob.email,
+        ]);
+      },
+    );
+
+    test(
+      'all notes, or a note alone in its space, invites into the space',
+      () async {
+        final note = await shareWithBob('One');
+        final pair = alice.notes.byId(note.id)!.spaceId!;
+        await alice.sharing.addPerson(note.id, carol());
+        expect(alice.notes.byId(note.id)!.spaceId, pair);
+        expect(alice.sharing.spaceById(pair)!.invites.single.email, carol());
+
+        final other = await privateNote('Two');
+        await alice.sharing.addPerson(other.id, bob.email);
+        final otherSpace = alice.notes.byId(other.id)!.spaceId!;
+        expect(otherSpace, isNot(pair));
+        final dave = server.user('user-4').email;
+        await alice.sharing.addPerson(other.id, dave);
+        expect(alice.notes.byId(other.id)!.spaceId, otherSpace);
+        await alice.sharing.addPerson(note.id, dave, allNotes: true);
+        expect(alice.notes.byId(note.id)!.spaceId, pair);
+        expect(
+          alice.sharing.spaceById(pair)!.invites.map((i) => i.email),
+          unorderedEquals([carol(), dave]),
+        );
+      },
+    );
+
+    test('a refused invitation leaves no space and no invitation', () async {
+      final note = await shareWithBob('One');
+      final other = await privateNote('Two');
+      await alice.sharing.addPerson(other.id, bob.email);
+      final pair = alice.notes.byId(note.id)!.spaceId!;
+      final sent = server.outbox.length;
+      final spaces = server.spaces.length;
+      server.refuseInvitesTo.add(carol());
+
+      await expectLater(
+        alice.sharing.addPerson(note.id, carol()),
+        refused('invite-limit'),
+      );
+      expect(server.spaces, hasLength(spaces));
+      expect(server.outbox, hasLength(sent));
+      expect(alice.sharing.teams.map((s) => s.id), [pair]);
+      expect(alice.notes.byId(note.id)!.spaceId, pair);
+      expect(alice.notes.byId(note.id)!.body, 'One');
+    });
+
+    test('a hidden note is refused before anything is made or sent', () async {
+      final note = alice.notes.create(body: 'Private', hidden: true);
+      await expectLater(
+        alice.sharing.addPerson(note.id, bob.email),
+        refused('hidden-note'),
+      );
+      expect(alice.sharing.teams, isEmpty);
+      expect(server.outbox, isEmpty);
+      expect(alice.notes.byId(note.id)!.spaceId, isNull);
+    });
+
+    test('a Free account is refused with nothing made or sent', () async {
+      final note = await privateNote('Mine');
+      server.failNext = const SyncRefusedException(402, 'pro-required', {});
+      await expectLater(
+        alice.sharing.addPerson(note.id, bob.email),
+        refused('pro-required'),
+      );
+      expect(alice.sharing.teams, isEmpty);
+      expect(server.outbox, isEmpty);
+      expect(alice.notes.byId(note.id)!.spaceId, isNull);
+    });
+
+    test('only the owner adds or removes people', () async {
+      final note = await shareWithBob('Ours');
+      await expectLater(
+        bob.sharing.addPerson(note.id, carol()),
+        refused('owner-only'),
+      );
+      await expectLater(
+        bob.sharing.removeFromNote(note.id, alice.email),
+        refused('owner-only'),
+      );
+      expect(server.outbox.where((m) => m.to == carol()), isEmpty);
+    });
+
+    test('access changes for the person on a note', () async {
+      final note = await shareWithBob('Ours');
+      await alice.sharing.changeAccessTo(note.id, bob.email, SpaceRole.viewer);
+      await bob.sharing.refresh();
+      expect(bob.sharing.canEdit(bob.notes.byId(note.id)!), isFalse);
+    });
+
+    test('removing someone from a note alone in its space', () async {
+      final note = await shareWithBob('Ours');
+      final space = alice.notes.byId(note.id)!.spaceId!;
+      await alice.sharing.addPerson(note.id, carol());
+
+      await alice.sharing.removeFromNote(note.id, carol());
+      expect(alice.sharing.spaceById(space)!.invites, isEmpty);
+      expect(alice.notes.byId(note.id)!.spaceId, space);
+
+      await alice.sharing.removeFromNote(note.id, bob.email);
+      expect(alice.notes.byId(note.id)!.isShared, isFalse);
+      expect(alice.notes.byId(note.id)!.body, 'Ours');
+      expect(server.spaces.containsKey(space), isFalse, reason: 'ended');
+      await bob.syncAndSettle();
+      expect(bob.notes.byId(note.id), isNull);
+    });
+
+    test('removing someone from one of several notes', () async {
+      final note = await shareWithBob('One');
+      final other = await privateNote('Two');
+      await alice.sharing.addPerson(other.id, bob.email);
+      final pair = alice.notes.byId(note.id)!.spaceId!;
+
+      await alice.sharing.removeFromNote(note.id, bob.email);
+      await alice.syncAndSettle();
+      await bob.syncAndSettle();
+      expect(alice.notes.byId(note.id)!.isShared, isFalse);
+      expect(alice.notes.byId(note.id)!.body, 'One');
+      expect(alice.notes.byId(other.id)!.spaceId, pair);
+      expect(bob.notes.byId(note.id), isNull);
+      expect(bob.notes.byId(other.id)?.body, 'Two');
+    });
+
+    test(
+      'stopping sharing with someone ends their spaces and keeps the notes',
+      () async {
+        final group = await privateNote('Group');
+        await alice.sharing.addPerson(group.id, bob.email);
+        await alice.sharing.addPerson(group.id, carol());
+        final pair = await privateNote('Pair');
+        await alice.sharing.addPerson(pair.id, bob.email);
+        final groupSpace = alice.notes.byId(group.id)!.spaceId!;
+        await bob.sharing.acceptInvite(
+          server.outbox.firstWhere((m) => m.to == bob.email).token,
+        );
+        await alice.sharing.refresh();
+        server.loseRemovalAnswer = const SyncTransientException('timed out');
+
+        await expectLater(
+          alice.sharing.stopSharingWith(bob.email),
+          throwsA(isA<SyncTransientException>()),
+        );
+        expect(alice.notes.byId(pair.id)!.isShared, isTrue);
+
+        await alice.sharing.stopSharingWith(bob.email);
+        expect(alice.sharing.people.single.email, carol());
+        expect(alice.notes.byId(pair.id)!.isShared, isFalse);
+        expect(alice.notes.byId(pair.id)!.body, 'Pair');
+        expect(alice.notes.byId(group.id)!.spaceId, groupSpace);
+        expect(
+          alice.sharing.spaceById(groupSpace)!.invites.single.email,
+          carol(),
+        );
+      },
+    );
+  });
+
   group('content keys', () {
     test(
       'a write under a retired epoch is refused, adopts the server\'s key, and lands',

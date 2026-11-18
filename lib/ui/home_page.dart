@@ -3723,7 +3723,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               topRight: Radius.circular(22),
               bottomRight: Radius.circular(22),
             ),
-            side: BorderSide(color: palette.separator, width: 0.5),
+            side: BorderSide(
+              color: palette.separator,
+              width: AppHairline.of(context),
+            ),
           ),
           child: _drawerContentReady
               ? Builder(
@@ -3889,9 +3892,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialFormats: note.formats,
           engine: widget.engines.engine,
           highlighter: widget.engines.highlighter,
-          // A phone keeps a fixed results column, and a wide phone gets
-          // enough of one for a grouped currency and its three-letter code.
-          gutterWidth: MediaQuery.sizeOf(context).width >= 400 ? 152 : 132,
+          keepResultRoom: true,
           resultsVisible: true,
           autofocus: _readyToTypeIn(note),
           startAtEnd: _readyToTypeIn(note),

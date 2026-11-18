@@ -112,6 +112,10 @@ class FakeServer {
   /// [announceUsers], the way a purchase or a refund announces itself.
   final Set<String> needsPro = {};
 
+  /// Addresses an invitation to is refused, as the real server refuses one
+  /// past the daily cap.
+  final Set<String> refuseInvitesTo = {};
+
   void _covered(String spaceId) {
     if (needsPro.contains(spaceId)) {
       _refuse(402, 'pro-required', {'spaceId': spaceId});
@@ -1002,6 +1006,7 @@ class FakeServer {
     if (space.members[userId] != SpaceRole.owner) {
       _refuse(403, 'only the owner can do this');
     }
+    if (refuseInvitesTo.contains(email)) _refuse(429, 'invite-limit');
     for (final member in space.members.keys) {
       if (user(member).email.toLowerCase() == email) {
         _refuse(409, 'already a member');

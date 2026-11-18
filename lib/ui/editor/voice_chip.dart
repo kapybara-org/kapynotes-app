@@ -191,9 +191,9 @@ class NoteVoiceChip extends StatelessWidget {
     final small = TextStyle(
       fontFamily: AppFonts.ui,
       fontFamilyFallback: AppFonts.uiFallback,
-      fontSize: 12.5,
+      fontSize: 13,
       height: 16 / 12.5,
-      fontWeight: FontWeight.w600,
+      fontWeight: FontWeight.w500,
       fontFeatures: const [FontFeature.tabularFigures()],
       color: palette.textSecondary,
     );
@@ -207,7 +207,7 @@ class NoteVoiceChip extends StatelessWidget {
           padding: EdgeInsets.only(left: 6, right: onRemove == null ? 16 : 6),
           decoration: BoxDecoration(
             color: palette.controlBackground,
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(AppRadii.pill),
             border: Border.all(color: palette.controlBorder, width: 1.5),
           ),
           child: Row(
@@ -245,7 +245,7 @@ class NoteVoiceChip extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: small.copyWith(
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w400,
                         color: _isTransient
                             ? palette.textTertiary
                             : palette.textMuted,
@@ -312,7 +312,7 @@ class NoteVoiceChip extends StatelessWidget {
             height: noteVoiceChipHeight,
             decoration: BoxDecoration(
               color: palette.controlBackground,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppRadii.control),
               border: Border.all(color: palette.controlBorder),
             ),
             padding: EdgeInsets.only(left: 8, right: onRemove == null ? 8 : 34),

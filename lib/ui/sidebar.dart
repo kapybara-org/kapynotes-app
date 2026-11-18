@@ -1285,7 +1285,7 @@ class _NoteCount extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
             color: palette.hover,
-            borderRadius: BorderRadius.circular(99),
+            borderRadius: BorderRadius.circular(AppRadii.pill),
           ),
           child: Text(
             '$count',
@@ -1323,7 +1323,12 @@ class _SidebarFooter extends StatelessWidget {
         AppControlMetrics.footerHeight,
       ),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: palette.separator, width: 0.5)),
+        border: Border(
+          top: BorderSide(
+            color: palette.separator,
+            width: AppHairline.of(context),
+          ),
+        ),
       ),
       child: InstalledVersion(
         updates: updates,
@@ -1520,10 +1525,10 @@ class _SettingsEntry extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         color: palette.selectedBackground,
-                        borderRadius: BorderRadius.circular(99),
+                        borderRadius: BorderRadius.circular(AppRadii.pill),
                         border: Border.all(
                           color: palette.chipCurrency.withValues(alpha: 0.35),
-                          width: 0.5,
+                          width: AppHairline.of(context),
                         ),
                       ),
                       child: Text(
@@ -1610,6 +1615,8 @@ class SidebarWindowBar extends StatelessWidget {
   /// Narrower than these, New note gives up its keycap and then its word, so
   /// the space's name keeps its room on a list dragged narrow. Measured at
   /// the reader's text size, which the name and the button both grow with.
+  /// The keycap's is for a two-glyph chord like ⌘N, and rises by however
+  /// much wider the real one prints, as Ctrl+N does on Windows.
   static const double _keycapWidth = 280;
   static const double _labelWidth = 250;
 
@@ -1634,7 +1641,14 @@ class SidebarWindowBar extends StatelessWidget {
                   final width =
                       constraints.maxWidth /
                       MediaQuery.textScalerOf(context).scale(1);
-                  final keycap = width >= _keycapWidth;
+                  final chord = newNoteShortcut?.keycapLabel;
+                  final keycap =
+                      width >=
+                      _keycapWidth +
+                          (chord == null
+                              ? 0
+                              : Keycap.textWidth(chord, tonal: true) -
+                                    Keycap.textWidth('⌘N', tonal: true));
                   final label = width >= _labelWidth;
                   return Row(
                     children: [
@@ -1662,7 +1676,7 @@ class SidebarWindowBar extends StatelessWidget {
                                           handwritten.fontVariations,
                                       fontSize: AppTypeScale.spaceTitle,
                                       height: 1.3,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w500,
                                       color: palette.textPrimary,
                                     ),
                                   ),
@@ -1684,7 +1698,7 @@ class SidebarWindowBar extends StatelessWidget {
                                     maxLines: 1,
                                     style: TextStyle(
                                       fontSize: AppTypeScale.small,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w400,
                                       color: palette.textTertiary,
                                       fontFeatures: const [
                                         FontFeature.tabularFigures(),
@@ -1774,7 +1788,7 @@ class _SidebarTabs extends StatelessWidget {
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
           color: palette.hover,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadii.control),
         ),
         child: Row(
           children: [
@@ -1845,12 +1859,12 @@ class _SidebarTabButton extends StatelessWidget {
                 color: selected
                     ? palette.surfaceBackground
                     : palette.surfaceBackground.withValues(alpha: 0),
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(AppRadii.compact),
                 border: Border.all(
                   color: selected
                       ? palette.controlBorder
                       : palette.controlBorder.withValues(alpha: 0),
-                  width: 0.5,
+                  width: AppHairline.of(context),
                 ),
               ),
               child: Row(
@@ -2074,8 +2088,11 @@ class _InvitationCard extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(10, 8, 4, 6),
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: palette.controlBorder, width: 0.5),
+          borderRadius: BorderRadius.circular(AppRadii.control),
+          border: Border.all(
+            color: palette.controlBorder,
+            width: AppHairline.of(context),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2298,7 +2315,7 @@ class SidebarSearchField extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: palette.surfaceBackground,
                   border: Border.all(color: palette.controlBorder, width: 1.5),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppRadii.surface),
                   boxShadow: [
                     BoxShadow(
                       color: palette.shadowAt(0x4D),
@@ -2881,7 +2898,7 @@ class _NoteRowState extends State<NoteRow> {
               color: widget.selected || (widget.selecting && widget.checked)
                   ? palette.selectedBackground
                   : (_hovering ? palette.hover : Colors.transparent),
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             // Open in another pane: ringed rather than filled, so it reads
             // as on screen without competing with the focused note's row.
@@ -2889,7 +2906,7 @@ class _NoteRowState extends State<NoteRow> {
             foregroundDecoration: widget.openElsewhere && !widget.selected
                 ? BoxDecoration(
                     border: Border.all(color: palette.selectedBorder),
-                    borderRadius: BorderRadius.circular(7),
+                    borderRadius: BorderRadius.circular(AppRadii.compact),
                   )
                 : null,
             child: Row(
@@ -3347,7 +3364,7 @@ class _SpaceHeader extends StatelessWidget {
         child: ExcludeSemantics(
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(AppRadii.compact),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 4, 6, 3),
               child: heading,
@@ -3383,7 +3400,7 @@ class _DrawingsEmpty extends StatelessWidget {
               decoration: BoxDecoration(
                 color: palette.editorBackground,
                 border: Border.all(color: palette.separator),
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(AppRadii.dialog),
               ),
               alignment: Alignment.center,
               child: KapyIcon(
@@ -3404,7 +3421,7 @@ class _DrawingsEmpty extends StatelessWidget {
               fontVariations: handwritten.fontVariations,
               fontSize: 16,
               height: 22 / 16,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
               color: palette.textSubheading,
             ),
           ),
@@ -3418,7 +3435,7 @@ class _DrawingsEmpty extends StatelessWidget {
               style: TextStyle(
                 fontSize: AppTypeScale.small,
                 height: 18 / 13,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w400,
                 color: palette.textTertiary,
               ),
             ),

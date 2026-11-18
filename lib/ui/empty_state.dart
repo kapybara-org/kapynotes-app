@@ -64,7 +64,7 @@ class EmptyState extends StatelessWidget {
                       : 'Start one with New drawing or',
                   style: TextStyle(
                     fontSize: AppTypeScale.small,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w400,
                     color: palette.textTertiary,
                   ),
                 ),

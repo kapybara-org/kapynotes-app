@@ -241,7 +241,7 @@ class SpacesRail extends StatelessWidget {
 TextStyle _railLabel(Color color, {required bool strong}) => TextStyle(
   fontSize: AppTypeScale.railLabel,
   height: 14 / 11,
-  fontWeight: strong ? FontWeight.w600 : FontWeight.w500,
+  fontWeight: strong ? FontWeight.w500 : FontWeight.w400,
   color: color,
   fontFeatures: const [FontFeature.tabularFigures()],
 );
@@ -297,7 +297,7 @@ class _RailItemState extends State<_RailItem> {
         color: selected
             ? palette.tonalBackground
             : palette.hover.withValues(alpha: lit ? 1 : 0),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.surface),
       ),
       child: Stack(
         clipBehavior: Clip.none,
@@ -380,7 +380,7 @@ class _Badge extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: palette.clay,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         // The rail's own colour, so the badge reads as cut out of the tile.
         border: Border.all(color: palette.railBackground, width: 2),
       ),
@@ -390,7 +390,7 @@ class _Badge extends StatelessWidget {
         style: TextStyle(
           fontSize: AppTypeScale.badge,
           height: 1,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
           color: palette.sidebarBackground,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
@@ -593,7 +593,7 @@ class _RailAccount extends StatelessWidget {
                 style: TextStyle(
                   fontSize: AppTypeScale.control,
                   height: 1,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w500,
                   color: palette.textPrimary,
                 ),
               ),

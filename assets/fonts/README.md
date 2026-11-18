@@ -53,6 +53,27 @@ monospace face (`AppFonts.monoFallback` in `lib/core/theme.dart`).
 Licenses: [`Figtree-OFL.txt`](Figtree-OFL.txt),
 [`GeistMono-OFL.txt`](GeistMono-OFL.txt)
 
+## Title font
+
+A note's title, in the default Clean writing font, is set in Newsreader by
+Production Type, under the SIL Open Font License 1.1. Any other writing font
+titles the note in its own face, and scripts Newsreader lacks fall back to the
+writing face.
+
+The app draws the title at one weight and one size, so the file is a static
+instance of the upstream variable font at `wght` 400 and `opsz` 36: 119 KB
+in place of 452 KB. To regenerate it:
+
+```sh
+pip install fonttools
+fonttools varLib.instancer -o Newsreader-Title.ttf \
+  "Newsreader[opsz,wght].ttf" wght=400 opsz=36
+```
+
+Source: <https://github.com/google/fonts/tree/main/ofl/newsreader>
+
+License: [`Newsreader-OFL.txt`](Newsreader-OFL.txt)
+
 ## Formula fonts
 
 Formulas written in TeX are drawn in KaTeX's fonts, which come with
