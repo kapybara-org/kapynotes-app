@@ -1151,6 +1151,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         _notes.markSynced(tombstones: [stone]);
         continue;
       }
+      if (space.isTeam && !space.isOwner) {
+        // Only the owner deletes a shared note for everyone. Anyone else's
+        // Delete takes it out of their own notes and is never sent.
+        _notes.dismiss(stone);
+        continue;
+      }
       if (record.outbox.any((entry) => entry.deleted == true)) continue;
       record.outbox.add(
         OutboxEntry(id: _nextRequestId(), spaceId: spaceId, deleted: true),
@@ -1836,11 +1842,16 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       if (!item.isMarker && item.epoch > record.serverEpoch) {
         record.serverEpoch = item.epoch;
       }
-      if (record.spaceId != batch.spaceId && !(item.isMarker && item.deleted)) {
+      if (record.spaceId != batch.spaceId &&
+          !(item.isMarker && item.deleted) &&
+          !record.outbox.any((entry) => entry.from == batch.spaceId)) {
         // The log says the note is here now, wherever the local copy sits.
         // Not a tombstone marker, which says the opposite: the note left this
         // space, and the record already points wherever it went. Taking the
         // old space back would make the next edit a move the server refuses.
+        // Nor the note's history read back while its move out of this space
+        // is still on its way: the record already points where it is going,
+        // and taking it back would leave the next move unsent.
         record.spaceId = batch.spaceId;
       }
 
@@ -2189,8 +2200,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       await _api.stopSharing(spaceId, const []);
     } on SyncRefusedException catch (error) {
       // Moving the last note out of a space nobody else is in reaps it on
-      // the server, so there is nothing left to stop.
-      if (error.status != 404) rethrow;
+      // the server, so there is nothing left to stop. Only the server saying
+      // so: a 404 from anything in between leaves the space followed.
+      if (error.status != 404 || error.code != 'no such space') rethrow;
     }
     _notes.bringHome(mine.map((note) => note.id), at: at);
     _state.forgetSpace(spaceId);
@@ -2201,6 +2213,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
 
   /// Notes from spaces this account is no longer in. Clean ones go; ones
   /// with unsynced edits come home as the user's own notes.
+  final Set<String> _left = {};
+
+  /// The user left [spaceId] themselves and chose what to keep, so nothing
+  /// unsent there is kept for them again when the space is forgotten.
+  void left(String spaceId) => _left.add(spaceId);
+
   void _forgetDepartedSpaces() {
     final live = {for (final space in _keyring.spaces) space.id};
     final home = _keyring.personal?.id;
@@ -2213,6 +2231,13 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         for (final note in _notes.notesIn(spaceId))
           if (home != null && _docs.get(note.id)?.spaceId == home) note.id,
       ], at: _now());
+      if (!_left.remove(spaceId)) {
+        // Removed rather than left: an edit still in the outbox is unsynced
+        // work all the same, and is kept as the user's own note.
+        for (final note in _notes.notesIn(spaceId)) {
+          if (_docs.get(note.id)?.hasPending ?? false) _notes.touch(note.id);
+        }
+      }
       final kept = _notes.forgetSpace(spaceId);
       _state.forgetSpace(spaceId);
       _subscribed.remove(spaceId);

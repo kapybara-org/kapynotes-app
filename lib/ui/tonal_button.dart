@@ -40,6 +40,36 @@ class TonalButton extends StatelessWidget {
   /// finer icon than the notes list's New note.
   final bool tall;
 
+  /// How wide a button with an icon, [label] and, if given, [shortcut]'s
+  /// keycap lays out at the reader's text size, for a bar that has to choose
+  /// what to show before it builds.
+  static double widthOf(
+    BuildContext context,
+    String label, {
+    String? shortcut,
+  }) {
+    final painter = TextPainter(
+      text: TextSpan(text: label, style: _labelStyle(context)),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final text = painter.width;
+    painter.dispose();
+    return 9 +
+        AppControlMetrics.iconControl +
+        6 +
+        text +
+        (shortcut == null
+            ? 12
+            : 6 + Keycap.widthOf(context, shortcut, tonal: true) + 6);
+  }
+
+  static TextStyle? _labelStyle(BuildContext context) => Theme.of(context)
+      .textTheme
+      .labelLarge
+      ?.copyWith(fontSize: AppTypeScale.control, fontWeight: FontWeight.w500);
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -60,7 +90,9 @@ class TonalButton extends StatelessWidget {
         shape: tall
             ? const WidgetStatePropertyAll(
                 RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(10)),
+                  borderRadius: BorderRadius.all(
+                    Radius.circular(AppRadii.control),
+                  ),
                 ),
               )
             : null,
@@ -86,12 +118,7 @@ class TonalButton extends StatelessWidget {
               ? palette.textTertiary
               : palette.tonalForeground,
         ),
-        textStyle: WidgetStatePropertyAll(
-          Theme.of(context).textTheme.labelLarge?.copyWith(
-            fontSize: AppTypeScale.control,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        textStyle: WidgetStatePropertyAll(_labelStyle(context)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

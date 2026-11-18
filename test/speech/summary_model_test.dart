@@ -18,6 +18,8 @@ import 'package:kapy_notes/speech/local_models.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../fake_mobile_data.dart';
+
 class MemoryStore extends LocalStore {
   MemoryStore() : super(fileName: 'summary-model-test.json');
   @override
@@ -236,11 +238,95 @@ void main() {
     });
   });
 
+  group('mobile data', () {
+    LocalModelStore storeOn(FakeMobileData mobile) => LocalModelStore(
+      catalogue: localSummaryModels,
+      directory: temp,
+      client: MockClient((_) async => http.Response('', 503)),
+      mobileData: mobile,
+    );
+
+    testWidgets('a large download asks first, and can wait for Wi-Fi', (
+      tester,
+    ) async {
+      final models = storeOn(FakeMobileData(onlyMobile: true));
+      addTearDown(models.dispose);
+
+      await _openVoicePane(
+        tester,
+        models: models,
+        prefs: VoicePrefs(store)..load(),
+      );
+      await _pressDownload(tester);
+
+      expect(find.byKey(const ValueKey('mobile-data-dialog')), findsOneWidget);
+      expect(find.textContaining(fileSize(gemma4E2bIt.bytes)), findsWidgets);
+
+      await tester.tap(find.byKey(const ValueKey('mobile-data-wifi')));
+      await tester.pumpAndSettle();
+
+      expect(
+        models.stateOf(gemma4E2bIt).status,
+        LocalModelStatus.waitingForWifi,
+      );
+      expect(find.text('Gemma 4 E2B · waiting for Wi-Fi'), findsOneWidget);
+    });
+
+    testWidgets('dismissing the question downloads nothing', (tester) async {
+      final models = storeOn(FakeMobileData(onlyMobile: true));
+      addTearDown(models.dispose);
+
+      await _openVoicePane(
+        tester,
+        models: models,
+        prefs: VoicePrefs(store)..load(),
+      );
+      await _pressDownload(tester);
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('mobile-data-dialog')), findsNothing);
+      expect(models.stateOf(gemma4E2bIt).status, LocalModelStatus.absent);
+    });
+
+    testWidgets('on Wi-Fi it does not ask', (tester) async {
+      final models = storeOn(FakeMobileData());
+      addTearDown(models.dispose);
+
+      await _openVoicePane(
+        tester,
+        models: models,
+        prefs: VoicePrefs(store)..load(),
+      );
+      await _pressDownload(tester);
+
+      expect(find.byKey(const ValueKey('mobile-data-dialog')), findsNothing);
+    });
+  });
+
   group('memory', () {
     test('a machine that will not say is allowed to try', () async {
-      // No /proc, no channel: Windows, in effect.
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
-      expect(await DeviceMemory().total(), isNull);
+      final memory = DeviceMemory(
+        windowsTotal: () => throw ArgumentError('no kernel32'),
+      );
+      expect(await memory.total(), isNull);
+    });
+
+    test('a windows probe that answers nothing is unknown, not zero', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      expect(await DeviceMemory(windowsTotal: () => 0).total(), isNull);
+      expect(await DeviceMemory(windowsTotal: () => null).total(), isNull);
+    });
+
+    test('windows asks the kernel', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      final memory = DeviceMemory(windowsTotal: () => 16 * 1000 * 1000 * 1000);
+      expect(await memory.total(), 16 * 1000 * 1000 * 1000);
+    });
+
+    test('the summary model needs room for its worst published peak', () {
+      expect(gemma4E2bIt.minimumMemoryBytes, greaterThan(3505 * 1000 * 1000));
     });
 
     test('linux reads its own /proc, in kibibytes', () async {

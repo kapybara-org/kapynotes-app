@@ -333,7 +333,10 @@ class _NoteImageViewState extends State<NoteImageView> {
           decoration: BoxDecoration(
             color: palette.controlBackground,
             borderRadius: radius,
-            border: Border.all(color: palette.separator, width: 0.5),
+            border: Border.all(
+              color: palette.separator,
+              width: AppHairline.of(context),
+            ),
           ),
           child: Stack(
             fit: StackFit.expand,
@@ -352,7 +355,7 @@ class _NoteImageViewState extends State<NoteImageView> {
                       AnimatedOpacity(
                         opacity: frame == null ? 0 : 1,
                         duration: const Duration(milliseconds: 180),
-                        curve: Curves.easeOut,
+                        curve: Curves.easeOutCubic,
                         child: child,
                       ),
                   errorBuilder: (context, error, stack) => _Unavailable(
@@ -484,7 +487,7 @@ class _ImageTransferCover extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.62),
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(AppRadii.pill),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -513,7 +516,7 @@ class _ImageTransferCover extends StatelessWidget {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: AppTypeScale.caption,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -620,7 +623,7 @@ class _RemoteImage extends StatelessWidget {
                   key: const ValueKey('image-downloading'),
                   decoration: BoxDecoration(
                     color: palette.editorBackground.withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(AppRadii.dialog),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -651,7 +654,7 @@ class _RemoteImage extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: AppTypeScale.body,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w500,
                                 color: palette.textSubheading,
                               ),
                             ),
@@ -681,7 +684,7 @@ class _RemoteImage extends StatelessWidget {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: AppTypeScale.control,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w500,
                             color: palette.textSubheading,
                           ),
                         ),

@@ -14,6 +14,7 @@ import 'billing/revenuecat_store.dart';
 import 'core/deep_links.dart';
 import 'core/desktop_integration.dart';
 import 'core/focus_hold.dart';
+import 'core/font_licenses.dart';
 import 'core/platform.dart';
 import 'core/quick_capture.dart';
 import 'core/window_placement.dart';
@@ -36,6 +37,7 @@ import 'sync/sync_state.dart';
 Future<void> main([List<String> args = const []]) async {
   WidgetsFlutterBinding.ensureInitialized();
   QuickCapture.startedWith(args);
+  registerFontLicenses();
   // After the binding has claimed the view-focus callback, so it wraps the
   // framework's handler rather than being replaced by it.
   if (AppPlatform.isMacOS) {

@@ -162,7 +162,9 @@ class _SplitViewState extends State<SplitView> {
                               color: _dragging || _hovering
                                   ? Theme.of(context).colorScheme.primary
                                   : Colors.transparent,
-                              borderRadius: BorderRadius.circular(999),
+                              borderRadius: BorderRadius.circular(
+                                AppRadii.pill,
+                              ),
                             ),
                           ),
                         ),
@@ -198,7 +200,7 @@ class _SplitViewState extends State<SplitView> {
                         border: Border(
                           right: BorderSide(
                             color: palette.separator,
-                            width: 0.5,
+                            width: AppHairline.of(context),
                           ),
                         ),
                       ),

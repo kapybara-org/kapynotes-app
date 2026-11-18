@@ -90,7 +90,7 @@ void main() {
     expect(f.library.resultsOf(drawing), isEmpty);
     expect(
       () => f.library.append(f.drawing, 'x'),
-      refusedWith('Drawings can’t be changed from an assistant.'),
+      refusedWith('A drawing has no text. Use draw to change it.'),
     );
   });
 

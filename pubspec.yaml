@@ -1,7 +1,7 @@
 name: kapy_notes
 description: "Notes where every line is a live calculator."
 publish_to: 'none'
-version: 1.32.0+38
+version: 1.33.0+39
 
 environment:
   sdk: ^3.10.0
@@ -120,6 +120,10 @@ dependencies:
   flutter_gemma: ^1.7.3
   flutter_gemma_litertlm: ^1.6.3
 
+  # Whether a phone is on mobile data, so a model download of hundreds of
+  # megabytes asks before it spends somebody's allowance.
+  connectivity_plus: ^6.1.5
+
   # Running a speech recogniser on the device, so a recording can become words
   # with no account, no minutes and nothing leaving the machine. Prebuilt
   # native libraries for every platform this app ships on — no CMake, no NDK
@@ -228,6 +232,7 @@ flutter:
     - assets/fonts/ShantellSans-OFL.txt
     - assets/fonts/Figtree-OFL.txt
     - assets/fonts/GeistMono-OFL.txt
+    - assets/fonts/Newsreader-OFL.txt
     # The notice KaTeX's fonts come with, which flutter_math_fork bundles
     # without: its own LICENSE is the package's, not the fonts'.
     - packages/flutter_math_fork/katex_fonts/LICENSE
@@ -245,3 +250,6 @@ flutter:
     - family: Geist Mono
       fonts:
         - asset: assets/fonts/GeistMono-Variable.ttf
+    - family: Newsreader
+      fonts:
+        - asset: assets/fonts/Newsreader-Title.ttf
