@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import '../core/mobile_data.dart';
 import '../data/blob_store.dart';
 import 'local_models.dart';
 import 'runtime_pack.dart';
@@ -35,6 +36,10 @@ enum LocalModelStatus {
 
   /// The last attempt did not finish. [LocalModelState.error] says why.
   failed,
+
+  /// Asked for on mobile data and held until the phone is on Wi-Fi. See
+  /// [LocalModelStore.downloadOnWifi].
+  waitingForWifi,
 }
 
 /// What the settings card draws.
@@ -88,12 +93,17 @@ class LocalModelStore extends ChangeNotifier {
     Directory? directory,
     http.Client? client,
     RuntimePack runtime = const BundledRuntimePack(),
+    MobileData? mobileData,
   }) : _directory = directory,
        _client = client ?? http.Client(),
        _ownsClient = client == null,
-       _runtime = runtime;
+       _runtime = runtime,
+       mobileData = mobileData ?? MobileData();
 
   final List<DownloadableModel> catalogue;
+
+  /// Asked before a large download on a phone, by whatever offers one.
+  final MobileData mobileData;
 
   /// The native code every model here needs, where the app does not carry
   /// it. Fetched before the first model and released after the last.
@@ -117,6 +127,9 @@ class LocalModelStore extends ChangeNotifier {
   /// as cancelling can be honoured without abandoning the connection mid-write
   /// and leaving a part file whose length lies.
   final Set<String> _cancelling = {};
+
+  /// Models held for Wi-Fi, each with the connection watch that will start it.
+  final Map<String, StreamSubscription<bool>> _waiting = {};
 
   /// Rebuilding the pane on every chunk would spend more time laying out than
   /// downloading. Progress is a smooth quantity; five updates a second is
@@ -189,13 +202,17 @@ class LocalModelStore extends ChangeNotifier {
     for (final model in catalogue) {
       // A download in flight already knows more about itself than the disk
       // does; asking now would report its part files as a broken install.
-      if (_running.containsKey(model.id)) continue;
+      if (_running.containsKey(model.id) || _waiting.containsKey(model.id)) {
+        continue;
+      }
       final installed = runtimeHere && await _isInstalled(model);
       final received = installed ? model.bytes : await _bytesOnDisk(model);
       // Reading the disk takes long enough for someone to have pressed
       // Download in the middle of it, and what they started outranks what
       // this found.
-      if (_running.containsKey(model.id)) continue;
+      if (_running.containsKey(model.id) || _waiting.containsKey(model.id)) {
+        continue;
+      }
       _set(
         model,
         LocalModelState(
@@ -215,6 +232,8 @@ class LocalModelStore extends ChangeNotifier {
   Future<void> download(DownloadableModel model) {
     final running = _running[model.id];
     if (running != null) return running;
+    // Download now outranks download later.
+    unawaited(_waiting.remove(model.id)?.cancel());
     // A block body, not an arrow: `remove` hands back the very future being
     // chained here, and `whenComplete` waits on whatever its callback
     // returns — so an arrow would make this future wait for itself.
@@ -389,11 +408,54 @@ class LocalModelStore extends ChangeNotifier {
   /// Stops a download between chunks, keeping what has arrived so that
   /// starting again resumes rather than refetches.
   void cancel(DownloadableModel model) {
+    final waiting = _waiting.remove(model.id);
+    if (waiting != null) {
+      unawaited(waiting.cancel());
+      final state = stateOf(model);
+      _set(
+        model,
+        LocalModelState(
+          status: LocalModelStatus.absent,
+          receivedBytes: state.receivedBytes,
+          totalBytes: state.totalBytes,
+        ),
+      );
+      return;
+    }
     if (!_running.containsKey(model.id)) return;
     _cancelling.add(model.id);
     if (stateOf(model).status == LocalModelStatus.fetchingRuntime) {
       unawaited(_runtime.cancel());
     }
+  }
+
+  /// Downloads [model] once the phone is off mobile data, and straight away
+  /// if it already is.
+  ///
+  /// Not remembered across a restart. The card offers the download again,
+  /// and asks again if the phone is still on mobile data.
+  Future<void> downloadOnWifi(DownloadableModel model) async {
+    if (_running.containsKey(model.id) || _waiting.containsKey(model.id)) {
+      return;
+    }
+    if (!await mobileData.inUse()) {
+      unawaited(download(model));
+      return;
+    }
+    if (_disposed || _running.containsKey(model.id)) return;
+    final state = stateOf(model);
+    _set(
+      model,
+      LocalModelState(
+        status: LocalModelStatus.waitingForWifi,
+        receivedBytes: state.receivedBytes,
+        totalBytes: model.bytes,
+      ),
+    );
+    _waiting[model.id] = mobileData.changes().listen((onlyMobile) {
+      if (onlyMobile || _disposed) return;
+      unawaited(download(model));
+    });
   }
 
   /// Throws the model away, part files and all.
@@ -612,6 +674,10 @@ class LocalModelStore extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    for (final waiting in _waiting.values) {
+      unawaited(waiting.cancel());
+    }
+    _waiting.clear();
     for (final model in catalogue) {
       _cancelling.add(model.id);
     }

@@ -18,6 +18,8 @@ import 'package:kapy_notes/speech/local_models.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../fake_mobile_data.dart';
+
 class MemoryStore extends LocalStore {
   MemoryStore() : super(fileName: 'summary-model-test.json');
   @override
@@ -233,6 +235,72 @@ void main() {
       expect(prefs.hasAcceptedTerms('a-model', 1), isTrue);
       // New wording, new question.
       expect(prefs.hasAcceptedTerms('a-model', 2), isFalse);
+    });
+  });
+
+  group('mobile data', () {
+    LocalModelStore storeOn(FakeMobileData mobile) => LocalModelStore(
+      catalogue: localSummaryModels,
+      directory: temp,
+      client: MockClient((_) async => http.Response('', 503)),
+      mobileData: mobile,
+    );
+
+    testWidgets('a large download asks first, and can wait for Wi-Fi', (
+      tester,
+    ) async {
+      final models = storeOn(FakeMobileData(onlyMobile: true));
+      addTearDown(models.dispose);
+
+      await _openVoicePane(
+        tester,
+        models: models,
+        prefs: VoicePrefs(store)..load(),
+      );
+      await _pressDownload(tester);
+
+      expect(find.byKey(const ValueKey('mobile-data-dialog')), findsOneWidget);
+      expect(find.textContaining(fileSize(gemma4E2bIt.bytes)), findsWidgets);
+
+      await tester.tap(find.byKey(const ValueKey('mobile-data-wifi')));
+      await tester.pumpAndSettle();
+
+      expect(
+        models.stateOf(gemma4E2bIt).status,
+        LocalModelStatus.waitingForWifi,
+      );
+      expect(find.text('Gemma 4 E2B · waiting for Wi-Fi'), findsOneWidget);
+    });
+
+    testWidgets('dismissing the question downloads nothing', (tester) async {
+      final models = storeOn(FakeMobileData(onlyMobile: true));
+      addTearDown(models.dispose);
+
+      await _openVoicePane(
+        tester,
+        models: models,
+        prefs: VoicePrefs(store)..load(),
+      );
+      await _pressDownload(tester);
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('mobile-data-dialog')), findsNothing);
+      expect(models.stateOf(gemma4E2bIt).status, LocalModelStatus.absent);
+    });
+
+    testWidgets('on Wi-Fi it does not ask', (tester) async {
+      final models = storeOn(FakeMobileData());
+      addTearDown(models.dispose);
+
+      await _openVoicePane(
+        tester,
+        models: models,
+        prefs: VoicePrefs(store)..load(),
+      );
+      await _pressDownload(tester);
+
+      expect(find.byKey(const ValueKey('mobile-data-dialog')), findsNothing);
     });
   });
 

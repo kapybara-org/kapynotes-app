@@ -117,6 +117,15 @@ class FakeDeviceModel extends DeviceModel {
   @override
   Future<void> remove() async {}
 
+  bool mobileData = false;
+  int wifiDownloads = 0;
+
+  @override
+  Future<bool> onMobileData() async => mobileData;
+
+  @override
+  void downloadOnWifi() => wifiDownloads++;
+
   @override
   Future<String> answer(KapyModel model, AnswerRequest request) async {
     asked.add(request);

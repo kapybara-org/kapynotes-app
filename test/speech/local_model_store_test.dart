@@ -8,6 +8,8 @@ import 'package:http/testing.dart';
 import 'package:kapy_notes/speech/local_model_store.dart';
 import 'package:kapy_notes/speech/local_models.dart';
 
+import '../fake_mobile_data.dart';
+
 /// A model made of whatever bytes a test wants, hashed for real.
 ///
 /// Real hashes matter: the point of this store is that it trusts the checksum
@@ -120,6 +122,80 @@ void main() {
         directory: temp,
         client: client,
       );
+
+  group('waiting for Wi-Fi', () {
+    final bodies = {'encoder.onnx': _bytes(300)};
+
+    LocalModelStore storeOn(
+      LocalSpeechModel model,
+      FakeMobileData mobile,
+      http.Client client,
+    ) => LocalModelStore(
+      catalogue: [model],
+      directory: temp,
+      client: client,
+      mobileData: mobile,
+    );
+
+    test('holds the download until the phone leaves mobile data', () async {
+      final model = _model(bodies);
+      final mobile = FakeMobileData(onlyMobile: true);
+      var fetches = 0;
+      final store = storeOn(
+        model,
+        mobile,
+        MockClient((_) async {
+          fetches++;
+          return http.Response('', 503);
+        }),
+      );
+      addTearDown(store.dispose);
+
+      await store.downloadOnWifi(model);
+      expect(store.stateOf(model).status, LocalModelStatus.waitingForWifi);
+
+      mobile.move(onlyMobile: true);
+      await Future<void>.delayed(Duration.zero);
+      expect(fetches, 0);
+      expect(store.stateOf(model).status, LocalModelStatus.waitingForWifi);
+
+      mobile.move(onlyMobile: false);
+      await Future<void>.delayed(Duration.zero);
+      await store.download(model);
+      expect(fetches, greaterThan(0));
+      expect(store.stateOf(model).status, isNot(LocalModelStatus.waitingForWifi));
+    });
+
+    test('already on Wi-Fi, it downloads straight away', () async {
+      final model = _model(bodies);
+      final store = storeOn(model, FakeMobileData(), _Server(bodies).client);
+      addTearDown(store.dispose);
+
+      await store.downloadOnWifi(model);
+      await store.download(model);
+
+      expect(store.stateOf(model).status, LocalModelStatus.ready);
+    });
+
+    test('cancelling the wait downloads nothing, even on Wi-Fi', () async {
+      final model = _model(bodies);
+      final mobile = FakeMobileData(onlyMobile: true);
+      final store = storeOn(
+        model,
+        mobile,
+        MockClient((_) async => fail('a cancelled wait must fetch nothing')),
+      );
+      addTearDown(store.dispose);
+
+      await store.downloadOnWifi(model);
+      store.cancel(model);
+      expect(store.stateOf(model).status, LocalModelStatus.absent);
+
+      mobile.move(onlyMobile: false);
+      await Future<void>.delayed(Duration.zero);
+      expect(store.stateOf(model).status, LocalModelStatus.absent);
+    });
+  });
 
   test('downloads every file, checks it, and reports it ready', () async {
     final bodies = {
