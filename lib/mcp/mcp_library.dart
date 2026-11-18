@@ -498,9 +498,33 @@ class McpLibrary {
   TagStore get _tags =>
       tags ?? (throw const McpRefusal('Tags aren’t available here.'));
 
-  Tag _tag(String name) =>
-      _tags.named(name) ??
-      (throw McpRefusal('There’s no tag called “${name.trim()}”.'));
+  Tag _tag(String name) => switch (_tags.named(name)) {
+    final tag? when _visible(tag) => tag,
+    _ => throw McpRefusal('There’s no tag called “${name.trim()}”.'),
+  };
+
+  /// Whether an assistant may know [tag] exists: no Hidden note carries it,
+  /// or a note it can see does too. A tag only Hidden notes carry is as
+  /// hidden as they are, its name included.
+  bool _visible(Tag tag) =>
+      !_onHidden(tag) ||
+      notes.allNotes.any((note) => !note.isHidden && _carries(note, tag));
+
+  bool _onHidden(Tag tag) =>
+      notes.hiddenNotes.any((note) => _carries(note, tag));
+
+  bool _carries(Note note, Tag tag) =>
+      _tags.tagsOf(note.id).any((each) => each.id == tag.id);
+
+  /// [name]'s tag, if changing it reaches no Hidden note. The refusal says
+  /// nothing of why, so it gives no Hidden note away.
+  Tag _changeableTag(String name) {
+    final tag = _tag(name);
+    if (_onHidden(tag)) {
+      throw const McpRefusal('Change this tag in Kapy Notes.');
+    }
+    return tag;
+  }
 
   /// The live tag called [name], ignoring case.
   Tag tagNamed(String name) => _tag(name);
@@ -518,7 +542,8 @@ class McpLibrary {
       }
     }
     return [
-      for (final tag in store.tags) (tag: tag, notes: counts[tag.id] ?? 0),
+      for (final tag in store.tags)
+        if (_visible(tag)) (tag: tag, notes: counts[tag.id] ?? 0),
     ];
   }
 
@@ -539,7 +564,7 @@ class McpLibrary {
     final missing = <String>[];
     for (final name in add) {
       final tag = store.named(name);
-      if (tag != null) {
+      if (tag != null && (createMissing || _visible(tag))) {
         existing.add(tag);
       } else if (!createMissing) {
         throw McpRefusal(
@@ -583,8 +608,13 @@ class McpLibrary {
   Tag createTag(String name, {String? colour}) {
     final store = _tags;
     _clean(name, tagNameMax * 2, 'name');
-    if (store.named(name) != null) {
-      throw McpRefusal('There’s already a tag called “${name.trim()}”.');
+    final taken = store.named(name);
+    if (taken != null) {
+      throw McpRefusal(
+        _visible(taken)
+            ? 'There’s already a tag called “${name.trim()}”.'
+            : 'Choose another name for that tag.',
+      );
     }
     if (colour != null) _colour(colour);
     final tag = store.create(name) ??
@@ -596,7 +626,7 @@ class McpLibrary {
   }
 
   Tag renameTag(String name, String to) {
-    final tag = _tag(name);
+    final tag = _changeableTag(name);
     _clean(to, tagNameMax * 2, 'name');
     if (!_tags.rename(tag.id, to)) {
       throw McpRefusal(
@@ -609,7 +639,7 @@ class McpLibrary {
   }
 
   Tag recolourTag(String name, String colour) {
-    final tag = _tag(name);
+    final tag = _changeableTag(name);
     _tags.recolour(tag.id, _colour(colour));
     return _tags.byId(tag.id)!;
   }
@@ -617,7 +647,7 @@ class McpLibrary {
   /// Deletes a tag and nothing else: every note stays, and Undo puts it
   /// back on them.
   Tag deleteTag(String name) {
-    final tag = _tag(name);
+    final tag = _changeableTag(name);
     _tags.delete(tag.id);
     return tag;
   }
@@ -666,34 +696,38 @@ class McpLibrary {
   /// ticked or not as it was, and in the style that note's tasks use.
   McpTask moveTask(String taskId, {required String noteId, String? beforeTaskId}) {
     final task = _taskAt(taskId);
-    _writable(noteId);
+    final target = _writable(noteId);
     if (beforeTaskId == taskId) return task;
     final before = beforeTaskId == null ? null : _taskAt(beforeTaskId);
     if (before != null && before.note.id != noteId) {
       throw const McpRefusal('before_task_id is a task in that note.');
     }
-    final anchorText = before?.text;
-    _splice(task.note, [_lineOf(task)]);
-    final target = notes.byId(noteId)!;
     final line = '${_box(target, done: task.done)}${task.text}';
-    final McpTask? anchor = anchorText == null
-        ? null
-        : tasksIn(target).where((each) => each.text == anchorText).firstOrNull;
     final body = target.body;
-    final _Region region;
-    if (anchor != null) {
-      region = (start: anchor.line.start, end: anchor.line.start, text: '$line\n');
+    final _Region insert = before != null
+        ? (start: before.line.start, end: before.line.start, text: '$line\n')
+        : (
+            start: body.length,
+            end: body.length,
+            text: body.isEmpty || body.endsWith('\n') ? line : '\n$line',
+          );
+    final removal = _lineOf(task);
+    var at = insert.start + (insert.text.startsWith('\n') ? 1 : 0);
+    final Note written;
+    if (target.id == task.note.id) {
+      if (insert.start >= removal.end) at -= removal.end - removal.start;
+      written = _splice(
+        target,
+        [removal, insert]..sort((a, b) => a.start.compareTo(b.start)),
+      );
     } else {
-      final joined = body.isEmpty || body.endsWith('\n') ? line : '\n$line';
-      region = (start: body.length, end: body.length, text: joined);
+      if (body.length + insert.text.length > maxNoteLength) {
+        throw const McpRefusal('That would make the note too long.');
+      }
+      written = _splice(target, [insert]);
+      _splice(task.note, [removal]);
     }
-    final written = _splice(target, [region]);
-    return tasksIn(written).firstWhere(
-      (each) =>
-          each.text == task.text &&
-          each.line.start >= region.start &&
-          each.line.start <= region.start + region.text.length,
-    );
+    return tasksIn(written).firstWhere((each) => each.line.start == at);
   }
 
   /// The whole line [task] is on, with the line break that ends it, or the

@@ -115,17 +115,66 @@ void main() {
     }
     expect(f.tags.tags, isEmpty);
     expect(body(h), 'Secret diary\nnothing to see');
+  });
 
+  test('a tag only Hidden notes carry is as hidden as they are', () {
     final secret = f.tags.create('Secret')!;
-    f.tags.addTag(h, secret.id);
+    f.tags.addTag(f.hidden, secret.id);
+    final shared = f.tags.create('Shared')!;
+    f.tags.addTag(f.hidden, shared.id);
+    f.tags.addTag(f.plain, shared.id);
+    expect(ok('list_tags', {})['tags'], [
+      {'name': 'Shared', 'colour': shared.colour.v, 'notes': 1},
+    ]);
+    const missing = 'There’s no tag called “Secret”.';
+    expect(refused('list_notes', {'tag': 'Secret'}), missing);
     expect(
-      (ok('list_tags', {})['tags']! as List).single,
-      containsPair('notes', 0),
+      refused('tag_note', {
+        'id': f.plain,
+        'add': ['Secret'],
+      }),
+      '$missing Set create_missing to make it.',
     );
     expect(
-      ok('list_notes', {'tag': 'Secret', 'include_archived': true})['notes'],
-      isEmpty,
+      refused('tag_note', {
+        'id': f.plain,
+        'remove': ['Secret'],
+      }),
+      missing,
     );
+    for (final args in [
+      {'action': 'rename', 'tag': 'Secret', 'new_name': 'Out'},
+      {'action': 'recolour', 'tag': 'Secret', 'colour': 'rose'},
+      {'action': 'delete', 'tag': 'Secret'},
+    ]) {
+      expect(refused('manage_tag', args), missing, reason: '${args['action']}');
+    }
+    expect(
+      refused('manage_tag', {'action': 'create', 'tag': 'secret'}),
+      'Choose another name for that tag.',
+    );
+    for (final args in [
+      {'action': 'rename', 'tag': 'Shared', 'new_name': 'Out'},
+      {'action': 'recolour', 'tag': 'Shared', 'colour': 'rose'},
+      {'action': 'delete', 'tag': 'Shared'},
+    ]) {
+      expect(
+        refused('manage_tag', args),
+        'Change this tag in Kapy Notes.',
+        reason: '${args['action']}',
+      );
+    }
+    ok('tag_note', {
+      'id': f.plain,
+      'remove': ['Shared'],
+    });
+    expect(f.tags.byId(shared.id)!.name.v, 'Shared');
+    expect(f.tags.byId(shared.id)!.colour.v, shared.colour.v);
+    expect(f.tags.byId(secret.id)!.name.v, 'Secret');
+    expect(f.tags.tagsOf(f.hidden).map((tag) => tag.id), [
+      secret.id,
+      shared.id,
+    ]);
   });
 
   group('edit_note', () {
@@ -501,6 +550,47 @@ void main() {
         'before_task_id': taskId(chores, 'Laundry'),
       });
       expect(body(chores), 'Chores\n- [x] Pack bag\n- [ ] Laundry');
+    });
+
+    test('moves before the right one of two tasks with the same words', () {
+      final chores = f.notes
+          .create(
+            body: 'Chores\n- [ ] Laundry\n- [ ] Dishes\n- [ ] Laundry',
+            authored: false,
+          )
+          .id;
+      final second = [
+        for (final t in ok('list_tasks', {'note_id': chores})['tasks']! as List)
+          if ((t as Map)['text'] == 'Laundry') t['id'] as String,
+      ].last;
+      ok('edit_task', {
+        'task_id': taskId(f.plain, 'Book taxi'),
+        'move_to_note_id': chores,
+        'before_task_id': second,
+      });
+      expect(
+        body(chores),
+        'Chores\n- [ ] Laundry\n- [ ] Dishes\n- [ ] Book taxi\n- [ ] Laundry',
+      );
+    });
+
+    test('a move the other note can’t take leaves the task where it was', () {
+      final full = f.notes
+          .create(
+            body: 'Full\n${'x' * (McpLibrary.maxNoteLength - 8)}',
+            authored: false,
+          )
+          .id;
+      final before = body(f.plain);
+      expect(
+        refused('edit_task', {
+          'task_id': taskId(f.plain, 'Book taxi'),
+          'move_to_note_id': full,
+        }),
+        'That would make the note too long.',
+      );
+      expect(body(f.plain), before);
+      expect(body(full), isNot(contains('Book taxi')));
     });
 
     test('removes a task’s line and keeps the note', () {
