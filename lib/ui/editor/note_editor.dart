@@ -61,6 +61,7 @@ import '../../paste/note_text.dart';
 import '../../paste/paste_converter.dart';
 import '../../paste/paste_insertion.dart';
 import '../../paste/paste_tree.dart';
+import '../../paste/paste_writers.dart' show linkDestination;
 import '../../sync/aead.dart' show randomKey;
 import '../../images/image_codec.dart';
 import '../../images/image_ingest.dart';
@@ -5530,7 +5531,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       replaceSlashCommandRange(
         value,
         TextRange(start: selection.start, end: selection.end),
-        '[$words]($address)',
+        '[$words](${linkDestination(address)})',
         selection: TextSelection(
           baseOffset: selection.start + 1,
           extentOffset: selection.start + 1 + words.length,

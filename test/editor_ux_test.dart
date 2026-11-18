@@ -316,6 +316,41 @@ void main() {
       expect(desk.text, 'Read the [docs](https://kapynotes.app) today');
     }, variant: desktopPlatforms);
 
+    for (final (address, written, destination) in [
+      (
+        'https://kapynotes.app/docs',
+        'https://kapynotes.app/docs',
+        'https://kapynotes.app/docs',
+      ),
+      (
+        'https://example.com/my notes',
+        'https://example.com/my%20notes',
+        'https://example.com/my%20notes',
+      ),
+      (
+        'https://en.wikipedia.org/wiki/Foo_(bar)',
+        '<https://en.wikipedia.org/wiki/Foo_(bar)>',
+        'https://en.wikipedia.org/wiki/Foo_(bar)',
+      ),
+      ('https://x.com/a)b', '<https://x.com/a)b>', 'https://x.com/a)b'),
+    ]) {
+      testWidgets('a link to $address stays one link', (tester) async {
+        final desk = Desk(tester);
+        await desk.open('Read the docs today');
+        await desk.click(desk.on('docs', 1), times: 2);
+        await desk.chord(ShortcutAction.formatLink);
+        await desk.tester.enterText(
+          find.byKey(const ValueKey('selection-link-field')),
+          address,
+        );
+        await desk.tester.testTextInput.receiveAction(TextInputAction.done);
+        await desk.settle();
+        expect(desk.text, 'Read the [docs]($written) today');
+        final links = desk.note.controller.markdownFor(desk.text).links;
+        expect(links.single.destination, destination);
+      }, variant: desktopPlatforms);
+    }
+
     testWidgets('a formula shows its result as it is typed', (tester) async {
       final desk = Desk(tester);
       await desk.open('Sums\n', results: true);
