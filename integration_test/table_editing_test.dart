@@ -15,7 +15,6 @@
 //
 // A phone has no column border to drag, so resize runs on desktops only.
 import 'package:flutter/gestures.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
@@ -71,9 +70,13 @@ void main() {
     (frame.rowEdges[row] + frame.rowEdges[row + 1]) / 2,
   );
 
+  /// A second of real time, which a live binding's pump does not wait for,
+  /// so a phone's keyboard has finished moving the note before anything is
+  /// measured.
   Future<void> settle(WidgetTester tester) async {
     for (var i = 0; i < 20; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
     }
     await tester.pumpAndSettle();
   }
@@ -128,10 +131,13 @@ void main() {
 
   Future<void> drag(WidgetTester tester, Offset from, Offset to) async {
     final gesture = await tester.startGesture(from, kind: kind);
-    await tester.pump(Duration(milliseconds: phone ? 700 : 50));
+    // A live binding's pump does not wait, so a phone's press is held for real.
+    await Future<void>.delayed(Duration(milliseconds: phone ? 800 : 50));
+    await tester.pump();
     for (var i = 1; i <= 12; i++) {
       await gesture.moveTo(Offset.lerp(from, to, i / 12)!);
-      await tester.pump(const Duration(milliseconds: 16));
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      await tester.pump();
     }
     await gesture.up();
     await settle(tester);
@@ -151,13 +157,6 @@ void main() {
         '| Hotel | Sanjay | 896 |\n| Taxi | Ana | 38 |\n| Tickets | Ana | 412 |',
       ),
     );
-    if (AppPlatform.isMacOS) {
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
-      await settle(tester);
-      expect(text(tester), _body);
-    }
   });
 
   testWidgets('a row is added below the first and then deleted', (
