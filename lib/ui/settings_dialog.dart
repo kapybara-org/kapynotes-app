@@ -1582,7 +1582,9 @@ class _SettingsDialogState extends State<SettingsDialog>
               onChanged: namer.available
                   ? (value) => prefs.autoTitlesEnabled = value
                   : null,
-              byDefault: namer.available ? true : null,
+              byDefault: namer.available
+                  ? LayoutPrefs.autoTitlesByDefault
+                  : null,
               keywords: [
                 'title',
                 'name',
