@@ -178,6 +178,7 @@ dependencies:
   # Package Manager on iOS and macOS, so it forces no Podfile into `ios/`.
   # Registered on macOS and Android too, and never called there.
   purchases_flutter: ^10.12.0
+  device_info_plus: ^13.3.0
 # The Apple halves of sherpa_onnx carry a 26 MB (iOS) or 56 MB (macOS) native
 # library the app never uses there: Apple's own on-device recogniser does the
 # job. These stand-ins have no native code. See packages/apple_stubs/README.md.
