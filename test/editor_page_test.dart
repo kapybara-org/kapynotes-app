@@ -429,14 +429,14 @@ void main() {
     expect(kapy.bottom, 800);
   });
 
-  testWidgets('a phone keeps its footer and its own rows', (tester) async {
+  testWidgets('a phone has no footer under its own rows', (tester) async {
     window(tester);
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await tester.pumpWidget(_page(_body, width: 390));
     await tester.pumpAndSettle();
 
-    expect(find.byType(NoteFooter), findsOneWidget);
+    expect(find.byType(NoteFooter), findsNothing);
     expect(find.byType(NoteMetaRow), findsNothing);
     final field = _editable(tester);
     expect(

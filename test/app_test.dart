@@ -4758,7 +4758,7 @@ void main() {
       expect(find.byKey(const ValueKey('note-total')), findsNothing);
     });
 
-    testWidgets('puts the insert menu in a scrollable phone footer', (
+    testWidgets('raises the formatting bar over the phone keyboard', (
       tester,
     ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
@@ -4774,43 +4774,41 @@ void main() {
 
       await pumpApp(tester, size: const Size(320, 720));
 
-      expect(find.byKey(const ValueKey('insert-menu')), findsOneWidget);
-      expect(find.byKey(const ValueKey('insert-image')), findsNothing);
-      expect(find.byKey(const ValueKey('record-voice')), findsNothing);
-      final insertMenu = find.byKey(const ValueKey('insert-menu'));
-      expect(
-        find.descendant(of: insertMenu, matching: find.text('/')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: insertMenu,
-          matching: findKapyIcon(KapyIcons.addRounded),
-        ),
-        findsNothing,
-      );
+      final bar = find.byKey(const ValueKey('phone-format-bar'));
+      expect(bar, findsNothing);
+      expect(find.byType(NoteFooter), findsNothing);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+
+      expect(bar, findsOneWidget);
+      expect(tester.getRect(bar).bottom, closeTo(720 - 300, 0.01));
       // Settings is in the notes drawer, not under the thumb that is writing.
       expect(find.byKey(const ValueKey('note-settings')), findsNothing);
       expect(find.byKey(const ValueKey('note-total')), findsNothing);
-
-      final scroller = find.descendant(
-        of: find.byType(NoteFooter),
-        matching: find.byType(SingleChildScrollView),
-      );
-      expect(scroller, findsOneWidget);
       expect(
-        tester.widget<SingleChildScrollView>(scroller).scrollDirection,
+        tester
+            .widget<SingleChildScrollView>(
+              find.byKey(const ValueKey('phone-format-scroll')),
+            )
+            .scrollDirection,
         Axis.horizontal,
       );
-
       expect(openNoteField(tester).focusNode.hasFocus, isTrue);
-      expect(tester.testTextInput.isVisible, isTrue);
 
-      await tester.tap(insertMenu);
+      // A "/" on a new line opens Commands, which hides the keyboard.
+      openNoteField(tester).controller.selection =
+          const TextSelection.collapsed(offset: 18);
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Phone budget\n6 * 7\n/',
+          selection: TextSelection.collapsed(offset: 20),
+        ),
+      );
       await tester.pump();
       await tester.pump();
-      expect(openNoteField(tester).focusNode.hasFocus, isFalse);
-      expect(tester.testTextInput.isVisible, isFalse);
+      expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
 
       const commandOrder = [
         'checklist',
@@ -4864,41 +4862,46 @@ void main() {
       expect(find.byKey(const ValueKey('slash-command-drawing')), findsNothing);
     });
 
-    testWidgets('sits the phone footer on the bottom edge of the screen', (
-      tester,
-    ) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      store.data['notes.v1'] = [
-        {
-          'id': 'home-indicator',
-          'body': 'Phone note',
-          'createdAt': 1000,
-          'updatedAt': 1000,
-        },
-      ];
-      // The strip a phone keeps for its home indicator. Set before pumpApp,
-      // which pins the ratio these physical pixels are read at to one and
-      // resets the view afterwards.
-      tester.view.padding = const FakeViewPadding(bottom: 34);
+    testWidgets(
+      'holds the note above the home indicator and the bar on the keyboard',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        store.data['notes.v1'] = [
+          {
+            'id': 'home-indicator',
+            'body': 'Phone note',
+            'createdAt': 1000,
+            'updatedAt': 1000,
+          },
+        ];
+        // The strip a phone keeps for its home indicator. Set before pumpApp,
+        // which pins the ratio these physical pixels are read at to one and
+        // resets the view afterwards.
+        tester.view.padding = const FakeViewPadding(bottom: 34);
 
-      await pumpApp(tester, size: const Size(390, 844));
+        await pumpApp(tester, size: const Size(390, 844));
 
-      final footer = tester.getRect(find.byType(NoteFooter));
-      expect(
-        footer.bottom,
-        closeTo(844, 0.01),
-        reason: 'the bar belongs on the edge, not floating above it',
-      );
-      // The background grew into the strip. The controls did not follow it in:
-      // a 44pt target under the home indicator is a target the system swipe
-      // takes first.
-      expect(footer.height, closeTo(56 + 34, 0.01));
-      expect(
-        tester.getRect(find.byKey(const ValueKey('insert-menu'))).bottom,
-        lessThanOrEqualTo(844 - 34),
-      );
-    });
+        expect(find.byType(NoteFooter), findsNothing);
+        expect(find.byKey(const ValueKey('phone-format-bar')), findsNothing);
+        expect(
+          tester.getRect(find.byType(NoteEditor)).bottom,
+          closeTo(844, 0.01),
+        );
+
+        // The system takes the keyboard's height out of the inset it reports
+        // for the home indicator.
+        tester.view.padding = FakeViewPadding.zero;
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.pumpAndSettle();
+        final bar = tester.getRect(
+          find.byKey(const ValueKey('phone-format-bar')),
+        );
+        expect(bar.height, 44);
+        expect(bar.bottom, closeTo(844 - 300, 0.01));
+      },
+    );
 
     testWidgets(
       'opens the last opened note with the caret and focus at its end',
@@ -5120,7 +5123,34 @@ void main() {
       },
     );
 
-    testWidgets('leaves a swipe along the note footer to the footer', (
+    testWidgets('takes the formatting bar away with the note it belongs to', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'drawer-bar',
+          'body': 'Open the list',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(420, 800));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      final bar = find.byKey(const ValueKey('phone-format-bar'));
+      expect(bar, findsOneWidget);
+
+      await tester.dragFrom(const Offset(330, 400), const Offset(80, 0));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Open the list'), findsOneWidget);
+      expect(bar, findsNothing);
+    });
+
+    testWidgets('leaves a swipe along the formatting bar to the bar', (
       tester,
     ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
@@ -5137,10 +5167,15 @@ void main() {
       await pumpApp(tester, size: const Size(420, 800));
       expect(find.byType(NoteRow), findsNothing);
 
-      // The footer's controls scroll sideways when they do not fit, and a
-      // thumb rests exactly there. Reaching for the button past the end of the
-      // row must not walk out of the note.
-      final footer = tester.getRect(find.byType(NoteFooter));
+      // The bar's buttons scroll sideways when they do not fit, and a thumb
+      // rests exactly there. Reaching for the button past the end of the row
+      // must not walk out of the note.
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      final footer = tester.getRect(
+        find.byKey(const ValueKey('phone-format-scroll')),
+      );
       await tester.dragFrom(footer.center, const Offset(-160, 0));
       await tester.pumpAndSettle();
       expect(find.byType(NoteRow), findsNothing);

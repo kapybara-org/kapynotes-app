@@ -26,6 +26,7 @@ import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/images/note_image_provider.dart';
 import 'package:kapy_notes/ui/app_logo.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app_test.dart' show MemoryStore;
@@ -1380,4 +1381,36 @@ void main() {
       matchesGoldenFile('goldens/phone_editor_large.png'),
     );
   });
+
+  // The formatting bar on a phone's keyboard. The golden has no keyboard to
+  // draw, so the room it takes is left empty under the bar.
+  for (final (name, brightness, platform, keyboard, list) in [
+    ('iphone_dark', Brightness.dark, TargetPlatform.iOS, 336.0, false),
+    ('iphone_light', Brightness.light, TargetPlatform.iOS, 336.0, false),
+    ('android_dark', Brightness.dark, TargetPlatform.android, 300.0, false),
+    ('iphone_dark_list', Brightness.dark, TargetPlatform.iOS, 336.0, true),
+  ]) {
+    testWidgets('phone formatting bar, $name', (tester) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(390, 844),
+        brightness: brightness,
+        platform: platform,
+      );
+      tester.view.viewInsets = FakeViewPadding(bottom: keyboard);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      if (list) {
+        tester.widget<NoteField>(find.byType(NoteField)).controller.selection =
+            TextSelection.collapsed(offset: _body.indexOf('Hotel'));
+        await tester.pump();
+        await tester.tap(find.byKey(const ValueKey('format-bullets')));
+        await tester.pumpAndSettle();
+      }
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile('goldens/phone_format_bar_$name.png'),
+      );
+    });
+  }
 }
