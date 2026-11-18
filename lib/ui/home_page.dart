@@ -1663,7 +1663,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           hidden: creatingHidden,
         );
     if (drawing) widget.notes.setDrawingMode(note.id, drawing: true);
-    if (blank == null) _freshNoteIds.add(note.id);
+    if (blank == null) {
+      _freshNoteIds.add(note.id);
+    } else {
+      widget.notes.startAsNew(blank.id);
+    }
     setState(() {
       _archiveQuery = '';
       _archiveMode = false;

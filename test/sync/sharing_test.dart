@@ -500,6 +500,8 @@ void main() {
         final space = bob.sharing.teams.single;
         bob.tick();
         final fresh = bob.sharing.createNoteIn(space.id);
+        expect(fresh.body, Note.blankBody, reason: 'it starts as New Note');
+        expect(bob.notes.namesHere(fresh.id), isTrue);
         bob.notes.updateBody(fresh.id, 'Written by Bob');
         await bob.sync.syncNow();
         alice.tick(2);

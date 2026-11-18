@@ -121,7 +121,40 @@ void main() {
         expect(cleanTitle(hostile), isNull, reason: hostile);
       }
       expect(cleanTitle('Meeting with @sam'), 'Meeting with @sam');
-      expect(cleanTitle('Notes on Node.js'), 'Notes on Node.js');
+    });
+
+    test('nothing for a bare domain or an address the note would link', () {
+      for (final hostile in [
+        'evil.com',
+        'Sign in at evil.com',
+        'Lisbon trip evil.io/login',
+        'Paypal.com account',
+        'Server 10.0.0.1',
+        'Router at 192.168.1.1 admin',
+        'Trip evil\u200B.com',
+        'Trip evil\u200C.com',
+        'Trip ev\u200Dil.com',
+        'Trip evil.\u2060com',
+        'Trip **evil**.com',
+        'Trip evil.com!',
+      ]) {
+        expect(cleanTitle(hostile), isNull, reason: hostile);
+      }
+      expect(
+        cleanTitle('Notes on Node.js'),
+        isNull,
+        reason: 'a note draws Node.js as a link, so a title would too',
+      );
+      expect(cleanTitle('Release 2.0 plan'), 'Release 2.0 plan');
+      expect(cleanTitle('Budget for 2026'), 'Budget for 2026');
+    });
+
+    test('keeps the joiners a script or an emoji spells with', () {
+      expect(cleanTitle('برنامه\u200Cی سفر'), 'برنامه\u200Cی سفر');
+      expect(cleanTitle('क्\u200Dष योजना'), 'क्\u200Dष योजना');
+      expect(cleanTitle('👩\u200D💻 Coding notes'), 'Coding notes');
+      expect(cleanTitle('Family 👨\u200D👩\u200D👧 trip'), 'Family trip');
+      expect(cleanTitle('\u200CTrip\u200D plan'), 'Trip plan');
     });
   });
 
@@ -200,6 +233,22 @@ void main() {
       expect(store.data['notes.v2'].toString(), isNot(contains('nameHere')));
     },
   );
+
+  test('a blank from an older build starts as New Note when reused', () {
+    final notes = NotesStore(_MemoryStore());
+    final old = notes.create(body: '\n');
+    notes.startAsNew(old.id);
+    expect(notes.byId(old.id)!.body, Note.blankBody);
+    expect(notes.takeEdit(old.id), (start: 0, oldEnd: 1, newEnd: 9));
+
+    final written = notes.create(body: 'Groceries');
+    notes.startAsNew(written.id);
+    expect(notes.byId(written.id)!.body, 'Groceries');
+    final fresh = notes.create(body: Note.blankBody, authored: false);
+    final before = notes.byId(fresh.id);
+    notes.startAsNew(fresh.id);
+    expect(notes.byId(fresh.id), same(before));
+  });
 
   test('retitle moves the formats and attachments after the title', () {
     final notes = NotesStore(_MemoryStore());

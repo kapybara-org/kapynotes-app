@@ -3574,6 +3574,30 @@ void main() {
       expect(prefs.lastOpenedNoteId, blank.id);
     });
 
+    testWidgets('an empty note from an older build is reused as New Note', (
+      tester,
+    ) async {
+      store.data['notes.v1'] = [
+        {'id': 'old-blank', 'body': '', 'createdAt': 1000, 'updatedAt': 2000},
+      ];
+      await pumpApp(tester, titleModel: _InstantTitles('Unused'));
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(1));
+      expect(notes.byId('old-blank')!.body, Note.blankBody);
+      final field = tester
+          .widget<NoteField>(
+            find.descendant(of: find.byType(NoteEditor), matching: noteField),
+          )
+          .controller;
+      expect(field.text, Note.blankBody);
+      expect(
+        field.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+        reason: 'not made here, so nothing names it and the person does',
+      );
+    });
+
     testWidgets('writing in it makes the next press a real new note', (
       tester,
     ) async {

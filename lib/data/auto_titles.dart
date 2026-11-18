@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../core/note_link.dart';
 import '../core/platform.dart';
 import '../speech/apple_summarizer.dart';
 import '../speech/summarizer.dart';
@@ -359,7 +360,7 @@ String? cleanTitle(String raw) {
   if (line.isEmpty ||
       line.length > 120 ||
       _refusal.hasMatch(line) ||
-      _link.hasMatch(line)) {
+      _holdsLink(line)) {
     return null;
   }
   var text =
@@ -381,7 +382,9 @@ String? cleanTitle(String raw) {
     text = cut > 0 ? text.substring(0, cut) : text.substring(0, titleMaxLength);
   }
   text = text.replaceFirst(_edgeEnd, '');
-  if (text.isEmpty || text.toLowerCase() == Note.untitled.toLowerCase()) {
+  if (text.isEmpty ||
+      text.toLowerCase() == Note.untitled.toLowerCase() ||
+      _holdsLink(text)) {
     return null;
   }
   return text[0].toUpperCase() + text.substring(1);
@@ -391,13 +394,22 @@ String? cleanTitle(String raw) {
 final RegExp _control = RegExp(r'\p{Cc}', unicode: true);
 
 /// Characters that draw nothing themselves: direction overrides and
-/// isolates, zero-width spaces and joiners, the byte order mark.
-final RegExp _invisible = RegExp(r'\p{Cf}', unicode: true);
+/// isolates, zero-width spaces, the byte order mark. Not the zero-width
+/// joiner and non-joiner, which Persian, Indic scripts and emoji spell with.
+final RegExp _invisible = RegExp(r'(?![\u200C\u200D])\p{Cf}', unicode: true);
 
-/// A web address, an email address or a markdown link: a title
-/// with one of these would draw as a link the note never had.
+final RegExp _joiners = RegExp(r'[\u200C\u200D]');
+
+/// Whether [text] would draw as a link the note never had: anything the
+/// note's own link detection finds, read without the joiners, or another
+/// scheme, an IP address, an email address or a markdown link.
+bool _holdsLink(String text) {
+  final bare = text.replaceAll(_joiners, '');
+  return findNoteLinks(bare).isNotEmpty || _link.hasMatch(bare);
+}
+
 final RegExp _link = RegExp(
-  r'[a-z][a-z0-9+.-]*://|\bwww\.|\]\s*\(|\bmailto:|[^\s@]+@[^\s@]+\.[a-z]{2,}',
+  r'[a-z][a-z0-9+.-]*://|\bwww\.|\]\s*\(|\bmailto:|[^\s@]+@[^\s@]+\.[a-z]{2,}|\b\d{1,3}(\.\d{1,3}){3}\b',
   caseSensitive: false,
 );
 
@@ -405,18 +417,27 @@ final RegExp _edgeStart = RegExp(r'^[\p{P}\s]+', unicode: true);
 final RegExp _edgeEnd = RegExp(r'[\p{P}\s]+$', unicode: true);
 
 /// [text] without quotes, markdown marks or emoji. A single quote between
-/// two letters is an apostrophe, and stays.
+/// two letters is an apostrophe, and stays; so does a zero-width joiner or
+/// non-joiner inside a word, where a script spells with it.
 String _undecorated(String text) {
   final runes = text.runes.toList();
   bool letterAt(int i) =>
       i >= 0 &&
       i < runes.length &&
       _letterOrDigit.hasMatch(String.fromCharCode(runes[i]));
+  bool inWordAt(int i) =>
+      i >= 0 &&
+      i < runes.length &&
+      _inWord.hasMatch(String.fromCharCode(runes[i]));
   final out = StringBuffer();
   for (var i = 0; i < runes.length; i++) {
     final rune = runes[i];
     if (_marks.contains(rune) || _isEmoji(rune)) continue;
     if (_singleQuotes.contains(rune) && !(letterAt(i - 1) && letterAt(i + 1))) {
+      continue;
+    }
+    if ((rune == 0x200C || rune == 0x200D) &&
+        !(inWordAt(i - 1) && inWordAt(i + 1))) {
       continue;
     }
     out.writeCharCode(rune);
@@ -425,6 +446,7 @@ String _undecorated(String text) {
 }
 
 final Set<int> _marks = '"“”„«»‹›`*_#~'.runes.toSet();
+final RegExp _inWord = RegExp(r'[\p{L}\p{M}\p{N}]', unicode: true);
 final Set<int> _singleQuotes = "'‘’".runes.toSet();
 
 bool _isEmoji(int rune) =>
@@ -432,7 +454,6 @@ bool _isEmoji(int rune) =>
     (rune >= 0x2600 && rune <= 0x27BF) ||
     (rune >= 0x2B00 && rune <= 0x2BFF) ||
     rune == 0xFE0F ||
-    rune == 0x200D ||
     rune == 0x20E3;
 
 final RegExp _refusal = RegExp(

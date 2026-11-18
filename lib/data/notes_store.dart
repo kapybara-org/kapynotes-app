@@ -357,6 +357,32 @@ class NotesStore extends ChangeNotifier {
     return true;
   }
 
+  /// Gives a blank note left by an older build the [Note.blankBody] a new
+  /// note starts with, as it is taken for a new one. The app's own words, so
+  /// not writing.
+  void startAsNew(String id) {
+    final index = indexOf(id);
+    if (index < 0) return;
+    final existing = _notes[index];
+    if (existing.body == Note.blankBody || !existing.isEmpty) return;
+    final edit = (
+      start: 0,
+      oldEnd: existing.body.length,
+      newEnd: Note.blankBody.length,
+    );
+    final earlier = _edits[id];
+    _edits[id] = earlier == null ? edit : composeEdits(earlier, edit);
+    _replace(
+      index,
+      existing.copyWith(
+        body: Note.blankBody,
+        formats: const [],
+        updatedAt: _now(),
+      ),
+      toFront: true,
+    );
+  }
+
   /// Puts [title] in place of [id]'s first line, moving the formats and
   /// attachments after it along. The app's own words, so not writing.
   /// Returns whether the note changed.
