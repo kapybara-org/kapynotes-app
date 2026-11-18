@@ -13,11 +13,15 @@ final class MenuBarPanel: NSObject, NSWindowDelegate {
   /// setter asserts once any view exists, and the window's always exists
   /// first. Set directly, the window stays the implicit view and the panel
   /// gets the next id. An engine that renames it has no panel: the Dart side
-  /// is told so, and a click on the icon opens the menu instead.
+  /// is told so, and a click on the icon opens the menu instead. So is one
+  /// whose switch is no longer a BOOL, which key-value coding could not set.
   static let multiViewIvar = "_multiViewEnabled"
 
   static func isSupported(by engine: AnyClass = FlutterEngine.self) -> Bool {
-    class_getInstanceVariable(engine, multiViewIvar) != nil
+    guard let ivar = class_getInstanceVariable(engine, multiViewIvar),
+          let type = ivar_getTypeEncoding(ivar)
+    else { return false }
+    return ["B", "c"].contains(String(cString: type))
   }
 
   static let width: CGFloat = 360
@@ -49,7 +53,7 @@ final class MenuBarPanel: NSObject, NSWindowDelegate {
     case "isControlPressed":
       result(NSEvent.modifierFlags.contains(.control))
     case "show":
-      guard Self.isSupported() else {
+      guard Self.isSupported(), !NSScreen.screens.isEmpty else {
         result(nil)
         return
       }
@@ -119,9 +123,10 @@ final class MenuBarPanel: NSObject, NSWindowDelegate {
   /// The item is never under the notch, so neither is the panel.
   private func place(_ panel: Panel, height: Double) {
     let item = NSApp.windows.first { $0.className == "NSStatusBarWindow" }?.frame
-    let screen = NSScreen.screens.first { item.map($0.frame.intersects) ?? false }
+    guard let screen = NSScreen.screens.first(where: { item.map($0.frame.intersects) ?? false })
       ?? NSScreen.main
-      ?? NSScreen.screens[0]
+      ?? NSScreen.screens.first
+    else { return }
     let visible = screen.visibleFrame
     let anchor = item ?? NSRect(x: visible.maxX - 24, y: visible.maxY, width: 0, height: 0)
     let margin: CGFloat = 6

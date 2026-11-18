@@ -1,24 +1,28 @@
 // The menu bar panel on a real engine: a second Flutter view in a native
-// panel, which flutter test cannot host. This opens it through the same
-// channel the menu bar icon uses, times each opening, and then captures,
-// switches tabs and checks a task in it with synthetic events.
-//
-// The panel opens without becoming key, so nothing on the Mac loses focus,
-// and with no menu bar icon in this run it sits in the top-right corner. The
-// stores are in memory: nothing is read from or written to the app's own
-// files, and sync is never constructed.
+// panel, which flutter test cannot host. The stores are in memory, so nothing
+// is read from or written to the app's own files and sync is never built.
 //
 //   flutter build macos --profile -t integration_test/menu_bar_panel_test.dart \
 //     --dart-define=KAPYNOTES_SYNC=false
 //   open -g --stdout out.txt "build/macos/Build/Products/Profile/Kapy Notes.app"
 //
-// Each run prints MENUBAR_OPEN_MS with the cold, median and slowest opening.
+// By default the panel opens through the icon's channel without becoming key,
+// so nothing on the Mac loses focus: each opening is timed (MENUBAR_OPEN_MS)
+// and capture, the tabs and checking are driven with synthetic events.
+//
+// With --dart-define=MENUBAR_REAL_KEYS=true it instead puts the real icon in
+// the menu bar, opens the panel as a click on it does, and waits, at most
+// 60 s, for an outside driver to type with real key events, then prints what
+// the panel saved (MENUBAR_KEYS).
+// The driver ends the wait by creating menubar-keys-done in the app's temp
+// directory.
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:kapy_notes/core/app_tray.dart';
 import 'package:kapy_notes/core/menu_bar_panel.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -30,6 +34,8 @@ import 'package:kapy_notes/ui/menu_bar_panel.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
+
+const _realKeys = bool.fromEnvironment('MENUBAR_REAL_KEYS');
 
 class _MemoryStore extends LocalStore {
   _MemoryStore() : super(fileName: 'menu-bar-panel-integration.json');
@@ -45,6 +51,82 @@ class _MemoryStore extends LocalStore {
 
   @override
   void putNow(String key, Object? value) => data[key] = value;
+}
+
+typedef _Panel = ({
+  NotesStore notes,
+  TasksController tasks,
+  LayoutPrefs prefs,
+  MenuBarPanelController controller,
+  List<String> opened,
+});
+
+/// The panel as the app wires it, on in-memory stores, with the main window
+/// hidden so that nothing but the panel is ever on screen.
+Future<_Panel> _pumpPanel(WidgetTester tester, {required bool takesKey}) async {
+  await windowManager.ensureInitialized();
+  await windowManager.hide();
+
+  final store = _MemoryStore();
+  final notes = NotesStore(store);
+  await notes.load();
+  final library = TaskLibrary(
+    notes: notes,
+    store: store,
+    storage: MemoryDocStorage(),
+  );
+  await library.load();
+  final tasks = TasksController(
+    notes: notes,
+    library: library,
+    canEdit: (_) => true,
+  );
+  final prefs = LayoutPrefs(store)..load();
+  final shortcuts = ShortcutPrefs(store)..load();
+  final controller = MenuBarPanelController(takesKey: takesKey);
+  final opened = <String>[];
+  addTearDown(() async {
+    await controller.close();
+    controller.dispose();
+    tasks.dispose();
+    library.dispose();
+  });
+
+  expect(await controller.isSupported, isTrue);
+
+  await tester.pumpWidget(
+    ViewAnchor(
+      view: MenuBarPanelView(
+        controller: controller,
+        prefs: prefs,
+        panel: (context) => MenuBarPanel(
+          controller: controller,
+          notes: notes,
+          tasks: tasks,
+          prefs: prefs,
+          shortcuts: shortcuts,
+          canEdit: (_) => true,
+          inWindow: (act) async => act((
+            openNote: (id) => opened.add('note $id'),
+            openTasks: () => opened.add('tasks'),
+            find: () => opened.add('find'),
+            newTask: () => opened.add('new task'),
+            openSettings: () => opened.add('settings'),
+            explainNoteLimit: () => opened.add('limit'),
+          )),
+          now: notes.now,
+        ),
+      ),
+      child: const SizedBox.shrink(),
+    ),
+  );
+  return (
+    notes: notes,
+    tasks: tasks,
+    prefs: prefs,
+    controller: controller,
+    opened: opened,
+  );
 }
 
 /// Types into the panel's field. A live binding has no test text input, so
@@ -81,61 +163,9 @@ void main() {
   testWidgets('the menu bar panel opens, captures and checks in place', (
     tester,
   ) async {
-    await windowManager.ensureInitialized();
-    await windowManager.hide();
-
-    final store = _MemoryStore();
-    final notes = NotesStore(store);
-    await notes.load();
-    final library = TaskLibrary(
-      notes: notes,
-      store: store,
-      storage: MemoryDocStorage(),
-    );
-    await library.load();
-    final tasks = TasksController(
-      notes: notes,
-      library: library,
-      canEdit: (_) => true,
-    );
-    final prefs = LayoutPrefs(store)..load();
-    final shortcuts = ShortcutPrefs(store)..load();
-    final controller = MenuBarPanelController(takesKey: false);
-    final opened = <String>[];
-    addTearDown(() async {
-      await controller.close();
-      controller.dispose();
-      tasks.dispose();
-      library.dispose();
-    });
-
-    expect(await controller.isSupported, isTrue);
-
-    await tester.pumpWidget(
-      ViewAnchor(
-        view: MenuBarPanelView(
-          controller: controller,
-          prefs: prefs,
-          panel: (context) => MenuBarPanel(
-            controller: controller,
-            notes: notes,
-            tasks: tasks,
-            prefs: prefs,
-            shortcuts: shortcuts,
-            canEdit: (_) => true,
-            inWindow: (act) async => act((
-              openNote: (id) => opened.add('note $id'),
-              openTasks: () => opened.add('tasks'),
-              find: () => opened.add('find'),
-              newTask: () => opened.add('new task'),
-              openSettings: () => opened.add('settings'),
-              explainNoteLimit: () => opened.add('limit'),
-            )),
-            now: notes.now,
-          ),
-        ),
-        child: const SizedBox.shrink(),
-      ),
+    final (:notes, :tasks, :prefs, :controller, :opened) = await _pumpPanel(
+      tester,
+      takesKey: false,
     );
 
     // From the icon's click to the panel shown with its first frame drawn.
@@ -214,5 +244,39 @@ void main() {
     } finally {
       await hotKeyManager.unregisterAll();
     }
-  });
+  }, skip: _realKeys);
+
+  testWidgets('the menu bar panel takes real keys', (tester) async {
+    final (:notes, :tasks, :prefs, :controller, :opened) = await _pumpPanel(
+      tester,
+      takesKey: true,
+    );
+    final tray = AppTray(
+      onOpen: () => opened.add('open'),
+      onNewNote: () => opened.add('new note'),
+      onNewTask: () => opened.add('new task'),
+      onSettings: () => opened.add('settings'),
+      onQuit: () => opened.add('quit'),
+      onClick: controller.click,
+    );
+    addTearDown(tray.dispose);
+    await tray.setVisible(true);
+    // The icon takes no accessibility press (tray_manager reads mouse events
+    // on a view over the button), so the panel opens the way a click would.
+    expect(await controller.click(), isTrue);
+    stdout.writeln('MENUBAR_KEYS ready');
+
+    final done = File('${Directory.systemTemp.path}/menubar-keys-done');
+    final until = DateTime.now().add(const Duration(seconds: 60));
+    while (!done.existsSync() && DateTime.now().isBefore(until)) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    await tasks.reconcileNow();
+    stdout.writeln(
+      'MENUBAR_KEYS notes=${notes.notes.map((note) => note.title).toList()} '
+      'tasks=${tasks.read().open.map((item) => item.words).toList()} '
+      'open=${controller.isOpen} tasksTab=${prefs.menuBarOpensTasks} '
+      'window=$opened',
+    );
+  }, skip: !_realKeys);
 }

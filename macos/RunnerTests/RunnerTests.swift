@@ -32,4 +32,17 @@ class RunnerTests: XCTestCase {
     XCTAssertFalse(MenuBarPanel.isSupported(by: NSObject.self))
   }
 
+  /// A switch that is no longer a BOOL would make key-value coding raise, so
+  /// an engine like that gets no panel either.
+  func testMenuBarPanelRefusesASwitchThatIsNotABool() {
+    func engine(_ name: String, switchType: String) -> AnyClass {
+      let engine: AnyClass = objc_allocateClassPair(NSObject.self, name, 0)!
+      class_addIvar(engine, MenuBarPanel.multiViewIvar, 8, 3, switchType)
+      objc_registerClassPair(engine)
+      return engine
+    }
+    XCTAssertTrue(MenuBarPanel.isSupported(by: engine("KapyBoolEngine", switchType: "B")))
+    XCTAssertFalse(MenuBarPanel.isSupported(by: engine("KapyObjectEngine", switchType: "@")))
+  }
+
 }

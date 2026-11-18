@@ -32,6 +32,10 @@ class MenuBarPanelController extends ChangeNotifier with WidgetsBindingObserver 
 
   static const double maxHeight = 600;
 
+  /// How long the engine has to put the panel's view on screen and draw it.
+  /// An engine that takes the panel but never shows it gets the menu back.
+  static const Duration showTimeout = Duration(seconds: 2);
+
   final MethodChannel _channel;
 
   /// False only where nothing may take the keyboard: the panel then opens
@@ -78,12 +82,12 @@ class MenuBarPanelController extends ChangeNotifier with WidgetsBindingObserver 
 
   /// What a plain click on the icon does: opens or closes the panel, and
   /// answers true; or answers false when the menu should open instead,
-  /// because there is no panel here or ⌃ is held.
+  /// because there is no panel here, ⌃ is held, or the panel never showed.
   Future<bool> click() async {
     if (!await isSupported) return false;
     if (await _ask<bool>('isControlPressed') ?? false) return false;
     await toggle();
-    return true;
+    return isSupported;
   }
 
   Future<void> toggle() => _open ? close() : open();
@@ -98,6 +102,18 @@ class MenuBarPanelController extends ChangeNotifier with WidgetsBindingObserver 
       return;
     }
     _viewId = id;
+    final shown = await _drawAndReveal().timeout(
+      showTimeout,
+      onTimeout: () => false,
+    );
+    if (shown) return;
+    _open = false;
+    _supported = Future.value(false);
+    notifyListeners();
+    await _ask<void>('hide');
+  }
+
+  Future<bool> _drawAndReveal() async {
     if (view == null) {
       _arrival = Completer<void>();
       await _arrival!.future;
@@ -108,8 +124,8 @@ class MenuBarPanelController extends ChangeNotifier with WidgetsBindingObserver 
     // A first frame that found the panel the wrong height has asked for the
     // right one; the frame after it is the one to show.
     if (_resized) await WidgetsBinding.instance.endOfFrame;
-    if (!_open) return;
-    await _ask<void>('reveal');
+    if (_open) await _ask<void>('reveal');
+    return true;
   }
 
   Future<void> close() async {

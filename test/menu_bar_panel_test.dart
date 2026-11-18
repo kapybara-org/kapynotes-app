@@ -636,6 +636,37 @@ void main() {
       await golden(tester, 'empty_dark');
     });
   });
+
+  testWidgets('an engine that never shows the panel gives the menu back', (
+    tester,
+  ) async {
+    const channel = MethodChannel('test/menubar_panel_never_shown');
+    final calls = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      calls.add(call.method);
+      return switch (call.method) {
+        'isSupported' => true,
+        'isControlPressed' => false,
+        'show' => 7,
+        _ => null,
+      };
+    });
+    final panel = MenuBarPanelController(channel: channel);
+    addTearDown(panel.dispose);
+
+    final clicked = panel.click();
+    await tester.pump(MenuBarPanelController.showTimeout);
+    expect(await clicked, isFalse, reason: 'the icon opens its menu');
+    expect(panel.isOpen, isFalse);
+    expect(calls, containsAllInOrder(['show', 'hide']));
+    expect(calls, isNot(contains('reveal')));
+
+    calls.clear();
+    expect(await panel.click(), isFalse, reason: 'and keeps it this session');
+    expect(calls, isEmpty);
+  });
 }
 
 /// A recorder with no microphone behind it, which only remembers its file.
