@@ -1085,6 +1085,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       fallbackId: preferred ?? available.firstOrNull?.id,
     );
     _adoptWorkspaceSelection(previous);
+    final parked = widget.notes.byId(_noteBeforeSpace);
+    if (parked == null || parked.isHidden || parked.isArchived) {
+      _noteBeforeSpace = _openedBySpace = null;
+    }
     if (available.isEmpty && _usesCompactLayout) _scheduleInitialNote();
   }
 
@@ -2422,7 +2426,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Empty on a personal note, and while the account is still locked: there is
   /// no roster to read until the keyring is open.
   List<SpaceMember> get _selectedMembers {
-    final note = widget.notes.byId(_selectedId);
+    final note = _shownNote(_selectedId);
     final sharing = widget.account?.sharing;
     if (note == null || !note.isShared || sharing == null) return const [];
     return sharing.spaceById(note.spaceId)?.members ?? const [];
@@ -2448,7 +2452,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   List<Collaborator> get _selectedPresence {
     final id = _selectedId;
     final sync = widget.account?.sync;
-    if (id == null || sync == null) return const [];
+    if (id == null || sync == null || _shownNote(id) == null) return const [];
     return sync.collaboratorsIn(id);
   }
 
@@ -2536,8 +2540,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _openKapyAi({String? question}) {
     final ai = _kapyAi;
     if (ai == null || !ai.enabled) return;
-    final noteId = _selectedId != null && _kapyNoteTitle(_selectedId!) != null
-        ? _selectedId
+    final shown = _shownNote(_selectedId)?.id;
+    final noteId = shown != null && _kapyNoteTitle(shown) != null
+        ? shown
         : null;
     final draft = question != null && ai.answering ? question : null;
     if (question != null && draft == null) {
@@ -2766,7 +2771,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : (noteId) => [
               for (final tag in widget.tags!.tagsOf(noteId)) tagMarkOf(tag),
             ],
-      tagNote: _tasksMode ? null : widget.notes.byId(_selectedId),
+      tagNote: _tasksMode ? null : _shownNote(_selectedId),
       settingsIndex: (lend) => SettingsDialog(
         onIndex: lend,
         kapyAi: _kapyAi,
@@ -2953,7 +2958,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// holds an item of the section the list is showing. The note a space
   /// does not hold stays open underneath, and comes back with its space.
   bool _inSpace(Note note) =>
-      _tasksMode || _specialMode || _narrowed([note]).isNotEmpty;
+      _mayRevealInCurrentCollection(note) &&
+      (_tasksMode || _specialMode || _narrowed([note]).isNotEmpty);
 
   /// The note on the page, or null where there is none or it is in another
   /// space.
@@ -3084,7 +3090,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _buildWide(BuildContext context) {
-    final selected = widget.notes.byId(_selectedId);
+    final selected = _shownNote(_selectedId);
     // A tablet reaches this layout too, and it has no Scaffold to resize
     // around the software keyboard. Desktop reports zero here.
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
