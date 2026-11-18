@@ -680,6 +680,22 @@ class NoteFieldState extends State<NoteField>
     if (!widget.focusNode.hasFocus) widget.focusNode.requestFocus();
   }
 
+  /// Takes the value an undo or redo restores, exactly, as [UndoHistory]
+  /// requires, then moves the caret to the text the step changed before the
+  /// frame reveals it.
+  void _undoOrRedo(TextEditingValue value) {
+    final caret = _caretAfterStep(_value, value);
+    userUpdateTextEditingValue(value, SelectionChangedCause.keyboard);
+    if (caret == value.selection) return;
+    scheduleMicrotask(() {
+      if (!mounted || _value.text != value.text) return;
+      userUpdateTextEditingValue(
+        _value.copyWith(selection: caret),
+        SelectionChangedCause.keyboard,
+      );
+    });
+  }
+
   void _formatAndSetValue(
     TextEditingValue value,
     SelectionChangedCause? cause,
@@ -2081,8 +2097,7 @@ class NoteFieldState extends State<NoteField>
         value: _controller,
         controller: widget.undoController,
         focusNode: widget.focusNode,
-        onTriggered: (value) =>
-            userUpdateTextEditingValue(value, SelectionChangedCause.keyboard),
+        onTriggered: _undoOrRedo,
         shouldChangeUndoStack: (oldValue, newValue) {
           if (!newValue.selection.isValid) return false;
           if (oldValue == null) return true;
@@ -2411,3 +2426,35 @@ class _CaretBlink extends Simulation {
 }
 
 bool _isLowSurrogate(int unit) => unit & 0xFC00 == 0xDC00;
+
+/// Where the caret goes when undo or redo turns [from] into [to]: after the
+/// text the step brings back, or where the text it takes away was, rather
+/// than wherever it stood when [to] was recorded. A step that keeps the
+/// text's length, such as ticking a box, leaves the caret where it is.
+TextSelection _caretAfterStep(TextEditingValue from, TextEditingValue to) {
+  final before = from.text;
+  final after = to.text;
+  if (before == after) return to.selection;
+  if (before.length == after.length && from.selection.isValid) {
+    return from.selection;
+  }
+  final shorter = math.min(before.length, after.length);
+  var start = 0;
+  while (start < shorter &&
+      before.codeUnitAt(start) == after.codeUnitAt(start)) {
+    start++;
+  }
+  var end = 0;
+  while (end < shorter - start &&
+      before.codeUnitAt(before.length - 1 - end) ==
+          after.codeUnitAt(after.length - 1 - end)) {
+    end++;
+  }
+  var offset = after.length - end;
+  if (offset > 0 &&
+      offset < after.length &&
+      _isLowSurrogate(after.codeUnitAt(offset))) {
+    offset++;
+  }
+  return TextSelection.collapsed(offset: offset);
+}

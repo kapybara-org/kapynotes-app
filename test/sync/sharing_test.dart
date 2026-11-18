@@ -39,7 +39,12 @@ DateTime now = DateTime.utc(2026, 9, 1);
 
 /// One person on one device: their own master key and storage.
 class Person {
-  Person(this.server, {required this.userId, required this.device}) {
+  Person(
+    this.server, {
+    required this.userId,
+    required this.device,
+    this.typingIdle = const Duration(milliseconds: 300),
+  }) {
     server.seedBundle(userId);
     store = MemoryStore();
     store.data['sync.v1'] = {'deviceId': deviceIdFor(device)};
@@ -63,7 +68,7 @@ class Person {
       now: () => now,
       sendDelay: const Duration(milliseconds: 1),
       presenceThrottle: const Duration(milliseconds: 1),
-      typingIdle: const Duration(milliseconds: 300),
+      typingIdle: typingIdle,
       presenceLinger: const Duration(milliseconds: 60),
     );
     sharing = Sharing(
@@ -78,6 +83,7 @@ class Person {
   final FakeServer server;
   final String userId;
   final String device;
+  final Duration typingIdle;
   late final MemoryStore store;
   late final NotesStore notes;
   late final SyncState state;
@@ -242,6 +248,16 @@ void main() {
     test(
       'shows who is typing by name and clears them when they stop',
       () async {
+        // Typing must outlast a pass that a loaded machine slows down; this
+        // test is about the name, not the expiry.
+        alice.dispose();
+        alice = Person(
+          server,
+          userId: 'user-1',
+          device: 'alice-mac',
+          typingIdle: const Duration(seconds: 30),
+        );
+        await alice.boot();
         final note = await shareWithBob('Together');
         await alice.goLive();
         await bob.goLive();
@@ -500,6 +516,8 @@ void main() {
         final space = bob.sharing.teams.single;
         bob.tick();
         final fresh = bob.sharing.createNoteIn(space.id);
+        expect(fresh.body, Note.blankBody, reason: 'it starts as New Note');
+        expect(bob.notes.namesHere(fresh.id), isTrue);
         bob.notes.updateBody(fresh.id, 'Written by Bob');
         await bob.sync.syncNow();
         alice.tick(2);

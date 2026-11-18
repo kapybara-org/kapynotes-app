@@ -131,11 +131,36 @@ class TaskSync {
     return _running = _loop().whenComplete(() => _running = null);
   }
 
+  /// Why the server last refused what this sent, until a pass goes through.
+  /// Tasks, tags and chats travel here, so the sync status says so rather
+  /// than reading as synced without them.
+  String? get refusal => _refusal;
+  String? _refusal;
+
+  /// Told when [refusal] changes.
+  void Function()? onRefusal;
+
+  void _refused(String? refusal) {
+    if (refusal == _refusal) return;
+    _refusal = refusal;
+    onRefusal?.call();
+  }
+
   Future<void> _loop() async {
     do {
       _again = false;
       try {
         await _pass();
+        _refused(null);
+      } on SyncRefusedException catch (error) {
+        // Not Pro, or a server from before tasks: nothing is wrong to show.
+        if (error.code == proRequiredCode || error.status == 404) return;
+        _refused(
+          error.code == 'too many tasks'
+              ? 'Too many tasks to sync. Delete some to sync again.'
+              : 'Tasks and tags could not sync (${error.code}).',
+        );
+        return;
       } on SyncException catch (error) {
         debugPrint('KapyNotes: tasks not synced: ${error.message}');
         return;

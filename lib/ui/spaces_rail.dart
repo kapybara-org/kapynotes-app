@@ -537,7 +537,7 @@ class _RailAccount extends StatelessWidget {
     SyncStatus.idle => 'Synced',
     SyncStatus.syncing => 'Syncing…',
     SyncStatus.offline => 'Offline. Will retry',
-    SyncStatus.signedOut => 'Session expired. Sign in again',
+    SyncStatus.signedOut => 'Checking your sign-in. Will retry',
     SyncStatus.locked => 'Locked',
     SyncStatus.outdated => 'Sync needs a newer version',
     SyncStatus.failed => 'Sync failed',

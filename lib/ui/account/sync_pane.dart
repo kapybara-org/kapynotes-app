@@ -14,6 +14,7 @@ import '../../sync/account.dart';
 import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
 import 'recovery_key_dialog.dart';
+import 'sign_out_others_row.dart';
 import '../control_surface.dart';
 import '../profile_avatar.dart';
 import '../settings_rows.dart';
@@ -311,7 +312,9 @@ class _SignInFormState extends State<_SignInForm> {
           'Enter the code sent to $_address and choose a new password.',
         _SignInStep.resetRequest =>
           'We will email a reset code. Your passphrase and notes will not change.',
-        _ => 'Sync encrypted notes across your devices.',
+        _ =>
+          widget.account.signedOutReason ??
+              'Sync encrypted notes across your devices.',
       },
       children: [
         ..._fields(),
@@ -995,7 +998,7 @@ class _ReadyState extends State<_Ready> {
   String get _syncStatus => switch (account.sync?.status) {
     SyncStatus.syncing => 'Syncing…',
     SyncStatus.offline => 'Offline. Will retry',
-    SyncStatus.signedOut => 'Session expired. Sign in again',
+    SyncStatus.signedOut => 'Checking your sign-in. Will retry',
     SyncStatus.failed => account.sync?.lastError ?? 'Sync failed',
     SyncStatus.locked => 'Locked',
     _ => _lastSynced,
@@ -1091,6 +1094,7 @@ class _ReadyState extends State<_Ready> {
               ),
             ),
           ),
+          SignOutOthersRow(account: account),
           SettingsRow(
             title: 'Delete account',
             subtitle: 'Deletes synced notes from the server, for good',

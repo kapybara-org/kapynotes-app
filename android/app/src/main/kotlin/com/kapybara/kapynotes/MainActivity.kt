@@ -20,6 +20,7 @@ import io.flutter.plugin.common.MethodChannel
  */
 class MainActivity : FlutterFragmentActivity() {
     private var pendingLaunch: String? = null
+    private var noteTitles: NoteTitles? = null
 
     /**
      * Lets code Play delivered after install — the speech runtime module —
@@ -37,6 +38,7 @@ class MainActivity : FlutterFragmentActivity() {
         AudioDecode.register(flutterEngine.dartExecutor.binaryMessenger)
         SpeechRuntime.register(flutterEngine.dartExecutor.binaryMessenger, this) { this }
         SystemRegion.register(flutterEngine.dartExecutor.binaryMessenger)
+        noteTitles = NoteTitles.register(flutterEngine.dartExecutor.binaryMessenger)
         FileExport.register(flutterEngine.dartExecutor.binaryMessenger) { this }
         pendingLaunch = takeLaunchName(intent)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -49,6 +51,12 @@ class MainActivity : FlutterFragmentActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        noteTitles?.close()
+        noteTitles = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     /**

@@ -122,6 +122,21 @@ class TasksScreenState extends State<TasksScreen> {
     unawaited(_tasks.setDone(item, done: true));
   }
 
+  /// A click on a row's mark: none, then picked, then Do now, then none
+  /// again. Picking by hand ends the questions about that task, so a task
+  /// picked last stays picked until it is clicked again.
+  void _cycleMark(TaskItem item) {
+    if (item.doNow) {
+      _autoPicked = null;
+      _tasks.clearPick(item);
+    } else if (item.dotted) {
+      _tasks.doNow(item);
+    } else {
+      _autoPicked = item.id;
+      _tasks.dot(item);
+    }
+  }
+
   void _notFinished(TaskItem item) {
     setState(() => _resumeAfter = item.entry.position);
     _tasks.sendToEnd(item);
@@ -194,12 +209,23 @@ class TasksScreenState extends State<TasksScreen> {
       return LayoutBuilder(
         builder: (context, constraints) {
           final width = math.min(700.0, constraints.maxWidth - 48);
+          final reach = widget.filter.done || AppPlatform.hasPointer
+              ? 0.0
+              : _markReach;
           return SingleChildScrollView(
             padding: const EdgeInsets.only(top: 20, bottom: 48),
-            child: Center(
-              child: SizedBox(
-                width: width,
-                child: widget.filter.done ? _done(board) : _today(board),
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: (constraints.maxWidth - width) / 2 - reach,
+                ),
+                child: SizedBox(
+                  width: width + reach,
+                  child: widget.filter.done
+                      ? _done(board)
+                      : _today(board, reach),
+                ),
               ),
             ),
           );
@@ -208,7 +234,7 @@ class TasksScreenState extends State<TasksScreen> {
     },
   );
 
-  Widget _today(TaskBoard board) {
+  Widget _today(TaskBoard board, double reach) {
     final palette = context.palette;
     final now = _tasks.now();
     final open = _open(board);
@@ -221,89 +247,114 @@ class TasksScreenState extends State<TasksScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 10, bottom: 18),
+          padding: EdgeInsets.only(left: reach),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const _TodayTitle(),
-              const SizedBox(height: 10),
-              NoteMetaRow(
-                edited: SidebarTimestamp.fullDay(now),
-                done: doneToday,
-                tasks: doneToday + open.length,
-                today: true,
-              ),
-            ],
-          ),
-        ),
-        _AddRow(
-          controller: _words,
-          focus: widget.addFocus,
-          shortcut: widget.newTaskShortcut,
-          target: _addInto == null ? null : _tasks.notes.byId(_addInto),
-          labelOf: widget.labelOf,
-          choices: _pickerNotes(board),
-          onChoose: (noteId) => setState(() {
-            _target = noteId;
-            _targetChosen = true;
-          }),
-          onSubmit: () => unawaited(_add()),
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 160),
-          child: _notice
-              ? Padding(
-                  padding: const EdgeInsets.only(left: 36, top: 8),
-                  child: Text(
-                    'Added to the end of the list',
-                    key: const ValueKey('tasks-added-notice'),
-                    style: uiStyle(13, 16, FontWeight.w500, palette.accentText),
-                  ),
-                )
-              : const SizedBox(width: double.infinity),
-        ),
-        const SizedBox(height: 14),
-        if (doNow != null)
-          _DoNowCard(
-            item: doNow,
-            label: board.isHome(doNow) ? null : widget.labelOf(doNow.note),
-            onOpenNote: () => widget.onOpenNote(doNow.note.id),
-            onNotFinished: () => _notFinished(doNow),
-            onDone: completeDoNow,
-          )
-        else if (open.isNotEmpty)
-          _picker(board, open),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 22, 10, 6),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                'The list',
-                style: handStyle(
-                  15,
-                  22,
-                  FontWeight.w600,
-                  palette.textSubheading,
+              Padding(
+                padding: const EdgeInsets.only(left: 10, bottom: 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _TodayTitle(),
+                    const SizedBox(height: 10),
+                    NoteMetaRow(
+                      edited: SidebarTimestamp.fullDay(now),
+                      done: doneToday,
+                      tasks: doneToday + open.length,
+                      today: true,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                '${open.length}',
-                style: uiStyle(12, 16, FontWeight.w600, palette.textTertiary),
+              _AddRow(
+                controller: _words,
+                focus: widget.addFocus,
+                shortcut: widget.newTaskShortcut,
+                target: _addInto == null ? null : _tasks.notes.byId(_addInto),
+                labelOf: widget.labelOf,
+                choices: _pickerNotes(board),
+                onChoose: (noteId) => setState(() {
+                  _target = noteId;
+                  _targetChosen = true;
+                }),
+                onSubmit: () => unawaited(_add()),
               ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 160),
+                child: _notice
+                    ? Padding(
+                        padding: const EdgeInsets.only(left: 36, top: 8),
+                        child: Text(
+                          'Added to the end of the list',
+                          key: const ValueKey('tasks-added-notice'),
+                          style: uiStyle(
+                            13,
+                            16,
+                            FontWeight.w500,
+                            palette.accentText,
+                          ),
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
+              ),
+              const SizedBox(height: 14),
+              if (doNow != null)
+                _DoNowCard(
+                  item: doNow,
+                  label: board.isHome(doNow)
+                      ? null
+                      : widget.labelOf(doNow.note),
+                  onOpenNote: () => widget.onOpenNote(doNow.note.id),
+                  onNotFinished: () => _notFinished(doNow),
+                  onDone: completeDoNow,
+                )
+              else if (open.isNotEmpty)
+                _picker(board, open),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 22, 10, 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      'The list',
+                      style: handStyle(
+                        15,
+                        22,
+                        FontWeight.w600,
+                        palette.textSubheading,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${open.length}',
+                      style: uiStyle(
+                        12,
+                        16,
+                        FontWeight.w600,
+                        palette.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (open.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                  child: Text(
+                    'Nothing on the list.',
+                    style: uiStyle(
+                      14,
+                      20,
+                      FontWeight.w500,
+                      palette.textTertiary,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
-        if (open.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
-            child: Text(
-              'Nothing on the list.',
-              style: uiStyle(14, 20, FontWeight.w500, palette.textTertiary),
-            ),
-          ),
         for (final item in open)
           _TaskRow(
             key: ValueKey(item.id),
@@ -311,6 +362,7 @@ class TasksScreenState extends State<TasksScreen> {
             now: _tasks.now(),
             label: board.isHome(item) ? null : widget.labelOf(item.note),
             wash: item.id == _washId,
+            onMark: () => _cycleMark(item),
             onTick: () => unawaited(_tasks.setDone(item, done: true)),
             onOpenNote: () => widget.onOpenNote(item.note.id),
             onKeep: () => _tasks.keep(item),
@@ -346,7 +398,7 @@ class TasksScreenState extends State<TasksScreen> {
       return _ReadyCard(
         item: first,
         label: labelOf(first),
-        onYes: () => _tasks.doNow(first, open),
+        onYes: () => _tasks.doNow(first),
         onNotYet: () => _tasks.dot(first),
       );
     }
@@ -360,7 +412,7 @@ class TasksScreenState extends State<TasksScreen> {
       if (_autoPicked != benchmark.id) {
         _autoPicked = benchmark.id;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _tasks.doNow(benchmark, _open(_tasks.read()));
+          if (mounted) _tasks.doNow(benchmark);
         });
       }
       return const SizedBox.shrink();
@@ -375,7 +427,7 @@ class TasksScreenState extends State<TasksScreen> {
         setState(() => _allCandidates = false);
         _tasks.dot(item);
       },
-      onNone: () => _tasks.doNow(benchmark, open),
+      onNone: () => _tasks.doNow(benchmark),
     );
   }
 
@@ -1196,6 +1248,21 @@ class _Dot extends StatelessWidget {
   );
 }
 
+/// What a click on a hovered row would pick: the dot, hollow and faint.
+class _HollowDot extends StatelessWidget {
+  const _HollowDot();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 8,
+    height: 8,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(color: context.palette.textTertiary, width: 1.2),
+    ),
+  );
+}
+
 /// Do now's mark in the gutter: the dot, ringed.
 class _Ring extends StatelessWidget {
   const _Ring();
@@ -1263,6 +1330,10 @@ class _Box extends StatelessWidget {
   }
 }
 
+/// How far a touch row's mark reaches into the page margin, so the target is
+/// 44 points wide while the dot and the words stay where the desktop has them.
+const double _markReach = 24;
+
 /// One task in the list: its mark in the gutter, its box and words, and at
 /// the end what is worth knowing about it.
 class _TaskRow extends StatefulWidget {
@@ -1272,6 +1343,7 @@ class _TaskRow extends StatefulWidget {
     required this.now,
     required this.label,
     required this.wash,
+    required this.onMark,
     required this.onTick,
     required this.onOpenNote,
     required this.onKeep,
@@ -1286,6 +1358,9 @@ class _TaskRow extends StatefulWidget {
 
   /// Just added: a sage wash that fades.
   final bool wash;
+
+  /// A click on the mark: picks the task, makes it Do now, or clears it.
+  final VoidCallback onMark;
   final VoidCallback onTick;
   final VoidCallback onOpenNote;
   final VoidCallback onKeep;
@@ -1308,21 +1383,50 @@ class _TaskRowState extends State<_TaskRow> {
         widget.now.millisecondsSinceEpoch - item.lastTouched >=
             TaskBoard.staleAfter.inMilliseconds;
     final quiet = uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary);
-    Widget mark;
-    if (item.doNow) {
-      mark = const Tooltip(message: 'Do now: your last pick', child: _Ring());
-    } else if (item.dotted) {
-      mark = const Tooltip(message: 'Picked to do next', child: _Dot());
-    } else {
-      mark = const SizedBox.shrink();
-    }
+    final touch = !AppPlatform.hasPointer;
+    final (Widget mark, String tip, String action) = item.doNow
+        ? (const _Ring(), 'Do now · click to clear', 'Clear pick')
+        : item.dotted
+        ? (const _Dot(), 'Picked to do next · click for Do now', 'Make Do now')
+        : (
+            _hovered && !touch ? const _HollowDot() : const SizedBox.shrink(),
+            'Pick to do next',
+            'Pick',
+          );
+    final rowHeight = touch ? 44.0 : 38.0;
+    final reach = touch ? _markReach : 0.0;
     final row = SizedBox(
-      height: 38,
+      height: rowHeight,
       child: Padding(
         padding: const EdgeInsets.only(right: 10),
         child: Row(
           children: [
-            SizedBox.square(dimension: 20, child: Center(child: mark)),
+            Tooltip(
+              message: tip,
+              excludeFromSemantics: true,
+              child: Semantics(
+                button: true,
+                label: '$action: ${item.words}',
+                onTap: widget.onMark,
+                excludeSemantics: true,
+                child: InkWell(
+                  key: ValueKey('task-mark-${item.id}'),
+                  onTap: widget.onMark,
+                  borderRadius: BorderRadius.circular(6),
+                  hoverColor: Colors.transparent,
+                  splashColor: Colors.transparent,
+                  highlightColor: Colors.transparent,
+                  child: SizedBox(
+                    width: 20 + reach,
+                    height: rowHeight,
+                    child: Padding(
+                      padding: EdgeInsets.only(left: reach),
+                      child: Center(child: mark),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(width: 10),
             _Box(done: false, onPressed: widget.onTick, label: item.words),
             const SizedBox(width: 10),

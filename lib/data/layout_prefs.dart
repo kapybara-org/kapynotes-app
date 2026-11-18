@@ -104,6 +104,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _readyToTypeOnOpenKey = 'readyToTypeOnOpen.v1';
   static const String _dailySeparatorsKey = 'dailySeparators.v1';
   static const String _spellCheckKey = 'spellCheck.v1';
+  static const String _autoTitlesKey = 'autoTitles.v1';
   static const String _markdownKey = 'markdownInNotes.v1';
   static const String _numberSystemKey = 'numberSystem.v1';
   static const String _writingFontKey = 'writingFont.v1';
@@ -152,6 +153,7 @@ class LayoutPrefs extends ChangeNotifier {
   bool _readyToTypeOnOpen = true;
   bool _dailySeparatorsEnabled = true;
   bool _spellCheckEnabled = true;
+  bool _autoTitlesEnabled = true;
   bool _markdownEnabled = true;
   NumberSystem _numberSystem = NumberSystem.auto;
   WritingFont _writingFont = WritingFont.clean;
@@ -207,6 +209,9 @@ class LayoutPrefs extends ChangeNotifier {
   bool get readyToTypeOnOpen => _readyToTypeOnOpen;
   bool get dailySeparatorsEnabled => _dailySeparatorsEnabled;
   bool get spellCheckEnabled => _spellCheckEnabled;
+
+  /// Name new notes from what is in them, where a model on the device can.
+  bool get autoTitlesEnabled => _autoTitlesEnabled;
 
   /// Whether notes are written in markdown: `# `, `**`, `- ` and the rest
   /// drawn as what they mean, and the formatting controls writing them.
@@ -354,6 +359,7 @@ class LayoutPrefs extends ChangeNotifier {
     _readyToTypeOnOpen = _store.read<bool>(_readyToTypeOnOpenKey) ?? true;
     _dailySeparatorsEnabled = _store.read<bool>(_dailySeparatorsKey) ?? true;
     _spellCheckEnabled = _store.read<bool>(_spellCheckKey) ?? true;
+    _autoTitlesEnabled = _store.read<bool>(_autoTitlesKey) ?? true;
     _markdownEnabled = _store.read<bool>(_markdownKey) ?? true;
     _numberSystem = _readNumberSystem();
     _writingFont = _readWritingFont();
@@ -477,6 +483,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _spellCheckEnabled) return;
     _spellCheckEnabled = value;
     _store.putNow(_spellCheckKey, value);
+    notifyListeners();
+  }
+
+  set autoTitlesEnabled(bool value) {
+    if (value == _autoTitlesEnabled) return;
+    _autoTitlesEnabled = value;
+    _store.putNow(_autoTitlesKey, value);
     notifyListeners();
   }
 

@@ -914,43 +914,40 @@ void main() {
     expect(find.byType(NoteVideoViewer), findsOneWidget);
   });
 
-  testWidgets('the mobile insert menu opens capture and inserts its result', (
-    tester,
-  ) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    var opened = 0;
-    await tester.pumpWidget(
-      harness(
-        'a note',
-        attachments: const [],
-        imageAcquirer: (_) async {
-          opened++;
-          return [XFile.fromData(Uint8List(0), name: 'camera.jpg')];
-        },
-        imageIngestor: (_, _) async =>
-            ImageBatch(images: [at(0)], rejections: const []),
-      ),
-    );
-    await tester.pump();
+  testWidgets(
+    'the bar\'s picture button opens capture and inserts its result',
+    (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      var opened = 0;
+      await tester.pumpWidget(
+        harness(
+          'a note',
+          attachments: const [],
+          imageAcquirer: (_) async {
+            opened++;
+            return [XFile.fromData(Uint8List(0), name: 'camera.jpg')];
+          },
+          imageIngestor: (_, _) async =>
+              ImageBatch(images: [at(0)], rejections: const []),
+        ),
+      );
+      await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      tester.widget<NoteField>(noteField).focusNode.requestFocus();
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('insert-menu')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('format-attach')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('attach-photo')));
+      await tester.pumpAndSettle();
 
-    // Scrolled to rather than dragged a fixed distance: the list grows as
-    // attachment kinds are added.
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('slash-command-image')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('slash-command-image')));
-    await tester.pumpAndSettle();
-
-    expect(opened, 1);
-    expect(find.byKey(const ValueKey('insert-menu')), findsOneWidget);
-    expect(find.byType(NoteImageView), findsOneWidget);
-  });
+      expect(opened, 1);
+      expect(find.byKey(const ValueKey('phone-format-bar')), findsOneWidget);
+      expect(find.byType(NoteImageView), findsOneWidget);
+    },
+  );
 
   testWidgets('the image shortcut opens the same picker as the footer', (
     tester,

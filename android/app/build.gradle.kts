@@ -118,6 +118,10 @@ dependencies {
     // Asking Play for the speech runtime module, and making it loadable in
     // the same process once it has arrived (SplitCompat).
     implementation("com.google.android.play:feature-delivery-ktx:2.1.0")
+
+    // Gemini Nano through AICore, for automatic note titles. Its minSdk is 26
+    // against the app's 24: see the overrideLibrary in AndroidManifest.xml.
+    implementation("com.google.mlkit:genai-prompt:1.0.0-beta5")
 }
 
 kotlin {

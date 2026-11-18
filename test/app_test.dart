@@ -12,6 +12,7 @@ import 'package:kapy_notes/core/desktop_integration.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/editor_workspace.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -119,6 +120,7 @@ Future<void> pumpApp(
   ImageFileAcquirer? imageAcquirer,
   Account? account,
   TagStore? tags,
+  TitleModel titleModel = const NoTitleModel('Not in tests'),
 }) async {
   // Almost everything here speaks for somebody who has opened the app before,
   // and they have already met the welcome note. The tests about a genuinely
@@ -149,9 +151,44 @@ Future<void> pumpApp(
       imageAcquirer: imageAcquirer,
       account: account,
       tags: tags,
+      titleModel: titleModel,
     ),
   );
   await tester.pumpAndSettle();
+}
+
+/// Names every note the same, at once.
+class _InstantTitles implements TitleModel {
+  _InstantTitles(this.title);
+
+  final String title;
+  int asked = 0;
+
+  @override
+  Future<String?> unavailableReason() async => null;
+
+  @override
+  Future<String> name({
+    required String instructions,
+    required String prompt,
+  }) async {
+    asked++;
+    return title;
+  }
+}
+
+/// A model whose answer arrives when the test gives it.
+class _LaterTitles implements TitleModel {
+  final List<Completer<String>> asked = [];
+
+  @override
+  Future<String?> unavailableReason() async => null;
+
+  @override
+  Future<String> name({required String instructions, required String prompt}) {
+    asked.add(Completer<String>());
+    return asked.last.future;
+  }
 }
 
 class _HiddenGate implements HiddenNotesGate {
@@ -995,8 +1032,213 @@ void main() {
     final newNoteField = tester.widget<NoteField>(
       find.descendant(of: find.byType(NoteEditor), matching: noteField),
     );
-    expect(newNoteField.controller.text, isEmpty);
+    expect(newNoteField.controller.text, Note.blankBody);
     expect(newNoteField.focusNode.hasFocus, isTrue);
+  });
+
+  group('a new note', () {
+    const trip =
+        'Flights to Lisbon are 900 for two, the hotel near Alfama is 120 a '
+        'night, and the train to Sintra is cheap';
+
+    Future<TextEditingController> newNote(WidgetTester tester) async {
+      await tester.tap(findKapyIcon(KapyIcons.addRounded).first);
+      await tester.pumpAndSettle();
+      return tester
+          .widget<NoteField>(
+            find.descendant(of: find.byType(NoteEditor), matching: noteField),
+          )
+          .controller;
+    }
+
+    testWidgets('opens on the line below New Note when it will be named', (
+      tester,
+    ) async {
+      await pumpApp(tester, titleModel: _InstantTitles('Unused'));
+      final field = await newNote(tester);
+      expect(field.text, Note.blankBody);
+      expect(field.selection, const TextSelection.collapsed(offset: 9));
+      expect(notes.notes.first.title, 'New Note');
+    });
+
+    testWidgets('opens on New Note, selected, where nothing will name it', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      final field = await newNote(tester);
+      expect(field.text, Note.blankBody);
+      expect(
+        field.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+      );
+
+      field.value = const TextEditingValue(
+        text: 'Groceries\n',
+        selection: TextSelection.collapsed(offset: 9),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        notes.notes.first.title,
+        'Groceries',
+        reason: 'typed, it names it',
+      );
+    });
+
+    testWidgets('with the setting off, opens on New Note, selected', (
+      tester,
+    ) async {
+      prefs.autoTitlesEnabled = false;
+      await pumpApp(tester, titleModel: _InstantTitles('Unused'));
+      final field = await newNote(tester);
+      expect(
+        field.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+      );
+    });
+
+    testWidgets('a caret in New Note takes all of it', (tester) async {
+      await pumpApp(tester, titleModel: _InstantTitles('Unused'));
+      final field = await newNote(tester);
+
+      field.selection = const TextSelection.collapsed(offset: 3);
+      await tester.pump();
+      expect(
+        field.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+      );
+
+      field.selection = const TextSelection.collapsed(offset: 8);
+      await tester.pump();
+      expect(
+        field.selection,
+        const TextSelection.collapsed(offset: 9),
+        reason: 'right out of the title goes to the line below',
+      );
+
+      field.selection = const TextSelection(baseOffset: 0, extentOffset: 8);
+      field.value = const TextEditingValue(
+        text: 'Trip\n',
+        selection: TextSelection.collapsed(offset: 4),
+      );
+      await tester.pumpAndSettle();
+      expect(notes.notes.first.title, 'Trip');
+      field.selection = const TextSelection.collapsed(offset: 2);
+      await tester.pump();
+      expect(
+        field.selection,
+        const TextSelection.collapsed(offset: 2),
+        reason: 'a title they wrote is edited like any line',
+      );
+    });
+
+    testWidgets('left alone, it is let go like any blank note', (tester) async {
+      await pumpApp(tester);
+      final before = notes.notes.length;
+      await newNote(tester);
+      expect(notes.notes.length, before + 1);
+      await newNote(tester);
+      expect(notes.notes.length, before + 1, reason: 'the blank one is reused');
+    });
+
+    testWidgets('is named by the model on this device after a pause', (
+      tester,
+    ) async {
+      final model = _InstantTitles('lisbon trip budget.');
+      await pumpApp(tester, titleModel: model);
+      final field = await newNote(tester);
+      field.value = const TextEditingValue(
+        text: 'New Note\n$trip',
+        selection: TextSelection.collapsed(offset: 9 + trip.length),
+      );
+      await tester.pump();
+      expect(model.asked, 0);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(model.asked, 1);
+      expect(notes.notes.first.title, 'Lisbon trip budget');
+      expect(field.text, 'Lisbon trip budget\n$trip');
+    });
+
+    testWidgets('a title the model sends once the person is in New Note '
+        'loses to what they type', (tester) async {
+      final model = _LaterTitles();
+      await pumpApp(tester, titleModel: model);
+      final field = await newNote(tester);
+      field.value = const TextEditingValue(
+        text: 'New Note\n$trip',
+        selection: TextSelection.collapsed(offset: 9 + trip.length),
+      );
+      await tester.pump(const Duration(seconds: 4));
+      expect(model.asked, hasLength(1));
+      final editor = tester.state<NoteEditorState>(find.byType(NoteEditor));
+      expect(editor.selectionInTitle, isFalse);
+
+      field.selection = const TextSelection.collapsed(offset: 3);
+      await tester.pump();
+      expect(
+        field.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+      );
+      expect(editor.selectionInTitle, isTrue);
+
+      model.asked.single.complete('Lisbon trip budget');
+      await tester.pumpAndSettle();
+      expect(field.text, 'New Note\n$trip');
+      expect(notes.notes.first.title, 'New Note');
+
+      field.value = const TextEditingValue(
+        text: 'Holiday\n$trip',
+        selection: TextSelection.collapsed(offset: 7),
+      );
+      await tester.pumpAndSettle();
+      expect(field.text, 'Holiday\n$trip');
+      expect(notes.notes.first.body, 'Holiday\n$trip');
+
+      field.value = const TextEditingValue(
+        text: 'New Note\n$trip',
+        selection: TextSelection.collapsed(offset: 9 + trip.length),
+      );
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(
+        model.asked,
+        hasLength(1),
+        reason: 'named by the person for good, even put back to New Note',
+      );
+    });
+
+    testWidgets('a note from another device is not named here', (tester) async {
+      store.data['notes.v1'] = [
+        {
+          'id': 'from-the-phone',
+          'body': 'New Note\n',
+          'createdAt': 1000,
+          'updatedAt': 2000,
+        },
+      ];
+      final model = _InstantTitles('Lisbon trip');
+      await pumpApp(tester, titleModel: model);
+      await tester.enterNote('New Note\n$trip');
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(model.asked, 0);
+      expect(notes.byId('from-the-phone')!.title, 'New Note');
+    });
+
+    testWidgets('with the setting off it stays New Note', (tester) async {
+      final model = _InstantTitles('Lisbon trip');
+      prefs.autoTitlesEnabled = false;
+      await pumpApp(tester, titleModel: model);
+      final field = await newNote(tester);
+      field.value = const TextEditingValue(
+        text: 'New Note\n$trip',
+        selection: TextSelection.collapsed(offset: 9 + trip.length),
+      );
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(model.asked, 0);
+      expect(notes.notes.first.title, 'New Note');
+    });
   });
 
   testWidgets('coming back the same day leaves the caret where it was', (
@@ -1940,7 +2182,7 @@ void main() {
     final editor = tester.widget<NoteField>(
       find.descendant(of: find.byType(NoteEditor), matching: noteField),
     );
-    expect(editor.controller.text, isEmpty);
+    expect(editor.controller.text, Note.blankBody);
     expect(notes.notes.last.body, startsWith('petrol 40'));
   });
 
@@ -3330,6 +3572,30 @@ void main() {
       expect(notes.notes.first.id, blank.id);
       // And the caret is back in it, which is the whole of what plus is for.
       expect(prefs.lastOpenedNoteId, blank.id);
+    });
+
+    testWidgets('an empty note from an older build is reused as New Note', (
+      tester,
+    ) async {
+      store.data['notes.v1'] = [
+        {'id': 'old-blank', 'body': '', 'createdAt': 1000, 'updatedAt': 2000},
+      ];
+      await pumpApp(tester, titleModel: _InstantTitles('Unused'));
+      await tester.tap(plus());
+      await tester.pumpAndSettle();
+      expect(notes.notes, hasLength(1));
+      expect(notes.byId('old-blank')!.body, Note.blankBody);
+      final field = tester
+          .widget<NoteField>(
+            find.descendant(of: find.byType(NoteEditor), matching: noteField),
+          )
+          .controller;
+      expect(field.text, Note.blankBody);
+      expect(
+        field.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+        reason: 'not made here, so nothing names it and the person does',
+      );
     });
 
     testWidgets('writing in it makes the next press a real new note', (
@@ -4760,7 +5026,7 @@ void main() {
       expect(find.byKey(const ValueKey('note-total')), findsNothing);
     });
 
-    testWidgets('puts the insert menu in a scrollable phone footer', (
+    testWidgets('raises the formatting bar over the phone keyboard', (
       tester,
     ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
@@ -4776,43 +5042,41 @@ void main() {
 
       await pumpApp(tester, size: const Size(320, 720));
 
-      expect(find.byKey(const ValueKey('insert-menu')), findsOneWidget);
-      expect(find.byKey(const ValueKey('insert-image')), findsNothing);
-      expect(find.byKey(const ValueKey('record-voice')), findsNothing);
-      final insertMenu = find.byKey(const ValueKey('insert-menu'));
-      expect(
-        find.descendant(of: insertMenu, matching: find.text('/')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: insertMenu,
-          matching: findKapyIcon(KapyIcons.addRounded),
-        ),
-        findsNothing,
-      );
+      final bar = find.byKey(const ValueKey('phone-format-bar'));
+      expect(bar, findsNothing);
+      expect(find.byType(NoteFooter), findsNothing);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+
+      expect(bar, findsOneWidget);
+      expect(tester.getRect(bar).bottom, closeTo(720 - 300, 0.01));
       // Settings is in the notes drawer, not under the thumb that is writing.
       expect(find.byKey(const ValueKey('note-settings')), findsNothing);
       expect(find.byKey(const ValueKey('note-total')), findsNothing);
-
-      final scroller = find.descendant(
-        of: find.byType(NoteFooter),
-        matching: find.byType(SingleChildScrollView),
-      );
-      expect(scroller, findsOneWidget);
       expect(
-        tester.widget<SingleChildScrollView>(scroller).scrollDirection,
+        tester
+            .widget<SingleChildScrollView>(
+              find.byKey(const ValueKey('phone-format-scroll')),
+            )
+            .scrollDirection,
         Axis.horizontal,
       );
-
       expect(openNoteField(tester).focusNode.hasFocus, isTrue);
-      expect(tester.testTextInput.isVisible, isTrue);
 
-      await tester.tap(insertMenu);
+      // A "/" on a new line opens Commands, which hides the keyboard.
+      openNoteField(tester).controller.selection =
+          const TextSelection.collapsed(offset: 18);
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'Phone budget\n6 * 7\n/',
+          selection: TextSelection.collapsed(offset: 20),
+        ),
+      );
       await tester.pump();
       await tester.pump();
-      expect(openNoteField(tester).focusNode.hasFocus, isFalse);
-      expect(tester.testTextInput.isVisible, isFalse);
+      expect(find.byKey(const ValueKey('slash-command-menu')), findsOneWidget);
 
       const commandOrder = [
         'checklist',
@@ -4866,41 +5130,46 @@ void main() {
       expect(find.byKey(const ValueKey('slash-command-drawing')), findsNothing);
     });
 
-    testWidgets('sits the phone footer on the bottom edge of the screen', (
-      tester,
-    ) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      store.data['notes.v1'] = [
-        {
-          'id': 'home-indicator',
-          'body': 'Phone note',
-          'createdAt': 1000,
-          'updatedAt': 1000,
-        },
-      ];
-      // The strip a phone keeps for its home indicator. Set before pumpApp,
-      // which pins the ratio these physical pixels are read at to one and
-      // resets the view afterwards.
-      tester.view.padding = const FakeViewPadding(bottom: 34);
+    testWidgets(
+      'holds the note above the home indicator and the bar on the keyboard',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        store.data['notes.v1'] = [
+          {
+            'id': 'home-indicator',
+            'body': 'Phone note',
+            'createdAt': 1000,
+            'updatedAt': 1000,
+          },
+        ];
+        // The strip a phone keeps for its home indicator. Set before pumpApp,
+        // which pins the ratio these physical pixels are read at to one and
+        // resets the view afterwards.
+        tester.view.padding = const FakeViewPadding(bottom: 34);
 
-      await pumpApp(tester, size: const Size(390, 844));
+        await pumpApp(tester, size: const Size(390, 844));
 
-      final footer = tester.getRect(find.byType(NoteFooter));
-      expect(
-        footer.bottom,
-        closeTo(844, 0.01),
-        reason: 'the bar belongs on the edge, not floating above it',
-      );
-      // The background grew into the strip. The controls did not follow it in:
-      // a 44pt target under the home indicator is a target the system swipe
-      // takes first.
-      expect(footer.height, closeTo(56 + 34, 0.01));
-      expect(
-        tester.getRect(find.byKey(const ValueKey('insert-menu'))).bottom,
-        lessThanOrEqualTo(844 - 34),
-      );
-    });
+        expect(find.byType(NoteFooter), findsNothing);
+        expect(find.byKey(const ValueKey('phone-format-bar')), findsNothing);
+        expect(
+          tester.getRect(find.byType(NoteEditor)).bottom,
+          closeTo(844, 0.01),
+        );
+
+        // The system takes the keyboard's height out of the inset it reports
+        // for the home indicator.
+        tester.view.padding = FakeViewPadding.zero;
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.pumpAndSettle();
+        final bar = tester.getRect(
+          find.byKey(const ValueKey('phone-format-bar')),
+        );
+        expect(bar.height, 44);
+        expect(bar.bottom, closeTo(844 - 300, 0.01));
+      },
+    );
 
     testWidgets(
       'opens the last opened note with the caret and focus at its end',
@@ -5122,7 +5391,34 @@ void main() {
       },
     );
 
-    testWidgets('leaves a swipe along the note footer to the footer', (
+    testWidgets('takes the formatting bar away with the note it belongs to', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      store.data['notes.v1'] = [
+        {
+          'id': 'drawer-bar',
+          'body': 'Open the list',
+          'createdAt': 1000,
+          'updatedAt': 1000,
+        },
+      ];
+
+      await pumpApp(tester, size: const Size(420, 800));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      final bar = find.byKey(const ValueKey('phone-format-bar'));
+      expect(bar, findsOneWidget);
+
+      await tester.dragFrom(const Offset(330, 400), const Offset(80, 0));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Open the list'), findsOneWidget);
+      expect(bar, findsNothing);
+    });
+
+    testWidgets('leaves a swipe along the formatting bar to the bar', (
       tester,
     ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
@@ -5139,10 +5435,15 @@ void main() {
       await pumpApp(tester, size: const Size(420, 800));
       expect(find.byType(NoteRow), findsNothing);
 
-      // The footer's controls scroll sideways when they do not fit, and a
-      // thumb rests exactly there. Reaching for the button past the end of the
-      // row must not walk out of the note.
-      final footer = tester.getRect(find.byType(NoteFooter));
+      // The bar's buttons scroll sideways when they do not fit, and a thumb
+      // rests exactly there. Reaching for the button past the end of the row
+      // must not walk out of the note.
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      final footer = tester.getRect(
+        find.byKey(const ValueKey('phone-format-scroll')),
+      );
       await tester.dragFrom(footer.center, const Offset(-160, 0));
       await tester.pumpAndSettle();
       expect(find.byType(NoteRow), findsNothing);
@@ -5220,7 +5521,7 @@ void main() {
       await tester.pump();
 
       expect(notes.notes, hasLength(2));
-      expect(openNoteBody(tester), isEmpty);
+      expect(openNoteBody(tester), Note.untitled);
       expect(find.text('New note created'), findsOneWidget);
     });
 
@@ -5234,7 +5535,7 @@ void main() {
       expect(notes.notes, hasLength(1));
       expect(find.byType(NoteEditor), findsOneWidget);
       final field = tester.widget<NoteField>(noteField);
-      expect(field.controller.text, isEmpty);
+      expect(field.controller.text, Note.blankBody);
       expect(field.focusNode.hasFocus, isTrue);
       expect(tester.testTextInput.isVisible, isTrue);
     });

@@ -229,7 +229,7 @@ class _ProSheetState extends State<ProSheet> {
   }
 
   /// Buying with no account, which is allowed because one part of Pro works
-  /// without one: writing past five notes.
+  /// without one: writing past the free note limit.
   ///
   /// What the rest of it needs is said before the money, not discovered after
   /// it, and signing in later is offered rather than demanded.

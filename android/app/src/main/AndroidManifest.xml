@@ -1,4 +1,11 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- ML Kit's GenAI Prompt API (Gemini Nano, for automatic note titles)
+         needs Android 8; this app runs on Android 7. Its libraries are
+         merged anyway, and NoteTitles.kt calls them only on API 26 and up,
+         answering "unavailable" below. -->
+    <uses-sdk tools:overrideLibrary="com.google.mlkit.genai.prompt,com.google.mlkit.genai.common"/>
+
     <!-- Refreshing exchange rates needs the network. Flutter only adds this
          to the debug and profile manifests, so a release build without it
          fails every rate refresh. -->

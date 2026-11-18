@@ -31,6 +31,7 @@ import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../data/daily_separator.dart';
 import '../../data/attachment_limits.dart';
+import '../../data/note.dart';
 import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
 import '../compact_icon_button.dart';
@@ -48,6 +49,7 @@ import 'markdown_syntax.dart';
 import 'table_cell_editor.dart';
 import 'table_geometry.dart';
 import 'note_footer.dart';
+import 'phone_format_bar.dart';
 import 'note_header.dart';
 import '../sidebar_timestamp.dart';
 import '../tag_ui.dart';
@@ -192,6 +194,8 @@ class NoteEditor extends StatefulWidget {
     this.onMarkdownEnabledChanged,
     this.autofocus = false,
     this.startAtEnd = false,
+    this.namedByPerson = true,
+    this.onDefaultTitleEntered,
     this.initialCaret,
     this.onCaretChanged,
     this.ensureKeyboardVisible = false,
@@ -368,6 +372,16 @@ class NoteEditor extends StatefulWidget {
   final ValueChanged<bool>? onMarkdownEnabledChanged;
   final bool autofocus;
   final bool startAtEnd;
+
+  /// Whether the person names this note rather than the model on the
+  /// device. A new note they name opens with its title selected, so the
+  /// first thing typed names it; one the model names opens on the line
+  /// below, for the note itself.
+  final bool namedByPerson;
+
+  /// The person put the caret or a selection in the title while it is still
+  /// [Note.untitled], to name the note themselves.
+  final VoidCallback? onDefaultTitleEntered;
 
   /// Where the caret was left in this note earlier today, if it was.
   ///
@@ -900,9 +914,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _scheduleKeyboardRetry();
   }
 
-  /// Places the caret after the note's final character and brings it on screen.
+  /// Places the caret after the note's final character and brings it on
+  /// screen. A new note the person names opens with its title selected.
   void focusAtEnd() {
     if (!mounted || widget.readOnly) return;
+    if (widget.namedByPerson && _controller.text == Note.blankBody) {
+      _controller.selection = const TextSelection(
+        baseOffset: 0,
+        extentOffset: Note.untitled.length,
+      );
+      _focusNode.requestFocus();
+      _recordKapyPeekActivity();
+      _scheduleKeyboardRetry();
+      return;
+    }
     _controller.selection = TextSelection.collapsed(
       offset: _controller.text.length,
     );
@@ -1229,6 +1254,50 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   @visibleForTesting
   List<NoteFormatRange> get formatsForTest => _formats;
 
+  /// Whether the caret or a selection is in the first line, where the title
+  /// is written, while the person is in the note.
+  bool get selectionInTitle {
+    final selection = _controller.selection;
+    if (!_focusNode.hasFocus || !selection.isValid) return false;
+    final text = _controller.text;
+    final newline = text.indexOf('\n');
+    return selection.start <= (newline < 0 ? text.length : newline);
+  }
+
+  void _reportDefaultTitleEntered() {
+    final report = widget.onDefaultTitleEntered;
+    if (report == null || widget.readOnly || !selectionInTitle) return;
+    final text = _controller.text;
+    if (text == Note.untitled || text.startsWith(Note.blankBody)) report();
+  }
+
+  /// A caret put in a new note's [Note.untitled] takes the whole title, so
+  /// what is typed replaces it rather than adding to it. Leaving the taken
+  /// title to the right goes on to the line below it.
+  bool _takeDefaultTitle(TextSelection previous, TextEditingValue value) {
+    const title = Note.untitled;
+    final text = value.text;
+    final selection = value.selection;
+    if (widget.readOnly ||
+        !selection.isValid ||
+        !selection.isCollapsed ||
+        selection.baseOffset > title.length ||
+        _composingOpen(value) ||
+        !text.startsWith(title) ||
+        (text.length > title.length && text[title.length] != '\n')) {
+      return false;
+    }
+    const taken = TextSelection(baseOffset: 0, extentOffset: title.length);
+    final leaving =
+        previous == taken &&
+        selection.baseOffset == title.length &&
+        text.length > title.length;
+    _controller.selection = leaving
+        ? const TextSelection.collapsed(offset: title.length + 1)
+        : taken;
+    return true;
+  }
+
   void _onControllerChanged() {
     _recordKapyPeekActivity();
     final value = _controller.value;
@@ -1245,6 +1314,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _lastValue = value;
       return;
     }
+    _reportDefaultTitleEntered();
     // The composition that held the store's text back has ended, with a
     // keystroke or without one. The keystroke is written below; the store's
     // text is taken after it.
@@ -1255,6 +1325,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _lastValue = value;
       if (!selectionChanged) return;
       if (_collapseLineTerminatorSelection(value.selection)) return;
+      if (_takeDefaultTitle(previous.selection, value)) return;
       // Tables draw as a grid with the setting off too, so this is not
       // inside the markdown branch below.
       if (_keepCaretOutOfTable(previous.selection, value.selection)) return;
@@ -4220,9 +4291,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _markdownTyping.clear();
       _markdownShortcut.clear();
       setState(() => _markdownQuiet = true);
+    } else if (mounted && AppPlatform.isMobile) {
+      setState(() {});
     }
     if (_focusNode.hasFocus) {
       widget.onFocus?.call();
+      _reportDefaultTitleEntered();
       _recordKapyPeekActivity();
       _reportActivity(edited: false);
       _scheduleSlashCommandMenuSync();
@@ -4241,7 +4315,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _dismissKapyPeek();
   }
 
-  /// Gives the footer a deliberate way out of editing on a phone. Cancelling
+  /// Gives the formatting bar a deliberate way out of editing on a phone. Cancelling
   /// the startup retry matters on Android: otherwise a retry already waiting
   /// in the timer could immediately raise the keyboard again.
   void _dismissKeyboard() {
@@ -5273,6 +5347,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// Raises the bubble over the selection, or brings the one showing up to
   /// date with it.
   void _showSelectionBubble() {
+    if (!AppPlatform.hasPointer) return;
     final field = _field;
     final box = field?.box;
     final selection = _controller.selection;
@@ -5557,6 +5632,323 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  /// Whether the phone's formatting bar is up: the keyboard is open on this
+  /// note, or on a cell of its table.
+  bool get _formatBarShown =>
+      AppPlatform.isMobile &&
+      !widget.readOnly &&
+      _keyboardInset > 0 &&
+      _editingNote;
+
+  /// Whether the caret or selection sits inside a code block, which holds
+  /// plain text and so takes none of the formatting.
+  bool get _inCodeBlock {
+    final selection = _controller.selection;
+    if (!widget.markdownEnabled || !selection.isValid) return false;
+    return _controller
+        .markdownFor(_controller.text)
+        .blocks
+        .any(
+          (block) =>
+              block.kind == MarkdownBlockKind.code &&
+              block.start <= selection.start &&
+              selection.end <= block.end,
+        );
+  }
+
+  /// The bar's buttons, each the same command as the desktop's bubble, the
+  /// shortcut and the Commands menu. Inside a table cell they are the cell's
+  /// row and column controls instead.
+  List<FormatBarAction> _formatBarActions(
+    ({MarkdownTable table, int row, int column})? cell,
+  ) {
+    if (cell != null) {
+      final alignment = _tableColumnAlignment(cell.table, cell.column);
+      return [
+        FormatBarAction(
+          key: 'footer-table-add-row',
+          label: 'Insert row below',
+          icon: KapyIcons.tableRowBelow,
+          onPressed: _addTableRow,
+        ),
+        FormatBarAction(
+          key: 'footer-table-add-column',
+          label: 'Insert column right',
+          icon: KapyIcons.tableColumnRight,
+          onPressed: _addTableColumn,
+        ),
+        FormatBarAction(
+          key: 'footer-table-align-column',
+          label: switch (alignment) {
+            MarkdownCellAlign.start => 'Column aligned left; change to center',
+            MarkdownCellAlign.center => 'Column centered; change to right',
+            MarkdownCellAlign.end => 'Column aligned right; change to left',
+          },
+          icon: switch (alignment) {
+            MarkdownCellAlign.start => KapyIcons.alignLeft,
+            MarkdownCellAlign.center => KapyIcons.alignCenter,
+            MarkdownCellAlign.end => KapyIcons.alignRight,
+          },
+          active: alignment != MarkdownCellAlign.start,
+          onPressed: _cycleTableColumnAlignment,
+        ),
+        FormatBarAction(
+          key: 'footer-table-remove-row',
+          label: 'Delete row',
+          icon: KapyIcons.tableDeleteRow,
+          onPressed: cell.row == 0 ? null : _removeTableRow,
+        ),
+        FormatBarAction(
+          key: 'footer-table-remove-column',
+          label: 'Delete column',
+          icon: KapyIcons.tableDeleteColumn,
+          onPressed: markdownTableColumnCount(cell.table) <= 1
+              ? null
+              : _removeTableColumn,
+        ),
+      ];
+    }
+    final markdown = widget.markdownEnabled;
+    final selection = _controller.selection;
+    final analysis = markdown
+        ? _controller.markdownFor(_controller.text)
+        : null;
+    final line = markdown && selection.isValid
+        ? markdownLinePrefix(_controller.text, selection.extentOffset)
+        : null;
+    final inCode = _inCodeBlock;
+    bool marked(MarkdownStyle style) =>
+        analysis != null && markdownSelectionHas(analysis, selection, style);
+    FormatBarAction action(
+      String key,
+      String label,
+      KapyIconData? icon,
+      VoidCallback? press, {
+      bool active = false,
+      bool plain = true,
+      String? glyph,
+    }) => FormatBarAction(
+      key: key,
+      label: label,
+      icon: icon,
+      glyph: glyph,
+      active: active,
+      onPressed: plain && inCode ? null : press,
+    );
+    return [
+      if (_showIndentControls) ...[
+        action(
+          'format-outdent',
+          'Move out',
+          KapyIcons.indentDecreaseRounded,
+          _canIndent(outdent: true) ? () => _indentList(outdent: true) : null,
+        ),
+        action(
+          'format-indent',
+          'Move in',
+          KapyIcons.indentIncreaseRounded,
+          _canIndent(outdent: false) ? () => _indentList(outdent: false) : null,
+        ),
+      ] else
+        action(
+          'format-style',
+          'Heading',
+          KapyIcons.heading1Rounded,
+          _cycleParagraphStyle,
+          active: markdown
+              ? (_markdownHeadingLevel ?? 0) > 0
+              : _activeParagraphStyle != null &&
+                    _activeParagraphStyle != NoteParagraphStyle.text,
+        ),
+      action(
+        'format-bold',
+        'Bold',
+        KapyIcons.formatBoldRounded,
+        () => _toggleInlineFormat(NoteFormat.bold),
+        active: _formatActive(NoteFormat.bold),
+      ),
+      action(
+        'format-italic',
+        'Italic',
+        KapyIcons.formatItalicRounded,
+        () => _toggleInlineFormat(NoteFormat.italic),
+        active: _formatActive(NoteFormat.italic),
+      ),
+      action(
+        'format-checklist',
+        'Checklist',
+        KapyIcons.checklistRounded,
+        _toggleChecklist,
+        active: _lineStyleActive(NoteLineStyle.checklist),
+      ),
+      action(
+        'format-bullets',
+        'Bulleted list',
+        KapyIcons.bulletedListRounded,
+        _toggleBullets,
+        active: _lineStyleActive(NoteLineStyle.bullet),
+      ),
+      action(
+        'format-numbered',
+        'Numbered list',
+        KapyIcons.numberedListRounded,
+        () => unawaited(_toggleBlock(SlashCommandType.numberedList)),
+        active: line?.isOrdered ?? false,
+      ),
+      action(
+        'format-quote',
+        'Quote',
+        KapyIcons.quoteRounded,
+        () => unawaited(_toggleBlock(SlashCommandType.quote)),
+        active: line?.isQuoted ?? false,
+      ),
+      action(
+        'format-code',
+        'Code',
+        KapyIcons.inlineCodeRounded,
+        _formatCode,
+        active: inCode || marked(MarkdownStyle.code),
+        plain: false,
+      ),
+      action(
+        'format-link',
+        'Link',
+        KapyIcons.linkRounded,
+        () => unawaited(_linkFromBar()),
+        active: marked(MarkdownStyle.link),
+      ),
+      action(
+        'format-attach',
+        'Picture or file',
+        KapyIcons.imageOutlined,
+        widget.images == null ? null : () => unawaited(_attachFromBar()),
+      ),
+      action('format-commands', 'Commands', null, _showInsertMenu, glyph: '/'),
+    ];
+  }
+
+  /// The numbered list and the quote on the caret's line: taken off when the
+  /// line has it, otherwise the same command the "+" menu runs.
+  Future<void> _toggleBlock(SlashCommandType type) async {
+    final value = _controller.value;
+    final selection = value.selection;
+    if (widget.readOnly || !selection.isValid) return;
+    final line = markdownLinePrefix(value.text, selection.extentOffset);
+    final marker = !widget.markdownEnabled
+        ? null
+        : switch (type) {
+            SlashCommandType.numberedList when line.isOrdered => TextRange(
+              start: line.markerStart,
+              end: line.contentStart,
+            ),
+            SlashCommandType.quote when line.isQuoted => TextRange(
+              start: line.indentEnd,
+              end: line.quoteEnd,
+            ),
+            _ => null,
+          };
+    if (marker != null) {
+      _replaceCommandValue(
+        replaceSlashCommandRange(
+          value,
+          marker,
+          '',
+          selection: _selectionAfterReplacement(selection, marker, 0),
+        ),
+      );
+      return;
+    }
+    _slashCommandRange = TextRange.collapsed(selection.extentOffset);
+    _slashCommandWasTyped = false;
+    await _runSlashCommand(SlashCommandChoice(type));
+  }
+
+  /// Code: inline on a selection, a block on a caret.
+  void _formatCode() {
+    final selection = _controller.selection;
+    if (widget.readOnly || !selection.isValid || _inCodeBlock) return;
+    if (selection.isCollapsed) {
+      unawaited(_toggleBlock(SlashCommandType.codeBlock));
+    } else {
+      unawaited(_toggleMarkdownWrap('`', 'Inline code'));
+    }
+  }
+
+  /// Link: asks for the address, then wraps the selection in it, or writes
+  /// the address as its own link at a caret.
+  ///
+  /// The note can change while the prompt is open, from another device. The
+  /// link still goes in when the same words are at the selection, or the same
+  /// few characters around a caret, and when they are not it says so rather
+  /// than vanish. The keyboard comes back
+  /// either way.
+  Future<void> _linkFromBar() async {
+    final before = _controller.value;
+    final selection = before.selection;
+    if (widget.readOnly || !selection.isValid) return;
+    void resumeWriting() {
+      _focusNode.requestFocus();
+      unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.show'));
+    }
+
+    if (!widget.markdownEnabled && !await _confirmMarkdown('Links')) {
+      if (mounted) resumeWriting();
+      return;
+    }
+    if (!mounted) return;
+    final address = await askLinkAddress(context);
+    if (!mounted) return;
+    resumeWriting();
+    if (address == null) return;
+    final now = _controller.value;
+    final from = selection.isCollapsed
+        ? math.max(0, selection.start - 8)
+        : selection.start;
+    final to = selection.isCollapsed
+        ? math.min(before.text.length, selection.end + 8)
+        : selection.end;
+    if (to > now.text.length ||
+        now.text.substring(from, to) != before.text.substring(from, to)) {
+      Toast.show(
+        context,
+        'Link not added, the note changed',
+        icon: KapyIcons.errorOutlined,
+      );
+      return;
+    }
+    _controller.selection = selection;
+    if (!selection.isCollapsed) {
+      _linkSelection(address);
+      return;
+    }
+    final words = address.replaceAllMapped(
+      RegExp(r'[\\\[\]]'),
+      (match) => '\\${match[0]}',
+    );
+    _replaceCommandValue(
+      replaceSlashCommandRange(
+        now,
+        TextRange.collapsed(selection.start),
+        '[$words](${linkDestination(address)})',
+        selection: TextSelection(
+          baseOffset: selection.start + 1,
+          extentOffset: selection.start + 1 + words.length,
+        ),
+      ),
+    );
+  }
+
+  /// Picture or file: asks which, then runs the command the "+" menu does.
+  Future<void> _attachFromBar() async {
+    final choice = await chooseAttachment(context);
+    if (choice == null || !mounted) return;
+    await switch (choice) {
+      FormatBarAttachment.photo => pickAndInsertImages(),
+      FormatBarAttachment.video => pickAndInsertVideos(),
+      FormatBarAttachment.file => pickAndInsertFileAttachments(),
+    };
   }
 
   void _evaluate() {
@@ -6903,6 +7295,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
     final textScaler = MediaQuery.textScalerOf(context);
     final mobileTableCell = AppPlatform.isMobile ? _activeTableCell() : null;
+    final statusShown = widget.readOnly || widget.typing.isNotEmpty;
 
     // A drop lands on the page as a whole, not on the text field: dragging a
     // picture over a note and having to aim at the caret would be worse than
@@ -7383,82 +7776,26 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onStop: widget.onRecordVoice,
               onCancel: () => unawaited(widget.recording!.cancel()),
             )
-          else if (!EditorMetrics.page)
-            NoteFooter(
-              typing: widget.typing,
-              readOnly: widget.readOnly,
-              readOnlyLabel: widget.readOnlyLabel,
-              readOnlyIcon: widget.readOnlyIcon,
-              onReadOnlyPressed: widget.onReadOnlyPressed,
-              paragraphStyleShortcut: widget.shortcuts.bindingFor(
-                ShortcutAction.cycleTextStyle,
+          else if (EditorMetrics.page)
+            SizedBox(height: MediaQuery.paddingOf(context).bottom)
+          else ...[
+            if (statusShown)
+              NoteFooter(
+                typing: widget.typing,
+                readOnly: widget.readOnly,
+                readOnlyLabel: widget.readOnlyLabel,
+                readOnlyIcon: widget.readOnlyIcon,
+                onReadOnlyPressed: widget.onReadOnlyPressed,
               ),
-              boldShortcut: widget.shortcuts.bindingFor(
-                ShortcutAction.formatBold,
-              ),
-              italicShortcut: widget.shortcuts.bindingFor(
-                ShortcutAction.formatItalic,
-              ),
-              bulletsShortcut: widget.shortcuts.bindingFor(
-                ShortcutAction.formatBullets,
-              ),
-              checklistShortcut: widget.shortcuts.bindingFor(
-                ShortcutAction.formatChecklist,
-              ),
-              onParagraphStylePressed: _cycleParagraphStyle,
-              onBoldPressed: () => _toggleInlineFormat(NoteFormat.bold),
-              onItalicPressed: () => _toggleInlineFormat(NoteFormat.italic),
-              onBulletsPressed: _toggleBullets,
-              onChecklistPressed: _toggleChecklist,
-              onInsertMenuPressed: _showInsertMenu,
-              onIndentPressed: () => _indentList(outdent: false),
-              onOutdentPressed: () => _indentList(outdent: true),
-              showIndentControls: _showIndentControls,
-              canIndent: _canIndent(outdent: false),
-              canOutdent: _canIndent(outdent: true),
-              onAddTableRowPressed: mobileTableCell == null
-                  ? null
-                  : _addTableRow,
-              onRemoveTableRowPressed:
-                  mobileTableCell == null || mobileTableCell.row == 0
-                  ? null
-                  : _removeTableRow,
-              onAddTableColumnPressed: mobileTableCell == null
-                  ? null
-                  : _addTableColumn,
-              onRemoveTableColumnPressed:
-                  mobileTableCell == null ||
-                      markdownTableColumnCount(mobileTableCell.table) <= 1
-                  ? null
-                  : _removeTableColumn,
-              onCycleTableAlignmentPressed: mobileTableCell == null
-                  ? null
-                  : _cycleTableColumnAlignment,
-              tableTapGroup: _cellEditor,
-              tableAlignment: mobileTableCell == null
-                  ? null
-                  : _tableColumnAlignment(
-                      mobileTableCell.table,
-                      mobileTableCell.column,
-                    ),
-              boldActive: _formatActive(NoteFormat.bold),
-              italicActive: _formatActive(NoteFormat.italic),
-              bulletsActive: _lineStyleActive(NoteLineStyle.bullet),
-              checklistActive: _lineStyleActive(NoteLineStyle.checklist),
-              paragraphStyle: _activeParagraphStyle,
-              markdownHeadingLevel: widget.markdownEnabled
-                  ? _markdownHeadingLevel
-                  : null,
-              markdown: widget.markdownEnabled,
-              onDismissKeyboardPressed:
-                  AppPlatform.isMobile && _keyboardInset > 0
-                  ? _dismissKeyboard
-                  : null,
-            )
-          else
-            // The page has no footer to hold the writing above a home
-            // indicator, so the room is kept here instead.
-            SizedBox(height: MediaQuery.paddingOf(context).bottom),
+            if (_formatBarShown)
+              PhoneFormatBar(
+                actions: _formatBarActions(mobileTableCell),
+                tapGroup: mobileTableCell == null ? EditableText : _cellEditor,
+                onDismissKeyboard: _dismissKeyboard,
+              )
+            else if (!statusShown)
+              SizedBox(height: MediaQuery.paddingOf(context).bottom),
+          ],
         ],
       ),
     );
