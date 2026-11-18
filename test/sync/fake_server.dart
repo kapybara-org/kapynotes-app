@@ -57,6 +57,10 @@ class FakeServer {
   /// paths.
   SyncException? failNext;
 
+  /// Set to refuse every op push with this code, as a server refuses an op or
+  /// a snapshot past its size.
+  String? refusePushes;
+
   /// The server's clock. Ops are stamped with it; tests that compare a local
   /// `updatedAt` against an op's `at` set it.
   DateTime Function() now = DateTime.now;
@@ -329,6 +333,9 @@ class FakeServer {
   /// anyone who asks after one.
   bool tasksServed = true;
 
+  /// Set to refuse task pushes as an account at the row cap is refused.
+  bool tasksFull = false;
+
   /// Each account's task records by id, with the seq each was last written
   /// at. Mirrors `server/src/tasks.ts`: last writer wins on `updatedAt`,
   /// the pull pages by seq.
@@ -345,6 +352,7 @@ class FakeServer {
     List<WireTaskRecord> records,
   ) {
     if (!tasksServed) _refuse(404, 'not found');
+    if (tasksFull) _refuse(413, 'too many tasks', {'limit': 20000});
     taskPushes.add([for (final record in records) record.id]);
     final mine = tasks.putIfAbsent(userId, () => {});
     final applied = <String>[];
@@ -472,6 +480,8 @@ class FakeServer {
 
   /// One push, applied whole or not at all. Mirrors `applyOps`.
   OpsPushResult pushOps(String userId, String device, OpsPush push) {
+    final refusal = refusePushes;
+    if (refusal != null) _refuse(413, refusal);
     if (push.from == push.spaceId) {
       _refuse(400, 'a move names two different spaces');
     }
@@ -2351,11 +2361,23 @@ class FakeAuth implements AuthApi {
   /// — every failure that says nothing about whether the session is good.
   bool reachable = true;
 
+  int sessionChecks = 0;
+
   @override
   Future<SessionCheck> checkSession(String token) async {
+    sessionChecks++;
     if (!reachable) return const SessionUnreachable();
     if (!sessionValid) return const SessionRejected();
     return SessionActive(_user);
+  }
+
+  int revokeOthersCalls = 0;
+
+  @override
+  Future<bool> revokeOtherSessions(String token) async {
+    if (!reachable) return false;
+    revokeOthersCalls++;
+    return true;
   }
 }
 

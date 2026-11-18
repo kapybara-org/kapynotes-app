@@ -11,6 +11,7 @@ import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/account/recovery_key_dialog.dart';
 import 'package:kapy_notes/ui/account/sync_pane.dart';
@@ -525,5 +526,63 @@ void main() {
     expect(find.text('Someone'), findsWidgets);
     expect(find.byKey(const ValueKey('sign-out')), findsOneWidget);
     second.dispose();
+  }, timeout: const Timeout(Duration(minutes: 2)));
+
+  testWidgets('signing out other devices asks first, then does it', (
+    tester,
+  ) async {
+    final auth = FakeAuth();
+    final app = build(auth: auth);
+    await tester.runAsync(() async {
+      await app.notes.load();
+      await app.account.restore();
+      await app.account.signIn(email: 'a@b.co', password: 'x');
+      await app.account.createPassphrase('a good passphrase');
+    });
+    await tester.pumpWidget(harness(app.account));
+    await tester.pumpAndSettle();
+
+    final button = find.byKey(const ValueKey('sign-out-others'));
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('Sign out other devices?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(auth.revokeOthersCalls, 0);
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('sign-out-others-confirm')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    expect(auth.revokeOthersCalls, 1);
+    expect(app.account.state, AccountState.ready);
+    app.account.dispose();
+  }, timeout: const Timeout(Duration(minutes: 2)));
+
+  testWidgets('a session the server ended says why on the sign-in form', (
+    tester,
+  ) async {
+    final auth = FakeAuth();
+    final app = build(auth: auth);
+    await tester.runAsync(() async {
+      await app.notes.load();
+      await app.account.restore();
+      await app.account.signIn(email: 'a@b.co', password: 'x');
+      await app.account.createPassphrase('a good passphrase');
+      auth.sessionValid = false;
+      app.server.failNext = const SyncAuthException('session rejected');
+      await app.account.sync!.syncNow();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpWidget(harness(app.account));
+    await tester.pumpAndSettle();
+
+    expect(find.text(Account.sessionEndedReason), findsOneWidget);
+    expect(find.text('Email me a code'), findsOneWidget);
+    app.account.dispose();
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

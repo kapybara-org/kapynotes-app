@@ -129,6 +129,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
        _now = now ?? DateTime.now {
     _notes.addListener(_onNotesChanged);
     _docs.beforeFlush = _state.cursorsToSave;
+    tasks?.onRefusal = () {
+      if (_status == SyncStatus.idle || _status == SyncStatus.failed) _settle();
+    };
   }
 
   /// Protocol 3 shipped on this day. A note nobody has touched since was
@@ -205,6 +208,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// month of keystrokes queued against a refusal. A space leaves only when
   /// the server serves it again, so what the UI shows never flickers.
   final Set<String> _needsPro = {};
+
+  /// Notes whose push the server refused for a reason this build cannot
+  /// answer, with the note's edit time then. Sending the same thing again
+  /// would only be refused again, so each waits for its next edit.
+  final Map<String, DateTime?> _stuck = {};
+  String? _stuckError;
 
   /// Whether the next pass asks about [_needsPro] again. Set only by something
   /// that could have changed the answer: a purchase or a trial ending, the
@@ -620,12 +629,14 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       await _drain();
       await _tasks?.run();
       _failures = 0;
-      _lastError = null;
       _state.recordSync(_now());
-      _setStatus(SyncStatus.idle);
+      _settle();
     } on SyncAuthException catch (error) {
+      // The account asks the server whether the session has really gone, and
+      // signs out only if it has. Until then this is one more failure.
       _lastError = error.message;
       _setStatus(SyncStatus.signedOut);
+      _scheduleRetry();
     } on SyncOutdatedException catch (error) {
       _lastError = error.message;
       _stopPolling();
@@ -1317,6 +1328,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       if (record.outbox.isEmpty) continue;
       final entry = record.outbox.first;
       if (entry.inFlight) continue;
+      final note = _notes.byId(record.noteId);
+      if (_stuck.containsKey(record.noteId) &&
+          _stuck[record.noteId] == note?.updatedAt) {
+        continue;
+      }
       // What was queued before the refusal waits in the outbox, in order.
       if (_needsPro.contains(entry.spaceId) ||
           (entry.from != null && _needsPro.contains(entry.from))) {
@@ -1327,7 +1343,6 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       // last sent, and the reading is what hands it its own ops back and moves
       // its numbering past them; see [_claimDeviceSeq].
       if (!_caughtUp.contains(entry.spaceId)) continue;
-      final note = _notes.byId(record.noteId);
       // Closed to typing before it is sealed, so a keystroke that lands while
       // it is goes into the entry behind it, not into ops the seal has already
       // read; and in flight, so a second drain does not seal it too.
@@ -1373,6 +1388,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
             _scheduleRetry();
           } else if (error is SyncAuthException) {
             _setStatus(SyncStatus.signedOut);
+            _scheduleRetry();
           } else if (error is SyncOutdatedException) {
             _setStatus(SyncStatus.outdated);
           }
@@ -1540,9 +1556,9 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
     }
     _docs.markDirty(record.noteId);
     _state.recordSync(_now());
+    _stuck.remove(record.noteId);
     if (_status == SyncStatus.offline || _status == SyncStatus.failed) {
-      _lastError = null;
-      _setStatus(SyncStatus.idle);
+      _settle();
     }
     _scheduleSend();
     notifyListeners();
@@ -1610,8 +1626,11 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           );
         }
         _docs.markDirty(record.noteId);
-        _lastError = code;
-        _setStatus(SyncStatus.failed);
+        _stuck[record.noteId] = _notes.byId(record.noteId)?.updatedAt;
+        _stuckError = code.contains('too large')
+            ? 'A note is too large to sync. Shorten it to sync it again.'
+            : 'A note could not sync ($code).';
+        _settle();
     }
   }
 
@@ -2224,6 +2243,15 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
 
   String _nextRequestId() =>
       '${_state.deviceId.substring(0, 8)}-${++_requestCounter}-${_now().millisecondsSinceEpoch}';
+
+  /// Idle, unless a note, or the tasks and tags, the server refused are still
+  /// waiting: then failed, and saying which, rather than a pass reading as
+  /// synced without them.
+  void _settle() {
+    final problem = _stuck.isEmpty ? _tasks?.refusal : _stuckError;
+    _lastError = problem;
+    _setStatus(problem == null ? SyncStatus.idle : SyncStatus.failed);
+  }
 
   void _setStatus(SyncStatus status) {
     if (_status == status) return;

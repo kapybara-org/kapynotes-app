@@ -321,6 +321,21 @@ class KeyStore {
     );
   }
 
+  /// A session the server has ended. Only the token goes: the key and whose
+  /// it is stay, so signing back in to the same account needs no passphrase.
+  Future<void> forgetToken() async {
+    _token = null;
+    _tokenRead = true;
+    await _store.delete(_tokenEntry);
+  }
+
+  /// Another account signed in on this device: the key it holds is not theirs.
+  Future<void> forgetMasterKey() async {
+    _masterKey = null;
+    _masterKeyRead = true;
+    await _store.delete(_masterKeyEntry);
+  }
+
   /// Signing out. Drops the key and the token but never the notes: those are
   /// the user's, they are on their device, and a sign-out is not a delete.
   Future<void> clear() async {

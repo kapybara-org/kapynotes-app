@@ -162,8 +162,18 @@ class Account extends ChangeNotifier {
   SpaceKeyring? _keyring;
   TrustStore? _trust;
   String? _lastError;
+  String? _signedOutReason;
+  SyncStatus? _syncStatus;
 
   AccountState get state => _accountState;
+
+  /// Why this device is signed out when nobody signed it out: the server
+  /// ended its session. Null after a sign-out, a deletion, or a fresh install.
+  String? get signedOutReason => _signedOutReason;
+
+  static const String sessionEndedReason =
+      'Your session ended. Sign in again to keep syncing. '
+      'Your notes are still on this device.';
   AccountUser? get user => _user;
 
   /// The current session token, for API clients built outside this object.
@@ -217,7 +227,12 @@ class Account extends ChangeNotifier {
       _tasks.index.recordCursor(0);
     }
     final token = await _keys.readToken();
-    if (token == null) return _moveTo(AccountState.signedOut);
+    if (token == null) {
+      // A key and an owner with no session left: the server ended it on an
+      // earlier launch, and the reason still stands.
+      if (await _keys.readUser() != null) _signedOutReason = sessionEndedReason;
+      return _moveTo(AccountState.signedOut);
+    }
 
     switch (await _auth.checkSession(token)) {
       case SessionActive(:final user):
@@ -231,10 +246,9 @@ class Account extends ChangeNotifier {
         }
       case SessionRejected():
         // Asked, and told no: expired, revoked, or signed out on another
-        // device. The notes stay; only the session is gone, and signing in
-        // again picks them up where they were.
-        await _keys.clear();
-        _moveTo(AccountState.signedOut);
+        // device. Only the session is gone. The notes and the key stay, so
+        // signing back in to the same account picks up where it was.
+        await _endSession();
       case SessionUnreachable():
         // Not asked. Nothing has been revoked, so nothing is thrown away —
         // this device carries on as whoever it was, and the sync layer will
@@ -306,6 +320,12 @@ class Account extends ChangeNotifier {
     final result = await attempt();
     switch (result) {
       case AuthSignedIn(:final token, :final user):
+        // The key on this device opens one account. Anyone else signing in
+        // starts without it, and without what was kept for that account.
+        final previous = await _keys.readUser();
+        if (previous?.id != user.id) await _keys.forgetMasterKey();
+        if (previous != null && previous.id != user.id) _forgetAccountData();
+        _signedOutReason = null;
         _token = token;
         _user = user;
         await _keys.writeToken(token);
@@ -528,7 +548,10 @@ class Account extends ChangeNotifier {
     _speech = speechApiFor?.call(_token!);
     _images = images;
     _keyring = keyring;
-    _sync = service..addListener(notifyListeners);
+    _syncStatus = null;
+    _sync = service
+      ..addListener(notifyListeners)
+      ..addListener(_onSyncStatus);
     _tasks.attachSync(service.reconcileTasksNow);
     _sharing = Sharing(
       api: api,
@@ -569,6 +592,50 @@ class Account extends ChangeNotifier {
     _tasks.detachSync();
   }
 
+  /// A sync call was refused for want of a session. A 401 from anything
+  /// between here and the server proves nothing, so the server is asked, and
+  /// the device signs out only if it says the session has gone. Otherwise the
+  /// sync service keeps retrying on its own backoff.
+  void _onSyncStatus() {
+    final status = _sync?.status;
+    if (status == _syncStatus) return;
+    _syncStatus = status;
+    if (status == SyncStatus.signedOut) unawaited(_confirmSession());
+  }
+
+  Future<void> _confirmSession() async {
+    final token = _token;
+    if (token == null) return;
+    if (await _auth.checkSession(token) is! SessionRejected) return;
+    if (_token == token) await _endSession();
+  }
+
+  /// The server ended this device's session: signed out with the reason, the
+  /// notes and the key kept.
+  Future<void> _endSession() async {
+    _teardownSync();
+    _token = null;
+    _user = null;
+    await _keys.forgetToken();
+    _signedOutReason = sessionEndedReason;
+    _moveTo(AccountState.signedOut);
+  }
+
+  /// Ends every other device's session. This one stays signed in.
+  Future<bool> signOutOtherDevices() async {
+    final token = _token;
+    return token != null && await _auth.revokeOtherSessions(token);
+  }
+
+  /// What is kept for the account rather than for the device.
+  void _forgetAccountData() {
+    _state.clearCursor();
+    // Its ids and its seal are the account's; the next account pulls its own,
+    // and until then the library rebuilds the index from the documents.
+    _tasks.index.clear();
+    _tags.forgetAccount();
+  }
+
   /// Signing out drops the session and the key. It never touches the notes:
   /// they are the user's, they are on their device, and a sign-out is not a
   /// delete.
@@ -577,11 +644,8 @@ class Account extends ChangeNotifier {
     _teardownSync();
     _token = null;
     _user = null;
-    _state.clearCursor();
-    // Its ids and its seal are the account's; the next account pulls its own,
-    // and until then the library rebuilds the index from the documents.
-    _tasks.index.clear();
-    _tags.forgetAccount();
+    _signedOutReason = null;
+    _forgetAccountData();
     await _keys.clear();
     if (token != null) await _auth.signOut(token);
     _moveTo(AccountState.signedOut);
@@ -649,9 +713,8 @@ class Account extends ChangeNotifier {
     _token = null;
     _user = null;
     _lastError = null;
-    _state.clearCursor();
-    _tasks.index.clear();
-    _tags.forgetAccount();
+    _signedOutReason = null;
+    _forgetAccountData();
     await _keys.clear();
     _moveTo(AccountState.signedOut);
     return true;

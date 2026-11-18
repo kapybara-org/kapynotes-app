@@ -8,6 +8,8 @@ import 'package:kapy_notes/speech/speech_api.dart';
 import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/sync/sync_api.dart';
+import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 
 import '../billing/billing_fakes.dart';
@@ -342,37 +344,170 @@ void main() {
     restarted.dispose();
   });
 
-  test('a session the server refuses is still dropped', () async {
-    // The other half: being told no is not the same as not being able to ask,
-    // and this one does have to clear.
+  group('a session the server ended', () {
+    Account relaunch(Device d) {
+      final syncState = SyncState(d.store);
+      return Account(
+        auth: d.auth,
+        syncApi: (_) => FakeApi(server),
+        keys: d.keys,
+        notes: d.notes,
+        state: syncState,
+        store: d.store,
+        tags: TagStore(d.store),
+        tasks: TaskLibrary(
+          notes: d.notes,
+          store: d.store,
+          state: syncState,
+          storage: MemoryDocStorage(),
+        ),
+      );
+    }
+
+    Future<Device> endedSession() async {
+      final d = Device(server);
+      await d.boot();
+      await d.account.signIn(email: 'a@b.co', password: 'x');
+      await d.account.createPassphrase('a good passphrase');
+      d.notes.create(body: 'Mine');
+      d.dispose();
+      d.auth.sessionValid = false;
+      return d;
+    }
+
+    test('drops the session, says why, and keeps the key', () async {
+      final d = await endedSession();
+      final restarted = relaunch(d);
+      await restarted.restore();
+
+      expect(restarted.state, AccountState.signedOut);
+      expect(restarted.signedOutReason, Account.sessionEndedReason);
+      expect(await d.keys.readToken(), isNull);
+      expect(await d.keys.readMasterKey(), isNotNull);
+      expect(d.notes.notes, hasLength(1));
+      restarted.dispose();
+
+      final again = relaunch(d);
+      await again.restore();
+      expect(
+        again.signedOutReason,
+        Account.sessionEndedReason,
+        reason: 'the reason stands on the next launch too',
+      );
+      again.dispose();
+    });
+
+    test('signing back in to the same account needs no passphrase', () async {
+      final d = await endedSession();
+      final restarted = relaunch(d);
+      await restarted.restore();
+
+      d.auth.sessionValid = true;
+      await restarted.signIn(email: 'a@b.co', password: 'x');
+
+      expect(restarted.state, AccountState.ready);
+      expect(restarted.signedOutReason, isNull);
+      expect(d.notes.notes, hasLength(1));
+      restarted.dispose();
+    });
+
+    test('another account signing in starts without the key', () async {
+      final d = await endedSession();
+      final restarted = relaunch(d);
+      await restarted.restore();
+
+      d.auth
+        ..sessionValid = true
+        ..id = 'someone-else'
+        ..email = 'other@b.co';
+      await restarted.signIn(email: 'other@b.co', password: 'x');
+
+      expect(await d.keys.readMasterKey(), isNull);
+      expect(restarted.state, AccountState.needsAccountDecision);
+      expect(d.notes.notes, hasLength(1), reason: 'the notes are not dropped');
+      restarted.dispose();
+    });
+
+    test('signing out after it still drops the key', () async {
+      final d = await endedSession();
+      final restarted = relaunch(d);
+      await restarted.restore();
+
+      await restarted.signOut();
+
+      expect(await d.keys.readMasterKey(), isNull);
+      expect(restarted.signedOutReason, isNull);
+      restarted.dispose();
+    });
+  });
+
+  group('a 401 during sync', () {
+    Future<Device> ready() async {
+      final d = Device(server);
+      await d.boot();
+      await d.account.signIn(email: 'a@b.co', password: 'x');
+      await d.account.createPassphrase('a good passphrase');
+      return d;
+    }
+
+    test('signs out once the server confirms the session is gone', () async {
+      final d = await ready();
+      d.notes.create(body: 'Kept');
+      d.auth.sessionValid = false;
+      server.failNext = const SyncAuthException('session rejected');
+
+      await d.account.sync!.syncNow();
+      await pumpEventQueue();
+
+      expect(d.account.state, AccountState.signedOut);
+      expect(d.account.signedOutReason, Account.sessionEndedReason);
+      expect(await d.keys.readMasterKey(), isNotNull);
+      expect(d.notes.notes, hasLength(1));
+      d.dispose();
+    });
+
+    test('stays signed in when the server says the session is fine', () async {
+      final d = await ready();
+      server.failNext = const SyncAuthException('session rejected');
+
+      await d.account.sync!.syncNow();
+      await pumpEventQueue();
+
+      expect(d.auth.sessionChecks, greaterThan(0));
+      expect(d.account.state, AccountState.ready);
+      expect(await d.keys.readToken(), isNotNull);
+
+      await d.account.sync!.syncNow();
+      expect(d.account.sync!.status, SyncStatus.idle, reason: 'and resumes');
+      d.dispose();
+    });
+
+    test('stays signed in when the server cannot be asked', () async {
+      final d = await ready();
+      d.auth.reachable = false;
+      server.failNext = const SyncAuthException('session rejected');
+
+      await d.account.sync!.syncNow();
+      await pumpEventQueue();
+
+      expect(d.account.state, AccountState.ready);
+      d.dispose();
+    });
+  });
+
+  test('signing out other devices keeps this one signed in', () async {
     final d = Device(server);
     await d.boot();
     await d.account.signIn(email: 'a@b.co', password: 'x');
     await d.account.createPassphrase('a good passphrase');
+
+    expect(await d.account.signOutOtherDevices(), isTrue);
+    expect(d.auth.revokeOthersCalls, 1);
+    expect(d.account.state, AccountState.ready);
+
+    d.auth.reachable = false;
+    expect(await d.account.signOutOtherDevices(), isFalse);
     d.dispose();
-
-    d.auth.sessionValid = false;
-    final syncState = SyncState(d.store);
-    final restarted = Account(
-      auth: d.auth,
-      syncApi: (_) => FakeApi(server),
-      keys: d.keys,
-      notes: d.notes,
-      state: syncState,
-      store: d.store,
-      tags: TagStore(d.store),
-      tasks: TaskLibrary(
-        notes: d.notes,
-        store: d.store,
-        state: syncState,
-        storage: MemoryDocStorage(),
-      ),
-    );
-    await restarted.restore();
-
-    expect(restarted.state, AccountState.signedOut);
-    expect(await d.keys.readMasterKey(), isNull);
-    restarted.dispose();
   });
 
   test('signing out drops the key but never the notes', () async {

@@ -174,6 +174,10 @@ abstract class AuthApi {
 
   /// Whether a stored token is still a session, and whose.
   Future<SessionCheck> checkSession(String token);
+
+  /// Ends every session of this account except the one holding [token].
+  /// False when the server could not be reached or did not do it.
+  Future<bool> revokeOtherSessions(String token);
 }
 
 class HttpAuthApi implements AuthApi {
@@ -323,15 +327,41 @@ class HttpAuthApi implements AuthApi {
     }
     // Only the server saying so revokes anything. A 500 or a 502 is the
     // server having a bad minute — which a release, of all times, is when it
-    // is most likely to be having one.
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      return const SessionRejected();
-    }
+    // is most likely to be having one — and a 403 or a page that is not JSON
+    // is a proxy or a captive portal speaking, not the server.
+    if (response.statusCode == 401) return const SessionRejected();
     if (response.statusCode != 200) return const SessionUnreachable();
-    final body = jsonDecode(response.body);
+    final Object? body;
+    try {
+      body = jsonDecode(response.body);
+    } on FormatException {
+      return const SessionUnreachable();
+    }
+    // Better Auth's answer for a session that has expired or was revoked: 200
+    // and `null`, never a 401.
+    if (body == null) return const SessionRejected();
     if (body is! Map) return const SessionUnreachable();
     final user = AccountUser.fromJson(body['user']);
     return user == null ? const SessionUnreachable() : SessionActive(user);
+  }
+
+  @override
+  Future<bool> revokeOtherSessions(String token) async {
+    try {
+      final response = await _client
+          .post(
+            _baseUrl.resolve('api/auth/revoke-other-sessions'),
+            headers: {
+              'authorization': 'Bearer $token',
+              'content-type': 'application/json',
+            },
+            body: '{}',
+          )
+          .timeout(timeout);
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Sign-in and sign-up differ only in the path: both answer with a session
