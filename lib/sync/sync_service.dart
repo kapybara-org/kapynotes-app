@@ -2208,6 +2208,12 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
 
   /// Notes from spaces this account is no longer in. Clean ones go; ones
   /// with unsynced edits come home as the user's own notes.
+  final Set<String> _left = {};
+
+  /// The user left [spaceId] themselves and chose what to keep, so nothing
+  /// unsent there is kept for them again when the space is forgotten.
+  void left(String spaceId) => _left.add(spaceId);
+
   void _forgetDepartedSpaces() {
     final live = {for (final space in _keyring.spaces) space.id};
     final home = _keyring.personal?.id;
@@ -2220,6 +2226,13 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
         for (final note in _notes.notesIn(spaceId))
           if (home != null && _docs.get(note.id)?.spaceId == home) note.id,
       ], at: _now());
+      if (!_left.remove(spaceId)) {
+        // Removed rather than left: an edit still in the outbox is unsynced
+        // work all the same, and is kept as the user's own note.
+        for (final note in _notes.notesIn(spaceId)) {
+          if (_docs.get(note.id)?.hasPending ?? false) _notes.touch(note.id);
+        }
+      }
       final kept = _notes.forgetSpace(spaceId);
       _state.forgetSpace(spaceId);
       _subscribed.remove(spaceId);
