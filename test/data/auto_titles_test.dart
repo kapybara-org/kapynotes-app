@@ -399,6 +399,31 @@ void main() {
       });
     });
 
+    test(
+      'says which new notes it will name, so the rest open on the title',
+      () {
+        fakeAsync((async) {
+          start(async);
+          final plain = notes.create(body: Note.blankBody, authored: false);
+          final hidden = notes.create(body: Note.blankBody, hidden: true);
+          final drawing = notes.create(body: Note.blankBody, authored: false);
+          notes.setDrawingMode(drawing.id, drawing: true);
+          expect(namer.willName(plain), isTrue);
+          expect(namer.willName(hidden), isFalse);
+          expect(namer.willName(notes.byId(drawing.id)!), isFalse);
+
+          prefs.autoTitlesEnabled = false;
+          expect(namer.willName(plain), isFalse);
+          prefs.autoTitlesEnabled = true;
+
+          model.reason = 'Needs a built-in on-device model';
+          unawaited(namer.check());
+          async.flushMicrotasks();
+          expect(namer.willName(plain), isFalse);
+        });
+      },
+    );
+
     test('the setting off names nothing; on is the default', () {
       fakeAsync((async) {
         start(async);

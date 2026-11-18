@@ -190,6 +190,7 @@ class NoteEditor extends StatefulWidget {
     this.onMarkdownEnabledChanged,
     this.autofocus = false,
     this.startAtEnd = false,
+    this.namedByPerson = true,
     this.initialCaret,
     this.onCaretChanged,
     this.ensureKeyboardVisible = false,
@@ -362,6 +363,12 @@ class NoteEditor extends StatefulWidget {
   final ValueChanged<bool>? onMarkdownEnabledChanged;
   final bool autofocus;
   final bool startAtEnd;
+
+  /// Whether the person names this note rather than the model on the
+  /// device. A new note they name opens with its title selected, so the
+  /// first thing typed names it; one the model names opens on the line
+  /// below, for the note itself.
+  final bool namedByPerson;
 
   /// Where the caret was left in this note earlier today, if it was.
   ///
@@ -894,9 +901,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _scheduleKeyboardRetry();
   }
 
-  /// Places the caret after the note's final character and brings it on screen.
+  /// Places the caret after the note's final character and brings it on
+  /// screen. A new note the person names opens with its title selected.
   void focusAtEnd() {
     if (!mounted || widget.readOnly) return;
+    if (widget.namedByPerson && _controller.text == Note.blankBody) {
+      _controller.selection = const TextSelection(
+        baseOffset: 0,
+        extentOffset: Note.untitled.length,
+      );
+      _focusNode.requestFocus();
+      _recordKapyPeekActivity();
+      _scheduleKeyboardRetry();
+      return;
+    }
     _controller.selection = TextSelection.collapsed(
       offset: _controller.text.length,
     );

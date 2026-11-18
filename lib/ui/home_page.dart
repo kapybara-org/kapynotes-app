@@ -3871,6 +3871,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           resultsVisible: true,
           autofocus: _readyToTypeIn(note),
           startAtEnd: _readyToTypeIn(note),
+          namedByPerson: !(_namer?.willName(note) ?? false),
           initialCaret: _resumeCaretIn(note),
           onCaretChanged: (offset) =>
               widget.prefs.rememberCaret(note.id, offset),
@@ -3963,6 +3964,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           autofocus:
               active && !_selectionAutofocusSuppressed && _readyToTypeIn(note),
           startAtEnd: active && _readyToTypeIn(note),
+          namedByPerson: !(_namer?.willName(note) ?? false),
           initialCaret: _resumeCaretIn(note),
           onCaretChanged: (offset) =>
               widget.prefs.rememberCaret(note.id, offset),

@@ -1037,14 +1037,54 @@ void main() {
           .controller;
     }
 
-    testWidgets('is New Note, and a caret in the title takes all of it', (
+    testWidgets('opens on the line below New Note when it will be named', (
+      tester,
+    ) async {
+      await pumpApp(tester, titleModel: _InstantTitles('Unused'));
+      final field = await newNote(tester);
+      expect(field.text, Note.blankBody);
+      expect(field.selection, const TextSelection.collapsed(offset: 9));
+      expect(notes.notes.first.title, 'New Note');
+    });
+
+    testWidgets('opens on New Note, selected, where nothing will name it', (
       tester,
     ) async {
       await pumpApp(tester);
       final field = await newNote(tester);
       expect(field.text, Note.blankBody);
-      expect(field.selection, const TextSelection.collapsed(offset: 9));
-      expect(notes.notes.first.title, 'New Note');
+      expect(
+        field.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+      );
+
+      field.value = const TextEditingValue(
+        text: 'Groceries\n',
+        selection: TextSelection.collapsed(offset: 9),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        notes.notes.first.title,
+        'Groceries',
+        reason: 'typed, it names it',
+      );
+    });
+
+    testWidgets('with the setting off, opens on New Note, selected', (
+      tester,
+    ) async {
+      prefs.autoTitlesEnabled = false;
+      await pumpApp(tester, titleModel: _InstantTitles('Unused'));
+      final field = await newNote(tester);
+      expect(
+        field.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+      );
+    });
+
+    testWidgets('a caret in New Note takes all of it', (tester) async {
+      await pumpApp(tester, titleModel: _InstantTitles('Unused'));
+      final field = await newNote(tester);
 
       field.selection = const TextSelection.collapsed(offset: 3);
       await tester.pump();

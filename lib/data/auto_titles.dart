@@ -222,8 +222,14 @@ class NoteNamer extends ChangeNotifier {
     unawaited(_name(id));
   }
 
-  bool _mayTouch(Note note) =>
-      !note.isHidden && !note.isDrawing && !note.isArchived && mayName(note);
+  bool _mayTouch(Note note) => _kindToName(note) && mayName(note);
+
+  bool _kindToName(Note note) =>
+      !note.isHidden && !note.isDrawing && !note.isArchived;
+
+  /// Whether [note], new, will be named here as it is written. Where it
+  /// will not, the person names it, so it opens on its title.
+  bool willName(Note note) => isOn && _kindToName(note);
 
   Future<void> _name(String id) async {
     _running = id;
