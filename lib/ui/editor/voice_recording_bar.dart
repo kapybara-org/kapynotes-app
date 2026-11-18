@@ -206,7 +206,7 @@ class _RecordingDot extends StatelessWidget {
       child: Center(
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 100),
-          curve: Curves.easeOut,
+          curve: Curves.easeOutCubic,
           width: 8 + response * 3,
           height: 8 + response * 3,
           decoration: BoxDecoration(

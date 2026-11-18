@@ -236,7 +236,10 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final scheme = Theme.of(context).colorScheme;
-    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    final curve = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
     final dark = Theme.of(context).brightness == Brightness.dark;
     final compact = AppPlatform.hasPointer;
     final statusColor = widget.isError ? scheme.error : scheme.primary;

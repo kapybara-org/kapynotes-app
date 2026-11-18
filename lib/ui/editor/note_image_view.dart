@@ -352,7 +352,7 @@ class _NoteImageViewState extends State<NoteImageView> {
                       AnimatedOpacity(
                         opacity: frame == null ? 0 : 1,
                         duration: const Duration(milliseconds: 180),
-                        curve: Curves.easeOut,
+                        curve: Curves.easeOutCubic,
                         child: child,
                       ),
                   errorBuilder: (context, error, stack) => _Unavailable(

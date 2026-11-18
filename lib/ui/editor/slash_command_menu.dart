@@ -545,13 +545,13 @@ class _SlashCommandOverlayState extends State<_SlashCommandOverlay>
       _scroll.animateTo(
         top,
         duration: const Duration(milliseconds: 100),
-        curve: Curves.easeOut,
+        curve: Curves.easeOutCubic,
       );
     } else if (bottom > position.pixels + position.viewportDimension) {
       _scroll.animateTo(
         bottom - position.viewportDimension,
         duration: const Duration(milliseconds: 100),
-        curve: Curves.easeOut,
+        curve: Curves.easeOutCubic,
       );
     }
   }
@@ -567,7 +567,10 @@ class _SlashCommandOverlayState extends State<_SlashCommandOverlay>
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    final curve = CurvedAnimation(parent: _animation, curve: Curves.easeOut);
+    final curve = CurvedAnimation(
+      parent: _animation,
+      curve: Curves.easeOutCubic,
+    );
     return Stack(
       children: [
         Positioned.fill(

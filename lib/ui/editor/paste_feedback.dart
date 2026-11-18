@@ -94,7 +94,7 @@ class _WashPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final strength = 1 - Curves.easeIn.transform(fade.value);
+    final strength = 1 - Curves.easeInCubic.transform(fade.value);
     final area = strength == 0 ? null : rows();
     if (area == null) return;
     canvas.drawRRect(
