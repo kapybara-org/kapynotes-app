@@ -3762,19 +3762,76 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         keyboard.isAltPressed) {
       return KeyEventResult.ignored;
     }
-    if (!_focusNode.hasFocus || !_showIndentControls) {
-      return KeyEventResult.ignored;
-    }
+    if (!_focusNode.hasFocus) return KeyEventResult.ignored;
     final pressed = keyboard.logicalKeysPressed;
     final outdent =
         pressed.contains(LogicalKeyboardKey.shiftLeft) ||
         pressed.contains(LogicalKeyboardKey.shiftRight);
+    if (_indentCode(outdent: outdent)) return KeyEventResult.handled;
+    if (!_showIndentControls) return KeyEventResult.ignored;
     // Claim the key even at the ends of the range, or Tab would silently fall
     // through to focus traversal exactly when the list stops moving.
     if (_canIndent(outdent: outdent)) {
       _indentList(outdent: outdent);
     }
     return KeyEventResult.handled;
+  }
+
+  /// Tab inside a fenced code block puts two spaces in, or at the start of
+  /// each selected line, and Shift+Tab takes them back: the fences themselves
+  /// are left alone. Says whether the caret was in a block's code.
+  bool _indentCode({required bool outdent}) {
+    final value = _controller.value;
+    final selection = value.selection;
+    if (!widget.markdownEnabled || !selection.isValid) return false;
+    final analysis = _controller.markdownFor(value.text);
+    for (final block in analysis.blocks) {
+      final fences = analysis.fencesOf(block);
+      if (fences == null) continue;
+      final code = TextRange(
+        start: fences.open.end + 1,
+        end: fences.close?.start ?? block.end,
+      );
+      if (selection.start < code.start || selection.end > code.end) continue;
+      if (widget.readOnly) return true;
+      var text = value.text;
+      var start = selection.start;
+      var end = selection.end;
+      if (selection.isCollapsed && !outdent) {
+        text = text.replaceRange(start, start, '  ');
+        start = end = start + 2;
+      } else {
+        final last = end > start && text.codeUnitAt(end - 1) == 0x0A
+            ? end - 1
+            : end;
+        final lineStarts = <int>[];
+        var at = text.lastIndexOf('\n', start - 1) + 1;
+        while (at <= last) {
+          lineStarts.add(at);
+          final next = text.indexOf('\n', at);
+          if (next < 0) break;
+          at = next + 1;
+        }
+        for (final at in lineStarts.reversed) {
+          final removed = outdent
+              ? RegExp(r'^ {0,2}').stringMatch(text.substring(at))!.length
+              : 0;
+          final shift = outdent ? -removed : 2;
+          text = outdent
+              ? text.replaceRange(at, at + removed, '')
+              : text.replaceRange(at, at, '  ');
+          if (start > at) start = math.max(at, start + shift);
+          if (end > at) end = math.max(at, end + shift);
+        }
+      }
+      _nextInsertedFormats = const {};
+      _controller.value = value.copyWith(
+        text: text,
+        selection: TextSelection(baseOffset: start, extentOffset: end),
+      );
+      return true;
+    }
+    return false;
   }
 
   void _handlePointerDown(PointerDownEvent event) {
@@ -3984,10 +4041,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
 
     final offset = field.positionAt(event.position).offset;
+    final unmoved = down.selection.isValid
+        ? _controller.value.copyWith(selection: down.selection)
+        : _controller.value;
     final task = _markdownTaskAt(field, event.position, offset);
     if (!widget.readOnly && task != null) {
       _nextInsertedFormats = const {};
-      _controller.value = toggleMarkdownTask(_controller.value, task.box);
+      _controller.value = toggleMarkdownTask(unmoved, task.box);
       _focusNode.requestFocus();
       if (!task.checked) _celebrateCheck(field, event.position);
       return;
@@ -3999,7 +4059,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         uncheckedPrefix,
         checkboxStart,
       );
-      _controller.value = toggleCheckboxAt(_controller.value, checkboxStart);
+      _controller.value = toggleCheckboxAt(unmoved, checkboxStart);
       _focusNode.requestFocus();
       // Only on the way in. Unticking something is a correction, and a
       // correction that throws confetti is mocking you.
@@ -7488,6 +7548,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     .bindingFor(ShortcutAction.pasteAsPlainText)
                     ?.activator: () =>
                     unawaited(_pastePlainText(SelectionChangedCause.keyboard)),
+                if (AppPlatform.isWindows || AppPlatform.isLinux)
+                  const SingleActivator(
+                    LogicalKeyboardKey.keyY,
+                    control: true,
+                  ): () => Actions.maybeInvoke(
+                    _focusNode.context!,
+                    const RedoTextIntent(SelectionChangedCause.keyboard),
+                  ),
                 // The Mac's own Paste and Match Style, alongside whatever
                 // the setting above says.
                 if (AppPlatform.isMacOS)
