@@ -41,6 +41,26 @@ void main() {
     phone.dispose();
   });
 
+  test('a refused task push shows as failed until one goes through', () async {
+    final laptop = Device(server, name: 'laptop');
+    await laptop.boot();
+    server.tasksFull = true;
+
+    final note = laptop.notes.create(body: '☐ Buy milk');
+    await laptop.pass();
+    expect(laptop.sync.status, SyncStatus.failed, reason: 'not "synced"');
+    expect(laptop.sync.lastError, contains('Too many tasks'));
+    expect(stored(laptop), isEmpty);
+
+    server.tasksFull = false;
+    laptop.notes.updateBody(note.id, '☐ Buy milk\n☐ Bread');
+    await laptop.pass();
+    expect(laptop.sync.status, SyncStatus.idle);
+    expect(laptop.sync.lastError, isNull);
+    expect(stored(laptop), hasLength(2));
+    laptop.dispose();
+  });
+
   test('a dot on one device and a tick on the other both survive', () async {
     final laptop = Device(server, name: 'laptop');
     final phone = Device(server, name: 'phone');
