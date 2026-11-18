@@ -54,9 +54,16 @@ void main() {
 
   Future<void> open(WidgetTester tester, String body) async {
     await tester.pumpWidget(const SizedBox.shrink());
-    for (var i = 0; i < 30 && tester.view.viewInsets.bottom > 0; i++) {
+    for (var i = 0; i < 150 && tester.view.viewInsets.bottom > 0; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
+    expect(
+      tester.view.viewInsets.bottom,
+      0,
+      reason:
+          'the last case\'s keyboard is still going down; mounting over it '
+          'would have the editor let go when it finally does',
+    );
     await tester.pumpWidget(
       MaterialApp(
         theme: KapyTheme.dark(),

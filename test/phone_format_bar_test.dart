@@ -500,6 +500,71 @@ void main() {
         });
       }
 
+      testWidgets('a link at a caret escapes brackets in its text', (
+        tester,
+      ) async {
+        await _open(
+          tester,
+          platform,
+          'Trip ',
+          const TextSelection.collapsed(offset: 5),
+        );
+        await _tap(tester, 'format-link');
+        await tester.enterText(
+          find.byKey(const ValueKey('link-address')),
+          r'a.co/x[1]\y',
+        );
+        await _tap(tester, 'link-add');
+        expect(_text(tester), r'Trip [a.co/x\[1\]\\y](a.co/x[1]\y)');
+      });
+
+      testWidgets(
+        'a link at a caret is dropped when the text before it moved',
+        (tester) async {
+          await _open(
+            tester,
+            platform,
+            'Trip budget',
+            const TextSelection.collapsed(offset: 5),
+          );
+          await _tap(tester, 'format-link');
+          _field(tester).controller.text = 'Hey Trip budget';
+          await tester.enterText(
+            find.byKey(const ValueKey('link-address')),
+            'a.co',
+          );
+          await _tap(tester, 'link-add');
+
+          expect(_text(tester), 'Hey Trip budget');
+          expect(find.text('Link not added, the note changed'), findsOneWidget);
+          _expectStillWriting(tester);
+        },
+      );
+
+      testWidgets('a link at a caret goes in when only far-off text changed', (
+        tester,
+      ) async {
+        const body = 'Trip budget for the whole summer holiday';
+        await _open(
+          tester,
+          platform,
+          body,
+          const TextSelection.collapsed(offset: 5),
+        );
+        await _tap(tester, 'format-link');
+        _field(tester).controller.text = '$body!';
+        await tester.enterText(
+          find.byKey(const ValueKey('link-address')),
+          'a.co',
+        );
+        await _tap(tester, 'link-add');
+
+        expect(
+          _text(tester),
+          'Trip [a.co](a.co)budget for the whole summer holiday!',
+        );
+      });
+
       testWidgets('cancelling the link leaves the note and its selection', (
         tester,
       ) async {

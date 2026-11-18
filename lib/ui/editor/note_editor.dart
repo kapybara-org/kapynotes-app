@@ -5809,8 +5809,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// the address as its own link at a caret.
   ///
   /// The note can change while the prompt is open, from another device. The
-  /// link still goes in when the same words are at the selection, and when
-  /// they are not it says so rather than vanish. The keyboard comes back
+  /// link still goes in when the same words are at the selection, or the same
+  /// few characters around a caret, and when they are not it says so rather
+  /// than vanish. The keyboard comes back
   /// either way.
   Future<void> _linkFromBar() async {
     final before = _controller.value;
@@ -5831,9 +5832,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     resumeWriting();
     if (address == null) return;
     final now = _controller.value;
-    if (selection.end > now.text.length ||
-        now.text.substring(selection.start, selection.end) !=
-            before.text.substring(selection.start, selection.end)) {
+    final from = selection.isCollapsed
+        ? math.max(0, selection.start - 8)
+        : selection.start;
+    final to = selection.isCollapsed
+        ? math.min(before.text.length, selection.end + 8)
+        : selection.end;
+    if (to > now.text.length ||
+        now.text.substring(from, to) != before.text.substring(from, to)) {
       Toast.show(
         context,
         'Link not added, the note changed',
@@ -5846,14 +5852,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       _linkSelection(address);
       return;
     }
+    final words = address.replaceAllMapped(
+      RegExp(r'[\\\[\]]'),
+      (match) => '\\${match[0]}',
+    );
     _replaceCommandValue(
       replaceSlashCommandRange(
         now,
         TextRange.collapsed(selection.start),
-        '[$address](${linkDestination(address)})',
+        '[$words](${linkDestination(address)})',
         selection: TextSelection(
           baseOffset: selection.start + 1,
-          extentOffset: selection.start + 1 + address.length,
+          extentOffset: selection.start + 1 + words.length,
         ),
       ),
     );
