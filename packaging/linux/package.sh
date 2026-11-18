@@ -231,6 +231,13 @@ EOF
 [[ -f "$BUNDLE/share/icons/hicolor/256x256/apps/$APP_ID.png" ]] || die "the 256 px icon is missing from $BUNDLE/share"
 [[ ! -e "$BUNDLE/lib/libdartjni.so" ]] || die "$BUNDLE/lib/libdartjni.so is Android-only (it links libjvm.so) and must not ship"
 [[ -x "$FFMPEG_DIR/ffmpeg" ]] || die "$FFMPEG_DIR/ffmpeg missing; run packaging/linux/build_ffmpeg.sh"
+# An ELF that calls into glibc's private ABI ties the .deb to one exact glibc
+# release, which dpkg-shlibdeps then writes into Depends, and can stop loading
+# on any other.
+while read -r elf; do
+  [[ "$(objdump -T "$elf" 2>/dev/null | grep -c GLIBC_PRIVATE || true)" == 0 ]] ||
+    die "${elf#"$BUNDLE"/} uses glibc's private ABI (GLIBC_PRIVATE) and must not ship"
+done < <(find "$BUNDLE/$BIN" "$BUNDLE/lib" "$FFMPEG_DIR/ffmpeg" -type f)
 
 rm -rf "$WORK"
 mkdir -p "$WORK"
@@ -249,6 +256,17 @@ while read -r elf; do
     strip --strip-unneeded "$elf"
   fi
 done < <(elfs_in "$PLAIN")
+# Flutter installs plugin libraries as plain files, so they keep the RUNPATH
+# of the build tree (.../linux/flutter/ephemeral): on a user's machine the
+# loader would search a path that does not exist, or one someone else
+# created. Every library in lib/ looks only beside itself instead.
+while read -r elf; do
+  [[ "${elf##*/}" == libapp.so ]] && continue
+  rpath="$(patchelf --print-rpath "$elf")"
+  [[ -z "$rpath" || "$rpath" == "\$ORIGIN" ]] && continue
+  # shellcheck disable=SC2016 # a literal $ORIGIN, for the dynamic loader
+  patchelf --set-rpath '$ORIGIN' "$elf"
+done < <(elfs_in "$PLAIN/lib")
 find "$PLAIN" -type d -exec chmod 0755 {} +
 find "$PLAIN" -type f -exec chmod 0644 {} +
 chmod 0755 "$PLAIN/$BIN" "$PLAIN/libexec/ffmpeg"

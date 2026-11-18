@@ -111,11 +111,19 @@ foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
     COMPONENT Runtime)
 endforeach(bundled_library)
 
-# Copy the native assets provided by the build.dart from all packages.
+# Copy the native assets provided by the build.dart from all packages, except
+# flutter_gemma_litertlm's LiteRT-LM runtime. Nothing loads it while Linux
+# does not offer local Gemma, it would be most of the download, and the x86_64
+# build of GemmaModelConstraintProvider calls into glibc's private ABI, which
+# ties a .deb to one exact glibc release.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"
    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-   COMPONENT Runtime)
+   COMPONENT Runtime
+   PATTERN "libLiteRt*" EXCLUDE
+   PATTERN "libGemmaModelConstraintProvider.so" EXCLUDE
+   PATTERN "libStreamProxy.so" EXCLUDE
+   PATTERN "libwebgpu_dawn.so" EXCLUDE)
 
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
