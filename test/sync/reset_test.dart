@@ -163,6 +163,93 @@ void main() {
     },
   );
 
+  test('the notes from before a reset come back with the old passphrase, '
+      'and only what is missing', () async {
+    final a = await unlocked('first passphrase', create: true);
+    a.notes.create(body: 'Only on the server');
+    a.notes.create(body: 'Deleted after the reset');
+    await settle([a]);
+    final b = await unlocked('first passphrase');
+    await settle([a, b]);
+
+    final c = Device(server)..account.deviceName = (_) async => 'Office iMac';
+    await c.boot();
+    await c.account.signIn(email: 'someone@example.com', password: 'x');
+    expect(await reset(c, 'new passphrase'), isA<KeyChangeDone>());
+    await settle([c]);
+    expect(c.account.canRestore, isTrue);
+    expect(c.account.restorableUntil, isNotNull);
+
+    expect(
+      await c.account.restoreFromArchive('nonsense'),
+      isA<RestoreWrongKey>(),
+    );
+    final first = await c.account.restoreFromArchive('first passphrase');
+    expect((first as RestoreDone).added, 2);
+    await settle([c]);
+    expect(
+      bodies(c),
+      containsAll(['Only on the server', 'Deleted after the reset']),
+    );
+    expect(onServer(), hasLength(2));
+
+    // Deleted here since: it stays deleted. Brought back already: nothing
+    // is added twice.
+    final doomed = c.notes.notes.firstWhere(
+      (n) => n.body == 'Deleted after the reset',
+    );
+    c.notes.delete(doomed.id);
+    await settle([c]);
+    final again = await c.account.restoreFromArchive('first passphrase');
+    expect((again as RestoreDone).added, 0);
+    expect(again.changed, 0);
+    expect(bodies(c), isNot(contains('Deleted after the reset')));
+
+    // A device that held the same notes rejoins without doubling any.
+    expect(await b.account.unlock('new passphrase'), isTrue);
+    await settle([b, c]);
+    expect(
+      c.notes.notes.where((n) => n.body == 'Only on the server'),
+      hasLength(1),
+    );
+    expect(bodies(b), contains('Only on the server'));
+    for (final d in [a, b, c]) {
+      d.dispose();
+    }
+  });
+
+  test('the old recovery key brings them back too, and nothing once the '
+      '30 days are over', () async {
+    final a = await signedIn();
+    final recovery = await a.account.createPassphrase('first passphrase');
+    await settle([a]);
+    await a.account.signOut();
+    // Written on another device, and never on this one.
+    final b = await unlocked('first passphrase');
+    b.notes.create(body: 'Kept by the recovery key');
+    await settle([b]);
+    b.dispose();
+    await a.account.signIn(email: 'someone@example.com', password: 'x');
+    expect(await reset(a, 'new passphrase'), isA<KeyChangeDone>());
+    await settle([a]);
+
+    final done = await a.account.restoreFromArchive(recovery!.formatted);
+    expect((done as RestoreDone).added, 1);
+    await settle([a]);
+    expect(bodies(a), contains('Kept by the recovery key'));
+    expect(onServer(), hasLength(1));
+
+    server.user('user-1')
+      ..archive = null
+      ..retired = null;
+    expect(
+      await a.account.restoreFromArchive('first passphrase'),
+      isA<RestoreGone>(),
+    );
+    expect(a.account.canRestore, isFalse);
+    a.dispose();
+  });
+
   test(
     'a device already holding the new key carries on without asking',
     () async {

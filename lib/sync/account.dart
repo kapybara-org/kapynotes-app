@@ -954,14 +954,75 @@ class Account extends ChangeNotifier {
     final token = _token;
     if (token == null) return;
     try {
-      final bundle = await _syncApiFor(token).fetchKeyBundle();
+      final api = _syncApiFor(token);
+      final bundle = await api.fetchKeyBundle();
       if (bundle == null || _token != token) return;
       _bundle = bundle;
       _markSeen(bundle);
+      _archive = bundle.generation > 1 ? await api.fetchKeyArchive() : null;
       notifyListeners();
     } on SyncException {
       // Offline: Settings shows what it last knew, and the next start asks.
     }
+  }
+
+  /// The notes from before the last reset, while the server keeps them.
+  KeyArchive? _archive;
+
+  /// Whether there are notes from before a reset to bring back.
+  bool get canRestore => _archive != null;
+
+  /// The day the notes from before the reset stop being kept, when known.
+  DateTime? get restorableUntil =>
+      (_archive?.retiredAt ?? _bundle?.changes.reset?.at)?.add(KeyArchive.kept);
+
+  /// Brings back the notes from before the last reset, with the passphrase
+  /// or recovery key that opened them then. The key from before is held
+  /// only for this, and wiped after.
+  Future<RestoreResult> restoreFromArchive(String typed) async {
+    final token = _token;
+    final sync = _sync;
+    if (token == null || sync == null) return const RestoreOffline();
+    final api = _syncApiFor(token);
+    try {
+      final archive = _archive = await api.fetchKeyArchive();
+      if (archive == null) {
+        notifyListeners();
+        return const RestoreGone();
+      }
+      final old = await _openArchive(archive, typed);
+      if (old == null) return const RestoreWrongKey();
+      try {
+        final restored = await sync.restoreArchive(
+          old,
+          (after) => api.pullArchiveLog(after: after),
+        );
+        return RestoreDone(added: restored.added, changed: restored.changed);
+      } finally {
+        old.wipe();
+      }
+    } on SyncTransientException {
+      return const RestoreOffline();
+    } on SyncException {
+      return const RestoreRefused();
+    }
+  }
+
+  Future<Vault?> _openArchive(KeyArchive archive, String typed) async {
+    final key = RecoveryKey.parse(typed);
+    final wrapped = archive.recoveryWrappedMasterKey;
+    if (key != null && wrapped != null) {
+      final vault = await Vault.unlockWithRecoveryKey(
+        recoveryKey: key,
+        recoveryWrappedMasterKey: wrapped,
+      );
+      if (vault != null) return vault;
+    }
+    return Vault.unlockWithPassphrase(
+      passphrase: typed,
+      kdf: archive.kdf,
+      wrappedMasterKey: archive.wrappedMasterKey,
+    );
   }
 
   /// At most hourly, so a sync pass costs nothing extra.
@@ -974,8 +1035,9 @@ class Account extends ChangeNotifier {
     final name = await deviceName(_user?.name);
     if (name == null || _token != token) return;
     try {
-      await _syncApiFor(token)
-          .reportDevice(name: name, platform: thisDevicePlatform);
+      await _syncApiFor(
+        token,
+      ).reportDevice(name: name, platform: thisDevicePlatform);
       _putForThisAccount(_reportedEntry, now);
     } on SyncException {
       // Only ever a nicer sentence on another device; the next pass retries.
@@ -1006,8 +1068,9 @@ class Account extends ChangeNotifier {
     final token = _token;
     if (token == null) return (proof: null, problem: KeyCodeProblem.offline);
     try {
-      final proof = await _syncApiFor(token)
-          .verifyKeyProof(action, code.replaceAll(RegExp(r'\s'), ''));
+      final proof = await _syncApiFor(
+        token,
+      ).verifyKeyProof(action, code.replaceAll(RegExp(r'\s'), ''));
       return (proof: proof, problem: null);
     } on SyncRefusedException catch (error) {
       return (
@@ -1073,12 +1136,15 @@ class Account extends ChangeNotifier {
     if (token == null) return const KeyChangeOffline();
     final api = _syncApiFor(token);
     final recovery = change is PreparedRecoveryKey;
+    final wasUnsaved = recoveryKeyUnsaved;
     if (recovery) _putForThisAccount(_unsavedEntry, true);
     final device = await deviceName(_user?.name);
 
     KeyChangeResult settle(KeyChangeResult result) {
       if (recovery && result is! KeyChangeDone && result is! KeyChangeOffline) {
-        _putForThisAccount(_unsavedEntry, null);
+        // Only this attempt's mark goes. A key an earlier attempt put on the
+        // server and never showed still needs replacing.
+        _putForThisAccount(_unsavedEntry, wasUnsaved ? true : null);
       }
       notifyListeners();
       return result;
@@ -1357,6 +1423,36 @@ class PreparedReset {
 
   bool _appliedTo(KeyBundle bundle) =>
       _same(bundle.wrappedMasterKey, _setup.wrappedMasterKey);
+}
+
+/// How bringing back the notes from before a reset went.
+sealed class RestoreResult {
+  const RestoreResult();
+}
+
+class RestoreDone extends RestoreResult {
+  const RestoreDone({required this.added, required this.changed});
+  final int added;
+  final int changed;
+}
+
+/// What was typed opens neither the passphrase nor the recovery key from
+/// before the reset.
+class RestoreWrongKey extends RestoreResult {
+  const RestoreWrongKey();
+}
+
+/// No longer kept: past its 30 days, or never there.
+class RestoreGone extends RestoreResult {
+  const RestoreGone();
+}
+
+class RestoreOffline extends RestoreResult {
+  const RestoreOffline();
+}
+
+class RestoreRefused extends RestoreResult {
+  const RestoreRefused();
 }
 
 sealed class KeyChangeResult {

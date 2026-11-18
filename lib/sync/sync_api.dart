@@ -707,6 +707,14 @@ abstract class SyncApi {
   /// the last 30 days.
   Future<KeyArchive?> fetchKeyArchive();
 
+  /// The log of the personal space the last reset set aside, a page at a
+  /// time, sealed under the key from before it. Null when there is none:
+  /// never reset, or past [KeyArchive.kept].
+  Future<OpsBatch?> pullArchiveLog({
+    int after = 0,
+    int limit = opsPullDefaultLimit,
+  });
+
   /// Publishes the identity keypairs for an account created before they
   /// existed. Refused once they exist.
   Future<void> publishIdentity(WireIdentity identity);
@@ -1104,6 +1112,26 @@ class HttpSyncApi implements SyncApi {
       absentIsNull: true,
     );
     return body.isEmpty ? null : KeyArchive.fromJson(body);
+  }
+
+  @override
+  Future<OpsBatch?> pullArchiveLog({
+    int after = 0,
+    int limit = opsPullDefaultLimit,
+  }) async {
+    final body = await _send(
+      'GET',
+      _baseUrl
+          .resolve('keys/archive/log')
+          .replace(queryParameters: {'after': '$after', 'limit': '$limit'}),
+      absentIsNull: true,
+    );
+    if (body.isEmpty) return null;
+    final batch = OpsBatch.fromJson(body);
+    if (batch == null) {
+      throw const SyncProtocolException('archive log response was malformed');
+    }
+    return batch;
   }
 
   @override

@@ -86,6 +86,23 @@ class EncryptionGroup extends StatelessWidget {
                 ),
               ),
             ),
+            if (account.canRestore)
+              SettingsRow(
+                key: const ValueKey('restore-row'),
+                title: 'Notes from before the reset',
+                subtitle: switch (account.restorableUntil) {
+                  final until? =>
+                    'Kept until ${changeDate(until)}. Your old passphrase or '
+                        'recovery key brings them back.',
+                  null =>
+                    'Your old passphrase or recovery key brings them back.',
+                },
+                trailing: SettingsRowButton(
+                  key: const ValueKey('restore'),
+                  label: 'Bring back…',
+                  onPressed: () => showRestoreDialog(context, account),
+                ),
+              ),
           ],
         ),
       ],
@@ -153,6 +170,9 @@ Future<void> showKeyChangeDialog(
 }) async {
   final save = saveTextFile ?? TextFileExport.save;
   final replacesOld = account.hasRecoveryKey || account.recoveryKeyUnsaved;
+  // The pane can be rebuilt away while the dialog is open, by the account
+  // changing state under it; the new key is still shown, from the root.
+  final host = Navigator.of(context, rootNavigator: true).context;
   final made = await showDialog<Object>(
     context: context,
     barrierDismissible: false,
@@ -163,10 +183,10 @@ Future<void> showKeyChangeDialog(
       passphraseGenerator: passphraseGenerator ?? generatePassphrase,
     ),
   );
-  if (made == null || !context.mounted) return;
+  if (made == null || !host.mounted) return;
   final reset = made is PreparedReset ? made : null;
   await showRecoveryKeyDialog(
-    context,
+    host,
     reset?.recoveryKey ?? (made as PreparedRecoveryKey).key,
     saveTextFile: save,
     title: 'Save your new recovery key',
@@ -509,7 +529,8 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
             '${missing == 1 ? '1 note is' : '$missing notes are'} on the '
             'server but not on this $kind. If another device has them, they '
             'come back when you unlock it. If none does, they can\'t be read '
-            'after a reset.',
+            "after a reset. You'll have 30 days to bring them back if you "
+            'find your old passphrase or recovery key.',
           ),
         const _Line("Your account, plan and purchases don't change."),
         _Line("To check it's you, we'll email a code to $_email.", last: true),
@@ -732,6 +753,130 @@ class _GeneratedPassphraseState extends State<GeneratedPassphrase> {
       ],
     );
   }
+}
+
+/// Brings back the notes from before a reset, with the passphrase or
+/// recovery key that opened them then.
+Future<void> showRestoreDialog(BuildContext context, Account account) async {
+  final host = Navigator.of(context, rootNavigator: true).context;
+  final done = await showDialog<RestoreDone>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => _RestoreDialog(account: account),
+  );
+  if (done == null) return;
+  final target = context.mounted ? context : host;
+  if (!target.mounted) return;
+  final count = done.added + done.changed;
+  Toast.show(target, switch (count) {
+    0 => 'Every note from before the reset is already here',
+    1 => 'Brought back 1 note',
+    _ => 'Brought back $count notes',
+  });
+}
+
+class _RestoreDialog extends StatefulWidget {
+  const _RestoreDialog({required this.account});
+  final Account account;
+
+  @override
+  State<_RestoreDialog> createState() => _RestoreDialogState();
+}
+
+class _RestoreDialogState extends State<_RestoreDialog> {
+  final _secret = TextEditingController();
+  bool _busy = false;
+  String? _problem;
+
+  @override
+  void dispose() {
+    _secret.dispose();
+    super.dispose();
+  }
+
+  Future<void> _restore() async {
+    final typed = _secret.text.trim();
+    if (typed.isEmpty) return;
+    setState(() {
+      _busy = true;
+      _problem = null;
+    });
+    final result = await widget.account.restoreFromArchive(typed);
+    if (!mounted) return;
+    if (result is RestoreDone) {
+      Navigator.of(context).pop(result);
+      return;
+    }
+    setState(() {
+      _busy = false;
+      _problem = switch (result) {
+        RestoreWrongKey() =>
+          "That doesn't open the notes from before the reset. Check it and "
+              'try again.',
+        RestoreGone() => 'The notes from before the reset are no longer kept.',
+        RestoreOffline() => _offline,
+        RestoreRefused() || RestoreDone() => _refused,
+      };
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_busy,
+    child: AlertDialog(
+      title: const Text('Bring back notes from before the reset'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 380),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _Line(
+              'Enter the passphrase or recovery key you used before the '
+              "reset. Notes you've deleted since stay deleted.",
+            ),
+            TextField(
+              key: const ValueKey('restore-secret'),
+              controller: _secret,
+              autofocus: true,
+              obscureText: true,
+              autocorrect: false,
+              enableSuggestions: false,
+              enabled: !_busy,
+              decoration: const InputDecoration(
+                hintText: 'Old passphrase or recovery key',
+              ),
+              onSubmitted: (_) => _busy ? null : _restore(),
+            ),
+            if (_problem != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  _problem!,
+                  key: const ValueKey('restore-problem'),
+                  style: TextStyle(
+                    fontSize: AppTypeScale.small,
+                    color: context.palette.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const ValueKey('restore-confirm'),
+          onPressed: _busy ? null : _restore,
+          child: const Text('Bring back'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _Line extends StatelessWidget {
