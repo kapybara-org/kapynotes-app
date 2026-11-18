@@ -1092,6 +1092,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('settings-section-about')));
     await tester.pumpAndSettle();
+    expect(
+      find.text('The version you have, updates and what changed'),
+      findsOneWidget,
+      reason: 'the tap reached About, so the golden shows its pane',
+    );
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_settings_about.png'),

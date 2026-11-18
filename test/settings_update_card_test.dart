@@ -220,6 +220,50 @@ void main() {
     expect(find.byKey(const ValueKey('settings-changed')), findsNothing);
   });
 
+  // A category more than there are today (another PR adds one) leaves the
+  // card the room of a window one rail row shorter, so that is tested too.
+  for (final (extra, ready) in [(0, false), (0, true), (1, false), (1, true)]) {
+    testWidgets('in a short window every category stays reachable, with '
+        '${extra == 0 ? 'the rail as it is' : 'one more item in it'} and the '
+        'card ${ready ? 'ready to restart' : "on What's new"}', (tester) async {
+      tester.view.physicalSize = Size(760, 520.0 - 34 * extra);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final store = _MemoryStore();
+      final notes = NotesStore(store);
+      await notes.load();
+      final updates = ready ? (await _readyChecker(store)).$1 : _checker(store);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: SettingsDialog(
+              layoutPrefs: LayoutPrefs(store),
+              shortcuts: ShortcutPrefs(store)..load(),
+              rates: RatesRepository(store),
+              notes: notes,
+              updates: updates,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final items = find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('settings-section-'),
+      );
+      expect(items, findsWidgets);
+      expect(items.hitTestable(), findsNWidgets(items.evaluate().length));
+      final card = find.byKey(_card);
+      if (card.evaluate().isNotEmpty) {
+        final lowestItem = tester.getBottomLeft(items.last).dy;
+        expect(tester.getTopLeft(card).dy, greaterThanOrEqualTo(lowestItem));
+      }
+    });
+  }
+
   testWidgets('on a phone the index opens with one quiet row for the '
       'changelog, and no card', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;

@@ -2761,19 +2761,38 @@ class _SettingsDialogState extends State<SettingsDialog>
               _searchField(autofocus: widget.section == null),
               const SizedBox(height: 14),
               Expanded(
-                child: _SettingsRail(
-                  sections: _sections,
-                  changed: _changedSections,
-                  // No category is the one on show while results are.
-                  selected: _searching ? null : section,
-                  onSelect: _selectFromRail,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final updates = widget.updates;
+                    // Every category stays in view, so the card gets only
+                    // what the rail leaves: its rows, a gap and the version.
+                    final left =
+                        constraints.maxHeight -
+                        _sections.length * _SettingsRail.itemHeight -
+                        (updates == null ? 0 : 28);
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _SettingsRail(
+                            sections: _sections,
+                            changed: _changedSections,
+                            // No category is the one on show while results
+                            // are.
+                            selected: _searching ? null : section,
+                            onSelect: _selectFromRail,
+                          ),
+                        ),
+                        if (updates != null) ...[
+                          SettingsUpdateCard(updates: updates, maxHeight: left),
+                          const SizedBox(height: 10),
+                          _VersionStatus(updates: updates),
+                        ],
+                      ],
+                    );
+                  },
                 ),
               ),
-              if (widget.updates case final updates?) ...[
-                SettingsUpdateCard(updates: updates),
-                const SizedBox(height: 10),
-                _VersionStatus(updates: updates),
-              ],
             ],
           ),
         ),
@@ -3820,6 +3839,9 @@ class _SettingsRail extends StatelessWidget {
   /// Null while the pane is showing search results instead of a category.
   final SettingsSection? selected;
   final ValueChanged<SettingsSection> onSelect;
+
+  /// One row and the gap under it.
+  static const double itemHeight = 34;
 
   @override
   Widget build(BuildContext context) => SingleChildScrollView(

@@ -88,9 +88,16 @@ class SettingsWhatsNewRow extends StatelessWidget {
 /// of its changelog entry, and links to the rest. Phones update through their
 /// store, so there it only ever says what is new.
 class SettingsUpdateCard extends StatefulWidget {
-  const SettingsUpdateCard({super.key, required this.updates});
+  const SettingsUpdateCard({
+    super.key,
+    required this.updates,
+    this.maxHeight = double.infinity,
+  });
 
   final UpdateChecker updates;
+
+  /// The room the rail has left for it once every category is in view.
+  final double maxHeight;
 
   @override
   State<SettingsUpdateCard> createState() => _SettingsUpdateCardState();
@@ -137,32 +144,78 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
     });
   }
 
+  /// Heights the card takes, worst case for the lines that may wrap. The
+  /// rail asks for no more than it is given: every category stays in view,
+  /// so a short window gets a one-line card, or none.
+  static const double _pad = 13;
+  static const double _lineHeight = 17;
+
   @override
   Widget build(BuildContext context) {
-    {
-      final updates = widget.updates;
-      final palette = context.palette;
-      final staged = AppPlatform.isMobile ? null : updates.staged;
-      final version = updates.currentVersion;
-      if (staged == null && version.isEmpty) return const SizedBox.shrink();
+    final updates = widget.updates;
+    final palette = context.palette;
+    final staged = AppPlatform.isMobile ? null : updates.staged;
+    final version = updates.currentVersion;
+    if (staged == null && version.isEmpty) return const SizedBox.shrink();
 
-      final title = TextStyle(
-        fontSize: 13,
-        height: 18 / 13,
-        fontWeight: FontWeight.w400,
-        color: palette.textPrimary,
-      );
-      final body = TextStyle(
-        fontSize: 12.5,
-        height: 17 / 12.5,
-        fontWeight: FontWeight.w400,
-        color: palette.textDescription,
-      );
+    final title = TextStyle(
+      fontSize: 13,
+      height: 18 / 13,
+      fontWeight: FontWeight.w400,
+      color: palette.textPrimary,
+    );
+    final body = TextStyle(
+      fontSize: 12.5,
+      height: _lineHeight / 12.5,
+      fontWeight: FontWeight.w400,
+      color: palette.textDescription,
+    );
+    Widget card(Widget child, {double padding = _pad}) => KapyControlSurface(
+      key: const ValueKey('settings-update-card'),
+      radius: AppRadii.surface,
+      padding: EdgeInsets.all(padding),
+      color: palette.cardBackground,
+      borderColor: palette.controlBorder,
+      child: child,
+    );
+    final room = widget.maxHeight;
 
-      final Widget content;
-      if (staged != null) {
-        final error = updates.downloadError;
-        content = Column(
+    if (staged != null) {
+      final error = updates.downloadError;
+      final fullHeight =
+          2 * _pad + 18 + (error == null ? 0 : 4 + 2 * _lineHeight) + 10 + 30;
+      final compact = fullHeight > room;
+      if (compact && 38 > room) return const SizedBox.shrink();
+      final restart = TextButton(
+        key: const ValueKey('settings-update-restart'),
+        onPressed: updates.isInstalling
+            ? null
+            : () => unawaited(updates.installAndRestart()),
+        style: TextButton.styleFrom(
+          minimumSize: const Size(0, 30),
+          backgroundColor: palette.selectedBackground,
+          foregroundColor: palette.textPrimary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.control),
+          ),
+        ),
+        child: Text(
+          updates.isInstalling
+              ? 'Restarting…'
+              : compact
+              ? 'Restart to update to ${staged.version}'
+              : 'Restart',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: AppTypeScale.caption,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+      );
+      if (compact) return card(restart, padding: 4);
+      return card(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text('Restart to update to ${staged.version}', style: title),
@@ -171,38 +224,26 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
               Text(error, style: body),
             ],
             const SizedBox(height: 10),
-            TextButton(
-              key: const ValueKey('settings-update-restart'),
-              onPressed: updates.isInstalling
-                  ? null
-                  : () => unawaited(updates.installAndRestart()),
-              style: TextButton.styleFrom(
-                minimumSize: const Size(0, 30),
-                backgroundColor: palette.selectedBackground,
-                foregroundColor: palette.textPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadii.control),
-                ),
-              ),
-              child: Text(
-                updates.isInstalling ? 'Restarting…' : 'Restart',
-                style: TextStyle(
-                  fontSize: AppTypeScale.caption,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ),
+            restart,
           ],
-        );
-      } else {
-        final notes = [
-          for (final release in updates.history.releases)
-            if (release.version == version) ...release.updateHighlights,
-        ].take(_lines);
-        content = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("What's new in $version", style: title),
+        ),
+      );
+    }
+
+    final notes = [
+      for (final release in updates.history.releases)
+        if (release.version == version) ...release.updateHighlights,
+    ].take(_lines).toList();
+    const compactHeight = 2 * _pad + 18 + 8 + _lineHeight;
+    final fullHeight = compactHeight + notes.length * (6 + 2 * _lineHeight);
+    final compact = fullHeight > room;
+    if (compact && compactHeight > room) return const SizedBox.shrink();
+    return card(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("What's new in $version", style: title),
+          if (!compact)
             for (final line in notes) ...[
               const SizedBox(height: 6),
               Text(
@@ -212,45 +253,35 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
                 style: body,
               ),
             ],
-            const SizedBox(height: 8),
-            InkWell(
-              key: const ValueKey('settings-update-changelog'),
-              onTap: () => unawaited(openChangelogPage(context)),
-              borderRadius: BorderRadius.circular(6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      'Full changelog',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: body.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
+          const SizedBox(height: 8),
+          InkWell(
+            key: const ValueKey('settings-update-changelog'),
+            onTap: () => unawaited(openChangelogPage(context)),
+            borderRadius: BorderRadius.circular(6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    'Full changelog',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: body.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  KapyIcon(
-                    KapyIcons.openExternalRounded,
-                    size: 13,
-                    color: palette.textTertiary,
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 4),
+                KapyIcon(
+                  KapyIcons.openExternalRounded,
+                  size: 13,
+                  color: palette.textTertiary,
+                ),
+              ],
             ),
-          ],
-        );
-      }
-
-      return KapyControlSurface(
-        key: const ValueKey('settings-update-card'),
-        radius: AppRadii.surface,
-        padding: const EdgeInsets.all(13),
-        color: palette.cardBackground,
-        borderColor: palette.controlBorder,
-        child: content,
-      );
-    }
+          ),
+        ],
+      ),
+    );
   }
 }
