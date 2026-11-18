@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Full-bleed adaptive-icon tile. This matches the source artwork's
-         sampled corner colour, so circular OEM masks never expose a ring. -->
-    <color name="ic_launcher_background">#E07045</color>
+    <!-- Full-bleed adaptive-icon field: the Fold mark's orange, so a circular
+         or squircle OEM mask never exposes a different colour. -->
+    <color name="ic_launcher_background">#E8772E</color>
     <color name="launch_background">#FAF9F7</color>
     <!-- The widgets wear the same paper and ink as the surface they open
          onto, so a tap looks like the app growing rather than replacing it.
