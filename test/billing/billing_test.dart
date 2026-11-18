@@ -510,6 +510,10 @@ void main() {
       final old = Entitlements.fromJson({'plan': 'free', 'sync': true});
       expect(old.noteLimit, isNull);
       expect(old.trialEndsAt, isNull);
+      // Nor does it send cloud summaries, which Free never had.
+      expect(old.summaryGenerationsPerMonth, 0);
+      expect(Entitlements.freePreview.summaryGenerationsPerMonth, 0);
+      expect(Entitlements.freePreview.sync, isFalse);
     });
   });
 
