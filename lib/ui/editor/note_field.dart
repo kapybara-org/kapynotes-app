@@ -264,6 +264,7 @@ class NoteFieldState extends State<NoteField>
     _blinkTimer?.cancel();
     _blink.dispose();
     _overlay?.dispose();
+    _words?.painter.dispose();
     clipboardStatus.dispose();
     _startHandleShows.dispose();
     _endHandleShows.dispose();
@@ -1674,18 +1675,27 @@ class NoteFieldState extends State<NoteField>
     );
   }
 
+  /// The last line [getWordBoundary] laid out, kept for the next call, which
+  /// a double click's drag makes on every move.
+  ({String text, TextPainter painter})? _words;
+
   @override
   TextRange getWordBoundary(TextPosition position) {
     final line = _lines.lineAt(position.offset);
     final start = _lines.startOf(line);
-    final word = layout
-        .paragraphOf(line)
-        .getWordBoundary(_local(position, line));
-    final length = _lines[line].length;
-    return TextRange(
-      start: start + math.min(word.start, length),
-      end: start + math.min(word.end, length),
-    );
+    final text = _lines[line];
+    if (_words?.text != text) {
+      _words?.painter.dispose();
+      _words = (
+        text: text,
+        painter: TextPainter(
+          text: TextSpan(text: text, style: widget.style),
+          textDirection: TextDirection.ltr,
+        )..layout(),
+      );
+    }
+    final word = _words!.painter.getWordBoundary(_local(position, line));
+    return TextRange(start: start + word.start, end: start + word.end);
   }
 
   @override
