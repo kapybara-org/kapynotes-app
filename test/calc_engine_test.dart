@@ -743,7 +743,7 @@ void main() {
       const body = 'Lunch = \$10\nLunch = Burger \$12';
       expect(total(body), '12.00 USD');
       expect(hover(body, 0), 'Not in the total: replaced by a later Lunch');
-      expect(total('${body}\nLunch = Pizza \$9'), '9.00 USD');
+      expect(total('$body\nLunch = Pizza \$9'), '9.00 USD');
     });
 
     test('takes a rate as the input of a line that multiplies it', () {

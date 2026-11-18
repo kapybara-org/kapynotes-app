@@ -960,7 +960,7 @@ void main() {
     const body =
         'Food and getting around town for the week // only a rough guess\n'
         'daily = 55\n'
-        'daily * 7\n'
+        '7 * 55\n'
         'total';
     await tester.pumpWidget(harness(body, width: 465));
     await tester.pumpAndSettle();
