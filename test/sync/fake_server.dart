@@ -57,6 +57,12 @@ class FakeServer {
   /// paths.
   SyncException? failNext;
 
+  /// Calls to let through before [failNext] is thrown.
+  int failAfter = 0;
+
+  /// Thrown after the next removal is applied, as when its answer is lost.
+  SyncException? loseRemovalAnswer;
+
   /// Set to refuse every op push with this code, as a server refuses an op or
   /// a snapshot past its size.
   String? refusePushes;
@@ -332,6 +338,9 @@ class FakeServer {
   /// False is a server from before protocol 6: no task index, and a 404 for
   /// anyone who asks after one.
   bool tasksServed = true;
+
+  /// False is a server from before members' roles could change: a 404.
+  bool roleChangeServed = true;
 
   /// Set to refuse task pushes as an account at the row cap is refused.
   bool tasksFull = false;
@@ -1160,6 +1169,31 @@ class FakeServer {
     announceSpace(spaceId);
   }
 
+  /// Like `PUT /spaces/:id/members/:userId`.
+  Space changeRole(
+    String userId,
+    String spaceId,
+    String target,
+    SpaceRole role,
+  ) {
+    if (!roleChangeServed) {
+      throw const SyncRefusedException(404, 'server returned 404', {});
+    }
+    final space = _member(userId, spaceId);
+    if (space.members[userId] != SpaceRole.owner) {
+      _refuse(403, 'only the owner can do this');
+    }
+    if (target == userId) _refuse(400, 'already the owner');
+    if (role == SpaceRole.owner) _refuse(400, 'invalid request');
+    final theirs = space.members[target];
+    if (theirs == null) _refuse(404, 'not a member');
+    if (theirs != role) {
+      space.members[target] = role;
+      announceSpace(spaceId);
+    }
+    return _wire(space, userId);
+  }
+
   Space transfer(String userId, String spaceId, String target) {
     final space = _member(userId, spaceId);
     if (space.members[userId] != SpaceRole.owner) {
@@ -1894,7 +1928,9 @@ class FakeApi implements SyncApi {
 
   void _gate() {
     final failure = server.failNext;
-    if (failure != null) {
+    if (failure != null && server.failAfter > 0) {
+      server.failAfter--;
+    } else if (failure != null) {
       server.failNext = null;
       throw failure;
     }
@@ -2069,6 +2105,21 @@ class FakeApi implements SyncApi {
   Future<void> removeMember(String spaceId, String userId) async {
     _gate();
     server.removeMember(this.userId, spaceId, userId);
+    final lost = server.loseRemovalAnswer;
+    if (lost != null) {
+      server.loseRemovalAnswer = null;
+      throw lost;
+    }
+  }
+
+  @override
+  Future<Space> changeRole(
+    String spaceId,
+    String userId,
+    SpaceRole role,
+  ) async {
+    _gate();
+    return server.changeRole(this.userId, spaceId, userId, role);
   }
 
   @override
