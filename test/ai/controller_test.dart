@@ -227,6 +227,28 @@ void main() {
       expect(ai.current!.messages.last.text, 'device answer');
     });
 
+    test(
+      'waiting for Wi-Fi hands the download over and clears the ask',
+      () async {
+        device.state = const DeviceModelState(
+          status: DeviceModelStatus.notDownloaded,
+          model: FakeDeviceModel.gemma,
+          totalBytes: 2600,
+        );
+        device.mobileData = true;
+        final ai = await build();
+        await ai.ask('Lisbon?');
+        expect(ai.pending, isA<KapyDownloadAsk>());
+        expect(await ai.deviceDownloadOnMobileData(), isTrue);
+
+        ai.downloadDeviceModelOnWifi();
+
+        expect(device.wifiDownloads, 1);
+        expect(device.downloads, 0);
+        expect(ai.pending, isNull);
+      },
+    );
+
     test('Cancel during a download stops it', () async {
       device.state = const DeviceModelState(
         status: DeviceModelStatus.notDownloaded,

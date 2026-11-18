@@ -250,22 +250,25 @@ void main() {
       },
     );
 
-    test('Claude’s extension file is deleted after ten minutes unused', () async {
-      final clock = FakeAsync();
-      late Future<File> writing;
-      clock.run((_) => writing = service.writeClaudeExtension([1]));
-      File? file;
-      unawaited(writing.then((written) => file = written));
-      while (file == null) {
-        clock.flushMicrotasks();
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
-      clock.elapse(McpService.extensionKept - const Duration(seconds: 1));
-      expect(file!.existsSync(), isTrue);
-      clock.elapse(const Duration(seconds: 1));
-      expect(file!.existsSync(), isFalse);
-      expect(file!.parent.existsSync(), isFalse);
-    });
+    test(
+      'Claude’s extension file is deleted after ten minutes unused',
+      () async {
+        final clock = FakeAsync();
+        late Future<File> writing;
+        clock.run((_) => writing = service.writeClaudeExtension([1]));
+        File? file;
+        unawaited(writing.then((written) => file = written));
+        while (file == null) {
+          clock.flushMicrotasks();
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        clock.elapse(McpService.extensionKept - const Duration(seconds: 1));
+        expect(file!.existsSync(), isTrue);
+        clock.elapse(const Duration(seconds: 1));
+        expect(file!.existsSync(), isFalse);
+        expect(file!.parent.existsSync(), isFalse);
+      },
+    );
 
     test(
       'Claude’s extension file is deleted at quit, and any left at launch',
@@ -323,10 +326,12 @@ void main() {
       expect(names(await rpc('tools/list')), [
         'list_notes',
         'read_note',
+        'read_voice_note',
         'list_tasks',
+        'list_tags',
       ]);
       service.setAllowWrites(true);
-      expect(names(await rpc('tools/list')), hasLength(7));
+      expect(names(await rpc('tools/list')), hasLength(15));
     });
 
     test('an unknown method is a JSON-RPC error', () async {
@@ -445,6 +450,20 @@ void main() {
         'Groceries\n☐ Milk\nFrom the market\n☑ Eggs',
       );
       expect(f.notes.dirtyNotes.map((n) => n.id), contains(id));
+    });
+
+    test('a change can be undone once from Recent activity', () async {
+      service.setAllowWrites(true);
+      await call('update_note', {'id': f.plain, 'archived': true});
+      final entry = service.activity.first;
+      expect(entry.text, 'Archived “Trip budget”');
+      expect(service.canUndo(entry), isTrue);
+      service.undo(entry);
+      expect(f.notes.byId(f.plain)!.isArchived, isFalse);
+      expect(service.canUndo(entry), isFalse);
+
+      await call('read_note', {'id': f.plain});
+      expect(service.canUndo(service.activity.first), isFalse);
     });
 
     test('Recent activity holds titles, never note text, and clears', () async {
