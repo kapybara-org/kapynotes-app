@@ -366,7 +366,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
             decoration: BoxDecoration(
               color: palette.editorBackground,
               border: Border.all(color: palette.separator, width: 1.5),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(AppRadii.dialog),
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
@@ -417,7 +417,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                           color: canSend
                               ? palette.totalPillBackground
                               : palette.kapyHighlight,
-                          borderRadius: BorderRadius.circular(9),
+                          borderRadius: BorderRadius.circular(AppRadii.control),
                           clipBehavior: Clip.antiAlias,
                           child: InkWell(
                             key: const ValueKey('kapy-ai-send'),
@@ -475,7 +475,7 @@ class _NoteChip extends StatelessWidget {
       padding: const EdgeInsets.only(left: 7, right: 3),
       decoration: BoxDecoration(
         color: palette.kapyHighlight,
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(AppRadii.compact),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -496,7 +496,7 @@ class _NoteChip extends StatelessWidget {
                 12,
                 16,
                 palette.textSubheading,
-                weight: FontWeight.w500,
+                weight: FontWeight.w400,
               ),
             ),
           ),
@@ -505,7 +505,7 @@ class _NoteChip extends StatelessWidget {
             message: 'Search all notes',
             child: InkWell(
               key: const ValueKey('kapy-ai-chip-remove'),
-              borderRadius: BorderRadius.circular(5),
+              borderRadius: BorderRadius.circular(AppRadii.small),
               onTap: onRemove,
               child: Padding(
                 padding: const EdgeInsets.all(2),
@@ -576,7 +576,7 @@ class KapyAiDock extends StatelessWidget {
               decoration: BoxDecoration(
                 color: palette.wellBackground,
                 border: Border.all(color: palette.separator),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(AppRadii.surface),
                 boxShadow: [
                   BoxShadow(
                     color: palette.shadowAt(0x99),
@@ -592,7 +592,7 @@ class KapyAiDock extends StatelessWidget {
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(13),
+                borderRadius: BorderRadius.circular(AppRadii.surface),
                 child: panel,
               ),
             ),

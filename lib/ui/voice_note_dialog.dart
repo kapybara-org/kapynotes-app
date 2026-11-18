@@ -1236,7 +1236,7 @@ class _SpeakerLabel extends StatelessWidget {
       label: 'Rename $name',
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadii.compact),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
           child: label,
@@ -1258,7 +1258,7 @@ class _QuietButton extends StatelessWidget {
     final palette = context.palette;
     return InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(AppRadii.compact),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
         child: Text(
@@ -1291,12 +1291,12 @@ class _RewriteChip extends StatelessWidget {
       enabled: enabled,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(AppRadii.pill),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
             color: palette.controlBackground,
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(AppRadii.pill),
             border: Border.all(color: palette.controlBorder),
           ),
           child: Row(
@@ -1350,7 +1350,7 @@ class _TakeCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 10, 8, 12),
       decoration: BoxDecoration(
         color: palette.controlBackground,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         border: Border.all(color: palette.controlBorder),
       ),
       child: Column(

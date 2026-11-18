@@ -66,12 +66,14 @@ extension WritingFontDetails on WritingFont {
     WritingFont.mixed || WritingFont.clean || WritingFont.monospace => null,
   };
 
+  List<FontVariation> get faceVariations => fontVariations ?? const [];
+
   /// Handwriting faces need a little more size to carry the same visual weight
   /// as a UI sans or a compact mono face.
   double get editorSize => switch (this) {
     WritingFont.mixed => 16,
-    WritingFont.handwritten => 16.5,
-    WritingFont.clean => 15.5,
-    WritingFont.monospace => 14.5,
+    WritingFont.handwritten => 16,
+    WritingFont.clean => 16,
+    WritingFont.monospace => 14,
   };
 }

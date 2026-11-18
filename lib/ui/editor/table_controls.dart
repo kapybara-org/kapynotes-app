@@ -250,7 +250,9 @@ Future<TableCommand?> _showTableSheet(
     isScrollControlled: true,
     backgroundColor: palette.surfaceBackground,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(AppRadii.dialog),
+      ),
     ),
     builder: (sheetContext) => SafeArea(
       child: SingleChildScrollView(
@@ -412,7 +414,7 @@ class _AlignRow extends StatelessWidget {
               child: InkWell(
                 key: ValueKey('table-menu-${command.name}'),
                 onTap: () => onPick(command),
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(AppRadii.compact),
                 hoverColor: palette.hover,
                 child: Container(
                   width: side,
@@ -421,7 +423,7 @@ class _AlignRow extends StatelessWidget {
                   decoration: command.align == current
                       ? BoxDecoration(
                           color: palette.selectedBackground,
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(AppRadii.compact),
                         )
                       : null,
                   child: KapyIcon(
@@ -1197,7 +1199,7 @@ class _GripState extends State<_Grip> {
               ? palette.selectedBorder
               : palette.controlBorder,
         ),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(AppRadii.small),
       ),
       alignment: Alignment.center,
       child: RotatedBox(
@@ -1322,7 +1324,7 @@ class _EdgePlusState extends State<_EdgePlus> {
           child: Container(
             decoration: BoxDecoration(
               color: _hovered ? palette.hover : null,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(AppRadii.compact),
             ),
             alignment: Alignment.center,
             child: KapyIcon(

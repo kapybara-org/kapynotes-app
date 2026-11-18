@@ -135,7 +135,7 @@ class NoteMark extends StatelessWidget {
       message: 'Open $label',
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(AppRadii.compact),
         child: SizedBox(
           height: 24,
           child: Padding(
