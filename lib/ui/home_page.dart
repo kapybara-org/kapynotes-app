@@ -774,7 +774,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (started) {
         progress.success('Recording started');
       } else {
-        progress.error('Kapy Notes needs microphone access to record');
+        // Linux asks no permission, so there a refusal is a capture that
+        // never started: no sound server, or nothing to record from.
+        progress.error(
+          AppPlatform.isLinux
+              ? 'Could not open a microphone'
+              : 'Kapy Notes needs microphone access to record',
+        );
       }
     } catch (error) {
       if (mounted) {

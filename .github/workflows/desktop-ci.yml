@@ -244,7 +244,7 @@ jobs:
           done
           dpkg-deb -c "$deb" > deb-contents.txt
           for path in ./usr/bin/kapynotes ./usr/lib/kapynotes/kapynotes ./usr/lib/kapynotes/lib/libapp.so \
-            ./usr/lib/kapynotes/libexec/ffmpeg ./usr/lib/kapynotes/libexec/parecord \
+            ./usr/lib/kapynotes/libexec/ffmpeg \
             ./usr/share/applications/com.kapybara.kapynotes.desktop \
             ./usr/share/metainfo/com.kapybara.kapynotes.metainfo.xml \
             ./usr/share/icons/hicolor/256x256/apps/com.kapybara.kapynotes.png \
@@ -258,6 +258,19 @@ jobs:
           # its tags (a bundled Flutter engine, a private RUNPATH) are the
           # nature of a Flutter app rather than something to fix.
           lintian --no-tag-display-limit "$deb" || true
+
+      # Voice notes on Linux are ffmpeg talking to PulseAudio, and the ffmpeg
+      # is the minimal one the packages ship, so this records, decodes and
+      # plays back through that very build against a headless sound server: a
+      # speaker nobody hears and a microphone that hears a tone. The tone
+      # comes from the distro's ffmpeg, which has the lavfi input the shipped
+      # one leaves out. The tests skip themselves where nothing can capture;
+      # here that would be a failure, so they run regardless.
+      - name: Record, decode and play voice notes through the shipped ffmpeg
+        run: |
+          sudo apt-get install -y --no-install-recommends pulseaudio pulseaudio-utils ffmpeg
+          bash test/audio/headless_pulse.sh
+          PATH="$PWD/build/linux/ffmpeg/${{ matrix.arch }}:$PATH" flutter test --run-skipped test/audio/linux_voice_test.dart
 
       - uses: actions/upload-artifact@v4
         with:

@@ -5,22 +5,24 @@
 #   build/linux/ffmpeg/<arch>/ffmpeg               the program
 #   build/linux/ffmpeg/<arch>/ffmpeg-LICENSE.md    its licence, source and flags
 #
-# Why ship one: the record package's Linux side pipes `parecord` into
-# `ffmpeg` to write a voice note, and the app uses the same ffmpeg to play one
-# back through PulseAudio and to decode it for the speech model. Neither
-# program is installed on a stock desktop, and a distro ffmpeg may lack the AAC
-# encoder or be GPL-licensed. packaging/linux/parecord stands in for parecord
-# on top of this binary, so one program covers all three jobs.
+# Why ship one: on Linux, voice notes record, play back and decode for the
+# speech model through ffmpeg talking to PulseAudio (lib/audio/linux_*.dart).
+# A stock desktop has no ffmpeg installed, and a distro ffmpeg may lack the
+# AAC encoder or be GPL-licensed.
 #
 # What it is: LGPL-2.1-or-later only (no --enable-gpl, no --enable-nonfree),
 # ffmpeg's own libraries linked statically, and nothing dynamic but glibc and
 # libpulse.so.0, which every PulseAudio or PipeWire desktop has. Only the
 # pieces those commands use are enabled:
 #
-#   record   ffmpeg -f s16le -ar R -ac C -i - -c:a aac -b:a 48k out.m4a
-#   capture  ffmpeg -f pulse -sample_rate R -channels C -i default -f s16le pipe:1
-#   play     ffmpeg -ss S -i in.m4a -af atempo=X -f pulse -device default "Kapy Notes"
-#   decode   ffmpeg -i in.m4a -ac 1 -ar 16000 -f s16le out.pcm
+#   capture  ffmpeg -f pulse -sample_rate R -channels C -i default -c:a copy -f s16le pipe:1
+#   record   ffmpeg -f s16le -ar R -ac C -i pipe:0 -c:a aac -b:a B -f ipod out.m4a
+#   read     ffmpeg -ss S -i in.m4a -map 0:a:0 -af atempo=X -ac 1 -ar 48000 -f s16le pipe:1
+#   play     ffmpeg -f s16le -ar 48000 -ac 1 -i pipe:0 -f pulse -buffer_duration 200 "Voice note"
+#   decode   ffmpeg -i in.m4a -map 0:a:0 -ac 1 -ar 16000 -c:a pcm_s16le -f s16le out.pcm
+#
+# The smoke test's check also feeds the encoder from `-`, which is the fd
+# protocol below.
 #
 # Change a flag below and the cache key changes with it: CI keys its cache on
 # this file's hash, and a local run rebuilds when the stamp beside the binary

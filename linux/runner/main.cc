@@ -2,13 +2,11 @@
 
 #include "my_application.h"
 
-// The helpers the packages ship beside the binary, in libexec/: an ffmpeg
-// and a parecord in front of it, which is what package:record runs on Linux
-// to capture and encode a voice note, and what playback and transcription
-// decode recordings with. Found by name on PATH, so the bundle's own copies
-// go first and every package behaves the same whatever the system has
-// installed. A build run from the source tree has no libexec/ and uses the
-// system's.
+// The helper the packages ship beside the binary, in libexec/: the ffmpeg
+// that voice notes record, play back and decode for transcription with.
+// Found by name on PATH, so the bundle's own copy goes first and every package
+// behaves the same whatever the system has installed. A build run from the
+// source tree has no libexec/ and uses the system's.
 static void prepend_bundled_helpers_to_path() {
   g_autofree gchar* executable = g_file_read_link("/proc/self/exe", nullptr);
   if (executable == nullptr) return;

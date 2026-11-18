@@ -36,7 +36,7 @@ abstract class VoiceRecorderBackend {
   Future<void> dispose();
 }
 
-/// The real one.
+/// The real one, everywhere but Linux: see `LinuxVoiceRecorder`.
 class VoiceRecorder implements VoiceRecorderBackend {
   AudioRecorder? _recorder;
   StreamSubscription<Amplitude>? _amplitudes;

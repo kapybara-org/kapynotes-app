@@ -11,9 +11,9 @@
 # packaging/release.sh linux runs it after the Flutter build; it needs the
 # ffmpeg that packaging/linux/build_ffmpeg.sh leaves in build/linux/ffmpeg.
 #
-# Every package carries libexec/ffmpeg and libexec/parecord beside the app;
-# the runner puts libexec first on PATH, which is how voice notes record and
-# play without either program installed. See those two files.
+# Every package carries libexec/ffmpeg beside the app; the runner puts libexec
+# first on PATH, which is how voice notes record, play and transcribe without
+# ffmpeg installed. See packaging/linux/build_ffmpeg.sh.
 #
 # The .deb ships the bundle as built and lets dpkg-shlibdeps turn every ELF's
 # needs into Depends, so apt installs the rest from the distro.
@@ -241,7 +241,6 @@ cp -a "$BUNDLE" "$PLAIN"
 mkdir -p "$PLAIN/libexec"
 install -m 0755 "$FFMPEG_DIR/ffmpeg" "$PLAIN/libexec/ffmpeg"
 install -m 0644 "$FFMPEG_DIR/ffmpeg-LICENSE.md" "$PLAIN/libexec/ffmpeg-LICENSE.md"
-install -m 0755 "$HERE/parecord" "$PLAIN/libexec/parecord"
 # Debug information has no business in a download. The Dart snapshot's is
 # already split out by --split-debug-info, and stripping it would break it.
 while read -r elf; do
@@ -252,7 +251,7 @@ while read -r elf; do
 done < <(elfs_in "$PLAIN")
 find "$PLAIN" -type d -exec chmod 0755 {} +
 find "$PLAIN" -type f -exec chmod 0644 {} +
-chmod 0755 "$PLAIN/$BIN" "$PLAIN/libexec/ffmpeg" "$PLAIN/libexec/parecord"
+chmod 0755 "$PLAIN/$BIN" "$PLAIN/libexec/ffmpeg"
 
 # ---------------------------------------------------------------------------
 

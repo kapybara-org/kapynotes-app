@@ -87,11 +87,8 @@ check_ffmpeg() {
     fail "libexec/ffmpeg could not encode a voice note"
   "$libexec/ffmpeg" -nostdin -v error -i "$tmp/note.m4a" -ac 1 -ar 16000 -f s16le "$tmp/speech.pcm" ||
     fail "libexec/ffmpeg could not decode a voice note"
-  local status=0
-  "$libexec/parecord" --bogus 2>/dev/null || status=$?
-  [[ "$status" == 2 ]] || fail "libexec/parecord accepted an unknown argument (exit $status)"
   rm -rf "$tmp"
-  echo "  libexec/ffmpeg encodes and decodes; libexec/parecord parses"
+  echo "  libexec/ffmpeg encodes and decodes"
 }
 
 # Every process descended from $1, including itself.
