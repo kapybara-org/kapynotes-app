@@ -638,7 +638,9 @@ class TranscriptionQueue extends ChangeNotifier {
       _replace(
         entry.copyWith(
           lang: error.lang,
-          lastError: _cloudAccess?.cloudSummariesAllowed == false
+          lastError: _api() == null
+              ? SpeechCodes.summaryNeedsCloudSignIn
+              : _cloudAccess?.cloudSummariesAllowed == false
               ? SpeechCodes.summaryNeedsCloudPlan
               : SpeechCodes.summaryNeedsCloud,
         ),
@@ -721,6 +723,7 @@ class TranscriptionQueue extends ChangeNotifier {
       code == SpeechCodes.engineUnavailable ||
       code == SpeechCodes.summaryNeedsCloud ||
       code == SpeechCodes.summaryNeedsCloudPlan ||
+      code == SpeechCodes.summaryNeedsCloudSignIn ||
       code == SpeechCodes.consentRequired ||
       code == SpeechCodes.minutesExhausted ||
       code == SpeechCodes.summariesExhausted ||

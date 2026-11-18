@@ -221,6 +221,24 @@ Standup thoughts
       expect(await device.writes('en'), isTrue);
     });
 
+    for (final state in [
+      SummarizerReadiness.needsSystemFeature,
+      SummarizerReadiness.preparing,
+    ]) {
+      test('Hindi where the only model lacks it, ${state.name}, says so '
+          'rather than asking for something that would not help', () async {
+        final device = DeviceSummarizer([
+          _Fake(state, languages: {'en'}),
+          _Fake(SummarizerReadiness.unsupported),
+        ]);
+
+        await expectLater(
+          device.summarize(text: 'x', lang: 'hi'),
+          throwsA(isA<SummaryLanguageUnavailable>()),
+        );
+      });
+    }
+
     test(
       'waiting is worth saying only when nothing else is actionable',
       () async {

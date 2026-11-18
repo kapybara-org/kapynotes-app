@@ -901,6 +901,48 @@ void main() {
       expect(here.calls, 1, reason: 'a language no model has is not retried');
     });
 
+    test('signed out, it says to sign in before choosing Cloud', () async {
+      final signedOut = TranscriptionQueue(
+        store: queueStore,
+        notes: notes,
+        blobs: blobs,
+        prefs: prefs,
+        cloudAccess: access,
+        summarizer: () => here,
+        transcriber: () => local,
+      );
+      addTearDown(signedOut.dispose);
+      here.languages = {'en'};
+      notes.updateAttachment(
+        noteId,
+        'v1',
+        (ref) => (ref as NoteVoiceRef).copyWith(
+          transcript: VoiceTranscript(
+            lang: 'hi',
+            engine: 'apple/speech',
+            at: 1,
+            segments: const [TranscriptSegment(s: 0, e: 1, t: 'नमस्ते')],
+          ),
+        ),
+      );
+      signedOut.enqueue(noteId, 'v1');
+      await signedOut.drain();
+
+      final entry = signedOut.entries.single;
+      expect(entry.lastError, SpeechCodes.summaryNeedsCloudSignIn);
+      expect(current()!.transcript, isNotNull);
+
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      expect(
+        describeSpeechError(
+          SyncRefusedException(400, entry.lastError!, {'lang': entry.lang}),
+        ),
+        'Hindi summaries on iPhone use the cloud. Sign in, then choose Cloud '
+        'for summaries in Settings › Voice & AI.',
+      );
+    });
+
     test('a language this device cannot do goes to the cloud, its summary '
         'stays here', () async {
       local.state = TranscriberReadiness.unsupported;

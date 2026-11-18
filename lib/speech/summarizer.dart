@@ -228,15 +228,16 @@ class DeviceSummarizer implements Summarizer {
   ///
   /// When none is ready, the failure reported is the most actionable among
   /// those that write [lang], so a Mac with Hindi and no Gemma is told to
-  /// download it. A device where the only ready model lacks the language, and
-  /// nothing else could ever write it, is a [SummaryLanguageUnavailable].
+  /// download it. A device whose only models lack the language, ready or not,
+  /// is a [SummaryLanguageUnavailable]: switching Apple Intelligence on, or
+  /// waiting for it, would not give an iPhone Hindi either.
   Future<Summarizer> _ready(String lang) async {
     var best = SummarizerReadiness.unsupported;
     var lacksLanguage = false;
     for (final candidate in candidates) {
       final state = await candidate.readiness();
       if (!await candidate.writes(lang)) {
-        lacksLanguage |= state == SummarizerReadiness.ready;
+        lacksLanguage |= state != SummarizerReadiness.unsupported;
         continue;
       }
       if (state == SummarizerReadiness.ready) return candidate;

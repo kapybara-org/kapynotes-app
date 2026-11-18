@@ -34,6 +34,9 @@ String describeSpeechError(Object error) => switch (error) {
     SpeechCodes.summaryNeedsCloud =>
       '${_languageSummaries(body)} on ${_device()} use the cloud. Choose '
           'Cloud for summaries in Settings › Voice & AI.',
+    SpeechCodes.summaryNeedsCloudSignIn =>
+      '${_languageSummaries(body)} on ${_device()} use the cloud. Sign in, '
+          'then choose Cloud for summaries in Settings › Voice & AI.',
     SpeechCodes.summaryNeedsCloudPlan =>
       "${_languageSummaries(body)} on ${_device()} use the cloud, which isn't "
           'part of the Free plan. The transcript is here.',
