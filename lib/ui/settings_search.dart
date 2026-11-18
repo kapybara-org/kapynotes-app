@@ -28,7 +28,6 @@ class SettingsSearchEntry<S> {
     this.description,
     this.value,
     this.changed = false,
-    this.onReset,
     this.elsewhere,
   });
 
@@ -53,9 +52,8 @@ class SettingsSearchEntry<S> {
   /// What it is set to, in a word, shown at the end of a result.
   final String? value;
 
-  /// Whether it is off its default, and what puts it back.
+  /// Whether it is off its default.
   final bool changed;
-  final VoidCallback? onReset;
 
   /// Where a setting that is not in settings lives instead — "In a voice
   /// note's player". Such a result says so and goes nowhere.
@@ -317,7 +315,6 @@ class SettingsSearchResults<S> extends StatelessWidget {
     required this.results,
     required this.onOpen,
     this.marked,
-    this.resets = false,
   });
 
   final String query;
@@ -327,10 +324,6 @@ class SettingsSearchResults<S> extends StatelessWidget {
   /// The result Return opens, lit so a keyboard can see which. Null on a
   /// phone, where a thumb picks.
   final int? marked;
-
-  /// Whether each result offers its own reset, as the list of changed
-  /// settings does.
-  final bool resets;
 
   @override
   Widget build(BuildContext context) {
@@ -389,14 +382,13 @@ class SettingsSearchResults<S> extends StatelessWidget {
                 key: ValueKey('settings-search-result-${results[index].id}'),
                 entry: results[index],
                 marked: index == marked,
-                reset: resets ? results[index].onReset : null,
                 onTap: results[index].elsewhere == null
                     ? () => onOpen(results[index])
                     : null,
               ),
           ],
         ),
-        if (pointer && !resets)
+        if (pointer)
           Padding(
             padding: const EdgeInsets.fromLTRB(3, 16, 3, 0),
             child: Text(
@@ -414,20 +406,17 @@ class _ResultRow extends StatelessWidget {
     super.key,
     required this.entry,
     required this.marked,
-    required this.reset,
     required this.onTap,
   });
 
   final SettingsSearchEntry<Object?> entry;
   final bool marked;
-  final VoidCallback? reset;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final value = entry.value;
-    final reset = this.reset;
     final row = Container(
       constraints: BoxConstraints(minHeight: SettingsMetrics.minRowHeight),
       padding: SettingsMetrics.padding,
@@ -456,10 +445,6 @@ class _ResultRow extends StatelessWidget {
                 ),
               ),
             ),
-          ],
-          if (reset != null) ...[
-            const SizedBox(width: 6),
-            SettingsResetButton(onPressed: reset),
           ],
           if (marked) ...[
             const SizedBox(width: 10),
