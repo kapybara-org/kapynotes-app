@@ -46,9 +46,15 @@ class LineResult {
 }
 
 /// One pass over a note, including both its line-by-line results and the
-/// running total that remains after the final line.
+/// total the note's footer shows.
 class DocumentEvaluation {
   final Map<int, LineResult> results;
+
+  /// The sum of the lines that read nothing from other lines. A line worked
+  /// out from another's result, as `per person = total / 2` is, is left out
+  /// so that nothing is counted twice, though `total` and `sum` in the note
+  /// still read everything. Null when the note has a `total` or `sum` line of
+  /// its own, so that the footer never contradicts a total the writer wrote.
   final CalcValue? total;
   final DigitGrouping grouping;
 
@@ -59,7 +65,8 @@ class DocumentEvaluation {
   });
 
   /// Null when the note holds no calculations at all, so the footer can omit
-  /// the readout rather than claim a total of zero.
+  /// the readout rather than claim a total of zero, and when it has a `total`
+  /// or `sum` line of its own.
   String? get totalText => total == null
       ? null
       : ResultFormatter.display(total!, grouping: grouping);
@@ -69,10 +76,22 @@ class _EvaluatedLine {
   final LineResult result;
   final bool isAggregateReadout;
 
+  /// Whether the line is worked out from the note's other lines, reading a
+  /// variable they define or an aggregate such as `total` or `prev`.
+  final bool isDerived;
+
   const _EvaluatedLine({
     required this.result,
     required this.isAggregateReadout,
+    this.isDerived = false,
   });
+
+  /// The same outcome, marked as worked out from other lines.
+  _EvaluatedLine derived() => _EvaluatedLine(
+    result: result,
+    isAggregateReadout: isAggregateReadout,
+    isDerived: true,
+  );
 
   /// The same outcome on line [line].
   _EvaluatedLine at(int line) => _EvaluatedLine(
@@ -85,6 +104,7 @@ class _EvaluatedLine {
       isTotal: result.isTotal,
     ),
     isAggregateReadout: isAggregateReadout,
+    isDerived: isDerived,
   );
 }
 
@@ -148,14 +168,16 @@ class CalcEngine {
         // Aggregate readouts, including conversions such as `total to usd`,
         // report the total without becoming another entry in it.
         if (!evaluated.isAggregateReadout) {
-          scope.record(evaluated.result.value);
+          scope.record(evaluated.result.value, derived: evaluated.isDerived);
         }
       }
     }
     _memo.end(pass);
     return DocumentEvaluation(
       results: Map<int, LineResult>.unmodifiable(results),
-      total: scope.runningSum,
+      total: results.values.any((result) => result.isTotal)
+          ? null
+          : scope.ownSum,
       grouping: grouping,
     );
   }
@@ -192,7 +214,10 @@ class CalcEngine {
     final reading = _memo.reuse(pass, index, scope);
     if (reading != null) return reading.at(index);
     scope.beginTrace();
-    final evaluated = _readLine(pass.lines[index], index, evaluator, scope);
+    var evaluated = _readLine(pass.lines[index], index, evaluator, scope);
+    if (evaluated != null && scope.tracedReadsResults) {
+      evaluated = evaluated.derived();
+    }
     _memo.remember(pass, index, scope.endTrace(), evaluated);
     return evaluated;
   }
