@@ -1041,6 +1041,9 @@ void main() {
         'Flights to Lisbon are 900 for two, the hotel near Alfama is 120 a '
         'night, and the train to Sintra is cheap';
 
+    // Naming is off by default; these speak for someone who turned it on.
+    setUp(() => prefs.autoTitlesEnabled = true);
+
     Future<TextEditingController> newNote(WidgetTester tester) async {
       await tester.tap(findKapyIcon(KapyIcons.addRounded).first);
       await tester.pumpAndSettle();
@@ -3675,6 +3678,7 @@ void main() {
       store.data['notes.v1'] = [
         {'id': 'old-blank', 'body': '', 'createdAt': 1000, 'updatedAt': 2000},
       ];
+      prefs.autoTitlesEnabled = true;
       await pumpApp(tester, titleModel: _InstantTitles('Unused'));
       await tester.tap(plus());
       await tester.pumpAndSettle();
