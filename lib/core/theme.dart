@@ -522,17 +522,12 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
 class EditorMetrics {
   const EditorMetrics._();
 
-  /// Whether the note is laid out as Riverbank's page: a 680px column under
-  /// a title with its meta row, headings with room above them, and rows of
-  /// [lineHeight] that may grow. Phones keep their own structure.
-  static bool get page => !AppPlatform.isMobile;
-
   /// How far in a quote's words start on the page, past its 3px bar and the
   /// 14px after it.
   static const double quoteIndent = 17;
 
-  /// One row of writing: Paper's 28px line on the page, 29 on a phone.
-  static double get lineHeight => page ? 28 : 29;
+  /// One row of writing: Paper's 28px line, and 27pt on a phone.
+  static double get lineHeight => AppPlatform.isMobile ? 27 : 28;
 
   /// The writing column on the page. A window narrower than this plus
   /// [padding] gives the column what it has.
@@ -541,11 +536,11 @@ class EditorMetrics {
   /// The note's first line, its title, on the page: Paper's 40/48, and the
   /// meta row that sits under it, 10 below the title and 20 above the body:
   /// Paper has 10 there, and Sanjay asked for more room between the details
-  /// and the writing.
+  /// and the writing. On a phone the tags take a line of their own.
   static const double titleFontSize = 40;
   static const double titleRow = 48;
   static const double metaGap = 10;
-  static const double metaRow = 16;
+  static double get metaRow => AppPlatform.isMobile ? 16 + 8 + 22 : 16;
   static const double metaBottom = 20;
   static double get titleReserve => metaGap + metaRow + metaBottom;
 
@@ -596,8 +591,8 @@ class EditorMetrics {
     horizontal: 28,
     vertical: 20,
   );
-  static const EdgeInsets mobilePadding = EdgeInsets.symmetric(
-    horizontal: 18,
+  static const EdgeInsets phonePadding = EdgeInsets.symmetric(
+    horizontal: 20,
     vertical: 14,
   );
 
@@ -664,21 +659,10 @@ class EditorMetrics {
 
   /// The row geometry of a note.
   ///
-  /// On a phone, forcing the strut pins every row to exactly [lineHeight]
-  /// whatever it contains, which is what its results column was built
-  /// against. [allowTallRows] lifts that ceiling for what cannot live under
-  /// it: an image is a `WidgetSpan`, and a forced strut clamps a
-  /// placeholder's line box to the height of the text, so a 400px picture
-  /// would paint straight through the writing beneath it.
-  ///
-  /// The [page] never forces it: its title, headings and pictures are taller
-  /// than a row by design, and [lineHeight] is only the floor. Results there
-  /// sit on each line's own last row, measured, so nothing needs rows even.
-  static StrutStyle strut(
-    WritingFont font, {
-    bool allowTallRows = false,
-    double editorScale = 1,
-  }) {
+  /// Never forced: the title, headings and pictures are taller than a row by
+  /// design, and [lineHeight] is only the floor. Results sit on each line's
+  /// own last row, measured, so nothing needs rows even.
+  static StrutStyle strut(WritingFont font, {double editorScale = 1}) {
     final fontSize = font.editorSize * editorScale;
     final rowHeight = lineHeight * editorScale;
     return StrutStyle(
@@ -686,7 +670,7 @@ class EditorMetrics {
       fontFamilyFallback: font.fontFamilyFallback,
       fontSize: fontSize,
       height: rowHeight / fontSize,
-      forceStrutHeight: !page && !allowTallRows,
+      forceStrutHeight: false,
       leading: 0,
     );
   }

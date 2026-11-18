@@ -6755,9 +6755,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final newline = text.indexOf('\n');
     final end = newline < 0 ? text.length : newline;
     final words = text.substring(0, end);
-    if (!EditorMetrics.page ||
-        words.trim().isEmpty ||
-        pictures.any((offset) => offset < end)) {
+    if (words.trim().isEmpty || pictures.any((offset) => offset < end)) {
       _titleKey = null;
       return _title = null;
     }
@@ -6946,29 +6944,30 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         return Stack(
           children: [
             for (final mark in _lineMarks.value) ...[
-              Positioned(
-                left: padding.left - _lineCommandsExtent - 12,
-                top: y + mark.middle - _lineCommandsExtent / 2,
-                child: Semantics(
-                  button: true,
-                  label: 'Commands',
-                  onTap: () => _openCommandsAt(mark.line),
-                  excludeSemantics: true,
-                  child: ExcludeFocus(
-                    child: CompactIconButton(
-                      key: const ValueKey('line-commands'),
-                      tooltip: 'Commands',
-                      extent: _lineCommandsExtent,
-                      selected: mark.hovered,
-                      foregroundColor: mark.hovered
-                          ? palette.textPrimary
-                          : palette.lineCommand,
-                      onPressed: () => _openCommandsAt(mark.line),
-                      icon: KapyIcon(KapyIcons.addRounded, size: 16),
+              if (AppPlatform.hasPointer)
+                Positioned(
+                  left: padding.left - _lineCommandsExtent - 12,
+                  top: y + mark.middle - _lineCommandsExtent / 2,
+                  child: Semantics(
+                    button: true,
+                    label: 'Commands',
+                    onTap: () => _openCommandsAt(mark.line),
+                    excludeSemantics: true,
+                    child: ExcludeFocus(
+                      child: CompactIconButton(
+                        key: const ValueKey('line-commands'),
+                        tooltip: 'Commands',
+                        extent: _lineCommandsExtent,
+                        selected: mark.hovered,
+                        foregroundColor: mark.hovered
+                            ? palette.textPrimary
+                            : palette.lineCommand,
+                        onPressed: () => _openCommandsAt(mark.line),
+                        icon: KapyIcon(KapyIcons.addRounded, size: 16),
+                      ),
                     ),
                   ),
                 ),
-              ),
               if (mark.caret && widget.slashHint)
                 Positioned(
                   left: padding.left,
@@ -7137,40 +7136,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// A number in a table's cell: a sign, a currency, digits and a percent.
   static final _tableNumber = RegExp(r'^[+\-−]?[₹$€£]?\d[\d.,]*%?$');
 
-  Map<int, NoteImageSpan> _tableRowSpacers({
-    required MarkdownAnalysis? markdown,
-    required double rowHeight,
-    required double overhead,
-  }) {
-    // The page sets each row's height itself: see
-    // HighlightingController.setTableRowsDuringLayout.
-    if (EditorMetrics.page || markdown == null || _tableGrids.isEmpty) {
-      return const {};
-    }
-    final spacers = <int, NoteImageSpan>{};
-    for (final table in markdown.tables) {
-      final geometry = _tableGrids[table];
-      if (geometry == null) continue;
-      for (final row in table.rows) {
-        final wanted =
-            geometry.rowHeight(row) - (row.header ? rowHeight : 0) - overhead;
-        // A row needing no more than the line it already has takes no spacer:
-        // the strut floor gives it that much for nothing.
-        if (wanted <= 0) continue;
-        // The child has to carry the height itself. The field lays a
-        // placeholder out by asking its widget, not from the dimensions handed
-        // to a `TextPainter` — those only answer for a painter measuring on its
-        // own, which is why a `SizedBox.shrink()` here reserved nothing at all.
-        spacers[row.start] = (
-          width: 0,
-          height: wanted,
-          child: SizedBox(width: 0, height: wanted),
-        );
-      }
-    }
-    return spacers;
-  }
-
   Map<int, NoteImageSpan> _buildAttachmentSpans(
     double columnWidth,
     double viewportHeight,
@@ -7328,24 +7293,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // its own controls clear of it, so an inset on the text would only open a
     // second gap above a bar that already covers that strip.
     final basePadding = AppPlatform.isMobile
-        ? EditorMetrics.mobilePadding
+        ? EditorMetrics.phonePadding
         : EditorMetrics.padding;
     final textStyle = EditorMetrics.textStyle(
       palette.textPrimary,
       widget.writingFont,
       editorScale: widget.editorTextScale,
     );
-    // Only a note that needs a row taller than one line gives up the forced
-    // one: a picture, a table whose cells wrap onto more lines than that, or a
-    // formula, which is as tall as what it writes. Any formula, drawn or shown
-    // as its TeX, so that moving the caret onto one never moves every line.
-    final analysis = _controller.markdownFor(_controller.text);
     final strut = EditorMetrics.strut(
       widget.writingFont,
-      allowTallRows:
-          (_attachments.isNotEmpty && widget.images != null) ||
-          analysis.tables.isNotEmpty ||
-          analysis.maths.isNotEmpty,
       editorScale: widget.editorTextScale,
     );
     final textScaler = MediaQuery.textScalerOf(context);
@@ -7378,21 +7334,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 final textPaneWidth = constraints.maxWidth - gutterWidth;
 
                 // The page centres a column of [EditorMetrics.columnWidth].
-                final side = EditorMetrics.page
-                    ? math.max(
-                        basePadding.left,
-                        (textPaneWidth - EditorMetrics.columnWidth) / 2,
-                      )
-                    : null;
-                final padding = side == null
-                    ? basePadding
-                    : basePadding.copyWith(left: side, right: side);
+                final side = math.max(
+                  basePadding.left,
+                  (textPaneWidth - EditorMetrics.columnWidth) / 2,
+                );
+                final padding = basePadding.copyWith(left: side, right: side);
 
                 // Must match the text field's own content box exactly, right
                 // down to the sliver it holds back for the caret.
-                final trailingGap = side == null
-                    ? 16.0
-                    : side - EditorMetrics.caretMargin;
+                final trailingGap = side - EditorMetrics.caretMargin;
                 final contentWidth = EditorMetrics.textLayoutWidth(
                   textPaneWidth - padding.left - trailingGap,
                 );
@@ -7413,9 +7363,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 // Paper's attachments fill the column. What the text engine is
                 // told of them stays [attachmentWidth] wide, so the line under
                 // one survives; the attachment itself is drawn the column wide.
-                final drawnWidth = EditorMetrics.page
-                    ? contentWidth
-                    : attachmentWidth;
+                final drawnWidth = contentWidth;
 
                 final markdown = _controller.markdownFor(_controller.text);
                 // Markdown is shown as written only in a note being edited:
@@ -7439,13 +7387,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 );
                 // Paper's cells are 15px words on 20px lines in rows of 36,
                 // and a number in one is set in the mono face at 14.
-                final page = EditorMetrics.page;
-                final cellStyle = page
-                    ? textStyle.copyWith(
-                        fontSize: textStyle.fontSize! * 15 / 16,
-                        height: 20 / 15,
-                      )
-                    : textStyle;
+                final cellStyle = textStyle.copyWith(
+                  fontSize: textStyle.fontSize! * 15 / 16,
+                  height: 20 / 15,
+                );
                 _tableGrids = {
                   for (final table in markdown.tables)
                     table: _tableGeometry.of(
@@ -7454,12 +7399,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       base: cellStyle,
                       scaler: textScaler,
                       fitToWidth: drawnWidth,
-                      fill: page,
-                      minRowHeight: page
-                          ? textScaler.scale(
-                              EditorMetrics.tableRow * widget.editorTextScale,
-                            )
-                          : rowHeight,
+                      fill: true,
+                      minRowHeight: textScaler.scale(
+                        EditorMetrics.tableRow * widget.editorTextScale,
+                      ),
                       style: (palette, Theme.of(context).colorScheme.primary),
                       runStyle: (base, styles, words) {
                         var drawn = _controller.markdownRunStyle(
@@ -7468,8 +7411,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           Theme.of(context).colorScheme.primary,
                           words: words,
                         );
-                        if (page &&
-                            !styles.contains(MarkdownStyle.tableHeader) &&
+                        if (!styles.contains(MarkdownStyle.tableHeader) &&
                             _tableNumber.hasMatch(words.trim())) {
                           drawn = drawn.copyWith(
                             fontFamily: AppFonts.mono,
@@ -7497,31 +7439,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 };
 
                 _controller.setMathWidthDuringLayout(attachmentWidth);
-                _controller.setTableRowsDuringLayout(
-                  page
-                      ? {
-                          for (final table in markdown.tables)
-                            for (final row in table.rows)
-                              if (_tableGrids[table] case final grid?)
-                                row.start:
-                                    grid.rowHeight(row) /
-                                    textScaler.scale(widget.editorTextScale),
-                        }
-                      : const {},
-                );
-                // A table's rows reserve their room the same way a picture
-                // does, through a placeholder apiece. A real attachment wins any
-                // offset they might share.
+                _controller.setTableRowsDuringLayout({
+                  for (final table in markdown.tables)
+                    for (final row in table.rows)
+                      if (_tableGrids[table] case final grid?)
+                        row.start:
+                            grid.rowHeight(row) /
+                            textScaler.scale(widget.editorTextScale),
+                });
                 final spacers = {
-                  ..._tableRowSpacers(
-                    markdown: markdown,
-                    rowHeight: rowHeight,
-                    overhead: placeholderLineOverhead(
-                      style: textStyle,
-                      strut: strut,
-                      scaler: textScaler,
-                    ),
-                  ),
                   for (final MapEntry(:key, :value) in _buildAttachmentSpans(
                     drawnWidth,
                     constraints.maxHeight,
@@ -7589,12 +7515,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     if (mounted) _syncTableCellEditorPosition();
                   });
                 }
-                final checkboxes = EditorMetrics.page
-                    ? _controller.plainCheckboxes(_controller.text)
-                    : const <MarkdownOrnament>[];
-                final chips = EditorMetrics.page
-                    ? _controller.linkChips(_controller.text)
-                    : const <TextRange>[];
+                final checkboxes = _controller.plainCheckboxes(
+                  _controller.text,
+                );
+                final chips = _controller.linkChips(_controller.text);
                 // The field reaches across the results column, which is where
                 // each line puts its result on a phone.
                 final fieldWidth = constraints.maxWidth - padding.left;
@@ -7610,7 +7534,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
                 return MouseRegion(
                   opaque: false,
-                  onHover: widget.readOnly || !EditorMetrics.page
+                  onHover: widget.readOnly || !AppPlatform.hasPointer
                       ? null
                       : (event) => _hoverLine.value = _emptyLineUnder(
                           event.position,
@@ -7756,7 +7680,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                       ),
                       if (title != null)
                         Positioned.fill(child: _titleMarks(title, padding)),
-                      if (EditorMetrics.page && !widget.readOnly)
+                      if (!widget.readOnly)
                         Positioned.fill(
                           child: _emptyLineMarks(
                             padding,
@@ -7765,7 +7689,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                             rowHeight,
                           ),
                         ),
-                      if (EditorMetrics.page && widget.markdownEnabled)
+                      if (widget.markdownEnabled)
                         Positioned.fill(
                           child: _codeHeaders(
                             padding,
@@ -7788,8 +7712,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           ),
                         ),
                       // Only where there is room for it beside the writing.
-                      if (EditorMetrics.page &&
-                          textPaneWidth >= EditorMetrics.columnWidth + 120)
+                      if (textPaneWidth >= EditorMetrics.columnWidth + 120)
                         Positioned(
                           right: -6,
                           bottom: 0,
@@ -7831,7 +7754,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onStop: widget.onRecordVoice,
               onCancel: () => unawaited(widget.recording!.cancel()),
             )
-          else if (EditorMetrics.page)
+          else if (!AppPlatform.isMobile)
             SizedBox(height: MediaQuery.paddingOf(context).bottom)
           else ...[
             if (statusShown)

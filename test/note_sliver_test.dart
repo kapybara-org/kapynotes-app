@@ -51,7 +51,7 @@ NoteLayout _layout(NoteLines lines) => NoteLayout(
     );
   },
   style: _style,
-  strut: EditorMetrics.strut(WritingFont.handwritten, allowTallRows: true),
+  strut: EditorMetrics.strut(WritingFont.handwritten),
 );
 
 Widget _view(
@@ -227,10 +227,9 @@ void main() {
     expect(scroll.offset, moreOrLessEquals(scroll.position.maxScrollExtent));
   });
 
-  for (final (name, platform, tall) in [
-    ('on the page', TargetPlatform.macOS, false),
-    ('on a phone, rows held to the strut', TargetPlatform.iOS, false),
-    ('on a phone, tall rows allowed', TargetPlatform.iOS, true),
+  for (final (name, platform) in [
+    ('on a desktop', TargetPlatform.macOS),
+    ('on a phone', TargetPlatform.iOS),
   ]) {
     testWidgets('lines laid out one at a time sit where one paragraph of the '
         'whole note puts them, $name', (tester) async {
@@ -238,9 +237,6 @@ void main() {
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       // The page sets a code block's rows itself, as no one paragraph can, so
       // the block is left to the tests of those rows there.
-      final fence = platform == TargetPlatform.macOS
-          ? ''
-          : '```python\ndef score(page):\n    return 1  # one\n```\n';
       final body = '''Groceries and sums
 ## Monday
 - [ ] milk \$2.50
@@ -256,7 +252,7 @@ price = 4 usd
 price * 3 // a comment
 ☐ a box with https://kapynotes.app/help in it
 ☑ done
-${fence}A line long enough to wrap onto a second row of the column and then a third row as well, because it simply keeps going with more and more words, and **bold** words too, until it is well past the width of the note.
+A line long enough to wrap onto a second row of the column and then a third row as well, because it simply keeps going with more and more words, and **bold** words too, until it is well past the width of the note.
 
 total''';
       final engine = CalcEngine();
@@ -280,10 +276,7 @@ total''';
           ),
         ),
       );
-      final strut = EditorMetrics.strut(
-        WritingFont.handwritten,
-        allowTallRows: tall,
-      );
+      final strut = EditorMetrics.strut(WritingFont.handwritten);
       final whole = TextPainter(
         text: controller.buildTextSpan(
           context: context,

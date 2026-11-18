@@ -452,14 +452,16 @@ void main() {
   });
 
   group('clicking the blank page below a note', () {
-    /// The middle of ruled row [row], counting the first line of the note as
-    /// row 0 — the point a reader aims at when they click an empty line.
+    /// The middle of ruled row [row], counting the title as row 0 and the
+    /// first row under it as row 1 — the point a reader aims at when they
+    /// click an empty line.
     Offset rowCenter(WidgetTester tester, int row) {
       final editable = NoteDriver(tester);
       final origin = editable.toGlobal(Offset.zero);
+      final body = editable.state.layout.heights!.topOf(1);
       return Offset(
         origin.dx + 40,
-        origin.dy + (row + 0.5) * editable.rowHeight,
+        origin.dy + body + (row - 0.5) * editable.rowHeight,
       );
     }
 
@@ -472,7 +474,9 @@ void main() {
           offset: state.widget.controller.value.selection.baseOffset,
         ),
       );
-      return (rect.center.dy / editable.rowHeight).floor();
+      final body = editable.state.layout.heights!.topOf(1);
+      if (rect.center.dy < body) return 0;
+      return ((rect.center.dy - body) / editable.rowHeight).floor() + 1;
     }
 
     Future<void> pumpEditor(
@@ -481,9 +485,6 @@ void main() {
       bool readOnly = false,
       ValueChanged<String>? onBodyChanged,
     }) async {
-      // Ruled rows all the way down, which on the page start under the
-      // title's taller row and its meta row instead.
-      _onPhone();
       tester.view.physicalSize = const Size(900, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -982,9 +983,7 @@ void main() {
   });
 
   testWidgets('dims only the slash comment portion of a line', (tester) async {
-    // A phone's look: on the page the first line is the note's title.
-    _onPhone();
-    const body = '  // travel assumptions\n2 + 2';
+    const body = 'Trip\n  // travel assumptions\n2 + 2';
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
 
@@ -993,7 +992,7 @@ void main() {
       (span) => span.text?.contains('//') ?? false,
     );
     final indentation = rendered.children!.whereType<TextSpan>().firstWhere(
-      (span) => span.text == '  ',
+      (span) => span.text?.endsWith('  ') ?? false,
     );
 
     expect(comment.text, '// travel assumptions');
@@ -1303,64 +1302,34 @@ void main() {
   testWidgets('styles pasted URLs as links without changing their text', (
     tester,
   ) async {
-    // A phone's look: on the page a link is a chip and the first line a
-    // title, both of which editor_page_test covers.
-    _onPhone();
-    const body = 'Read https://example.com/docs?q=notes.';
-    const linkText = 'https://example.com/docs?q=notes';
-    final linkStart = body.indexOf(linkText);
-    final linkEnd = linkStart + linkText.length;
+    const body = 'Reading\nRead https://example.com/docs?q=notes.';
 
     await tester.pumpWidget(harness(body));
     await tester.pumpAndSettle();
 
-    final rendered = NoteDriver(tester).span;
-    var offset = 0;
-    var sawLinkRun = false;
-    var sawTrailingPeriod = false;
-    for (final span in rendered.children!.whereType<TextSpan>()) {
-      final text = span.text ?? '';
-      final end = offset + text.length;
-      if (offset >= linkStart && end <= linkEnd && text.isNotEmpty) {
-        sawLinkRun = true;
-        expect(
-          span.style!.color,
-          Theme.of(tester.element(noteField)).colorScheme.primary,
-        );
-        expect(
-          span.style?.decoration?.contains(TextDecoration.underline) ?? false,
-          isFalse,
-        );
-        expect(
-          span.style?.fontWeight,
-          tester.widget<NoteField>(noteField).style.fontWeight,
-        );
-      }
-      if (offset == linkEnd && text == '.') {
-        sawTrailingPeriod = true;
-        expect(
-          span.style?.decoration?.contains(TextDecoration.underline) ?? false,
-          isFalse,
-        );
-        expect(span.style?.fontStyle, isNot(FontStyle.italic));
-      }
-      offset = end;
-    }
-
-    expect(sawLinkRun, isTrue);
-    expect(sawTrailingPeriod, isTrue);
+    final runs = NoteDriver(tester).span.children!.whereType<TextSpan>();
+    // The page's link chip, which keeps its scheme out of sight.
+    final address = runs.firstWhere(
+      (span) => span.text == 'example.com/docs?q=notes',
+    );
+    expect(address.style!.fontFamily, AppFonts.mono);
+    expect(address.style!.decoration, TextDecoration.none);
+    // The full stop after it is the sentence's, not the address's.
+    final period = runs.firstWhere((span) => span.text == '.');
+    expect(period.style?.fontFamily, isNot(AppFonts.mono));
+    expect(
+      period.style?.decoration?.contains(TextDecoration.underline) ?? false,
+      isFalse,
+    );
+    expect(period.style?.fontStyle, isNot(FontStyle.italic));
     expect(tester.widget<NoteField>(noteField).controller.text, body);
   });
 
-  testWidgets('a link inside a comment keeps the comment colour', (
-    tester,
-  ) async {
+  testWidgets('a link inside a comment is still a link', (tester) async {
     // A slash comment, a hash after a sum and a quoted annotation, then
     // prose, where the same kind of address still shows as a link.
-    // A phone's look: on the page a link is a chip and the first line a
-    // title, both of which editor_page_test covers.
-    _onPhone();
     const body =
+        'Links\n'
         '//buy from unipile (https://www.unipile.com/pricing-api/)\n'
         '2 + 2 # rates at https://example.com/rates\n'
         '3 * 4 "see example.com/tax"\n'
@@ -1376,7 +1345,12 @@ void main() {
       final end = start + text.length;
       final runs = <TextSpan>[];
       var offset = 0;
-      for (final span in rendered.children!.whereType<TextSpan>()) {
+      // The title's last letter stands in a placeholder of its own.
+      for (final span in rendered.children!) {
+        if (span is! TextSpan) {
+          offset++;
+          continue;
+        }
         final length = span.text?.length ?? 0;
         if (length > 0 && offset >= start && offset + length <= end) {
           runs.add(span);
@@ -1387,21 +1361,16 @@ void main() {
       return runs;
     }
 
+    // Each a chip on the page, as in prose.
     for (final link in [
       'https://www.unipile.com/pricing-api/',
       'https://example.com/rates',
       'example.com/tax',
+      'https://example.com/docs',
     ]) {
       for (final run in runsOf(link)) {
-        expect(run.style!.color, KapyTheme.darkPalette.comment, reason: link);
-        expect(run.style!.fontStyle, FontStyle.italic, reason: link);
+        expect(run.style!.fontFamily, AppFonts.mono, reason: link);
       }
-    }
-    for (final run in runsOf('https://example.com/docs')) {
-      expect(
-        run.style!.color,
-        Theme.of(tester.element(noteField)).colorScheme.primary,
-      );
     }
 
     // Quiet, but still a link: a click on it offers to open it.
@@ -1419,15 +1388,15 @@ void main() {
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(
       harness(
-        'Project title\nA supporting thought',
+        'Plan\nProject title\nA supporting thought',
         onFormatsChanged: changes.add,
       ),
     );
     await tester.pumpAndSettle();
     final field = tester.widget<NoteField>(noteField);
     field.controller.selection = const TextSelection(
-      baseOffset: 2,
-      extentOffset: 7,
+      baseOffset: 7,
+      extentOffset: 12,
     );
     await tester.pump();
     await revealFormatting(tester);
@@ -1436,7 +1405,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(changes.last, const [
-      NoteFormatRange(start: 0, end: 13, format: NoteFormat.heading),
+      NoteFormatRange(start: 5, end: 18, format: NoteFormat.heading),
     ]);
     final rendered = NoteDriver(tester).span;
     final heading = rendered.children!.whereType<TextSpan>().firstWhere(
@@ -1456,7 +1425,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('format-style')));
     await tester.pumpAndSettle();
     expect(changes.last, const [
-      NoteFormatRange(start: 0, end: 13, format: NoteFormat.subtitle),
+      NoteFormatRange(start: 5, end: 18, format: NoteFormat.subtitle),
     ]);
 
     await tester.tap(find.byKey(const ValueKey('format-style')));
@@ -2125,11 +2094,11 @@ void main() {
     final changes = <List<NoteFormatRange>>[];
     await tester.pumpWidget(
       harness(
-        'Keep emphasis',
+        'Note\nKeep emphasis',
         initialFormats: const [
-          NoteFormatRange(start: 0, end: 4, format: NoteFormat.bold),
-          NoteFormatRange(start: 5, end: 13, format: NoteFormat.italic),
-          NoteFormatRange(start: 0, end: 13, format: NoteFormat.subtitle),
+          NoteFormatRange(start: 5, end: 9, format: NoteFormat.bold),
+          NoteFormatRange(start: 10, end: 18, format: NoteFormat.italic),
+          NoteFormatRange(start: 5, end: 18, format: NoteFormat.subtitle),
         ],
         onFormatsChanged: changes.add,
       ),
@@ -2137,8 +2106,8 @@ void main() {
     await tester.pumpAndSettle();
     final field = tester.widget<NoteField>(noteField);
     field.controller.selection = const TextSelection(
-      baseOffset: 0,
-      extentOffset: 13,
+      baseOffset: 5,
+      extentOffset: 18,
     );
     await tester.pump();
     await revealFormatting(tester);
@@ -2147,8 +2116,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(changes.last, const [
-      NoteFormatRange(start: 0, end: 4, format: NoteFormat.bold),
-      NoteFormatRange(start: 5, end: 13, format: NoteFormat.italic),
+      NoteFormatRange(start: 5, end: 9, format: NoteFormat.bold),
+      NoteFormatRange(start: 10, end: 18, format: NoteFormat.italic),
     ]);
     final rendered = NoteDriver(tester).span;
     final bold = rendered.children!.whereType<TextSpan>().firstWhere(
@@ -2362,20 +2331,20 @@ void main() {
     tester,
   ) async {
     _onPhone();
-    await tester.pumpWidget(harness('Task'));
+    await tester.pumpWidget(harness('List\nTask'));
     await tester.pumpAndSettle();
     final field = tester.widget<NoteField>(noteField);
-    field.controller.selection = const TextSelection.collapsed(offset: 4);
+    field.controller.selection = const TextSelection.collapsed(offset: 9);
     await tester.pump();
     await revealFormatting(tester);
 
     await tester.tap(find.byKey(const ValueKey('format-checklist')));
     await tester.pumpAndSettle();
-    expect(field.controller.text, '☐ Task');
+    expect(field.controller.text, 'List\n☐ Task');
 
     final editable = NoteDriver(tester);
     final checkbox = editable
-        .boxesFor(const TextSelection(baseOffset: 0, extentOffset: 1))
+        .boxesFor(const TextSelection(baseOffset: 5, extentOffset: 6))
         .single;
     final checkboxCenter = editable.toGlobal(
       Offset(
@@ -2385,7 +2354,7 @@ void main() {
     );
     await tester.tapAt(checkboxCenter);
     await tester.pumpAndSettle();
-    expect(field.controller.text, '☑ Task');
+    expect(field.controller.text, 'List\n☑ Task');
     final rendered = editable.span;
     final completed = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'Task',
@@ -2394,11 +2363,11 @@ void main() {
 
     await tester.tapAt(checkboxCenter);
     await tester.pumpAndSettle();
-    expect(field.controller.text, '☐ Task');
+    expect(field.controller.text, 'List\n☐ Task');
 
     await tester.tap(find.byKey(const ValueKey('format-checklist')));
     await tester.pumpAndSettle();
-    expect(field.controller.text, 'Task');
+    expect(field.controller.text, 'List\nTask');
   });
 
   testWidgets('Enter keeps a nested item at its own depth', (tester) async {

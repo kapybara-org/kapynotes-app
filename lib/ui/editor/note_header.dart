@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../sync/presence.dart';
 import '../checklist_pie.dart';
@@ -180,18 +181,34 @@ class NoteMetaRow extends StatelessWidget {
           onPressed: onReadOnlyPressed,
         ),
     ];
+    final facts = [
+      for (final (index, item) in items.indexed) ...[
+        if (index > 0) ...[
+          const SizedBox(width: _gap),
+          dot,
+          const SizedBox(width: _gap),
+        ],
+        item,
+      ],
+    ];
+    if (AppPlatform.isMobile) {
+      return SizedBox(
+        height: EditorMetrics.metaRow,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(height: 16, child: Row(children: facts)),
+            const SizedBox(height: 8),
+            SizedBox(height: 22, child: tags),
+          ],
+        ),
+      );
+    }
     return SizedBox(
       height: EditorMetrics.metaRow,
       child: Row(
         children: [
-          for (final (index, item) in items.indexed) ...[
-            if (index > 0) ...[
-              const SizedBox(width: _gap),
-              dot,
-              const SizedBox(width: _gap),
-            ],
-            item,
-          ],
+          ...facts,
           if (tags case final tags?) ...[
             const SizedBox(width: _gap),
             dot,
