@@ -81,6 +81,11 @@ class Onboarding {
     return notes.create(body: welcomeNoteBody, authored: false);
   }
 
+  /// Whether the library is nothing but the welcome note, exactly as it was
+  /// written. Nobody has used the app yet, so a widget tap counts it as empty.
+  static bool holdsOnlyWelcome(NotesStore notes) =>
+      notes.notes.length == 1 && notes.notes.single.body == welcomeNoteBody;
+
   /// The welcome note as it stands, made again if it was edited or deleted.
   ///
   /// Matching on the exact body keeps another explicit onboarding request

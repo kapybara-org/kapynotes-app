@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -211,6 +212,149 @@ void main() {
 
     expect(imageRequests, ['camera']);
     expect(notes.notes, hasLength(1));
+  });
+
+  // A library whose only note is the welcome note, untouched, counts as empty
+  // for a widget tap: the welcome note is there to be read, so Write, Dictate
+  // and Capture each start a note of their own instead of landing in it.
+  for (final firstLaunch in [true, false]) {
+    final who = firstLaunch ? 'a first launch' : 'a relaunch';
+
+    void welcomeOnlyLibrary() {
+      store = MemoryStore();
+      if (!firstLaunch) {
+        store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
+        store.data['notes.v1'] = [
+          {
+            'id': 'welcome',
+            'body': welcomeNoteBody,
+            'createdAt': 1000,
+            'updatedAt': 1000,
+          },
+        ];
+      }
+      notes = NotesStore(store);
+      prefs = LayoutPrefs(store);
+      rates = RatesRepository(store);
+      shortcuts = ShortcutPrefs(store);
+    }
+
+    Note welcomeNote() =>
+        notes.notes.singleWhere((note) => note.body == welcomeNoteBody);
+
+    Note newNote() =>
+        notes.notes.singleWhere((note) => note.body != welcomeNoteBody);
+
+    void expectWelcomeLeftAlone(WidgetTester tester) {
+      expect(notes.notes, hasLength(2));
+      expect(welcomeNote().body, welcomeNoteBody);
+      expect(
+        tester.widget<NoteField>(noteField).controller.text,
+        isNot(contains('Welcome to Kapy Notes')),
+        reason: 'the note on the page is the new one',
+      );
+      expect(newNote().isEmpty, isTrue);
+    }
+
+    Future<void> resumeWith(WidgetTester tester, String action) async {
+      stubLaunchIntent(action);
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      await tester.pumpAndSettle();
+    }
+
+    VoiceRecordingController dictation() {
+      final recording = VoiceRecordingController(
+        recorder: _SilentRecorder(),
+        tempDirectory: Directory.systemTemp,
+      );
+      addTearDown(recording.dispose);
+      return recording;
+    }
+
+    for (final warm in [false, true]) {
+      final how = warm ? 'tapped while the app is open' : 'cold';
+
+      testWidgets('Dictate on $who with only the welcome note, $how, records '
+          'into a new note', (tester) async {
+        welcomeOnlyLibrary();
+        final recording = dictation();
+
+        if (warm) {
+          await pumpLaunch(tester, recording: recording);
+          await resumeWith(tester, 'dictate');
+        } else {
+          await pumpLaunch(tester, action: 'dictate', recording: recording);
+        }
+
+        expectWelcomeLeftAlone(tester);
+        expect(recording.isRecording, isTrue);
+        expect(recording.session!.noteId, newNote().id);
+        await tester.runAsync(recording.cancel);
+      });
+
+      testWidgets('Capture on $who with only the welcome note, $how, opens '
+          'the camera over a new note', (tester) async {
+        welcomeOnlyLibrary();
+
+        if (warm) {
+          await pumpLaunch(tester);
+          await resumeWith(tester, 'capture');
+        } else {
+          await pumpLaunch(tester, action: 'capture');
+        }
+
+        expect(imageRequests, ['camera']);
+        expectWelcomeLeftAlone(tester);
+      });
+
+      testWidgets('Write on $who with only the welcome note, $how, opens a '
+          'new note', (tester) async {
+        welcomeOnlyLibrary();
+
+        if (warm) {
+          await pumpLaunch(tester);
+          await resumeWith(tester, 'continueWriting');
+        } else {
+          await pumpLaunch(tester, action: 'continueWriting');
+        }
+
+        expect(imageRequests, isEmpty);
+        expectWelcomeLeftAlone(tester);
+      });
+    }
+  }
+
+  testWidgets('a welcome note that has been edited is a real note, and Dictate '
+      'carries on in it', (tester) async {
+    store.data['notes.v1'] = [
+      {
+        'id': 'welcome',
+        'body': '${welcomeNoteBody}Mine.',
+        'createdAt': 1000,
+        'updatedAt': 2000,
+      },
+    ];
+    notes = NotesStore(store);
+    final recording = VoiceRecordingController(
+      recorder: _SilentRecorder(),
+      tempDirectory: Directory.systemTemp,
+    );
+    addTearDown(recording.dispose);
+
+    await pumpLaunch(tester, action: 'dictate', recording: recording);
+
+    expect(notes.notes.single.id, 'welcome');
+    expect(recording.session!.noteId, 'welcome');
+    await tester.runAsync(recording.cancel);
   });
 
   testWidgets('an interrupted library return does not reopen Capture', (
