@@ -1026,6 +1026,9 @@ class AppFonts {
   /// Every control and label: menus, buttons, fields, lists.
   static const String ui = 'Figtree';
 
+  /// A note's title in the default writing font.
+  static const String title = 'Newsreader';
+
   /// Figures that have to line up and keys that have to look like keys:
   /// calculation results and keycaps.
   static const String mono = 'Geist Mono';

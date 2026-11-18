@@ -1,10 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/editor_font.dart';
+import 'package:kapy_notes/core/font_licenses.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/editor/editor_formatting.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'test_fonts.dart';
+
 void main() {
+  setUpAll(loadTestFonts);
+
   final darkInk = KapyTheme.darkPalette.textPrimary;
   final lightInk = KapyTheme.lightPalette.textPrimary;
 
@@ -36,11 +41,10 @@ void main() {
     }
   });
 
-  test('the title and headings stay at 600 in dark', () {
+  test('the title and headings are not lightened in dark', () {
     for (final font in WritingFont.values) {
       final base = EditorMetrics.textStyle(darkInk, font);
       final title = noteTitleStyle(base, writingFont: font);
-      expect(title.fontWeight, FontWeight.w600, reason: font.name);
       expect(lightened(title), isFalse, reason: font.name);
       for (final level in [1, 2, 3, 4]) {
         final heading = markdownHeadingStyle(base, level, writingFont: font);
@@ -52,6 +56,78 @@ void main() {
         expect(lightened(heading), isFalse, reason: '${font.name} h$level');
       }
     }
+  });
+
+  test('the default writing font titles a note in Newsreader', () {
+    final base = EditorMetrics.textStyle(lightInk, WritingFont.clean);
+    final title = noteTitleStyle(base, writingFont: WritingFont.clean);
+    expect(title.fontFamily, AppFonts.title);
+    expect(title.fontWeight, FontWeight.w400);
+    expect(title.fontFamilyFallback!.first, base.fontFamily);
+    expect(title.fontSize, EditorMetrics.titleFontSize);
+    expect(title.fontSize! / base.fontSize!, inInclusiveRange(1.75, 2));
+  });
+
+  test("a writing font the person picked titles the note too", () {
+    for (final (font, family) in [
+      (WritingFont.handwritten, WritingFont.handwritten.fontFamily),
+      (WritingFont.mixed, WritingFont.handwritten.fontFamily),
+      (WritingFont.monospace, WritingFont.monospace.fontFamily),
+    ]) {
+      final base = EditorMetrics.textStyle(lightInk, font);
+      final title = noteTitleStyle(base, writingFont: font);
+      expect(title.fontFamily, family, reason: font.name);
+      expect(title.fontWeight, EditorMetrics.titleWeight, reason: font.name);
+    }
+  });
+
+  test('every heading stays under the title', () {
+    for (final level in [1, 2, 3, 4]) {
+      expect(
+        EditorMetrics.headingFontSize(level),
+        lessThan(EditorMetrics.titleFontSize * 0.8),
+      );
+    }
+  });
+
+  testWidgets('a Greek title falls back to the writing face, not to tofu', (
+    tester,
+  ) async {
+    final base = EditorMetrics.textStyle(lightInk, WritingFont.clean);
+    final title = noteTitleStyle(base, writingFont: WritingFont.clean);
+    final writing = title.copyWith(
+      fontFamily: base.fontFamily,
+      fontFamilyFallback: base.fontFamilyFallback,
+    );
+    double width(String text, TextStyle style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    // No spaces: those Newsreader has, and draws itself.
+    const greek = 'Λισαβόνα';
+    expect(width(greek, title), width(greek, writing));
+    expect(
+      width(greek, title),
+      isNot(greek.length * title.fontSize!),
+      reason: 'the test font draws every glyph a square em wide',
+    );
+    expect(width('Lisbon trip', title), isNot(width('Lisbon trip', writing)));
+  });
+
+  test("Newsreader's licence is on the licences page", () async {
+    final entries = await fontLicenseEntries().toList();
+    final newsreader = entries.where((e) => e.packages.contains('Newsreader'));
+    expect(newsreader, isNotEmpty);
+    expect(
+      newsreader.first.paragraphs.map((p) => p.text).join(' '),
+      contains('SIL Open Font License'),
+    );
   });
 
   test('the interface type scale has no half pixels', () {
