@@ -154,8 +154,13 @@ class Sharing extends ChangeNotifier {
   /// Moves a note into a shared space under a freshly minted content key,
   /// and pushes it so the other members receive it.
   Future<void> shareNote(String noteId, {required String spaceId}) async {
-    if (_notes.byId(noteId)?.isHidden ?? false) {
+    final note = _notes.byId(noteId);
+    if (note?.isHidden ?? false) {
       throw const SyncRefusedException(409, 'hidden-note', {});
+    }
+    final from = note == null ? null : spaceOf(note);
+    if (from != null && from.isTeam && !from.isOwner) {
+      throw const SyncRefusedException(403, 'owner-only', {});
     }
     final space = _keyring.byId(spaceId);
     if (space == null || !space.isTeam) {

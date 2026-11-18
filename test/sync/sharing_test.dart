@@ -634,6 +634,23 @@ void main() {
       expect(ours.body, 'Ours');
     });
 
+    test('only the owner can move a note on to another space', () async {
+      final note = await shareWithBob('Ours');
+      final spaceId = bob.notes.byId(note.id)!.spaceId;
+      final other = await bob.sharing.createSpace('Bob\'s');
+      await expectLater(
+        bob.sharing.shareNote(note.id, spaceId: other.id),
+        throwsA(
+          isA<SyncRefusedException>().having(
+            (e) => e.code,
+            'code',
+            'owner-only',
+          ),
+        ),
+      );
+      expect(bob.notes.byId(note.id)!.spaceId, spaceId);
+    });
+
     test('an old editor whose move is refused over the socket', () async {
       final note = await shareWithBob('Ours');
       final spaceId = bob.notes.byId(note.id)!.spaceId;
