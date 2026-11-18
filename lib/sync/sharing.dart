@@ -242,6 +242,22 @@ class Sharing extends ChangeNotifier {
     await _sync.syncNow();
   }
 
+  /// The notes in a shared space, as this device holds them.
+  List<Note> notesIn(String spaceId) => [
+    for (final note in _notes.notes)
+      if (note.spaceId == spaceId) note,
+  ];
+
+  /// A copy of a shared note in this account's own notes. The shared note is
+  /// untouched, for everyone in the space.
+  void makePrivateCopy(String noteId) {
+    final note = _notes.byId(noteId);
+    if (note == null || !note.isShared) {
+      throw const SyncProtocolException('no such shared note');
+    }
+    _notes.keepCopy(note);
+  }
+
   /// A new note straight into a shared space.
   Note createNoteIn(String spaceId) {
     final space = _keyring.byId(spaceId);
