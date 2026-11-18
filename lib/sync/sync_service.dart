@@ -1856,6 +1856,19 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       }
 
       if (item.isMarker) {
+        // The note left this space. When its own history, read back after
+        // the move was already answered, took the record back here, the
+        // record goes on to where the note is now: otherwise the next move
+        // from there would never be sent.
+        final local = _notes.byId(noteId);
+        final there = local == null ? null : local.spaceId ?? personalId;
+        if (item.deleted &&
+            record.spaceId == batch.spaceId &&
+            there != null &&
+            there != batch.spaceId &&
+            !local!.isDirty) {
+          record.spaceId = there;
+        }
         _docs.markDirty(noteId);
         continue;
       }
