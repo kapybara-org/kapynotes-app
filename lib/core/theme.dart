@@ -827,27 +827,27 @@ class AppControlMetrics {
 
   /// Adornments inside a control — a field's search glyph, a row's clear
   /// button, a hover-revealed delete.
-  static double get iconAdornment => _touch ? 18 : 15;
+  static double get iconAdornment => _touch ? 18 : 14;
 
   /// Search is visually circular and reads larger than other adornments at
   /// the same box size, so it uses a slightly quieter glyph.
-  static double get iconSearch => _touch ? 16 : 13;
+  static double get iconSearch => _touch ? 16 : 14;
 
   /// A secondary icon that is itself the button.
   static double get iconControl => _touch ? 22 : 16;
 
   /// A primary icon that is itself the button. The workhorse of every bar.
-  static double get iconAction => _touch ? 22 : 17;
+  static double get iconAction => _touch ? 22 : 16;
 
   /// Primary and secondary glyphs inside the roomier footer controls.
   ///
   /// These sit one or two points above title-bar glyphs so the repeated strip
   /// reads at the same visual weight as the surrounding editor and sidebar.
-  static double get footerIconAction => _touch ? 22 : 19;
+  static double get footerIconAction => _touch ? 22 : 18;
   static double get footerIconControl => _touch ? 22 : 18;
 
   /// Feature icons that head a pane or an empty state.
-  static double get iconFeature => _touch ? 26 : 21;
+  static double get iconFeature => _touch ? 26 : 20;
 
   /// What an `Icon` with no size of its own gets, via the theme.
   static double get iconDefault => _touch ? 22 : 18;
