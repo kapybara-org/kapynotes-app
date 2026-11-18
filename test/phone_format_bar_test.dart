@@ -477,6 +477,29 @@ void main() {
         expect(find.byKey(_bar), findsOneWidget);
       });
 
+      for (final (name, address, written) in const [
+        ('a space', 'a.co/my page', '[a.co/my page](a.co/my%20page)'),
+        ('an unbalanced bracket', 'a.co/x)y', '[a.co/x)y](<a.co/x)y>)'),
+      ]) {
+        testWidgets('a link at a caret escapes an address with $name', (
+          tester,
+        ) async {
+          await _open(
+            tester,
+            platform,
+            'Trip ',
+            const TextSelection.collapsed(offset: 5),
+          );
+          await _tap(tester, 'format-link');
+          await tester.enterText(
+            find.byKey(const ValueKey('link-address')),
+            address,
+          );
+          await _tap(tester, 'link-add');
+          expect(_text(tester), 'Trip $written');
+        });
+      }
+
       testWidgets('cancelling the link leaves the note and its selection', (
         tester,
       ) async {

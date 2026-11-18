@@ -53,6 +53,10 @@ void main() {
       tester.widget<NoteField>(find.byType(NoteField));
 
   Future<void> open(WidgetTester tester, String body) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    for (var i = 0; i < 30 && tester.view.viewInsets.bottom > 0; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     await tester.pumpWidget(
       MaterialApp(
         theme: KapyTheme.dark(),
@@ -75,9 +79,10 @@ void main() {
         ),
       ),
     );
-    for (var i = 0; i < 100; i++) {
+    for (var i = 0; i < 300; i++) {
       await tester.pump(const Duration(milliseconds: 100));
-      if (tester.view.viewInsets.bottom > 0) {
+      if (tester.view.viewInsets.bottom > 0 &&
+          find.byKey(_bar).evaluate().isNotEmpty) {
         await tester.pump(const Duration(milliseconds: 500));
         return;
       }
@@ -120,20 +125,20 @@ void main() {
     expect(bar.bottom, closeTo(keyboardTop, 1));
   });
 
-  testWidgets('every button applies and leaves focus and the keyboard', (
-    tester,
-  ) async {
-    const cases = <(String, String, String)>[
-      ('format-style', 'Trip budget', '# Trip budget'),
-      ('format-bold', 'Trip budget', '**Trip** budget'),
-      ('format-italic', 'Trip budget', '*Trip* budget'),
-      ('format-checklist', 'Trip budget', '- [ ] Trip budget'),
-      ('format-bullets', 'Trip budget', '- Trip budget'),
-      ('format-numbered', 'Trip budget', '1. Trip budget'),
-      ('format-quote', 'Trip budget', '> Trip budget'),
-      ('format-code', 'Trip budget', '`Trip` budget'),
-    ];
-    for (final (key, body, expected) in cases) {
+  const cases = <(String, String, String)>[
+    ('format-style', 'Trip budget', '# Trip budget'),
+    ('format-bold', 'Trip budget', '**Trip** budget'),
+    ('format-italic', 'Trip budget', '*Trip* budget'),
+    ('format-checklist', 'Trip budget', '- [ ] Trip budget'),
+    ('format-bullets', 'Trip budget', '- Trip budget'),
+    ('format-numbered', 'Trip budget', '1. Trip budget'),
+    ('format-quote', 'Trip budget', '> Trip budget'),
+    ('format-code', 'Trip budget', '`Trip` budget'),
+  ];
+  for (final (key, body, expected) in cases) {
+    testWidgets('button $key applies and leaves focus and the keyboard', (
+      tester,
+    ) async {
       await open(tester, body);
       field(tester).controller.selection = const TextSelection(
         baseOffset: 0,
@@ -145,7 +150,27 @@ void main() {
       expect(field(tester).controller.text, expected, reason: key);
       expect(field(tester).controller.selection.isValid, isTrue, reason: key);
       expectStillWriting(tester, reason: key);
-    }
+    });
+  }
+
+  testWidgets('Link asks for an address and wraps the selection', (
+    tester,
+  ) async {
+    await open(tester, 'Trip budget');
+    field(tester).controller.selection = const TextSelection(
+      baseOffset: 0,
+      extentOffset: 4,
+    );
+    await tester.pump();
+    await tap(tester, 'format-link');
+    await tester.enterText(
+      find.byKey(const ValueKey('link-address')),
+      'https://example.com',
+    );
+    await tap(tester, 'link-add');
+
+    expect(field(tester).controller.text, '[Trip](https://example.com) budget');
+    expectStillWriting(tester, reason: 'link');
   });
 
   testWidgets('bold keeps the selection on the same words', (tester) async {

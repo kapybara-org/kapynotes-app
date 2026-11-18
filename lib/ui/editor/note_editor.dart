@@ -5850,7 +5850,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       replaceSlashCommandRange(
         now,
         TextRange.collapsed(selection.start),
-        '[$address]($address)',
+        '[$address](${linkDestination(address)})',
         selection: TextSelection(
           baseOffset: selection.start + 1,
           extentOffset: selection.start + 1 + address.length,
