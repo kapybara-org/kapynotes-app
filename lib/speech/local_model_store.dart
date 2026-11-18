@@ -429,8 +429,9 @@ class LocalModelStore extends ChangeNotifier {
     }
   }
 
-  /// Downloads [model] once the phone is off mobile data, and straight away
-  /// if it already is.
+  /// Downloads [model] once the phone is on Wi-Fi or Ethernet, and straight
+  /// away if it already is. Losing the connection, or a VPN with nothing
+  /// under it, is not Wi-Fi, and keeps waiting.
   ///
   /// Not remembered across a restart. The card offers the download again,
   /// and asks again if the phone is still on mobile data.
@@ -438,7 +439,7 @@ class LocalModelStore extends ChangeNotifier {
     if (_running.containsKey(model.id) || _waiting.containsKey(model.id)) {
       return;
     }
-    if (!await mobileData.inUse()) {
+    if (await mobileData.unmeteredNow()) {
       unawaited(download(model));
       return;
     }
@@ -452,8 +453,8 @@ class LocalModelStore extends ChangeNotifier {
         totalBytes: model.bytes,
       ),
     );
-    _waiting[model.id] = mobileData.changes().listen((onlyMobile) {
-      if (onlyMobile || _disposed) return;
+    _waiting[model.id] = mobileData.unmetered().listen((unmetered) {
+      if (!unmetered || _disposed) return;
       unawaited(download(model));
     });
   }

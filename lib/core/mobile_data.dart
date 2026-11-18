@@ -1,4 +1,5 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 
 import 'platform.dart';
 
@@ -20,19 +21,36 @@ class MobileData {
   Future<bool> inUse() async {
     if (!AppPlatform.isMobile) return false;
     try {
-      return _onlyMobile(await _connectivity.checkConnectivity());
+      return isOnlyMobile(await _connectivity.checkConnectivity());
     } catch (_) {
       // A phone that will not say is not charged for what it does not know.
       return false;
     }
   }
 
-  /// Whether mobile data is all there is, each time the connection changes.
-  Stream<bool> changes() =>
-      _connectivity.onConnectivityChanged.map(_onlyMobile);
+  /// Whether the phone is on Wi-Fi or Ethernet right now.
+  Future<bool> unmeteredNow() async {
+    try {
+      return isUnmetered(await _connectivity.checkConnectivity());
+    } catch (_) {
+      return false;
+    }
+  }
 
-  static bool _onlyMobile(List<ConnectivityResult> results) =>
-      results.contains(ConnectivityResult.mobile) &&
-      !results.contains(ConnectivityResult.wifi) &&
-      !results.contains(ConnectivityResult.ethernet);
+  /// Whether the phone is on Wi-Fi or Ethernet, each time the connection
+  /// changes. Not "off mobile data": a phone in a tunnel reports no connection
+  /// at all, and a download started then would fail and stop waiting.
+  Stream<bool> unmetered() =>
+      _connectivity.onConnectivityChanged.map(isUnmetered);
+
+  /// Mobile data with nothing cheaper beside it. A VPN over mobile data is
+  /// still mobile data.
+  @visibleForTesting
+  static bool isOnlyMobile(List<ConnectivityResult> results) =>
+      results.contains(ConnectivityResult.mobile) && !isUnmetered(results);
+
+  @visibleForTesting
+  static bool isUnmetered(List<ConnectivityResult> results) =>
+      results.contains(ConnectivityResult.wifi) ||
+      results.contains(ConnectivityResult.ethernet);
 }

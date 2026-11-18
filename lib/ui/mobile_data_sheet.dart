@@ -23,8 +23,8 @@ Future<MobileDataChoice?> showMobileDataSheet(
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: Text(
-          "It's ${fileSize(bytes)}. On Wi-Fi it costs nothing, and it can "
-          'start by itself as soon as you join one.',
+          "It's ${fileSize(bytes)}. Waiting for Wi-Fi keeps it off your data "
+          'plan; it starts when you join one while Kapy Notes is open.',
           style: TextStyle(fontSize: 13, color: context.palette.textSecondary),
         ),
       ),
