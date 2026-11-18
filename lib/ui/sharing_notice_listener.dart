@@ -7,9 +7,9 @@ import '../sync/account.dart';
 import '../sync/sharing.dart';
 import '../sync/sync_api.dart';
 
-/// Says each [SharingNotice] as a toast, wherever the person is. A share
-/// that was accepted on its own offers to leave again from the toast.
-class SharingNoticeListener extends StatefulWidget {
+/// Follows the account to whichever [Sharing] it has now, signed in or not,
+/// and says that one's notices.
+class SharingNoticeListener extends StatelessWidget {
   const SharingNoticeListener({
     super.key,
     required this.account,
@@ -20,46 +20,55 @@ class SharingNoticeListener extends StatefulWidget {
   final Widget child;
 
   @override
-  State<SharingNoticeListener> createState() => _SharingNoticeListenerState();
+  Widget build(BuildContext context) {
+    final account = this.account;
+    if (account == null) return child;
+    return ListenableBuilder(
+      listenable: account,
+      builder: (context, child) =>
+          SharingNotices(sharing: account.sharing, child: child!),
+      child: child,
+    );
+  }
 }
 
-class _SharingNoticeListenerState extends State<SharingNoticeListener> {
-  Sharing? _sharing;
+/// Says each [SharingNotice] as a toast, wherever the person is. A share
+/// that was accepted on its own offers to leave again from the toast.
+class SharingNotices extends StatefulWidget {
+  const SharingNotices({super.key, required this.sharing, required this.child});
+
+  final Sharing? sharing;
+  final Widget child;
+
+  @override
+  State<SharingNotices> createState() => _SharingNoticesState();
+}
+
+class _SharingNoticesState extends State<SharingNotices> {
   StreamSubscription<SharingNotice>? _notices;
 
   @override
   void initState() {
     super.initState();
-    widget.account?.addListener(_follow);
-    _follow();
+    _notices = widget.sharing?.notices.listen(_show);
   }
 
   @override
-  void didUpdateWidget(SharingNoticeListener old) {
+  void didUpdateWidget(SharingNotices old) {
     super.didUpdateWidget(old);
-    if (old.account == widget.account) return;
-    old.account?.removeListener(_follow);
-    widget.account?.addListener(_follow);
-    _follow();
+    if (identical(old.sharing, widget.sharing)) return;
+    unawaited(_notices?.cancel());
+    _notices = widget.sharing?.notices.listen(_show);
   }
 
   @override
   void dispose() {
-    widget.account?.removeListener(_follow);
     unawaited(_notices?.cancel());
     super.dispose();
   }
 
-  void _follow() {
-    final sharing = widget.account?.sharing;
-    if (identical(sharing, _sharing)) return;
-    unawaited(_notices?.cancel());
-    _sharing = sharing;
-    _notices = sharing?.notices.listen(_show);
-  }
-
   void _show(SharingNotice notice) {
-    final sharing = _sharing;
+    final sharing = widget.sharing;
     final spaceId = notice.leaveSpaceId;
     if (!mounted || sharing == null) return;
     Toast.show(
@@ -71,9 +80,6 @@ class _SharingNoticeListenerState extends State<SharingNoticeListener> {
           : () => unawaited(_leave(sharing, spaceId)),
     );
   }
-
-  @override
-  Widget build(BuildContext context) => widget.child;
 
   Future<void> _leave(Sharing sharing, String spaceId) async {
     try {
@@ -89,4 +95,7 @@ class _SharingNoticeListenerState extends State<SharingNoticeListener> {
       }
     }
   }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
