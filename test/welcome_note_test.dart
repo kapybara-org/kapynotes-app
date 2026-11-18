@@ -11,7 +11,6 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/empty_state.dart';
-import 'package:kapy_notes/ui/kapy_header_mascot.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -210,20 +209,6 @@ void main() {
       expect(tester.testTextInput.isVisible, isFalse);
     });
 
-    testWidgets('gives Kapy the one beat the word total already earns', (
-      tester,
-    ) async {
-      // The animated mark lives in the phone's title bar.
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      await pumpLaunch(tester, MemoryStore(), size: const Size(390, 760));
-
-      final mascot = tester.widget<KapyHeaderMascot>(
-        find.byType(KapyHeaderMascot),
-      );
-      expect(mascot.controller.lastAnimation, KapyHeaderAnimation.think);
-    });
-
     testWidgets('hands the note over the moment it is typed in', (
       tester,
     ) async {
@@ -271,15 +256,9 @@ void main() {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpLaunch(tester, MemoryStore(), size: const Size(390, 760));
-      await tester.tap(find.byKey(const ValueKey('toolbar-notes-toggle')));
+      await tester.tap(find.byKey(const ValueKey('page-back')));
       await tester.pumpAndSettle();
-      final settings = find.descendant(
-        of: find.byType(Drawer),
-        matching: find.byKey(const ValueKey('sidebar-settings')),
-      );
-      await tester.ensureVisible(settings);
-      await tester.pumpAndSettle();
-      await tester.tap(settings);
+      await tester.tap(find.byKey(const ValueKey('bar-settings')));
       await tester.pumpAndSettle();
 
       expect(find.byType(SettingsDialog), findsOneWidget);
