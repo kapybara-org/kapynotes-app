@@ -63,8 +63,11 @@ class DeviceMemory {
       }
     }
     if (AppPlatform.isWindows) {
+      // Anything from the probe but a positive count, a thrown error included,
+      // is a machine we could not measure, which is allowed to try.
       try {
-        return _windowsTotal();
+        final bytes = _windowsTotal();
+        return bytes != null && bytes > 0 ? bytes : null;
       } catch (_) {
         return null;
       }

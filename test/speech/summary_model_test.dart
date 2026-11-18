@@ -245,6 +245,12 @@ void main() {
       expect(await memory.total(), isNull);
     });
 
+    test('a windows probe that answers nothing is unknown, not zero', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      expect(await DeviceMemory(windowsTotal: () => 0).total(), isNull);
+      expect(await DeviceMemory(windowsTotal: () => null).total(), isNull);
+    });
+
     test('windows asks the kernel', () async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
       final memory = DeviceMemory(windowsTotal: () => 16 * 1000 * 1000 * 1000);
