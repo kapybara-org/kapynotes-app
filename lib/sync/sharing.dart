@@ -36,14 +36,18 @@ class Sharing extends ChangeNotifier {
     required NotesStore notes,
     required SyncService sync,
     ImageSync? images,
+    DateTime Function() now = DateTime.now,
   }) : _api = api,
        _vault = vault,
        _keyring = keyring,
        _notes = notes,
        _sync = sync,
-       _images = images {
-    _keyring.addListener(notifyListeners);
+       _images = images,
+       _since = now() {
+    _guests = _guestSpaces();
+    _keyring.addListener(_onKeyring);
     _keyring.trust.addListener(notifyListeners);
+    _changes = _sync.sharedChanges.listen(_onSharedChange);
   }
 
   final SyncApi _api;
@@ -52,6 +56,29 @@ class Sharing extends ChangeNotifier {
   final NotesStore _notes;
   final SyncService _sync;
   final ImageSync? _images;
+
+  /// When this device started watching. A space's whole history arriving
+  /// is news only for a space joined after it; before, it is a device
+  /// catching up on what was already shared.
+  final DateTime _since;
+  late final StreamSubscription<SharedChange> _changes;
+  final StreamController<SharingNotice> _notices = StreamController.broadcast();
+
+  /// The shared spaces somebody else owns, as last seen.
+  late Map<String, ({SpaceRole role, String owner, List<Note> notes})> _guests;
+
+  /// Spaces this device is leaving, whose going is no news.
+  final Set<String> _leaving = {};
+
+  /// Invitations this device has tried to accept by itself, once each.
+  final Set<String> _autoAccepting = {};
+
+  /// Spaces joined that way, whose notice offers to leave again.
+  final Set<String> _autoAccepted = {};
+
+  /// What happened to the notes shared with this account, once each: a
+  /// note shared, access changed, access ended.
+  Stream<SharingNotice> get notices => _notices.stream;
 
   /// Whether sync is holding [spaceId] back until somebody in it has Pro.
   bool needsPro(String spaceId) => _sync.spacesNeedingPro.contains(spaceId);
@@ -130,7 +157,102 @@ class Sharing extends ChangeNotifier {
   Future<void> refreshSafety() async {
     _blocks = await _api.fetchBlocks();
     _terms = await _api.fetchTerms();
+    _autoAccept();
     notifyListeners();
+  }
+
+  Map<String, ({SpaceRole role, String owner, List<Note> notes})>
+  _guestSpaces() => {
+    for (final space in teams)
+      if (!space.isOwner)
+        space.id: (
+          role: space.role,
+          owner: space.shortNameOf(space.ownerId),
+          notes: notesIn(space.id),
+        ),
+  };
+
+  void _onKeyring() {
+    final before = _guests;
+    _guests = _guestSpaces();
+    if (_keyring.isFresh) {
+      for (final MapEntry(key: id, value: was) in before.entries) {
+        final now = _guests[id];
+        if (now != null) {
+          if (now.role != was.role) {
+            _notices.add(SharingNotice.access(from: now.owner, role: now.role));
+          }
+          continue;
+        }
+        if (_leaving.remove(id) || (spaceById(id)?.isOwner ?? false)) continue;
+        final held = [
+          for (final note in was.notes)
+            if (_notes.byId(note.id)?.spaceId == id && !note.isHidden) note,
+        ];
+        if (held.isNotEmpty) {
+          _notices.add(SharingNotice.ended(from: was.owner, notes: held));
+        }
+      }
+      _autoAccept();
+    }
+    notifyListeners();
+  }
+
+  void _onSharedChange(SharedChange change) {
+    final space = spaceById(change.spaceId);
+    if (space == null || space.isOwner) return;
+    final owner = space.shortNameOf(space.ownerId);
+    final joined = space.member(userId)?.joinedAt;
+    final catchingUp =
+        change.wholeHistory && (joined == null || joined.isBefore(_since));
+    final arrived = [
+      for (final note in change.arrived)
+        if (!note.isHidden) note,
+    ];
+    final removed = [
+      for (final note in change.removed)
+        if (!note.isHidden) note,
+    ];
+    if (arrived.isNotEmpty && !catchingUp) {
+      _notices.add(
+        SharingNotice.shared(
+          from: owner,
+          notes: arrived,
+          leaveSpaceId: _autoAccepted.contains(space.id) ? space.id : null,
+        ),
+      );
+    }
+    if (removed.isNotEmpty) {
+      _notices.add(SharingNotice.ended(from: owner, notes: removed));
+    }
+  }
+
+  /// Accepts, without asking, an invitation from somebody whose shared notes
+  /// this account is already in, and has not blocked (D2). Once per
+  /// invitation: one that fails stays an ordinary invitation.
+  void _autoAccept() {
+    if (!hasAcceptedTerms) return;
+    for (final invite in invites) {
+      final from = invite.invitedBy.toLowerCase();
+      final known = teams.any(
+        (space) =>
+            !space.isOwner &&
+            space.member(space.ownerId)?.email.toLowerCase() == from,
+      );
+      if (!known || hasBlocked(from) || !_autoAccepting.add(invite.token)) {
+        continue;
+      }
+      unawaited(_acceptOnItsOwn(invite));
+    }
+  }
+
+  Future<void> _acceptOnItsOwn(PendingInvite invite) async {
+    try {
+      await acceptInvite(invite.token);
+      _autoAccepted.add(invite.spaceId);
+    } on SyncException catch (error) {
+      debugPrint('KapyNotes: invitation not accepted on its own: $error');
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -618,6 +740,7 @@ class Sharing extends ChangeNotifier {
   /// refusal, which means nothing changed, takes back the copies this attempt
   /// made; a timeout may have left the space all the same, so they stay.
   Future<void> leave(String spaceId, {bool keepCopies = true}) async {
+    _leaving.add(spaceId);
     final sources = keepCopies ? notesIn(spaceId) : const <Note>[];
     final detached = [for (final note in sources) await _detached(note)];
     final made = [
@@ -632,6 +755,7 @@ class Sharing extends ChangeNotifier {
           error.status == 404 &&
           (error.code == 'not a member' || error.code == 'no such space');
       if (!alreadyGone) {
+        _leaving.remove(spaceId);
         for (final copy in made) {
           _notes.delete(copy.id);
         }
@@ -700,6 +824,7 @@ class Sharing extends ChangeNotifier {
         await _api.removeMember(space.id, theirId);
       } else if (!space.isOwner && theirId != null) {
         // Not ours to remove them from, so we go instead.
+        _leaving.add(space.id);
         await _api.removeMember(space.id, userId);
       }
     }
@@ -737,9 +862,59 @@ class Sharing extends ChangeNotifier {
 
   @override
   void dispose() {
-    _keyring.removeListener(notifyListeners);
+    _keyring.removeListener(_onKeyring);
     _keyring.trust.removeListener(notifyListeners);
+    unawaited(_changes.cancel());
+    unawaited(_notices.close());
     super.dispose();
+  }
+}
+
+/// Something that happened to the notes shared with this account, said in
+/// one line.
+class SharingNotice {
+  const SharingNotice._(this.message, {this.leaveSpaceId});
+
+  factory SharingNotice.shared({
+    required String from,
+    required List<Note> notes,
+    String? leaveSpaceId,
+  }) => SharingNotice._(
+    notes.length == 1
+        ? '$from shared ${_named(notes.single)} with you'
+        : '$from shared ${notes.length} notes with you',
+    leaveSpaceId: leaveSpaceId,
+  );
+
+  factory SharingNotice.access({
+    required String from,
+    required SpaceRole role,
+  }) => SharingNotice._(
+    role.canEdit
+        ? 'You can now edit notes from $from'
+        : 'You can now only view notes from $from',
+  );
+
+  factory SharingNotice.ended({
+    required String from,
+    required List<Note> notes,
+  }) => SharingNotice._(
+    notes.length == 1 && notes.single.title.trim().isEmpty
+        ? 'A note from $from is no longer shared with you'
+        : notes.length == 1
+        ? '${_named(notes.single)} is no longer shared with you'
+        : '${notes.length} notes from $from are no longer shared with you',
+  );
+
+  final String message;
+
+  /// The space a share accepted on its own joined, which the notice offers
+  /// to leave again.
+  final String? leaveSpaceId;
+
+  static String _named(Note note) {
+    final title = note.title.trim();
+    return title.isEmpty ? 'a note' : '"$title"';
   }
 }
 
