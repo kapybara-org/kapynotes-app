@@ -34,18 +34,25 @@ void main() {
     expect(find.textContaining('DeepSeek'), findsNothing);
   });
 
-  testWidgets('fits a short window by scrolling, with both answers reachable', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(844, 390);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final result = await open(tester);
-    expect(tester.takeException(), isNull);
-    await tester.tap(find.text('Turn on'));
-    await tester.pumpAndSettle();
-    expect(await result, isTrue);
-  });
+  for (final (name, size) in [
+    ('desktop', Size(1280, 800)),
+    ('phone portrait', Size(390, 844)),
+    ('phone landscape', Size(844, 390)),
+  ]) {
+    testWidgets('fits a $name window, with both answers reachable', (
+      tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final result = await open(tester);
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('Turn on'));
+      await tester.tap(find.text('Turn on'));
+      await tester.pumpAndSettle();
+      expect(await result, isTrue);
+    });
+  }
 
   testWidgets('turning on and declining are answered as such', (tester) async {
     var result = await open(tester);
