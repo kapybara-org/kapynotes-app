@@ -589,6 +589,81 @@ void main() {
     );
   });
 
+  group("the note's total", () {
+    String? total(String body) =>
+        engine.evaluateDocumentWithSummary(body).totalText;
+
+    String? freshTotal(String body) => CalcEngine(
+      ratesPerUsd: _rates,
+    ).evaluateDocumentWithSummary(body).totalText;
+
+    test('leaves out a line worked out from another result', () {
+      const body = 'Total spend = 412 + 896 + 38\nPer person = total / 2';
+      expect(total(body), '1,346');
+      expect(doc(body), {0: '1,346', 1: '673'}, reason: 'results are as shown');
+    });
+
+    test('adds a plain list up as it always did', () {
+      expect(total('Rent = 1200\nFood = 300'), '1,500');
+      expect(total('Rent = 1200\nFood = 300\nTax 5\n20 + 5'), '1,525');
+    });
+
+    test('leaves a total of the list under it out of the footer', () {
+      const body = 'Rent = 1200\nFood = 300\nTotal = Rent + Food';
+      expect(total(body), '1,500');
+      expect(doc(body)[2], '1,500', reason: 'the line still shows its result');
+    });
+
+    test('leaves out a line that reads prev, sum or avg', () {
+      expect(total('10\n20\nprev * 2'), '30');
+      expect(total('10\n20\nsum + 5'), '30');
+      expect(total('10\n20\navg * 4'), '30');
+    });
+
+    test('does not count a readout or conversion of a derived value', () {
+      expect(total('Rent = 1200 usd\nRent in eur'), '1,200.00 USD');
+      expect(
+        total('100 usd\n200 usd\ntotal in eur\nper person = total / 2 usd'),
+        '300.00 USD',
+      );
+    });
+
+    test('drops an add-on such as a tip, by design', () {
+      expect(
+        total('Dinner = 80\nTip = Dinner * 15%'),
+        '80',
+        reason: 'a total that counts a derived line twice is the worse error',
+      );
+    });
+
+    test('follows an edit that turns a plain line derived, and back', () {
+      const lines = ['a = 10', 'b = 5', 'c = 7'];
+      for (final (body, expected) in [
+        (lines.join('\n'), '22'),
+        ('a = 10\nb = a + 5\nc = 7', '17'),
+        (lines.join('\n'), '22'),
+        ('a = 10\nb = 5\nc = b * 2', '15'),
+        (lines.join('\n'), '22'),
+      ]) {
+        expect(total(body), expected, reason: body);
+        expect(total(body), freshTotal(body), reason: 'as a fresh engine');
+      }
+    });
+
+    test('follows a referenced variable being renamed or deleted', () {
+      const body = 'price = 10\nitem = price * 2\nextra = 5';
+      expect(total(body), '15');
+      for (final (edited, expected) in [
+        ('cost = 10\nitem = price * 2\nextra = 5', '15'),
+        ('item = price * 2\nextra = 5', '5'),
+        (body, '15'),
+      ]) {
+        expect(total(edited), expected, reason: edited);
+        expect(total(edited), freshTotal(edited), reason: 'as a fresh engine');
+      }
+    });
+  });
+
   group('date and time', () {
     test('does calendar arithmetic with deterministic clock input', () {
       engine = clockEngine();
@@ -933,10 +1008,7 @@ void main() {
     // `Milk: 2 bottles` is a label with its amount, as it always was. Taking
     // `Milk` for a variable would stop it labelling the lines below.
     test('a colon label keeps its word free for later labels', () {
-      expect(doc('Milk: 2 bottles\nMilk powder \$8'), {
-        0: '2',
-        1: '8.00 USD',
-      });
+      expect(doc('Milk: 2 bottles\nMilk powder \$8'), {0: '2', 1: '8.00 USD'});
       expect(doc('Hotel: 3 nights\nHotel rate \$120\nHotel tax \$25'), {
         0: '3',
         1: '120.00 USD',
