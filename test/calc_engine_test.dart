@@ -705,16 +705,19 @@ void main() {
     bool? marked(String body, int index) =>
         read(body).results[index]?.count?.mark;
 
-    test('counts a conversion, a bare reference or a restating sum as nothing', () {
-      const priced = 'price = 100 usd\nprice in eur\nprice';
-      expect(total(priced), '100.00 USD');
-      expect(hover(priced, 1), 'Not added again: restates price');
-      expect(hover(priced, 2), 'Not added again: restates price');
-      expect(marked(priced, 1), isFalse, reason: 'left out by rule, no mark');
-      const sums = 'rent = 1200\nfood = 300\nrent + food';
-      expect(total(sums), '1,500');
-      expect(hover(sums, 2), 'Not added again: restates rent and food');
-    });
+    test(
+      'counts a conversion, a bare reference or a restating sum as nothing',
+      () {
+        const priced = 'price = 100 usd\nprice in eur\nprice';
+        expect(total(priced), '100.00 USD');
+        expect(hover(priced, 1), 'Not added again: restates price');
+        expect(hover(priced, 2), 'Not added again: restates price');
+        expect(marked(priced, 1), isFalse, reason: 'left out by rule, no mark');
+        const sums = 'rent = 1200\nfood = 300\nrent + food';
+        expect(total(sums), '1,500');
+        expect(hover(sums, 2), 'Not added again: restates rent and food');
+      },
+    );
 
     test('counts only what an additive line adds', () {
       expect(total('flights = 412 eur\nflights + 20 eur'), '432.00 EUR');
@@ -736,6 +739,13 @@ void main() {
       expect(total('x = 5\nx = x + 1'), '6', reason: 'it builds on the old x');
     });
 
+    test('counts a labelled redefinition once', () {
+      const body = 'Lunch = \$10\nLunch = Burger \$12';
+      expect(total(body), '12.00 USD');
+      expect(hover(body, 0), 'Not in the total: replaced by a later Lunch');
+      expect(total('${body}\nLunch = Pizza \$9'), '9.00 USD');
+    });
+
     test('takes a rate as the input of a line that multiplies it', () {
       const rate = 'nightly = 128 eur\nhotel = nightly * 7';
       expect(total(rate), '896.00 EUR');
@@ -743,12 +753,15 @@ void main() {
       expect(total('nightly = 128 eur\nhotel = 7 * nightly'), '896.00 EUR');
     });
 
-    test('takes a rate and a unitless variable as the input of their product', () {
-      const body = 'nightly = 128 eur\nnights = 7\nhotel = nightly * nights';
-      expect(total(body), '896.00 EUR');
-      expect(hover(body, 0), 'Not in the total: used as a rate by hotel');
-      expect(hover(body, 1), 'Not in the total: used as a count by hotel');
-    });
+    test(
+      'takes a rate and a unitless variable as the input of their product',
+      () {
+        const body = 'nightly = 128 eur\nnights = 7\nhotel = nightly * nights';
+        expect(total(body), '896.00 EUR');
+        expect(hover(body, 0), 'Not in the total: used as a rate by hotel');
+        expect(hover(body, 1), 'Not in the total: used as a count by hotel');
+      },
+    );
 
     test('takes a base as the input of a share of it', () {
       const body = 'dinner = 80\nshare = dinner / 2';
@@ -795,7 +808,10 @@ void main() {
     test('adds bare numbers as before where no amount has a unit', () {
       const body = 'a = 5\nb = 7';
       expect(total(body), '12');
-      expect(read(body).results.values.map((r) => r.count), everyElement(isNull));
+      expect(
+        read(body).results.values.map((r) => r.count),
+        everyElement(isNull),
+      );
     });
 
     test('lets a bare number in once the amount that set the kind is gone', () {
@@ -1192,3 +1208,130 @@ void main() {
     });
 
     // The same words, once the amount is given a name. They used to fail
+    // there, and so then did every later line that used the name.
+    test('a labelled value can be assigned', () {
+      expect(
+        doc(
+          'domains = 20\n'
+          'mailboxes= domains * 5 mail boxes\n'
+          '\n'
+          'domain_cost = domains * \$10/domain\n'
+          'mailbox_cost: mailboxes * \$2/mailbox\n'
+          '\n'
+          'total_cost = domain_cost + mailbox_cost',
+        ),
+        {0: '20', 1: '100', 3: '200.00 USD', 4: '200.00 USD', 6: '400.00 USD'},
+      );
+      expect(doc('rent = Flat 4B 1200 usd\nrent * 2'), {
+        0: '1,200.00 USD',
+        1: '2,400.00 USD',
+      });
+      expect(doc('seats: 12 seats x \$8\nseats / 2'), {
+        0: '96.00 USD',
+        1: '48.00 USD',
+      });
+    });
+
+    test('an assigned value is held to the same rules as a line', () {
+      expect(line('n = 10 min break'), isNull);
+      expect(line('n = 12 + mangoes'), isNull);
+      expect(line('n = Room 12'), isNull);
+      // And a line that shows nothing gives its name nothing either.
+      expect(doc('apt = Room 12\napt * 2'), isEmpty);
+      expect(doc('apt = 3\napt = Room 12\napt * 2'), {0: '3', 2: '6'});
+    });
+
+    // `Milk: 2 bottles` is a label with its amount, as it always was. Taking
+    // `Milk` for a variable would stop it labelling the lines below.
+    test('a colon label keeps its word free for later labels', () {
+      expect(doc('Milk: 2 bottles\nMilk powder \$8'), {0: '2', 1: '8.00 USD'});
+      expect(doc('Hotel: 3 nights\nHotel rate \$120\nHotel tax \$25'), {
+        0: '3',
+        1: '120.00 USD',
+        2: '25.00 USD',
+      });
+      // A value that works something out still defines the name.
+      expect(doc('fee: \$2/mailbox + \$1\nfee * 2'), {
+        0: '3.00 USD',
+        1: '6.00 USD',
+      });
+    });
+
+    test('an article stays an article when a is a variable', () {
+      expect(doc('a = 2\nTake 2 pills 3 times a day'), {0: '2'});
+      expect(doc('a = 2\n3 times a week'), {0: '2'});
+      expect(doc('a = 5\n25 as a % of 200')[1], '12.5');
+      expect(doc('a = 3\nb = 4\nsqrt(a^2 + b^2)')[2], '5');
+    });
+
+    test('quantities feed the running total', () {
+      final evaluation = engine.evaluateDocumentWithSummary(
+        'Shopping\n12 mangoes\n13 bananas\ntotal',
+      );
+      expect(evaluation.results[0], isNull, reason: 'the heading');
+      expect(evaluation.results[3]?.text, '25');
+      expect(evaluation.totalText, isNull, reason: "the note's own total");
+      expect(
+        engine
+            .evaluateDocumentWithSummary('Shopping\n12 mangoes\n13 bananas')
+            .totalText,
+        '25',
+      );
+    });
+  });
+
+  // Sub-lists are written as leading spaces before the list prefix, so the
+  // engine has to be blind to indentation or nesting an item would change what
+  // the note computes.
+  group('indentation', () {
+    test('leading whitespace does not change a result', () {
+      expect(line('2 + 2'), '4');
+      expect(line('  2 + 2'), '4');
+      expect(line('\t2 + 2'), '4');
+      // Indented continuation lines see the same scope as unindented ones.
+      expect(doc('price = 10 usd\n    price * 2'), {
+        0: '10.00 USD',
+        1: '20.00 USD',
+      });
+    });
+
+    test('a list marker is not arithmetic, at any depth', () {
+      // Pre-existing: the engine never strips these, so a bullet line has
+      // never produced a result. Nesting must not change that either way.
+      expect(line('• 2 + 2'), isNull);
+      expect(line('  • 2 + 2'), isNull);
+      expect(line('☐ 2 + 2'), isNull);
+    });
+  });
+
+  group('result kinds and copy text', () {
+    test('classifies results for gutter colouring', () {
+      final results = engine.evaluateDocument(
+        '2 + 2\n100 usd to eur\n10 km to mi\n3 > 2',
+      );
+      expect(results[0]!.kind, ResultKind.number);
+      expect(results[1]!.kind, ResultKind.currency);
+      expect(results[2]!.kind, ResultKind.unit);
+      expect(results[3]!.kind, ResultKind.boolean);
+    });
+
+    test('copy text is full precision and ungrouped', () {
+      final result = engine.evaluateDocument('2 / 3\n1234567 + 0');
+      expect(result[0]!.text, '0.666667');
+      expect(result[0]!.copyText, '0.666666666667');
+      expect(result[1]!.text, '1,234,567');
+      expect(result[1]!.copyText, '1234567');
+    });
+
+    test('renders infinity and NaN readably', () {
+      expect(line('1 / 0'), '∞');
+      expect(line('-1 / 0'), '-∞');
+      expect(line('0 / 0'), 'NaN');
+    });
+
+    test('renders booleans', () {
+      expect(line('3 > 2'), 'true');
+      expect(line('3 == 4'), 'false');
+    });
+  });
+}
