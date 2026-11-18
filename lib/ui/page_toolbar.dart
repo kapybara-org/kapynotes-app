@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -29,7 +30,6 @@ class PageToolbar extends StatelessWidget {
     required this.listVisible,
     required this.onShowList,
     required this.onCreate,
-    required this.onMore,
     this.section,
     this.showListShortcut,
     this.noun = 'note',
@@ -45,8 +45,12 @@ class PageToolbar extends StatelessWidget {
     this.onShare,
     this.pinned = false,
     this.onTogglePin,
+    this.keepOnTop = false,
+    this.onToggleKeepOnTop,
+    this.keepOnTopShortcut,
     this.assistant,
     this.moreActions = const [],
+    this.onMore,
     this.updates,
     this.center,
     this.actions,
@@ -90,13 +94,21 @@ class PageToolbar extends StatelessWidget {
   final bool pinned;
   final VoidCallback? onTogglePin;
 
+  /// Whether the window floats over other apps, and the toggle that turns it
+  /// on or off. Null off the desktop, where there is no window to float; it
+  /// belongs to the window, so every page of the main window carries it.
+  final bool keepOnTop;
+  final VoidCallback? onToggleKeepOnTop;
+  final String? keepOnTopShortcut;
+
   /// Kapy AI's button, between Share and the pin. It keeps its own gap, so
   /// it can hide while Kapy AI is off without leaving one behind.
   final Widget? assistant;
 
-  /// Everything else the page offers, under More.
+  /// Everything else the page offers, under More. A page with no onMore has
+  /// nothing to put there and shows no More at all.
   final List<KapyMenuAction> moreActions;
-  final ValueChanged<String> onMore;
+  final ValueChanged<String>? onMore;
 
   /// Offers "Update and restart" once a release has downloaded. Null where
   /// the app does not update itself.
@@ -107,7 +119,7 @@ class PageToolbar extends StatelessWidget {
   final Widget? center;
 
   /// A page that is not a note puts its own actions where a note's saved
-  /// state, Share and Pin go. More stays.
+  /// state, Share and Pin go, and has no More.
   final List<Widget>? actions;
 
   static const double height = 56;
@@ -118,6 +130,10 @@ class PageToolbar extends StatelessWidget {
   /// The same for the count of pictures that didn't load, which stands in for
   /// Saved and is up to 125 wider.
   static const double _unloadedPicturesWidth = _savedWidth + 125;
+
+  /// Narrower than this, Share is its icon alone, so the window's own buttons
+  /// (Keep on top, More) still fit beside it.
+  static const double _shareLabelWidth = 420;
 
   /// Narrower than this, "Update and restart" shortens to "Update".
   static const double _updateLabelWidth = 680;
@@ -132,6 +148,9 @@ class PageToolbar extends StatelessWidget {
     final newNoteShortcut = this.newNoteShortcut;
     final updates = this.updates;
     final center = this.center;
+    // The window's own button takes room from Saved, so Saved gives way
+    // that much sooner.
+    final onTop = onToggleKeepOnTop == null ? 0.0 : actionExtent + 6;
 
     return Container(
       key: const ValueKey('page-toolbar'),
@@ -176,10 +195,42 @@ class PageToolbar extends StatelessWidget {
                     const SizedBox(width: 8),
                   ],
                   Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: WindowDragArea(
-                        child: _Breadcrumb(space: space, section: section),
+                    child: LayoutBuilder(
+                      builder: (context, slot) => Row(
+                        children: [
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: WindowDragArea(
+                                child: _Breadcrumb(
+                                  space: space,
+                                  section: section,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (actions == null && members.isNotEmpty)
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: math.min(
+                                  slot.maxWidth,
+                                  constraints.maxWidth / 3,
+                                ),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                  left: 8,
+                                  right: 6,
+                                ),
+                                child: MemberAvatars(
+                                  members: members,
+                                  present: present,
+                                  currentUserId: currentUserId,
+                                  onPressed: onShare,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
@@ -187,32 +238,21 @@ class PageToolbar extends StatelessWidget {
                     if (updates != null)
                       UpdateRestartButton(
                         updates: updates,
-                        wide: constraints.maxWidth >= _updateLabelWidth,
+                        wide: constraints.maxWidth >= _updateLabelWidth + onTop,
                       ),
                     ...actions,
                   ] else ...[
-                    if (members.isNotEmpty)
-                      Flexible(
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 8, right: 6),
-                          child: MemberAvatars(
-                            members: members,
-                            present: present,
-                            currentUserId: currentUserId,
-                            onPressed: onShare,
-                          ),
-                        ),
-                      ),
                     if (updates != null)
                       UpdateRestartButton(
                         updates: updates,
-                        wide: constraints.maxWidth >= _updateLabelWidth,
+                        wide: constraints.maxWidth >= _updateLabelWidth + onTop,
                       ),
                     if (noteOpen &&
                         constraints.maxWidth >=
-                            (unloadedPictures > 0
-                                ? _unloadedPicturesWidth
-                                : _savedWidth)) ...[
+                            onTop +
+                                (unloadedPictures > 0
+                                    ? _unloadedPicturesWidth
+                                    : _savedWidth)) ...[
                       if (unloadedPictures > 0)
                         UnloadedPicturesStatus(
                           count: unloadedPictures,
@@ -226,8 +266,14 @@ class PageToolbar extends StatelessWidget {
                       key: const ValueKey('page-share'),
                       tall: true,
                       icon: KapyIcons.personAddRounded,
-                      label: 'Share',
-                      tooltip: noteShared ? 'Manage sharing' : null,
+                      label: constraints.maxWidth >= _shareLabelWidth
+                          ? 'Share'
+                          : null,
+                      tooltip: noteShared
+                          ? 'Manage sharing'
+                          : constraints.maxWidth >= _shareLabelWidth
+                          ? null
+                          : 'Share',
                       onPressed: onShare,
                     ),
                     const SizedBox(width: 6),
@@ -246,23 +292,48 @@ class PageToolbar extends StatelessWidget {
                       ),
                     ),
                   ],
-                  const SizedBox(width: 6),
-                  Builder(
-                    builder: (buttonContext) => CompactIconButton(
-                      key: const ValueKey('page-more'),
-                      tooltip: 'More',
+                  if (onToggleKeepOnTop case final toggle?) ...[
+                    const SizedBox(width: 6),
+                    CompactIconButton(
+                      key: const ValueKey('page-keep-on-top'),
+                      tooltip: [
+                        keepOnTop ? 'Keep on top: on' : 'Keep on top',
+                        ?keepOnTopShortcut,
+                      ].join('  '),
                       extent: actionExtent,
                       radius: 10,
-                      onPressed: moreActions.isEmpty
-                          ? null
-                          : () => _showMore(buttonContext),
+                      selected: keepOnTop,
+                      selectedBackground: palette.tonalBackground,
+                      foregroundColor: keepOnTop
+                          ? palette.tonalForeground
+                          : null,
+                      onPressed: toggle,
                       icon: KapyIcon(
-                        KapyIcons.moreRounded,
+                        KapyIcons.keepOnTop,
                         size: AppControlMetrics.iconAction,
-                        strokeWidth: 2.2,
+                        strokeWidth: 1.9,
                       ),
                     ),
-                  ),
+                  ],
+                  if (onMore case final onMore?) ...[
+                    const SizedBox(width: 6),
+                    Builder(
+                      builder: (buttonContext) => CompactIconButton(
+                        key: const ValueKey('page-more'),
+                        tooltip: 'More',
+                        extent: actionExtent,
+                        radius: 10,
+                        onPressed: moreActions.isEmpty
+                            ? null
+                            : () => _showMore(buttonContext, onMore),
+                        icon: KapyIcon(
+                          KapyIcons.moreRounded,
+                          size: AppControlMetrics.iconAction,
+                          strokeWidth: 2.2,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -274,7 +345,7 @@ class PageToolbar extends StatelessWidget {
   }
 
   /// Opens under More, its right edge on the button's.
-  void _showMore(BuildContext context) {
+  void _showMore(BuildContext context, ValueChanged<String> onMore) {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null) return;
     unawaited(
@@ -315,6 +386,17 @@ class _Breadcrumb extends StatelessWidget {
       color: palette.textTertiary,
     );
     final section = this.section;
+    // Too narrow to read, it steps aside rather than overflow.
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.maxWidth < _minWidth
+          ? const SizedBox.shrink()
+          : _row(style, palette, section),
+    );
+  }
+
+  static const double _minWidth = 48;
+
+  Widget _row(TextStyle style, CalcPalette palette, String? section) {
     return Row(
       key: const ValueKey('page-breadcrumb'),
       mainAxisSize: MainAxisSize.min,
