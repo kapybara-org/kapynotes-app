@@ -30,7 +30,8 @@ typedef McpTask = ({
 /// The rules live here rather than in the tools so no tool can step around
 /// them: Hidden notes do not exist, archived notes are read-only and listed
 /// only on request, drawings show by title, notes in shared spaces are
-/// read-only, and nothing is ever deleted. A Hidden note's id is refused with
+/// read-only, notes Free holds read-only past its limit stay so, and nothing
+/// is ever deleted. A Hidden note's id is refused with
 /// exactly the words an unknown id gets, so an assistant can't tell one is
 /// there.
 class McpLibrary {
@@ -38,12 +39,15 @@ class McpLibrary {
     required this.notes,
     required CalcEngine Function() engine,
     bool Function()? canCreate,
+    bool Function(Note note)? isLocked,
   }) : _engine = engine,
-       _canCreate = canCreate ?? (() => true);
+       _canCreate = canCreate ?? (() => true),
+       _isLocked = isLocked ?? ((_) => false);
 
   final NotesStore notes;
   final CalcEngine Function() _engine;
   final bool Function() _canCreate;
+  final bool Function(Note note) _isLocked;
 
   static const String notFound = 'No note with that id.';
   static final RegExp _glyphBox = RegExp(r'^[ \t]*[☐☑]');
@@ -68,8 +72,8 @@ class McpLibrary {
         ? pool.toList()
         : pool.where((note) => note.matches(trimmed)).toList();
     matches.sort((a, b) {
-      final pinned = (notes.isPinned(b.id) ? 1 : 0) -
-          (notes.isPinned(a.id) ? 1 : 0);
+      final pinned =
+          (notes.isPinned(b.id) ? 1 : 0) - (notes.isPinned(a.id) ? 1 : 0);
       return pinned != 0 ? pinned : b.updatedAt.compareTo(a.updatedAt);
     });
     return matches;
@@ -130,10 +134,7 @@ class McpLibrary {
   List<McpTask> tasksIn(Note note) {
     if (note.isDrawing) return const [];
     final seen = <String, int>{};
-    return [
-      for (final line in taskLines(note.body))
-        _task(note, line, seen),
-    ];
+    return [for (final line in taskLines(note.body)) _task(note, line, seen)];
   }
 
   McpTask _task(Note note, TaskLine line, Map<String, int> seen) {
@@ -164,7 +165,9 @@ class McpLibrary {
 
   Note append(String id, String text) {
     final addition = _clean(text, maxAppend, 'text');
-    if (addition.trim().isEmpty) throw const McpRefusal('There’s no text to add.');
+    if (addition.trim().isEmpty) {
+      throw const McpRefusal('There’s no text to add.');
+    }
     final note = _writable(id);
     final body = note.body;
     final joined = body.isEmpty || body.endsWith('\n')
@@ -180,13 +183,16 @@ class McpLibrary {
     }
     final note = _writable(noteId);
     final existing = taskLines(note.body);
-    final markdown = existing.isNotEmpty &&
+    final markdown =
+        existing.isNotEmpty &&
         !_glyphBox.hasMatch(
           note.body.substring(existing.first.start, existing.first.textStart),
         );
     final line = markdown ? '- [ ] $words' : '☐ $words';
     final body = note.body;
-    final joined = body.isEmpty || body.endsWith('\n') ? '$body$line' : '$body\n$line';
+    final joined = body.isEmpty || body.endsWith('\n')
+        ? '$body$line'
+        : '$body\n$line';
     final written = _write(note, joined);
     return tasksIn(written).lastWhere((task) => task.text == words);
   }
@@ -228,6 +234,7 @@ class McpLibrary {
     if (note.isDrawing) {
       throw const McpRefusal('Drawings can’t be changed from an assistant.');
     }
+    if (_isLocked(note)) throw const McpRefusal('Read-only on Free.');
     return note;
   }
 

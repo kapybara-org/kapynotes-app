@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:io';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -36,7 +34,14 @@ String get _computer => AppPlatform.isWindows ? 'this PC' : 'this Mac';
 List<SettingsSearchEntry<SettingsSection>> mcpSearchEntries(
   McpService? service,
 ) {
-  const apps = ['Claude', 'Claude Code', 'Claude Desktop', 'Cursor', 'Codex', 'VS Code'];
+  const apps = [
+    'Claude',
+    'Claude Code',
+    'Claude Desktop',
+    'Cursor',
+    'Codex',
+    'VS Code',
+  ];
   const words = ['assistants', 'AI', 'MCP', 'model context protocol', ...apps];
   SettingsSearchEntry<SettingsSection> entry(
     String title, {
@@ -58,7 +63,8 @@ List<SettingsSearchEntry<SettingsSection>> mcpSearchEntries(
     return [
       entry(
         'AI assistants',
-        description: 'Assistants connect through Kapy Notes on your Mac or '
+        description:
+            'Assistants connect through Kapy Notes on your Mac or '
             'Windows PC',
       ),
     ];
@@ -78,7 +84,15 @@ List<SettingsSearchEntry<SettingsSection>> mcpSearchEntries(
     entry(
       'Connect an app',
       target: 'mcp-connect',
-      keywords: const ['assistants', 'AI', 'MCP', 'connect', 'token', 'revoke', ...apps],
+      keywords: const [
+        'assistants',
+        'AI',
+        'MCP',
+        'connect',
+        'token',
+        'revoke',
+        ...apps,
+      ],
     ),
   ];
 }
@@ -125,7 +139,8 @@ class _McpPaneState extends State<McpPane> {
             SettingsToggleRow(
               key: const ValueKey('mcp-allow-changes'),
               title: 'Allow changes',
-              subtitle: 'Create notes, append, add and tick off tasks. Never '
+              subtitle:
+                  'Create notes, append, add and tick off tasks. Never '
                   'delete',
               value: service.allowWrites,
               onChanged: service.enabled ? service.setAllowWrites : null,
@@ -205,7 +220,8 @@ class _McpPaneState extends State<McpPane> {
       trailing = SettingsRowButton(
         label: 'Copy again',
         prominent: true,
-        onPressed: () => unawaited(Clipboard.setData(ClipboardData(text: snippet))),
+        onPressed: () =>
+            unawaited(Clipboard.setData(ClipboardData(text: snippet))),
       );
     } else if (connection != null && !open) {
       trailing = SettingsRowButton(
@@ -253,16 +269,6 @@ class _McpPaneState extends State<McpPane> {
   Future<void> _connect(McpService service, McpClientKind kind) async {
     setState(() => _busy = true);
     try {
-      FileSaveLocation? saveTo;
-      if (kind == McpClientKind.claudeDesktop) {
-        saveTo = await getSaveLocation(
-          suggestedName: 'Kapy Notes.mcpb',
-          acceptedTypeGroups: const [
-            XTypeGroup(label: 'Claude extension', extensions: ['mcpb']),
-          ],
-        );
-        if (saveTo == null) return;
-      }
       final token = await service.connect(kind);
       final url = service.url;
       if (url == null) return;
@@ -272,7 +278,8 @@ class _McpPaneState extends State<McpPane> {
       switch (kind) {
         case McpClientKind.claudeCode:
           snippet = setup.claudeCode;
-          hint = 'Copied. Paste it in Terminal, then ask Claude about your notes';
+          hint =
+              'Copied. Paste it in Terminal, then ask Claude about your notes';
         case McpClientKind.codex:
           snippet = setup.codex;
           hint = 'Copied. Add it to ~/.codex/config.toml, then start Codex';
@@ -280,7 +287,9 @@ class _McpPaneState extends State<McpPane> {
           snippet = setup.json;
           hint = 'Copied. Add it where the app keeps its MCP servers';
         case McpClientKind.cursor || McpClientKind.vsCode:
-          final link = kind == McpClientKind.cursor ? setup.cursor : setup.vsCode;
+          final link = kind == McpClientKind.cursor
+              ? setup.cursor
+              : setup.vsCode;
           if (await _launch(link)) {
             hint = 'Opened ${kind.label}. Confirm there to finish';
           } else {
@@ -288,14 +297,16 @@ class _McpPaneState extends State<McpPane> {
             hint = '${kind.label} didn’t open, so its JSON is copied instead';
           }
         case McpClientKind.claudeDesktop:
-          final path = saveTo!.path;
-          await File(path).writeAsBytes(
+          final file = await service.writeClaudeExtension(
             setup.claudeExtension(version: '1.0.0'),
-            flush: true,
           );
-          hint = await _launch(Uri.file(path))
-              ? 'Saved. Claude opens to install it'
-              : 'Saved. Open the file to install it in Claude';
+          if (await _launch(Uri.file(file.path))) {
+            hint = 'Claude opens to install it';
+          } else {
+            service.discardClaudeExtension();
+            await service.revoke(kind);
+            hint = 'Claude didn’t open. Install Claude, then try again';
+          }
       }
       if (snippet != null) {
         await Clipboard.setData(ClipboardData(text: snippet));

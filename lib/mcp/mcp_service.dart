@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../data/local_store.dart';
 import '../sync/key_store.dart';
@@ -43,10 +44,12 @@ class McpService extends ChangeNotifier {
     required McpLibrary library,
     DateTime Function()? now,
     Random? random,
+    Future<Directory> Function()? scratch,
   }) : _store = store,
        _secrets = secrets,
        _now = now ?? DateTime.now,
-       _random = random ?? Random.secure() {
+       _random = random ?? Random.secure(),
+       _scratch = scratch ?? _temporary {
     _server = McpServer(
       tools: McpTools(library),
       authenticate: _authenticate,
@@ -59,12 +62,16 @@ class McpService extends ChangeNotifier {
   final SecureStore _secrets;
   final DateTime Function() _now;
   final Random _random;
+  final Future<Directory> Function() _scratch;
   late final McpServer _server;
 
   static const String _prefsKey = 'mcp.v1';
   static const String _activityKey = 'mcp.activity.v1';
   static const String _secretKey = 'mcp.clients.v1';
   static const int activityLimit = 50;
+
+  /// How long Claude's extension file may wait to be installed.
+  static const Duration extensionKept = Duration(minutes: 10);
 
   /// Where a port is first chosen: below the range both macOS and Windows
   /// hand out for outgoing connections, so one of those can't take it later.
@@ -78,6 +85,9 @@ class McpService extends ChangeNotifier {
   String? _problem;
   Map<McpClientKind, McpConnection> _connections = {};
   List<McpActivity> _activity = [];
+  File? _extension;
+  Timer? _extensionExpiry;
+  Future<void> _stopped = Future<void>.value();
 
   bool get enabled => _enabled;
   bool get allowWrites => _allowWrites;
@@ -100,7 +110,12 @@ class McpService extends ChangeNotifier {
       Map.unmodifiable(_connections);
   List<McpActivity> get activity => List.unmodifiable(_activity);
 
+  /// Completes once [dispose] has let go of the port.
+  @visibleForTesting
+  Future<void> get stopped => _stopped;
+
   Future<void> load() async {
+    await _clearScratch();
     final prefs = _store.read<Map<String, Object?>>(_prefsKey) ?? const {};
     _enabled = prefs['enabled'] == true;
     _allowWrites = prefs['writes'] == true;
@@ -120,13 +135,13 @@ class McpService extends ChangeNotifier {
             'created': final int created,
           })
             ?McpClientKind.named(kind): (
-                tokenHash: hash,
-                createdAt: DateTime.fromMillisecondsSinceEpoch(created),
-                lastUsedAt: switch (used[kind]) {
-                  final int at => DateTime.fromMillisecondsSinceEpoch(at),
-                  _ => null,
-                },
-              ),
+              tokenHash: hash,
+              createdAt: DateTime.fromMillisecondsSinceEpoch(created),
+              lastUsedAt: switch (used[kind]) {
+                final int at => DateTime.fromMillisecondsSinceEpoch(at),
+                _ => null,
+              },
+            ),
       };
     } catch (_) {
       // An unreadable keystore leaves no app connected; each connects again.
@@ -180,6 +195,42 @@ class McpService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Writes Claude's extension, which holds its token in clear, to a folder
+  /// of its own under the temporary directory, to be opened at once. It is
+  /// deleted when Claude first calls in, after [extensionKept] at most, when
+  /// the app closes, and at the next launch if the app never got to.
+  Future<File> writeClaudeExtension(List<int> bytes) async {
+    discardClaudeExtension();
+    final root = await (await _scratch()).create(recursive: true);
+    final file = File('${(await root.createTemp()).path}/Kapy Notes.mcpb');
+    _extension = file;
+    _extensionExpiry = Timer(extensionKept, discardClaudeExtension);
+    await file.writeAsBytes(bytes, flush: true);
+    return file;
+  }
+
+  void discardClaudeExtension() {
+    _extensionExpiry?.cancel();
+    _extensionExpiry = null;
+    final file = _extension;
+    _extension = null;
+    try {
+      file?.parent.deleteSync(recursive: true);
+    } on FileSystemException catch (_) {}
+  }
+
+  static Future<Directory> _temporary() async =>
+      Directory('${(await getTemporaryDirectory()).path}/kapy-mcpb');
+
+  Future<void> _clearScratch() async {
+    try {
+      final root = await _scratch();
+      if (await root.exists()) await root.delete(recursive: true);
+    } catch (_) {
+      // Best effort: the next launch tries again.
+    }
+  }
+
   void clearActivity() {
     _activity = [];
     _store.putNow(_activityKey, const <Object?>[]);
@@ -220,6 +271,7 @@ class McpService extends ChangeNotifier {
     final kind = McpClientKind.named(client);
     final connection = _connections[kind];
     if (kind == null || connection == null) return;
+    if (kind == McpClientKind.claudeDesktop) discardClaudeExtension();
     final at = _now();
     _connections = {
       ..._connections,
@@ -253,7 +305,8 @@ class McpService extends ChangeNotifier {
       'client': final String client,
       'text': final String text,
       'at': final int at,
-    } when McpClientKind.named(client) != null =>
+    }
+        when McpClientKind.named(client) != null =>
       (
         client: McpClientKind.named(client)!,
         text: text,
@@ -270,7 +323,8 @@ class McpService extends ChangeNotifier {
       'port': ?_port,
       'used': {
         for (final MapEntry(:key, :value) in _connections.entries)
-          if (value.lastUsedAt case final at?) key.name: at.millisecondsSinceEpoch,
+          if (value.lastUsedAt case final at?)
+            key.name: at.millisecondsSinceEpoch,
       },
     };
     now ? _store.putNow(_prefsKey, value) : _store.put(_prefsKey, value);
@@ -303,7 +357,8 @@ class McpService extends ChangeNotifier {
 
   @override
   void dispose() {
-    unawaited(_server.stop());
+    discardClaudeExtension();
+    _stopped = _server.stop();
     super.dispose();
   }
 }

@@ -37,10 +37,25 @@ class McpFixture {
       notes: notes,
       engine: () => engine,
       canCreate: () => canCreate,
+      isLocked: (note) => locked.contains(note.id),
     );
-    plain = notes.create(body: 'Trip budget\nflights = 420\nhotel = 300\n☐ Book taxi\n☑ Pack bag', authored: false).id;
-    hidden = notes.create(body: 'Secret diary\nnothing to see', hidden: true, authored: false).id;
-    archived = notes.create(body: 'Old receipts\n- [ ] file taxes', authored: false).id;
+    plain = notes
+        .create(
+          body:
+              'Trip budget\nflights = 420\nhotel = 300\n☐ Book taxi\n☑ Pack bag',
+          authored: false,
+        )
+        .id;
+    hidden = notes
+        .create(
+          body: 'Secret diary\nnothing to see',
+          hidden: true,
+          authored: false,
+        )
+        .id;
+    archived = notes
+        .create(body: 'Old receipts\n- [ ] file taxes', authored: false)
+        .id;
     notes.archive(archived);
     drawing = notes.create().id;
     notes.setDrawingMode(drawing, drawing: true);
@@ -57,6 +72,9 @@ class McpFixture {
   final store = McpTestStore();
   late final NotesStore notes = NotesStore(store);
   final engine = CalcEngine();
+
+  /// Notes Free holds read-only, past the note limit.
+  final locked = <String>{};
   late final McpLibrary library;
   late final String plain;
   late final String hidden;
@@ -64,4 +82,3 @@ class McpFixture {
   late final String drawing;
   late final String shared;
 }
-

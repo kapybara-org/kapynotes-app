@@ -15,6 +15,7 @@ void main() {
   late MemorySecrets secrets;
   late McpService service;
   late String token;
+  late Directory scratch;
   final client = HttpClient();
   tearDownAll(() => client.close(force: true));
 
@@ -22,11 +23,16 @@ void main() {
     store: fixture.store,
     secrets: secrets,
     library: fixture.library,
+    scratch: () async => scratch,
   );
 
   setUp(() async {
     f = McpFixture();
     secrets = MemorySecrets();
+    scratch = Directory(
+      '${(await Directory.systemTemp.createTemp('mcp')).path}/kapy-mcpb',
+    );
+    addTearDown(() => scratch.parent.delete(recursive: true));
     service = serviceOver(f);
     await service.load();
     await service.setEnabled(true);
@@ -130,33 +136,32 @@ void main() {
       }
     });
 
-    test('keeps its address across launches, and moves when it is taken', () async {
-      final first = port();
-      service.dispose();
-      // The next launch comes after this one has let go of the port.
-      for (var i = 0; i < 40; i++) {
-        try {
-          await (await ServerSocket.bind(InternetAddress.loopbackIPv4, first)).close();
-          break;
-        } on SocketException {
-          await Future<void>.delayed(const Duration(milliseconds: 50));
-        }
-      }
-      final again = serviceOver(f);
-      await again.load();
-      expect(again.address, '127.0.0.1:$first');
-      expect(again.moved, isFalse);
-      again.dispose();
+    test(
+      'keeps its address across launches, and moves when it is taken',
+      () async {
+        final first = port();
+        service.dispose();
+        await service.stopped;
+        final again = serviceOver(f);
+        await again.load();
+        expect(again.address, '127.0.0.1:$first');
+        expect(again.moved, isFalse);
+        again.dispose();
+        await again.stopped;
 
-      final squatter = await ServerSocket.bind(InternetAddress.loopbackIPv4, first);
-      addTearDown(squatter.close);
-      final moved = serviceOver(f);
-      await moved.load();
-      expect(moved.running, isTrue);
-      expect(moved.moved, isTrue);
-      expect(moved.address, isNot('127.0.0.1:$first'));
-      service = moved;
-    });
+        final squatter = await ServerSocket.bind(
+          InternetAddress.loopbackIPv4,
+          first,
+        );
+        addTearDown(squatter.close);
+        final moved = serviceOver(f);
+        await moved.load();
+        expect(moved.running, isTrue);
+        expect(moved.moved, isTrue);
+        expect(moved.address, isNot('127.0.0.1:$first'));
+        service = moved;
+      },
+    );
 
     test('turning it off closes the port at once', () async {
       final was = port();
@@ -223,22 +228,63 @@ void main() {
       expect((body!['error']! as Map)['code'], -32000);
     });
 
-    test('tokens are never stored, only their digests, in the keystore', () async {
-      expect(jsonEncode(f.store.data), isNot(contains(token)));
-      expect(f.store.data.keys.join(), isNot(contains('clients')));
-      final saved = secrets.values['mcp.clients.v1']!;
-      expect(saved, isNot(contains(token)));
-      expect(saved, contains('"kind":"claudeCode"'));
-    });
+    test(
+      'Claude’s extension file is deleted once Claude first calls in',
+      () async {
+        final claude = await service.connect(McpClientKind.claudeDesktop);
+        final file = await service.writeClaudeExtension([1, 2, 3]);
+        expect(file.path, startsWith(scratch.path));
+        expect(file.existsSync(), isTrue);
+        await send({'jsonrpc': '2.0', 'id': 1, 'method': 'ping'});
+        expect(file.existsSync(), isTrue);
+        await send({
+          'jsonrpc': '2.0',
+          'id': 2,
+          'method': 'initialize',
+          'params': {'protocolVersion': '2025-06-18'},
+        }, bearer: claude);
+        expect(file.existsSync(), isFalse);
+        expect(file.parent.existsSync(), isFalse);
+      },
+    );
+
+    test(
+      'Claude’s extension file is deleted at quit, and any left at launch',
+      () async {
+        final file = await service.writeClaudeExtension([1]);
+        service.dispose();
+        await service.stopped;
+        expect(file.existsSync(), isFalse);
+
+        final left = File('${scratch.path}/crashed/Kapy Notes.mcpb')
+          ..createSync(recursive: true);
+        service = serviceOver(f);
+        await service.load();
+        expect(left.existsSync(), isFalse);
+      },
+    );
+
+    test(
+      'tokens are never stored, only their digests, in the keystore',
+      () async {
+        expect(jsonEncode(f.store.data), isNot(contains(token)));
+        expect(f.store.data.keys.join(), isNot(contains('clients')));
+        final saved = secrets.values['mcp.clients.v1']!;
+        expect(saved, isNot(contains(token)));
+        expect(saved, contains('"kind":"claudeCode"'));
+      },
+    );
   });
 
   group('protocol', () {
     test('initialize names Kapy Notes and offers tools', () async {
-      final result = (await rpc('initialize', {
-        'protocolVersion': '2025-06-18',
-        'capabilities': {},
-        'clientInfo': {'name': 'test', 'version': '1'},
-      }))['result']! as Map;
+      final result =
+          (await rpc('initialize', {
+                'protocolVersion': '2025-06-18',
+                'capabilities': {},
+                'clientInfo': {'name': 'test', 'version': '1'},
+              }))['result']!
+              as Map;
       expect(result['protocolVersion'], '2025-06-18');
       expect((result['serverInfo']! as Map)['name'], 'kapy-notes');
       expect((result['serverInfo']! as Map)['version'], isA<String>());
@@ -293,27 +339,35 @@ void main() {
       expect(note['done_tasks'], 1);
     });
 
-    test('read_note returns markdown and results, and continues long notes', () async {
-      final read = output(await call('read_note', {'id': f.plain}));
-      expect(read['body'], startsWith('Trip budget'));
-      expect(read['next_offset'], isNull);
-      expect(read['results'], anyElement(equals({'line': 2, 'value': '420'})));
+    test(
+      'read_note returns markdown and results, and continues long notes',
+      () async {
+        final read = output(await call('read_note', {'id': f.plain}));
+        expect(read['body'], startsWith('Trip budget'));
+        expect(read['next_offset'], isNull);
+        expect(
+          read['results'],
+          anyElement(equals({'line': 2, 'value': '420'})),
+        );
 
-      final long = f.notes.create(
-        body: List.filled(9000, 'a line of ten').join('\n'),
-      ).id;
-      final pages = <String>[];
-      int? offset = 0;
-      while (offset != null) {
-        final page = output(await call('read_note', {'id': long, 'offset': offset}));
-        final body = page['body']! as String;
-        expect(body.length, lessThanOrEqualTo(McpLibrary.pageSize));
-        pages.add(body);
-        offset = page['next_offset'] as int?;
-      }
-      expect(pages.length, greaterThan(1));
-      expect(pages.join(), f.notes.byId(long)!.body);
-    });
+        final long = f.notes
+            .create(body: List.filled(9000, 'a line of ten').join('\n'))
+            .id;
+        final pages = <String>[];
+        int? offset = 0;
+        while (offset != null) {
+          final page = output(
+            await call('read_note', {'id': long, 'offset': offset}),
+          );
+          final body = page['body']! as String;
+          expect(body.length, lessThanOrEqualTo(McpLibrary.pageSize));
+          pages.add(body);
+          offset = page['next_offset'] as int?;
+        }
+        expect(pages.length, greaterThan(1));
+        expect(pages.join(), f.notes.byId(long)!.body);
+      },
+    );
 
     test('a Hidden id gets the same error as an unknown one', () async {
       final hidden = error(await call('read_note', {'id': f.hidden}));
@@ -324,10 +378,14 @@ void main() {
 
     test('list_tasks reads open, done or all', () async {
       Future<List<Object?>> texts(String status) async => [
-        for (final task in output(await call('list_tasks', {
-          'status': status,
-          'note_id': f.plain,
-        }))['tasks']! as List)
+        for (final task
+            in output(
+                  await call('list_tasks', {
+                    'status': status,
+                    'note_id': f.plain,
+                  }),
+                )['tasks']!
+                as List)
           (task as Map)['text'],
       ];
       expect(await texts('open'), ['Book taxi']);
@@ -346,20 +404,22 @@ void main() {
 
     test('every write tool lands in the note as typed', () async {
       service.setAllowWrites(true);
-      final created = output(await call('create_note', {
-        'title': 'Groceries',
-        'body': '☐ Milk',
-      }));
+      final created = output(
+        await call('create_note', {'title': 'Groceries', 'body': '☐ Milk'}),
+      );
       final id = (created['note']! as Map)['id']! as String;
       expect(f.notes.byId(id)!.body, 'Groceries\n☐ Milk');
 
-      output(await call('append_to_note', {'id': id, 'text': 'From the market'}));
-      final added = output(await call('add_task', {'note_id': id, 'text': 'Eggs'}));
+      output(
+        await call('append_to_note', {'id': id, 'text': 'From the market'}),
+      );
+      final added = output(
+        await call('add_task', {'note_id': id, 'text': 'Eggs'}),
+      );
       final taskId = (added['task']! as Map)['id'];
-      final ticked = output(await call('set_task_done', {
-        'task_id': taskId,
-        'done': true,
-      }));
+      final ticked = output(
+        await call('set_task_done', {'task_id': taskId, 'done': true}),
+      );
       expect((ticked['task']! as Map)['done'], isTrue);
       expect(
         f.notes.byId(id)!.body,
@@ -373,8 +433,14 @@ void main() {
       final entry = service.activity.first;
       expect(entry.client, McpClientKind.claudeCode);
       expect(entry.text, 'Read “Trip budget”');
-      expect(jsonEncode(f.store.data['mcp.activity.v1']), isNot(contains('flights')));
-      expect(service.connections[McpClientKind.claudeCode]!.lastUsedAt, isNotNull);
+      expect(
+        jsonEncode(f.store.data['mcp.activity.v1']),
+        isNot(contains('flights')),
+      );
+      expect(
+        service.connections[McpClientKind.claudeCode]!.lastUsedAt,
+        isNotNull,
+      );
       service.clearActivity();
       expect(service.activity, isEmpty);
       expect(f.store.data['mcp.activity.v1'], isEmpty);

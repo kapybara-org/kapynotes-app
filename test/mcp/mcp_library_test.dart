@@ -7,9 +7,8 @@ void main() {
   late McpFixture f;
   setUp(() => f = McpFixture());
 
-  Matcher refusedWith(String message) => throwsA(
-    isA<McpRefusal>().having((r) => r.message, 'message', message),
-  );
+  Matcher refusedWith(String message) =>
+      throwsA(isA<McpRefusal>().having((r) => r.message, 'message', message));
 
   group('Hidden notes', () {
     test('are never listed, searched or counted', () {
@@ -23,13 +22,26 @@ void main() {
     });
 
     test('by id get exactly the words an unknown id gets', () {
-      expect(() => f.library.read('no-such-id'), refusedWith(McpLibrary.notFound));
-      expect(() => f.library.read(f.hidden), refusedWith(McpLibrary.notFound));
-      expect(() => f.library.tasks(noteId: f.hidden), refusedWith(McpLibrary.notFound));
-      expect(() => f.library.append(f.hidden, 'x'), refusedWith(McpLibrary.notFound));
-      expect(() => f.library.addTask(f.hidden, 'x'), refusedWith(McpLibrary.notFound));
       expect(
-        () => f.library.setTaskDone('${f.hidden}~0000000000000000~0', done: true),
+        () => f.library.read('no-such-id'),
+        refusedWith(McpLibrary.notFound),
+      );
+      expect(() => f.library.read(f.hidden), refusedWith(McpLibrary.notFound));
+      expect(
+        () => f.library.tasks(noteId: f.hidden),
+        refusedWith(McpLibrary.notFound),
+      );
+      expect(
+        () => f.library.append(f.hidden, 'x'),
+        refusedWith(McpLibrary.notFound),
+      );
+      expect(
+        () => f.library.addTask(f.hidden, 'x'),
+        refusedWith(McpLibrary.notFound),
+      );
+      expect(
+        () =>
+            f.library.setTaskDone('${f.hidden}~0000000000000000~0', done: true),
         refusedWith(McpLibrary.notFound),
       );
       expect(f.notes.byId(f.hidden)!.body, 'Secret diary\nnothing to see');
@@ -38,7 +50,10 @@ void main() {
     test('a note hidden after it was listed is refused at the write', () {
       final task = f.library.tasks(noteId: f.plain).first;
       f.notes.hide(f.plain);
-      expect(() => f.library.append(f.plain, 'more'), refusedWith(McpLibrary.notFound));
+      expect(
+        () => f.library.append(f.plain, 'more'),
+        refusedWith(McpLibrary.notFound),
+      );
       expect(
         () => f.library.setTaskDone(task.id, done: true),
         refusedWith(McpLibrary.notFound),
@@ -55,7 +70,10 @@ void main() {
         contains(f.archived),
       );
       expect(f.library.read(f.archived).id, f.archived);
-      expect(f.library.tasks().map((t) => t.note.id), isNot(contains(f.archived)));
+      expect(
+        f.library.tasks().map((t) => t.note.id),
+        isNot(contains(f.archived)),
+      );
     });
 
     test('are read-only', () {
@@ -82,7 +100,10 @@ void main() {
     const refusal = 'Notes in shared spaces are read-only here.';
     expect(() => f.library.append(f.shared, 'x'), refusedWith(refusal));
     expect(() => f.library.addTask(f.shared, 'x'), refusedWith(refusal));
-    expect(() => f.library.setTaskDone(task.id, done: true), refusedWith(refusal));
+    expect(
+      () => f.library.setTaskDone(task.id, done: true),
+      refusedWith(refusal),
+    );
     expect(f.notes.byId(f.shared)!.body, 'Team plan\n☐ Ship it');
   });
 
@@ -109,6 +130,41 @@ void main() {
     );
   });
 
+  group('a note Free holds read-only', () {
+    setUp(() => f.locked.add(f.plain));
+
+    test('refuses append_to_note', () {
+      expect(
+        () => f.library.append(f.plain, 'More'),
+        refusedWith('Read-only on Free.'),
+      );
+      expect(f.notes.byId(f.plain)!.body, endsWith('☑ Pack bag'));
+    });
+
+    test('refuses add_task', () {
+      expect(
+        () => f.library.addTask(f.plain, 'Print tickets'),
+        refusedWith('Read-only on Free.'),
+      );
+      expect(f.notes.byId(f.plain)!.body, endsWith('☑ Pack bag'));
+    });
+
+    test('refuses set_task_done, and stays readable', () {
+      final taxi = f.library
+          .tasks(noteId: f.plain)
+          .firstWhere((t) => t.text == 'Book taxi');
+      expect(
+        () => f.library.setTaskDone(taxi.id, done: true),
+        refusedWith('Read-only on Free.'),
+      );
+      expect(f.notes.byId(f.plain)!.body, contains('☐ Book taxi'));
+      expect(
+        f.library.bodyOf(f.library.read(f.plain)),
+        startsWith('Trip budget\n'),
+      );
+    });
+  });
+
   test('appends on a new line', () {
     final note = f.library.append(f.plain, 'Remember the charger');
     expect(note.body, endsWith('☑ Pack bag\nRemember the charger'));
@@ -125,7 +181,9 @@ void main() {
   });
 
   test('ticks a task off and back on by swapping only its box', () {
-    final taxi = f.library.tasks(noteId: f.plain).firstWhere((t) => t.text == 'Book taxi');
+    final taxi = f.library
+        .tasks(noteId: f.plain)
+        .firstWhere((t) => t.text == 'Book taxi');
     expect(f.library.setTaskDone(taxi.id, done: true).done, isTrue);
     expect(f.notes.byId(f.plain)!.body, contains('☑ Book taxi'));
     expect(f.library.setTaskDone(taxi.id, done: false).done, isFalse);
@@ -138,8 +196,13 @@ void main() {
   });
 
   test('a task whose line changed is refused rather than guessed at', () {
-    final taxi = f.library.tasks(noteId: f.plain).firstWhere((t) => t.text == 'Book taxi');
-    f.notes.updateBody(f.plain, f.notes.byId(f.plain)!.body.replaceFirst('Book taxi', 'Call cab'));
+    final taxi = f.library
+        .tasks(noteId: f.plain)
+        .firstWhere((t) => t.text == 'Book taxi');
+    f.notes.updateBody(
+      f.plain,
+      f.notes.byId(f.plain)!.body.replaceFirst('Book taxi', 'Call cab'),
+    );
     expect(
       () => f.library.setTaskDone(taxi.id, done: true),
       refusedWith('That task changed; list the tasks again.'),
@@ -147,13 +210,22 @@ void main() {
   });
 
   test('refuses text that could fake an attachment or carry control bytes', () {
-    expect(() => f.library.append(f.plain, 'a\uFFFCb'), throwsA(isA<McpRefusal>()));
-    expect(() => f.library.append(f.plain, 'a\u0000b'), throwsA(isA<McpRefusal>()));
+    expect(
+      () => f.library.append(f.plain, 'a\uFFFCb'),
+      throwsA(isA<McpRefusal>()),
+    );
+    expect(
+      () => f.library.append(f.plain, 'a\u0000b'),
+      throwsA(isA<McpRefusal>()),
+    );
     expect(
       () => f.library.create(title: 'x' * (McpLibrary.maxTitle + 1)),
       throwsA(isA<McpRefusal>()),
     );
-    expect(() => f.library.addTask(f.plain, 'two\nlines'), throwsA(isA<McpRefusal>()));
+    expect(
+      () => f.library.addTask(f.plain, 'two\nlines'),
+      throwsA(isA<McpRefusal>()),
+    );
   });
 
   test('an assistant’s write is a dirty local edit that syncs like typing', () {

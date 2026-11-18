@@ -414,6 +414,8 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           notes: widget.notes,
           engine: () => engines.engine,
           canCreate: () => widget.account?.noteLimit?.canCreate ?? true,
+          isLocked: (note) =>
+              widget.account?.noteLimit?.isLocked(note) ?? false,
         ),
       );
     }
