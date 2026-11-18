@@ -15,6 +15,7 @@ import '../core/editor_font.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
+import '../data/auto_titles.dart';
 import '../data/layout_prefs.dart';
 import '../data/note.dart';
 import '../data/notes_store.dart';
@@ -149,6 +150,7 @@ Future<void> showSettings(
   TagStore? tags,
   List<TagEntry> Function()? listedTags,
   KapyAi? kapyAi,
+  NoteNamer? namer,
   SettingsSection? section,
   String? reveal,
   String? notice,
@@ -171,6 +173,7 @@ Future<void> showSettings(
     tags: tags,
     listedTags: listedTags,
     kapyAi: kapyAi,
+    namer: namer,
     section: section,
     reveal: reveal,
     notice: notice,
@@ -225,6 +228,7 @@ class SettingsDialog extends StatefulWidget {
     this.tags,
     this.listedTags,
     this.kapyAi,
+    this.namer,
     this.section,
     this.reveal,
     this.notice,
@@ -281,6 +285,10 @@ class SettingsDialog extends StatefulWidget {
   /// Kapy AI's chats, models and accounts, for its two groups in Voice & AI.
   /// Null, or the feature not built in, leaves both out.
   final KapyAi? kapyAi;
+
+  /// What names new notes, for its row in Typing and calculations. Null
+  /// leaves the row out.
+  final NoteNamer? namer;
 
   /// The row [section] opens scrolled to and lit, by its key: "Manage
   /// accounts…" in Kapy AI lands on Your accounts.
@@ -484,6 +492,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     _shortcutError = widget.desktopIntegration?.registrationError;
     _loadSpeechState();
     unawaited(widget.account?.billing?.refresh());
+    unawaited(widget.namer?.check());
     // The only disk read this dialog does, and only in a build that offers
     // models: a handful of `stat` calls to see which are already here.
     unawaited(widget.localModels?.refresh());
@@ -1575,6 +1584,29 @@ class _SettingsDialogState extends State<SettingsDialog>
             byDefault: true,
             keywords: ['date', 'day', 'dated line', 'divider'],
           ),
+          if (widget.namer case final namer?)
+            _toggle(
+              'auto-titles-toggle',
+              'Name new notes automatically',
+              namer.available
+                  ? 'Replaces “New Note” with a title, made on this device'
+                  : namer.unavailableReason ??
+                        'Looking for a model on this device',
+              value: namer.isOn,
+              onChanged: namer.available
+                  ? (value) => prefs.autoTitlesEnabled = value
+                  : null,
+              byDefault: namer.available ? true : null,
+              keywords: [
+                'title',
+                'name',
+                'rename',
+                'apple intelligence',
+                'gemini',
+                'on-device',
+                'ai',
+              ],
+            ),
           _Setting(
             'time-zone-setting',
             'Time zone for dates',
@@ -2420,6 +2452,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             ?widget.localModels,
             ?widget.updates,
             ?_kapyAi,
+            ?widget.namer,
           ]),
           builder: (context, _) =>
               widget.asSheet ? _buildSheet(context) : _buildDialog(context),

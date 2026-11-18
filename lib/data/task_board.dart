@@ -11,6 +11,7 @@ class TaskItem {
     required this.note,
     required this.words,
     required this.line,
+    this.demoted = false,
   });
 
   final TaskEntry entry;
@@ -22,11 +23,26 @@ class TaskItem {
 
   String get id => entry.id;
   bool get dotted => entry.dot.v;
-  bool get doNow => entry.doNow.v;
+
+  /// Do now, unless another open task's Do now is newer (two devices can
+  /// each make a different task Do now before they hear of each other).
+  bool get doNow => entry.doNow.v && !demoted;
+
+  /// Whether a newer Do now elsewhere has taken this task's, which is still
+  /// stored on its record.
+  final bool demoted;
   DateTime? get doneAt => switch (entry.doneAt.v) {
     final at? => DateTime.fromMillisecondsSinceEpoch(at),
     null => null,
   };
+
+  TaskItem asPicked() => TaskItem(
+    entry: entry,
+    note: note,
+    words: words,
+    line: line,
+    demoted: true,
+  );
 
   /// When it was last added, put back, picked, edited or kept.
   int get lastTouched => [
@@ -102,6 +118,24 @@ class TaskBoard {
       return byPosition != 0 ? byPosition : a.id.compareTo(b.id);
     });
     done.sort((a, b) => b.entry.doneAt.v!.compareTo(a.entry.doneAt.v!));
+    TaskItem? newest;
+    for (final item in open) {
+      if (!item.entry.doNow.v) continue;
+      final held = newest?.entry.doNow.at;
+      if (held == null ||
+          item.entry.doNow.at > held ||
+          (item.entry.doNow.at == held && item.id.compareTo(newest!.id) > 0)) {
+        newest = item;
+      }
+    }
+    if (newest != null) {
+      for (var i = 0; i < open.length; i++) {
+        final item = open[i];
+        if (item.entry.doNow.v && item.id != newest.id) {
+          open[i] = item.asPicked();
+        }
+      }
+    }
     return TaskBoard._(open, done, home);
   }
 

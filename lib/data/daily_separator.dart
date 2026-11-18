@@ -1,3 +1,5 @@
+import 'note.dart';
+
 /// The compact, plain-text section marker used to separate editing sessions.
 ///
 /// It deliberately starts with `//`, so the existing comment highlighter
@@ -52,7 +54,11 @@ class DailySeparator {
   /// removed permanently if the user types.
   static String prepareForAppend(String body) {
     final content = _withoutTrailingEmptySection(body);
-    if (content.trim().isEmpty || content.endsWith('\n\n')) return content;
+    if (content.trim().isEmpty ||
+        content == Note.blankBody ||
+        content.endsWith('\n\n')) {
+      return content;
+    }
     return content.endsWith('\n') ? '$content\n' : '$content\n\n';
   }
 

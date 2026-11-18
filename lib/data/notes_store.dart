@@ -35,6 +35,8 @@ class NotesStore extends ChangeNotifier {
   static const String _legacyKey = 'notes.v1';
   static const String _pinnedKey = 'pinnedNoteIds.v1';
   static const String _writingDaysKey = 'writingDays.v1';
+  static const String _nameHereKey = 'nameHereNoteIds.v1';
+  static const int _nameHereLimit = 200;
 
   final LocalStore _store;
   final DateTime Function() _now;
@@ -144,6 +146,7 @@ class NotesStore extends ChangeNotifier {
     }
 
     _loadPinnedNoteIds();
+    _loadNameHere();
     _loadWritingDays();
     _refreshViews();
     _loaded = true;
@@ -241,7 +244,36 @@ class NotesStore extends ChangeNotifier {
     _notes = [note, ..._notes];
     if (authored && !note.isEmpty) _recordWriting([WritingStreak.dayOf(now)]);
     _persist();
+    final nameHere = [..._nameHere, note.id];
+    if (nameHere.length > _nameHereLimit) nameHere.removeAt(0);
+    _nameHere = List.unmodifiable(nameHere);
+    _store.put(_nameHereKey, _nameHere);
     return note;
+  }
+
+  /// Notes made on this device that it may still name, oldest first. Kept
+  /// on this device and never synced, so each note is named only by the
+  /// device that made it, and a note from another device never is.
+  List<String> _nameHere = const [];
+
+  /// Whether [id] was made on this device and may still be named here.
+  bool namesHere(String id) => _nameHere.contains(id);
+
+  /// [id] is not to be named on this device again: its title is the
+  /// person's.
+  void stopNamingHere(String id) {
+    if (!_nameHere.contains(id)) return;
+    _nameHere = List.unmodifiable(_nameHere.where((each) => each != id));
+    _store.put(_nameHereKey, _nameHere);
+  }
+
+  void _loadNameHere() {
+    final raw = _store.data[_nameHereKey];
+    if (raw is! List) return;
+    final liveIds = _notes.map((note) => note.id).toSet();
+    _nameHere = List.unmodifiable(
+      raw.whereType<String>().where(liveIds.contains),
+    );
   }
 
   void updateBody(String id, String body) {
@@ -337,9 +369,75 @@ class NotesStore extends ChangeNotifier {
     _replace(
       index,
       existing.copyWith(
+        body: drawing ? '' : null,
         drawing: drawing ? NoteDrawing.empty : null,
         updatedAt: _now(),
       ),
+    );
+    return true;
+  }
+
+  /// Gives a blank note left by an older build the [Note.blankBody] a new
+  /// note starts with, as it is taken for a new one. The app's own words, so
+  /// not writing.
+  void startAsNew(String id) {
+    final index = indexOf(id);
+    if (index < 0) return;
+    final existing = _notes[index];
+    if (existing.body == Note.blankBody || !existing.isEmpty) return;
+    final edit = (
+      start: 0,
+      oldEnd: existing.body.length,
+      newEnd: Note.blankBody.length,
+    );
+    final earlier = _edits[id];
+    _edits[id] = earlier == null ? edit : composeEdits(earlier, edit);
+    _replace(
+      index,
+      existing.copyWith(
+        body: Note.blankBody,
+        formats: const [],
+        updatedAt: _now(),
+      ),
+      toFront: true,
+    );
+  }
+
+  /// Puts [title] in place of [id]'s first line, moving the formats and
+  /// attachments after it along. The app's own words, so not writing.
+  /// Returns whether the note changed.
+  bool retitle(String id, String title) {
+    final index = indexOf(id);
+    if (index < 0) return false;
+    final existing = _notes[index];
+    final old = existing.firstLine.length;
+    if (existing.firstLine == title) return false;
+    final body = '$title${existing.body.substring(old)}';
+    final shift = title.length - old;
+    int moved(int offset) => offset < old ? 0 : offset + shift;
+    final edit = (start: 0, oldEnd: old, newEnd: title.length);
+    final earlier = _edits[id];
+    _edits[id] = earlier == null ? edit : composeEdits(earlier, edit);
+    _replace(
+      index,
+      existing.copyWith(
+        body: body,
+        formats: normalizeNoteFormats([
+          for (final range in existing.formats)
+            if (range.end > old)
+              NoteFormatRange(
+                start: moved(range.start),
+                end: range.end + shift,
+                format: range.format,
+              ),
+        ], body.length),
+        attachments: normalizeNoteAttachments([
+          for (final ref in existing.attachments)
+            if (ref.offset >= old) ref.copyWith(offset: ref.offset + shift),
+        ], body),
+        updatedAt: _now(),
+      ),
+      toFront: true,
     );
     return true;
   }
