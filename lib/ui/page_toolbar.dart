@@ -206,7 +206,10 @@ class PageToolbar extends StatelessWidget {
                     ...actions,
                   ] else ...[
                     if (members.isNotEmpty)
-                      Flexible(
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: constraints.maxWidth / 3,
+                        ),
                         child: Padding(
                           padding: const EdgeInsets.only(left: 8, right: 6),
                           child: MemberAvatars(
