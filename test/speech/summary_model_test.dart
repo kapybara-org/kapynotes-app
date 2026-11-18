@@ -238,9 +238,21 @@ void main() {
 
   group('memory', () {
     test('a machine that will not say is allowed to try', () async {
-      // No /proc, no channel: Windows, in effect.
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
-      expect(await DeviceMemory().total(), isNull);
+      final memory = DeviceMemory(
+        windowsTotal: () => throw ArgumentError('no kernel32'),
+      );
+      expect(await memory.total(), isNull);
+    });
+
+    test('windows asks the kernel', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+      final memory = DeviceMemory(windowsTotal: () => 16 * 1000 * 1000 * 1000);
+      expect(await memory.total(), 16 * 1000 * 1000 * 1000);
+    });
+
+    test('the summary model needs room for its worst published peak', () {
+      expect(gemma4E2bIt.minimumMemoryBytes, greaterThan(3505 * 1000 * 1000));
     });
 
     test('linux reads its own /proc, in kibibytes', () async {

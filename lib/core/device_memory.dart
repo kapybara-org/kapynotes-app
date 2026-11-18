@@ -1,3 +1,4 @@
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -18,8 +19,10 @@ class DeviceMemory {
   DeviceMemory({
     MethodChannel channel = const MethodChannel(_channelName),
     File? procMeminfo,
+    int? Function()? windowsTotal,
   }) : _channel = channel,
-       _procMeminfo = procMeminfo ?? File('/proc/meminfo');
+       _procMeminfo = procMeminfo ?? File('/proc/meminfo'),
+       _windowsTotal = windowsTotal ?? _globalMemoryStatus;
 
   /// The same channel the summariser uses. One channel per subject area, and
   /// "what can this device do" is that subject.
@@ -27,6 +30,7 @@ class DeviceMemory {
 
   final MethodChannel _channel;
   final File _procMeminfo;
+  final int? Function() _windowsTotal;
 
   int? _cached;
 
@@ -58,9 +62,51 @@ class DeviceMemory {
         return null;
       }
     }
-    // Windows would need a channel of its own for GlobalMemoryStatusEx. Until
-    // there is a reason to write one, an unmeasured machine is allowed to try.
+    if (AppPlatform.isWindows) {
+      try {
+        return _windowsTotal();
+      } catch (_) {
+        return null;
+      }
+    }
     return null;
+  }
+
+  /// `ullTotalPhys` from `GlobalMemoryStatusEx`, the Windows counterpart of
+  /// `MemTotal`: the physical memory the OS can use, a little under what is
+  /// installed.
+  ///
+  /// The struct is 64 bytes: two 32-bit fields, `dwLength` first, then seven
+  /// 64-bit ones starting with `ullTotalPhys`. It is allocated with
+  /// kernel32's own `LocalAlloc`, zeroed, so the call needs nothing beyond
+  /// the library it already reads.
+  static int? _globalMemoryStatus() {
+    final kernel32 = DynamicLibrary.open('kernel32.dll');
+    final localAlloc = kernel32
+        .lookupFunction<
+          Pointer<Uint64> Function(Uint32, IntPtr),
+          Pointer<Uint64> Function(int, int)
+        >('LocalAlloc');
+    final localFree = kernel32
+        .lookupFunction<
+          IntPtr Function(Pointer<Uint64>),
+          int Function(Pointer<Uint64>)
+        >('LocalFree');
+    final globalMemoryStatusEx = kernel32
+        .lookupFunction<
+          Int32 Function(Pointer<Uint64>),
+          int Function(Pointer<Uint64>)
+        >('GlobalMemoryStatusEx');
+    const zeroInit = 0x40;
+    final status = localAlloc(zeroInit, 64);
+    if (status == nullptr) return null;
+    try {
+      status.cast<Uint32>().value = 64;
+      if (globalMemoryStatusEx(status) == 0) return null;
+      return status[1];
+    } finally {
+      localFree(status);
+    }
   }
 
   /// Reads `MemTotal:` out of `/proc/meminfo`, which is in kibibytes.
