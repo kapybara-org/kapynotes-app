@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/mcp/mcp_clients.dart';
 import 'package:kapy_notes/mcp/mcp_library.dart';
@@ -247,6 +249,23 @@ void main() {
         expect(file.parent.existsSync(), isFalse);
       },
     );
+
+    test('Claude’s extension file is deleted after ten minutes unused', () async {
+      final clock = FakeAsync();
+      late Future<File> writing;
+      clock.run((_) => writing = service.writeClaudeExtension([1]));
+      File? file;
+      unawaited(writing.then((written) => file = written));
+      while (file == null) {
+        clock.flushMicrotasks();
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      clock.elapse(McpService.extensionKept - const Duration(seconds: 1));
+      expect(file!.existsSync(), isTrue);
+      clock.elapse(const Duration(seconds: 1));
+      expect(file!.existsSync(), isFalse);
+      expect(file!.parent.existsSync(), isFalse);
+    });
 
     test(
       'Claude’s extension file is deleted at quit, and any left at launch',
