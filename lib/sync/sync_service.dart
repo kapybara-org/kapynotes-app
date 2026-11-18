@@ -1933,6 +1933,13 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
 
     if (touch.deleted) {
       if (local != null &&
+          space.isTeam &&
+          local.spaceId == storedSpaceId &&
+          record.spaceId == personalId) {
+        // The marker a note leaves in the space it moved out of, read after
+        // its arrival at home: it came home, it was not deleted.
+        _notes.bringHome([noteId], at: at);
+      } else if (local != null &&
           (local.spaceId ?? personalId) == (storedSpaceId ?? personalId)) {
         _notes.applyRemote(
           tombstones: [
@@ -2178,7 +2185,13 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       record.keys.clear();
       _docs.markDirty(note.id);
     }
-    await _api.stopSharing(spaceId, const []);
+    try {
+      await _api.stopSharing(spaceId, const []);
+    } on SyncRefusedException catch (error) {
+      // Moving the last note out of a space nobody else is in reaps it on
+      // the server, so there is nothing left to stop.
+      if (error.status != 404) rethrow;
+    }
     _notes.bringHome(mine.map((note) => note.id), at: at);
     _state.forgetSpace(spaceId);
     _subscribed.remove(spaceId);
@@ -2190,8 +2203,16 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
   /// with unsynced edits come home as the user's own notes.
   void _forgetDepartedSpaces() {
     final live = {for (final space in _keyring.spaces) space.id};
+    final home = _keyring.personal?.id;
     for (final spaceId in _notes.spaceIds) {
       if (live.contains(spaceId)) continue;
+      // Notes whose history already arrived at home came home with the
+      // space's last trip, on another device; they are not this space's to
+      // drop.
+      _notes.bringHome([
+        for (final note in _notes.notesIn(spaceId))
+          if (home != null && _docs.get(note.id)?.spaceId == home) note.id,
+      ], at: _now());
       final kept = _notes.forgetSpace(spaceId);
       _state.forgetSpace(spaceId);
       _subscribed.remove(spaceId);

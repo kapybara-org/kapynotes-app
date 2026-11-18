@@ -640,7 +640,8 @@ class FakeServer {
     if (dropHistory) _forgetHistory(space, push.noteId);
 
     // --- the note row -------------------------------------------------------
-    final deletedAfter = push.deleted ?? wasDeleted;
+    final deletedAfter =
+        push.deleted ?? (push.from != null ? false : wasDeleted);
     final deletedAt = deletedAfter ? (prior?.deletedAt ?? at) : null;
     space.notes[push.noteId] = FakeNoteRow(
       id: push.noteId,
