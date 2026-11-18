@@ -330,6 +330,10 @@ class KapyIcons {
     HugeIcons.strokeRoundedMenu01,
   );
   static const micRounded = KapyIconData(0xE03D, HugeIcons.strokeRoundedMic01);
+  static const mcpServer = KapyIconData(
+    0xE0E3,
+    HugeIcons.strokeRoundedMcpServer,
+  );
   static const moreRounded = KapyIconData(
     0xE03E,
     HugeIcons.strokeRoundedMoreHorizontal,

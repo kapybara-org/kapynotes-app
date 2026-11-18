@@ -240,27 +240,72 @@ class TableGeometry {
     if (painter == null || column < 0 || column >= row.cells.length) {
       return null;
     }
+    final position = TextPosition(
+      offset: _plainOffset(row, column, painter, sourceOffset),
+    );
+    final caret = painter.getOffsetForCaret(position, Rect.zero);
+    final height = painter.getFullHeightForCaret(position, Rect.zero);
+    return Rect.fromLTWH(
+      0,
+      0,
+      0,
+      height,
+    ).shift(_wordsAt(row, column, painter) + caret);
+  }
+
+  /// Where the source from [start] to [end] inside one cell is painted, row
+  /// by row, relative to that cell's top-left corner, mapped as
+  /// [caretRectInCell] maps a caret.
+  List<Rect> selectionInCell(
+    MarkdownTableRow row,
+    int column,
+    int start,
+    int end,
+  ) {
+    final painter = cell(row, column);
+    if (painter == null || column < 0 || column >= row.cells.length) {
+      return const [];
+    }
+    final at = _wordsAt(row, column, painter);
+    return [
+      for (final box in painter.getBoxesForSelection(
+        TextSelection(
+          baseOffset: _plainOffset(row, column, painter, start),
+          extentOffset: _plainOffset(row, column, painter, end),
+        ),
+      ))
+        box.toRect().shift(at),
+    ];
+  }
+
+  /// Where a source offset inside a cell falls in its painted words: by
+  /// progress through the source, since the words leave out its markers.
+  int _plainOffset(
+    MarkdownTableRow row,
+    int column,
+    TextPainter painter,
+    int sourceOffset,
+  ) {
     final source = row.cells[column];
     final sourceLength = source.end - source.start;
     final plainLength = painter.plainText.length;
     final progress = sourceLength == 0
         ? 0.0
         : ((sourceOffset - source.start) / sourceLength).clamp(0.0, 1.0);
-    final plainOffset = (plainLength * progress).round().clamp(0, plainLength);
-    final position = TextPosition(offset: plainOffset);
-    final caret = painter.getOffsetForCaret(position, Rect.zero);
+    return (plainLength * progress).round().clamp(0, plainLength);
+  }
+
+  /// Where a cell's words start, relative to the cell's top-left corner.
+  Offset _wordsAt(MarkdownTableRow row, int column, TextPainter painter) {
     final inner = innerWidth(column);
     final aligned = switch (table.aligns.elementAtOrNull(column)) {
       MarkdownCellAlign.center => (inner - painter.width) / 2,
       MarkdownCellAlign.end => inner - painter.width,
       _ => 0.0,
     };
-    final height = painter.getFullHeightForCaret(position, Rect.zero);
-    return Rect.fromLTWH(
-      padding + math.max(0, aligned) + caret.dx,
-      (rowHeight(row) - painter.height) / 2 + caret.dy,
-      0,
-      height,
+    return Offset(
+      padding + math.max(0, aligned),
+      (rowHeight(row) - painter.height) / 2,
     );
   }
 

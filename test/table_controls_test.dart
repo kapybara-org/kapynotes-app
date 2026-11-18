@@ -47,7 +47,7 @@ void main() {
     await desk.open(
       body,
       window: window,
-      theme: dark ? KapyTheme.dark() : KapyTheme.light(),
+      brightness: dark ? Brightness.dark : Brightness.light,
     );
     await desk.settle();
     return (desk, desk.editor.debugTableFrames.single);

@@ -2,8 +2,7 @@
 ///
 /// A switch has two phases. [advance] walks a frozen snapshot while the
 /// shortcut modifier is held, then [commit] returns the final preview. The
-/// caller owns MRU order so the sidebar and the shortcut have one source of
-/// truth rather than two lists that can disagree.
+/// caller owns the order: most recently opened first.
 class NoteSwitcher {
   List<String>? _session;
   int _sessionIndex = 0;
@@ -19,12 +18,12 @@ class NoteSwitcher {
   /// Ends an unfinished preview when another interaction takes over.
   void cancel() => _clearSession();
 
-  /// Moves through [eligibleIds] in the order the sidebar is currently using.
+  /// Moves through [eligibleIds] in the order the caller gives.
   ///
   /// That order is frozen for the held-modifier session so the preview does
   /// not jump as the selected editor changes. The caller promotes the final
   /// note only after [commit], which is what makes every new forward switch
-  /// start on the row directly below the active note.
+  /// start on the note opened just before the active one.
   String? advance({
     required String? currentId,
     required Iterable<String> eligibleIds,
