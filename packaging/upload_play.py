@@ -478,6 +478,7 @@ def validate(bundle):
 
 
 UPLOAD_CHUNK = 16 * 1024 * 1024
+UPLOAD_STALL_LIMIT = 6
 
 
 def upload_bundle(edit_id, bundle):
@@ -486,7 +487,9 @@ def upload_bundle(edit_id, bundle):
     Google's front end drops a single-request upload of a bundle this size
     (190 MB for 1.32.0) without a response. A resumable session survives that:
     after a dropped chunk, Play reports how many bytes it holds and the upload
-    carries on from there.
+    carries on from there. Only forward progress resets the retry budget, so a
+    session that stops taking bytes fails after UPLOAD_STALL_LIMIT tries, with
+    the wait between them growing each time.
     """
     size = os.path.getsize(bundle)
 
@@ -510,37 +513,44 @@ def upload_bundle(edit_id, bundle):
     ).headers["Location"]
 
     offset = 0
+    stalled = 0
     with open(bundle, "rb") as handle:
         while True:
             handle.seek(offset)
             chunk = handle.read(UPLOAD_CHUNK)
             span = f"bytes {offset}-{offset + len(chunk) - 1}/{size}"
-            for attempt in range(6):
+            holding = None
+            try:
+                with send(session, "PUT", chunk,
+                          {"Content-Range": span,
+                           "Content-Type": "application/octet-stream"}) as response:
+                    return json.loads(response.read().decode())
+            except urllib.error.HTTPError as error:
+                if error.code != 308:
+                    die(f"bundle upload failed: HTTP {error.code} {error.read().decode()[:400]}")
+                holding = held(error)
+            except (OSError, http.client.HTTPException) as error:
+                print(f"  chunk at byte {offset} dropped ({type(error).__name__})")
                 try:
-                    with send(session, "PUT", chunk,
-                              {"Content-Range": span,
-                               "Content-Type": "application/octet-stream"}) as response:
+                    with send(session, "PUT", b"", {"Content-Range": f"bytes */{size}"}) as response:
                         return json.loads(response.read().decode())
-                except urllib.error.HTTPError as error:
-                    if error.code != 308:
-                        die(f"bundle upload failed: HTTP {error.code} {error.read().decode()[:400]}")
-                    offset = held(error)
-                    break
-                except (OSError, http.client.HTTPException) as error:
-                    print(f"  chunk at byte {offset} dropped ({type(error).__name__}), retrying")
-                    time.sleep(5 * (attempt + 1))
-                    try:
-                        with send(session, "PUT", b"", {"Content-Range": f"bytes */{size}"}) as response:
-                            return json.loads(response.read().decode())
-                    except urllib.error.HTTPError as status:
-                        if status.code == 308:
-                            offset = held(status)
-                            break
-                    except (OSError, http.client.HTTPException):
-                        pass
-            else:
-                die(f"bundle upload stalled at byte {offset} of {size}")
-            print(f"  {offset * 100 // size}% sent")
+                except urllib.error.HTTPError as status:
+                    if status.code == 308:
+                        holding = held(status)
+                except (OSError, http.client.HTTPException):
+                    pass
+
+            if holding is not None and holding > offset:
+                offset = holding
+                stalled = 0
+                print(f"  {offset * 100 // size}% sent")
+                continue
+            if holding is not None:
+                offset = holding
+            stalled += 1
+            if stalled >= UPLOAD_STALL_LIMIT:
+                die(f"bundle upload made no progress in {stalled} tries; Play holds {offset} of {size} bytes")
+            time.sleep(5 * stalled)
 
 
 def upload(bundle, track):
